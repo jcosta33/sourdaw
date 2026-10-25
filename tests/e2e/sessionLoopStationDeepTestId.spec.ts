@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+
+import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 async function openTab(page: import('@playwright/test').Page, tabId: string): Promise<void> {
     const dock = page.getByTestId('toggle-bottom-dock');
@@ -8,10 +9,9 @@ async function openTab(page: import('@playwright/test').Page, tabId: string): Pr
         await page.waitForTimeout(500);
     }
     const tab = page.locator(`#bottom-dock-tab-${tabId}`);
-    if (await tab.isVisible().catch(() => false)) {
-        await tab.click();
-        await page.waitForTimeout(500);
-    }
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
 
 test.describe('Session view & loop station deep — EDM template', () => {
@@ -50,21 +50,7 @@ test.describe('Session view & loop station deep — EDM template', () => {
         await expect(page.getByTestId('transport-play')).toBeVisible();
     });
 
-    test('loop station tab accessible with arm button', async ({ page }) => {
-        await openTab(page, 'loopStation');
-
-        const region = page.getByRole('region', { name: 'Loop station' });
-        const hasRegion = await region.isVisible().catch(() => false);
-        if (hasRegion) {
-            const arm = page.getByRole('button', { name: /Arm loop station|Disarm loop station/i }).first();
-            const hasArm = await arm.isVisible().catch(() => false);
-            if (hasArm) {
-                const label = await arm.getAttribute('aria-label');
-                expect(label).toContain('loop station');
-            }
-        }
-    });
-
+    // setlistLoopStationTestId owns unconditional loop region and Arm to Disarm coverage.
     test('session view and loop station can be viewed sequentially', async ({ page }) => {
         // Open session view.
         await page.getByTestId('toggle-dual-view').click();

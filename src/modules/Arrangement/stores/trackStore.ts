@@ -284,6 +284,9 @@ function normalize_clip(value: unknown): Clip | null {
     if (is_finite_number(value.loopLength)) {
         clip.loopLength = value.loopLength;
     }
+    if (is_finite_number(value.loopOriginBeat)) {
+        clip.loopOriginBeat = value.loopOriginBeat;
+    }
     if (is_follow_action(value.followAction)) {
         clip.followAction = value.followAction;
     }

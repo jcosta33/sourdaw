@@ -6,12 +6,12 @@ and shared principles that bind them.
 ## Stance derivation and the lesson library
 
 Stances are derived per task, never selected from this directory. Enumerate the material risks the
-diff creates, name one stance per risk, and record the dispatched set with each stance's admission
-evidence in the bundle's `stances.json`; the root `AGENTS.md` Review section carries the rule.
+diff creates, name one stance per risk, and record each completed draw in `review.json`'s `draws`;
+the root `AGENTS.md` Review section carries the rule and the risk plan's floor.
 
-Every dispatched draw and its adjudication become durable evidence under the frozen attributable
-evidence contract ([ADR 0048](../../decisions/0048-attributable-evidence-contract-is-frozen.md)):
-stance names, models, tiers, outcomes, and dispositions enter the head-bound `dossier-v1` record.
+Every completed draw becomes durable evidence: `review:publish` derives the head-bound `dossier-v1`
+record from `review.json`, so stance names, models, tiers, and outcomes enter it
+([ADR 0054](../../decisions/0054-proportional-machine-checked-review-floor.md)).
 Name stances by the failure mode that admits them so that record stays meaningful to a cold reader,
 and keep every recorded value single-line and free of credentials or transcript material — the
 contract's parsers refuse anything else.

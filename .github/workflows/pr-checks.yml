@@ -1,0 +1,69 @@
+name: PR checks
+
+# Cheap validation for every push, before review. It mints no Gate and is not
+# required: the required Gate, the affected browser matrix, Browser AI hardware
+# admission and CodeQL run in health-gates.yml once the reviewer App approves
+# the exact head, so pushes from many lanes no longer queue the heavy suite.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    name: Plan push checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      profile: ${{ steps.plan.outputs.profile }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      browser: ${{ steps.plan.outputs.browser }}
+      browser-ai: ${{ steps.plan.outputs.browser-ai }}
+      codeql: ${{ steps.plan.outputs.codeql }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: package.json
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Plan affected checks
+        id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/prValidationScope.ts plan
+      - name: Upload scope manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-validation-scope
+          path: pr-validation-scope.json
+          if-no-files-found: error
+          retention-days: 7
+
+  validation:
+    name: Push validation
+    needs: scope
+    uses: ./.github/workflows/validation.yml
+    with:
+      browser: ${{ needs.scope.outputs.browser == 'true' }}
+      profile: ${{ needs.scope.outputs.profile }}

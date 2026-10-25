@@ -100,6 +100,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAudioRecording: mocks.stopAudioRecording,
     getCompensationDelay: mocks.getCompensationDelay,
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    // The recording terminal's root-identity witness reads one function; these
+    // specs exercise no branch machinery, so the identity never moves.
+    captureProjectRootIdentity: () => 'root-identity',
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 const PUNCH_IN_BEAT = 8;

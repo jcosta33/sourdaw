@@ -155,7 +155,6 @@ describe('LevainPanel edits reach the live engine', () => {
         vi.stubGlobal('cancelAnimationFrame', vi.fn());
 
         injectDependencies(levainBridge, {
-            getAllTracks: () => trackStore.value?.tracks ?? [],
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget,
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,
@@ -214,7 +213,6 @@ describe('LevainPanel edits reach the live engine', () => {
         // spec above; Levain writes are gated on the device still being in the
         // project, so a panel left open across a device delete must not resurrect it.
         injectDependencies(levainBridge, {
-            getAllTracks: () => [],
             persistDeviceParam,
             resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' as const }),
             autoLoadLevainSamples: mocks.autoLoadLevainSamples,

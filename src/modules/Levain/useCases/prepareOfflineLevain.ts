@@ -26,10 +26,13 @@ export type PrepareOfflineLevainInput = {
  * **Zones.** Reuses the live loader rather than keeping a second implementation.
  * The main-thread decoded SAB cache avoids another fetch/decode pass, while the
  * fresh `OfflineAudioContext` uploads one separate Rust/WASM bank into its own
- * worklet scope. The loader waits for `sampleBankLoaded`; merely posting
- * `buildZoneMap` is insufficient because offline rendering outruns asynchronous
- * setup. Progress and errors remain keyed to the same device id so export
- * failures reach the user instead of disappearing into a log line.
+ * worklet scope. The loader stages that bank's zone tables, built off the render
+ * thread, as `reserveZoneTables`, bounded `zoneTableChunk` messages and
+ * `sealZoneTables`, then posts `commitSampleBank` and waits for
+ * `sampleBankLoaded`; merely posting the commit is insufficient because offline
+ * rendering outruns asynchronous setup. Progress and errors remain keyed to the
+ * same device id so export failures reach the user instead of disappearing into
+ * a log line.
  *
  * **Where the patch comes from.** The live patch when the session holds one, then
  * project truth, then the module default. Instrument identity rides

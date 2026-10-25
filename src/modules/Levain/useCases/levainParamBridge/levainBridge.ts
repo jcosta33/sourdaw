@@ -6,7 +6,7 @@ import { levainBridgeDependencies } from './levainBridgeDependencies';
 import type { LevainBridgeApi } from './helpers';
 
 /**
- * Injectable singleton — resolves **`getAllTracks`**, **`persistDeviceParam`**, **`autoLoadLevainSamples`** for tests via **`injectDependencies(levainBridge, …)`**.
+ * Injectable singleton — resolves parameter persistence and sample loading for tests via **`injectDependencies(levainBridge, …)`**.
  */
 export const levainBridge = inject(levainBridgeDependencies)((deps) => {
     const bridge = createLevainBridge(deps);

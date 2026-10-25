@@ -4,8 +4,11 @@
  * `review:accept`. Extracted from `publishReview.ts` so the publication
  * machinery and the document contract evolve independently.
  */
+import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { assertReviewDocumentFormat, parseApprovalEvidence, renderLegacyApprovalBody } from './reviewApprovalFormat.ts';
+
+import type { ReviewModelTier } from './reviewDossier.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -16,6 +19,20 @@ export type ReviewComment = {
     defect: string;
     consequence: string;
     done: string;
+};
+
+/** One completed blind review draw: one stance performed by one reviewer model. */
+export type ReviewDraw = {
+    stance: string;
+    reviewerModel: string;
+    tier: ReviewModelTier;
+    outcome: 'clean' | 'findings';
+};
+
+/** One candidate finding the orchestrator discarded, with its one-line reason. Never posted. */
+export type ReviewDiscard = {
+    finding: string;
+    reason: string;
 };
 
 export type ApprovalEvidence = {
@@ -61,6 +78,14 @@ export type ReviewDocument = {
      */
     modelExhaustion?: string;
     /**
+     * The round's completed draws. Required on a fresh plan-carrying reviewer publication, where
+     * `review:publish` derives the head's durable record from them and enforces the risk plan's
+     * stance floor; optional on the parse so legacy bundles and exact replays read unchanged.
+     */
+    draws?: ReviewDraw[];
+    /** The orchestrator's discarded candidates: shape-checked and evidence-safe, never posted. */
+    discarded?: ReviewDiscard[];
+    /**
      * Acceptance-only delivery authorization: `parseAcceptanceDocument` sets it from the
      * `authorization` block, and `parseReviewDocument` refuses that key, so a review document
      * never carries it. Absent on legacy acceptance bundles with no evidence manifest to bind.
@@ -101,27 +126,27 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
     if (record.event === 'APPROVE' && body.trim() === '') {
         fail('APPROVE requires a body stating what was attacked and held');
     }
-    const declaredModel = extractDeclaredModelFields(record);
+    const declared = { ...extractDeclaredModelFields(record), ...extractRoundRecordFields(record) };
     if ('evidence' in record && record.evidence !== undefined) {
         if (record.event !== 'APPROVE') {
             fail('REQUEST_CHANGES must not carry approval evidence');
         }
         const evidence = parseApprovalEvidence(record.evidence);
         if (record.format === 'compact-v1') {
-            return { format: record.format, event: record.event, body, comments, evidence, ...declaredModel };
+            return { format: record.format, event: record.event, body, comments, evidence, ...declared };
         }
         return {
             event: record.event,
             body: renderLegacyApprovalBody(body, evidence),
             comments,
             evidence,
-            ...declaredModel,
+            ...declared,
         };
     }
     if (record.format === 'compact-v1') {
         fail('compact-v1 requires APPROVE with evidence');
     }
-    return { event: record.event, body, comments, ...declaredModel };
+    return { event: record.event, body, comments, ...declared };
 }
 
 /**
@@ -129,6 +154,91 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
  * callers (and spec fixtures) distinguish "document declares no model" from a set value by key
  * presence.
  */
+const DRAW_KEYS = ['outcome', 'reviewerModel', 'stance', 'tier'].join(',');
+const DISCARD_KEYS = ['finding', 'reason'].join(',');
+const DRAW_TIERS: ReadonlySet<string> = new Set(['economy', 'standard', 'strongest']);
+const DRAW_OUTCOMES: ReadonlySet<string> = new Set(['clean', 'findings']);
+
+function roundRecordEntry(value: unknown, label: string, keys: string): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        fail(`${label} must be an object`);
+    }
+    const entry = value as Record<string, unknown>;
+    const actual = Object.keys(entry).sort().join(',');
+    if (actual !== keys) {
+        fail(`${label} fields must be ${keys}, found ${actual}`);
+    }
+    return entry;
+}
+
+/** A recorded round value: a non-empty string carrying the published-evidence safety rules. */
+function roundRecordString(value: unknown, label: string): string {
+    if (typeof value !== 'string') {
+        fail(`${label} must be a string`);
+    }
+    assertPublicationSafeEvidence(label, [value]);
+    return value;
+}
+
+function roundRecordToken<Value extends string>(value: unknown, label: string, allowed: ReadonlySet<string>): Value {
+    if (typeof value !== 'string' || !allowed.has(value)) {
+        fail(`${label} must be one of ${[...allowed].join(', ')}, found ${JSON.stringify(value) ?? typeof value}`);
+    }
+    return value as Value;
+}
+
+function parseDraws(value: unknown): ReviewDraw[] {
+    if (!Array.isArray(value)) {
+        fail('review.json draws must be an array');
+    }
+    const seen = new Set<string>();
+    return value.map((raw: unknown, index) => {
+        const label = `review.json draws[${index}]`;
+        const entry = roundRecordEntry(raw, label, DRAW_KEYS);
+        const draw: ReviewDraw = {
+            stance: roundRecordString(entry.stance, `${label}.stance`),
+            reviewerModel: roundRecordString(entry.reviewerModel, `${label}.reviewerModel`),
+            tier: roundRecordToken<ReviewModelTier>(entry.tier, `${label}.tier`, DRAW_TIERS),
+            outcome: roundRecordToken<ReviewDraw['outcome']>(entry.outcome, `${label}.outcome`, DRAW_OUTCOMES),
+        };
+        // One stance may carry several draws on distinct models; an exact repeat is one draw twice.
+        const key = JSON.stringify([draw.stance, draw.reviewerModel]);
+        if (seen.has(key)) {
+            fail(`${label} repeats stance ${draw.stance} on ${draw.reviewerModel}`);
+        }
+        seen.add(key);
+        return draw;
+    });
+}
+
+function parseDiscards(value: unknown): ReviewDiscard[] {
+    if (!Array.isArray(value)) {
+        fail('review.json discarded must be an array');
+    }
+    return value.map((raw: unknown, index) => {
+        const label = `review.json discarded[${index}]`;
+        const entry = roundRecordEntry(raw, label, DISCARD_KEYS);
+        return {
+            finding: roundRecordString(entry.finding, `${label}.finding`),
+            reason: roundRecordString(entry.reason, `${label}.reason`),
+        };
+    });
+}
+
+/** The round record fields, omitted entirely when absent, exactly like the model fields below. */
+function extractRoundRecordFields(
+    record: Record<string, unknown>
+): Partial<Pick<ReviewDocument, 'draws' | 'discarded'>> {
+    const fields: Partial<Pick<ReviewDocument, 'draws' | 'discarded'>> = {};
+    if (record.draws !== undefined) {
+        fields.draws = parseDraws(record.draws);
+    }
+    if (record.discarded !== undefined) {
+        fields.discarded = parseDiscards(record.discarded);
+    }
+    return fields;
+}
+
 function extractDeclaredModelFields(
     record: Record<string, unknown>
 ): Partial<Pick<ReviewDocument, 'reviewerModel' | 'modelExhaustion'>> {

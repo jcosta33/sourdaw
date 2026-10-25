@@ -1,7 +1,13 @@
 import { IDBFactory, IDBKeyRange, IDBObjectStore, IDBOpenDBRequest, IDBVersionChangeEvent } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ASSET_RESUME_CHUNKS, ASSET_RESUME_METADATA, type ResumeManifest } from '../../models/AssetTransferResume';
+import {
+    ASSET_RESUME_CHUNKS,
+    ASSET_RESUME_METADATA,
+    type ResumeManifest,
+    type ResumeJournal,
+    type ResumeChunk,
+} from '../../models/AssetTransferResume';
 import { MIN_ASSET_CHUNK_SIZE } from '../../models/CollaborationTypes';
 import { openAssetTransferResumeDatabase } from '../assetTransferResumeIndexedDb';
 import { createAssetTransferResumeRepository } from '../assetTransferResumeRepository';
@@ -44,7 +50,163 @@ async function counts(): Promise<number[]> {
     });
 }
 
+async function collectChunks(journal: ResumeJournal | null): Promise<ResumeChunk[]> {
+    const chunks: ResumeChunk[] = [];
+    if (journal) {
+        for await (const entry of journal.chunks) {
+            if (entry.chunk) {
+                chunks.push(entry.chunk);
+            }
+        }
+    }
+    return chunks;
+}
+
+async function writeRows(metadata: unknown, chunks: unknown[]): Promise<void> {
+    const database = await openAssetTransferResumeDatabase();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction([ASSET_RESUME_METADATA, ASSET_RESUME_CHUNKS], 'readwrite');
+        transaction.objectStore(ASSET_RESUME_METADATA).put(metadata);
+        for (const chunk of chunks) {
+            transaction.objectStore(ASSET_RESUME_CHUNKS).put(chunk);
+        }
+        transaction.oncomplete = () => {
+            database.close();
+            resolve();
+        };
+        transaction.onabort = () => {
+            database.close();
+            reject(transaction.error);
+        };
+    });
+}
+
+function legacyFixture() {
+    const metadata = {
+        schemaVersion: 1,
+        ownerId: OWNER,
+        hash: HASH,
+        generation: 'legacy-generation',
+        writerId: 'legacy-writer',
+        revision: 4,
+        manifest: { ...manifest, size: MIN_ASSET_CHUNK_SIZE * 4, chunkCount: 4 },
+        received: [0, 0, 1, 2],
+        lastVerifiedProgressAt: Date.now() - 1000,
+    };
+    const chunks = [0, 1, 3].map((index) => ({
+        ownerId: OWNER,
+        hash: HASH,
+        generation: metadata.generation,
+        index,
+        data: new Uint8Array(MIN_ASSET_CHUNK_SIZE).fill(index + 1),
+        digest: DIGEST,
+    }));
+    return { metadata, chunks };
+}
+
+async function rawRows(): Promise<unknown[][]> {
+    const database = await openAssetTransferResumeDatabase();
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction([ASSET_RESUME_METADATA, ASSET_RESUME_CHUNKS], 'readonly');
+        const metadata = transaction.objectStore(ASSET_RESUME_METADATA).getAll();
+        const chunks = transaction.objectStore(ASSET_RESUME_CHUNKS).getAll();
+        transaction.oncomplete = () => {
+            database.close();
+            resolve([metadata.result, chunks.result]);
+        };
+        transaction.onabort = () => {
+            database.close();
+            reject(transaction.error);
+        };
+    });
+}
+
 describe('temporary asset journal transactions', () => {
+    it.each([1, 2] as const)(
+        'range-retires out-of-geometry rows before bounded v%s recovery',
+        async (schemaVersion) => {
+            const repository = createAssetTransferResumeRepository(OWNER);
+            const initial = await repository.begin(
+                { ...manifest, size: MIN_ASSET_CHUNK_SIZE * 3, chunkCount: 3 },
+                'original-writer'
+            );
+            const metadata = schemaVersion === 1 ? { ...initial, schemaVersion, received: [2] } : initial;
+            const valid = {
+                ownerId: OWNER,
+                hash: HASH,
+                generation: initial.generation,
+                index: 2,
+                data: new Uint8Array(MIN_ASSET_CHUNK_SIZE).fill(9),
+                digest: DIGEST,
+            };
+            const invalid = Array.from({ length: 32 }, (_, offset) => ({
+                ...valid,
+                index: 3 + offset,
+                data: new Uint8Array([offset]),
+            }));
+            await writeRows(metadata, [valid, ...invalid]);
+            const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+            const keys = vi.spyOn(IDBObjectStore.prototype, 'openKeyCursor');
+            const getAllKeys = vi.spyOn(IDBObjectStore.prototype, 'getAllKeys');
+            const journal = await repository.claim(HASH, 'recovery-writer');
+            expect(cursor).not.toHaveBeenCalled();
+            const recovered = await collectChunks(journal);
+            expect(recovered.map((chunk) => chunk.index)).toEqual([2]);
+            expect(Array.from(recovered[0]!.data)).toEqual(Array.from(valid.data));
+            expect(cursor).toHaveBeenCalledTimes(1);
+            expect(keys).not.toHaveBeenCalled();
+            expect(getAllKeys).not.toHaveBeenCalled();
+            expect(journal?.metadata).toMatchObject({
+                generation: initial.generation,
+                writerId: 'recovery-writer',
+                revision: initial.revision + 1,
+                lastVerifiedProgressAt: initial.lastVerifiedProgressAt,
+            });
+            expect(await counts()).toEqual([1, 1]);
+        }
+    );
+
+    it('rolls back geometry range retirement when runtime authority is revoked before commit', async () => {
+        const repository = createAssetTransferResumeRepository(OWNER);
+        const metadata = await repository.begin(manifest, 'original-writer');
+        await writeRows(metadata, [
+            {
+                ownerId: OWNER,
+                hash: HASH,
+                generation: metadata.generation,
+                index: 32,
+                data: new Uint8Array([1]),
+                digest: DIGEST,
+            },
+        ]);
+        const before = await rawRows();
+        const controller = new AbortController();
+        const nativeDelete = IDBObjectStore.prototype.delete;
+        let retired = false;
+        vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (this: IDBObjectStore, ...args) {
+            const request = nativeDelete.apply(this, args);
+            if (this.name === ASSET_RESUME_CHUNKS) {
+                request.addEventListener(
+                    'success',
+                    () => {
+                        retired = true;
+                        controller.abort();
+                    },
+                    { once: true }
+                );
+            }
+            return request;
+        });
+        await expect(
+            repository.claim(HASH, 'cancelled-writer', {
+                signal: controller.signal,
+                isCurrent: () => !controller.signal.aborted,
+            })
+        ).rejects.toThrow();
+        expect(retired).toBe(true);
+        expect(await rawRows()).toEqual(before);
+    });
+
     it('persists only six manifest fields from an extended network object across a reopened connection', async () => {
         const wireManifest = { ...manifest, integrityVersion: 1, unrelatedMarker: 'bounded-unknown-wire-field' };
         await createAssetTransferResumeRepository(OWNER).begin(wireManifest, 'writer');
@@ -96,8 +258,11 @@ describe('temporary asset journal transactions', () => {
         const written = await first.append(initial, 0, new Uint8Array(MIN_ASSET_CHUNK_SIZE).fill(9), DIGEST);
         const successor = createAssetTransferResumeRepository(OWNER);
         const restored = await successor.claim(HASH, 'second-writer');
-        expect(restored?.metadata.received).toEqual([0]);
-        expect(restored?.chunks[0]?.data).toEqual(new Uint8Array(MIN_ASSET_CHUNK_SIZE).fill(9));
+        const restoredChunks = await collectChunks(restored);
+        expect(restoredChunks.map((chunk) => chunk.index)).toEqual([0]);
+        expect(Array.from(restoredChunks[0]?.data ?? [])).toEqual(
+            Array.from(new Uint8Array(MIN_ASSET_CHUNK_SIZE).fill(9))
+        );
         await expect(first.append(written, 1, new Uint8Array(MIN_ASSET_CHUNK_SIZE), DIGEST)).rejects.toThrow(
             'superseded'
         );
@@ -136,8 +301,8 @@ describe('temporary asset journal transactions', () => {
         expect(requestSucceeded).toBe(true);
         aborting.mockRestore();
         const reopened = await createAssetTransferResumeRepository(OWNER).claim(HASH, 'after-abort');
-        expect(reopened?.metadata.received).toEqual([]);
-        expect(reopened?.chunks).toEqual([]);
+        expect(reopened?.metadata.schemaVersion).toBe(2);
+        expect(await collectChunks(reopened)).toEqual([]);
         expect(await counts()).toEqual([1, 0]);
     });
 
@@ -159,8 +324,8 @@ describe('temporary asset journal transactions', () => {
         );
         quota.mockRestore();
         const reopened = await createAssetTransferResumeRepository(OWNER).claim(HASH, 'after-quota');
-        expect(reopened?.metadata.received).toEqual([]);
-        expect(reopened?.chunks).toEqual([]);
+        expect(reopened?.metadata.schemaVersion).toBe(2);
+        expect(await collectChunks(reopened)).toEqual([]);
     });
 
     it('aborts held work when its exact runtime authority is revoked', async () => {
@@ -185,7 +350,7 @@ describe('temporary asset journal transactions', () => {
             })
         ).rejects.toThrow();
         cancelling.mockRestore();
-        expect((await createAssetTransferResumeRepository(OWNER).claim(HASH, 'successor'))?.metadata.received).toEqual(
+        expect(await collectChunks(await createAssetTransferResumeRepository(OWNER).claim(HASH, 'successor'))).toEqual(
             []
         );
     });
@@ -209,7 +374,7 @@ describe('temporary asset journal transactions', () => {
             'chunk is invalid'
         );
         expect(await counts()).toEqual([1, 0]);
-        expect((await repository.claim(HASH, 'reader'))?.metadata.received).toEqual([]);
+        expect(await collectChunks(await repository.claim(HASH, 'reader'))).toEqual([]);
     });
 
     it('preserves an unknown metadata shape and reports it rather than replacing its generation', async () => {
@@ -231,5 +396,126 @@ describe('temporary asset journal transactions', () => {
         await expect(repository.begin(manifest, 'writer')).rejects.toThrow('record changed');
         expect(await counts()).toEqual([1, 0]);
         expect(await repository.expire(Number.MAX_SAFE_INTEGER)).toBe(0);
+    });
+    it('bounds append metadata independently of admitted chunk count and prior progress', async () => {
+        const repository = createAssetTransferResumeRepository(OWNER);
+        const wideManifest = { ...manifest, size: 512 * 1024 * 1024, chunkCount: 131072 };
+        let current = await repository.begin(wideManifest, 'writer');
+        const put = vi.spyOn(IDBObjectStore.prototype, 'put');
+        const getKey = vi.spyOn(IDBObjectStore.prototype, 'getKey');
+        const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+        const indices = [...Array.from({ length: 32 }, (_, index) => index), 65536, 131071];
+        for (const index of indices) {
+            current = await repository.append(current, index, new Uint8Array(MIN_ASSET_CHUNK_SIZE), DIGEST);
+        }
+        const metadataWrites = put.mock.calls
+            .map(([value]) => value)
+            .filter((value) => value.schemaVersion !== undefined);
+        expect(metadataWrites).toHaveLength(indices.length);
+        expect(getKey).toHaveBeenCalledTimes(indices.length);
+        expect(cursor).not.toHaveBeenCalled();
+        for (const value of metadataWrites) {
+            expect(value).not.toHaveProperty('received');
+            expect(Object.values(value).some((field) => Array.isArray(field) || ArrayBuffer.isView(field))).toBe(false);
+            expect(JSON.stringify(value).length).toBeLessThan(600);
+        }
+        expect(new Set(metadataWrites.map((value) => Object.keys(value).sort().join(','))).size).toBe(1);
+    });
+
+    it('migrates listed v1 chunks once without loading payloads or refreshing their age', async () => {
+        const legacy = legacyFixture();
+        await writeRows(legacy.metadata, legacy.chunks);
+        const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+        const keys = vi.spyOn(IDBObjectStore.prototype, 'openKeyCursor');
+        const repository = createAssetTransferResumeRepository(OWNER);
+        const journal = await repository.claim(HASH, 'new-writer');
+        expect(cursor).not.toHaveBeenCalled();
+        expect(keys).not.toHaveBeenCalled();
+        expect(journal?.metadata).toEqual({
+            schemaVersion: 2,
+            ownerId: OWNER,
+            hash: HASH,
+            generation: legacy.metadata.generation,
+            writerId: 'new-writer',
+            revision: 5,
+            manifest: legacy.metadata.manifest,
+            lastVerifiedProgressAt: legacy.metadata.lastVerifiedProgressAt,
+        });
+        const restored = (await collectChunks(journal)).map((chunk) => ({ ...chunk, data: Array.from(chunk.data) }));
+        const expected = legacy.chunks.slice(0, 2).map((chunk) => ({ ...chunk, data: Array.from(chunk.data) }));
+        expect(restored).toEqual(expected);
+        expect(await counts()).toEqual([1, 2]);
+    });
+
+    it.each(['abort', 'quota'] as const)('rolls back v1 conversion completely after %s', async (mode) => {
+        const legacy = legacyFixture();
+        await writeRows(legacy.metadata, legacy.chunks);
+        const before = await rawRows();
+        let refused = false;
+        const nativeDelete = IDBObjectStore.prototype.delete;
+        const nativePut = IDBObjectStore.prototype.put;
+        const remove = vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (
+            this: IDBObjectStore,
+            ...args
+        ) {
+            const request = nativeDelete.apply(this, args);
+            if (mode === 'abort' && this.name === ASSET_RESUME_CHUNKS) {
+                request.addEventListener(
+                    'success',
+                    () => {
+                        refused = true;
+                        this.transaction.abort();
+                    },
+                    { once: true }
+                );
+            }
+            return request;
+        });
+        const put = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+            this: IDBObjectStore,
+            ...args
+        ) {
+            if (mode === 'quota' && this.name === ASSET_RESUME_METADATA) {
+                refused = true;
+                throw new DOMException('Conversion quota refusal', 'QuotaExceededError');
+            }
+            return nativePut.apply(this, args);
+        });
+        await expect(createAssetTransferResumeRepository(OWNER).claim(HASH, 'new-writer')).rejects.toThrow();
+        remove.mockRestore();
+        put.mockRestore();
+        expect(refused).toBe(true);
+        expect(await rawRows()).toEqual(before);
+    });
+
+    it.each(['successor', 'abort'] as const)('loads one row per consumer step and fences a later %s', async (mode) => {
+        const repository = createAssetTransferResumeRepository(OWNER);
+        let metadata = await repository.begin(manifest, 'first');
+        for (const index of [0, 1]) {
+            metadata = await repository.append(metadata, index, new Uint8Array(MIN_ASSET_CHUNK_SIZE), DIGEST);
+        }
+        const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll');
+        const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+        const controller = new AbortController();
+        const journal = await repository.claim(HASH, 'reader', {
+            signal: controller.signal,
+            isCurrent: () => !controller.signal.aborted,
+        });
+        expect(cursor).not.toHaveBeenCalled();
+        if (!journal) {
+            throw new Error('Expected journal');
+        }
+        const iterator = journal.chunks[Symbol.asyncIterator]();
+        expect((await iterator.next()).value).toMatchObject({ index: 0, chunk: { index: 0 } });
+        expect(cursor).toHaveBeenCalledTimes(1);
+        expect(getAll).not.toHaveBeenCalled();
+        if (mode === 'successor') {
+            await repository.claim(HASH, 'successor');
+        } else {
+            controller.abort();
+        }
+        await expect(iterator.next()).rejects.toThrow('superseded');
+        expect(cursor).toHaveBeenCalledTimes(1);
+        expect(await counts()).toEqual([1, 2]);
     });
 });
