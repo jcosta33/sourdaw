@@ -1,0 +1,111 @@
+evidence/agent-campaign/manifest.json
+  s_29d8df116c5b92::t_6764f23560da07 623
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_29d8df116c5b92::t_7f9555473d8e30 72-73,77
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_29d8df116c5b92::t_47d5465508878d 21
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  s_29d8df116c5b92::t_7605f5d9c4c9b1 30
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_29d8df116c5b92::t_a771ee865a29e5 68-69
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_29d8df116c5b92::t_275fc06d2f3ee7 54
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_cb7d016192ae2f 23,723-886
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_29d8df116c5b92::t_dc39f131f42065 80-81,83
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_29d8df116c5b92::t_d6e14d8f50a66f 1,10,20,46-47,49-60,73-89,103-104,109-112,241
+src/modules/Arrangement/repositories/track/__tests__/updateTrackState.spec.ts
+  s_29d8df116c5b92::t_cfedc5b33c8302 8
+src/modules/Arrangement/repositories/track/updateTrackState.ts
+  s_29d8df116c5b92::t_8d4c6216290537 1,11-15
+src/modules/Arrangement/stores/__tests__/trackStoreTransientState.spec.ts
+  s_29d8df116c5b92::t_905d0dc54f9282 233-280
+src/modules/Arrangement/stores/trackStore.ts
+  s_29d8df116c5b92::t_9a2d67ec80e93b 2-5,67-73,814,816-818
+src/modules/Arrangement/useCases/clip/buildDuplicateClipInput.ts
+  s_29d8df116c5b92::t_d4387df6cb3ff1 1-35
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_29d8df116c5b92::t_2cf3ede2d5457f 12,78-84
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_29d8df116c5b92::t_8f5f6ead2ea021 5-7,27-77,185-192
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingLoopPass.spec.ts
+  s_29d8df116c5b92::t_03ccc66f967765 3-5,81,85-87,118
+src/modules/Command/useCases/__tests__/commitRedoInverseCapture.spec.ts
+  s_29d8df116c5b92::t_0f409ec33dbfd8 15,40,66,76,78-90,96-98,102-124,126-132,134-180,184,186
+src/modules/Command/useCases/commitRedoInverseCapture.ts
+  s_29d8df116c5b92::t_1a8c96fe4a02c5 12,26,75,80-88,149
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_29d8df116c5b92::t_d29b75258e057a 33-37,259,342-346,434,438-446
+src/modules/CrdtDocument/useCases/__tests__/readOwnedProjectPublications.spec.ts
+  s_29d8df116c5b92::t_f7b2811d04485a 1-149
+src/modules/CrdtDocument/useCases/index.ts
+  s_29d8df116c5b92::t_e742f132bc5f19 12
+src/modules/CrdtDocument/useCases/readOwnedProjectPublications.ts
+  s_29d8df116c5b92::t_819a9ab6881a6f 1-6
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_29d8df116c5b92::t_234729279ff9f0 317-321
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_29d8df116c5b92::t_91bf4fccc39d52 21-26,171-173
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_29d8df116c5b92::t_14b95bd5b6fb0a 81-82
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_29d8df116c5b92::t_67c6a21b553d79 143
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_29d8df116c5b92::t_70c5d2ec850eb2 125-126
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_0eaf9e7be33658 98-99
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  s_29d8df116c5b92::t_c33d3d228fed58 96-97
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_29d8df116c5b92::t_28f023a2bddaf8 38,117-118,210-213,219
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_29d8df116c5b92::t_f192da944798e3 112-113
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_29d8df116c5b92::t_fb4cc7d58be6b7 63,69,143-144,338
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.recording.integration.spec.ts
+  s_29d8df116c5b92::t_dd73e064c834f2 17-23,39-42,46-47,63-76,81-111,151,161,170,261-265,269-270,358-364,519-523,525-551
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_29d8df116c5b92::t_55c2137598726e 35-37
+src/modules/Project/useCases/projectPersistence/helpers/resetCrdtProjectWithTransportStopped.ts
+  s_29d8df116c5b92::t_01fd8f65ff9a11 104-106
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_a528229b9b4242 36-37,200-201,474,485,829
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_1d4247e44dda87 25-26,53,156-157,326
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_29d8df116c5b92::t_41ec52c4dac800 28-29,60-61,68,282
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_29d8df116c5b92::t_2dab93ac1a656e 25-26,141-142,146,216
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_2ceb74aad6120a 50,69,71,104,107-112,118-125,140,142-147,222,364-367,703-704,707-711,714,721-732,756-761
+src/modules/Transport/useCases/transportControls/__tests__/rearmNativeSessionAfterEngineRetire.spec.ts
+  s_29d8df116c5b92::t_f058f115ec9915 52
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_29d8df116c5b92::t_ac8e947250626f 46
+src/modules/Transport/useCases/transportControls/__tests__/syncTransportMapsToNativeSession.spec.ts
+  s_29d8df116c5b92::t_7163b35e835be7 47
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_29d8df116c5b92::t_9c4b8e534376dc 3-4
+tests/e2e/devServerOnlySpecs.ts
+  s_29d8df116c5b92::t_958855c265f778 21
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_29d8df116c5b92::t_29f53c7aecac6d 1-1267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "941b52297c60bd74fd01d6d454f28e721e1ae319",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
