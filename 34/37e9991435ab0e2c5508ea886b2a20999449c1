@@ -1,0 +1,52 @@
+scripts/semanticReview/admissionCaseRule.ts
+  s_567a084d0540c4::t_d67c3b2cf2d44f 1-26
+scripts/semanticReview/run.ts
+  s_567a084d0540c4::t_71b9c427efe2b7 40,84,150,339-364,371,714-720
+scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts
+  s_567a084d0540c4::t_392b259ab68fa3 601,726,751,763,776-777,797,822,868,907
+  s_567a084d0540c4::t_1c8bf0348a4dbf 615
+  s_567a084d0540c4::t_9d316e8bf05d20 232-243,250-258,260-269
+  s_567a084d0540c4::t_ca910632b01c54 228-231,244-249,259
+  s_567a084d0540c4::t_8b203064412b70 586-597
+  s_567a084d0540c4::t_88b50b3b4eb004 227
+scripts/semanticReview/rules.ts
+  s_567a084d0540c4::t_d67c3b2cf2d44f 23,326
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_567a084d0540c4::t_8c96cc4afa7e6c 111,6700,6717,6746-6750,6768-6772,6797-6815,6893-6945,6976
+  s_567a084d0540c4::t_fbf24bc10a5891 6816-6892
+  s_567a084d0540c4::t_05f98cae2394b5 6946,6948-6974
+  s_567a084d0540c4::t_940f4200347180 6648-6699
+  s_567a084d0540c4::t_62f6ed4eee4e9d 6947
+scripts/semanticReview/requiredEvidence.ts
+  s_567a084d0540c4::t_aa77e0f088c650 19,27,64-77,135-136,146
+  s_567a084d0540c4::t_a2a13be820e769 109-110,118
+scripts/semanticReview/testCaseContext.ts
+  s_567a084d0540c4::t_906cf053d96201 1-5,7-15,58-62,66,83-87,89-98,100-102,104-105,107-108,136-140,148-163,178-186
+  s_567a084d0540c4::t_d9f67f9b55231c 6,41-57,64-65,67-82,88,103,106,109,111-112,121-122,135
+  s_567a084d0540c4::t_13127ab62aab92 99,110,113-120,123-134,141-147,164-177
+  s_567a084d0540c4::t_b56c1183e83d95 16-40,63
+scripts/semanticReview/evidence.ts
+  s_567a084d0540c4::t_ce08f00688d243 168
+  s_567a084d0540c4::t_13127ab62aab92 789,803,813
+  s_567a084d0540c4::t_9b1d78ee632e82 80,83,167,782-788,790-802,804-812,814-818,828
+scripts/semanticReview/passes.ts
+  s_567a084d0540c4::t_5d92bac7ef670a 16,31,183,193-194,219,234,249,312
+scripts/semanticReview/unitAssessment.ts
+  s_567a084d0540c4::t_5d92bac7ef670a 154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3437e9991435ab0e2c5508ea886b2a20999449c1",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

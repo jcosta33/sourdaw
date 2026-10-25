@@ -1,0 +1,23 @@
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_29d8df116c5b92::t_b0710f2417177c 1,19,22,27,204-228,232-259,263-270,272-278,284-286,288-299,305-310
+  s_29d8df116c5b92::t_cda55732b92ae4 229-231,260-262,271,279-283,287,300-304
+  s_29d8df116c5b92::t_22cfad20901e22 311-312
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_29d8df116c5b92::t_d2bbe9873fa30a 37-40,64-66,79-81,86,99-102,121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64ef36272cfc9d7c949b9302c18dd9407711a7a7",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

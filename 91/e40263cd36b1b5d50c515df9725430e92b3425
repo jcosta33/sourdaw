@@ -1,0 +1,22 @@
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_29d8df116c5b92::t_0691a09a49a421 752-761,1075,1229-1321,2783-2784,2800-2801,2857
+  s_29d8df116c5b92::t_919fa1ff43a038 2816,2835-2836,2858,2860,2863-2864,2875-2876
+scripts/supersedePullRequestGh.ts
+  s_29d8df116c5b92::t_ef901d5e789789 166,178,190,194-197,199-212,214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91e40263cd36b1b5d50c515df9725430e92b3425",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

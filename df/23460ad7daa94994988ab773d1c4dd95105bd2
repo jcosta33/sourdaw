@@ -1,0 +1,43 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_8e7531b1eafe53 2208,2233
+src/modules/Arrangement/useCases/clipEditing/__tests__/captureRestoreClipCommitValidation.spec.ts
+  s_567a084d0540c4::t_f53a9e0f84f1a1 63-141,147-149,154-156,159-161
+src/modules/Arrangement/useCases/clipEditing/captureRestoreClipCommitValidation.ts
+  s_567a084d0540c4::t_edffe2b7a1c22e 8,28,34-48,52-55,59-63,69-71,91,95-100,102-112,124,128-144,147-148,152,156,180-182,186-189,200-202,227-234,238-240,249,271-273,280-282
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_567a084d0540c4::t_b7d233c519a764 21,316-318,345-351,354,385-386,443-445,492-494,498-500
+src/modules/Command/useCases/__tests__/handlerCommitValidation.integration.spec.ts
+  s_59e31a5c6f3e31::t_19f7514be79b26 162-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "df23460ad7daa94994988ab773d1c4dd95105bd2",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

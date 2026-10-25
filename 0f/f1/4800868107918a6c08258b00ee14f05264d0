@@ -1,0 +1,29 @@
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  s_567a084d0540c4::t_452c847769de24 46-51,488,490,642,644
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_567a084d0540c4::t_874ab05552e258 33-38,45,330-331,340-343,345-360,362,365,476-484
+scripts/reviewDocumentParser.ts
+  s_567a084d0540c4::t_0f8c3f1df3fe57 391-395
+scripts/reviewDossier.ts
+  s_567a084d0540c4::t_99ebdf9e98c93c 390,397-400
+scripts/reviewDossierPublication.ts
+  s_567a084d0540c4::t_6223053640ade7 109-112
+scripts/reviewDossierViews.ts
+  s_567a084d0540c4::t_0e21e720d113f0 48-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ff14800868107918a6c08258b00ee14f05264d0",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

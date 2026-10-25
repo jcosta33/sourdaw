@@ -1,0 +1,37 @@
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_d4dd9ceae53f93 42-76
+.agents/skills/review-stances/project-integrity.md
+  s_29d8df116c5b92::t_a79c5417d1b361 3-35
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_29d8df116c5b92::t_7731cef20d2bda 1,8,56,696-1081,3882-3897
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_29d8df116c5b92::t_27d9b9217b8ad9 7-10,64,109-126,1033-1050,4115,4119-4125,4145-4162,4167,4189-4235
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts
+  s_29d8df116c5b92::t_e71a389157f404 38,56,216-219
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  s_29d8df116c5b92::t_7193fa62cd9505 5-8,241-243
+src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts
+  s_29d8df116c5b92::t_f73910fbddc890 2-5,26-32,36
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_29d8df116c5b92::t_3612531d54209e 14,16,59-94,285,354-358,508-509,513-515,809-816,831-832,845-847
+src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts
+  s_29d8df116c5b92::t_ac38391f315211 1,72-252
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringCommandCheckpoint.ts
+  s_29d8df116c5b92::t_b4a207590d8289 138-141,147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "daadb75f61f0a19b4528ac89b0399b2b26c82724",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

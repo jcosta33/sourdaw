@@ -1,0 +1,34 @@
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_29d8df116c5b92::t_eecc33f1d28d1d 42
+  s_29d8df116c5b92::t_822d7865c1b39e 7
+src/modules/Arrangement/useCases/rippleInsert/__tests__/rippleInsertClip.spec.ts
+  s_29d8df116c5b92::t_935649d289dd6f 70-77
+  s_29d8df116c5b92::t_0f9332cde8b50c 133-134
+src/modules/Arrangement/useCases/rippleInsert/__tests__/undoRippleInsertClip.spec.ts
+  s_29d8df116c5b92::t_0f9332cde8b50c 104-108,135,176
+src/modules/Arrangement/handlers/clip/__tests__/drawClipTakeRestore.integration.spec.ts
+  s_29d8df116c5b92::t_6ffce8e51d90f9 21,26-27,29,31,77-118,133,144,189-305
+src/modules/Arrangement/useCases/rippleInsert/rippleInsertClip.ts
+  s_29d8df116c5b92::t_eecc33f1d28d1d 4,45-46,48
+src/modules/Arrangement/useCases/clipEditing/__tests__/nudgeClip.spec.ts
+  s_29d8df116c5b92::t_822d7865c1b39e 8-13,100-108,118-126
+  s_29d8df116c5b92::t_0f9332cde8b50c 56-65,69-75,109-117,127
+src/modules/Arrangement/useCases/rippleInsert/undoRippleInsertClip.ts
+  s_29d8df116c5b92::t_eecc33f1d28d1d 3,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b9a6392dcf261905d4607d8f19caf65719882c6",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

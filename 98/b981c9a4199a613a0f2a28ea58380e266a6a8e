@@ -1,0 +1,21 @@
+scripts/__tests__/resolveThread.spec.ts
+  s_567a084d0540c4::t_52d67fdea47859 61-62
+scripts/resolveThread.ts
+  s_567a084d0540c4::t_dd58eb687ecd93 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98b981c9a4199a613a0f2a28ea58380e266a6a8e",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
