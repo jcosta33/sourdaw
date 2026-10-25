@@ -87,11 +87,57 @@ describe('perceptual goal admission', () => {
         vi.restoreAllMocks();
     });
 
-    it.each(['local', 'anthropic', 'openai', 'openai-compatible'] as const)(
-        'refuses needless clarification through the real %s planning loop and accepts the next recipe proposal',
-        async (route) => {
+    it.each(
+        (['local', 'anthropic', 'openai', 'openai-compatible'] as const).flatMap((route) =>
+            (
+                [
+                    { label: 'unqualified edit', prompt: 'make Vocals warmer', outcome: 'proposal' },
+                    {
+                        label: 'resolved protected owner',
+                        prompt: 'make Vocals warmer; leave the fader of Keys alone',
+                        outcome: 'proposal',
+                    },
+                    {
+                        label: 'resolved excluded owner',
+                        prompt: 'make Vocals warmer except Keys',
+                        outcome: 'proposal',
+                    },
+                    { label: 'read-only question', prompt: 'Is Vocals warmer?', outcome: 'clarify' },
+                    {
+                        label: 'missing protected owner',
+                        prompt: 'make Vocals warmer; leave the fader of Ghost alone',
+                        outcome: 'clarify',
+                    },
+                    {
+                        label: 'ambiguous protected owner',
+                        prompt: 'make Vocals warmer; leave the fader of Keys alone',
+                        outcome: 'clarify',
+                    },
+                    {
+                        label: 'missing excluded owner',
+                        prompt: 'make the mix warmer except Missing',
+                        outcome: 'clarify',
+                    },
+                    {
+                        label: 'later missing target',
+                        prompt: 'make Vocals warmer and Missing brighter',
+                        outcome: 'clarify',
+                    },
+                    { label: 'unread suffix', prompt: 'make Vocals warmer 🚫', outcome: 'clarify' },
+                ] as const
+            ).map((scenario) => ({ route, ...scenario }))
+        )
+    )(
+        'keeps explicit-preservation recipe planning bounded through $route for $label',
+        async ({ route, prompt, outcome, label }) => {
             trackStore.set({
-                tracks: [createTrack({ id: vocals.id, name: vocals.name })],
+                tracks: [
+                    createTrack({ id: vocals.id, name: vocals.name }),
+                    createTrack({ id: 'track-keys', name: 'Keys' }),
+                    ...(label === 'ambiguous protected owner'
+                        ? [createTrack({ id: 'track-other-keys', name: 'Keys' })]
+                        : []),
+                ],
                 selectedTrackId: null,
                 ghostClips: [],
             });
@@ -101,7 +147,7 @@ describe('perceptual goal admission', () => {
             const snapshotBefore = structuredClone(planningContext);
             const providerTurn = route === 'local' ? undefined : { provider: route, assistantItems: null };
             const catalog = prepareCreativeInterpretationCatalog({
-                prompt: 'make Vocals warmer',
+                prompt,
                 context: planningContext,
                 projectRevision: 'snapshot-1',
             });
@@ -156,11 +202,21 @@ describe('perceptual goal admission', () => {
                 });
 
             const result = await parsePromptToActions({
-                prompt: 'make Vocals warmer',
+                prompt,
                 context: planningContext,
                 projectRevision: 'snapshot-1',
             });
 
+            expect(planningContext).toEqual(snapshotBefore);
+            expect(trackStore.value).toBe(liveBefore);
+            expect(captureProjectRevision()).toBe(revisionBefore);
+            if (outcome === 'clarify') {
+                expect(result.planningOutcome?.kind).toBe('clarify');
+                expect(result.actions).toEqual([]);
+                expect(result.applicationToolReceipts).toBeUndefined();
+                expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
+                return;
+            }
             expect(result.rejectionReason).toBeUndefined();
             expect(result.planningOutcome?.kind).toBe('proposal');
             expect(result.actions.some((action) => action.type === 'addDevice')).toBe(true);
@@ -187,9 +243,6 @@ describe('perceptual goal admission', () => {
                     receipts: [{ callId: 'decline-1', error: { code: 'decline-not-admitted' } }],
                 });
             }
-            expect(planningContext).toEqual(snapshotBefore);
-            expect(trackStore.value).toBe(liveBefore);
-            expect(captureProjectRevision()).toBe(revisionBefore);
         }
     );
     it('preserves an already-supported deterministic command without asking the provider', async () => {
