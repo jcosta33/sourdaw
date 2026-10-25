@@ -19,8 +19,80 @@ dispatch.
   internal consumer of a broad platform directory does not grant the renderer authority over it.
 - Follow canonical paths through existing symlinks and missing tails before evaluating a root or
   grant. Check component boundaries and platform spelling behavior rather than string prefixes.
+- Trace every authoritative field from its native response parser through the final equality
+  witness. PR #5627's new historical-parent observation cut exposed an inherited omission of the
+  child's live `baseRef`; cached `baseRefOid` did not bind its name, repository, target or presence.
+  The omission is source-established at the base, and the reviewed head has a native-adapter
+  reproduction; no base-head execution or live/main occurrence is claimed. Change each ref field,
+  remove it, or recreate it after an admitted cleanup while returning the final parent marker
+  response. Require the actual final child core to observe and refuse the change before closure or
+  replay success, retaining owner and markers after an attempted close. An inspected null ref is
+  bound absence; an internal core-only projection omitting the field is not an observed absence.
+  Keep stable present-ref and cleanup-replay controls, and reject an explicitly owned undefined
+  expectation. A selected native response field must exist: omitted or undefined `baseRef` is
+  unavailable evidence, never the explicit null that admits cleanup. Probe native parser admission
+  and CLOSED replay with a moved underlying ref but the selected key omitted; require no writes or
+  success. These are finite client observations, not a server snapshot or protection from later
+  external changes.
+- Keep native selected-field requirements separate from optional internal proof projections.
+  PR #5627's cached `baseRefOid` reader accepted an omitted selected nonnull SHA; the resulting
+  undefined skipped cached ancestry and became null in a fresh historical binding. A controlled
+  native-adapter reproduction rejected a present divergent SHA but closed when only that wire key
+  was omitted; no live/main occurrence is claimed. Pair those inputs and require zero writes for
+  both. Reject missing, null or malformed native cached SHAs before comment inspection, while
+  preserving valid cached SHAs and explicit null live-ref cleanup on CLOSED replay. An absent live
+  ref does not erase its cached commit, and deliberate non-native optional projections do not
+  weaken the selected native response contract.
+- Bind registered historical provenance to the source identity its registration actually attests.
+  PR #5627's protected-primary lane fallback attests same-repository children; branch spelling and
+  a shared fork commit cannot authorize a foreign source. Preserve the observed child source in the
+  canonical record and require the same identity on replay after descriptor and ref cleanup. A
+  registered source becoming null or foreign refuses; a record missing that required field is not
+  upgraded. Keep real-DAG and native-adapter controls for native registration and for fork children
+  with actual final-parent containment. The latter must ignore an unrelated same-named local
+  ledger; a recorded null source is eligible only through that independent containment route and
+  only while its observed identity still matches. These are reviewed source-contract reproductions,
+  not claims of live/main occurrences or an established historical reviewer omission.
 
 ## Lessons from escapes
+
+### 2026-10-25 — a current branch ref substituted an unrelated historical parent (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) bound the child's current base
+ref to the named parent's final head but never established that parent belonged to the old child's
+history. Source inspection establishes the older same-replacement gap; base-head execution was
+not performed. PR #5627's new distinct-replacement path reproduced it with real Git commits:
+the old child's original parent work was absent from the merged replacement, while a reused
+parent ref and genuine replacement ancestry still permitted closure. Two unbound child markers
+also permitted deleted-ref replay through the wrong parent. No live occurrence is claimed.
+The public #5615 approval describes changed-target probes; exact historical prompts/tier are
+unavailable. The missed risk was historical association, beyond present ref equality.
+
+Use a real content-bearing Git DAG with unrelated parents sharing a base. Require final-parent
+containment or previously registered native fork provenance, and reject cached/common ancestry
+alone. Keep a genuine late-parent control whose final head is absent from the old child. Preserve
+the exact admitted binding in an authorized canonical marker; delete local metadata and the ref
+before replay, then substitute another parent or malformed/missing binding and require zero writes.
+Never reconstruct missing provenance from reviews, workflow associations or prose.
+
+### 2026-10-25 — dependency authority changed during its final thread response (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) introduced stacked supersession
+whose parent core was read before separate marker and thread requests. Source inspection shows
+the older same-replacement route retained that split; a base-head execution was not performed.
+PR #5627 carried it into distinct replacements. Controlled native-adapter cases at its reviewed
+head reopened the parent during its last thread response while head, branch and child ref stayed
+unchanged; post-close verification and CLOSED replay still reported success. No live occurrence is
+claimed. The published #5615 approval describes changed-target and late-finding probes; exact
+historical reviewer prompts and tier are unavailable. The missed risk was movement inside each
+dependency authority's composed proof, beyond the child-only final witness.
+
+For every proof subject, mutate its core during its last dependent response. Drive actual shell
+adapters and the serialized transaction at pre-write, mid-proof, post-close and replay boundaries.
+Require an independent current core for parent and both replacements after all dependent reads,
+then the existing final child witness. Preserve compensation before close and retained owner and
+markers after uncertain closure. These observations bound client composition, not later remote
+changes or a server-side compare-and-swap.
 
 ### 2026-10-24 — split PR metadata could close a head that arrived during comment reads (introduced by PR #2357, retained by #4420)
 

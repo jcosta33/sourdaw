@@ -5196,6 +5196,11 @@ describe('fresh reviewer dossier publication', () => {
         { stance: 'stale binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
     ];
 
+    const findingDraws = defaultDraws.map((draw, index): ReviewDraw =>
+        index === 0 ? { ...draw, outcome: 'findings' } : draw
+    );
+    const findingSources = [{ stance: defaultDraws[0]!.stance, reviewerModel: defaultDraws[0]!.reviewerModel }];
+
     const reviewDocument: ReviewDocument = {
         format: 'compact-v1',
         event: 'APPROVE',
@@ -5209,7 +5214,12 @@ describe('fresh reviewer dossier publication', () => {
     function derivedRecord(
         input: {
             draws?: ReviewDraw[];
-            comments?: { path: string; line: number; side: 'LEFT' | 'RIGHT' }[];
+            comments?: {
+                path: string;
+                line: number;
+                side: 'LEFT' | 'RIGHT';
+                sources?: { stance: string; reviewerModel: string }[];
+            }[];
             recommendation?: 'approve' | 'request-changes';
             evidence?: { observable: string; verification: string; observed: string }[];
         } = {}
@@ -5241,6 +5251,7 @@ describe('fresh reviewer dossier publication', () => {
     function changesDocument(): Record<string, unknown> {
         return {
             event: 'REQUEST_CHANGES',
+            draws: findingDraws,
             body: 'One blocking finding.',
             comments: [
                 {
@@ -5250,6 +5261,7 @@ describe('fresh reviewer dossier publication', () => {
                     defect: 'the gate reads the wrong base',
                     consequence: 'a foreign commit slips the authorship gate',
                     done: 'read the comparison base',
+                    sources: findingSources,
                 },
             ],
             reviewerModel: 'glm-5.3-flash',
@@ -5509,6 +5521,41 @@ describe('fresh reviewer dossier publication', () => {
             message: /review risk plan baseSha d{40} does not match the bundle manifest baseSha a{40}/u,
         },
     ];
+
+    it.each([
+        ['missing sources', undefined, /comment 0 requires sources/u],
+        [
+            'unknown source',
+            [{ stance: 'uncompleted', reviewerModel: 'review-model' }],
+            /source.*does not name a completed findings draw/u,
+        ],
+        [
+            'clean source',
+            [{ stance: 'test-validity', reviewerModel: 'review-model' }],
+            /source.*does not name a completed findings draw/u,
+        ],
+    ])('refuses %s before any dossier write, journal, or remote publication', (_label, sources, message) => {
+        const fixture = dossierFixture({
+            plan: toolingRiskPlan(),
+            diff: targetDiff,
+            document: {
+                ...changesDocument(),
+                comments: [
+                    {
+                        ...validComment,
+                        path: 'scripts/target.ts',
+                        line: 5,
+                        ...(sources === undefined ? {} : { sources }),
+                    },
+                ],
+            },
+        });
+        try {
+            expect(refusedBeforeSideEffects(fixture)).toMatch(message);
+        } finally {
+            removeTemporaryDirectory(fixture.root);
+        }
+    });
 
     it('publishes a matching plan, deriving the canonical record from review.json and writing it beside it', () => {
         const fixture = dossierFixture({
@@ -6251,9 +6298,11 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const changesDocument = {
             event: 'REQUEST_CHANGES',
+            draws: findingDraws,
             body: 'One blocking finding.',
             comments: [comment],
             reviewerModel: 'glm-5.3-flash',
@@ -6291,7 +6340,13 @@ describe('fresh reviewer dossier publication', () => {
             const persisted = parseReviewDossier(fixture.readDossier());
             expect(persisted.recommendation).toBe('request-changes');
             expect(acceptedFindings(persisted)).toEqual([
-                { findingId: 'comment-0', path: comment.path, line: comment.line, side: 'RIGHT' },
+                {
+                    findingId: 'comment-0',
+                    path: comment.path,
+                    line: comment.line,
+                    side: 'RIGHT',
+                    sources: findingSources,
+                },
             ]);
             expect(publishedReviewId(persisted)).toBe(99);
             expect(publishedFindings(persisted)).toEqual([
@@ -6313,11 +6368,13 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         return dossierFixture({
             plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6500,6 +6557,7 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6517,6 +6575,7 @@ describe('fresh reviewer dossier publication', () => {
             plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6541,6 +6600,7 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6558,6 +6618,7 @@ describe('fresh reviewer dossier publication', () => {
             plan: toolingRiskPlan(),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6606,6 +6667,7 @@ describe('fresh reviewer dossier publication', () => {
             defect: 'the gate reads the wrong base',
             consequence: 'a foreign commit slips the authorship gate',
             done: 'read the comparison base',
+            sources: findingSources,
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6620,7 +6682,8 @@ describe('fresh reviewer dossier publication', () => {
             '',
         ].join('\n');
         const { canonical } = derivedRecord({
-            comments: [{ path: comment.path, line: comment.line, side: comment.side }],
+            draws: findingDraws,
+            comments: [{ path: comment.path, line: comment.line, side: comment.side, sources: findingSources }],
             recommendation: 'request-changes',
             evidence: [],
         });
@@ -6633,6 +6696,7 @@ describe('fresh reviewer dossier publication', () => {
             dossier: JSON.parse(serializeReviewDossier(bound)),
             document: {
                 event: 'REQUEST_CHANGES',
+                draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
                 reviewerModel: 'glm-5.3-flash',
@@ -6687,7 +6751,8 @@ describe('fresh reviewer dossier publication', () => {
 
     it('refuses a recorded publication whose dossier chain was tampered with', () => {
         const { canonical } = derivedRecord({
-            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
+            draws: findingDraws,
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const, sources: findingSources }],
             recommendation: 'request-changes',
             evidence: [],
         });
@@ -7011,7 +7076,8 @@ describe('fresh reviewer dossier publication', () => {
 
     it('refuses orchestrator acceptance when an accepted finding lacks its public binding', async () => {
         const { canonical } = derivedRecord({
-            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const }],
+            draws: findingDraws,
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' as const, sources: findingSources }],
             recommendation: 'request-changes',
             evidence: [],
         });
@@ -7216,6 +7282,43 @@ describe('review.json round record', () => {
         reviewerModel: 'glm-5.3-flash',
     };
     const draw = { stance: 'stale replay binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' };
+
+    it('retains explicit source pairs while leaving historical comments source-absent', () => {
+        const sources = [{ stance: draw.stance, reviewerModel: draw.reviewerModel }];
+        const attributed = parseReviewDocument({ ...base, comments: [{ ...validComment, sources }] });
+        expect(attributed.comments[0]).toEqual({ ...validComment, sources });
+        expect(parseReviewDocument(base).comments[0]).not.toHaveProperty('sources');
+        expect(JSON.parse(reviewPublicationPayload({ commitId: 'headsha', ...attributed }))).toMatchObject({
+            comments: [{ body: composeReviewCommentBody(validComment) }],
+        });
+    });
+
+    it.each([
+        ['empty', [], /sources must be a non-empty array/u],
+        ['bare model', ['review-model'], /sources\[0\] must be an object/u],
+        ['missing stance', [{ reviewerModel: 'review-model' }], /fields must be reviewerModel,stance/u],
+        [
+            'unknown field',
+            [{ stance: 's', reviewerModel: 'm', tier: 'standard' }],
+            /fields must be reviewerModel,stance/u,
+        ],
+        [
+            'duplicate pair',
+            [
+                { stance: 's', reviewerModel: 'm' },
+                { stance: 's', reviewerModel: 'm' },
+            ],
+            /repeats source/u,
+        ],
+        ['blank stance', [{ stance: '', reviewerModel: 'm' }], /stance.*blank/u],
+        [
+            'unsafe model',
+            [{ stance: 's', reviewerModel: `ghp_${'A'.repeat(24)}` }],
+            /reviewerModel.*contains a GitHub token/u,
+        ],
+    ])('refuses %s finding source data', (_label, sources, message) => {
+        expect(() => parseReviewDocument({ ...base, comments: [{ ...validComment, sources }] })).toThrow(message);
+    });
 
     it('parses draws and discards, and omits both keys when absent', () => {
         expect(

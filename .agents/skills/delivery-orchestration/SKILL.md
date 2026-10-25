@@ -35,7 +35,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent>] --lineage <path-to-json>`                                                     |
+| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`  |
 | Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                               |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
@@ -93,26 +93,67 @@ merge, own the child's old base branch from the child's base repository, target
 the replacement's base, and carry exactly one canonical author-Bot supersession
 receipt and one total finding lineage marker naming the merged replacement. The
 child's live `baseRef` must name that parent branch in the child's repository and
-target the parent's final head commit; a reused branch name is insufficient. The
-cached `baseRefOid` may legitimately predate the current branch tip and does not
-establish this identity. The command snapshots the live ref's repository, name
+target the parent's final head commit. The parent's final head must also belong
+to the old child's immutable history. When that head advanced after the published
+child, only the existing native registered lane provenance can establish the
+historical association: the protected-primary descriptor and matching
+`branch.<child>.sourdaw-stack-fork`, exact child/parent branches and parent PR,
+and the recorded fork commit retained in both old child and final parent. This
+uses the existing same-account native provenance boundary, not cryptographic
+ownership. A missing descriptor is never reconstructed from shared ancestry,
+reviews, workflow associations or prose. A reused branch name is insufficient.
+Any observed cached child `baseRefOid` must belong to both histories during fresh
+admission; that cached commit alone is not parent provenance. The command
+snapshots the live ref's repository, name
 and target, re-reading the child after the parent proof at each mutation boundary.
 It checks the child's finding set after that last remote proof immediately before
 close, and again after the final post-close proof, so a finding added or removed
 during parent inspection cannot inherit an earlier coverage check.
 
-An already CLOSED child with exactly one matching author-Bot receipt and one
-canonical total lineage marker may replay without writes after its live base ref
-has been deleted. Its named parent's identity, canonical receipt and total live
-lineage are still checked; a present contradictory live ref still refuses. This
-replay distinction confirms an existing completion only and cannot admit a fresh
-closure with an absent ref. It does not reconstruct historical ref state.
+Stacked closure posts a third canonical author-Bot
+`sourdaw-supersession-parent-v1` marker binding the child, parent, both replacement
+identities and immutable commits to the admitted provenance kind, fork and cached
+base. It participates in exact observation, convergence, journaled writes,
+compensation and ambiguous-write retention alongside receipt and lineage.
+An already CLOSED child may replay without writes after its live base ref or
+local lane metadata has been deleted only with exactly one strictly parsed,
+canonical authorized binding marker, receipt and total lineage. Replay uses the
+stored historical fork and cached base, verifies current identities and immutable
+ancestry, and refuses a present contradictory descriptor or live ref. A later
+cached base does not rewrite the admitted history. An old two-marker completion
+cannot acquire this binding during CLOSED replay. The distinction confirms an
+existing completion only and cannot admit fresh closure with an absent live ref.
 
 The command revalidates that live parent proof before the first child write, before
 closing, and after closing before reporting success. A refusal before writing
 leaves no child mutation, a refusal after adding child markers compensates those
 markers, and a post-close authority failure reports ambiguity while retaining
-the closed child's two markers as durable evidence.
+all the closed child's markers as durable evidence.
+
+When the parent was superseded by a different merged PR, name it explicitly with
+`--parent-replacement <pr>` after `--superseded-parent`. All four PR identities
+must differ. Both replacements and the old parent must target `main`; the old
+parent's canonical receipt and total live finding lineage must name its own
+replacement, while the child keeps its independent lineage to the child
+replacement. The parent's replacement merge commit must be an ancestor of the
+child replacement's source head. The read-only comparison binds the repository,
+ordered full commit SHAs, base object, merge-base object and terminal descendant
+commit. The comparison has no paging parameters, so GitHub's terminal returned
+commit remains the newest even when its list is capped at 250. A branch match or
+status alone is insufficient, and unavailable evidence refuses. This path
+snapshots and revalidates all four identities, merge commits, parent markers and
+both old PR finding sets before the first child write, immediately before close,
+and after close. Each proof ends with independent core reads of every replacement
+and parent after the final dependent marker and thread reads, followed by the
+child's final core read. CLOSED replay uses the same final authority witnesses.
+These client reads cannot exclude changes after their respective observations.
+Pre-close refusals use the same marker compensation; post-close
+failure reports ambiguity and preserves the closed child's markers. The option
+does not infer a new parent from prose, retarget a branch, or change a registered
+stack. Ancestry proves dependency containment, not semantic replacement or product
+acceptance; those remain independently reviewed caller obligations. Historical
+same-base supersessions and the existing same-replacement parent path do not
+require this additional merge-commit proof.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a

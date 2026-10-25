@@ -35,6 +35,7 @@ const supersessionPaths = [
     'scripts/trustedGithubWriteBootstrap.ts',
     'scripts/supersedePullRequest.ts',
     'scripts/supersedePullRequestGh.ts',
+    'scripts/stackedLanes.ts',
     'scripts/findingLineage.ts',
     'scripts/pullRequestMutationLock.ts',
     'scripts/reviewRepair.ts',
@@ -131,6 +132,7 @@ function withNativeSupersession(
             `
             export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
             export const REQUIRED_REPOSITORY = 'fixture/repository';
+            export const REQUIRED_BASE_BRANCH = 'main';
             export const isAuthorBotNodeId = value => value === AUTHOR_BOT_NODE_ID;
             export const assertTrustedExecutingBlob = () => undefined;
             export const originMainBlob = () => 'controlled-source-port';
@@ -301,6 +303,7 @@ function writeNativeRetirementPorts(root: string, mode: 'admission' | 'rollback'
         export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
         export const REVIEWER_BOT_NODE_ID = 'BOT_fixture_reviewer';
         export const REQUIRED_REPOSITORY = 'fixture/repository';
+        export const REQUIRED_BASE_BRANCH = 'main';
         export const isAuthorBotNodeId = value => value === AUTHOR_BOT_NODE_ID;
         export const assertTrustedExecutingBlob = () => undefined;
         export const originMainBlob = () => 'controlled-source-port';
