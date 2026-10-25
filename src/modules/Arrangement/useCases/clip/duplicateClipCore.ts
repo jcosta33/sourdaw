@@ -18,6 +18,7 @@ type DuplicateClipCoreInput = {
     /** Track the copy is added to. Defaults to the source clip's own track. */
     destinationTrackId?: string;
     computeStartBeat: (clip: Clip) => number;
+    captureMidiOutput?: (capture: NonNullable<ReturnType<typeof duplicateClipNotes>>) => void;
 };
 
 export function duplicateClipCore(input: DuplicateClipCoreInput): boolean;
@@ -121,7 +122,10 @@ export function duplicateClipCore(
     }
 
     if (clip.type === 'midi') {
-        duplicateClipNotes(clipId, newClip.id);
+        const capture = duplicateClipNotes(clipId, newClip.id);
+        if (capture && typeof input !== 'string') {
+            input.captureMidiOutput?.(capture);
+        }
     }
 
     return true;

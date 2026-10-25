@@ -881,8 +881,171 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(ownerProjections()).toEqual(original);
             expect(getCrdtDoc('root')).toEqual(raw);
             expectValidProject();
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(ownerProjections()).toEqual(original);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+            );
+            reloadSavedProject();
+            await redo();
+            expect(undoHistoryStore.value?.future).toEqual([]);
+            expect(ownerProjections()).toEqual(original);
+            expect(getCrdtDoc('root')).toEqual(raw);
         }
     );
+
+    it.each(['source-midi', 'publication-observer', 'creator-throw'] as const)(
+        'aborts a saved duplicate/remove group without publishing after %s diverges',
+        async (failure) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            midiStore.set({
+                ...midiStore.value!,
+                notesByClipId: {
+                    'clip-a': [
+                        {
+                            id: 'prefix-source-note',
+                            pitch: 60,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 90,
+                            expression: { pressure: [{ offsetBeats: 0.5, value: 0.25 }] },
+                        },
+                    ],
+                },
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            const options = { groupId: 'creator-midi-refusal', groupLabel: 'Duplicate then remove' };
+            await executeUserAppAction(
+                {
+                    type: 'duplicateClipAt',
+                    payload: {
+                        clipId: 'clip-a',
+                        targetClipId: 'clip-copy',
+                        destinationTrackId: TRACK_ID,
+                        startBeat: 12,
+                    },
+                },
+                options
+            );
+            await executeUserAppAction(
+                { type: 'removeClip', payload: { clipId: 'clip-copy', ripple: false } },
+                options
+            );
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+            );
+            reloadSavedProject();
+            if (failure === 'source-midi') {
+                syncPeerProject((project) => {
+                    project.midi.notesByClipId['clip-a']![0]!.velocity = 42;
+                });
+            }
+            const raw = structuredClone(getCrdtDoc('root'));
+            const heads = Automerge.getHeads(getCrdtDoc('root')!);
+            const owners = ownerProjections();
+            const localTracks = structuredClone(trackStore.value);
+            const history = structuredClone(undoHistoryStore.value);
+            let observed = false;
+            const publish = midiStore.set;
+            const publication =
+                failure === 'source-midi'
+                    ? null
+                    : vi.spyOn(midiStore, 'set').mockImplementation((state) => {
+                          if (!observed && state?.notesByClipId['clip-copy']?.length) {
+                              observed = true;
+                              if (failure === 'creator-throw') throw new Error('Creator MIDI publication refused');
+                              publish(state);
+                              const current = midiStore.value!;
+                              const note = structuredClone(current.notesByClipId['clip-copy']![0]!);
+                              note.velocity = 42;
+                              publish({ ...current, notesByClipId: { ...current.notesByClipId, 'clip-copy': [note] } });
+                              return;
+                          }
+                          publish(state);
+                      });
+            try {
+                if (failure === 'creator-throw') {
+                    await expect(redo()).rejects.toThrow('Creator MIDI publication refused');
+                } else {
+                    await redo();
+                }
+            } finally {
+                publication?.mockRestore();
+            }
+            expect(getCrdtDoc('root')).toEqual(raw);
+            expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+            expect(ownerProjections()).toEqual(owners);
+            expect(trackStore.value).toEqual(localTracks);
+            expect(undoHistoryStore.value).toEqual(history);
+            if (failure !== 'source-midi') expect(observed).toBe(true);
+            projectCrdtToStores({ resetProjections: true });
+            expect(ownerProjections()).toEqual(owners);
+            if (failure === 'source-midi') {
+                syncPeerProject((project) => {
+                    project.midi.notesByClipId['clip-a']![0]!.velocity = 90;
+                });
+            }
+            // A changed explicit attempt must build its own receipt after the abort.
+            await redo();
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            expect(clipOnTrack(TRACK_ID, 'clip-copy')).toBeUndefined();
+        }
+    );
+
+    it('replays saved split-created MIDI followed by removal for two hydrated cycles', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                'clip-a': [{ id: 'sustained-prefix', pitch: 60, startBeat: 1, duration: 2, velocity: 90 }],
+            },
+            ccByClipId: { 'clip-a': [{ id: 'prefix-cc', controller: 64, value: 127, beat: 1, channel: 0 }] },
+            pitchBendByClipId: { 'clip-a': [{ id: 'prefix-bend', value: 4096, beat: 1, channel: 0 }] },
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+        const original = ownerProjections();
+        const options = { groupId: 'split-created-removal', groupLabel: 'Split then remove' };
+        await executeUserAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'split-copy' } },
+            options
+        );
+        await executeUserAppAction({ type: 'removeClip', payload: { clipId: 'split-copy', ripple: false } }, options);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+        );
+        const removed = ownerProjections();
+        const raw = structuredClone(getCrdtDoc('root'));
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(ownerProjections()).toEqual(original);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+            );
+            reloadSavedProject();
+            await redo();
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            expect(ownerProjections()).toEqual(removed);
+            expect(getCrdtDoc('root')).toEqual(raw);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+        }
+    });
 
     it('keeps a saved split paired take capture when a listener publishes another root', async () => {
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
@@ -2749,6 +2912,31 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             reloadSavedProject();
         }
     });
+
+    it.each([false, true].flatMap((grouped) => ['trim', 'delete'].map((edit) => ({ grouped, edit }))))(
+        'refuses a saved comped split Undo after a peer $edit of its right region: grouped=$grouped',
+        async ({ grouped, edit }) => {
+            await persistCompedSplit(grouped);
+            reloadSavedProject();
+            syncPeerProject((project) => {
+                const lane = project.takeLanes.lanes.find((candidate) => candidate.id === 'comp-lane')!;
+                const index = lane.activeCompRegions.findIndex((region) => region.startBeat === 14);
+                expect(index).toBeGreaterThanOrEqual(0);
+                const region = lane.activeCompRegions[index]!;
+                expect(lane.takes.some((take) => take.id === region.takeId)).toBe(true);
+                if (edit === 'trim') {
+                    region.startBeat = 15;
+                } else {
+                    lane.activeCompRegions.splice(index, 1);
+                }
+            });
+            reloadSavedProject();
+            expect(undoHistoryStore.value?.past).toHaveLength(grouped ? 2 : 1);
+            expectValidProject();
+            await expectReplayRefused('undo');
+            expectValidProject();
+        }
+    );
 
     it.each(['undo', 'redo'] as const)(
         'refuses saved grouped comped split %s before writes when a peer edits the surviving take media',
@@ -6435,6 +6623,77 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(midiStore.value?.notesByClipId['clip-a']).toEqual([peerNote]);
     });
 
+    it.each(
+        (['notes', 'cc', 'bends', 'unrelated'] as const).flatMap((facet) =>
+            [false, true].map((grouped) => ({ facet, grouped }))
+        )
+    )('saved remove Redo authenticates peer-only $facet edits: grouped=$grouped', async ({ facet, grouped }) => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === TRACK_ID
+                    ? { ...track, clips: [...track.clips, createClipFixture('unrelated-midi', 16, 20)] }
+                    : track
+            ),
+        });
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                'clip-a': [{ id: 'owned-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                'unrelated-midi': [{ id: 'untouched-note', pitch: 72, startBeat: 0, duration: 1, velocity: 90 }],
+            },
+            ccByClipId: { 'clip-a': [{ id: 'owned-cc', controller: 64, value: 127, beat: 0, channel: 0 }] },
+            pitchBendByClipId: { 'clip-a': [{ id: 'owned-bend', value: 0, beat: 0, channel: 0 }] },
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        const count = grouped ? 2 : 1;
+        if (grouped) {
+            const result = await executeAppActionBatch(
+                [
+                    { type: 'removeClip', payload: { clipId: 'clip-a' } },
+                    { type: 'removeClip', payload: { clipId: 'clip-b' } },
+                ],
+                { source: 'manual', groupId: 'peer-midi-only' }
+            );
+            expect(result.status).toBe('committed');
+        } else {
+            await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } });
+        }
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(count)
+        );
+        reloadSavedProject();
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(count)
+        );
+        reloadSavedProject();
+        syncPeerProject((project) => {
+            if (facet === 'notes') {
+                project.midi.notesByClipId['clip-a']![0]!.velocity = 42;
+            } else if (facet === 'cc') {
+                project.midi.ccByClipId['clip-a']![0]!.value = 42;
+            } else if (facet === 'bends') {
+                project.midi.pitchBendByClipId['clip-a']![0]!.value = 0.5;
+            } else {
+                project.midi.notesByClipId['unrelated-midi']![0]!.velocity = 42;
+            }
+        });
+        expect(undoHistoryStore.value?.future).toHaveLength(count);
+        if (facet === 'unrelated') {
+            await redo();
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+            expect(midiStore.value?.notesByClipId['unrelated-midi']?.[0]?.velocity).toBe(42);
+            expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['unrelated-midi']?.[0]?.velocity).toBe(42);
+        } else {
+            await expectReplayRefused('redo');
+        }
+    });
+
     it.each([false, true])('saved remove Undo refuses hidden peer owners grouped=%s', async (grouped) => {
         const capturedNote = { id: 'captured-hidden-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
         midiStore.set({ ...midiStore.value!, notesByClipId: { 'clip-a': [capturedNote] } });
@@ -6541,9 +6800,15 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
     });
 
-    it.each([false, true].flatMap((grouped) => ['abort', 'commit'].map((settle) => ({ grouped, settle }))))(
-        'saved remove Redo refuses a foreign pending capture then retries grouped=$grouped settle=$settle',
-        async ({ grouped, settle }) => {
+    it.each(
+        [false, true].flatMap((grouped) => [
+            { grouped, settle: 'abort', peerMidi: true },
+            { grouped, settle: 'commit', peerMidi: true },
+            { grouped, settle: 'commit', peerMidi: false },
+        ])
+    )(
+        'saved remove Redo preserves a foreign pending capture grouped=$grouped settle=$settle peerMidi=$peerMidi',
+        async ({ grouped, settle, peerMidi }) => {
             workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
             const committedNote = { id: 'captured-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
             const committedTake = { ...createTake('clip-a', 'Committed take A', 0, 4), selected: true };
@@ -6588,10 +6853,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             );
             reloadSavedProject();
 
-            const pendingNote = { ...committedNote, pitch: 72 };
+            const pendingNote = peerMidi ? { ...committedNote, pitch: 72 } : committedNote;
             const pendingTake = { ...committedTake, name: 'Unpublished take B' };
             const pending = runWithAutomergeStorageTransaction(undefined, () => {
-                midiStore.set({ ...midiStore.value!, notesByClipId: { 'clip-a': [pendingNote] } });
+                if (peerMidi) {
+                    midiStore.set({ ...midiStore.value!, notesByClipId: { 'clip-a': [pendingNote] } });
+                }
                 takeLaneStore.set({ lanes: [{ ...committedLane, takes: [pendingTake] }] });
             });
             expect(pending.status).toBe('returned');
@@ -6634,16 +6901,42 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             const expectedTake = settle === 'commit' ? pendingTake : committedTake;
             projectCrdtToStores();
             expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['clip-a']).toEqual([expectedNote]);
-            expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes[0]?.takes[0]?.name).toBe(expectedTake.name);
+            expect(midiStore.value?.notesByClipId['clip-a']).toEqual([expectedNote]);
+            const expectedTakeLanes = { lanes: [{ ...committedLane, takes: [expectedTake] }] };
+            expect(getCrdtDoc<PeerProject>('root')?.takeLanes).toEqual(expectedTakeLanes);
+            expect(takeLaneStore.value).toEqual(expectedTakeLanes);
+            if (settle === 'commit' && peerMidi) {
+                // Committed peer MIDI differs from the restored removal capture.
+                // A late take alone may refresh the inverse; a changed note may not.
+                const mirrorWrite = vi.spyOn(Storage.prototype, 'setItem');
+                try {
+                    await expectReplayRefused('redo');
+                    expect(mirrorWrite).not.toHaveBeenCalled();
+                } finally {
+                    mirrorWrite.mockRestore();
+                }
+                expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(mirror);
+                expect(held.inverseAction).toBe(inverse);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeDefined();
+                expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['clip-a']).toEqual([pendingNote]);
+                expect(getCrdtDoc<PeerProject>('root')?.takeLanes).toEqual(expectedTakeLanes);
+                return;
+            }
             await redo();
             expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+            if (settle === 'commit') {
+                expect(held.inverseAction).not.toBe(inverse);
+                expect(held.inverseAction).not.toEqual(inverse);
+            }
             await vi.waitFor(() =>
                 expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(entryCount)
             );
             reloadSavedProject();
             expect((await undo()).headConsumed).toBe(true);
             expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['clip-a']).toEqual([expectedNote]);
-            expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes[0]?.takes[0]?.name).toBe(expectedTake.name);
+            expect(midiStore.value?.notesByClipId['clip-a']).toEqual([expectedNote]);
+            expect(getCrdtDoc<PeerProject>('root')?.takeLanes).toEqual(expectedTakeLanes);
+            expect(takeLaneStore.value).toEqual(expectedTakeLanes);
             expectValidProject();
         }
     );

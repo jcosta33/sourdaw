@@ -65,6 +65,7 @@ describe('handleDuplicateClipAt', () => {
             targetClipId: 'copy-42',
             destinationTrackId: 't2',
             computeStartBeat: expect.any(Function),
+            captureMidiOutput: expect.any(Function),
         });
         const call = mocks.duplicateClipCore.mock.calls[0]![0];
         expect(call.computeStartBeat({ startBeat: 0 })).toBe(8);

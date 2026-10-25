@@ -155,6 +155,41 @@ describe('restoreTakesForClip', () => {
         }
     );
 
+    it.each(['apply', 'restore'] as const)(
+        'authenticates changed and deleted source comp regions on the %s leg while their take remains live',
+        (direction) => {
+            const before = { ...createTake('c1', 'Before', 0, 4), id: 'owned-take' };
+            const after = { ...before, clipId: 'c2', startBeat: 4, endBeat: 8 };
+            const beforeRegion = { startBeat: 0, endBeat: 4, takeId: before.id };
+            const afterRegion = { startBeat: 4, endBeat: 8, takeId: before.id };
+            const transition = {
+                laneId: 'captured-lane',
+                trackId: 't1',
+                takesBefore: [before],
+                takesAfter: [after],
+                regionsBefore: [beforeRegion],
+                regionsAfter: [afterRegion],
+            };
+            const source = direction === 'apply' ? before : after;
+            const sourceRegion = direction === 'apply' ? beforeRegion : afterRegion;
+            const live = {
+                ...laneWithTakes('t1', [{ ...source, selected: true }]),
+                id: 'replacement-lane',
+                activeCompRegions: [sourceRegion],
+            };
+            mocks.takeLaneStoreValue.value = { lanes: [live] };
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(true);
+            live.activeCompRegions = [{ ...sourceRegion, startBeat: sourceRegion.startBeat + 1 }];
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(false);
+            live.activeCompRegions = [];
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(false);
+            // Missing-owner recovery stays distinct from deleting a region on a live owner.
+            live.takes = [];
+            expect(reKeyedTakeLaneOwnersMatchStore([transition], direction)).toBe(true);
+            expect(takeLaneStore.set).not.toHaveBeenCalled();
+        }
+    );
+
     it('re-inserts a lane retired whole at the index it held', () => {
         const firstLane = laneWithTakes('t2', [createTake('c9', 'First survivor', 0, 4)]);
         const secondLane = laneWithTakes('t3', [createTake('c8', 'Second survivor', 0, 4)]);
