@@ -4,6 +4,7 @@ import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 type Control = ProposalProtectionFacts['protectedControls'][number];
 type Lane = NonNullable<ProjectContext['automationLanes']>[number];
 type Effect = { trackId: string; operations: string[] };
+type AddEffect = (trackId: string, operation: string) => void;
 type EffectInput = {
     actionType: string;
     payload: Readonly<Record<string, unknown>>;
@@ -44,27 +45,21 @@ function changesLinkedValues(actionType: string): boolean {
     return !['addAutomationLane', 'setAutomationLaneEnabled', 'setAutomationMode'].includes(actionType);
 }
 
-/**
- * Actual controls stay paired with their owner. Registry declarations supply the mutation owners,
- * automation dimension and lane targets; current lane metadata supplies the parameter and links.
- */
-function readEffects(input: EffectInput): Effect[] {
-    const { actionType, payload, context, declaredOwners, automation, laneTargetIds } = input;
-    const effects = new Map<string, Set<string>>();
-    const add = (trackId: string, operation: string) => {
-        const operations = effects.get(trackId) ?? new Set<string>();
-        operations.add(operation);
-        effects.set(trackId, operations);
-    };
-    if (!automation) {
-        for (const owner of declaredOwners) {
-            add(owner, canonicalOperation(actionType));
+function collectParameterRoots(lanes: readonly Lane[], roots: Set<string>, trackId: string, parameterId: string): void {
+    for (const lane of lanes) {
+        if (lane.clipId === undefined && lane.trackId === trackId && lane.parameterId === parameterId) {
+            roots.add(lane.id);
         }
-        return Array.from(effects, ([trackId, operations]) => ({ trackId, operations: [...operations] }));
     }
+}
 
-    const lanes = context.automationLanes ?? [];
-    const roots = new Set<string>();
+function collectAutomationEffects(
+    input: EffectInput,
+    lanes: readonly Lane[],
+    roots: Set<string>,
+    add: AddEffect
+): void {
+    const { actionType, payload, declaredOwners, laneTargetIds } = input;
     const addLane = (lane: Lane) => {
         add(lane.trackId, lane.clipId === undefined ? parameterOperation(lane.parameterId, actionType) : actionType);
         roots.add(lane.id);
@@ -79,11 +74,7 @@ function readEffects(input: EffectInput): Effect[] {
         const parameterId = payload.parameterId;
         if (declaredOwners.includes(trackId)) {
             add(trackId, parameterOperation(parameterId, actionType));
-            for (const lane of lanes) {
-                if (lane.clipId === undefined && lane.trackId === trackId && lane.parameterId === parameterId) {
-                    roots.add(lane.id);
-                }
-            }
+            collectParameterRoots(lanes, roots, trackId, parameterId);
         }
     } else if (
         actionType === 'automateTrackGainRange' ||
@@ -93,11 +84,7 @@ function readEffects(input: EffectInput): Effect[] {
         const parameterId = actionType === 'automateTrackGainRange' ? 'gain' : `send:${String(payload.busId)}`;
         for (const owner of declaredOwners) {
             add(owner, canonicalOperation(actionType));
-            for (const lane of lanes) {
-                if (lane.clipId === undefined && lane.trackId === owner && lane.parameterId === parameterId) {
-                    roots.add(lane.id);
-                }
-            }
+            collectParameterRoots(lanes, roots, owner, parameterId);
         }
     } else if (actionType === 'setAutomationMode') {
         for (const lane of lanes) {
@@ -106,7 +93,14 @@ function readEffects(input: EffectInput): Effect[] {
             }
         }
     }
+}
 
+function collectLinkedEffects(
+    actionType: string,
+    lanes: readonly Lane[],
+    roots: ReadonlySet<string>,
+    add: AddEffect
+): void {
     if (changesLinkedValues(actionType)) {
         // The reverse walk is bounded by current lane ids, including malformed cycles.
         const visited = new Set(roots);
@@ -126,6 +120,31 @@ function readEffects(input: EffectInput): Effect[] {
             }
         }
     }
+}
+
+/**
+ * Actual controls stay paired with their owner. Registry declarations supply the mutation owners,
+ * automation dimension and lane targets; current lane metadata supplies the parameter and links.
+ */
+function readEffects(input: EffectInput): Effect[] {
+    const { actionType, context, declaredOwners, automation } = input;
+    const effects = new Map<string, Set<string>>();
+    const add = (trackId: string, operation: string) => {
+        const operations = effects.get(trackId) ?? new Set<string>();
+        operations.add(operation);
+        effects.set(trackId, operations);
+    };
+    if (!automation) {
+        for (const owner of declaredOwners) {
+            add(owner, canonicalOperation(actionType));
+        }
+        return Array.from(effects, ([trackId, operations]) => ({ trackId, operations: [...operations] }));
+    }
+
+    const lanes = context.automationLanes ?? [];
+    const roots = new Set<string>();
+    collectAutomationEffects(input, lanes, roots, add);
+    collectLinkedEffects(actionType, lanes, roots, add);
     for (const owner of declaredOwners) {
         if (!effects.has(owner)) {
             add(owner, actionType);
