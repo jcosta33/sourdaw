@@ -354,17 +354,17 @@ hand-edited plan can neither widen nor narrow its own review. The earned stances
 name risk surfaces to weigh; the dispatched stances are the orchestrator's
 task-derived judgement.
 
-| Class                                                                                       | Earns                                                     | Draw floor         |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
-| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1                  |
-| `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
-| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
-| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
-| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
-| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3                  |
-| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3, one `strongest` |
-| `native-security`                                                                           | correctness, security-platform, test-validity             | 3, one `strongest` |
-| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3, one `strongest` |
+| Class                                                                                       | Earns                                                     | Draw floor |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------- |
+| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1          |
+| `test-only` (every path a test)                                                             | test-validity                                             | 1          |
+| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2          |
+| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3          |
+| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3          |
+| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3          |
+| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3          |
+| `native-security`                                                                           | correctness, security-platform, test-validity             | 3          |
+| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3          |
 
 Every `.github/` path classifies as handwritten whatever its name, so it never
 plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
@@ -378,16 +378,22 @@ scripts, and the review tooling that admits CI or feeds the bundle earn
 `native-security`; worklet sources under `public/audio/worklets/` and their
 generators earn `realtime-audio`. A generated-only change plans `small`. A plan
 of several classes needs three distinct stances, or every stance its classes
-earn when they earn fewer, plus one `strongest` draw when any of them is a
-specialist class.
+earn when they earn fewer. Specialist classes keep those stance and evidence
+obligations within the same reviewer cost ceiling.
 
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. For a plan-carrying bundle it derives the canonical record from
 `review.json` and the plan, persists it as `dossier.json` before the POST, and
 refuses before any remote write when the plan is missing, malformed, or rebound
-from the head/base/pr it must bind; when `review.json` carries no `draws`; when
-the draws miss the floor above; or when a value is unsafe. The record is
+from the head/base/pr it must bind; when `review.json` carries no `draws` and no
+reusable unpublished record supplies them; when
+the draws miss the floor above; when the summary reviewer model or any effective
+draw exceeds the review cost ceiling below; or when a value is unsafe. Effective
+draws include an unpublished historical dossier reused by a caller document with
+no draws. These are fresh-publication gates: exact published replay and recovery
+keep their original model and tier metadata without rewriting canonical bytes.
+The record is
 `format: 'dossier-v1'`: an append-only event chain (`stance-completed` per draw,
 `finding-accepted` per inline comment) whose records carry `sequence`,
 `previousDigest`, and `digest`, plus `headDigest` and a `dossierDigest` over the
@@ -410,21 +416,34 @@ respin the change as one consolidated pull request, then close the frozen one
 with `pr:supersede` once the replacement merges. `review:repair` and
 `review:confirm` stay open.
 
-Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
-publishes exactly as before.
+Legacy tolerance: a bundle with no `risk-plan.json` retains its historical shape.
+A fresh publication still meets reviewer cost and diversity rules.
 
 ### Headless reviewer dispatch
+
+Reviewers use only fast, low-cost mid-tier models or below: Luna, Terra, Sonnet
+and Haiku families, recorded by their public model names. Fresh draws use
+`economy` or `standard`, including specialist and disputed-risk reviews. Never
+use Fable, Astra, Opus, any Sol model, another frontier or high-end model, or an
+unknown family or premium alias for review. Author and orchestrator routing is
+unchanged. Keep the required independent stances, blind dispatch, identity and
+head bindings, probes and evidence quality within this ceiling.
 
 When the harness cannot select subagent models, run each blind stance on another agent
 harness headlessly: one stance per dispatch, blind, read-only, no credentials, the
 report returned as text for the orchestrator to validate and publish. `reviewerModel`
 records the model actually run; the dispatch never enters the trusted snapshot; the
-harness, model, and invocation are the dispatching session's choice. When only the
-author's model is available, the same-model review still publishes: `review.json`
+harness and invocation are the dispatching session's choice within the permitted
+configured models. Diversify among those models, preferring a different model from
+the author's when available. When only one permitted model is available, disclose
+the unavailable alternatives in `modelExhaustion`; never use a prohibited model
+to obtain diversity. If no permitted model is available, report the blocker.
+When only the author's permitted model is available, the same-model review still publishes: `review.json`
 carries `modelExhaustion` (one line naming what made every other model unavailable)
 and the published body names the reviewer model, so the deviation is recorded rather
 than silently accepted. A draw on an authoring model is covered by the same
-`modelExhaustion`, and the body names that draw's model too.
+`modelExhaustion`, and the body names that draw's model too. Exhaustion never
+waives the cost ceiling.
 
 ## Review document formats
 
@@ -448,11 +467,13 @@ report.
 `review.json` is the only caller document. Beside its review fields it carries
 `draws`, one `{ stance, reviewerModel, tier, outcome }` per completed blind draw —
 several draws on one stance with distinct models count once toward the floor —
-with `tier` `economy`/`standard`/`strongest` and `outcome` `clean`/`findings`,
+with fresh `tier` `economy`/`standard` and `outcome` `clean`/`findings`,
 and optional `discarded`, one `{ finding, reason }` per discarded candidate. The
 fields are exact; an unknown tier or outcome, a repeated stance-and-model pair,
 or an extra field is refused. Discards are shape-checked and never posted or
 recorded. The accepted findings are the document's own inline comments.
+Canonical historical parsers retain `strongest`; that metadata cannot authorize
+a fresh publication and is preserved on published replay and recovery.
 
 Every draw, discard, and approval-claim value must be single-line, trimmed and
 bounded, and is refused when it carries a credential-shaped value, a private-key
