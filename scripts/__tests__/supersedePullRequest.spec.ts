@@ -759,8 +759,7 @@ function nativeSupersessionFixture(
     let pendingChange: { number: number; atParentThreadRead: number; patch: AuthorityChange } | undefined;
     let liveParentComments = [...distinctParentComments];
     let pendingParentCommentsChange:
-        | { atParentThreadRead: number; change: (comments: IssueComment[]) => IssueComment[] }
-        | undefined;
+        { atParentThreadRead: number; change: (comments: IssueComment[]) => IssueComment[] } | undefined;
     let moveAt = moveAtRead;
     const nativeBindingBody = bindingBody({
         ...parentBinding,
@@ -1024,7 +1023,10 @@ function nativeSupersessionFixture(
         changeAuthorityDuringParentThreads: (number: number, read: number, patch: AuthorityChange) => {
             pendingChange = { number, atParentThreadRead: parentThreadReads + read, patch };
         },
-        changeParentCommentsDuringParentThreads: (read: number, change: (comments: IssueComment[]) => IssueComment[]) => {
+        changeParentCommentsDuringParentThreads: (
+            read: number,
+            change: (comments: IssueComment[]) => IssueComment[]
+        ) => {
             pendingParentCommentsChange = { atParentThreadRead: parentThreadReads + read, change };
         },
     };
@@ -1390,7 +1392,9 @@ describe('pull-request supersession', () => {
                     expect(current.events.filter((event) => event === 'comment')).toHaveLength(3);
                     expect(current.events.filter((event) => event === 'delete')).toHaveLength(3);
                     expect(current.comments()).toEqual([oldComment]);
-                    expect(current.events.filter((event) => /^(?:close|pull-request-superseded:)/.test(event))).toEqual([]);
+                    expect(current.events.filter((event) => /^(?:close|pull-request-superseded:)/.test(event))).toEqual(
+                        []
+                    );
                     expect(
                         readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
                     ).toBeUndefined();
@@ -1426,7 +1430,9 @@ describe('pull-request supersession', () => {
                 const changedAt = replay.findIndex((event) => event.startsWith('parent-markers-changed:'));
                 expect(changedAt).toBeGreaterThan(-1);
                 expect(replay.slice(changedAt + 1)).toContain('parent-comments');
-                expect(replay.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+                expect(
+                    replay.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
+                ).toEqual([]);
                 expect(current.state()).toBe('CLOSED');
                 expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
                 expect(current.comments().map((comment) => comment.body)).toEqual([
@@ -1511,7 +1517,9 @@ describe('pull-request supersession', () => {
                 )
             ).resolves.toBe('pull-request-superseded:2244:2246');
             const replay = current.events.slice(replayStart);
-            expect(replay.lastIndexOf('parent-comments')).toBeGreaterThan(replay.lastIndexOf(`threads:${parentNumber}`));
+            expect(replay.lastIndexOf('parent-comments')).toBeGreaterThan(
+                replay.lastIndexOf(`threads:${parentNumber}`)
+            );
             expect(replay.slice(replay.lastIndexOf('parent-comments') + 1)).toContain(`core:${parentNumber}`);
             expect(replay.filter((event) => /^(?:comment|close|delete)$/.test(event))).toEqual([]);
             expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
@@ -1521,7 +1529,9 @@ describe('pull-request supersession', () => {
                 lineageBody,
                 current.bindingBody,
             ]);
-            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)).toBeUndefined();
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
         });
     });
     it('retains the native owner and every marker after an ambiguous third-marker write', async () => {
@@ -3186,7 +3196,12 @@ describe('pull-request supersession', () => {
         ];
         const { port, calls, state } = fakePort({
             bases: [parentBranch, parentBranch, parentBranch],
-            parentCommentsByInspection: [validParentComments, validParentComments, validParentComments, changedParentComments],
+            parentCommentsByInspection: [
+                validParentComments,
+                validParentComments,
+                validParentComments,
+                changedParentComments,
+            ],
         });
         expect(() => runWithParent(port)).toThrow(/proof changed during supersession/i);
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
@@ -3736,7 +3751,12 @@ describe('pull-request supersession', () => {
                     },
                 };
                 if (stage === 'before close') {
-                    input.parentCommentsByInspection = [validParentComments, validParentComments, validParentComments, []];
+                    input.parentCommentsByInspection = [
+                        validParentComments,
+                        validParentComments,
+                        validParentComments,
+                        [],
+                    ];
                 } else {
                     input.removeParentReceiptDuringClose = true;
                 }
