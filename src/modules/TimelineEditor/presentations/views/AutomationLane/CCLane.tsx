@@ -100,7 +100,6 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                 // The swept rows carry their standing ids; their pre-gesture values live in the
                 // click capture, so the restore maps the swept ids back onto the captured rows.
                 const removedIds = new Set(removedFamily.map((row) => row.id));
-                const standingIds = new Set((midiStore.value?.ccByClipId[clipId] ?? []).map((context) => context.id));
                 restoreMidiCCPoints(
                     clipId,
                     [...preClickPoints, ...allCc.filter((context: MidiCC) => removedIds.has(context.id))].filter(
