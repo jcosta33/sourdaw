@@ -30,7 +30,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Post final `acceptance.json` (legacy pre-policy heads only) | `pnpm review:accept <pr>`                                                                                                                                                                     |
 | Record a repair, leave open                                 | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
 | Confirm repairs, resolve                                    | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
-| Reply `Done` and resolve                                    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
+| Explain the retired resolution command                      | `pnpm review:resolve --help`                                                                                                                                                                  |
 | Rebuild rounds; shadow-compare                              | `pnpm review:reconstruct <pr>`                                                                                                                                                                |
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
@@ -607,10 +607,13 @@ a descendant live head, logs `repair-confirmation-replayed:<pr>:<thread>`, and
 resolves without posting a second confirmation.
 Both commands are lock-free and idempotent by their
 deterministic ids, and re-running after a partial pass ignores already-resolved
-threads and completes the remainder. `review:resolve` remains only for legacy
-roots, where it posts only its bare `Done` as author bot and resolves against
-that head; using it on a thread a reviewer blocked reintroduces bare author-side
-resolution, which is what `review:repair` and `review:confirm` exist to replace.
+threads and completes the remainder.
+
+`review:resolve` is retired. Valid invocations refuse before authentication or
+GitHub access; `--help` explains the replacement. Record every repair with
+`review:repair` and let the distinct reviewer confirm it with `review:confirm`.
+Historical records remain readable, but historical roots do not restore
+author-side resolution.
 No script writes free-form thread replies; wrongly posted findings have no
 discussion route. Clarify code, not threads. Resolve only when the current head
 addresses the finding, then obtain a new review. File out-of-scope feedback; do

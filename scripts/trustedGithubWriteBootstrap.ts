@@ -380,12 +380,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
-    'review:resolve': [
-        'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/resolveThread.ts',
-        'scripts/githubAppIdentity.ts',
-        'scripts/prContract.ts',
-    ],
+    'review:resolve': ['scripts/trustedGithubWriteBootstrap.ts', 'scripts/resolveThread.ts', 'scripts/prContract.ts'],
     'review:shadow-status': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/reviewShadowStatus.ts',
