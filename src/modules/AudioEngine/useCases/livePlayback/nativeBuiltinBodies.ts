@@ -38,7 +38,6 @@ import {
     mapFermenterParamToDspParam,
     mapFermenterPatchToDspPatch,
 } from '#/modules/Fermenter/useCases';
-import { captureNativeGrinderNeuralPatch } from '#/modules/Grinder/useCases';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
@@ -46,6 +45,8 @@ import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
 import { mapGrandBouleParamToDspParam } from '../../models/GrandBouleDspParamNames';
 import { KNEAD_ENGINE_PARAM_NAMES } from '../../models/KneadEngineParamNames';
 import { mapToasterKitParamToDspParam } from '../../models/ToasterKitParamNames';
+
+import { captureNativeGrinderNeuralPatch } from './captureNativeGrinderNeuralPatch';
 
 /**
  * The wire shape `BuiltinParamName::parse` admits

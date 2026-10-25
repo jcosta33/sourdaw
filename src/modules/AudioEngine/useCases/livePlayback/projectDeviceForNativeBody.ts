@@ -44,11 +44,11 @@
  */
 
 import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
-import { captureNativeGrinderNeuralPatch } from '#/modules/Grinder/useCases';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { type AudioGraphDevice as NativeBodyDevice } from '../../models/AudioGraphBackend';
 
+import { captureNativeGrinderNeuralPatch } from './captureNativeGrinderNeuralPatch';
 import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody } from './nativeBuiltinBodies';
 
 /**

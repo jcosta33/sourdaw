@@ -22,7 +22,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
-import { grinderNeuralLibraryStore, DEFAULT_GRINDER_NEURAL_LIBRARY_STATE } from '#/modules/Grinder/stores';
+import {
+    grinderNeuralLibraryStore,
+    DEFAULT_GRINDER_NEURAL_LIBRARY_STATE,
+    readGrinderNeuralModelContent,
+} from '#/modules/Grinder/stores';
 import { getLevainEngineParameterName, projectLevainDeviceStateToNativePatch } from '#/modules/Levain/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
@@ -1121,11 +1125,8 @@ describe('the scoring body', () => {
 });
 
 describe('native Grinder full-network patch classification', () => {
-    afterEach(() => {
-        grinderNeuralLibraryStore.set(DEFAULT_GRINDER_NEURAL_LIBRARY_STATE);
-    });
-    it('lets an explicit imported record resolve its actual model ahead of a retained factory slot', () => {
-        const entry: NonNullable<typeof grinderNeuralLibraryStore.value>['entries'][number] = {
+    function importedEntry(): NonNullable<typeof grinderNeuralLibraryStore.value>['entries'][number] {
+        return {
             id: 'imported',
             source: 'imported',
             name: 'Linear reference',
@@ -1157,8 +1158,10 @@ describe('native Grinder full-network patch classification', () => {
                 },
             },
         };
-        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, hydrated: true, entries: [entry] });
-        const record = {
+    }
+
+    function savedRecord() {
+        return {
             neuralModelMode: 1,
             neuralModelSlot: 0,
             neuralCustomTier: 0,
@@ -1175,6 +1178,15 @@ describe('native Grinder full-network patch classification', () => {
             neuralCustomModelDigest2: 3,
             neuralCustomModelDigest3: 4,
         };
+    }
+
+    afterEach(() => {
+        grinderNeuralLibraryStore.set(DEFAULT_GRINDER_NEURAL_LIBRARY_STATE);
+    });
+    it('lets an explicit imported record resolve its actual model ahead of a retained factory slot', () => {
+        const entry = importedEntry();
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, hydrated: true, entries: [entry] });
+        const record = savedRecord();
         const body = bodyOf('grinder');
         const modelJson = body.neuralPatch?.(record);
         expect(typeof modelJson).toBe('string');
@@ -1207,5 +1219,56 @@ describe('native Grinder full-network patch classification', () => {
         expect(body.neuralPatch?.({ neuralModelMode: 'imported', profile: { modelDigest: null } })).toBeNull();
         expect(body.neuralPatch?.({ neuralModelMode: 'builtin', neuralModelSlot: 2 })).toBeNull();
         expect(body.neuralPatch?.({ gain: 5, neuralModelMode: 1 })).toBeUndefined();
+    });
+
+    it('refuses unavailable and ambiguous library content through the numeric patch door', () => {
+        const record = savedRecord();
+        const body = bodyOf('grinder');
+        expect(() => body.neuralPatch?.(record)).toThrow(
+            'Imported Grinder NAM content is unavailable in the neural library'
+        );
+        const entry = importedEntry();
+        const different = importedEntry();
+        different.profile.model = { ...different.profile.model!, weights: [0.5, -0.5] };
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [entry, different] });
+        expect(() => body.neuralPatch?.(record)).toThrow(
+            'Imported Grinder NAM identity is ambiguous in the neural library'
+        );
+        const missing = { ...entry, profile: { ...entry.profile, model: null } };
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [entry, missing] });
+        expect(() => body.neuralPatch?.(record)).toThrow(
+            'Imported Grinder NAM identity is ambiguous in the neural library'
+        );
+    });
+
+    it('keeps native byte admission on the numeric patch read while the library read preserves all content', () => {
+        const entry = importedEntry();
+        const model = entry.profile.model;
+        if (!model) {
+            throw new Error('Full model fixture is required');
+        }
+        const config = { ...model.config, description: '' };
+        entry.profile.model = { ...model, config };
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [entry] });
+        const record = savedRecord();
+        const overhead = new TextEncoder().encode(readGrinderNeuralModelContent(record)).byteLength;
+        const body = bodyOf('grinder');
+        for (const byteLength of [1_048_576, 1_048_577]) {
+            entry.profile.model = {
+                ...model,
+                config: { ...config, description: `é${'x'.repeat(byteLength - overhead - 2)}` },
+            };
+            grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [entry] });
+            const content = readGrinderNeuralModelContent(record);
+            expect(new TextEncoder().encode(content).byteLength).toBe(byteLength);
+            if (byteLength === 1_048_576) {
+                expect(body.neuralPatch?.(record)).toBe(content);
+            } else {
+                expect(content?.length).toBe(1_048_576);
+                expect(() => body.neuralPatch?.(record)).toThrow(
+                    'Imported Grinder NAM exceeds the native model byte limit'
+                );
+            }
+        }
     });
 });
