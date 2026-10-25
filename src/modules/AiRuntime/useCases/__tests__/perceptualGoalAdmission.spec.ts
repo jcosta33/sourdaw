@@ -130,14 +130,15 @@ describe('perceptual goal admission', () => {
     )(
         'keeps explicit-preservation recipe planning bounded through $route for $label',
         async ({ route, prompt, outcome, label }) => {
+            const tracks = [
+                createTrack({ id: vocals.id, name: vocals.name }),
+                createTrack({ id: 'track-keys', name: 'Keys' }),
+            ];
+            if (label === 'ambiguous protected owner') {
+                tracks.push(createTrack({ id: 'track-other-keys', name: 'Keys' }));
+            }
             trackStore.set({
-                tracks: [
-                    createTrack({ id: vocals.id, name: vocals.name }),
-                    createTrack({ id: 'track-keys', name: 'Keys' }),
-                    ...(label === 'ambiguous protected owner'
-                        ? [createTrack({ id: 'track-other-keys', name: 'Keys' })]
-                        : []),
-                ],
+                tracks,
                 selectedTrackId: null,
                 ghostClips: [],
             });
