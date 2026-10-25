@@ -4,7 +4,6 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 
 import { ClipDummy } from '../../__tests__/ClipDummy';
 import { resolveClipsWithComping } from '../../useCases/resolveComping';
-
 import {
     decodeExactTakeLaneSnapshots,
     defaultTakeLaneStoreState,
