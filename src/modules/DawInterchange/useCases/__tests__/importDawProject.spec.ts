@@ -416,6 +416,52 @@ describe('importDawProject', () => {
         );
     });
 
+    it('imports decimal one-pass Notes leaves from real bytes and warns only for the real repeat', async () => {
+        vi.clearAllMocks();
+        await setupRealImport();
+        const projectXml = `<Project version="1.0"><Application name="Fixture" version="1.0"/>
+            <Transport><Tempo value="120"/></Transport>
+            <Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes timeUnit="beats"><Clips track="keys">
+                <Clip id="beat" name="Beat one pass" time="1" duration="2.2" playStart="1.1" loopStart="1.1" loopEnd="3.3">
+                    <Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>
+                <Clip id="seconds" name="Seconds one pass" time="28.2" duration="2.2" contentTimeUnit="seconds" playStart="0.05" loopStart="0.05" loopEnd="1.15">
+                    <Notes><Note time="0" duration="0.25" key="62"/></Notes></Clip>
+                <Clip id="repeat" name="Real repeat" time="36.2" duration="2.2001" playStart="1.1" loopStart="1.1" loopEnd="3.3">
+                    <Notes><Note time="0" duration="0.5" key="64"/></Notes></Clip>
+                <Clip id="plain" name="Plain" time="40.2" duration="1"><Notes>
+                    <Note time="0" duration="0.5" key="67"/></Notes></Clip>
+            </Clips></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'decimal-loops.dawproject',
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            warnings: [
+                {
+                    kind: 'unsupported-clip',
+                    sourceId: 'repeat',
+                    name: 'Real repeat',
+                    context: 'Keys',
+                    handling: 'dropped',
+                },
+            ],
+        });
+        expect(result.warnings).toHaveLength(1);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(
+            applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')?.clips
+        ).toMatchObject([{ name: 'Beat one pass' }, { name: 'Seconds one pass' }, { name: 'Plain' }]);
+        expect(mocks.notifyUser.mock.calls).toEqual([
+            [expect.stringContaining('Clip "Real repeat" on "Keys"'), 'warning'],
+            [expect.stringContaining('Imported decimal-loops.dawproject'), 'success'],
+        ]);
+    });
+
     it('keeps a supported DAWproject import free of warning notices', async () => {
         vi.clearAllMocks();
         await setupRealImport();

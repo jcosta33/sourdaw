@@ -2229,6 +2229,101 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         }
     );
 
+    it.each([
+        { unit: 'beats near the start', time: '1', contentTimeUnit: '', playStart: '1.1', loopEnd: '3.3' },
+        { unit: 'beats later', time: '28.2', contentTimeUnit: '', playStart: '0.1', loopEnd: '2.3' },
+        {
+            unit: 'seconds content',
+            time: '28.2',
+            contentTimeUnit: ' contentTimeUnit="seconds"',
+            playStart: '0.05',
+            loopEnd: '1.15',
+        },
+    ])(
+        'keeps a decimal one-pass Notes loop in $unit but omits a 0.0001-beat repeat',
+        ({ time, contentTimeUnit, playStart, loopEnd }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes timeUnit="beats"><Clips track="keys">' +
+                        `<Clip id="one-pass" name="One pass" time="${time}" duration="2.2"${contentTimeUnit} playStart="${playStart}" loopStart="${playStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                        `<Clip id="plain" name="Plain" time="${time}" duration="1"><Notes>` +
+                        '<Note time="0" duration="0.5" key="62"/></Notes></Clip>' +
+                        `<Clip id="repeat" name="Real repeat" time="${time}" duration="2.2001"${contentTimeUnit} playStart="${playStart}" loopStart="${playStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="64"/></Notes></Clip>' +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+
+            expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.notes?.[0]?.pitch])).toEqual([
+                ['One pass', 60],
+                ['Plain', 62],
+            ]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    kind: 'unsupported-clip',
+                    sourceId: 'repeat',
+                    name: 'Real repeat',
+                    context: 'Keys',
+                    handling: 'dropped',
+                },
+            ]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
+    it('keeps a decimal one-pass parent and nested Notes child while omitting a genuine repeating parent', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes timeUnit="beats"><Clips track="keys">' +
+                    '<Clip id="parent" name="Parent" time="1" duration="2.2" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
+                    '<Clips><Clip name="Child" time="1.1" duration="1"><Notes>' +
+                    '<Note time="0" duration="0.5" key="67"/></Notes></Clip></Clips></Clip>' +
+                    '<Clip id="repeat-parent" name="Repeat parent" time="5" duration="2.2001" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
+                    '<Clips><Clip name="Lost child" time="1.1" duration="1"><Notes>' +
+                    '<Note time="0" duration="0.5" key="69"/></Notes></Clip></Clips></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.notes?.[0]?.pitch])).toEqual([
+            ['Parent', undefined],
+            ['Child', 67],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceId: 'repeat-parent',
+                name: 'Repeat parent',
+                context: 'Keys',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('still refuses a direct Notes loop whose end does not follow its start', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip id="invalid-loop" name="Invalid loop" time="1" duration="1" loopStart="2" loopEnd="2">' +
+                    '<Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                    '<Clip name="Plain" time="2" duration="1"><Notes>' +
+                    '<Note time="0" duration="0.5" key="62"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Plain']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'invalid-loop', name: 'Invalid loop', context: 'Keys' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
     it('reports a direct nonidentity warped Audio leaf while retaining identity and plain siblings', () => {
         const parsed = parseProjectXml(
             project(

@@ -45,6 +45,7 @@ const {
 // Match the owning Transport tempo-map store; its model bounds are private to that module.
 const MIN_TEMPO_MAP_BPM = 20;
 const MAX_TEMPO_MAP_BPM = 999;
+const LOOP_ROUNDOFF_TOLERANCE_BEATS = 1e-9;
 
 type ParseContext = {
     /** Map from track XML id to our own stable id. */
@@ -376,7 +377,11 @@ function repeatsClipLoop(clip: XmlQuery, timing: ClipTiming): boolean {
     }
     const loopStartBeat = toBeats(clip.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
     const loopEndBeat = toBeats(clip.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
-    return loopEndBeat <= loopStartBeat || timing.playStartBeat + timing.visibleDurationBeat > loopEndBeat;
+    if (loopEndBeat <= loopStartBeat) {
+        return true;
+    }
+    // Converted decimal endpoints can differ by a few ulps at a one-pass boundary.
+    return timing.playStartBeat + timing.visibleDurationBeat - loopEndBeat > LOOP_ROUNDOFF_TOLERANCE_BEATS;
 }
 
 function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming): boolean {
@@ -901,19 +906,10 @@ function parseArrangementClips(
                 return false;
             }
             if (hasNestedClips(node)) {
-                const loopStart = node.attr('loopStart');
-                const loopEnd = node.attr('loopEnd');
-                const loopStartBeat = toBeats(node.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
-                const loopEndBeat = toBeats(node.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
                 if (
                     (timing.visibleEndBeat === null && clipNotesContent(node) === null) ||
                     node.attr('reference') !== null ||
-                    ((loopStart !== null || loopEnd !== null) &&
-                        (timing.visibleEndBeat === null ||
-                            loopStart === null ||
-                            loopEnd === null ||
-                            loopEndBeat <= loopStartBeat ||
-                            timing.playStartBeat + (timing.visibleEndBeat - timing.startBeat) > loopEndBeat))
+                    repeatsClipLoop(node, timing)
                 ) {
                     return false;
                 }
