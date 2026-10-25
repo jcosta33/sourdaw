@@ -52,10 +52,17 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { resolveDeviceLayout } from '../../deviceLayoutRegistry';
 import '../DistortionLayout';
 
-const RegisteredDistortionLayout = resolveDeviceLayout('builtin-distortion');
-if (!RegisteredDistortionLayout) {
-    throw new Error('Missing registered Distortion layout');
+function requireRegisteredLayout(type: string, missingMessage: string) {
+    const layout = resolveDeviceLayout(type);
+    if (!layout) {
+        throw new Error(missingMessage);
+    }
+    return layout;
 }
+const RegisteredDistortionLayout = requireRegisteredLayout(
+    'builtin-distortion',
+    'Missing registered Distortion layout'
+);
 
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
