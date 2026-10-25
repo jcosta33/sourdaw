@@ -1,0 +1,57 @@
+scripts/__tests__/publishReview.spec.ts
+  s_29d8df116c5b92::t_ff241fb4b421a5 5199-5203,5217-5222,5254,5264,5525-5559,6301,6305,6343-6349,6371,6377,6560,6578,6603,6621,6670,6685-6686,6699,6754-6755,7079-7080,7286-7322
+scripts/__tests__/reviewDossier.spec.ts
+  s_29d8df116c5b92::t_0b33be71cd0f91 152-165,239-281
+scripts/__tests__/reviewDossierPublication.spec.ts
+  s_29d8df116c5b92::t_a04ec9c7e25038 49-51,93,157-221,261,300,304,313
+  s_567a084d0540c4::t_70f91055ade922 11,271-274,325-361
+scripts/reviewDocumentParser.ts
+  s_567a084d0540c4::t_0cff3c4307c44a 10,12,23-24
+  s_567a084d0540c4::t_0f8c3f1df3fe57 391-395
+scripts/reviewDossier.ts
+  s_567a084d0540c4::t_3d71f3aa71886a 82-93,96,277-278,280-281,439-441,521
+  s_567a084d0540c4::t_99ebdf9e98c93c 375,382-385
+  s_567a084d0540c4::t_ea344850167503 17-22,279,519-520
+scripts/reviewDossierChain.ts
+  s_567a084d0540c4::t_283e143bab6e9a 289,296-303
+scripts/reviewDossierPublication.ts
+  s_567a084d0540c4::t_0cbcf7fce008f0 22,25,110,115-116,118,136-138
+  s_567a084d0540c4::t_6223053640ade7 111-114
+  s_567a084d0540c4::t_8b152fb8683fd0 63-71,80-87,175-177,187-200,202,208-215
+scripts/reviewDossierViews.ts
+  s_567a084d0540c4::t_718777f647c510 7-13,45
+  s_567a084d0540c4::t_0e21e720d113f0 48-59
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  s_567a084d0540c4::t_452c847769de24 46-51,488,490,642,644
+scripts/__tests__/recoverPublishReviewLock5008.spec.ts
+  s_567a084d0540c4::t_874ab05552e258 33-38,45,330-331,340-343,345-360,362,365,476-484
+  s_567a084d0540c4::t_49b8e7b0041d44 667-710
+scripts/reviewPublicationBinding.ts
+  s_567a084d0540c4::t_c2751e9765102f 30,226,232-236,246,253,260-272,485-492
+scripts/reviewDossierBindings.ts
+  s_567a084d0540c4::t_4793c50252adfa 2-5,10,87-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "574c3ab1924b3bc3f167fef135b11fd22a80af20",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
