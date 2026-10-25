@@ -702,14 +702,15 @@ unchanged into a passing record.
 | Command                                      | Purpose                                                                                                                                        |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test:watch`                            | Vitest watch mode for active development                                                                                                       |
-| `pnpm test:run <target>`                     | Single run; pass a file or narrow directory to stay focused. Bare `pnpm test:run` runs the full suite — do that only when explicitly requested |
-| `pnpm test:coverage`                         | Full Vitest run with **v8** coverage; run only when explicitly requested                                                                       |
-| `pnpm test:e2e <spec>`                       | Playwright run; pass a spec to stay focused. Bare `pnpm test:e2e` runs the full suite — do that only when explicitly requested                 |
+| `pnpm test:run <target>`                     | Focused local run; pass the exact changed spec. PR CI owns the broader unit matrix                                                               |
+| `pnpm test:coverage`                         | Full Vitest coverage run; PR CI owns routine repository-wide validation                                                                         |
+| `pnpm test:e2e <spec>`                       | Focused local diagnostic; PR CI selects affected E2E specs. Bare command runs the full suite and is for explicit debugging only                  |
 | `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                                                                                          |
 
 Run only checks affected by the changed files. Keep local verification focused on tests and
-formatting; CI owns lint and TypeScript typechecks. Never expand to repository-wide tests, coverage,
-E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks sequentially
+formatting; CI owns lint, TypeScript typechecks, module boundaries, barrel-mock coverage, builds,
+and broad unit, Rust, and E2E suites. Use PR CI for those results; run a broader check locally only
+for an explicit, targeted debugging need. Run checks sequentially
 within each lane through `package.json`. Other lanes may validate concurrently when RAM permits.
 Wrap compute-heavy agent runs with
 `pnpm guard --profile <p> [--max-rss-mib <estimate>] -- <command>`. Estimate peak RAM from the
