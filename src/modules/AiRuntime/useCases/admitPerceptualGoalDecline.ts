@@ -5,9 +5,10 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { maskQuotedTextContents, scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
 import { findAgentReferenceNameSpans } from './agentReference/findAgentReferenceNameSpans';
-import { findCoordinatedTrackLists } from './agentReference/findCoordinatedTrackLists';
+import { findCoordinatedTrackLists, resolveWholeMember } from './agentReference/findCoordinatedTrackLists';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { getPromptClauses } from './agentReference/groundingStrategies/getPromptClauses';
+import { isExplicitCommandClause } from './agentReference/groundingStrategies/isExplicitCommandClause';
 import { maskProjectReferences } from './agentReference/groundingStrategies/maskProjectReferences';
 import { hasExplicitTrackSelection } from './agentReference/hasExplicitTrackSelection';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
@@ -29,47 +30,52 @@ type PerceptualGoalTarget =
     | { kind: 'role'; role: RecipeRole; ids: readonly string[] }
     | { kind: 'project' };
 
+type BoundPerceptualGoalTarget = Extract<PerceptualGoalTarget, { kind: 'track' | 'tracks' | 'role' | 'project' }>;
+type PerceptualGoal = { target: BoundPerceptualGoalTarget; terms: string[] };
+
 export type PerceptualGoalDeclineAdmission = { status: 'admitted' } | { status: 'refused'; reason: string };
 
-/**
- * The scope words the project-wide `analysis.measure` scope answers to. A role or a track the prompt
- * names takes precedence, so a request naming both is read by the narrower one.
- */
-const PROJECT_SCOPE_WORDS = /\b(?:project|mix|song)\b/u;
+/** The complete scope phrases the project-wide `analysis.measure` scope answers to. */
+const PROJECT_SCOPE_WORDS = /^(?:the )?(?:project|mix|song)$/u;
 
 const ADMITTED: PerceptualGoalDeclineAdmission = { status: 'admitted' };
 
-/** Every span a project track is named by, blanked, so a track called "Bright Keys" states no goal. */
+/** Every track name and literal id is blanked, so a reference to "Bright Keys" states no goal. */
 function maskTrackNames(prompt: string, context: ProjectContext): string {
-    const names = context.tracks.map((track) => track.name);
-    let masked = maskQuotedTextContents(prompt);
-    for (const name of names) {
-        for (const span of findAgentReferenceNameSpans(masked, name, 'exact', names)) {
-            masked = `${masked.slice(0, span.start)}${' '.repeat(span.end - span.start)}${masked.slice(span.end)}`;
+    const names = context.tracks.flatMap((track) => [track.name, track.id]);
+    const original = maskQuotedTextContents(prompt);
+    const spans = names.flatMap((name) => findAgentReferenceNameSpans(original, name, 'exact', names));
+    const masked = original.split('');
+    for (const span of spans) {
+        for (let index = span.start; index < span.end; index += 1) {
+            masked[index] = ' ';
         }
     }
-    return masked;
+    return masked.join('');
 }
 
 /**
  * The catalog's own descriptor terms the prompt states, longest phrase first so "less bright" is
  * read once, as `dark`'s term, and not again as `bright`.
  */
-function readPerceptualTerms(prompt: string, context: ProjectContext, catalog: MixRecipeCatalog): string[] {
-    let remaining = ` ${normalizeAgentReferenceText(maskTrackNames(prompt, context))} `;
+function readFirstPerceptualTerm(
+    prompt: string,
+    context: ProjectContext,
+    catalog: MixRecipeCatalog
+): { term: string; start: number; end: number } | null {
+    const masked = maskTrackNames(prompt, context);
     const terms = catalog.descriptors
         .flatMap((descriptor) => catalog.descriptorTerms[descriptor])
         .toSorted((left, right) => right.length - left.length);
-    const stated: string[] = [];
+    let first: { term: string; start: number; end: number } | null = null;
     for (const term of terms) {
-        const needle = ` ${normalizeAgentReferenceText(term)} `;
-        if (!remaining.includes(needle) || stated.includes(term)) {
-            continue;
+        const words = normalizeAgentReferenceText(term).split(' ').map(escapeRegExp).join('[\\s-]+');
+        const match = new RegExp(`(?<![\\p{L}\\p{N}])${words}(?![\\p{L}\\p{N}])`, 'iu').exec(masked);
+        if (match !== null && (first === null || match.index < first.start)) {
+            first = { term, start: match.index, end: match.index + match[0].length };
         }
-        stated.push(term);
-        remaining = remaining.replaceAll(needle, ' ');
     }
-    return stated;
+    return first;
 }
 
 function readRoleWords(role: RecipeRole): string[] {
@@ -83,14 +89,14 @@ function readRoleWords(role: RecipeRole): string[] {
     return [singular, `${singular}s`];
 }
 
-function readNamedRole(prompt: string, catalog: MixRecipeCatalog): RecipeRole | 'ambiguous' | null {
+function readNamedRole(prompt: string, catalog: MixRecipeCatalog): RecipeRole | null {
     const normalized = normalizeAgentReferenceText(maskQuotedTextContents(prompt));
     const roles = catalog.roles.filter((role) =>
         readRoleWords(role).some((word) =>
-            new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(word)}(?![\\p{L}\\p{N}])`, 'u').test(normalized)
+            new RegExp(`^(?:the )?${escapeRegExp(word)}(?: tracks?)?$`, 'u').test(normalized)
         )
     );
-    return roles.length > 1 ? 'ambiguous' : (roles[0] ?? null);
+    return roles.length === 1 ? roles[0]! : null;
 }
 
 /** Reads catalog role qualifiers on a reserved selection without changing quoted names or source offsets. */
@@ -131,41 +137,13 @@ function isLeadingCourtesyClause(
     return unquoted === clause.text && maskTrackNames(clause.text, context) === unquoted;
 }
 
-/** Whether a shared perceptual goal follows a coordinated target prefix rather than a goal already stated. */
-function hasCoordinatedTargetPrefix(
-    prompt: string,
-    clauses: ReturnType<typeof getPromptClauses>,
-    context: ProjectContext,
-    catalog: MixRecipeCatalog
-): boolean {
-    const firstGoalClause = clauses.findIndex(
-        (clause) => readPerceptualTerms(clause.text, context, catalog).length > 0
-    );
-    return (
-        firstGoalClause > 0 &&
-        clauses.slice(1, firstGoalClause + 1).every((clause, index) => {
-            const previous = clauses[index]!;
-            return /^(?:,|,?\s*and)$/iu.test(prompt.slice(previous.end, clause.start).trim());
-        })
-    );
-}
-
 /** A complete coordinated list is the authority for every stated member, even when only one name resolved. */
 function readCoordinatedTarget(
     prompt: string,
     context: ProjectContext,
-    catalog: MixRecipeCatalog,
-    resolution: ReturnType<typeof resolveAgentReference>
+    goalStart: number
 ): PerceptualGoalTarget | null {
-    const originalClauses = getPromptClauses(prompt, maskProjectReferences(prompt, context));
-    let firstTargetClause = 0;
-    while (
-        firstTargetClause < originalClauses.length &&
-        isLeadingCourtesyClause(originalClauses[firstTargetClause]!, context)
-    ) {
-        firstTargetClause += 1;
-    }
-    const clauses = originalClauses.slice(firstTargetClause);
+    const clauses = getPromptClauses(prompt, maskProjectReferences(prompt, context));
     const lists = findCoordinatedTrackLists({
         prompt,
         context,
@@ -173,14 +151,15 @@ function readCoordinatedTarget(
         risk: 'broad-reversible',
         clauses,
     });
-    const candidateIds = resolution.candidates.map((candidate) => candidate.id);
     for (const list of lists) {
+        const lastMember = list.members.at(-1);
         if (
             list.memberIds === null ||
-            list.memberNamedOutsideList ||
-            !list.everyOtherClauseNamesAnotherTrack ||
-            list.memberIds.length !== candidateIds.length ||
-            !candidateIds.every((id) => list.memberIds?.includes(id))
+            list.firstClauseIndex !== 0 ||
+            list.lastClauseIndex !== clauses.length - 1 ||
+            list.lead.trim().length > 0 ||
+            lastMember === undefined ||
+            prompt.slice(lastMember.end, goalStart).trim().length > 0
         ) {
             continue;
         }
@@ -190,12 +169,6 @@ function readCoordinatedTarget(
             names: list.memberIds.map((id) => context.tracks.find((track) => track.id === id)!.name),
         };
     }
-    if (
-        hasCoordinatedTargetPrefix(prompt, clauses, context, catalog) ||
-        (resolution.status === 'rejected' && resolution.reason === 'ambiguous-target')
-    ) {
-        return { kind: 'tie' };
-    }
     return null;
 }
 
@@ -204,6 +177,13 @@ function readNamedTrack(prompt: string, context: ProjectContext, catalog: MixRec
     const reference = readSelectionReference(prompt, catalog);
     const readsSelection = hasExplicitTrackSelection(reference.text);
     if (readsSelection) {
+        if (
+            !/^(?:the )?(?:selected|current|this) (?:(?:audio|midi|bus|folder) )?track$/u.test(
+                normalizeAgentReferenceText(reference.text)
+            )
+        ) {
+            return { kind: 'tie' };
+        }
         const selected = context.tracks.find((track) => track.id === context.selectedTrackId);
         if (selected === undefined) {
             return { kind: 'tie' };
@@ -217,59 +197,138 @@ function readNamedTrack(prompt: string, context: ProjectContext, catalog: MixRec
                 return { kind: 'tie' };
             }
         }
+        const resolution = resolveAgentReference({
+            prompt: reference.text,
+            assertedId: selected.id,
+            capability: 'track',
+            context,
+        });
+        return resolution.status === 'resolved'
+            ? { kind: 'track', id: selected.id, name: selected.name, via: 'selection' }
+            : { kind: 'tie' };
     }
-    const resolution = resolveAgentReference({
-        prompt: reference.text,
-        assertedId: null,
-        capability: 'track',
-        context,
-    });
-    const coordinated = readCoordinatedTarget(prompt, context, catalog, resolution);
-    if (coordinated !== null) {
-        return coordinated;
-    }
-    if (resolution.status !== 'rejected' || resolution.reason !== 'asserted-target-mismatch') {
-        if (readsSelection) {
+    const forms = [prompt, prompt.replace(/^\s*(?:the|a|an)\s+/iu, '')];
+    for (const memberText of forms) {
+        const id = resolveWholeMember({ memberText, context, capability: 'track', risk: 'broad-reversible' });
+        if (id !== null) {
+            return { kind: 'track', id, name: context.tracks.find((track) => track.id === id)!.name, via: 'name' };
+        }
+        const words = normalizeAgentReferenceText(memberText);
+        if (
+            context.tracks.some((track) =>
+                [track.name, track.id].some((name) => normalizeAgentReferenceText(name) === words)
+            )
+        ) {
             return { kind: 'tie' };
         }
-        return { kind: 'none' };
     }
-    const named = resolution.candidates.filter((candidate) => !candidate.evidence.every((e) => e === 'fuzzy-name'));
-    const only = named.length === 1 ? named[0] : undefined;
-    if (only === undefined) {
-        return { kind: 'none' };
-    }
-    return {
-        kind: 'track',
-        id: only.id,
-        name: only.name,
-        via: only.evidence.includes('selection') && !only.evidence.includes('exact-name') ? 'selection' : 'name',
-    };
+    return { kind: 'none' };
 }
 
 function readPerceptualGoalTarget(
     prompt: string,
     context: ProjectContext,
-    catalog: MixRecipeCatalog
+    catalog: MixRecipeCatalog,
+    goalStart: number
 ): PerceptualGoalTarget {
-    const named = readNamedTrack(prompt, context, catalog);
+    const targetText = prompt.slice(0, goalStart).trim();
+    const named = readNamedTrack(targetText, context, catalog);
     if (named.kind !== 'none') {
         return named;
     }
-    const role = readNamedRole(prompt, catalog);
-    if (role === 'ambiguous') {
-        return { kind: 'tie' };
+    const coordinated = readCoordinatedTarget(prompt, context, goalStart);
+    if (coordinated !== null) {
+        return coordinated;
     }
+    if (maskQuotedTextContents(targetText) !== targetText) {
+        return { kind: 'none' };
+    }
+    const role = readNamedRole(targetText, catalog);
     if (role !== null) {
         const ids = resolveWorkflowTrackIds(context, 'perceptual-goal-role', {
             all: [{ roleFamily: role }],
         });
         return ids.length === 0 ? { kind: 'none' } : { kind: 'role', role, ids };
     }
-    if (PROJECT_SCOPE_WORDS.test(normalizeAgentReferenceText(maskQuotedTextContents(prompt)))) {
+    if (PROJECT_SCOPE_WORDS.test(normalizeAgentReferenceText(targetText))) {
         return { kind: 'project' };
     }
     return { kind: 'none' };
+}
+
+/** The canonical command head admits polite delegation; punctuation alone never decides intent. */
+function readDelegatedGoalBody(text: string): string | null {
+    if (!isExplicitCommandClause(text, [])) {
+        return null;
+    }
+    const verb = /\bmake\b/iu.exec(maskQuotedTextContents(text));
+    return verb === null ? null : text.slice(verb.index + verb[0].length);
+}
+
+/**
+ * Reads only complete target-and-goal units. Preservation text remains unread until its canonical
+ * reader can supply fully resolved source spans, so it cannot force planning before its owners bind.
+ */
+function readPerceptualGoals(
+    prompt: string,
+    context: ProjectContext,
+    catalog: MixRecipeCatalog
+): PerceptualGoal[] | null {
+    const initialClauses = getPromptClauses(prompt, maskProjectReferences(prompt, context));
+    const first = initialClauses.find((clause) => !isLeadingCourtesyClause(clause, context));
+    if (first === undefined) {
+        return null;
+    }
+    const body = readDelegatedGoalBody(prompt.slice(first.start));
+    if (body === null) {
+        return null;
+    }
+    const goals: PerceptualGoal[] = [];
+    let start: number | null = null;
+    for (const clause of getPromptClauses(body, maskProjectReferences(body, context))) {
+        if (start === null && isLeadingCourtesyClause(clause, context)) {
+            continue;
+        }
+        start ??= clause.start;
+        if (readFirstPerceptualTerm(clause.text, context, catalog) === null) {
+            continue;
+        }
+        let unit = body.slice(start, clause.end).trim();
+        let term = readFirstPerceptualTerm(unit, context, catalog);
+        if (term === null) {
+            return null;
+        }
+        if (!/^[\s.!?]*$/u.test(unit.slice(term.end))) {
+            return null;
+        }
+        if (unit.slice(0, term.start).trim().length === 0) {
+            const previous = goals.at(-1);
+            if (previous === undefined) {
+                return null;
+            }
+            previous.terms.push(term.term);
+            start = null;
+            continue;
+        }
+        let target = readPerceptualGoalTarget(unit, context, catalog, term.start);
+        if (target.kind === 'none') {
+            const delegated = readDelegatedGoalBody(unit);
+            if (delegated !== null) {
+                unit = delegated.trim();
+                term = readFirstPerceptualTerm(unit, context, catalog);
+                if (term === null || unit.slice(0, term.start).trim().length === 0) {
+                    return null;
+                }
+                target = readPerceptualGoalTarget(unit, context, catalog, term.start);
+            }
+        }
+        if (target.kind === 'none' || target.kind === 'tie') {
+            return null;
+        }
+        goals.push({ target, terms: [term.term] });
+        start = null;
+    }
+    return start === null && goals.length > 0 ? goals : null;
 }
 
 function describeTarget(
@@ -339,16 +398,13 @@ export function admitPerceptualGoalDecline(input: {
         return ADMITTED;
     }
     const catalog = getMixRecipeCatalog();
-    const terms = readPerceptualTerms(input.prompt, input.context, catalog);
-    if (terms.length === 0) {
+    const goals = readPerceptualGoals(input.prompt, input.context, catalog);
+    if (goals === null || goals.some((goal) => !answersGoal(goal.target, goal.terms, input.context))) {
         return ADMITTED;
     }
-    const target = readPerceptualGoalTarget(input.prompt, input.context, catalog);
-    if (target.kind === 'none' || target.kind === 'tie' || !answersGoal(target, terms, input.context)) {
-        return ADMITTED;
-    }
+    const descriptions = goals.map((goal) => `${goal.terms.join(', ')} for ${describeTarget(goal.target)}`);
     return {
         status: 'refused',
-        reason: `The request states a perceptual goal (${terms.join(', ')}) for ${describeTarget(target)}, and recipe.discover answers it. Do not ask for clarification. Measure the scope with analysis.measure, find a recipe with recipe.discover, expand it with recipe.expand, then send command.batch.propose. Decline again only when a target stays unresolved or ambiguous, or no supported recipe answers the goal.`,
+        reason: `The request delegates supported perceptual goals (${descriptions.join('; ')}), and recipe.discover answers each. Do not ask for clarification. Measure the scope with analysis.measure, find a recipe with recipe.discover, expand it with recipe.expand, then send command.batch.propose. Decline again only when a target stays unresolved or ambiguous, or no supported recipe answers the goal.`,
     };
 }

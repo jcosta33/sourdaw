@@ -81,7 +81,7 @@ function getReferenceMember(clause: PromptClauseSpan, reference: string): ListMe
  * longer name is itself a candidate track, so a member masked whole as a VCA group's "Bass DI"
  * binds the Bass track in a project with no Bass DI track.
  */
-function resolveWholeMember(input: {
+export function resolveWholeMember(input: {
     capability: AgentReferenceCapability;
     context: ProjectContext;
     memberText: string;

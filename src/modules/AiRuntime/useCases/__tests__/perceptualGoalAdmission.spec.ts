@@ -220,6 +220,12 @@ describe('perceptual goal admission', () => {
 
     it.each([
         { label: 'literal name', prompt: 'make Vocals warmer', read: context },
+        { label: 'polite delegated question', prompt: 'Can you make Vocals warmer?', read: context },
+        {
+            label: 'literal id containing a descriptor',
+            prompt: 'make track-bright-vocals warmer',
+            read: { ...context, tracks: [{ ...vocals, id: 'track-bright-vocals' }] },
+        },
         { label: 'quoted name', prompt: 'make "Vocals" warmer', read: context },
         { label: 'selection', prompt: 'make this track warmer', read: { ...context, selectedTrackId: vocals.id } },
         {
@@ -228,6 +234,23 @@ describe('perceptual goal admission', () => {
             read: { ...context, selectedTrackId: vocals.id },
         },
         { label: 'coordinated descriptors', prompt: 'make Vocals warmer and brighter', read: context },
+        {
+            label: 'separate resolved goals',
+            prompt: 'make Vocals warmer and Keys brighter',
+            read: {
+                ...context,
+                tracks: [
+                    vocals,
+                    {
+                        ...vocals,
+                        id: 'track-keys',
+                        name: 'Keys',
+                        canonicalRole: { role: 'keys', source: 'name-tags', evidence: 'name-tokens' },
+                    },
+                ],
+            },
+        },
+        { label: 'repeated delegated goal', prompt: 'make Vocals warmer and make Vocals brighter', read: context },
         { label: 'greeting-prefixed target', prompt: 'hi, make Vocals warmer', read: context },
         { label: 'filler-prefixed target', prompt: 'please, make Vocals warmer', read: context },
         {
@@ -333,6 +356,40 @@ describe('perceptual goal admission', () => {
     });
 
     it.each([
+        { label: 'read-only perceptual question', prompt: 'Is Vocals warmer?', read: context },
+        {
+            label: 'later unknown target with another descriptor',
+            prompt: 'make Vocals warmer and Missing brighter',
+            read: context,
+        },
+        {
+            label: 'later unknown target with the same descriptor',
+            prompt: 'make Vocals warmer and Missing warmer',
+            read: context,
+        },
+        { label: 'unknown project carve-out', prompt: 'make the mix warmer except Missing', read: context },
+        {
+            label: 'unknown protected control owner',
+            prompt: 'make Vocals warmer; leave the fader of Ghost alone',
+            read: context,
+        },
+        {
+            label: 'quoted unknown protected control owner',
+            prompt: 'make Vocals warmer; leave the fader of "Ghost" alone',
+            read: context,
+        },
+        { label: 'incomplete target expression', prompt: 'make Vocals Missing warmer', read: context },
+        {
+            label: 'unread descriptor continuation',
+            prompt: 'make Vocals warmer and somehow brighter',
+            read: context,
+        },
+        { label: 'unread symbol after the goal', prompt: 'make Vocals warmer 🚫', read: context },
+        {
+            label: 'unstated target in a later edit',
+            prompt: 'make Vocals warmer and make warmer',
+            read: context,
+        },
         { label: 'unstated target', prompt: 'make it warmer', read: { ...context, selectedTrackId: vocals.id } },
         { label: 'absent selection', prompt: 'make the selected track warmer', read: context },
         {
