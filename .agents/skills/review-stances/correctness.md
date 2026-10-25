@@ -662,6 +662,11 @@ probe was valid saved Redo after unrelated same-track growth: split, Undo, appen
 reload, then Redo twice. Preserve the peer clip and captured insertion position; a present right
 clip still requires its exact slot and value, and an invalid replacement slot still refuses.
 
+PR #515 (`58847d9a26e4c59772441bd23ae3a587f3573b2c`) captured a cross-track move's beats but missed
+its source clip order. The missed stance was real saved middle-clip return after binary reload: Undo
+must restore `[a,b,c]` and the actual beat-5 overlap hit on `b`, including after a peer removes `a`;
+Redo and a second saved cycle must preserve unrelated clips.
+
 Copied split lane, main, trim, ghost and seam identities must reserve the entire live namespace.
 Preoccupy the preferred generated identity under an unrelated owner before the split, then require
 binary reload and repeated Undo/Redo with exact values and valid invariants. After Undo, let a peer

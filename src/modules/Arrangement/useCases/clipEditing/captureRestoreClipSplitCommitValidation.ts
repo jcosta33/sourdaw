@@ -40,9 +40,10 @@ function takeMaterial(document: Document, takeId: string): unknown {
         if (matching.length === 0) {
             return [];
         }
-        const regions: readonly unknown[] = Array.isArray(lane.activeCompRegions)
-            ? Array.from(lane.activeCompRegions)
-            : [];
+        let regions: readonly unknown[] = [];
+        if (Array.isArray(lane.activeCompRegions)) {
+            regions = Array.from(lane.activeCompRegions);
+        }
         const ownedFacets = matching.map((take) => {
             if (!isRecord(take)) {
                 return take;
@@ -72,15 +73,20 @@ function rightTakeMaterial(document: Document, rightClipId: string): unknown {
         if (matching.length === 0) {
             return [];
         }
-        const takeIds = new Set(
-            matching
-                .filter(isRecord)
-                .map((take) => take.id)
-                .filter((id): id is string => typeof id === 'string')
-        );
-        const regions: readonly unknown[] = Array.isArray(lane.activeCompRegions)
-            ? Array.from(lane.activeCompRegions)
-            : [];
+        const takeIds = new Set<string>();
+        for (const take of matching) {
+            if (!isRecord(take)) {
+                continue;
+            }
+            const id = take.id;
+            if (typeof id === 'string') {
+                takeIds.add(id);
+            }
+        }
+        let regions: readonly unknown[] = [];
+        if (Array.isArray(lane.activeCompRegions)) {
+            regions = Array.from(lane.activeCompRegions);
+        }
         return [
             {
                 laneId: lane.id,
@@ -110,7 +116,7 @@ function readSnapshot(
     }
     const snapshot: Snapshot = new Map();
     const tracks: readonly unknown[] = document.tracks.tracks;
-    const automation =
+    const automation: readonly unknown[] =
         isRecord(document.automation) && Array.isArray(document.automation.lanes) ? document.automation.lanes : [];
     const warp = discard_warp_states_raw_keys(document.warpStates);
     for (const id of clipIds) {
@@ -120,11 +126,12 @@ function readSnapshot(
                 return null;
             }
             const trackClips: readonly unknown[] = track.clips;
-            trackClips.forEach((clip, index) => {
+            for (let index = 0; index < trackClips.length; index += 1) {
+                const clip = trackClips[index];
                 if (isRecord(clip) && clip.id === id) {
                     clips.push({ trackId: track.id, index, clip });
                 }
-            });
+            }
         }
         snapshot.set(`clip:${id}`, clips);
         snapshot.set(`notes:${id}`, entry(document.midi, 'notesByClipId', id));
@@ -136,12 +143,13 @@ function readSnapshot(
         }
     }
     if (writesAutomation) {
-        snapshot.set(
-            `automation:${rightClipId}`,
-            automation
-                .filter((lane) => isRecord(lane) && lane.clipId === rightClipId)
-                .toSorted((a, b) => String(a.id).localeCompare(String(b.id)))
+        const matchingAutomationLanes = automation.filter(
+            (lane): lane is Record<string, unknown> => isRecord(lane) && lane.clipId === rightClipId
         );
+        const orderedAutomationLanes = matchingAutomationLanes.toSorted((a, b) =>
+            String(a.id).localeCompare(String(b.id))
+        );
+        snapshot.set(`automation:${rightClipId}`, orderedAutomationLanes);
     }
     for (const [id, count] of identityCounts(document, childIds)) {
         snapshot.set(`identity:${id}`, count);
@@ -202,8 +210,10 @@ export function captureRestoreClipSplitCommitValidation(
     }
     const { clipId, rightClipId, expected, replacement, reKeyedTakeLanes, retiredTakeLanes } = action.payload;
     const clipIds = [clipId, rightClipId];
+    const expectedSatellites = expected.clipSatellites ?? [];
+    const replacementSatellites = replacement.clipSatellites ?? [];
     const satelliteIds = new Set(
-        [...(expected.clipSatellites ?? []), ...(replacement.clipSatellites ?? [])].map((satellite) => satellite.clipId)
+        [...expectedSatellites, ...replacementSatellites].map((satellite) => satellite.clipId)
     );
     const writesAutomation = expected.clipAutomationLanes !== undefined;
     const childIds = new Set(
@@ -218,9 +228,9 @@ export function captureRestoreClipSplitCommitValidation(
             retiredTakeLanes,
         ])
     );
-    const laneIds = new Set(
-        [...(expected.clipAutomationLanes ?? []), ...(replacement.clipAutomationLanes ?? [])].map((lane) => lane.id)
-    );
+    const expectedAutomationLanes = expected.clipAutomationLanes ?? [];
+    const replacementAutomationLanes = replacement.clipAutomationLanes ?? [];
+    const laneIds = new Set([...expectedAutomationLanes, ...replacementAutomationLanes].map((lane) => lane.id));
     const takeIds = new Set((retiredTakeLanes ?? []).flatMap((lane) => lane.retiredTakeIds ?? []));
     for (const lane of reKeyedTakeLanes ?? []) {
         const beforeTakes = new Map(lane.takesBefore.map((take) => [take.id, take]));

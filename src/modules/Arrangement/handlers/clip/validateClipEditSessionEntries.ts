@@ -307,7 +307,29 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
     );
 }
 
-function isPlacement(value: unknown): boolean {
+function isPlacementOrder(value: Record<string, unknown>, clipId: string): boolean {
+    const hasIndex = Object.hasOwn(value, 'clipIndex');
+    const hasBefore = Object.hasOwn(value, 'beforeClipId');
+    const hasAfter = Object.hasOwn(value, 'afterClipId');
+    if (!hasIndex) {
+        return !hasBefore && !hasAfter;
+    }
+    if (typeof value.clipIndex !== 'number' || !Number.isSafeInteger(value.clipIndex) || value.clipIndex < 0) {
+        return false;
+    }
+    if (hasBefore !== value.clipIndex > 0) {
+        return false;
+    }
+    return (
+        (!hasBefore || (typeof value.beforeClipId === 'string' && value.beforeClipId.length > 0)) &&
+        (!hasAfter || (typeof value.afterClipId === 'string' && value.afterClipId.length > 0)) &&
+        value.beforeClipId !== clipId &&
+        value.afterClipId !== clipId &&
+        (!hasBefore || !hasAfter || value.beforeClipId !== value.afterClipId)
+    );
+}
+
+function isPlacement(value: unknown, clipId: string): boolean {
     return (
         isRecord(value) &&
         typeof value.trackId === 'string' &&
@@ -320,7 +342,8 @@ function isPlacement(value: unknown): boolean {
         value.endBeat > value.startBeat &&
         isExactClipAutomationMoveSnapshots(value.automationLanes) &&
         value.automationLanes.every((lane) => lane.trackId === value.trackId) &&
-        hasFiniteNumbers(value.automationLanes)
+        hasFiniteNumbers(value.automationLanes) &&
+        isPlacementOrder(value, clipId)
     );
 }
 
@@ -329,8 +352,8 @@ export function isRestoreClipPlacementSessionPayload(value: unknown): boolean {
         isRecord(value) &&
         typeof value.clipId === 'string' &&
         value.clipId.length > 0 &&
-        isPlacement(value.expected) &&
-        isPlacement(value.replacement)
+        isPlacement(value.expected, value.clipId) &&
+        isPlacement(value.replacement, value.clipId)
     );
 }
 
@@ -352,6 +375,7 @@ export function isMoveClipSessionEntry(entry: HandlerSessionActionEntry): boolea
         isRestoreClipPlacementSessionPayload(redo) &&
         inverse.expected.trackId === action.trackId &&
         inverse.expected.startBeat === action.startBeat &&
+        Object.hasOwn(inverse.expected, 'clipIndex') === Object.hasOwn(inverse.replacement, 'clipIndex') &&
         inverse.expected.endBeat === action.startBeat + (inverse.replacement.endBeat - inverse.replacement.startBeat) &&
         valuesEqual(inverse.expected, redo.replacement) &&
         valuesEqual(inverse.replacement, redo.expected)

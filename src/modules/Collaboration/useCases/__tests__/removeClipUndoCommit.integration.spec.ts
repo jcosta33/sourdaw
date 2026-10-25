@@ -799,17 +799,19 @@ describe('committed clip restoration through Command and real peer sync', () => 
             ]);
         register();
         const heldNote = { id: 'split-held', pitch: 60, startBeat: 0, duration: 4, velocity: 90 };
+        let controlChangeSnapshot: readonly unknown[] | null = null;
+        if (mode === 'owned-concurrent-right-cc') {
+            controlChangeSnapshot = [{ id: 'split-cc', controller: 7, value: 80, beat: 3, channel: 1 }];
+        }
+        let pitchBendSnapshot: readonly unknown[] | null = null;
+        if (mode === 'owned-concurrent-source-bend') {
+            pitchBendSnapshot = [{ id: 'split-bend', value: 512, beat: 1, channel: 1 }];
+        }
         restoreMidiClipData({
             clipId: 'source',
             notesSnapshot: [heldNote],
-            controlChangeSnapshot:
-                mode === 'owned-concurrent-right-cc'
-                    ? [{ id: 'split-cc', controller: 7, value: 80, beat: 3, channel: 1 }]
-                    : null,
-            pitchBendSnapshot:
-                mode === 'owned-concurrent-source-bend'
-                    ? [{ id: 'split-bend', value: 512, beat: 1, channel: 1 }]
-                    : null,
+            controlChangeSnapshot,
+            pitchBendSnapshot,
         });
         if (mode === 'owned-concurrent-right-automation') {
             const lane = createAutomationLane('midi-track', 'gain', 'Split gain', 0, 4, 'source');
@@ -941,12 +943,12 @@ describe('committed clip restoration through Command and real peer sync', () => 
                 take.name = 'Peer take';
                 return;
             }
-            const target =
-                mode === 'unrelated-concurrent'
-                    ? 'midi-peer'
-                    : mode === 'owned-concurrent-source-midi'
-                      ? 'source'
-                      : 'right';
+            let target = 'right';
+            if (mode === 'unrelated-concurrent') {
+                target = 'midi-peer';
+            } else if (mode === 'owned-concurrent-source-midi') {
+                target = 'source';
+            }
             const note = draft.midi.notesByClipId[target]?.[0];
             if (!note) {
                 throw new Error('Expected peer-editable note');
@@ -995,13 +997,13 @@ describe('committed clip restoration through Command and real peer sync', () => 
                 mode === 'owned-concurrent' ||
                 mode === 'owned-concurrent-source-midi'
             ) {
-                expect(
-                    mode === 'unrelated-concurrent'
-                        ? peerPublication.otherVelocity
-                        : mode === 'owned-concurrent-source-midi'
-                          ? document().midi.notesByClipId.source?.[0]?.velocity
-                          : peerPublication.rightVelocity
-                ).toBe(99);
+                let observedVelocity = peerPublication.rightVelocity;
+                if (mode === 'unrelated-concurrent') {
+                    observedVelocity = peerPublication.otherVelocity;
+                } else if (mode === 'owned-concurrent-source-midi') {
+                    observedVelocity = document().midi.notesByClipId.source?.[0]?.velocity;
+                }
+                expect(observedVelocity).toBe(99);
             }
         }
         if (concurrent) {

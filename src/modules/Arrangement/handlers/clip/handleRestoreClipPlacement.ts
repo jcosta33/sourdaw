@@ -92,13 +92,24 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
         // rule can hold an audio clip on a MIDI track). Replay must return the
         // clip there, or the undo head is retained and every later Cmd+Z
         // re-fails on it.
+        const moveOptions: NonNullable<Parameters<typeof moveClip>[5]> = {
+            historicalPlacement: true,
+            historicalEndBeat: action.payload.replacement.endBeat,
+        };
+        if (action.payload.replacement.clipIndex !== undefined) {
+            moveOptions.historicalSlot = {
+                clipIndex: action.payload.replacement.clipIndex,
+                beforeClipId: action.payload.replacement.beforeClipId,
+                afterClipId: action.payload.replacement.afterClipId,
+            };
+        }
         const moved = moveClip(
             action.payload.clipId,
             action.payload.replacement.trackId,
             action.payload.replacement.startBeat,
             undefined,
             false,
-            { historicalPlacement: true, historicalEndBeat: action.payload.replacement.endBeat }
+            moveOptions
         );
         if (
             !moved ||

@@ -20,7 +20,53 @@ type MoveClipOptions = {
     historicalPlacement?: boolean;
     /** Exact captured end when restoring a historical placement. */
     historicalEndBeat?: number;
+    /** Original cross-track array slot and its immediate neighbors. */
+    historicalSlot?: { clipIndex: number; beforeClipId?: string; afterClipId?: string };
 };
+
+function historicalInsertionIndex(
+    clips: readonly Clip[],
+    clipId: string,
+    slot: NonNullable<MoveClipOptions['historicalSlot']>
+): number | null {
+    const { clipIndex, beforeClipId, afterClipId } = slot;
+    if (
+        !Number.isSafeInteger(clipIndex) ||
+        clipIndex < 0 ||
+        clipIndex > 0 !== (beforeClipId !== undefined) ||
+        (beforeClipId !== undefined &&
+            (typeof beforeClipId !== 'string' || beforeClipId.length === 0 || beforeClipId === clipId)) ||
+        (afterClipId !== undefined &&
+            (typeof afterClipId !== 'string' || afterClipId.length === 0 || afterClipId === clipId)) ||
+        (beforeClipId !== undefined && beforeClipId === afterClipId)
+    ) {
+        return null;
+    }
+    const before: number[] = [];
+    const after: number[] = [];
+    for (const [index, clip] of clips.entries()) {
+        if (clip.id === beforeClipId) {
+            before.push(index);
+        }
+        if (clip.id === afterClipId) {
+            after.push(index);
+        }
+    }
+    if (
+        before.length > 1 ||
+        after.length > 1 ||
+        (before.length === 1 && after.length === 1 && before[0]! >= after[0]!)
+    ) {
+        return null;
+    }
+    if (after.length === 1) {
+        return after[0]!;
+    }
+    if (before.length === 1) {
+        return before[0]! + 1;
+    }
+    return Math.min(clipIndex, clips.length);
+}
 
 function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): boolean {
     if (!Number.isFinite(startBeat) || startBeat < 0) {
@@ -118,6 +164,14 @@ export function moveClip(
         return false;
     }
 
+    let insertionIndex: number | null = targetTrack.clips.length;
+    if (!sameHost && options?.historicalSlot !== undefined) {
+        insertionIndex = historicalInsertionIndex(targetTrack.clips, clipId, options.historicalSlot);
+    }
+    if (insertionIndex === null) {
+        return false;
+    }
+
     const clipToMove = movedClip;
     // Array order controls overlap drawing and edge hit testing. A retime
     // keeps its slot so the forward move and historical restore preserve it.
@@ -134,7 +188,9 @@ export function moveClip(
             if (time.id !== targetTrackId) {
                 return time;
             }
-            return { ...time, clips: [...time.clips, clipToMove] };
+            const clips = [...time.clips];
+            clips.splice(insertionIndex, 0, clipToMove);
+            return { ...time, clips };
         });
     }
     setTrackState({ ...state, tracks });

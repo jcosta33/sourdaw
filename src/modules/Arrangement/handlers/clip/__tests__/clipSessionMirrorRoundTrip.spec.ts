@@ -62,6 +62,7 @@ import { createTake, createTakeLane, placeTakeOnClipMedia } from '../../../model
 import { createTrack, type Clip } from '../../../models/Track';
 import { gainEnvelopeStore, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStateStore } from '../../../stores/warpStates';
 import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
@@ -69,6 +70,7 @@ import { projectClipReplayPrefix } from '../../../useCases/clipEditing/projectCl
 import { takeLaneSelection } from '../../../useCases/comping/takeLaneSelection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
+import { hitTestClipEdge } from '../../../useCases/timelineInteractions/hitTestClipEdge';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
 import { handleDiscardDuplicatedClip } from '../handleDiscardDuplicatedClip';
 import { handleDrawClip } from '../handleDrawClip';
@@ -780,6 +782,238 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         Container.clear();
     });
 
+    it.each([
+        {
+            name: 'middle with no peer',
+            movedId: 'clip-b',
+            peer: 'none',
+            restored: ['clip-a', 'clip-b', 'clip-c'],
+            away: ['clip-a', 'clip-c'],
+        },
+        {
+            name: 'middle with peer append',
+            movedId: 'clip-b',
+            peer: 'append',
+            restored: ['clip-a', 'clip-b', 'clip-c', 'peer-tail'],
+            away: ['clip-a', 'clip-c', 'peer-tail'],
+        },
+        {
+            name: 'middle with left neighbor removed',
+            movedId: 'clip-b',
+            peer: 'remove-left',
+            restored: ['clip-b', 'clip-c'],
+            away: ['clip-c'],
+        },
+        {
+            name: 'middle with both neighbors removed',
+            movedId: 'clip-b',
+            peer: 'remove-both',
+            restored: ['clip-b'],
+            away: [],
+        },
+        {
+            name: 'tail with no peer',
+            movedId: 'clip-c',
+            peer: 'none',
+            restored: ['clip-a', 'clip-b', 'clip-c'],
+            away: ['clip-a', 'clip-b'],
+        },
+    ] as const)(
+        'saved cross-track $name restores order and the real overlap hit for two cycles',
+        async ({ movedId, peer, restored, away }) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineViewStore.set({ scrollX: 0, scrollY: 0, pixelsPerBeat: 20, autoScrollEnabled: false });
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: TRACK_ID,
+                        kind: 'midi',
+                        clips: [
+                            createClipFixture('clip-a', 0, 4),
+                            createClipFixture('clip-b', 2, 6),
+                            createClipFixture('clip-c', 4, 8),
+                        ],
+                    }),
+                    TrackDummy.create({
+                        id: 'destination',
+                        kind: 'midi',
+                        clips: [],
+                        alternatives: [],
+                        activeAlternativeId: '',
+                    }),
+                ],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            expect(hitTestClipEdge(100, 20)?.clipId).toBe('clip-b');
+
+            await executeAppAction(
+                { type: 'moveClip', payload: { clipId: movedId, trackId: 'destination', startBeat: 12 } },
+                { source: 'manual' }
+            );
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            const peerNote = { id: 'peer-tail-note', pitch: 67, startBeat: 0, duration: 1, velocity: 88 };
+            if (peer === 'append') {
+                syncPeerProject((project) => {
+                    project.tracks.tracks[0]!.clips.push(createClipFixture('peer-tail', 12, 16));
+                    project.midi.notesByClipId['peer-tail'] = [peerNote];
+                });
+            } else if (peer === 'remove-left') {
+                syncPeerProject((project) => {
+                    project.tracks.tracks[0]!.clips.splice(0, 1);
+                });
+            } else if (peer === 'remove-both') {
+                syncPeerProject((project) => {
+                    project.tracks.tracks[0]!.clips.splice(0, 2);
+                });
+            }
+            reloadSavedProject();
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                expect((await undo()).headConsumed).toBe(true);
+                expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(
+                    restored
+                );
+                expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(restored);
+                expect(hitTestClipEdge(100, 20)?.clipId).toBe('clip-b');
+                expect(undoHistoryStore.value?.past).toHaveLength(0);
+                expect(undoHistoryStore.value?.future).toHaveLength(1);
+                expectValidProject();
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                );
+                reloadSavedProject();
+
+                await redo();
+                const raw = getCrdtDoc<PeerProject>('root');
+                expect(raw?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(away);
+                expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(away);
+                expect(raw?.tracks.tracks[1]?.clips.map((clip) => clip.id)).toEqual([movedId]);
+                expect(trackStore.value?.tracks[1]?.clips.map((clip) => clip.id)).toEqual([movedId]);
+                expect(raw?.midi.notesByClipId['peer-tail']).toEqual(peer === 'append' ? [peerNote] : undefined);
+                expect(midiStore.value?.notesByClipId['peer-tail']).toEqual(raw?.midi.notesByClipId['peer-tail']);
+                expect(undoHistoryStore.value?.past).toHaveLength(1);
+                expect(undoHistoryStore.value?.future).toHaveLength(0);
+                expectValidProject();
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+                );
+                reloadSavedProject();
+            }
+        }
+    );
+
+    it('refuses a saved cross-track return when its captured neighbors have reversed', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: TRACK_ID,
+                    kind: 'midi',
+                    clips: [
+                        createClipFixture('clip-a', 0, 4),
+                        createClipFixture('clip-b', 2, 6),
+                        createClipFixture('clip-c', 4, 8),
+                    ],
+                }),
+                TrackDummy.create({
+                    id: 'destination',
+                    kind: 'midi',
+                    clips: [],
+                    alternatives: [],
+                    activeAlternativeId: '',
+                }),
+            ],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'moveClip', payload: { clipId: 'clip-b', trackId: 'destination', startBeat: 12 } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        syncPeerProject((project) => {
+            project.tracks.tracks[0]!.clips.splice(0, 1);
+            project.tracks.tracks[0]!.clips.push(createClipFixture('clip-a', 0, 4));
+        });
+        reloadSavedProject();
+        expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual([
+            'clip-c',
+            'clip-a',
+        ]);
+        await expectReplayRefused('undo');
+        expectValidProject();
+    });
+
+    it('drops a saved cross-track move with a malformed captured clip slot before Undo', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: TRACK_ID,
+                    kind: 'midi',
+                    clips: [createClipFixture('clip-a', 0, 4), createClipFixture('clip-b', 2, 6)],
+                }),
+                TrackDummy.create({
+                    id: 'destination',
+                    kind: 'midi',
+                    clips: [],
+                    alternatives: [],
+                    activeAlternativeId: '',
+                }),
+            ],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'moveClip', payload: { clipId: 'clip-b', trackId: 'destination', startBeat: 12 } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const past = saved.past;
+        if (!Array.isArray(past) || !isRecord(past[0])) {
+            throw new Error('Expected a saved move');
+        }
+        for (const [actionName, placementName] of [
+            ['inverseAction', 'replacement'],
+            ['redoAction', 'expected'],
+        ] as const) {
+            const action = past[0][actionName];
+            if (!isRecord(action) || !isRecord(action.payload)) {
+                throw new Error('Expected paired saved placement');
+            }
+            const placement = action.payload[placementName];
+            if (!isRecord(placement)) {
+                throw new Error('Expected paired saved placement');
+            }
+            placement.clipIndex = -1;
+        }
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        const raw = structuredClone(getCrdtDoc('root'));
+        const owners = ownerProjections();
+        hydrateProductionContracts();
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect((await undo()).headConsumed).toBe(false);
+        expect(getCrdtDoc('root')).toEqual(raw);
+        expect(ownerProjections()).toEqual(owners);
+    });
+
     it.each(['none', 'unrelated-append'] as const)(
         'replays a saved split after %s without losing its captured insertion slot',
         async (peer: 'none' | 'unrelated-append') => {
@@ -807,11 +1041,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             reloadSavedProject();
             expect(undoHistoryStore.value?.future).toHaveLength(1);
             expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes).toHaveLength(1);
-            const beforeRedo = peer === 'unrelated-append' ? ['clip-a', 'clip-b', 'peer-tail'] : ['clip-a', 'clip-b'];
-            const afterRedo =
-                peer === 'unrelated-append'
-                    ? ['clip-a', 'clip-b', 'clip-right', 'peer-tail']
-                    : ['clip-a', 'clip-b', 'clip-right'];
+            let beforeRedo = ['clip-a', 'clip-b'];
+            let afterRedo = ['clip-a', 'clip-b', 'clip-right'];
+            if (peer === 'unrelated-append') {
+                beforeRedo = [...beforeRedo, 'peer-tail'];
+                afterRedo = [...afterRedo, 'peer-tail'];
+            }
             for (let cycle = 0; cycle < 2; cycle += 1) {
                 await redo();
                 const raw = getCrdtDoc<PeerProject>('root');
