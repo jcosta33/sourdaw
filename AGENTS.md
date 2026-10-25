@@ -33,12 +33,23 @@ The orchestrator specifies, dispatches, adjudicates, and organizes; it does not 
 or merge. Each delegated agent executes one precise task, returns evidence and a result, and neither
 contacts the user nor owns decisions.
 
-Use economy, standard, or strongest tiers; model assignments are deployment details. Default one
-tier below the orchestrator. Use economy for bounded mechanical work with a decisive oracle; raise
-toward strongest for architecture, real-time audio, security, data loss, irreversible change,
-conflicting evidence, or unresolved ambiguity. Raise blocked or disputed steps one tier, then return
-to the cheapest adequate tier. Route on evidence, scope, reversibility, and repeated failure, never
-habit or agent confidence.
+Use the cheapest adequate economy, standard, or strongest tier for each task, independent of the
+orchestrator's model. Judge ambiguity, scope, failure consequence, reversibility, and the strength of
+available verification; a small diff alone does not make a task easy. Economy fits bounded mechanical
+work with a decisive oracle; standard fits ordinary behavior and integration work. Use strongest for
+architecture, real-time audio, security, data loss, irreversible change, conflicting evidence, or
+unresolved consequential ambiguity.
+
+Diagnose a blocked or disputed step before changing its tier. Escalate a genuine reasoning or model-capability
+failure, or a disputed interpretation, for the affected subproblem; then return to the cheapest
+adequate tier. Missing credentials, dependencies, browser access, resource capacity, or a deterministic
+environment failure call for fixing or reporting that blocker, not a blind retry on a stronger model.
+
+At dispatch, resolve the tier to an explicitly selected available model and a reasoning setting that
+model supports. Deployment profiles own tier mappings outside this portable policy. If no profile is
+available, select from the current model catalog, state the capability basis and provisional nature
+of the choice, and continue. If the harness cannot configure reasoning effort, use its default and
+do not claim a setting or capability it did not provide.
 
 For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
@@ -82,10 +93,11 @@ Independence is distinct failure modes, never distinct files: stances pinned to 
 paths that share one probe library are one stance. Dispatch one stance per independent risk, never
 fewer than the risk plan's floor below.
 
-Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
-checks, standard for behavioral and integration risk, strongest for real-time audio, security,
-data loss, irreversible change, or disputed severe findings. Also raise the tier for wide module
-diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes. Two
+Tier reviewers by the criticality of the risk each stance attacks, using the task-based selection
+above without lowering specialist floors: economy for narrow low-risk checks, standard for behavioral
+and integration risk, strongest for real-time audio, security, data loss, irreversible change, or
+disputed severe findings. Also raise the tier for wide module diffusion, heavy churn on defect-prone
+surfaces, or surfaces touched by many recent lanes. Two
 independent strongest-tier draws from different models may share one stance to expose different
 findings; that extends model diversity, not the stance count.
 
