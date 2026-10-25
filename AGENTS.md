@@ -206,9 +206,9 @@ Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review agains
 head, then dispatch repairs. The author pushes the fixed head and records each repair through
 `review:repair`, leaving the thread open; the reviewer App, a distinct identity, resolves only the
 threads whose recorded repair validates through `review:confirm`, and a refusal resolves nothing.
-`review:resolve` keeps its exact `Done` path for legacy roots. Never repair first and approve in
+`review:resolve` is retired and refuses all resolutions. Never repair first and approve in
 one motion: the public record must retain the reviewer identity's findings against the original
-head and the author identity's fixing pushes and `Done` replies. Orchestrator judgement lives in its
+head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
 exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
 delivery gate: the reviewer App records the independent review, its APPROVE publication records the
 delivery authorization, and the author then merges through `deliver` as the immutable author App.
@@ -590,13 +590,13 @@ teammate reviewing the work, not an auditor verifying the pipeline ran. If the s
 appear unchanged in a CI log, it does not belong in a review.
 
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
-Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a
+Each inline comment opens a merge-blocking thread; `review:confirm` validates an author-recorded
 repair, so it cannot honestly clear a non-blocking note. Put observations in the approval body
 with `Nit:` or `Optional:`, or file them — they belong to `CHANGES_REQUESTED` reviews and
 require an addressing new head.
 
-Push fixes before `review:resolve`; resolve a thread only once the current head addresses the
-finding, then obtain a fresh review. No script writes free-form thread replies, so wrongly posted
+Push fixes before `review:repair`; the reviewer resolves through `review:confirm` only once the
+current head addresses the finding, then obtain a fresh review. No script writes free-form thread replies, so wrongly posted
 findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
 grow the PR.
 
