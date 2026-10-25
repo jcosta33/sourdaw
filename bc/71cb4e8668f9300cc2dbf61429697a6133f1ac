@@ -1,0 +1,30 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_29d8df116c5b92::t_d2fa6c01fb27d7 75,283
+  s_29d8df116c5b92::t_ee3255f9679637 1021-1050,1052-1062,1064-1067,1070-1079,1082-1092,1098-1099,1101-1116
+  s_29d8df116c5b92::t_a3ce96b73724bd 613-622,624-643,655-671,673-721,725-780
+  s_29d8df116c5b92::t_3069414b498547 1063,1068-1069,1080-1081
+  s_29d8df116c5b92::t_b0619d20cd5d5a 644-654,1051
+  s_29d8df116c5b92::t_b60fe0588b8f66 672,1093-1097,1100
+  s_29d8df116c5b92::t_5e06882c47bf19 1-5,39,43,70-74,76-79,88,269,271,275-282,284-291,314-339,354,404-416,492-505,546,600
+  s_29d8df116c5b92::t_894815cb09464b 623,722-724
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  s_29d8df116c5b92::t_59cd361025281b 595
+  s_29d8df116c5b92::t_ee2272c6ae00c6 5-7,594,596-632
+  s_29d8df116c5b92::t_c1343ad79357f0 633-634
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc71cb4e8668f9300cc2dbf61429697a6133f1ac",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
