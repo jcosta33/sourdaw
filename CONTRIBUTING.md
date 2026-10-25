@@ -25,7 +25,7 @@ Run only checks that can fail because of the files you changed. Examples:
 - E2E code: `pnpm test:e2e <spec>` locally; the pull request's CI typechecks E2E code.
 - Rust code: `pnpm cargo:test --package <crate> <filter>` and
   `pnpm cargo:fmt --package <crate>`
-- Cross-module TypeScript changes: `pnpm deps:validate`
+- Cross-module boundaries, repository builds, and broad test suites: use the pull request's CI checks.
 
 There is no generic `pnpm test` script. A broad check is not a substitute for
 choosing the checks affected by the change.

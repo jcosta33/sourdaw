@@ -239,9 +239,10 @@ convention unless Sourdaw deliberately differs.
 All lanes share this machine. Run costly verification in the pipeline's per-job runners, not
 locally at other lanes' expense.
 
-- Run focused tests and formatting locally when the changed files can fail those checks. CI owns
-  lint and every TypeScript typecheck; do not run lint or typecheck commands locally. Use the
-  pull request's CI results as their verification evidence.
+- Run the exact affected tests and formatting locally when the changed files can fail those checks.
+  PR CI owns lint, every TypeScript typecheck, module-boundary validation, barrel-mock coverage,
+  repository builds, broad unit and Rust suites, and release inventory. Do not run these broad
+  checks locally; inspect the pull request's CI results as their verification evidence.
 - Run repository commands sequentially within your lane. Other lanes may validate concurrently only
   when the guard admits them.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
@@ -253,29 +254,28 @@ locally at other lanes' expense.
   observed peak in the guard's `measuredScriptBudgets`, never in a note. The guard waits until free
   RAM covers active reservations, this command, and the system reserve. Never bypass it. A timeout,
   RSS kill, or memory-monitor failure is a stop.
-- Run only checks that can fail because of the changed files. Never expand to repository-wide tests,
-  lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
+- Run only checks that can fail because of the changed files. Do not run repository-wide tests, lint, coverage, E2E, builds, Cargo, WASM, boundaries, barrel
+  mocks, release inventory, or measurements locally; use PR CI for those checks unless an explicit
+  targeted debugging need requires a local diagnostic.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
 - Never use watch mode for verification. Start a server only when the task needs it.
 
 ## Checks
 
-| Need                      | Command                                      |
-| ------------------------- | -------------------------------------------- |
-| Focused tests             | `pnpm test:run <file-or-narrow-directory>`   |
-| Focused E2E               | `pnpm test:e2e <spec>`                       |
-| Focused format            | `pnpm format <changed-files>`                |
-| Focused Rust tests        | `pnpm cargo:test --package <crate> <filter>` |
-| Focused Rust format       | `pnpm cargo:fmt --package <crate>`           |
-| Module boundaries         | `pnpm deps:validate`                         |
-| Barrel mocks              | `pnpm test:barrel-mocks`                     |
-| Rebuild one wasm pkg      | that package's own `wasm:*` script           |
-| Rebuild every wasm        | `pnpm wasm:all`                              |
-| Rewrite wasm manifest     | `pnpm wasm:manifest`                         |
-| Prove wasm freshness      | `pnpm wasm:verify`                           |
-| Restamp the wasm surface  | `pnpm release:restamp:wasm`                  |
-| Restamp a tracked set     | `pnpm release:restamp:tracked-set`           |
-| Restamp a dependency bump | `pnpm release:restamp`                       |
+| Need                                              | Command or evidence                                  |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| Focused tests                                     | `pnpm test:run <changed-spec>`                       |
+| Focused E2E diagnostic                            | `pnpm test:e2e <spec>`                               |
+| Focused format                                    | `pnpm format <changed-files>`                        |
+| Focused Rust tests                                | `pnpm cargo:test --package <crate> <filter>`         |
+| Focused Rust format                               | `pnpm cargo:fmt --package <crate>`                   |
+| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI |
+| Generate one affected WASM package                | that package's own `wasm:*` script                   |
+| Rewrite WASM manifest after generation            | `pnpm wasm:manifest`                                 |
+| Verify generated WASM surface                     | `pnpm wasm:verify` after generation                  |
+| Restamp the wasm surface                          | `pnpm release:restamp:wasm`                          |
+| Restamp a tracked set                             | `pnpm release:restamp:tracked-set`                   |
+| Restamp a dependency bump                         | `pnpm release:restamp`                               |
 
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
 
@@ -319,7 +319,8 @@ a retry never authorizes delivery.
 - React Compiler owns memoization. Do not add `useMemo`, `useCallback`, `React.memo`, or
   `forwardRef`.
 
-Run `pnpm deps:validate` after cross-module changes. Full rules:
+PR CI checks module boundaries after cross-module changes; inspect that check on the pull request.
+Full rules:
 [system](./docs/architecture/01-system.md),
 [TypeScript modules](./docs/architecture/03-typescript-module.md),
 [Rust backend](./docs/architecture/02-rust-backend.md), and
@@ -493,9 +494,9 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   `scripts/semanticReviewWorkflowContract.ts`
   ([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
-  native checks, scoped smoke, PR diff secret scanning and dependency review on each push and in the admitted run.
-  Release provenance (`pnpm test:release-inventory`) is not a pull-request check: it runs in `nightly.yml`
-  and in `release:proof:assemble`, which `docs/release.md` has the release owner run before `release:cut`.
+  native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review on
+  each push and in the admitted run. Nightly and `release:proof:assemble` also run release inventory;
+  the release owner still assembles proof before `release:cut` as described in `docs/release.md`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
   only in the admitted run. CodeQL has a separately permissioned required
@@ -549,8 +550,11 @@ manifest, stage artifacts, then verify after staging. Exception: root `Cargo.tom
 only canonical profile tables, the workspace package table, patch/replace tables, the resolver
 line, and closure-resolved workspace dependencies; new members, comments, and unrelated
 dependencies do not. `wasm:manifest` retains hashes for packages without rebuild evidence, so
-rebuilding the wrong package can match a manifest over stale artifacts; use `pnpm wasm:all` when
-unsure. Clean rebases can leave wasm stale; only `pnpm wasm:verify` proves freshness.
+rebuilding the wrong package can match a manifest over stale artifacts. Identify every affected
+package from `scripts/wasm-artifacts.ts`; rebuild each affected package when its generated artifacts
+must change, then rewrite and verify the manifest. PR CI checks committed WASM freshness; do not run
+`pnpm wasm:all` as a broad local fallback. Clean rebases can leave wasm stale; only
+`pnpm wasm:verify` proves freshness after generation or staging.
 
 `lane:publish` pushes without `--force` and refuses uncommitted changes: commit the work yourself
 with a conventional subject first. Titling, bodies, flags, stacks, and stranded lanes:
