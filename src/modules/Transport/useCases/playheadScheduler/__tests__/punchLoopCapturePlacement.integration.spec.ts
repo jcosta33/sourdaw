@@ -1,8 +1,4 @@
-import {
-    clone as cloneAutomergeDoc,
-    load as loadAutomergeDoc,
-    save as saveAutomergeDoc,
-} from '@automerge/automerge';
+import { clone as cloneAutomergeDoc, load as loadAutomergeDoc, save as saveAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -721,6 +717,7 @@ describe('punch audio capture loop placement', () => {
         expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
         hardware.now = 51.05;
         first.zeroFrame = Math.round(hardware.now * hardware.sampleRate);
+        await tick(0);
         await tick(0.075);
         expect(playheadWrapCountRef.current).toBe(1);
         expect(playheadClockRef.beat).toBeCloseTo(8.05, 10);
