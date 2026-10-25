@@ -34,6 +34,15 @@ dispatch.
   and CLOSED replay with a moved underlying ref but the selected key omitted; require no writes or
   success. These are finite client observations, not a server snapshot or protection from later
   external changes.
+- Keep native selected-field requirements separate from optional internal proof projections.
+  PR #5627's cached `baseRefOid` reader accepted an omitted selected nonnull SHA; the resulting
+  undefined skipped cached ancestry and became null in a fresh historical binding. A controlled
+  native-adapter reproduction rejected a present divergent SHA but closed when only that wire key
+  was omitted; no live/main occurrence is claimed. Pair those inputs and require zero writes for
+  both. Reject missing, null or malformed native cached SHAs before comment inspection, while
+  preserving valid cached SHAs and explicit null live-ref cleanup on CLOSED replay. An absent live
+  ref does not erase its cached commit, and deliberate non-native optional projections do not
+  weaken the selected native response contract.
 - Bind registered historical provenance to the source identity its registration actually attests.
   PR #5627's protected-primary lane fallback attests same-repository children; branch spelling and
   a shared fork commit cannot authorize a foreign source. Preserve the observed child source in the

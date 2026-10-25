@@ -754,7 +754,12 @@ function nativeSupersessionFixture(
     moveAtRead?: number,
     distinctParent = false,
     afterCloseIdentity: Partial<Pick<SupersededPullRequest, 'head' | 'headRefName'>> = {},
-    options: { comparison?: Record<string, unknown>; initialMarkers?: boolean; lateParent?: boolean } = {}
+    options: {
+        comparison?: Record<string, unknown>;
+        initialMarkers?: boolean;
+        lateParent?: boolean;
+        cachedBaseOid?: string;
+    } = {}
 ) {
     let currentHead = head;
     let currentHeadRefName = 'fix/old';
@@ -770,6 +775,7 @@ function nativeSupersessionFixture(
     };
     let currentChildSource: string | null = 'jcosta33/sourdaw';
     let omitChildBaseRef = false;
+    let omitChildCachedBaseOid = false;
     let nextComment = 2002;
     type AuthorityChange = Partial<Pick<SupersededPullRequest, 'state' | 'head' | 'headRefName' | 'closedAt'>>;
     const authorityChanges = new Map<number, AuthorityChange>();
@@ -779,7 +785,7 @@ function nativeSupersessionFixture(
         { atParentThreadRead: number; change: (comments: IssueComment[]) => IssueComment[] } | undefined;
     let pendingChildBaseChange: { atParentCommentRead: number; baseRef: ChildBaseRef } | undefined;
     let moveAt = moveAtRead;
-    let historicalBase = parentHead;
+    let historicalBase = options.cachedBaseOid ?? parentHead;
     let provenance = parentBinding.provenance;
     if (options.lateParent) {
         historicalBase = parentMerge;
@@ -889,7 +895,7 @@ function nativeSupersessionFixture(
                 headRefName: change?.headRefName ?? pullRequestBranch,
                 headRepository,
                 baseRefName: old && distinctParent ? parentBranch : 'main',
-                baseRefOid: old && distinctParent ? historicalBase : undefined,
+                baseRefOid: old && distinctParent ? historicalBase : childMerge,
                 baseRef,
                 merged: !old && !parent,
                 mergeCommit,
@@ -898,6 +904,12 @@ function nativeSupersessionFixture(
             if (old && omitChildBaseRef) {
                 Reflect.deleteProperty(pullRequest, 'baseRef');
                 events.push(`old-core-wire-has-base-ref:${Object.hasOwn(pullRequest, 'baseRef')}`);
+            }
+            if (old) {
+                if (omitChildCachedBaseOid) {
+                    Reflect.deleteProperty(pullRequest, 'baseRefOid');
+                }
+                events.push(`old-core-wire-has-cached-base:${Object.hasOwn(pullRequest, 'baseRefOid')}`);
             }
             return JSON.stringify({
                 data: {
@@ -1054,6 +1066,12 @@ function nativeSupersessionFixture(
             if (dependency && options.comparison !== undefined) {
                 Object.assign(response, options.comparison);
             }
+            if (options.cachedBaseOid === movedHead && ancestor === movedHead && descendant === parentHead) {
+                response.status = 'diverged';
+                response.behind_by = 1;
+                response.merge_base_commit = { sha: parentMerge };
+                events.push(`cached-base-comparison:${ancestor}:${descendant}:${response.status}`);
+            }
             if (options.lateParent && ancestor === parentHead && descendant === head) {
                 response.status = 'diverged';
                 response.behind_by = 1;
@@ -1096,6 +1114,9 @@ function nativeSupersessionFixture(
         },
         omitChildBaseRefFromNativeResponse: () => {
             omitChildBaseRef = true;
+        },
+        omitChildCachedBaseOidFromNativeResponse: () => {
+            omitChildCachedBaseOid = true;
         },
     };
 }
@@ -1754,6 +1775,114 @@ describe('pull-request supersession', () => {
             ).toBeUndefined();
         });
     });
+    it.each([
+        { label: 'stable SHA', cachedBaseOid: parentHead, omit: false, error: null, divergentReads: 0 },
+        {
+            label: 'divergent SHA present',
+            cachedBaseOid: movedHead,
+            omit: false,
+            error: /cached child base to final parent ancestry is not proven/i,
+            divergentReads: 1,
+        },
+        {
+            label: 'same divergent SHA omitted',
+            cachedBaseOid: movedHead,
+            omit: true,
+            error: /cached base commit/i,
+            divergentReads: 0,
+        },
+    ])('requires selected cached-base evidence through native serialized closure: $label', async (scenario) => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true, {}, {
+                initialMarkers: false,
+                cachedBaseOid: scenario.cachedBaseOid,
+            });
+            if (scenario.omit) {
+                current.omitChildCachedBaseOidFromNativeResponse();
+            }
+            const run = () =>
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                );
+            if (scenario.error !== null) {
+                await expect(run()).rejects.toThrow(scenario.error);
+                expect(current.state()).toBe('OPEN');
+                expect(current.comments()).toEqual([oldComment]);
+                expect(
+                    current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
+                ).toEqual([]);
+            } else {
+                await expect(run()).resolves.toBe('pull-request-superseded:2244:2246');
+                expect(current.state()).toBe('CLOSED');
+                expect(current.events.filter((event) => event === 'comment')).toHaveLength(3);
+                expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+                expect(current.events.filter((event) => event === 'delete')).toEqual([]);
+                expect(current.events.filter((event) => event === 'pull-request-superseded:2244:2246')).toHaveLength(1);
+                const binding = current.comments().find((comment) => comment.body === current.bindingBody);
+                expect(binding).toBeDefined();
+                if (binding === undefined) {
+                    throw new Error('expected native cached-base binding');
+                }
+                expect(parseSupersessionParentBinding(binding.body).child.cachedBase).toBe(parentHead);
+                current.setChildBaseRef(null);
+                const replayStart = current.events.length;
+                await expect(run()).resolves.toBe('pull-request-superseded:2244:2246');
+                const replay = current.events.slice(replayStart);
+                expect(replay).toContain('old-base-ref:null');
+                expect(replay.filter((event) => /^(?:comment|close|delete)$/.test(event))).toEqual([]);
+                const cleaned = current.port.inspect(oldNumber);
+                expect(cleaned.baseRef).toBeNull();
+                expect(cleaned.baseRefOid).toBe(parentHead);
+                expect(parseSupersessionParentBinding(binding.body).child.cachedBase).toBe(parentHead);
+                expect(current.comments()).toHaveLength(4);
+            }
+            expect(current.events).toContain(`old-core-wire-has-cached-base:${!scenario.omit}`);
+            expect(
+                current.events.filter((event) => event === `cached-base-comparison:${movedHead}:${parentHead}:diverged`)
+            ).toHaveLength(scenario.divergentReads);
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+        });
+    });
+    it('refuses a missing selected cached SHA during CLOSED replay after live-ref cleanup', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true, {}, { initialMarkers: false });
+            const run = () =>
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                );
+            await run();
+            const completedComments = [...current.comments()];
+            current.setChildBaseRef(null);
+            current.omitChildCachedBaseOidFromNativeResponse();
+            const start = current.events.length;
+            await expect(run()).rejects.toThrow(/cached base commit/i);
+            const observed = current.events.slice(start);
+            expect(observed).toContain('old-base-ref:null');
+            expect(observed).toContain('old-core-wire-has-cached-base:false');
+            expect(observed).not.toContain('old-comments');
+            expect(
+                observed.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
+            ).toEqual([]);
+            expect(current.state()).toBe('CLOSED');
+            expect(current.comments()).toEqual(completedComments);
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+        });
+    });
     it.each(['jcosta33/sourdaw', 'fork/sourdaw', null])(
         'binds native registered late-parent provenance to child source %s',
         async (sourceRepository) => {
@@ -2047,6 +2176,7 @@ describe('pull-request supersession', () => {
                                         headRefName: 'fix/deleted',
                                         headRepository: null,
                                         baseRefName: 'main',
+                                        baseRefOid: childMerge,
                                         baseRef: null,
                                         closedAt: '2026-08-20T12:00:00Z',
                                         mergeCommit,
@@ -2131,6 +2261,43 @@ describe('pull-request supersession', () => {
         expect(calls[0]?.join(' ')).toContain('baseRef{name repository{nameWithOwner} target{oid}}');
         expect(calls).toHaveLength(2);
     });
+    it.each([undefined, null, '', 'bad', 'a'.repeat(39), 'a'.repeat(41), 'A'.repeat(40), 42, { oid: head }])(
+        'rejects unavailable or malformed selected cached base %j before reading comments',
+        (baseRefOid) => {
+            const calls: string[][] = [];
+            expect(() =>
+                inspectPullRequest(
+                    oldNumber,
+                    (args) => {
+                        calls.push(args);
+                        return JSON.stringify({
+                            data: {
+                                repository: {
+                                    nameWithOwner: 'jcosta33/sourdaw',
+                                    pullRequest: {
+                                        id: 'PR_old',
+                                        number: oldNumber,
+                                        state: 'OPEN',
+                                        headRefOid: head,
+                                        headRefName: 'fix/old',
+                                        headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
+                                        baseRefName: parentBranch,
+                                        baseRefOid,
+                                        baseRef: null,
+                                        merged: false,
+                                        closedAt: null,
+                                    },
+                                },
+                            },
+                        });
+                    },
+                    new Map()
+                )
+            ).toThrow(/cached base commit/i);
+            expect(calls).toHaveLength(1);
+            expect(calls[0]?.join(' ')).toContain('baseRefName baseRefOid');
+        }
+    );
     it.each([
         ['missing', { data: { deleteIssueComment: { clientMutationId: null } } }],
         ['mismatched', { data: { deleteIssueComment: { clientMutationId: 'IC_other' } } }],

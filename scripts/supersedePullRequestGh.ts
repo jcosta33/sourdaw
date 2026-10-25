@@ -241,10 +241,8 @@ function readBaseRef(value: unknown, number: number): SupersededPullRequest['bas
     }
     return { name: ref.name, repository: ref.repository.nameWithOwner, target: ref.target.oid };
 }
-function readCachedBaseOid(value: unknown, number: number): string | undefined {
-    if (value === undefined) {
-        return undefined;
-    }
+function readCachedBaseOid(value: unknown, number: number): string {
+    // This selected native field is nonnull even after the separate live base ref is deleted.
     if (!isCommit(value)) {
         fail(`cannot inspect PR #${number} cached base commit`);
     }

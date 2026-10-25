@@ -278,6 +278,7 @@ function nativeClosureFixture(root: string, moveAtCommentRead?: number, closeErr
                     headRefName: 'fix/retire',
                     headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
                     baseRefName: 'main',
+                    baseRefOid: head,
                     baseRef: null,
                     merged: false,
                     closedAt,
