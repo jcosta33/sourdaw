@@ -12,6 +12,7 @@ import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.t
 import { supersessionCommentBody } from '../prContract.ts';
 import * as mutationOwnership from '../pullRequestMutationLock.ts';
 import {
+    isDeliveryPullRequestMutationLockOwner,
     pullRequestMutationLockRef,
     readPullRequestMutationLockOid,
     readPullRequestMutationLockOwner,
@@ -256,7 +257,9 @@ function fakePort(input: Input = {}) {
             )
         );
     }
-    comments.push(...(input.parentBindingComments ?? []));
+    if (input.parentBindingComments !== undefined) {
+        comments.push(...input.parentBindingComments);
+    }
     const snapshot = (number: number) => {
         if (number === oldNumber) {
             const inspection = index++;
@@ -524,10 +527,10 @@ function distinctPort(
         },
         isCommitAncestor: (repository, ancestor, descendant) => {
             fixture.calls.push(`ancestor:${repository}:${ancestor}:${descendant}`);
-            const result =
-                ancestor === parentMerge && descendant === replacementHead
-                    ? (changes.ancestry?.[ancestryReads++] ?? true)
-                    : true;
+            let result: boolean | Error = true;
+            if (ancestor === parentMerge && descendant === replacementHead) {
+                result = changes.ancestry?.[ancestryReads++] ?? true;
+            }
             if (result instanceof Error) {
                 throw result;
             }
@@ -766,16 +769,16 @@ function nativeSupersessionFixture(
             mergeCommit: parentMerge,
         },
     });
-    const comments = [
-        oldComment,
-        ...(options.initialMarkers === false
-            ? []
-            : [
-                  markerComment('IC_receipt', '2001', receiptBody),
-                  markerComment('IC_lineage', '2002', lineageBody),
-                  ...(distinctParent ? [markerComment('IC_parent_binding', '2000', nativeBindingBody)] : []),
-              ]),
-    ];
+    const comments = [oldComment];
+    if (options.initialMarkers !== false) {
+        comments.push(
+            markerComment('IC_receipt', '2001', receiptBody),
+            markerComment('IC_lineage', '2002', lineageBody)
+        );
+        if (distinctParent) {
+            comments.push(markerComment('IC_parent_binding', '2000', nativeBindingBody));
+        }
+    }
     const events: string[] = [];
     const capture = (command: string, args: string[]): string => {
         if (command === 'git') {
@@ -828,6 +831,13 @@ function nativeSupersessionFixture(
                 mergeCommit = { oid: mergeCommitOid };
             }
             const change = authorityChanges.get(number);
+            let observedClosedAt: string | null = '2026-10-24T00:00:00Z';
+            if (old) {
+                observedClosedAt = closedAt;
+            }
+            if (change?.closedAt !== undefined) {
+                observedClosedAt = change.closedAt;
+            }
             return JSON.stringify({
                 data: {
                     repository: {
@@ -844,12 +854,7 @@ function nativeSupersessionFixture(
                             baseRef,
                             merged: !old && !parent,
                             mergeCommit,
-                            closedAt:
-                                change?.closedAt !== undefined
-                                    ? change.closedAt
-                                    : old
-                                      ? closedAt
-                                      : '2026-10-24T00:00:00Z',
+                            closedAt: observedClosedAt,
                         },
                     },
                 },
@@ -977,7 +982,7 @@ function nativeSupersessionFixture(
             const dependency = ancestor === parentMerge && descendant === replacementHead;
             events.push(dependency ? 'parent-merge-ancestry' : 'historical-parent-ancestry');
             const identical = ancestor === descendant;
-            return JSON.stringify({
+            const response = {
                 url: `https://api.github.com/${endpoint}`,
                 status: identical ? 'identical' : 'ahead',
                 ahead_by: identical ? 0 : 1,
@@ -985,8 +990,11 @@ function nativeSupersessionFixture(
                 base_commit: { sha: ancestor },
                 merge_base_commit: { sha: ancestor },
                 commits: identical ? [] : [{ sha: descendant }],
-                ...(dependency ? options.comparison : {}),
-            });
+            };
+            if (dependency && options.comparison !== undefined) {
+                Object.assign(response, options.comparison);
+            }
+            return JSON.stringify(response);
         }
         throw new Error(`unexpected native supersession query: ${query}`);
     };
@@ -1337,6 +1345,9 @@ describe('pull-request supersession', () => {
             );
             const owner = retainedOwner(root);
             const retained = readPullRequestMutationLockOwner(root, owner, oldNumber);
+            if (!isDeliveryPullRequestMutationLockOwner(retained)) {
+                throw new Error('expected a journaled native delivery owner');
+            }
             expect(retained.mutation.phase).toBe('remote-mutation-attempted');
         });
     });
@@ -2067,9 +2078,10 @@ describe('pull-request supersession', () => {
                 const inspect = current.port.inspect;
                 current.port.inspect = (number) => {
                     const value = inspect(number);
-                    return number === oldNumber
-                        ? { ...value, baseRef: null, baseRefOid: current.dag.finalParent }
-                        : value;
+                    if (number === oldNumber) {
+                        return { ...value, baseRef: null, baseRefOid: current.dag.finalParent };
+                    }
+                    return value;
                 };
                 expect(current.run()).toBe('pull-request-superseded:2244:2246');
                 expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
@@ -2151,10 +2163,18 @@ describe('pull-request supersession', () => {
                         if (!comment.body.startsWith('sourdaw-supersession-parent-v1 ')) {
                             return [comment];
                         }
-                        if (scenario === 'missing') return [];
-                        if (scenario === 'foreign') return [{ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID }];
-                        if (scenario === 'duplicate') return [comment, { ...comment, id: 'IC_duplicate_binding' }];
-                        if (scenario === 'malformed') return [{ ...comment, body: `${comment.body}\nextra` }];
+                        if (scenario === 'missing') {
+                            return [];
+                        }
+                        if (scenario === 'foreign') {
+                            return [{ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID }];
+                        }
+                        if (scenario === 'duplicate') {
+                            return [comment, { ...comment, id: 'IC_duplicate_binding' }];
+                        }
+                        if (scenario === 'malformed') {
+                            return [{ ...comment, body: `${comment.body}\nextra` }];
+                        }
                         if (scenario === 'different parent') {
                             const record = parseSupersessionParentBinding(comment.body);
                             return [
@@ -2172,7 +2192,9 @@ describe('pull-request supersession', () => {
                     const read = current.port.readRegisteredLaneStack;
                     current.port.readRegisteredLaneStack = (branch) => {
                         const stack = read?.(branch);
-                        if (stack === undefined) throw new Error('expected registered fixture');
+                        if (stack === undefined) {
+                            throw new Error('expected registered fixture');
+                        }
                         return { ...stack, parentPullRequest: 9999 };
                     };
                 }
