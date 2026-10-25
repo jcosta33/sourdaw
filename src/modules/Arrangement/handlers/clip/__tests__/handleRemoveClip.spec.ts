@@ -70,6 +70,7 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({ workspaceStore: mocks.worksp
 
 vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
+    executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
     getExecutableAppActionEffect: vi.fn(),

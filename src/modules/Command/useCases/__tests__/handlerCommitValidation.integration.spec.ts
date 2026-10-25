@@ -9,12 +9,12 @@ import {
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { type ActionHandler, type HandlerCommitValidation } from '#/utils/handlerContract';
 
-import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { AppActionCommittedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
 import { executeAppActionBatch } from '../executeAppActionBatch';
-import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 
 type Document = { editingTool: { tool: string }; snapValue: { value: number } };
 type Action = { type: 'setEditingTool'; payload: { tool: string } };

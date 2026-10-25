@@ -16,9 +16,6 @@ import {
 import { addClip, addGainEnvelopePoint, addTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane, restoreAutomationLanes } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { restoreMidiClipData } from '#/modules/MIDI/useCases';
-import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -37,6 +34,9 @@ import {
     resetCrdtProjectAuthority,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+import { restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { AutomergeSync } from '../automergeSync';
 

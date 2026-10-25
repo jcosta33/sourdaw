@@ -171,6 +171,35 @@ function projectedDocument(root: Readonly<Record<string, unknown>>): Readonly<Re
     };
 }
 
+function refreshExpectedSnapshot(
+    expected: CapturedSnapshot,
+    observed: CapturedSnapshot,
+    next: Snapshot,
+    ids: ReadonlySet<string>,
+    childIds: ReadonlySet<string>,
+    laneIds: ReadonlySet<string>
+): void {
+    for (const id of ids) {
+        const nextOwner = next.owners.get(id);
+        const previousFingerprint = observed.owners.get(id);
+        if (nextOwner && previousFingerprint !== undefined && !matchesJsonFingerprint(nextOwner, previousFingerprint)) {
+            expected.owners.set(id, JSON.stringify(nextOwner));
+        }
+    }
+    for (const id of childIds) {
+        const count = next.identities.get(id);
+        if (count !== undefined && observed.identities.get(id) !== count) {
+            expected.identities.set(id, count);
+        }
+    }
+    for (const id of laneIds) {
+        const count = next.automationLaneIdentities.get(id);
+        if (count !== undefined && observed.automationLaneIdentities.get(id) !== count) {
+            expected.automationLaneIdentities.set(id, count);
+        }
+    }
+}
+
 /** Retain affected-owner intent independently from a peer-rebased optimistic projection. */
 export function captureRestoreClipCommitValidation(
     action: RestoreClipAction
@@ -222,29 +251,7 @@ export function captureRestoreClipCommitValidation(
             !authorityIntervened &&
             getCurrentAutomergeStorageMutationOwner() === owner
         ) {
-            for (const id of ids) {
-                const nextOwner = next.owners.get(id);
-                const previousFingerprint = observed.owners.get(id);
-                if (
-                    nextOwner &&
-                    previousFingerprint !== undefined &&
-                    !matchesJsonFingerprint(nextOwner, previousFingerprint)
-                ) {
-                    expected.owners.set(id, JSON.stringify(nextOwner));
-                }
-            }
-            for (const id of childIds) {
-                const count = next.identities.get(id);
-                if (count !== undefined && observed.identities.get(id) !== count) {
-                    expected.identities.set(id, count);
-                }
-            }
-            for (const id of laneIds) {
-                const count = next.automationLaneIdentities.get(id);
-                if (count !== undefined && observed.automationLaneIdentities.get(id) !== count) {
-                    expected.automationLaneIdentities.set(id, count);
-                }
-            }
+            refreshExpectedSnapshot(expected, observed, next, ids, childIds, laneIds);
         }
         observed = captureSnapshot(next);
         observedHeads = nextHeads;
