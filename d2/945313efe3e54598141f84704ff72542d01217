@@ -1,0 +1,53 @@
+scripts/supersedePullRequestGh.ts
+  s_29d8df116c5b92::t_71769701ef17d9 22,40,56,89-96,242-250,276,289,327,344
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_29d8df116c5b92::t_233448daa25e00 38
+.agents/skills/delivery-orchestration/SKILL.md
+  s_29d8df116c5b92::t_d34d0fa76685bc 96-107,113-125,131
+scripts/supersedePullRequest.ts
+  s_29d8df116c5b92::t_139446cafc82f7 957,972,983,1236,1367,1379-1380,1382-1383,1385-1388
+  s_29d8df116c5b92::t_1ae4ad8faea951 911,932
+  s_29d8df116c5b92::t_77be3623aad683 638-639,681,685,695,697-700,910,924-925,1185-1186,1204-1205
+  s_29d8df116c5b92::t_ee918673639974 909,914-916,923,927-931,935-938,941
+  s_29d8df116c5b92::t_81dee4ec2eb718 6,181,188,200,232,246,264-276,298-300,332-334,339,343-344,347,354-368,370-380,382-388,390-394,533-534,693-694
+  s_29d8df116c5b92::t_0e9012e04df2fb 277-282,290-292,319-323,337
+  s_29d8df116c5b92::t_82a34c0f37ebf4 5,29,205-220,233-234,283-289,293-297,301-304,312-318,324-331,335-336,338,340-342,345-346,348-353,369,381,389,395-398,526-532
+  s_29d8df116c5b92::t_b7dbaa547c2b79 305-311,399-460,478-492,494-501,504-525
+  s_29d8df116c5b92::t_c0e87780e177e3 461-477,493,502-503
+  s_29d8df116c5b92::t_c0cfca8212b77e 933-934,939-940
+.agents/skills/review-stances/security-and-platform.md
+  s_29d8df116c5b92::t_cb8b3854dff944 25-43
+  s_29d8df116c5b92::t_65b5e127a1767a 44-62
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_65b5e127a1767a 26-41
+  s_29d8df116c5b92::t_cb8b3854dff944 9-25
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_29d8df116c5b92::t_f3bd8c7be8c882 1918-2048
+  s_29d8df116c5b92::t_e9b9f00830d7ea 1906-1907,1909-1911,2077,2087-2089,2272,2307,2318,2330,2362
+  s_29d8df116c5b92::t_95793a11c6abac 1134,1153,1172-1173,1197,1250
+  s_29d8df116c5b92::t_859ce2a51afe8d 2492,2502,2507-2510,2514-2515,2539-2541,2547,2621-2627,3300,3328,3363,3375
+  s_29d8df116c5b92::t_ae4016f2d159b6 1,8,23,29,31,131-164,212,260,320,327,528-530
+  s_29d8df116c5b92::t_bb20dd78e90a3a 605-677,681-685
+  s_29d8df116c5b92::t_69f8d7b6922bba 2413
+  s_29d8df116c5b92::t_6de7ccc7a57cde 704-714,719-723,728-730,789,919-925,928-929,931-934,948
+  s_29d8df116c5b92::t_ff2a44f67ae1c2 678-680
+  s_29d8df116c5b92::t_86f1956a9f9010 1254-1271
+scripts/trustedGithubWriteBootstrap.ts
+  s_29d8df116c5b92::t_71769701ef17d9 159,408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2945313efe3e54598141f84704ff72542d01217",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
