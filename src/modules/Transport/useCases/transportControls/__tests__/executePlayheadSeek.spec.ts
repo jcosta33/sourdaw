@@ -59,6 +59,13 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({ stopPlayheadSc
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: null, subscribe: vi.fn(() => () => {}) },
     getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
+    adjustmentLayerStore: { hydrate: vi.fn() },
+    gainEnvelopeStore: { hydrate: vi.fn() },
+    markerStore: { hydrate: vi.fn() },
+    takeLaneStore: { hydrate: vi.fn() },
+    vcaGroupStore: { hydrate: vi.fn() },
+    warpStateStore: { hydrate: vi.fn() },
+    updateClipInStore: vi.fn(),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: vi.fn(() => ({ tracks: [{ id: 'record-track', kind: 'audio', armed: true }] })),
@@ -88,12 +95,27 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ currentTime: 0 })),
     stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'probe' })),
     repositionNativeLiveGraphSession: mockReposition,
+    wireSidechainRoute: vi.fn(),
+    getEngineState: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    removeSend: vi.fn(),
+    setSend: vi.fn(),
+    setBusGain: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: mockResetMidiState,
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
