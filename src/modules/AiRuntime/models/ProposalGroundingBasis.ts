@@ -51,6 +51,13 @@ export type ProposalProtectionFacts = {
     }>;
 };
 
+/** One admitted request's resolved protections and original UTF-16 clause ranges. */
+export type BoundRequestProtections = {
+    request: string;
+    facts: ProposalProtectionFacts;
+    resolvedTrackClauses: Array<{ start: number; end: number }>;
+};
+
 /**
  * What an ordinary pending card was grounded in, kept so a terse refinement can inherit it. Authority
  * is never read from the provider: the sources are request texts the user typed, the first one the

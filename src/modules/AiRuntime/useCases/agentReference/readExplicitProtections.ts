@@ -74,7 +74,6 @@ const RESERVED_SELECTION = new RegExp(
     `\\b(?:${[...SELECTION_PHRASES.keys()].toSorted((left, right) => right.length - left.length).join('|')})\\b`,
     'giu'
 );
-const OUTPUT_ACTIONS: readonly string[] = ['setTrackOutput'];
 const MEMBER_SEPARATOR = /\s*,\s*|\s+(?:and|or|as\s+well\s+as|along\s+with|together\s+with|plus)\s+|\s*&\s*/giu;
 const PROTECTION_VERB_WORD = /^(?:leave|leaving|keep|keeping|preserve|preserving|retain|retaining)$/u;
 
@@ -381,9 +380,6 @@ function readControlActions(control: string): readonly string[] | undefined {
     const singular = CONTROL_WORDS.has(control) ? control : control.replace(/s$/u, '');
     if (singular === 'send') {
         return SEND_ACTIONS;
-    }
-    if (singular === 'output') {
-        return OUTPUT_ACTIONS;
     }
     return refinementRequestReading.operationActions[singular];
 }

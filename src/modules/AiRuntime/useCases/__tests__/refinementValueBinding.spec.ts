@@ -6302,6 +6302,8 @@ describe('refining a held card through the chat', () => {
                     },
                     readTouchedObjectIds: (type, payload) =>
                         proposalCommandShape.touchedObjectIds(type, payload, CONTEXT),
+                    readControlOwnerIds: (type, payload) =>
+                        proposalCommandShape.controlOwnerIds(type, payload, CONTEXT),
                 },
             });
 
@@ -6590,5 +6592,171 @@ describe('refining a held card through the chat', () => {
         expect(proposedIds().filter((id) => id !== pendingId)).toEqual([]);
         expect(getPendingActionConfirmation(pendingId)?.supersededBy).toBeNull();
         expect(lastAssistantText()).toContain('track-snare is no longer in the project');
+    });
+});
+
+describe('recorded protection facet owners', () => {
+    const context = projectContext([
+        ...BASE_TRACKS.filter((track) => track.id !== 'track-drum-bus'),
+        projectTrack('track-drum-bus', 'Drum Bus', { kind: 'bus' }),
+        projectTrack('master', 'Master', { kind: 'master', outputId: 'hw_out' }),
+    ]);
+    const incoming = { name: 'setTrackOutput', arguments: { trackId: 'track-vocals', outputId: 'track-drum-bus' } };
+    const protection = { trackId: 'track-drum-bus', operations: ['setTrackOutput'] };
+
+    it('records output ownership and preserves it when an ordinary card is refined', () => {
+        const prompt = 'route Vocals to Drum Bus but leave the Drum Bus output alone';
+        const first = ground(prompt, [incoming], undefined, context);
+        expect(first.status).toBe('grounded');
+        if (first.status !== 'grounded' || first.groundingBasis === undefined) {
+            throw new Error('Expected the admitted routing card and its ordinary basis.');
+        }
+        expect(first.protectionFacts.protectedControls).toContainEqual(protection);
+        expect(first.protectionFacts.protectedUnchanged).toEqual([]);
+        expect(ground(prompt, [incoming], first.groundingBasis, context).status).toBe('grounded');
+    });
+
+    it('keeps incoming routing while removing a pending command that changes the protected output itself', () => {
+        const ownOutput = { name: 'setTrackOutput', arguments: { trackId: 'track-drum-bus', outputId: 'master' } };
+        const basis = cardBasis(
+            'route Vocals to Drum Bus and route Drum Bus to Master',
+            [incoming, ownOutput],
+            context
+        );
+        const result = ground('leave the Drum Bus output alone', [incoming], basis, context);
+        expect(result.status).toBe('grounded');
+        if (result.status !== 'grounded') {
+            throw new Error('Expected only the actual source-output command to be removed.');
+        }
+        expect(result.actions).toEqual([
+            expect.objectContaining({ type: incoming.name, payload: expect.objectContaining(incoming.arguments) }),
+        ]);
+        expect(result.protectionFacts.protectedControls).toContainEqual(protection);
+        expect(result.protectionFacts.protectedUnchanged).toEqual([]);
+    });
+
+    it('keeps output ownership on a compiled routing card', () => {
+        const prompt = 'route Vocals to Drum Bus but leave the Drum Bus output alone';
+        const revision = 'revision-output-owner';
+        const compiled = compileArbitraryCommandList({
+            context,
+            revision,
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: asCommandBatchProposal({ calls: [incoming] }).arguments.plan,
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'route-vocals',
+                                    name: incoming.name,
+                                    arguments: { outputId: 'track-drum-bus' },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Vocals' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error('Expected the routing list to compile.');
+        }
+        const result = groundCompiledCommandBatch({
+            toolCalls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context,
+            prompt,
+            projectRevision: revision,
+            workflowCapabilityId: undefined,
+            selectedCompilations: [],
+            transformCommands: [],
+            transformTargetIds: [],
+            creativeAuthority: undefined,
+            providerProposal: null,
+        });
+        expect(result.status).toBe('grounded');
+        if (result.status !== 'grounded') {
+            throw new Error('Expected the compiled routing card.');
+        }
+        expect(result.groundingBasis).toBeUndefined();
+        expect(result.protectionFacts.protectedControls).toContainEqual(protection);
+        expect(result.protectionFacts.protectedUnchanged).toEqual([]);
+    });
+
+    it.each([false, true])(
+        'applies recorded output ownership in preservation validation with complement=%s',
+        (complement) => {
+            const validate = (call: ProviderCall, whole = false) =>
+                validateRefinedProposalActions({
+                    pendingActions: null,
+                    actions: [{ type: call.name, payload: call.arguments }],
+                    prompt: 'route Vocals to Drum Bus',
+                    context,
+                    createdObject: proposalCommandShape.createdObject,
+                    readRemoval: readStoredCardRemoval,
+                    protection: {
+                        facts: {
+                            protectedUnchanged: whole ? [{ id: 'track-drum-bus', name: 'Drum Bus' }] : [],
+                            protectedControls: [
+                                complement
+                                    ? { trackId: 'track-drum-bus', operations: [], exceptOperations: ['setTrackGain'] }
+                                    : protection,
+                            ],
+                        },
+                        readTouchedObjectIds: (type, payload) =>
+                            proposalCommandShape.touchedObjectIds(type, payload, context),
+                        readControlOwnerIds: (type, payload) =>
+                            proposalCommandShape.controlOwnerIds(type, payload, context),
+                    },
+                });
+            expect(validate(incoming).status).toBe('valid');
+            expect(
+                validate({ name: 'setTrackOutput', arguments: { trackId: 'track-drum-bus', outputId: 'master' } })
+            ).toMatchObject({ status: 'refused' });
+            expect(validate(incoming, true)).toMatchObject({ status: 'refused' });
+        }
+    );
+    it('reads source-owned send facets while retaining child owners for complements', () => {
+        const validate = (call: ProviderCall, trackId: string, whole = false) =>
+            validateRefinedProposalActions({
+                pendingActions: null,
+                actions: [{ type: call.name, payload: call.arguments }],
+                prompt: 'change the requested routing or device',
+                context,
+                createdObject: proposalCommandShape.createdObject,
+                readRemoval: readStoredCardRemoval,
+                protection: {
+                    facts: {
+                        protectedUnchanged: whole ? [{ id: trackId, name: trackId }] : [],
+                        protectedControls: [{ trackId, operations: [], exceptOperations: ['setTrackGain'] }],
+                    },
+                    readTouchedObjectIds: (type, payload) =>
+                        proposalCommandShape.touchedObjectIds(type, payload, context),
+                    readControlOwnerIds: (type, payload) =>
+                        proposalCommandShape.controlOwnerIds(type, payload, context),
+                },
+            });
+        for (const name of ['addSend', 'setSend', 'removeSend']) {
+            const intoBus = { name, arguments: { trackId: 'track-vocals', busId: 'track-drum-bus', levelDb: -12 } };
+            const fromBus = { name, arguments: { trackId: 'track-drum-bus', busId: 'track-vocals', levelDb: -12 } };
+            expect(validate(intoBus, 'track-drum-bus').status).toBe('valid');
+            expect(validate(fromBus, 'track-drum-bus').status).toBe('refused');
+            expect(validate(intoBus, 'track-drum-bus', true).status).toBe('refused');
+        }
+        expect(validate(reverbMix(20), 'track-keys').status).toBe('refused');
+        expect(
+            validate({ name: 'setTrackGain', arguments: { trackId: 'track-keys', deltaDb: -1 } }, 'track-keys').status
+        ).toBe('valid');
+        expect(
+            validate({ name: 'renameTrack', arguments: { trackId: 'track-keys', name: 'Piano' } }, 'track-keys').status
+        ).toBe('refused');
     });
 });

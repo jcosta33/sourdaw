@@ -61,6 +61,13 @@ function groundScheduledSlice(
     schedule: AgentRunBatchSchedule,
     position: number
 ): GroundedScheduledBatch {
+    const requestProtections = schedule.requestProtections;
+    if (requestProtections === undefined || requestProtections.request !== run.request) {
+        return {
+            status: 'rejected',
+            reason: 'its original request protection binding is missing or no longer matches',
+        };
+    }
     const slices = schedule.slices.map((stored) => readBulkSetSliceEvidence(stored.serializedSlice));
     const evidence = slices[position - 1] ?? null;
     const providerProposal = readProviderProposal(schedule);
@@ -99,6 +106,7 @@ function groundScheduledSlice(
         transformTargetIds: [],
         creativeAuthority: undefined,
         providerProposal,
+        requestProtections,
     });
     if (grounded.status === 'rejected') {
         return { status: 'rejected', reason: grounded.rejectionReason };
@@ -116,6 +124,7 @@ function groundScheduledSlice(
         total: schedule.total,
         totalCommands: schedule.totalCommands,
         serializedProviderProposal: schedule.serializedProviderProposal,
+        requestProtections: structuredClone(requestProtections),
         slices: structuredClone(schedule.slices),
     };
     return {
@@ -164,6 +173,7 @@ async function dispatchScheduledBatch(
         context: grounded.context,
         prompt: run.request,
         inheritedProtectedUnchanged: grounded.result.protectionFacts?.protectedUnchanged,
+        requestProtectionFacts: grounded.result.protectionFacts,
     });
     const materialized = materializePromptCommandPlan({
         userText: run.request,

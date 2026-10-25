@@ -7,7 +7,11 @@ import { type CreativeRequestAuthority } from '../models/CreativeInterpretation'
 import { type IntentResult } from '../models/IntentResult';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
-import { type ProposalGroundingBasis, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
+import {
+    type BoundRequestProtections,
+    type ProposalGroundingBasis,
+    type ProposalProtectionFacts,
+} from '../models/ProposalGroundingBasis';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
@@ -47,6 +51,8 @@ type GroundCompiledCommandBatchInput = {
     refinementBasis?: ProposalGroundingBasis;
     /** Immutable restrictions on the pending card, including cards without an ordinary grounding witness. */
     refinementProtections?: ProposalProtectionFacts;
+    /** Resolved protections of this exact request when replaying a later scheduled slice. */
+    requestProtections?: BoundRequestProtections;
 };
 
 /** What grounding a refinement against its pending card's basis established. */
@@ -123,7 +129,7 @@ function bridgeCompiledCalls(
 ): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
     const transformProof = buildTransformProof(input);
-    const bridged = bridgeGroundedLlmToolCalls({
+    const bridgeInput: Parameters<typeof bridgeGroundedLlmToolCalls>[0] = {
         calls: input.toolCalls,
         context: input.context,
         markerSignatures,
@@ -136,7 +142,11 @@ function bridgeCompiledCalls(
         creativeAuthority: input.creativeAuthority,
         refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
         protectionFacts: readPriorProtectionFacts(input),
-    });
+    };
+    if (input.requestProtections !== undefined) {
+        bridgeInput.requestProtections = input.requestProtections;
+    }
+    const bridged = bridgeGroundedLlmToolCalls(bridgeInput);
     if (bridged.clarification !== undefined) {
         return {
             status: 'clarify',
@@ -230,6 +240,7 @@ function composeGroundedFields(
         context: input.context,
         prompt: input.prompt,
         workflowCapabilityId: input.workflowCapabilityId,
+        requestProtectionFacts: input.requestProtections?.facts,
     });
     let effectiveProviderProposal = input.providerProposal;
     if (effectiveProviderProposal !== null && verifiedProviderProposalScope !== undefined) {
@@ -383,6 +394,9 @@ function composeProtectionFacts(
     bridged: Bridged,
     guarded: Guarded
 ): ProposalProtectionFacts {
+    if (input.requestProtections !== undefined) {
+        return unionProposalProtectionFacts(input.requestProtections.facts);
+    }
     const readProtections = readExplicitProtections(input.prompt, input.context);
     // The tracks and operations the request protects are recorded as they resolve now, so a later
     // refinement never reads this request's selection phrases against a selection that has since moved.

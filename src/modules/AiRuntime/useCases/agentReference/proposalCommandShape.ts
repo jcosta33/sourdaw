@@ -171,9 +171,10 @@ function getIdentity(actionType: string, argumentsRecord: Readonly<Record<string
 /** Each id a command's targets name, with the capability of the target that names it. */
 function getTargetObjects(
     actionType: string,
-    argumentsRecord: Readonly<Record<string, unknown>>
+    argumentsRecord: Readonly<Record<string, unknown>>,
+    targetRules = getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []
 ): Array<{ id: string; capability: TargetRule['capability'] }> {
-    return (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).flatMap((rule) => {
+    return targetRules.flatMap((rule) => {
         const value = argumentsRecord[rule.argument];
         const members = Array.isArray(value) ? value : [value];
         return members
@@ -285,8 +286,46 @@ function getTouchedObjectIds(
     return [...new Set([...getObjectIds(actionType, payload), ...owners])];
 }
 
+/**
+ * A source-owned track field or send belongs to its declared source, even though its mutation
+ * identity also names a referenced destination. Other operations retain every touched owner: a
+ * child edit and a placement can change owners beyond a single source. Whole-object protection
+ * always uses touchedObjectIds, including routing destinations.
+ */
+function getControlOwnerIds(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+): string[] {
+    const rules = getExecutableAppActionGroundingRules(actionType);
+    const mutations = rules?.mutationIdentityRules.filter((rule) => rule.resourceReferenceOnly !== true) ?? [];
+    const references = new Set(
+        (rules?.mutationIdentityRules ?? [])
+            .filter((rule) => rule.resourceReferenceOnly === true)
+            .flatMap((rule) => rule.arguments.map((argument) => argument.argument))
+    );
+    const destinations = rules?.targetRules.filter((rule) => rule.promptRole === 'destination') ?? [];
+    const ownsTrackField =
+        mutations.some((rule) => rule.resourceFamily === 'track') &&
+        destinations.every((rule) => references.has(rule.argument));
+    const ownsSend =
+        mutations.some((rule) => rule.resourceFamily === 'send') &&
+        destinations.every((rule) => rule.capability === 'bus');
+    const sources = rules?.targetRules.filter((rule) => rule.promptRole === 'source') ?? [];
+    if ((!ownsTrackField && !ownsSend) || sources.length === 0) {
+        return getTouchedObjectIds(actionType, payload, context);
+    }
+    const targets = getTargetObjects(actionType, payload, sources);
+    return [
+        ...new Set(
+            targets.flatMap((target) => [target.id, ...findTargetOwnerTrackIds(target.capability, target.id, context)])
+        ),
+    ];
+}
+
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
+    controlOwnerIds: getControlOwnerIds,
     createdObject: getCreatedObject,
     identity: getIdentity,
     objectIds: getObjectIds,

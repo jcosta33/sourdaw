@@ -1,6 +1,7 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
 import { type SemanticCommandListMatch, type SemanticCommandListSelector } from '../../models/SemanticCommandList';
 
 import {
@@ -17,6 +18,7 @@ import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
+import { readExplicitProtections } from './readExplicitProtections';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 
 /*
@@ -85,6 +87,7 @@ export type CompiledTargetAuthorityInput = {
     dependencyId?: string;
     /** The whole original request, where protections, exclusions and naming evidence are read. */
     prompt: string;
+    requestProtections?: BoundRequestProtections;
     /**
      * Set when each target already resolved against the request the way a direct call does; that
      * resolution is the naming evidence, so only the request's protections remain to apply.
@@ -382,15 +385,24 @@ function getProtectedIds(
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): Set<string> {
     const protectedIds = new Set(input.compilerExcludedIds);
-    for (const object of getApplicationProtectedObjects({
-        actions: [],
-        context: input.context,
-        prompt: input.prompt,
-    })) {
+    const wholeObjects =
+        input.requestProtections?.facts.protectedUnchanged ??
+        getApplicationProtectedObjects({
+            actions: [],
+            context: input.context,
+            prompt: input.prompt,
+        });
+    for (const object of wholeObjects) {
         protectedIds.add(object.id);
     }
+    // The canonical reader distinguishes whole objects from their controls. Those consumed clauses
+    // are enforced after grounding against the actual mutation owners, never as blanket exclusions.
+    const consumed =
+        input.requestProtections?.resolvedTrackClauses ??
+        readExplicitProtections(input.prompt, input.context).resolvedTrackClauses;
+    const genericRestrictions = consumed.reduce(blankRange, request.prompt);
     for (const range of restrictionRanges) {
-        const restriction = request.prompt.slice(range.start, range.end);
+        const restriction = genericRestrictions.slice(range.start, range.end);
         const { capability, context, dependencyId } = input;
         for (const id of readWithNamedOwners(readReferencedIds, restriction, capability, context, dependencyId)) {
             protectedIds.add(id);

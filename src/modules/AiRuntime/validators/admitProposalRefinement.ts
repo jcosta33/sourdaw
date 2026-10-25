@@ -144,15 +144,17 @@ export function validateRefinedProposalActions(input: {
     protection?: {
         facts: ProposalProtectionFacts;
         readTouchedObjectIds: (actionType: string, payload: Readonly<Record<string, unknown>>) => readonly string[];
+        readControlOwnerIds: (actionType: string, payload: Readonly<Record<string, unknown>>) => readonly string[];
     };
 }): { status: 'valid' } | { status: 'refused'; reason: string } {
     if (input.protection !== undefined) {
-        const { facts, readTouchedObjectIds } = input.protection;
+        const { facts, readTouchedObjectIds, readControlOwnerIds } = input.protection;
         for (const action of input.actions) {
             const touched = new Set(readTouchedObjectIds(action.type, payloadOf(action)));
             const whole = facts.protectedUnchanged.find((object) => touched.has(object.id));
+            const owners = new Set(readControlOwnerIds(action.type, payloadOf(action)));
             const control = facts.protectedControls.find(({ trackId, operations, exceptOperations }) => {
-                if (!touched.has(trackId)) {
+                if (!owners.has(trackId)) {
                     return false;
                 }
                 if (exceptOperations !== undefined) {

@@ -27,12 +27,13 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type AgentRunBatchSchedule } from '../../models/AgentRun';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { WORKFLOW_CAPABILITY_IDS, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { resolveSemanticCommandListSelector } from '../../services/semanticCommandListCandidates';
-import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
+import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -43,6 +44,7 @@ import {
 import { getBulkDeviceInsertionTrackScope } from '../agentReference/getBulkDeviceInsertionTrackScope';
 import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
 import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
+import { proposeNextScheduledBatch } from '../agentRequestOrchestration/proposeNextScheduledBatch';
 import { rebaseBulkSetSliceEvidence } from '../agentRequestOrchestration/rebaseBulkSetSliceEvidence';
 import { revalidateApprovedMatchSelectors } from '../agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { agentRunLifecycle } from '../agentRunLifecycle';
@@ -1481,7 +1483,7 @@ describe('bulk set commands across successive batches', () => {
             agentRunLifecycle.clear();
         });
 
-        function recordScheduledPlan(runId: string) {
+        function recordScheduledPlan(runId: string, binding: 'valid' | 'missing' | 'mismatch' = 'valid') {
             const slices = requireSlices(splitBulk(context, [muteLayers]).split);
             const scope = { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] };
             agentRunLifecycle.create({
@@ -1513,13 +1515,13 @@ describe('bulk set commands across successive batches', () => {
                 budgets: { limits: {}, consumed: {} },
             });
             const plan = agentRunLifecycle.get(runId)!.plan!;
-            const batchSchedule = {
-                schemaVersion: 1 as const,
+            const batchSchedule: AgentRunBatchSchedule = {
+                schemaVersion: 1,
                 scheduleId: 'schedule-1',
                 position: 1,
                 total: 2,
                 totalCommands: 30,
-                interactionMode: 'apply' as const,
+                interactionMode: 'apply',
                 trustCeiling: null,
                 serializedProviderProposal: null,
                 slices: slices.map((slice, index) => ({
@@ -1529,6 +1531,18 @@ describe('bulk set commands across successive batches', () => {
                     serializedSlice: JSON.stringify(slice),
                 })),
             };
+            if (binding !== 'missing') {
+                batchSchedule.requestProtections = {
+                    request: binding === 'mismatch' ? 'A different request' : 'Mute every layer track',
+                    facts: {
+                        protectedUnchanged: [{ id: 'track-vocals', name: 'Vocals' }],
+                        protectedControls: [
+                            { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackGain'] },
+                        ],
+                    },
+                    resolvedTrackClauses: [],
+                };
+            }
             agentRunLifecycle.recordPlan({
                 runId,
                 summary: plan.summary,
@@ -1613,7 +1627,48 @@ describe('bulk set commands across successive batches', () => {
             expect(restored.runs.find((run) => run.runId === 'run-round-trip')?.plan?.batchSchedule).toEqual(
                 batchSchedule
             );
+            expect(
+                restored.runs.find((run) => run.runId === 'run-round-trip')?.plan?.batchSchedule?.requestProtections
+            ).toEqual(batchSchedule.requestProtections);
         });
+
+        it('keeps the run but drops an invalid stored request protection binding', () => {
+            recordScheduledPlan('run-invalid-binding');
+            const stored = structuredClone(readAgentRunState());
+            const requestProtections = stored.runs[0]?.plan?.batchSchedule?.requestProtections;
+            if (requestProtections === undefined) {
+                throw new Error('Expected the scheduled request protection binding.');
+            }
+            requestProtections.resolvedTrackClauses = [{ start: 5, end: 1 }];
+
+            const restored = sanitizeAgentRunState(JSON.parse(JSON.stringify(stored)));
+
+            expect(restored.runs.find((run) => run.runId === 'run-invalid-binding')?.plan?.batchSchedule).toBeDefined();
+            expect(
+                restored.runs.find((run) => run.runId === 'run-invalid-binding')?.plan?.batchSchedule
+                    ?.requestProtections
+            ).toBeUndefined();
+        });
+
+        it.each(['missing', 'mismatch'] as const)(
+            'refuses a later batch when its original request protection binding is %s',
+            async (binding) => {
+                recordScheduledPlan(`run-${binding}-binding`, binding);
+                agentRunLifecycle.recordCommittedWork({
+                    runId: `run-${binding}-binding`,
+                    workId: 'batch-1',
+                    receiptIdentity: 'receipt-1',
+                    completesRun: true,
+                });
+
+                await proposeNextScheduledBatch({ runId: `run-${binding}-binding` });
+
+                expect(agentRunLifecycle.get(`run-${binding}-binding`)?.phase).toBe('partially-completed');
+                expect(chatStore.value?.messages.at(-1)?.content).toContain(
+                    'original request protection binding is missing or no longer matches'
+                );
+            }
+        );
     });
 });
 
@@ -1803,6 +1858,165 @@ describe('a bulk request confirmed one batch at a time', () => {
         }
     });
 
+    it('keeps the originally selected whole track protected when selection moves before the next batch', async () => {
+        const layerIds = await seedTracks([...layerNames(LAYER_COUNT), 'Vocals']);
+        const vocalsId = layerIds.at(-1)!;
+        const newlySelectedId = layerIds[LAYER_COUNT - 1]!;
+        trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            () => searchCalls(['pan track']),
+            discoverSearchedCalls(['setTrackPan']),
+            proposeDiscoveredCalls(
+                [
+                    {
+                        id: 'pan-layers',
+                        name: 'setTrackPan',
+                        arguments: { pan: -20 },
+                        selector: matchTracks('layer', LAYER_COUNT),
+                    },
+                ],
+                ['setTrackPan']
+            ),
+        ]);
+
+        flushAutomergeStorageWrites();
+        const request = 'Pan all layer tracks 20% left; leave the selected track alone';
+        await sendChatMessage(request);
+        const first = requireOnlyProposedConfirmation();
+        const schedule = agentRunLifecycle.get(first.runId)?.plan?.batchSchedule;
+        expect(schedule?.requestProtections).toMatchObject({
+            request,
+            facts: { protectedUnchanged: [{ id: vocalsId, name: 'Vocals' }], protectedControls: [] },
+        });
+        expect(schedule?.requestProtections?.resolvedTrackClauses.length).toBeGreaterThan(0);
+        const restored = sanitizeAgentRunState(JSON.parse(JSON.stringify(readAgentRunState())));
+        expect(restored.runs.find((run) => run.runId === first.runId)?.plan?.batchSchedule?.requestProtections).toEqual(
+            schedule?.requestProtections
+        );
+        persistAgentRunState(restored);
+
+        trackStore.set({ ...trackStore.value!, selectedTrackId: newlySelectedId });
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        const second = requireOnlyProposedConfirmation();
+        expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
+        expect(second.approvalSnapshot.protectionFacts).toEqual({
+            protectedUnchanged: [{ id: vocalsId, name: 'Vocals' }],
+            protectedControls: [],
+        });
+        expect(second.protectedUnchanged).toEqual([{ id: vocalsId, name: 'Vocals' }]);
+        expect(second.approvalSnapshot.commandBatch?.authority.scope.protectedTargetIds).toContain(vocalsId);
+        expect(second.approvalSnapshot.commandBatch?.authority.scope.protectedTargetIds).not.toContain(newlySelectedId);
+        expect(
+            second.actions.some((action) => action.type === 'setTrackPan' && action.payload.trackId === newlySelectedId)
+        ).toBe(true);
+
+        await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
+        expect(pannedTrackNames()).toEqual(layerNames(LAYER_COUNT));
+        expect(trackStore.value?.tracks.find((track) => track.id === vocalsId)?.pan).toBe(0);
+    });
+
+    it.each([
+        {
+            protection: "leave the selected track's fader alone",
+            control: { trackId: '', operations: ['setTrackGain'] },
+        },
+        {
+            protection: 'leave the selected track alone except for the fader',
+            control: { trackId: '', operations: [], exceptOperations: ['setTrackGain'] },
+        },
+    ])(
+        'keeps the original control restriction for "$protection" across a moved selection',
+        async ({ protection, control }) => {
+            const layerIds = await seedTracks([...layerNames(LAYER_COUNT), 'Vocals']);
+            const vocalsId = layerIds.at(-1)!;
+            const newlySelectedId = layerIds[LAYER_COUNT - 1]!;
+            const originalVocalsGain = trackStore.value?.tracks.find((track) => track.id === vocalsId)?.gain;
+            if (originalVocalsGain === undefined) {
+                throw new Error('Expected the original protected fader value.');
+            }
+            trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
+            scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                () => searchCalls(['pan track']),
+                discoverSearchedCalls(['setTrackPan']),
+                proposeDiscoveredCalls(
+                    [
+                        {
+                            id: 'pan-layers',
+                            name: 'setTrackPan',
+                            arguments: { pan: -20 },
+                            selector: matchTracks('layer', LAYER_COUNT),
+                        },
+                    ],
+                    ['setTrackPan']
+                ),
+            ]);
+
+            flushAutomergeStorageWrites();
+            await sendChatMessage(`Pan all layer tracks 20% left; ${protection}`);
+            const first = requireOnlyProposedConfirmation();
+            const originalControl = { ...control, trackId: vocalsId };
+            expect(first.approvalSnapshot.protectionFacts).toEqual({
+                protectedUnchanged: [],
+                protectedControls: [originalControl],
+            });
+
+            trackStore.set({ ...trackStore.value!, selectedTrackId: newlySelectedId });
+            await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            const second = requireOnlyProposedConfirmation();
+            expect(second.approvalSnapshot.protectionFacts).toEqual({
+                protectedUnchanged: [],
+                protectedControls: [originalControl],
+            });
+            expect(
+                second.actions.some(
+                    (action) => action.type === 'setTrackPan' && action.payload.trackId === newlySelectedId
+                )
+            ).toBe(true);
+            await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({
+                status: 'executed',
+            });
+            expect(trackStore.value?.tracks.find((track) => track.id === newlySelectedId)?.pan).toBe(-20);
+            expect(trackStore.value?.tracks.find((track) => track.id === vocalsId)?.pan).toBe(0);
+            expect(trackStore.value?.tracks.find((track) => track.id === vocalsId)?.gain).toBe(originalVocalsGain);
+        }
+    );
+
+    it('refuses an initial schedule when a later slice would change its originally protected owner', async () => {
+        const layerIds = await seedTracks([...layerNames(LAYER_COUNT), 'Vocals']);
+        const vocalsId = layerIds.at(-1)!;
+        trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
+        cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+            () => searchCalls(['pan track']),
+            discoverSearchedCalls(['setTrackPan']),
+            proposeDiscoveredCalls(
+                [
+                    {
+                        id: 'pan-layers',
+                        name: 'setTrackPan',
+                        arguments: { pan: -20 },
+                        selector: matchTracks('layer', LAYER_COUNT),
+                    },
+                    {
+                        id: 'pan-vocals',
+                        name: 'setTrackPan',
+                        arguments: { pan: -20 },
+                        selector: matchTracks('vocals', 1),
+                    },
+                ],
+                ['setTrackPan']
+            ),
+        ]);
+
+        flushAutomergeStorageWrites();
+        await sendChatMessage('Pan all layer tracks and Vocals 20% left; leave the selected track alone');
+
+        expect(proposedConfirmations()).toEqual([]);
+        expect(pannedTrackNames()).toEqual([]);
+        expect(chatStore.value?.messages.at(-1)?.content).toMatch(/protection|protected|leaves alone/iu);
+    });
+
     describe('the last commit the next chat request reads', () => {
         /** The run's newest batch and the receipt it committed under. */
         function readNewestBatchReceipt(runId: string) {
@@ -1853,7 +2067,13 @@ describe('a bulk request confirmed one batch at a time', () => {
         // greedily, so two directly committed batches of one run are never adjacent: here a binding
         // span fills the middle batch and leaves a one-command batch on either side of it.
         it('reads the newest of two directly committed batches of one run, never the earlier one', async () => {
-            await seedTracks(['Intro', ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1), 'Outro']);
+            const trackIds = await seedTracks([
+                'Intro',
+                ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1),
+                'Outro',
+                'Vocals',
+            ]);
+            const vocalsId = trackIds.at(-1)!;
             const commandNames = ['muteTrack', 'createBus', 'addSend', 'setTrackPan'];
             scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
                 () => searchCalls(['mute track', 'create a bus', 'add a send to a bus', 'pan track']),
@@ -1887,11 +2107,21 @@ describe('a bulk request confirmed one batch at a time', () => {
 
             flushAutomergeStorageWrites();
             await sendChatMessage(
-                'Mute the Intro track, create a bus named Parallel, send every layer track to the Parallel bus at -6 dB, and pan Outro 20% left'
+                'Mute the Intro track, create a bus named Parallel, send every layer track to the Parallel bus at -6 dB, and pan Outro 20% left; leave Vocals alone'
             );
 
             const middle = requireOnlyProposedConfirmation();
             expect(middle.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 3 });
+            expect(
+                agentRunLifecycle.get(middle.runId)?.plan?.batchSchedule?.requestProtections?.facts.protectedUnchanged
+            ).toContainEqual({
+                id: vocalsId,
+                name: 'Vocals',
+            });
+            expect(middle.approvalSnapshot.protectionFacts?.protectedUnchanged).toContainEqual({
+                id: vocalsId,
+                name: 'Vocals',
+            });
             expect(mutedTrackNames()).toEqual(['Intro']);
             const [firstReceipt, ...laterReceipts] = agentRunLifecycle.get(middle.runId)?.receipts ?? [];
             expect(laterReceipts).toEqual([]);
@@ -1902,6 +2132,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             });
 
             expect(pannedTrackNames()).toEqual(['Outro']);
+            expect(trackStore.value?.tracks.find((track) => track.id === vocalsId)?.pan).toBe(0);
             const lastReceipt = readNewestBatchReceipt(middle.runId);
             expect(agentRunLifecycle.get(middle.runId)?.receipts).toHaveLength(3);
             expect(readChatThreadContext()?.lastCommit).toEqual({

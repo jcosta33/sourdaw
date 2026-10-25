@@ -82,6 +82,7 @@ const OPERATION_WORDS: Readonly<Record<string, readonly string[]>> = {
     mute: ['muteTrack'],
     solo: ['soloTrack'],
     arm: ['armTrack'],
+    output: ['setTrackOutput'],
 };
 /**
  * Every spelling an operation word is read in where a clause states the operation rather than naming its
