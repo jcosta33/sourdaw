@@ -18,6 +18,11 @@ export function addClip(input: {
     isGhost?: boolean;
     /** Optional source-clip properties to preserve (e.g. when duplicating). */
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
+    audioUnwrappedOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
+    audioLoopPassEntrySeconds?: number;
+    audioLoopPassOriginBeat?: number;
     midiOffsetBeats?: number;
     fadeInBeats?: number;
     fadeOutBeats?: number;
@@ -82,6 +87,17 @@ export function addClip(input: {
         audioBufferId: input.audioBufferId,
         assetHash: input.assetHash,
         audioOffsetBeats: input.audioOffsetBeats,
+        ...(input.audioOffsetSeconds === undefined ? {} : { audioOffsetSeconds: input.audioOffsetSeconds }),
+        ...(input.audioUnwrappedOffsetSeconds === undefined
+            ? {}
+            : { audioUnwrappedOffsetSeconds: input.audioUnwrappedOffsetSeconds }),
+        ...(input.audioLoopStartSeconds === undefined ? {} : { audioLoopStartSeconds: input.audioLoopStartSeconds }),
+        ...(input.audioLoopPassEntrySeconds === undefined
+            ? {}
+            : { audioLoopPassEntrySeconds: input.audioLoopPassEntrySeconds }),
+        ...(input.audioLoopPassOriginBeat === undefined
+            ? {}
+            : { audioLoopPassOriginBeat: input.audioLoopPassOriginBeat }),
         midiOffsetBeats: input.midiOffsetBeats,
         fadeInBeats: input.fadeInBeats ?? 0,
         fadeOutBeats: input.fadeOutBeats ?? 0,
