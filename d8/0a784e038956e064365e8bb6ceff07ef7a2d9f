@@ -1,0 +1,28 @@
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_29d8df116c5b92::t_09a1e2a5ce55aa 25-27,68-72
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_0fc9aaab3efd15 783
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipSplitStateRestorable.spec.ts
+  s_29d8df116c5b92::t_d14289603327c1 27-77,79-80,90
+  s_29d8df116c5b92::t_17914d80441b4e 78,81-89,91
+.agents/skills/review-stances/correctness.md
+  s_29d8df116c5b92::t_48cd975e317e10 659-664
+.agents/skills/review-stances/project-integrity.md
+  s_29d8df116c5b92::t_48cd975e317e10 445-450
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d80a784e038956e064365e8bb6ceff07ef7a2d9f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
