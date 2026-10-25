@@ -6715,7 +6715,7 @@ describe('test-case admission question', () => {
         const padding = Array.from({ length: 9 }, (_, index) => `    const context${index} = ${index};`);
         const oldSource = [firstLine, ...padding, '    expect(run()).toBe(1);', '});', ''].join('\n');
         const newSource = [
-            firstLine + ' if (missingModule) return;',
+            `${firstLine} if (missingModule) return;`,
             ...padding,
             '    expect(run()).toBe(1);',
             '});',
@@ -6726,9 +6726,9 @@ describe('test-case admission question', () => {
             `--- a/${sharedPath}`,
             `+++ b/${sharedPath}`,
             '@@ -1,7 +1,7 @@',
-            '-' + oldSource.split('\n')[0],
-            '+' + newSource.split('\n')[0],
-            ...padding.slice(0, 6).map((line) => ' ' + line),
+            `-${oldSource.split('\n')[0]}`,
+            `+${newSource.split('\n')[0]}`,
+            ...padding.slice(0, 6).map((line) => ` ${line}`),
             '',
         ].join('\n');
         for (const withChangedLines of [true, false]) {

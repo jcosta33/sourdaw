@@ -192,7 +192,7 @@ function hasUncoveredHunk(input: {
 function certifySide(input: {
     readonly path: string;
     readonly source: string;
-    readonly hunks: readonly LineRange[] | undefined;
+    readonly hunks?: readonly LineRange[];
     readonly changedLines?: readonly number[];
     readonly references: readonly EvidenceReference[];
 }): SideProof {
