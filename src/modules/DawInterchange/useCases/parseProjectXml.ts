@@ -407,6 +407,68 @@ function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming, transformT
     });
 }
 
+function hasNonIdentityLeafWarp(clip: XmlQuery, timing: ClipTiming, transformTempo: number | null): boolean {
+    const warps = clip.child('Warps');
+    const points = warps?.children('Warp') ?? [];
+    if (!warps || points.length === 0) {
+        return false;
+    }
+    if (transformTempo === null || timing.visibleDurationBeat === null || points.length < 2) {
+        return true;
+    }
+    const timeUnit = readTimeUnit(warps, timing.contentUnit);
+    const contentUnit = readContentTimeUnit(warps, timeUnit);
+    const converted: { time: number; contentTime: number }[] = [];
+    for (const point of points) {
+        const time = readTimingScalar(point, 'time', NaN);
+        const contentTime = readTimingScalar(point, 'contentTime', NaN);
+        if (time === null || contentTime === null) {
+            return true;
+        }
+        const timeBeat = toBeats(time, timeUnit, transformTempo);
+        const contentBeat = toBeats(contentTime, contentUnit, transformTempo);
+        const previous = converted.at(-1);
+        if (!Number.isFinite(timeBeat) || !Number.isFinite(contentBeat) || (previous && timeBeat <= previous.time)) {
+            return true;
+        }
+        converted.push({ time: timeBeat, contentTime: contentBeat });
+    }
+    // playStart selects the outer timeline; it is not an offset in the Warp map.
+    const start = toBeats(clip.attrNumber('playStart', 0), timing.contentUnit, transformTempo);
+    const end = start + timing.visibleDurationBeat;
+    const first = converted[0];
+    const last = converted.at(-1);
+    if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        end < start ||
+        !first ||
+        !last ||
+        start < first.time - LOOP_ROUNDOFF_TOLERANCE_BEATS ||
+        end > last.time + LOOP_ROUNDOFF_TOLERANCE_BEATS
+    ) {
+        return true;
+    }
+    for (let index = 1; index < converted.length; index++) {
+        const left = converted[index - 1]!;
+        const right = converted[index]!;
+        if (right.time < start || left.time > end) {
+            continue;
+        }
+        // The map is linear between points. Checking both clipped endpoints
+        // proves the complete played segment, including boundaries between points.
+        for (const boundary of [Math.max(start, left.time), Math.min(end, right.time)]) {
+            const fraction = (boundary - left.time) / (right.time - left.time);
+            const difference =
+                (left.contentTime - left.time) * (1 - fraction) + (right.contentTime - right.time) * fraction;
+            if (!Number.isFinite(difference) || Math.abs(difference) > LOOP_ROUNDOFF_TOLERANCE_BEATS) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 function parseClip(
     clip: XmlQuery,
     ownerKind: DawProjectParsedTrack['kind'],
@@ -421,7 +483,11 @@ function parseClip(
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
     const source = { sourceId: clip.attr('id') ?? undefined, sourceOrder: context.elementOrder.get(clip.element) };
-    if (repeatsClipLoop(clip, timing, transformTempo) || hasNonIdentityWarpPoints(clip, timing, transformTempo)) {
+    const nonidentityWarp =
+        clip.element.getElementsByTagName(CLIP).length > 0
+            ? hasNonIdentityWarpPoints(clip, timing, transformTempo)
+            : hasNonIdentityLeafWarp(clip, timing, transformTempo);
+    if (repeatsClipLoop(clip, timing, transformTempo) || nonidentityWarp) {
         warn(context, clip, 'unsupported-clip', name, trackName);
         return null;
     }

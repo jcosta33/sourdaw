@@ -513,6 +513,79 @@ describe('importDawProject', () => {
         );
     });
 
+    it('imports cropped identity warp windows from real bytes and names only the played transforms', async () => {
+        vi.clearAllMocks();
+        await setupRealImport();
+        mocks.decodeDawProjectAssets.mockResolvedValue({
+            audioBuffers: {},
+            bufferIdsByPath: new Map([
+                ['window.wav', 'window-buffer'],
+                ['parent.wav', 'parent-buffer'],
+                ['plain.wav', 'plain-buffer'],
+            ]),
+            failedPaths: [],
+        });
+        const projectXml = `<Project version="1.0"><Transport><Tempo value="120"/></Transport>
+            <Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement><Lanes><Clips track="audio">
+                <Clip name="Cropped suffix" time="0" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>
+                    <Warp time="0" contentTime="0"/><Warp time="4" contentTime="2"/><Warp time="8" contentTime="6"/></Warps></Clip>
+                <Clip id="stretched" name="Played stretch" time="4" duration="4" playStart="2"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>
+                    <Warp time="0" contentTime="0"/><Warp time="8" contentTime="2"/></Warps></Clip>
+                <Clip name="Parent" time="8" duration="16"><Audio file="parent.wav"/><Clips>
+                    <Clip name="Cropped prefix" time="0" duration="4" playStart="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>
+                        <Warp time="0" contentTime="-1"/><Warp time="4" contentTime="2"/><Warp time="8" contentTime="4"/></Warps></Clip>
+                    <Clip id="translated" name="Translated seek" time="4" duration="4" playStart="1"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>
+                        <Warp time="0" contentTime="0.5"/><Warp time="8" contentTime="4.5"/></Warps></Clip>
+                </Clips></Clip>
+                <Clip name="Plain" time="24" duration="4"><Audio file="plain.wav"/></Clip>
+            </Clips></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'cropped-warps.dawproject',
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceId: 'stretched',
+                name: 'Played stretch',
+                context: 'Audio',
+                handling: 'dropped',
+            },
+            {
+                kind: 'unsupported-clip',
+                sourceId: 'translated',
+                name: 'Translated seek',
+                context: 'Audio',
+                handling: 'dropped',
+            },
+        ]);
+        expect(result.warnings).toHaveLength(2);
+        expect(new Set(result.warnings.map((warning) => warning.sourceId)).size).toBe(2);
+        expect(result.warnings[0]!.sourceOrder).toBeLessThan(result.warnings[1]!.sourceOrder);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        const clips = applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Audio')?.clips;
+        expect(clips).toMatchObject([
+            { name: 'Cropped suffix', sampleStartBeat: 0 },
+            { name: 'Parent', sampleStartBeat: 0 },
+            { name: 'Cropped prefix', sampleStartBeat: 4 },
+            { name: 'Plain', sampleStartBeat: 0 },
+        ]);
+        expect(clips).toHaveLength(4);
+        expect(mocks.notifyUser.mock.calls).toEqual([
+            [expect.stringContaining('warning 1/2: Clip "Played stretch" on "Audio"'), 'warning'],
+            [expect.stringContaining('warning 2/2: Clip "Translated seek" on "Audio"'), 'warning'],
+            [expect.stringContaining('Imported cropped-warps.dawproject'), 'success'],
+        ]);
+        expect(mocks.applyImportedProjectData.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.notifyUser.mock.invocationCallOrder[0]!
+        );
+    });
+
     it('keeps a supported DAWproject import free of warning notices', async () => {
         vi.clearAllMocks();
         await setupRealImport();

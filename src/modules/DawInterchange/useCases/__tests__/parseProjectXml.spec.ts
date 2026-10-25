@@ -2359,6 +2359,199 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings).toHaveLength(1);
     });
 
+    describe.each(['direct', 'nested'])('%s visible warp window', (placement) => {
+        it.each([
+            {
+                name: 'unused stretched suffix',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [4, 2],
+                    [8, 6],
+                ],
+                supported: true,
+            },
+            {
+                name: 'unused stretched prefix',
+                playStart: 4,
+                duration: 'duration="4"',
+                points: [
+                    [0, -1],
+                    [4, 2],
+                    [8, 4],
+                ],
+                supported: true,
+            },
+            {
+                name: 'identity segment bracketing both boundaries',
+                playStart: 2,
+                duration: 'duration="4"',
+                points: [
+                    [-4, -4],
+                    [0, 0],
+                    [8, 4],
+                    [12, 8],
+                ],
+                supported: true,
+            },
+            {
+                name: 'nonidentity segment bracketing both boundaries',
+                playStart: 2,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [8, 2],
+                ],
+                supported: false,
+            },
+            {
+                name: 'interior nonidentity point',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [2, 0.5],
+                    [4, 2],
+                ],
+                supported: false,
+            },
+            {
+                name: 'translated source seek',
+                playStart: 1,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0.5],
+                    [8, 4.5],
+                ],
+                supported: false,
+            },
+            {
+                name: 'identity source seek',
+                playStart: 1,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [8, 4],
+                ],
+                supported: true,
+            },
+            {
+                name: 'uncovered playback end',
+                playStart: 6,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [8, 4],
+                ],
+                supported: false,
+            },
+            {
+                name: 'unknown playback end',
+                playStart: 0,
+                duration: '',
+                points: [
+                    [0, 0],
+                    [8, 4],
+                ],
+                supported: false,
+            },
+            {
+                name: 'missing point coordinate',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [[0, 0], [4, 2], [8]],
+                supported: false,
+            },
+            {
+                name: 'duplicate outer coordinate',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [4, 2],
+                    [4, 3],
+                ],
+                supported: false,
+            },
+            {
+                name: 'decimal identity boundaries',
+                playStart: 1.1,
+                duration: 'duration="2.2"',
+                points: [
+                    [0, 0],
+                    [3.3, 1.65],
+                    [8, 6],
+                ],
+                supported: true,
+            },
+        ])('$name', ({ playStart, duration, points, supported }) => {
+            const leaf =
+                `<Clip id="leaf" name="Window" time="0" ${duration} playStart="${playStart}">` +
+                '<Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>' +
+                points
+                    .map(
+                        ([time, contentTime]) =>
+                            `<Warp time="${time}"${contentTime === undefined ? '' : ` contentTime="${contentTime}"`}/>`
+                    )
+                    .join('') +
+                '</Warps></Clip>';
+            const content =
+                placement === 'direct'
+                    ? leaf
+                    : '<Clip name="Parent" time="0" duration="16"><Audio file="parent.wav"/><Clips>' +
+                      leaf +
+                      '</Clips></Clip>';
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                        '<Arrangement><Lanes><Clips track="audio">' +
+                        content +
+                        '<Clip name="Plain" time="20" duration="1"><Audio file="plain.wav"/></Clip>' +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+            const mapped = mapToProjectData({
+                parsed: { ...parsed, meta: { title: 'Window', artist: '', comment: '' }, audioAssets: new Map() },
+                bufferIdsByPath: new Map([
+                    ['window.wav', 'window-buffer'],
+                    ['parent.wav', 'parent-buffer'],
+                    ['plain.wav', 'plain-buffer'],
+                ]),
+                fileName: 'window.dawproject',
+            });
+            const clips = mapped.arrangement.tracks.find((track) => track.name === 'Audio')?.clips ?? [];
+            expect(clips.filter((clip) => clip.name === 'Window')).toEqual(
+                supported
+                    ? [
+                          expect.objectContaining({
+                              name: 'Window',
+                              startBeat: 0,
+                              endBeat: playStart === 1.1 ? 2.2 : 4,
+                              sampleStartBeat: playStart,
+                          }),
+                      ]
+                    : []
+            );
+            expect(clips.some((clip) => clip.name === 'Plain')).toBe(true);
+            expect(parsed.warnings).toMatchObject(
+                supported
+                    ? []
+                    : [
+                          {
+                              kind: 'unsupported-clip',
+                              sourceType: 'Clip',
+                              sourceId: 'leaf',
+                              name: 'Window',
+                              context: 'Audio',
+                              handling: 'dropped',
+                          },
+                      ]
+            );
+            expect(parsed.warnings).toHaveLength(supported ? 0 : 1);
+        });
+    });
+
     it('classifies seconds loops and mixed-unit warps at the local tempo while preserving an audio seek', () => {
         const parsed = parseProjectXml(
             project(
