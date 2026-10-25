@@ -35,6 +35,22 @@ type MasterGainMenuProps = {
     onEnterValue: () => void;
 };
 
+type MasterGainFaderProps = Pick<MasterGainControlProps, 'value' | 'onChange'>;
+
+const MasterGainFader = ({ value, onChange }: MasterGainFaderProps): ReactElement => (
+    <Fader
+        value={value}
+        onChange={onChange}
+        min={0}
+        max={FADER_MAX_GAIN}
+        step={0.01}
+        fineStep={0.001}
+        defaultValue={defaultTransportState.masterGain / 100}
+        height={100}
+        aria-label="Master gain"
+    />
+);
+
 const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: MasterGainMenuProps): ReactElement => {
     const handleActivationKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
         if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
@@ -158,17 +174,7 @@ export const MasterGainControl = ({
                 onContextMenu={handleMasterGainContextMenu}
                 onKeyDown={handleMasterGainMenuKeyDown}
             >
-                <Fader
-                    value={value}
-                    onChange={handleFaderChange}
-                    min={0}
-                    max={FADER_MAX_GAIN}
-                    step={0.01}
-                    fineStep={0.001}
-                    defaultValue={defaultTransportState.masterGain / 100}
-                    height={100}
-                    aria-label="Master gain"
-                />
+                <MasterGainFader value={value} onChange={handleFaderChange} />
             </div>
             {masterGainMenu ? (
                 <MasterGainMenu

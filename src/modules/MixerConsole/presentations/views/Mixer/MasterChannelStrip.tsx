@@ -19,6 +19,13 @@ type MasterChannelStripProps = {
     widthClass: string;
 };
 
+type MasterChannelSurfaceProps = MasterChannelStripProps & {
+    displayGain: number;
+    onChange: (value: number, isTransient?: boolean) => void;
+    onEnterValue: (value: number) => void;
+    onResetToDefault: () => void;
+};
+
 type ProjectTransitionAuthority = ReturnType<typeof captureProjectTransitionAuthority>;
 
 function restoreEngineFromProjectTruth(): void {
@@ -71,6 +78,32 @@ function consumeRecordedGrooveWindow(
     stamp.current = null;
     return true;
 }
+
+const MasterChannelSurface = ({
+    widthClass,
+    displayGain,
+    onChange,
+    onEnterValue,
+    onResetToDefault,
+}: MasterChannelSurfaceProps): ReactElement => (
+    <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel" data-testid="channel-master">
+        <div className="h-1 w-full rounded-full bg-border-active" />
+        <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
+        <MixerLevelReadout
+            trackId={null}
+            clusterClassName="mt-1"
+            control={
+                <MasterGainControl
+                    value={displayGain}
+                    onChange={onChange}
+                    onEnterValue={onEnterValue}
+                    onResetToDefault={onResetToDefault}
+                />
+            }
+            value={`${formatGainDb(displayGain)} dB`}
+        />
+    </DawChannelStripShell>
+);
 
 export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): ReactElement => {
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
@@ -235,26 +268,12 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     const displayGain = gestureGain ?? masterGain / 100;
 
     return (
-        <DawChannelStripShell
-            className={cn('ml-2', widthClass)}
-            aria-label="Master channel"
-            data-testid="channel-master"
-        >
-            <div className="h-1 w-full rounded-full bg-border-active" />
-            <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
-            <MixerLevelReadout
-                trackId={null}
-                clusterClassName="mt-1"
-                control={
-                    <MasterGainControl
-                        value={displayGain}
-                        onChange={handleFaderChange}
-                        onEnterValue={enterGain}
-                        onResetToDefault={resetMasterGainFromMenu}
-                    />
-                }
-                value={`${formatGainDb(displayGain)} dB`}
-            />
-        </DawChannelStripShell>
+        <MasterChannelSurface
+            widthClass={widthClass}
+            displayGain={displayGain}
+            onChange={handleFaderChange}
+            onEnterValue={enterGain}
+            onResetToDefault={resetMasterGainFromMenu}
+        />
     );
 };
