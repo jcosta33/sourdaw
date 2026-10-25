@@ -1,0 +1,188 @@
+.github/workflows/validation.yml
+  s_993e8cd4f5fad8::t_9032a685b590a7 308-310
+  s_993e8cd4f5fad8::t_d6d876544600a0 364-365
+  s_993e8cd4f5fad8::t_fb871ec6e31380 311
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_993e8cd4f5fad8::t_a138f5115cf264 1990-1995,4667,4685-4687
+  s_993e8cd4f5fad8::t_b59b5059f29792 4695
+  s_993e8cd4f5fad8::t_2b3edd48601553 1966,1969-1970,4658,4661-4666,4668-4669,4671-4673,4675-4684,4688-4694,4696-4697
+  s_993e8cd4f5fad8::t_becd8463c8de9b 5421
+  s_993e8cd4f5fad8::t_bd90eea02ce7b2 1967-1968,1971-1973,4699-4703
+  s_993e8cd4f5fad8::t_458da661ee0b99 4704-4705
+scripts/healthGateWorkflowContract.ts
+  s_993e8cd4f5fad8::t_762d40eed75ec0 101,109
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_993e8cd4f5fad8::t_ea440e26371474 685-686,689,747-750
+  s_993e8cd4f5fad8::t_7fefcc727d8922 687-688
+CONTRIBUTING.md
+  s_993e8cd4f5fad8::t_23043fdcda6c7e 28
+.agents/skills/architecture/SKILL.md
+  s_993e8cd4f5fad8::t_23043fdcda6c7e 97
+docs/06-testing.md
+  s_993e8cd4f5fad8::t_23043fdcda6c7e 705-707,711-713
+docs/release.md
+  s_993e8cd4f5fad8::t_23043fdcda6c7e 57-58
+docs/modern-primitives.md
+  s_993e8cd4f5fad8::t_23043fdcda6c7e 21-22
+AGENTS.md
+  s_993e8cd4f5fad8::t_5649474651aa68 257-259,272,553-555
+  s_993e8cd4f5fad8::t_06120b7af91113 242-245,265-271,273-275,277-278,322-323,497-499,556-557
+  s_993e8cd4f5fad8::t_945be36eeab660 276
+.agents/skills/review-stances/test-validity.md
+  s_993e8cd4f5fad8::t_5649474651aa68 977
+  s_993e8cd4f5fad8::t_fe4171a24d4684 363-366,741-742,754-757,765-767,878-880
+  s_993e8cd4f5fad8::t_70741617b855a6 772-786
+  s_993e8cd4f5fad8::t_5acae993f94a3a 771
+crates/daw-collab/AGENTS.md
+  s_993e8cd4f5fad8::t_ab0efd760ea62c 20-21,23
+crates/daw-core/AGENTS.md
+  s_993e8cd4f5fad8::t_bd167846466540 19-20,22
+crates/daw-engine/AGENTS.md
+  s_993e8cd4f5fad8::t_349e2a297decc9 159-160,162
+crates/daw-io/AGENTS.md
+  s_993e8cd4f5fad8::t_6220ad344090e6 19-20,22
+crates/daw-plugin-host/AGENTS.md
+  s_993e8cd4f5fad8::t_cab9940638288a 23-24,26
+crates/proof-chamber/AGENTS.md
+  s_993e8cd4f5fad8::t_7606f653ed71b9 21-22,24
+crates/scoring/AGENTS.md
+  s_993e8cd4f5fad8::t_884037e250a10d 19-20,22
+electron/AGENTS.md
+  s_993e8cd4f5fad8::t_2ae7e6b56fbaa2 22-23,25
+src/app/AGENTS.md
+  s_993e8cd4f5fad8::t_e460bda3abdb90 22-23,25
+src/infra/AGENTS.md
+  s_993e8cd4f5fad8::t_35494260ab2493 22-23,25
+src/modules/AgentAdapters/AGENTS.md
+  s_993e8cd4f5fad8::t_253fd53dbc3f63 37-38,40
+src/modules/AiGeneration/AGENTS.md
+  s_993e8cd4f5fad8::t_40a76714ed5412 28-29,31
+src/modules/AiRuntime/AGENTS.md
+  s_993e8cd4f5fad8::t_087bc4cd475276 59-60,62
+src/modules/Arrangement/AGENTS.md
+  s_993e8cd4f5fad8::t_01fd9271666422 33-34,36
+src/modules/AudioAnalysis/AGENTS.md
+  s_993e8cd4f5fad8::t_cf468e196e2271 34-37
+src/modules/AudioEngine/AGENTS.md
+  s_993e8cd4f5fad8::t_2bb36f84ef0667 29,55-59
+src/modules/AudioRendering/AGENTS.md
+  s_993e8cd4f5fad8::t_2e227ee170978e 38-41
+src/modules/Automation/AGENTS.md
+  s_993e8cd4f5fad8::t_c477edd1ad48cb 30-31,33
+src/modules/Bacteria/AGENTS.md
+  s_567a084d0540c4::t_f8777f37ce7333 29-33
+src/modules/BrowserAi/AGENTS.md
+  s_993e8cd4f5fad8::t_c1c7f72459de28 28-29,31
+src/modules/Collaboration/AGENTS.md
+  s_993e8cd4f5fad8::t_b07b8d75dbd4b6 29-30,32
+src/modules/Command/AGENTS.md
+  s_993e8cd4f5fad8::t_4cd061bae0c1b0 42-43,45
+src/modules/CommandInterface/AGENTS.md
+  s_993e8cd4f5fad8::t_398cf8462ccee3 24-25,27
+src/modules/ContentBrowser/AGENTS.md
+  s_993e8cd4f5fad8::t_76c075588f9c97 25-26,28
+src/modules/ControlRoom/AGENTS.md
+  s_993e8cd4f5fad8::t_2aa034e2c46a77 31-34
+src/modules/ControlSurface/AGENTS.md
+  s_993e8cd4f5fad8::t_793e0c320d5c2a 34-37
+src/modules/CrdtDocument/AGENTS.md
+  s_993e8cd4f5fad8::t_b884b94cccb5c0 41-42,44
+src/modules/Crumbs/AGENTS.md
+  s_567a084d0540c4::t_4d00f33a2960ac 30-34
+src/modules/Crust/AGENTS.md
+  s_567a084d0540c4::t_3811072f810fa4 26-30
+src/modules/CvGate/AGENTS.md
+  s_993e8cd4f5fad8::t_d56b8ae8cf77d1 24-27
+src/modules/DawInterchange/AGENTS.md
+  s_993e8cd4f5fad8::t_b07188f359331a 26-27,29
+src/modules/ElasticAudio/AGENTS.md
+  s_993e8cd4f5fad8::t_75e01d03e15060 32-35
+src/modules/FactorySynthesis/AGENTS.md
+  s_993e8cd4f5fad8::t_2a3748cf9fb81c 22-25
+src/modules/Fermenter/AGENTS.md
+  s_567a084d0540c4::t_bcd0d69968b6f1 27-31
+src/modules/Gluten/AGENTS.md
+  s_567a084d0540c4::t_ce67b52204d400 27-31
+src/modules/GrandBoule/AGENTS.md
+  s_567a084d0540c4::t_d97cfa4faf50f5 28-32
+src/modules/Grinder/AGENTS.md
+  s_567a084d0540c4::t_9f504151140510 27-31
+src/modules/Knead/AGENTS.md
+  s_993e8cd4f5fad8::t_1ac5e07bd0f643 25-28
+src/modules/Levain/AGENTS.md
+  s_567a084d0540c4::t_3b14e28f614f8c 26-30
+src/modules/MIDI/AGENTS.md
+  s_993e8cd4f5fad8::t_790d7a7b982b91 32-33,35
+src/modules/Metering/AGENTS.md
+  s_993e8cd4f5fad8::t_1c9f3646439c80 30-33
+src/modules/MixerConsole/AGENTS.md
+  s_993e8cd4f5fad8::t_506c9377833b73 26-27,29
+src/modules/Onboarding/AGENTS.md
+  s_993e8cd4f5fad8::t_880c9bd64d0b29 25-26,28
+src/modules/PluginHost/AGENTS.md
+  s_993e8cd4f5fad8::t_7d76e95cf038da 40-43
+src/modules/Preferences/AGENTS.md
+  s_993e8cd4f5fad8::t_8f832434fc9c95 23-24,26
+src/modules/Project/AGENTS.md
+  s_993e8cd4f5fad8::t_89b9f7f6bb2567 48-49,51
+src/modules/ProjectVersioning/AGENTS.md
+  s_993e8cd4f5fad8::t_229a9aba906d24 27-28,30
+src/modules/Proof/AGENTS.md
+  s_567a084d0540c4::t_2b9fdd999d4a16 27-31
+src/modules/ProofChamber/AGENTS.md
+  s_993e8cd4f5fad8::t_2b6c991f6dc361 27-31
+src/modules/PunchRecording/AGENTS.md
+  s_993e8cd4f5fad8::t_7dcdd610b986a4 28-29,31
+src/modules/Routing/AGENTS.md
+  s_993e8cd4f5fad8::t_6edaf53135c8d7 32-35
+src/modules/SampleLibrary/AGENTS.md
+  s_993e8cd4f5fad8::t_befb1d35932d01 28-29,31
+src/modules/SessionLauncher/AGENTS.md
+  s_993e8cd4f5fad8::t_ade75b052aabe4 29-30,32
+src/modules/Setlist/AGENTS.md
+  s_993e8cd4f5fad8::t_a79ac60f5cac4b 27-28,30
+src/modules/Synth/AGENTS.md
+  s_993e8cd4f5fad8::t_81a0e20866612f 25-28
+src/modules/TimelineEditor/AGENTS.md
+  s_993e8cd4f5fad8::t_c1b95085a41ed6 27-28,30
+src/modules/Toaster/AGENTS.md
+  s_567a084d0540c4::t_532fbfa5040eb3 28-32
+src/modules/Transport/AGENTS.md
+  s_993e8cd4f5fad8::t_b8eda45a0efc60 37-38,40
+src/modules/Tuner/AGENTS.md
+  s_993e8cd4f5fad8::t_189b8c14174fcc 23-24,26
+src/modules/WorkspaceShell/AGENTS.md
+  s_993e8cd4f5fad8::t_27c079fd818c3e 36-37,39
+src/modules/Yeast/AGENTS.md
+  s_993e8cd4f5fad8::t_d79331e418bb3d 28-31
+release/dependency-license-proofs.json
+  s_993e8cd4f5fad8::t_f6d531ef06b1e5 64
+release/open-source-inventory.json
+  s_993e8cd4f5fad8::t_f7a496fa3122a0 170,1743,2252-2256
+server/AGENTS.md
+  s_993e8cd4f5fad8::t_dc459e6566d04d 19-21,23,25-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e765f4038867e44d028aa4c905ec992e1dc8a36d",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_993e8cd4f5fad8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffd-2641-7f40-9221-3bd2de725b9b",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
