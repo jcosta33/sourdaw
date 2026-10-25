@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_3168504f6ce387::t_5fa8373dc5be3e 64-66,104-105,121-122,384,389,414,420,428,430,434,599,601-603
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_3168504f6ce387::t_5fa8373dc5be3e 4186-4188
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_3168504f6ce387::t_9aeebb5886cde2 1387-1389,1395
+  s_3168504f6ce387::t_5fa8373dc5be3e 1397
+  s_3168504f6ce387::t_73cef5894a2c47 1386,1393-1394,1396,1398-1436
+  s_3168504f6ce387::t_f38f29abaf25db 563,693,710,734,768,852,889,919,993,1002,1012
+  s_3168504f6ce387::t_da3c739b6442e9 1392,1442
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf182c86868342d69af6fd40a8ae229d030f3aac",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
