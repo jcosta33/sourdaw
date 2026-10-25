@@ -389,42 +389,97 @@ function nextCarriedBendReturnIndex(rows: readonly { id: string }[]): number {
  *
  * A split or glue that carries a bend onto its head also writes, just after it, returns that restore the state at
  * the cut: its range, but also the selection (an NRPN, the Null RPN, RPN 0) and the data bytes. An edit that changes
- * RPN 0's range where it lands (`editSetsBendRangeWhereItLands`) must govern every later bend, so the returns keep
- * restoring the cut state with the range replaced by the one the edit left: they are rewritten, in place and
- * under new ids, to reconcile the state after the edit to that target. Returns that restore nothing but the
- * range the edit already set are dropped.
+ * RPN 0's range where it lands (`editSetsBendRangeWhereItLands`) must govern every later bend, and a Data Entry LSB
+ * beside a coarse one completes the fractional range the returns carry, so both revisit the returns through
+ * `reconcileHandEditedReturns`; every other edit leaves them as they are.
  */
 export function landEditOnRows(stored: readonly MidiCC[], edit: MidiCC): MidiCC[] {
     const kept = stored.filter(
         (row) => !(row.beat === edit.beat && row.channel === edit.channel && row.controller === edit.controller)
     );
-    if (!editSetsBendRangeWhereItLands(stored, edit)) {
+    const setsRange = editSetsBendRangeWhereItLands(stored, edit);
+    if (!setsRange && edit.controller !== CC_DATA_ENTRY_LSB) {
         return [...kept, edit];
     }
-    const returns = kept.filter((row) => isCarriedBendReturnOnEditedHead(row, edit));
-    const [firstReturn] = returns;
-    if (!firstReturn) {
+    const revisited = reconcileHandEditedReturns(
+        [...kept, edit],
+        { channel: edit.channel, beat: edit.beat },
+        {
+            fineOnlyEdit: !setsRange,
+        }
+    );
+    if (revisited === null) {
         return [...kept, edit];
     }
+    return [...revisited];
+}
 
-    const headRows = kept.filter((row) => row.beat <= edit.beat && !returns.includes(row));
-    const afterEdit = replayInReaderOrder([...headRows, edit], edit.channel);
+/**
+ * The rows after a hand edit touched the point at a clip's head, with the returns a split or glue wrote just after
+ * that head reconciled to what the rows now set there: they keep restoring the cut state with only RPN 0's range
+ * replaced by the one the visible rows leave, rewritten in place under new ids, or dropped when nothing needs
+ * restoring. The returns are the last word the reader replays at the head, so an edit that leaves them carrying a
+ * range neither a visible point nor the cut state sets would govern every later bend wrongly. `fineOnlyEdit` marks
+ * an edit of a Data Entry LSB, which sets no coarse range alone: it refines the returns only when a hand coarse
+ * stands at the head for it to complete, and is a no-op otherwise.
+ *
+ * A no-op — signalled by `null` — when the head carries no returns, when RPN 0 is not selected after the visible
+ * rows (the reader semantics the returns serve are RPN 0's), when a fine-only edit finds no hand coarse at the head
+ * to complete, or when the returns already carry exactly the messages the reconcile produces.
+ */
+export function reconcileHandEditedReturns(
+    rows: readonly MidiCC[],
+    head: { channel: number; beat: number },
+    options: { fineOnlyEdit?: boolean } = {}
+): readonly MidiCC[] | null {
+    const returns = rows.filter((row) => isCarriedBendReturnOnEditedHead(row, head));
+    const [firstReturn] = returns;
+    if (firstReturn === undefined) {
+        return null;
+    }
+    const kept = rows.filter((row) => !returns.includes(row));
+    const visible = kept.filter((row) => row.beat <= head.beat);
+    const afterEdit = replayInReaderOrder(visible, head.channel);
+    if (!isPitchBendSensitivitySelected(afterEdit)) {
+        return null;
+    }
+    if (options.fineOnlyEdit === true) {
+        // A Data Entry LSB sets no coarse range alone, and the returns deliberately restore the cut's
+        // range over the writer's declaration and carried rows at the head (their ids carry `:rpn-`).
+        // The fine half refines the returns only when a hand coarse stands at the head for it to
+        // complete; otherwise the returns keep restoring the cut as they are.
+        const handCoarseStands = visible.some(
+            (row) => isBendRangeDataController(row.controller) && !row.id.includes(':rpn-')
+        );
+        if (!handCoarseStands) {
+            return null;
+        }
+    }
     const cut = replayInReaderOrder(
-        stored.filter(
-            (row) => row.beat <= edit.beat + SAME_BEAT_TOLERANCE || isCarriedBendReturnOnEditedHead(row, edit)
-        ),
-        edit.channel
+        rows.filter((row) => row.beat <= head.beat + SAME_BEAT_TOLERANCE || isCarriedBendReturnOnEditedHead(row, head)),
+        head.channel
     );
     const target = withBendRange(cut, afterEdit.bendRangeSemitones ?? STANDARD_BEND_RANGE_SEMITONES);
     const messages = reconcileRegisteredParameterMessages({
-        current: [...headRows.filter((row) => row.channel === edit.channel), edit].toSorted(
-            (first, second) => first.beat - second.beat
-        ),
-        target: declareChannelState(target).map((message) => ({ ...message, channel: edit.channel })),
+        current: visible
+            .filter((row) => row.channel === head.channel)
+            .toSorted((first, second) => first.beat - second.beat),
+        target: declareChannelState(target).map((message) => ({ ...message, channel: head.channel })),
     });
+    const carried = ({ controller, value, channel }: { controller: number; value: number; channel: number }) =>
+        JSON.stringify({ controller, value, channel });
+    if (
+        messages.length === returns.length &&
+        messages.every((message, index) => {
+            const standing = returns[index];
+            return standing !== undefined && carried(message) === carried(standing);
+        })
+    ) {
+        return null;
+    }
 
     const idPrefix = firstReturn.id.replace(CARRIED_BEND_RETURN_ID, ':');
-    const firstIndex = nextCarriedBendReturnIndex(stored);
+    const firstIndex = nextCarriedBendReturnIndex(rows);
     const rewritten: MidiCC[] = messages.map(({ controller, value, channel }, index) => ({
         id: `${idPrefix}${carriedBendReturnIdKey(firstIndex + index)}`,
         controller,
@@ -432,7 +487,19 @@ export function landEditOnRows(stored: readonly MidiCC[], edit: MidiCC): MidiCC[
         beat: firstReturn.beat,
         channel,
     }));
-    const others = kept.filter((row) => !returns.includes(row));
-    const at = kept.indexOf(firstReturn);
-    return [...others.slice(0, at), ...rewritten, ...others.slice(at), edit];
+    // The rewritten rows take the first return's position and the rest of the family is dropped, so
+    // the returns stay contiguous wherever an earlier row pulled the family ahead of the tick.
+    const result: MidiCC[] = [];
+    let inserted = false;
+    for (const row of rows) {
+        if (returns.includes(row)) {
+            if (!inserted) {
+                result.push(...rewritten);
+                inserted = true;
+            }
+            continue;
+        }
+        result.push(row);
+    }
+    return result;
 }

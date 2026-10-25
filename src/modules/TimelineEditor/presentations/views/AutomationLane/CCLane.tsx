@@ -5,7 +5,13 @@ import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { addMidiCC, removeMidiCC, moveMidiCC, restoreMidiCCPoints } from '#/modules/MIDI/useCases';
+import {
+    addMidiCC,
+    removeMidiCC,
+    moveMidiCC,
+    restoreMidiCCPoints,
+    revisitHandEditedCCReturns,
+} from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
@@ -131,10 +137,25 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
                 const finalBeat = finalPoint.beat;
                 const finalValue = finalPoint.value;
+                // Moving a hand point off or along a clip's head changes what its returns must restore, so
+                // both the head it left and the one it joined are revisited; the undo and redo replay the
+                // same revisits after the move, and a revisit that finds nothing to change is a no-op.
+                const edited = { editedController: finalPoint.controller };
+                const revisitBothEnds = (): void => {
+                    revisitHandEditedCCReturns(clipId, { channel: finalPoint.channel, beat: origBeat }, edited);
+                    revisitHandEditedCCReturns(clipId, { channel: finalPoint.channel, beat: finalBeat }, edited);
+                };
+                revisitBothEnds();
                 pushUndoEntry(
                     'Move CC point',
-                    () => moveMidiCC(clipId, ccId, origBeat, origValue),
-                    () => moveMidiCC(clipId, ccId, finalBeat, finalValue)
+                    () => {
+                        moveMidiCC(clipId, ccId, origBeat, origValue);
+                        revisitBothEnds();
+                    },
+                    () => {
+                        moveMidiCC(clipId, ccId, finalBeat, finalValue);
+                        revisitBothEnds();
+                    }
                 );
             }
         };
@@ -157,11 +178,23 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         if (point) {
             // Undo re-inserts just the removed point by id: a sibling sharing its
             // key survives, and rows other controllers hold are never overwritten.
+            // Deleting the head's hand point changes what its returns must restore,
+            // so every gesture direction ends in a revisit; one that finds nothing
+            // to change is a no-op.
+            const head = { channel: point.channel, beat: point.beat };
+            const edited = { editedController: point.controller };
             removeMidiCC(clipId, ccId);
+            revisitHandEditedCCReturns(clipId, head, edited);
             pushUndoEntry(
                 'Remove CC point',
-                () => restoreMidiCCPoints(clipId, [point]),
-                () => removeMidiCC(clipId, ccId)
+                () => {
+                    restoreMidiCCPoints(clipId, [point]);
+                    revisitHandEditedCCReturns(clipId, head, edited);
+                },
+                () => {
+                    removeMidiCC(clipId, ccId);
+                    revisitHandEditedCCReturns(clipId, head, edited);
+                }
             );
         } else {
             removeMidiCC(clipId, ccId);
