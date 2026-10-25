@@ -1,3 +1,4 @@
+import { midiStore } from '#/modules/MIDI/stores';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 import { loopOriginEntry, resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 
@@ -50,6 +51,24 @@ function shiftMidiRowsWithOffsetWrap(clip: Clip, rawOffsetBeats: number, wrapped
     shiftClipMidiNotes(clip.id, shiftBeats);
 }
 
+function hasFiniteRestoredMidiCoordinates(clip: Clip, newStartBeat: number, restoredOffsetBeats: number): boolean {
+    const delta = Math.max(0, newStartBeat) - clip.startBeat;
+    const rowShiftBeats = restoredOffsetBeats - delta - (clip.midiOffsetBeats ?? 0);
+    if (!Number.isFinite(rowShiftBeats)) {
+        return false;
+    }
+
+    const state = midiStore.value;
+    const notes = state?.notesByClipId[clip.id] ?? [];
+    const controllers = state?.ccByClipId[clip.id] ?? [];
+    const pitchBends = state?.pitchBendByClipId[clip.id] ?? [];
+    return (
+        notes.every((note) => Number.isFinite(note.startBeat + rowShiftBeats)) &&
+        controllers.every((controller) => Number.isFinite(controller.beat + rowShiftBeats)) &&
+        pitchBends.every((bend) => Number.isFinite(bend.beat + rowShiftBeats))
+    );
+}
+
 /**
  * Trims a clip's start. `anchorBeat` is the restore leg's exact-anchor form
  * (#5198): a recorded inverse carries the pre-action anchor state so BOTH
@@ -91,6 +110,16 @@ export function trimClipStart(
         if (state) {
             const target = findClipById({ clipId, tracks: state.tracks });
             if (target && newStartBeat >= target.clip.endBeat) {
+                return false;
+            }
+            // Finite captures can overflow when deriving or applying their row
+            // displacement. Refuse before either owner writes: MIDI sanitization
+            // would otherwise discard the overflowing rows while the trim succeeds.
+            if (
+                target?.clip.type === 'midi' &&
+                restoreMidiOffsetBeats !== undefined &&
+                !hasFiniteRestoredMidiCoordinates(target.clip, newStartBeat, restoreMidiOffsetBeats)
+            ) {
                 return false;
             }
         }

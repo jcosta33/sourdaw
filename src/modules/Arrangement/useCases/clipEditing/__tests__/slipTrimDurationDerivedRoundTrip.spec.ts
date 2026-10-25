@@ -1,6 +1,25 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    createVersionedCommandEnvelope,
+    executeAppAction,
+    parseVersionedCommandEnvelope,
+    resetActionReplayAuthority,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
 import { selectMidiNotesForLoopWindow } from '#/modules/Transport/useCases';
@@ -229,5 +248,97 @@ describe('a non-finite restored offset capture drops to the absent behavior (#55
         expect(restored.midiOffsetBeats).toBe(2);
         expect(storedNoteBeats('c-loop')).toEqual([0, 1, 2, 3]);
         expect(storedPressBeats('c-loop')).toEqual([0]);
+    });
+});
+
+describe('finite captured offsets refuse unsafe derived MIDI coordinates', () => {
+    beforeEach(() => {
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('trim inverse arithmetic');
+        removeCrdtDoc('root');
+        clearHandlerRegistry();
+        registerHandlerMap({ trimClipStart: handleTrimClipStart });
+        clearUndoHistory();
+        resetActionReplayAuthority();
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+        trackStore.set(structuredClone(defaultTrackState));
+        midiStore.set(structuredClone(defaultMidiStoreState));
+        flushAutomergeStorageWrites();
+    });
+
+    it.each([
+        { label: 'derived displacement', currentOffset: -Number.MAX_VALUE, noteBeat: 0, ccBeat: 0, bendBeat: 0 },
+        { label: 'note coordinate', currentOffset: 0, noteBeat: Number.MAX_VALUE, ccBeat: 0, bendBeat: 0 },
+        { label: 'controller coordinate', currentOffset: 0, noteBeat: 0, ccBeat: Number.MAX_VALUE, bendBeat: 0 },
+        { label: 'pitch-bend coordinate', currentOffset: 0, noteBeat: 0, ccBeat: 0, bendBeat: Number.MAX_VALUE },
+    ])('refuses overflowing $label before any owner or handler write', async (input) => {
+        // The MIDI CRDT codec cannot round-trip MAX_VALUE row beats. Keep those
+        // row-sum cases at the real projection/owner seam; ordinary rows also
+        // exercise the public command's raw-document and history refusal below.
+        const verifiesCommand = input.label === 'derived displacement';
+        if (verifiesCommand) {
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+        }
+        seed([{ ...durationDerivedLoopedClip('c-loop'), startBeat: 2, midiOffsetBeats: input.currentOffset }]);
+        midiStore.set({
+            ...defaultMidiStoreState,
+            notesByClipId: {
+                'c-loop': [{ id: 'note', pitch: 60, startBeat: input.noteBeat, duration: 0.25, velocity: 100 }],
+            },
+            ccByClipId: {
+                'c-loop': [{ id: 'cc', controller: 64, value: 127, beat: input.ccBeat, channel: 0 }],
+            },
+            pitchBendByClipId: {
+                'c-loop': [{ id: 'bend', value: 1024, beat: input.bendBeat, channel: 0 }],
+            },
+        });
+        flushAutomergeStorageWrites();
+        const action = {
+            type: 'trimClipStart',
+            payload: { clipId: 'c-loop', newStartBeat: 0, midiOffsetBeats: Number.MAX_VALUE },
+        } as const;
+        const envelope = createVersionedCommandEnvelope({
+            action,
+            availableDeviceVersions: {},
+            expectedEffect: 'Restore the captured trim offset',
+            normalizedProjectRevision: 'trim-overflow-fixture',
+            objectReferences: [{ argument: 'clipId', id: 'c-loop', scope: 'stable' }],
+            parameterUnits: [
+                { argument: 'newStartBeat', unit: 'beats' },
+                { argument: 'midiOffsetBeats', unit: 'beats' },
+            ],
+            reason: 'Replay a recorded trim inverse',
+            time: [
+                { argument: 'newStartBeat', domain: 'musical', unit: 'beats', value: 0 },
+                { argument: 'midiOffsetBeats', domain: 'musical', unit: 'beats', value: Number.MAX_VALUE },
+            ],
+        });
+        expect(parseVersionedCommandEnvelope(JSON.stringify(envelope))).toMatchObject({ status: 'valid' });
+        const tracksBefore = trackStore.value;
+        const midiBefore = midiStore.value;
+        const documentBefore = JSON.stringify(getCrdtDoc('root'));
+        const historyBefore = structuredClone(undoHistoryStore.value);
+
+        expect(trimClipStart('c-loop', 0, undefined, Number.MAX_VALUE)).toBe(false);
+        expect(trackStore.value).toBe(tracksBefore);
+        expect(midiStore.value).toBe(midiBefore);
+        expect(handleTrimClipStart.execute(action)).toEqual({ status: 'no-write' });
+        if (verifiesCommand) {
+            await executeAppAction(action);
+            flushAutomergeStorageWrites();
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(documentBefore);
+            expect(undoHistoryStore.value).toEqual(historyBefore);
+        }
+
+        expect(trackStore.value).toEqual(tracksBefore);
+        expect(midiStore.value).toEqual(midiBefore);
     });
 });

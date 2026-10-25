@@ -26,3 +26,17 @@ The discriminating probe removes the inverse's captured offset, or reverses the 
 row translation. The inferred-basis case must fail on its raw figures; the explicit-basis
 control must still describe its own preserved behavior. A fixture that always configures the
 normalization basis cannot cover a moving basis.
+
+## 2026-10-25 — finite captures overflowed their derived row translation
+
+Review of PR #5578 caught a captured trim inverse whose finite current and captured offsets
+produced an infinite restoring displacement. A finite displacement could also overflow a
+finite note, controller or pitch-bend beat. MIDI sanitization then removed those rows while
+the trim reported a write. Checking only the incoming capture did not protect the derived
+coordinates.
+
+Preflight the displacement and every translated row before either owner writes. Probe opposite
+finite extremes, then overflow each row type separately with a finite displacement. Require
+owner refusal, handler `no-write`, and unchanged clip and all row types; exercise raw-document
+and history preservation through the real command wherever the fixture codec admits the input.
+Keep ordinary and zero captures, the configured-loop control and keyless replay behavior intact.
