@@ -19,6 +19,7 @@ import {
     withPullRequestMutationLock,
     type PullRequestMutationSerialization,
 } from '../pullRequestMutationLock.ts';
+import { readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 import {
     parseSupersessionParentBinding,
     parseSupersedePullRequestArgs,
@@ -28,7 +29,6 @@ import {
     supersedePullRequest,
     type SupersessionParentBinding,
 } from '../supersedePullRequest.ts';
-import { readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 import * as githubPort from '../supersedePullRequestGh.ts';
 import {
     commentClientMutationId,
