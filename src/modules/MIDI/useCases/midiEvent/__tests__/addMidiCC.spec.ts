@@ -82,12 +82,27 @@ describe('addMidiCC', () => {
             return midiStore.value?.ccByClipId.c1?.map(({ id }) => id).filter((id) => !id.startsWith('select-'));
         }
 
+        /** The return family's (controller, value) pairs after the edit, in stored order. */
+        function familyAfter() {
+            return (midiStore.value?.ccByClipId.c1 ?? [])
+                .filter(({ id }) => id.includes('rpn-after-carried'))
+                .map(({ controller, value }) => [controller, value]);
+        }
+
         it('replaces the return one tick after the beat it lands on', () => {
             seed([splitReturn]);
 
             const cc = addMidiCC('c1', 6, 7, 0, 0);
 
-            expect(idsAfter()).toEqual([cc.id]);
+            // The family is re-declared to the target state — the cut's selection under the
+            // hand range — and is never emptied, so a later delete can still revisit it.
+            expect(familyAfter()).toEqual([
+                [101, 0],
+                [100, 0],
+                [6, 7],
+                [38, 0],
+            ]);
+            expect(idsAfter()).toContain(cc.id);
         });
 
         it('replaces a glue return on the beat of the window start it lands on, and only that one', () => {
@@ -95,7 +110,14 @@ describe('addMidiCC', () => {
 
             const cc = addMidiCC('c1', 6, 7, 4, 0);
 
-            expect(idsAfter()).toEqual([splitReturn.id, cc.id]);
+            expect(idsAfter()).toEqual([
+                splitReturn.id,
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                cc.id,
+            ]);
         });
 
         it.each([
@@ -106,7 +128,13 @@ describe('addMidiCC', () => {
 
             const cc = addMidiCC('c1', controller, 0, 0, 0);
 
-            expect(idsAfter()).toEqual([cc.id]);
+            expect(familyAfter()).toEqual([
+                [101, 0],
+                [100, 0],
+                [6, controller === 96 ? 3 : 1],
+                [38, 0],
+            ]);
+            expect(idsAfter()).toContain(cc.id);
         });
 
         it('applies when RPN 0 is selected in beat order though a Null RPN of an earlier beat is stored after it', () => {
@@ -130,7 +158,13 @@ describe('addMidiCC', () => {
 
             const cc = addMidiCC('c1', 6, 7, 4, 0);
 
-            expect(idsAfter()).toEqual([cc.id]);
+            expect(idsAfter()).toEqual([
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                expect.stringContaining('cc-glue:target:1:rpn-after-carried'),
+                cc.id,
+            ]);
         });
 
         it('rewrites the returns to restore the selection the cut left under the hand-set range', () => {
@@ -176,7 +210,13 @@ describe('addMidiCC', () => {
 
             const cc = addMidiCC('c1', 6, 7, 0, 0);
 
-            expect(idsAfter()).toEqual([cc.id]);
+            expect(familyAfter()).toEqual([
+                [101, 0],
+                [100, 0],
+                [6, 7],
+                [38, 0],
+            ]);
+            expect(idsAfter()).toContain(cc.id);
         });
 
         it.each([
@@ -266,7 +306,14 @@ describe('addMidiCC', () => {
 
             const cc = addMidiCC('c1', 6, 7, 0, 0);
 
-            expect(idsAfter()).toEqual(['other', cc.id]);
+            expect(idsAfter()).toEqual([
+                expect.stringContaining('cc-split:right:rpn-after-carried'),
+                expect.stringContaining('cc-split:right:rpn-after-carried'),
+                expect.stringContaining('cc-split:right:rpn-after-carried'),
+                expect.stringContaining('cc-split:right:rpn-after-carried'),
+                'other',
+                cc.id,
+            ]);
         });
 
         it.each([
@@ -279,7 +326,13 @@ describe('addMidiCC', () => {
 
             const cc = addMidiCC('c1', 6, 7, head, 0);
 
-            expect(idsAfter()).toEqual([cc.id]);
+            expect(familyAfter()).toEqual([
+                [101, 0],
+                [100, 0],
+                [6, 7],
+                [38, 0],
+            ]);
+            expect(idsAfter()).toContain(cc.id);
         });
 
         it('keeps the return when the point set is not a registered-parameter controller', () => {

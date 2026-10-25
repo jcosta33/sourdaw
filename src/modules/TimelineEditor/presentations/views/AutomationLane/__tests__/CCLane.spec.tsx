@@ -2,7 +2,13 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { addMidiCC, removeMidiCC, moveMidiCC, restoreMidiCCPoints } from '#/modules/MIDI/useCases';
+import {
+    addMidiCC,
+    removeMidiCC,
+    moveMidiCC,
+    restoreMidiCCPoints,
+    revisitHandEditedCCReturns,
+} from '#/modules/MIDI/useCases';
 
 import { type MidiCC } from '../../../../models/MidiNoteViewTypes';
 import { CCLane } from '../CCLane';
@@ -94,6 +100,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
             point.id === ccId ? { ...point, beat, value } : point
         );
     }),
+    revisitHandEditedCCReturns: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -537,6 +544,49 @@ describe('CCLane', () => {
             expect(moveMidiCC).toHaveBeenCalledWith('clip-1', 'cc-a', draggedBeat, draggedValue);
         });
 
+        it('revisits the head the point left and the one it joined when a drag commits, and in both replay directions', () => {
+            seedPoint();
+            const { container } = render(<CCLane {...defaultProps} />);
+            const point = getPoint(container);
+
+            fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+            fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+            fireEvent.pointerUp(point, { pointerId: 2, clientX: 88, clientY: 20 });
+
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: 0 },
+                { editedController: 1 }
+            );
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: draggedBeat },
+                { editedController: 1 }
+            );
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            vi.mocked(revisitHandEditedCCReturns).mockClear();
+            undoFn!();
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: 0 },
+                { editedController: 1 }
+            );
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: draggedBeat },
+                { editedController: 1 }
+            );
+            vi.mocked(revisitHandEditedCCReturns).mockClear();
+            redoFn!();
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: draggedBeat },
+                { editedController: 1 }
+            );
+        });
+
         it('should not push a Move undo entry when the drag ends without changing the point', () => {
             seedPoint();
             const { container } = render(<CCLane {...defaultProps} />);
@@ -873,6 +923,37 @@ describe('CCLane', () => {
             expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [
                 { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
             ]);
+        });
+
+        it('revisits the removed point head on delete and in both replay directions', () => {
+            laneMocks.midiState.ccByClipId['clip-1'] = [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }];
+            const { container } = render(<CCLane {...defaultProps} />);
+            const point = container.querySelector('[data-cc-point="true"]');
+
+            fireEvent.doubleClick(point!);
+
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: 0 },
+                { editedController: 1 }
+            );
+
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            vi.mocked(revisitHandEditedCCReturns).mockClear();
+            undoFn!();
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: 0 },
+                { editedController: 1 }
+            );
+            vi.mocked(revisitHandEditedCCReturns).mockClear();
+            redoFn!();
+            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+                'clip-1',
+                { channel: 0, beat: 0 },
+                { editedController: 1 }
+            );
         });
     });
 });

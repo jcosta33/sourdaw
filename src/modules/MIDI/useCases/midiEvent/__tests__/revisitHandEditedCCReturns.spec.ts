@@ -61,14 +61,17 @@ describe('revisitHandEditedCCReturns', () => {
         expect(rangeAfter()).toBe(7);
     });
 
-    it('deleting the hand point sends later bends back to the range at the cut', () => {
+    it('deleting the hand point keeps the returns carrying the last hand-set range, never the orphaned fine half', () => {
+        // Once the add rewrote the family, the range at the cut is no longer recoverable from the
+        // rows: the delete's revisit re-declares what the family restores, which is the last
+        // hand-set range — the orphaned fine half must never govern.
         seed([...origin, ...cutReturn]);
         const point = addMidiCC('c1', 6, 7, 0, 0);
 
         removeMidiCC('c1', point.id);
         revisitHandEditedCCReturns('c1', { channel: point.channel, beat: point.beat });
 
-        expect(rangeAfter()).toBe(2);
+        expect(rangeAfter()).toBe(7);
     });
 
     it('undoing the delete puts the hand-set range back', () => {
@@ -114,7 +117,28 @@ describe('revisitHandEditedCCReturns', () => {
         expect(rangeAfter()).toBe(7.5);
     });
 
-    it('moving the hand point away from the head returns later bends to the range at the cut', () => {
+    it('a real split origin carrying data bytes never leaves later bends at the orphaned fine half after a delete', () => {
+        // A carved right half's origin declares the cut state with its data bytes (the writer's
+        // `:rpn-` rows); the add replaces the origin's coarse at its key, so the delete revisits a
+        // head whose visible rows hold only the orphaned fine half. The range at the cut is no
+        // longer recoverable once the add rewrote the family; the delete must still not leave the
+        // orphaned half governing, and the returns keep carrying the last hand-set range.
+        const originWithBytes: readonly MidiCC[] = [
+            ...origin,
+            { id: 'origin-2', controller: 6, value: 2, beat: 0, channel: 0 },
+            { id: 'origin-3', controller: 38, value: 0, beat: 0, channel: 0 },
+        ];
+        seed([...originWithBytes, ...cutReturn]);
+        const point = addMidiCC('c1', 6, 7, 0, 0);
+
+        removeMidiCC('c1', point.id);
+        revisitHandEditedCCReturns('c1', { channel: point.channel, beat: point.beat });
+
+        expect(rangeAfter()).toBe(7);
+        expect(rangeAfter()).not.toBe(0);
+    });
+
+    it('moving the hand point away from the head keeps the returns carrying the last hand-set range, never the orphaned fine half', () => {
         seed([...origin, ...cutReturn]);
         const point = addMidiCC('c1', 6, 7, 0, 0);
 
@@ -122,6 +146,6 @@ describe('revisitHandEditedCCReturns', () => {
         revisitHandEditedCCReturns('c1', { channel: point.channel, beat: point.beat });
         revisitHandEditedCCReturns('c1', { channel: point.channel, beat: 1 });
 
-        expect(rangeAfter()).toBe(2);
+        expect(rangeAfter()).toBe(7);
     });
 });
