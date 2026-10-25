@@ -63,7 +63,7 @@ import {
     type ContractCarryingSides,
 } from '../evidenceOrdering.ts';
 import { fitUnitEvidence, regionCost, regionFitsRequest, regionRequestBytes } from '../fit.ts';
-import { parseUnifiedDiffRanges } from '../gitSource.ts';
+import { parseChangedLines, parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
     assessUnit,
@@ -6698,6 +6698,75 @@ describe('test-case admission question', () => {
         expect(sent.some((request) => JSON.stringify(request.state).includes('expect(result.status).toBe(1)'))).toBe(
             false
         );
+    });
+
+    it('withholds an unsupported case that shares a changed line with a complete case', async () => {
+        const sharedPath = 'scripts/__tests__/sharedLineAdmission.spec.ts';
+        const firstLine = "it('control', () => { expect(true).toBe(true); }); it.only('checks admission', () => {";
+        const padding = Array.from({ length: 9 }, (_, index) => `    const context${index} = ${index};`);
+        const oldSource = [firstLine, ...padding, '    expect(run()).toBe(1);', '});', ''].join('\n');
+        const newSource = [
+            firstLine + ' if (missingModule) return;',
+            ...padding,
+            '    expect(run()).toBe(1);',
+            '});',
+            '',
+        ].join('\n');
+        const diff = [
+            `diff --git a/${sharedPath} b/${sharedPath}`,
+            `--- a/${sharedPath}`,
+            `+++ b/${sharedPath}`,
+            '@@ -1,7 +1,7 @@',
+            '-' + oldSource.split('\n')[0],
+            '+' + newSource.split('\n')[0],
+            ...padding.slice(0, 6).map((line) => ' ' + line),
+            '',
+        ].join('\n');
+        for (const withChangedLines of [true, false]) {
+            const sent: unknown[] = [];
+            const source = fakeSource({
+                files: [changedFile(sharedPath)],
+                blobs: { [`${MERGE_BASE}:${sharedPath}`]: oldSource, [`${HEAD}:${sharedPath}`]: newSource },
+                hunks: parseUnifiedDiffRanges(diff),
+                changedLines: withChangedLines ? parseChangedLines(diff) : undefined,
+            });
+            const ports = scanPorts(
+                constantProvider(0.02, {
+                    systemOne: async ({ state, questions }) => {
+                        sent.push(state);
+                        return {
+                            model: TYPESAFE_MODEL,
+                            answers: Object.fromEntries(
+                                Object.keys(questions).map((id) => [id, { type: 'noul', noul: 0.02 }])
+                            ),
+                            usage: { input_tokens: 5, output_tokens: 0 },
+                        };
+                    },
+                }),
+                source,
+                fixedClock(1_000)
+            );
+            const set = collectEvidence({
+                port: source,
+                mergeBaseSha: MERGE_BASE,
+                headSha: HEAD,
+                contractSourceSha: MERGE_BASE,
+                limits: ports.limits,
+            });
+            const result = await runScan({ ...ports, profile: SEMANTIC_BUDGET_PROFILES.ci });
+            expect(set.testCaseContext?.get(sharedPath)?.complete, String(withChangedLines)).toBe(false);
+            expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+            expect(
+                result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting')
+            ).toMatchObject({ outcome: 'insufficient_context' });
+            expect(result.report.scope.truncated).toContainEqual({
+                path: sharedPath,
+                reason: 'test-case-context-not-supplied',
+            });
+            expect(result.report.execution).toBe('partial');
+            expect(sent).not.toHaveLength(0);
+            expect(JSON.stringify(sent)).not.toContain('expect(run()).toBe(1)');
+        }
     });
 
     async function plannedRequest(

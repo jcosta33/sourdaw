@@ -99,13 +99,13 @@ function hasUncoveredHunk(input: {
     readonly unrecognized: readonly LineRange[];
     readonly sourceLines: readonly string[];
 }): boolean {
+    if (input.unrecognized.some((range) => overlaps(range, input.range))) {
+        return true;
+    }
     if (input.changed !== undefined) {
         return input.changed.some(
             (line) => !input.matched.some((range) => line >= range.startLine && line <= range.endLine)
         );
-    }
-    if (input.unrecognized.some((range) => overlaps(range, input.range))) {
-        return true;
     }
     return input.sourceLines.some(
         (line, index) =>
