@@ -483,10 +483,12 @@ function parseClip(
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
     const source = { sourceId: clip.attr('id') ?? undefined, sourceOrder: context.elementOrder.get(clip.element) };
-    const nonidentityWarp =
-        clip.element.getElementsByTagName(CLIP).length > 0
-            ? hasNonIdentityWarpPoints(clip, timing, transformTempo)
-            : hasNonIdentityLeafWarp(clip, timing, transformTempo);
+    let nonidentityWarp: boolean;
+    if (clip.element.getElementsByTagName(CLIP).length > 0) {
+        nonidentityWarp = hasNonIdentityWarpPoints(clip, timing, transformTempo);
+    } else {
+        nonidentityWarp = hasNonIdentityLeafWarp(clip, timing, transformTempo);
+    }
     if (repeatsClipLoop(clip, timing, transformTempo) || nonidentityWarp) {
         warn(context, clip, 'unsupported-clip', name, trackName);
         return null;

@@ -2496,12 +2496,13 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                     )
                     .join('') +
                 '</Warps></Clip>';
-            const content =
-                placement === 'direct'
-                    ? leaf
-                    : '<Clip name="Parent" time="0" duration="16"><Audio file="parent.wav"/><Clips>' +
-                      leaf +
-                      '</Clips></Clip>';
+            let content = leaf;
+            if (placement === 'nested') {
+                content =
+                    '<Clip name="Parent" time="0" duration="16"><Audio file="parent.wav"/><Clips>' +
+                    leaf +
+                    '</Clips></Clip>';
+            }
             const parsed = parseProjectXml(
                 project(
                     '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
@@ -2521,33 +2522,30 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                 fileName: 'window.dawproject',
             });
             const clips = mapped.arrangement.tracks.find((track) => track.name === 'Audio')?.clips ?? [];
-            expect(clips.filter((clip) => clip.name === 'Window')).toEqual(
-                supported
-                    ? [
-                          expect.objectContaining({
-                              name: 'Window',
-                              startBeat: 0,
-                              endBeat: playStart === 1.1 ? 2.2 : 4,
-                              sampleStartBeat: playStart,
-                          }),
-                      ]
-                    : []
-            );
+            if (supported) {
+                expect(clips.filter((clip) => clip.name === 'Window')).toEqual([
+                    expect.objectContaining({
+                        name: 'Window',
+                        startBeat: 0,
+                        endBeat: playStart === 1.1 ? 2.2 : 4,
+                        sampleStartBeat: playStart,
+                    }),
+                ]);
+                expect(parsed.warnings).toEqual([]);
+            } else {
+                expect(clips.filter((clip) => clip.name === 'Window')).toEqual([]);
+                expect(parsed.warnings).toMatchObject([
+                    {
+                        kind: 'unsupported-clip',
+                        sourceType: 'Clip',
+                        sourceId: 'leaf',
+                        name: 'Window',
+                        context: 'Audio',
+                        handling: 'dropped',
+                    },
+                ]);
+            }
             expect(clips.some((clip) => clip.name === 'Plain')).toBe(true);
-            expect(parsed.warnings).toMatchObject(
-                supported
-                    ? []
-                    : [
-                          {
-                              kind: 'unsupported-clip',
-                              sourceType: 'Clip',
-                              sourceId: 'leaf',
-                              name: 'Window',
-                              context: 'Audio',
-                              handling: 'dropped',
-                          },
-                      ]
-            );
             expect(parsed.warnings).toHaveLength(supported ? 0 : 1);
         });
     });
