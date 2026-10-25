@@ -82,6 +82,17 @@ const SHARDED_BROWSER_STEPS = [
     'Report shard failure',
     'Upload blob report',
 ] as const;
+// The required and nightly unit shards both run in a fresh unprivileged account.
+const ISOLATED_UNIT_STEPS = [
+    'Checkout',
+    'Prepare unit tool directory',
+    'Set up pnpm',
+    'Set up Node',
+    'Prepare isolated unit account',
+    'Install dependencies',
+    'Run shard',
+    'Report shard failure',
+] as const;
 const WEBGPU_ADMISSION_STEPS = [...SETUP_PNPM_NODE, 'Install Chromium', 'Run Browser AI WebGPU admission'] as const;
 const NATIVE_MACOS_STEPS = [
     'Checkout',
@@ -184,16 +195,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         static: [...SETUP_NODE, ...STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
-        unit: [
-            'Checkout',
-            'Prepare unit tool directory',
-            'Set up pnpm',
-            'Set up Node',
-            'Prepare isolated unit account',
-            'Install dependencies',
-            'Run shard',
-            'Report shard failure',
-        ],
+        unit: ISOLATED_UNIT_STEPS,
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
         smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
@@ -268,7 +270,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         static: [...SETUP_PNPM_NODE, ...STATIC_SUITE_STEPS],
         lint: [...SETUP_PNPM_NODE, 'Lint'],
         boundaries: [...SETUP_PNPM_NODE, 'Validate the dependency graph'],
-        unit: [...SETUP_PNPM_NODE, 'Run shard', 'Report shard failure'],
+        unit: ISOLATED_UNIT_STEPS,
         build: [...SETUP_PNPM_NODE, 'Build'],
         rust: [
             'Checkout',

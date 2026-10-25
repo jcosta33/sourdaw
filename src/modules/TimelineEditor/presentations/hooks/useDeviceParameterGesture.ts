@@ -1,17 +1,39 @@
-import { type Dispatch, type RefObject, type SetStateAction, useLayoutEffect, useRef, useState } from 'react';
+import {
+    type Dispatch,
+    type RefObject,
+    type SetStateAction,
+    useLayoutEffect,
+    useRef,
+    useState,
+    useSyncExternalStore,
+} from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { releaseTouchAutomation } from '#/modules/Automation/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type DeviceParameterView } from '../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../models/TrackViewTypes';
 
+import {
+    acquireDeviceParameterPreview,
+    ownsDeviceParameterPreview,
+    readDeviceParameterPreview,
+    releaseDeviceParameterPreview,
+    subscribeDeviceParameterPreview,
+    updateDeviceParameterPreview,
+} from './deviceParameterGesturePreview';
+
 type ParameterGesture = {
     id: number;
+    session: symbol;
+    previewKey: string;
+    rootIdentity: string;
     trackId: string;
     deviceId: string;
     deviceType: string;
@@ -28,16 +50,6 @@ type ParameterGesture = {
     committed: boolean;
 };
 
-type GestureDraft = {
-    trackId: string;
-    deviceId: string;
-    paramId: string;
-    value: number;
-    valuePresent: boolean;
-    startingValue: number | undefined;
-    authority: ParameterGesture['authority'];
-};
-
 type DeviceParameterGestureContext = {
     param: DeviceParameterView | undefined;
     device: Device;
@@ -47,11 +59,14 @@ type DeviceParameterGestureContext = {
     mounted: RefObject<boolean>;
     cancelOnUnmount: RefObject<() => void>;
     setGestureOwner: Dispatch<SetStateAction<number | undefined>>;
-    setDraft: Dispatch<SetStateAction<GestureDraft | null>>;
 };
 
+function isGestureAuthorityCurrent(gesture: ParameterGesture): boolean {
+    return gesture.authority.isCurrent() && captureProjectRootIdentity() === gesture.rootIdentity;
+}
+
 function readGestureDevice(gesture: ParameterGesture, requireStartingValue: boolean) {
-    if (!gesture.authority.isCurrent()) {
+    if (!isGestureAuthorityCurrent(gesture)) {
         return undefined;
     }
     const tracks = trackStore.value?.tracks ?? [];
@@ -83,6 +98,9 @@ function readGestureDevice(gesture: ParameterGesture, requireStartingValue: bool
 }
 
 function restoreGesturePreview(gesture: ParameterGesture): void {
+    if (!ownsDeviceParameterPreview(gesture.previewKey, gesture.session)) {
+        return;
+    }
     const device = readGestureDevice(gesture, false);
     const value = device?.parameterValues[gesture.paramId] ?? gesture.defaultValue;
     if (device && gesture.previewValue !== undefined && gesture.previewValue !== value) {
@@ -90,6 +108,16 @@ function restoreGesturePreview(gesture: ParameterGesture): void {
             transient: true,
             automationRecordingPolicy: 'suppressed',
         });
+    }
+}
+
+function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
+    if (!ownsDeviceParameterPreview(gesture.previewKey, gesture.session) || !readGestureDevice(gesture, false)) {
+        return;
+    }
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === gesture.trackId);
+    if (track?.automationMode === 'touch') {
+        releaseTouchAutomation(gesture.trackId, `${gesture.deviceId}:${gesture.paramId}`);
     }
 }
 
@@ -104,16 +132,15 @@ function cancelDeviceParameterGesture(context: DeviceParameterGestureContext, ge
         return;
     }
     gesture.invalidated = true;
+    releaseGestureTouchAutomation(gesture);
     try {
         restoreGesturePreview(gesture);
     } catch (error) {
         notifyUser(error instanceof Error ? error.message : 'Device parameter preview restoration failed', 'error');
     }
-    if (context.mounted.current) {
-        if (context.gestureRef.current === gesture) {
-            context.setGestureOwner(undefined);
-        }
-        context.setDraft(null);
+    releaseDeviceParameterPreview(gesture.previewKey, gesture.session);
+    if (context.mounted.current && context.gestureRef.current === gesture) {
+        context.setGestureOwner(undefined);
     }
 }
 
@@ -155,8 +182,12 @@ function startDeviceParameterGesture(context: DeviceParameterGestureContext): nu
         cancelDeviceParameterGesture(context, previous);
     }
     const liveOwner = trackStore.value?.tracks.find((track) => track.id === trackId);
+    const rootIdentity = captureProjectRootIdentity();
     const gesture: ParameterGesture = {
         id: ++gestureSequence.current,
+        session: Symbol('device parameter gesture'),
+        previewKey: JSON.stringify([rootIdentity, trackId, device.id, param.id]),
+        rootIdentity,
         trackId,
         deviceId: device.id,
         deviceType: device.type,
@@ -176,6 +207,12 @@ function startDeviceParameterGesture(context: DeviceParameterGestureContext): nu
     if (!readGestureDevice(gesture, true)) {
         gesture.invalidated = true;
         notifyUser('Device parameter target changed; edit was not applied', 'warning');
+    } else {
+        gesture.previewValue = acquireDeviceParameterPreview(
+            gesture.previewKey,
+            gesture.session,
+            () => !!readGestureDevice(gesture, true)
+        );
     }
     return gesture.id;
 }
@@ -188,11 +225,11 @@ function finishDeviceParameterGesture(context: DeviceParameterGestureContext, ge
             notifyUser(error instanceof Error ? error.message : 'Device parameter preview restoration failed', 'error');
         }
     }
+    releaseDeviceParameterPreview(gesture.previewKey, gesture.session);
     if (context.gestureRef.current === gesture) {
         context.gestureRef.current = null;
         if (context.mounted.current) {
             context.setGestureOwner(undefined);
-            context.setDraft(null);
         }
     }
 }
@@ -202,6 +239,7 @@ function commitDeviceParameterGesture(
     gesture: ParameterGesture,
     nextValue: number
 ): void {
+    releaseGestureTouchAutomation(gesture);
     gesture.settling = true;
     void executeUserAppAction(
         {
@@ -221,7 +259,10 @@ function commitDeviceParameterGesture(
             },
         },
         {
-            shouldExecute: gesture.authority.isCurrent,
+            shouldExecute: () =>
+                !gesture.invalidated &&
+                ownsDeviceParameterPreview(gesture.previewKey, gesture.session) &&
+                isGestureAuthorityCurrent(gesture),
             onCommitted: () => {
                 gesture.committed = true;
             },
@@ -251,7 +292,11 @@ function changeDeviceParameterGesture(
     if (!gesture || gesture.settling) {
         return;
     }
-    if (gesture.invalidated || !readGestureDevice(gesture, true)) {
+    if (
+        gesture.invalidated ||
+        !ownsDeviceParameterPreview(gesture.previewKey, gesture.session) ||
+        !readGestureDevice(gesture, true)
+    ) {
         cancelDeviceParameterGesture(context, gesture);
         if (!isTransient) {
             context.gestureRef.current = null;
@@ -269,20 +314,12 @@ function changeDeviceParameterGesture(
         previewOptions.automationRecordingPolicy = 'suppressed';
     }
     gesture.previewValue = nextValue;
+    updateDeviceParameterPreview(gesture.previewKey, gesture.session, nextValue);
     try {
         if (!setDeviceParameter(gesture.deviceId, gesture.paramId, nextValue, previewOptions)) {
             cancelDeviceParameterGesture(context, gesture);
             return;
         }
-        context.setDraft({
-            trackId: gesture.trackId,
-            deviceId: gesture.deviceId,
-            paramId: gesture.paramId,
-            value: nextValue,
-            valuePresent: gesture.valuePresent,
-            startingValue: gesture.value,
-            authority: gesture.authority,
-        });
     } catch (error) {
         cancelDeviceParameterGesture(context, gesture);
         notifyUser(error instanceof Error ? error.message : 'Device parameter preview failed', 'error');
@@ -298,12 +335,13 @@ function settleDeviceParameterGesture(context: DeviceParameterGestureContext): v
     if (!gesture || gesture.settling || gesture.invalidated) {
         return;
     }
-    if (!readGestureDevice(gesture, true)) {
+    if (!ownsDeviceParameterPreview(gesture.previewKey, gesture.session) || !readGestureDevice(gesture, true)) {
         cancelDeviceParameterGesture(context, gesture);
         return;
     }
     const nextValue = gesture.previewValue;
     if (nextValue === undefined || nextValue === (gesture.value ?? gesture.defaultValue)) {
+        releaseGestureTouchAutomation(gesture);
         finishDeviceParameterGesture(context, gesture);
         return;
     }
@@ -318,16 +356,13 @@ export function useDeviceParameterGesture({ param, device, trackId }: DevicePara
     const [gestureOwner, setGestureOwner] = useState<number | undefined>(undefined);
     const mounted = useRef(true);
     const cancelOnUnmount = useRef<() => void>(() => undefined);
-    const [draft, setDraft] = useState<GestureDraft | null>(null);
+    const previewKey = JSON.stringify([captureProjectRootIdentity(), trackId, device.id, param?.id]);
+    const preview = useSyncExternalStore(
+        (listener) => subscribeDeviceParameterPreview(previewKey, listener),
+        () => readDeviceParameterPreview(previewKey)
+    );
     const storedValue = param ? (device.parameterValues[param.id] ?? param.value) : undefined;
-    const draftCurrent =
-        draft &&
-        draft.trackId === trackId &&
-        draft.deviceId === device.id &&
-        draft.paramId === param?.id &&
-        draft.authority.isCurrent() &&
-        Object.hasOwn(device.parameterValues, draft.paramId) === draft.valuePresent &&
-        device.parameterValues[draft.paramId] === draft.startingValue;
+    const previewValue = preview?.isCurrent() ? preview.value : undefined;
     const context: DeviceParameterGestureContext = {
         param,
         device,
@@ -337,7 +372,6 @@ export function useDeviceParameterGesture({ param, device, trackId }: DevicePara
         mounted,
         cancelOnUnmount,
         setGestureOwner,
-        setDraft,
     };
 
     useLayoutEffect(() => {
@@ -359,13 +393,18 @@ export function useDeviceParameterGesture({ param, device, trackId }: DevicePara
 
     return {
         owner,
-        value: draftCurrent ? draft.value : storedValue,
-        previewValue: draftCurrent ? draft.value : undefined,
+        value: previewValue ?? storedValue,
+        previewValue,
         gestureOwner,
         startGesture,
         isGestureCurrent: (token: string | number): boolean => {
             const gesture = gestureRef.current;
-            return gesture?.id === token && !gesture.invalidated && !!readGestureDevice(gesture, true);
+            return (
+                gesture?.id === token &&
+                !gesture.invalidated &&
+                ownsDeviceParameterPreview(gesture.previewKey, gesture.session) &&
+                !!readGestureDevice(gesture, true)
+            );
         },
         change,
         settleGesture,

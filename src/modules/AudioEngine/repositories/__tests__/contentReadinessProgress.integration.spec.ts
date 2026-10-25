@@ -5,15 +5,32 @@ import { logger } from '#/infra/logger/appLogger';
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import { createTrack, setTrackState } from '#/modules/Arrangement/useCases';
 import { defaultLevainState, levainStore } from '#/modules/Levain/stores';
-import { getDecodedBankDiagnostics, registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
+import {
+    configureLevainZoneTableBuilder,
+    getDecodedBankDiagnostics,
+    registerLevainDevice,
+    unregisterLevainDevice,
+} from '#/modules/Levain/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
+import { buildLevainZoneTables } from '../../useCases/buildLevainZoneTables';
 
 import { createAudioEngineTopologyTestHarness as createAudioEngine } from './createAudioEngineTopologyTestHarness';
 
 import type { LevainNodeResult } from '../../engine/LevainNode';
 
 const levainFactory = vi.hoisted(() => ({ createLevainNode: vi.fn() }));
+
+// The zone-table Worker does not exist under Node; build the tables in place.
+vi.mock('../levainZoneTables/buildLevainZoneTablesInWorker', () => ({
+    buildLevainZoneTablesInWorker: vi.fn(
+        (request: { zones: readonly { zoneId: number }[]; numArticulations: number; numMics: number }) =>
+            Promise.resolve({
+                lut: new Uint32Array(request.numArticulations * request.numMics * 128 * 16 * 2),
+                arena: Uint32Array.from(request.zones, (zone) => zone.zoneId),
+            })
+    ),
+}));
 
 vi.mock('../../engine/LevainNode', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../engine/LevainNode')>()),
@@ -75,6 +92,9 @@ function createPort(): MessagePort {
     }
     return {
         postMessage(message: { type: string; loadToken?: number; sampleId?: number }) {
+            if (message.type === 'zoneTableChunk') {
+                queueMicrotask(() => emit({ type: 'zoneTableChunkWritten', loadToken: message.loadToken }));
+            }
             if (message.type === 'sampleChunk') {
                 // The worklet writes each chunk and says so; the loader sends no
                 // more than a few chunks ahead of these answers.
@@ -91,7 +111,7 @@ function createPort(): MessagePort {
                     })
                 );
             }
-            if (message.type === 'buildZoneMap') {
+            if (message.type === 'commitSampleBank') {
                 pendingWorkletAcks.push(() => emit({ type: 'sampleBankLoaded', loadToken: message.loadToken }));
             }
         },
@@ -169,6 +189,7 @@ describe('live Levain content progress', () => {
         vi.useFakeTimers();
         vi.setSystemTime(0);
         vi.clearAllMocks();
+        configureLevainZoneTableBuilder(buildLevainZoneTables);
         progressEvents = [];
         progressChanged = Promise.withResolvers<void>();
         pendingWorkletAcks = [];
@@ -215,6 +236,7 @@ describe('live Levain content progress', () => {
     });
 
     afterEach(() => {
+        configureLevainZoneTableBuilder(null);
         setAudioDeviceRuntimeSink({});
         setTrackState(defaultTrackState);
         vi.unstubAllGlobals();

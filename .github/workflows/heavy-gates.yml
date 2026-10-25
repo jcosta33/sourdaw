@@ -70,6 +70,11 @@ jobs:
       # downloads; it is the price of failing a genuine stall, which prints
       # nothing after `apt-get update` for an hour, within minutes.
       #
+      # Every apt run reads the runner's sources except the image's standalone
+      # Microsoft product feed, which nothing here installs from and whose 403
+      # failed `apt-get update` on all three attempts (#5359); see
+      # scripts/aptWithoutMicrosoftFeed.sh. Any other apt failure stays fatal.
+      #
       # Limit: apt runs dpkg in its own session, which the group signal of
       # `timeout` does not reach. A cap that expires while dpkg is unpacking,
       # seconds after the downloads finish, can leave dpkg holding its lock
@@ -84,7 +89,7 @@ jobs:
             # GNU timeout kills the whole process group at the deadline. A TERM
             # grace period ends if pnpm exits while an installer child survives,
             # so the browser download is killed outright; apt gets a TERM first.
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&
               timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
@@ -173,10 +178,20 @@ jobs:
     # core non-fallback adapter.
     if: inputs.browser-ai
     runs-on: macos-14
-    timeout-minutes: 30
+    # Every step carries its own cap, and the caps leave the job two minutes of
+    # runner overhead. Checkout took 44s at most in 88 successful admissions
+    # from 2026-10-11 to 2026-10-21, but a slow merge-ref fetch hit a 1-minute
+    # cap at 38% of the tree update (run 39588034702), so it has three. Set up
+    # pnpm's self-installer reads the npm registry, and during the registry
+    # slowdown of 2026-10-22 02:18-03:21Z that step took about 5 minutes on
+    # macOS (304s in job 119609756189) while admissions died at a 1-minute
+    # cap (run 39703602835), so it has seven. Set up Node, which fetches Node
+    # and restores the pnpm store, has taken over 40% of a 1-minute cap, so it
+    # has three.
+    timeout-minutes: 40
     steps:
       - name: Checkout
-        timeout-minutes: 1
+        timeout-minutes: 3
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Enable Corepack
@@ -184,13 +199,13 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        timeout-minutes: 1
+        timeout-minutes: 7
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        timeout-minutes: 1
+        timeout-minutes: 3
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LEVAIN_SAMPLE_CHUNK_FLOATS } from '#/infra/audioWorklet/levainSampleChunk';
 
+import { oneNoteZones, stageAndCommitBank } from './levainZoneTableHarness';
 import { installWorkletGlobals, makeChannels } from './wasmViewGrowthHarness';
 
 // The shipped engine, driven through the shipped processor: a sample uploads in
@@ -147,8 +148,13 @@ function addLoopingZone(processor: LevainProcessorLike, loadToken: number, sampl
     });
 }
 
+/** Stage the zone tables of the one zone `addLoopingZone` added for sample 0, then commit. */
 function buildBank(processor: LevainProcessorLike, loadToken: number): void {
-    send(processor, { type: 'buildZoneMap', loadToken, numArticulations: 1, numMics: 1 });
+    stageAndCommitBank((data) => send(processor, data), wasmModule, loadToken, {
+        zones: oneNoteZones(1),
+        numArticulations: 1,
+        numMics: 1,
+    });
 }
 
 /** Sound a held note and return `quanta` quanta of left output. */
@@ -224,7 +230,11 @@ describe('shipped LevainProcessor sample upload', () => {
             timed({ type: 'sealSample', loadToken: 1, sampleId });
             addLoopingZone(processor, 1, sampleId, length);
         }
-        timed({ type: 'buildZoneMap', loadToken: 1, numArticulations: 1, numMics: 1 });
+        stageAndCommitBank(timed, wasmModule, 1, {
+            zones: oneNoteZones(lengths.length),
+            numArticulations: 1,
+            numMics: 1,
+        });
 
         expect(errors(processor)).toEqual([]);
         expect(posted(processor)).toContainEqual({ type: 'sampleBankLoaded', loadToken: 1 });
