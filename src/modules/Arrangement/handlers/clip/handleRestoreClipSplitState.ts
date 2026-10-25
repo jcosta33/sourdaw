@@ -13,6 +13,7 @@ import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../.
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitStateRestorable';
+import { captureRestoreClipSplitCommitValidation } from '../../useCases/clipEditing/captureRestoreClipSplitCommitValidation';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
@@ -159,63 +160,84 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         if (hasForeignPendingProjectWrites() || !clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
+        const proof = captureRestoreClipSplitCommitValidation(action);
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
-        const createdMidi = prepareCreatedMidi(action);
-        createdMidi?.stage(action.payload.replacement.rightMidi);
-        const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
-        const ownsPublication = capture ? captureProjectMutationAuthorization() : null;
-        // Bind inside this handler's storage transaction, before any owner writes.
-        ownsPublication?.();
-        let stagedRetired: ReturnType<typeof removeTakesForClips> = [];
-        const installCapture = () => {
-            createdClipMidiCapture({ phase: 'discard', action });
-            if (
-                capture &&
-                getCrdtDoc('root') &&
-                captureDurableDocumentWitness() !== documentBeforeReplay &&
-                ownsPublication?.()
-            ) {
-                capture.splice(0, capture.length, ...stagedRetired);
-            }
+        let createdMidi: ReturnType<typeof prepareCreatedMidi> = null;
+        const conflict = () => {
+            proof?.validation.release();
+            createdMidi?.discard();
+            return { status: 'conflict' as const };
         };
-        const trackRestored = replaceClipSplitTrackState(action.payload);
-        if (!trackRestored) {
-            return { status: 'conflict' };
-        }
-        const midiRestored = restoreMidiClipSplitState({
-            sourceClipId: action.payload.clipId,
-            rightClipId: action.payload.rightClipId,
-            expectedSource: action.payload.expected.sourceMidi,
-            expectedRight: action.payload.expected.rightMidi,
-            replacementSource: action.payload.replacement.sourceMidi,
-            replacementRight: action.payload.replacement.rightMidi,
-        });
-        if (!midiRestored) {
-            return { status: 'conflict' };
-        }
-        if (action.payload.expected.clipAutomationLanes !== undefined) {
-            const lanesRestored = applyClipAutomationLaneTransition(
-                [action.payload.rightClipId],
-                action.payload.expected.clipAutomationLanes,
-                action.payload.replacement.clipAutomationLanes ?? []
-            );
-            if (!lanesRestored) {
-                return { status: 'conflict' };
+        try {
+            createdMidi = prepareCreatedMidi(action);
+            createdMidi?.stage(action.payload.replacement.rightMidi);
+            const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
+            const ownsPublication = capture ? captureProjectMutationAuthorization() : null;
+            // Bind inside this handler's storage transaction, before any owner writes.
+            ownsPublication?.();
+            let stagedRetired: ReturnType<typeof removeTakesForClips> = [];
+            const installCapture = () => {
+                createdClipMidiCapture({ phase: 'discard', action });
+                if (
+                    capture &&
+                    getCrdtDoc('root') &&
+                    captureDurableDocumentWitness() !== documentBeforeReplay &&
+                    ownsPublication?.()
+                ) {
+                    capture.splice(0, capture.length, ...stagedRetired);
+                }
+            };
+            if (!replaceClipSplitTrackState(action.payload)) {
+                return conflict();
             }
-        }
-        if (action.payload.replacement.clipSatellites) {
-            for (const entry of action.payload.replacement.clipSatellites) {
-                writeClipSatelliteEntry(entry);
+            if (
+                !restoreMidiClipSplitState({
+                    sourceClipId: action.payload.clipId,
+                    rightClipId: action.payload.rightClipId,
+                    expectedSource: action.payload.expected.sourceMidi,
+                    expectedRight: action.payload.expected.rightMidi,
+                    replacementSource: action.payload.replacement.sourceMidi,
+                    replacementRight: action.payload.replacement.rightMidi,
+                })
+            ) {
+                return conflict();
             }
+            if (action.payload.expected.clipAutomationLanes !== undefined) {
+                const lanesRestored = applyClipAutomationLaneTransition(
+                    [action.payload.rightClipId],
+                    action.payload.expected.clipAutomationLanes,
+                    action.payload.replacement.clipAutomationLanes ?? []
+                );
+                if (!lanesRestored) {
+                    return conflict();
+                }
+            }
+            if (action.payload.replacement.clipSatellites) {
+                for (const entry of action.payload.replacement.clipSatellites) {
+                    writeClipSatelliteEntry(entry);
+                }
+            }
+            stagedRetired = applySplitTakeTransition(action.payload);
+            createdMidi?.complete();
+            if (proof && !proof.captureWrittenState()) {
+                return conflict();
+            }
+            // The paired arrays belong to history, outside the project transaction.
+            // Publish their staged capture only once this exact owner committed.
+            if (capture || createdMidi) {
+                return {
+                    status: 'written',
+                    commitValidation: proof?.validation,
+                    afterCommit: installCapture,
+                    afterAmbiguousCommit: installCapture,
+                };
+            }
+            return { status: 'written', commitValidation: proof?.validation };
+        } catch (error) {
+            proof?.validation.release();
+            createdMidi?.discard();
+            throw error;
         }
-        stagedRetired = applySplitTakeTransition(action.payload);
-        createdMidi?.complete();
-        // The paired arrays belong to history, outside the project transaction.
-        // Publish their staged capture only once this exact owner committed.
-        if (capture || createdMidi) {
-            return { status: 'written', afterCommit: installCapture, afterAmbiguousCommit: installCapture };
-        }
-        return { status: 'written' };
     },
     describe: () => ({ label: 'Restore clip split state', inverseAction: null }),
     previewExecution: 'isolated-project',

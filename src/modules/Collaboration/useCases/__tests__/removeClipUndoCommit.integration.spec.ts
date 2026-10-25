@@ -1,11 +1,13 @@
-import { change, clone, type Doc } from '@automerge/automerge';
+import { change, clone, load, save, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureAgentProjectInspectionState } from '#/app/captureCommandBatchPreflightState';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import {
     gainEnvelopeStore,
     setWarpState,
@@ -15,27 +17,32 @@ import {
 } from '#/modules/Arrangement/stores';
 import { addClip, addGainEnvelopePoint, addTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { createAutomationLane, restoreAutomationLanes } from '#/modules/Automation/useCases';
+import { createAutomationLane, getAutomationHandlers, restoreAutomationLanes } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
     executeAppActionBatch,
+    registerProductionCommandHandlers,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getDrumPreviewBranchHandlers,
     getCrdtDoc,
     projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
     setupProjectionBridge,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { getMidiNoteTransformHandlers, restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { AutomergeSync } from '../automergeSync';
@@ -50,6 +57,7 @@ type Project = {
     automation: NonNullable<typeof automationStore.value>;
     gainEnvelopes: NonNullable<typeof gainEnvelopeStore.value>;
     warpStates: NonNullable<typeof warpStateStore.value>;
+    takeLanes: NonNullable<typeof takeLaneStore.value>;
 };
 
 const noActionHistoryMetadataPort = {
@@ -713,6 +721,309 @@ describe('committed clip restoration through Command and real peer sync', () => 
             document().gainEnvelopes.envelopes['midi-peer']?.points.some((point) => point.id === 'source-note')
         ).toBe(true);
         expect(midiStore.value).toEqual(document().midi);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
+    });
+
+    it('preserves a clip-local warp marker ID during concurrent MIDI restoration', async () => {
+        const programme = await seedMidiProgramme();
+        setWarpState('survivor', {
+            enabled: true,
+            markers: [{ id: 'peer-warp-setup', originalBeat: 0, warpedBeat: 0.5 }],
+            stretchMode: 'repitch',
+            originalTempo: 120,
+        });
+        flushAutomergeStorageWrites();
+        const baseline = document();
+        const peer = change(clone(baseline, 'bbbbbbbbbbbbbbbb'), (draft) => {
+            draft.warpStates.states.survivor!.markers[0]!.id = 'source-note';
+        });
+        let applied = false;
+        const sync = new AutomergeSync(
+            { getConnectedPeerIds: () => [], sendCrdtSync: () => undefined },
+            {
+                prepareSyncPersistence: () => undefined,
+                onSyncApplied: () => {
+                    applied = true;
+                },
+            }
+        );
+        cleanups.push(() => sync.stop());
+        const pending = undo();
+        for (const syncMessageBase64 of createPeerSyncMessages({ remote: peer, local: baseline })) {
+            sync.receiveSync({ peerId: 'warp-peer', docId: 'root', syncMessageBase64 });
+        }
+        const result = await pending;
+        await sync.flushPersistence();
+        expect(applied).toBe(true);
+        expect(
+            captureAgentProjectInspectionState({ projectDocument: document(), targetIds: [] }).projectInvariantsValid
+        ).toBe(true);
+        expect(result.headConsumed).toBe(true);
+        expect(document().midi.notesByClipId.source).toEqual(programme.notesSnapshot);
+        expect(document().warpStates.states.survivor?.markers[0]?.id).toBe('source-note');
+        expect(midiStore.value).toEqual(document().midi);
+        expect(warpStateStore.value).toEqual(document().warpStates);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
+    });
+
+    it.each([
+        'none',
+        'unrelated-concurrent',
+        'owned-published',
+        'owned-concurrent',
+        'owned-concurrent-source-midi',
+        'owned-concurrent-right-cc',
+        'owned-concurrent-source-bend',
+        'owned-concurrent-right-clip',
+        'owned-concurrent-right-automation',
+        'owned-concurrent-source-gain',
+        'owned-concurrent-source-warp',
+        'owned-concurrent-right-take',
+    ] as const)('saved split commit protects the written owners: %s', async (mode) => {
+        await seedMidiProgramme();
+        expect((await undo({ stepOverConflicts: false })).headConsumed).toBe(true);
+        clearUndoHistory();
+        sessionStorage.removeItem('sourdaw-undo-session');
+        clearHandlerRegistry();
+        const register = () =>
+            registerProductionCommandHandlers([
+                getArrangementHandlers(),
+                getAudioRenderingHandlers(),
+                getAutomationHandlers(),
+                getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+                getMidiNoteTransformHandlers(),
+                getTransportHandlers(),
+                getYeastHandlers(),
+            ]);
+        register();
+        const heldNote = { id: 'split-held', pitch: 60, startBeat: 0, duration: 4, velocity: 90 };
+        restoreMidiClipData({
+            clipId: 'source',
+            notesSnapshot: [heldNote],
+            controlChangeSnapshot:
+                mode === 'owned-concurrent-right-cc'
+                    ? [{ id: 'split-cc', controller: 7, value: 80, beat: 3, channel: 1 }]
+                    : null,
+            pitchBendSnapshot:
+                mode === 'owned-concurrent-source-bend'
+                    ? [{ id: 'split-bend', value: 512, beat: 1, channel: 1 }]
+                    : null,
+        });
+        if (mode === 'owned-concurrent-right-automation') {
+            const lane = createAutomationLane('midi-track', 'gain', 'Split gain', 0, 4, 'source');
+            restoreAutomationLanes([
+                { ...lane, id: 'split-source-lane', points: [{ beat: 1, value: 1, curve: 'linear', tension: 0 }] },
+            ]);
+        }
+        if (mode === 'owned-concurrent-source-gain') {
+            addGainEnvelopePoint('source', 0, -6, 'split-source-gain');
+        }
+        if (mode === 'owned-concurrent-source-warp') {
+            setWarpState('source', {
+                enabled: true,
+                markers: [{ id: 'split-source-warp', originalBeat: 0, warpedBeat: 0.25 }],
+                stretchMode: 'repitch',
+                originalTempo: 120,
+            });
+        }
+        if (mode === 'owned-concurrent-right-take') {
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'split-take-lane',
+                        trackId: 'midi-track',
+                        takes: [
+                            {
+                                id: 'split-take',
+                                clipId: 'source',
+                                name: 'Split take',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: false,
+                            },
+                        ],
+                        activeCompRegions: [],
+                    },
+                ],
+            });
+        }
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'splitClip', payload: { clipId: 'source', beat: 2, rightClipId: 'right' } });
+        const produced = undoHistoryStore.value?.past[0];
+        if (produced?.kind !== 'action' || produced.inverseAction?.type !== 'restoreClipSplitState') {
+            throw new Error('Expected real split history');
+        }
+        await vi.waitFor(() => {
+            const saved = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+            expect(saved.past).toHaveLength(1);
+            expect(saved.past[0].action.type).toBe('splitClip');
+        });
+        const loaded = load<Project>(save(document()));
+        expect(loaded).toEqual(document());
+        replaceCrdtDocInLineage({ id: 'root', doc: loaded });
+        projectCrdtToStores({ resetProjections: true });
+        clearHandlerRegistry();
+        register();
+        expect(undoHistoryStore.value?.past[0]).toEqual(produced);
+        expect(undoHistoryStore.value?.past[0]).not.toBe(produced);
+
+        let stagedBeforeRawCommit = false;
+        cleanups.push(
+            trackStore.subscribe((state) => {
+                const rawHasRight = document().tracks.tracks.some((track) =>
+                    track.clips.some((clip) => clip.id === 'right')
+                );
+                const projectedHasRight = state?.tracks.some((track) =>
+                    track.clips.some((clip) => clip.id === 'right')
+                );
+                stagedBeforeRawCommit ||= rawHasRight && !projectedHasRight;
+            })
+        );
+        const baseline = document();
+        const peer = change(clone(baseline, 'cccccccccccccccc'), (draft) => {
+            if (mode === 'owned-concurrent-right-clip') {
+                const clip =
+                    draft.tracks.tracks[0]?.clips.find((candidate) => candidate.id === 'right') ??
+                    draft.tracks.tracks[1]?.clips.find((candidate) => candidate.id === 'right');
+                if (!clip) {
+                    throw new Error('Expected right clip for peer edit');
+                }
+                clip.name = 'Peer right';
+                return;
+            }
+            if (mode === 'owned-concurrent-right-cc') {
+                const cc = draft.midi.ccByClipId.right?.[0];
+                if (!cc) {
+                    throw new Error('Expected right controller for peer edit');
+                }
+                cc.value = 99;
+                return;
+            }
+            if (mode === 'owned-concurrent-source-bend') {
+                const bend = draft.midi.pitchBendByClipId.source?.[0];
+                if (!bend) {
+                    throw new Error('Expected source pitch bend for peer edit');
+                }
+                bend.value = 1024;
+                return;
+            }
+            if (mode === 'owned-concurrent-right-automation') {
+                const lane = draft.automation.lanes.find((lane) => lane.clipId === 'right');
+                if (!lane) {
+                    throw new Error('Expected right automation lane for peer edit');
+                }
+                lane.parameterName = 'Peer lane';
+                return;
+            }
+            if (mode === 'owned-concurrent-source-gain') {
+                const point = draft.gainEnvelopes.envelopes.source?.points[0];
+                if (!point) {
+                    throw new Error('Expected source gain point for peer edit');
+                }
+                point.gainDb = -3;
+                return;
+            }
+            if (mode === 'owned-concurrent-source-warp') {
+                const marker = draft.warpStates.states.source?.markers[0];
+                if (!marker) {
+                    throw new Error('Expected source warp marker for peer edit');
+                }
+                marker.warpedBeat = 0.5;
+                return;
+            }
+            if (mode === 'owned-concurrent-right-take') {
+                const take = draft.takeLanes.lanes[0]?.takes.find((candidate) => candidate.clipId === 'right');
+                if (!take) {
+                    throw new Error('Expected right take for peer edit');
+                }
+                take.name = 'Peer take';
+                return;
+            }
+            const target =
+                mode === 'unrelated-concurrent'
+                    ? 'midi-peer'
+                    : mode === 'owned-concurrent-source-midi'
+                      ? 'source'
+                      : 'right';
+            const note = draft.midi.notesByClipId[target]?.[0];
+            if (!note) {
+                throw new Error('Expected peer-editable note');
+            }
+            note.velocity = 99;
+        });
+        let peerPublication: { rightClip: boolean; rightVelocity?: number; otherVelocity?: number } = {
+            rightClip: false,
+        };
+        const sync = new AutomergeSync(
+            { getConnectedPeerIds: () => [], sendCrdtSync: () => undefined },
+            {
+                prepareSyncPersistence: () => undefined,
+                onSyncApplied: () => {
+                    peerPublication = {
+                        rightClip: document().tracks.tracks.some((track) =>
+                            track.clips.some((clip) => clip.id === 'right')
+                        ),
+                        rightVelocity: document().midi.notesByClipId.right?.[0]?.velocity,
+                        otherVelocity: document().midi.notesByClipId['midi-peer']?.[0]?.velocity,
+                    };
+                },
+            }
+        );
+        cleanups.push(() => sync.stop());
+        const concurrent = mode === 'unrelated-concurrent' || mode.startsWith('owned-concurrent');
+        const pending = concurrent ? undo({ stepOverConflicts: false }) : null;
+        if (mode !== 'none') {
+            for (const syncMessageBase64 of createPeerSyncMessages({ remote: peer, local: baseline })) {
+                sync.receiveSync({ peerId: 'split-peer', docId: 'root', syncMessageBase64 });
+            }
+            if (!concurrent) {
+                await sync.flushPersistence();
+            }
+        }
+        const result = await (pending ?? undo({ stepOverConflicts: false }));
+        await sync.flushPersistence();
+
+        expect(projectedOwners()).toEqual(owners());
+        expect(midiStore.value).toEqual(document().midi);
+        if (mode !== 'none') {
+            expect(peerPublication.rightClip).toBe(true);
+            if (
+                mode === 'unrelated-concurrent' ||
+                mode === 'owned-published' ||
+                mode === 'owned-concurrent' ||
+                mode === 'owned-concurrent-source-midi'
+            ) {
+                expect(
+                    mode === 'unrelated-concurrent'
+                        ? peerPublication.otherVelocity
+                        : mode === 'owned-concurrent-source-midi'
+                          ? document().midi.notesByClipId.source?.[0]?.velocity
+                          : peerPublication.rightVelocity
+                ).toBe(99);
+            }
+        }
+        if (concurrent) {
+            expect(stagedBeforeRawCommit).toBe(true);
+        }
+        if (mode === 'owned-published' || mode.startsWith('owned-concurrent')) {
+            expect(result.headConsumed).toBe(false);
+            expect(document().tracks).toEqual(peer.tracks);
+            expect(document().midi).toEqual(peer.midi);
+            expect(document().automation).toEqual(peer.automation);
+            expect(document().gainEnvelopes).toEqual(peer.gainEnvelopes);
+            expect(document().takeLanes).toEqual(peer.takeLanes);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            return;
+        }
+        expect(result.headConsumed).toBe(true);
+        expect(document().midi.notesByClipId.right).toBeUndefined();
+        expect(document().midi.notesByClipId.source).toEqual([heldNote]);
+        if (mode === 'unrelated-concurrent') {
+            expect(document().midi.notesByClipId['midi-peer']?.[0]?.velocity).toBe(99);
+        }
         expect(undoHistoryStore.value?.past).toHaveLength(0);
         expect(undoHistoryStore.value?.future).toHaveLength(1);
     });
