@@ -738,8 +738,17 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         dirty: (path) => shell.capture('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all']) !== '',
         ignored: (path) =>
             shell
-                .capture('git', ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
-                .split('\n')
+                .capture('git', [
+                    '-C',
+                    path,
+                    'ls-files',
+                    '--others',
+                    '--ignored',
+                    '--exclude-standard',
+                    '--directory',
+                    '-z',
+                ])
+                .split('\0')
                 .filter((candidate) => candidate !== ''),
         operation: (path) => {
             const candidates = [

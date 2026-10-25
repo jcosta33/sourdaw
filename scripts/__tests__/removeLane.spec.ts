@@ -14,8 +14,9 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, AUTHOR_LOCK_REASON } from '../githubAppIdentity.ts';
 import { guardFailureReceiptPath, supersessionCommentBody, type GuardFailureReceipt } from '../prContract.ts';
+import { prunableEntries } from '../pruneLane.ts';
 import {
     disposableIgnored,
     isExpectedReviewLaneName,
@@ -185,6 +186,21 @@ function withGitFixture(fn: (context: { repository: string; git: (args: string[]
     }
 }
 
+function withUnusualIgnoredLane(fn: (input: { repository: string; lane: string; ignored: string[] }) => void) {
+    withGitFixture(({ repository, git }) => {
+        const lane = join(repository, '.agents/worktrees/feature');
+        const protectedDirectory = join(lane, '.agents', 'records\n', 'dist');
+        mkdirSync(protectedDirectory, { recursive: true });
+        mkdirSync(join(lane, 'node_modules'), { recursive: true });
+        git(['init', '-b', 'main'], lane);
+        writeFileSync(join(lane, '.gitignore'), 'receipt.json\nnode_modules/\n');
+        writeFileSync(join(protectedDirectory, 'receipt.json'), 'must survive\n');
+        writeFileSync(join(protectedDirectory, 'keep.txt'), 'unignored sibling\n');
+        writeFileSync(join(lane, 'node_modules', 'output.js'), 'disposable\n');
+        fn({ repository, lane, ignored: shellPort().ignored(lane) });
+    });
+}
+
 describe('disposableIgnored', () => {
     it.each([
         ['node_modules/', true],
@@ -224,6 +240,50 @@ describe('disposableIgnored', () => {
         ['.env', false],
     ])('treats %s as disposable: %s', (path, expected) => {
         expect(disposableIgnored(path)).toBe(expected);
+    });
+});
+
+describe('ignored path framing', () => {
+    it('refuses removal before unlocking a protected path containing a line feed', () => {
+        withUnusualIgnoredLane(({ repository, lane, ignored }) => {
+            const { port, calls } = fakePort({
+                root: repository,
+                lane: worktree({ path: lane, locked: true, lockReason: AUTHOR_LOCK_REASON }),
+            });
+
+            expect(ignored).toContain('node_modules/');
+            expect(() =>
+                removeLane(lane, {
+                    ...port,
+                    ignored: () => ignored,
+                    clearGuardFailure: () => calls.push('clearGuardFailure'),
+                })
+            ).toThrow(/worktree contains ignored data/);
+            expect(ignored).toContain('.agents/records\n/dist/receipt.json');
+            expect(calls).not.toContain(`unlock:${lane}`);
+            expect(calls).not.toContain(`remove:${lane}`);
+            expect(calls).not.toContain('clearGuardFailure');
+            expect(prunableEntries(ignored)).toEqual(['node_modules/']);
+        });
+    });
+
+    it('refuses stranding before writing a receipt or deleting the branch', () => {
+        withUnusualIgnoredLane(({ repository, lane, ignored }) => {
+            const { port, calls, receipts } = fakeStrandPort({
+                root: repository,
+                lane: worktree({ path: lane, locked: true, lockReason: AUTHOR_LOCK_REASON }),
+            });
+
+            expect(ignored).toContain('node_modules/');
+            expect(() => strandLane(lane, 'fixture', { ...port, ignored: () => ignored })).toThrow(
+                /worktree contains ignored data/
+            );
+            expect(ignored).toContain('.agents/records\n/dist/receipt.json');
+            expect(receipts).toEqual([]);
+            expect(calls).not.toContain(`unlock:${lane}`);
+            expect(calls).not.toContain(`remove:${lane}`);
+            expect(calls).not.toContain('branch:-D:feat/work');
+        });
     });
 });
 
