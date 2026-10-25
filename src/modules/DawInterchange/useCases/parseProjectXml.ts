@@ -906,10 +906,19 @@ function parseArrangementClips(
                 return false;
             }
             if (hasNestedClips(node)) {
+                const loopStart = node.attr('loopStart');
+                const loopEnd = node.attr('loopEnd');
+                const loopStartBeat = toBeats(node.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
+                const loopEndBeat = toBeats(node.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
                 if (
                     (timing.visibleEndBeat === null && clipNotesContent(node) === null) ||
                     node.attr('reference') !== null ||
-                    repeatsClipLoop(node, timing)
+                    ((loopStart !== null || loopEnd !== null) &&
+                        (timing.visibleEndBeat === null ||
+                            loopStart === null ||
+                            loopEnd === null ||
+                            loopEndBeat <= loopStartBeat ||
+                            timing.playStartBeat + (timing.visibleEndBeat - timing.startBeat) > loopEndBeat))
                 ) {
                     return false;
                 }

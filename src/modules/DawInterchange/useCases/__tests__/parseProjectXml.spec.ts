@@ -2273,30 +2273,32 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         }
     );
 
-    it('keeps a decimal one-pass parent and nested Notes child while omitting a genuine repeating parent', () => {
+    it('keeps a decimal one-pass nested Notes leaf while omitting a genuinely repeating leaf', () => {
         const parsed = parseProjectXml(
             project(
                 '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
                     '<Arrangement><Lanes timeUnit="beats"><Clips track="keys">' +
-                    '<Clip id="parent" name="Parent" time="1" duration="2.2" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
-                    '<Clips><Clip name="Child" time="1.1" duration="1"><Notes>' +
-                    '<Note time="0" duration="0.5" key="67"/></Notes></Clip></Clips></Clip>' +
-                    '<Clip id="repeat-parent" name="Repeat parent" time="5" duration="2.2001" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
-                    '<Clips><Clip name="Lost child" time="1.1" duration="1"><Notes>' +
-                    '<Note time="0" duration="0.5" key="69"/></Notes></Clip></Clips></Clip>' +
-                    '</Clips></Lanes></Arrangement>'
+                    '<Clip id="parent" name="Parent" time="0" duration="16"><Clips>' +
+                    '<Clip id="leaf" name="One pass leaf" time="1" duration="2.2" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
+                    '<Notes><Note time="0" duration="0.5" key="67"/></Notes></Clip>' +
+                    '<Clip id="repeat-leaf" name="Repeat leaf" time="5" duration="2.2001" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
+                    '<Notes><Note time="0" duration="0.5" key="69"/></Notes></Clip>' +
+                    '<Clip name="Plain leaf" time="9" duration="1"><Notes>' +
+                    '<Note time="0" duration="0.5" key="71"/></Notes></Clip>' +
+                    '</Clips></Clip></Clips></Lanes></Arrangement>'
             )
         );
 
         expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.notes?.[0]?.pitch])).toEqual([
             ['Parent', undefined],
-            ['Child', 67],
+            ['One pass leaf', 67],
+            ['Plain leaf', 71],
         ]);
         expect(parsed.warnings).toMatchObject([
             {
                 kind: 'unsupported-clip',
-                sourceId: 'repeat-parent',
-                name: 'Repeat parent',
+                sourceId: 'repeat-leaf',
+                name: 'Repeat leaf',
                 context: 'Keys',
                 handling: 'dropped',
             },
