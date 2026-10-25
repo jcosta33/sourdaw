@@ -32,6 +32,12 @@ export type ChannelStripActions = {
     toggleMonitoring: () => void;
     toggleSoloSafeFlag: () => void;
     setGain: (value: number, isTransient?: boolean) => void;
+    setGainFromMenu: (request: {
+        trackId: string;
+        expectedGain: number;
+        gain: number;
+        shouldExecute: () => boolean;
+    }) => void;
     setPan: (value: number, isTransient?: boolean) => void;
     setColor: (color: string) => void;
     rename: (name: string) => void;
@@ -386,6 +392,31 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
             pendingGainCommit.current = pendingGainCommit.current
                 .catch(() => undefined)
                 .then(() => commitGain(value, token, wasOpen));
+        },
+        setGainFromMenu: ({ trackId, expectedGain, gain, shouldExecute }) => {
+            pendingGainCommit.current = pendingGainCommit.current
+                .catch(() => undefined)
+                .then(async () => {
+                    if (!shouldExecute()) {
+                        return;
+                    }
+                    try {
+                        await executeUserAppAction(
+                            {
+                                type: 'setTrackGain',
+                                payload: { trackId, gain, expectedGain, automationRecordingPolicy: 'suppressed' },
+                            },
+                            {
+                                shouldExecute,
+                                onCommitted: () => {
+                                    lastGainSettleTime.current = 0;
+                                },
+                            }
+                        );
+                    } catch (error) {
+                        logger.error(new Error('Channel strip menu gain commit failed', { cause: error }));
+                    }
+                });
         },
         setPan: (value, isTransient = false) => {
             if (isTransient) {

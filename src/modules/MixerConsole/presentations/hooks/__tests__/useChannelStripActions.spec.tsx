@@ -32,7 +32,10 @@ const mocks = vi.hoisted(() => ({
     setTrackPan: vi.fn(),
     setTrackColor: vi.fn(),
     executeAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
-    executeUserAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
+    executeUserAppAction: vi.fn(
+        (_action: AppAction, _options?: { shouldExecute?: () => boolean; onCommitted?: () => void }) =>
+            Promise.resolve()
+    ),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     releaseTouchAutomation: vi.fn(),
@@ -712,6 +715,56 @@ describe('useChannelStripActions', () => {
         });
 
         expect(result.current.displayGain).toBe(0.3);
+    });
+
+    it('refuses a queued menu gain edit when its captured track is replaced before dequeue', async () => {
+        seedProjectTruth({ gain: 0.8 });
+        const capturedTrack = trackStore.value?.tracks[0];
+        let releasePhysical: (() => void) | undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releasePhysical = resolve;
+                })
+        );
+        const { result } = renderHook(() => useChannelStripActions(makeTrack()));
+
+        act(() => result.current.setGain(0.5, false));
+        await waitFor(() => expect(releasePhysical).toBeDefined());
+        act(() => {
+            result.current.setGainFromMenu({
+                trackId: 'track-1',
+                expectedGain: 0.8,
+                gain: 0.3,
+                shouldExecute: () => trackStore.value?.tracks[0] === capturedTrack,
+            });
+            seedProjectTruth({ gain: 0.8 });
+        });
+        await act(async () => releasePhysical?.());
+
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.setTrackGain).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes frozen menu gain admission through the Command snapshot wait without a transient preview', async () => {
+        seedProjectTruth({ gain: 0.8 });
+        let current = true;
+        const shouldExecute = () => current;
+        const { result } = renderHook(() => useChannelStripActions(makeTrack()));
+        act(() => {
+            result.current.setGainFromMenu({ trackId: 'track-1', expectedGain: 0.8, gain: 0.25, shouldExecute });
+        });
+
+        await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        const [action, options] = mocks.executeUserAppAction.mock.calls[0] ?? [];
+        expect(action).toEqual({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.25, expectedGain: 0.8, automationRecordingPolicy: 'suppressed' },
+        });
+        expect(options).toEqual({ shouldExecute, onCommitted: expect.any(Function) });
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+        current = false;
+        expect(options?.shouldExecute?.()).toBe(false);
     });
 
     it('scopes pan commit continuation to the owning gesture and serialises overlapping settles', async () => {

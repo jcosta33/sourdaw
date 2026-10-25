@@ -1,8 +1,10 @@
-import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, type KeyboardEvent, useState, useRef, useEffect } from 'react';
 
 import { Circle, Ear, ShieldCheck } from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
+import { DawMenuButton } from '#/components/daw/DawMenuParts';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Fader } from '#/components/daw/Fader';
@@ -12,7 +14,11 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack } from '#/components/layout';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { getVcaGroups } from '#/modules/Arrangement/useCases';
-import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
+import { FADER_MAX_GAIN, formatGainDb, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { promptUser } from '#/utils/Notification/promptUser';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -26,6 +32,7 @@ import { MidiFxSection } from './MidiFxSection';
 import { MixerLevelReadout } from './MixerLevelReadout';
 import { MixerPopupLabel, MixerPopupMenu, MixerPopupOption, MixerPopupSeparator } from './MixerPopupMenu';
 import { SendsSection } from './SendsSection';
+import { parseMasterGainEntry } from './parseMasterGainEntry';
 
 type MixerMenu = { x: number; y: number } | null;
 
@@ -38,13 +45,189 @@ type ExpandedChannelStripProps = {
 export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: ExpandedChannelStripProps): ReactElement => {
     const actions = useChannelStripActions(track);
     const [ctxMenu, setCtxMenu] = useState<MixerMenu>(null);
+    const [gainMenu, setGainMenu] = useState<MixerMenu>(null);
     const [isRenaming, setIsRenaming] = useState(false);
     const ctxRef = useRef<HTMLDivElement>(null);
     const renameRef = useRef<HTMLInputElement>(null);
+    const gainControlRef = useRef<HTMLDivElement>(null);
+    const gainMenuRef = useRef<HTMLDivElement>(null);
+    const gainIntent = useRef(0);
+    const mounted = useRef(false);
+    const focusFrame = useRef<number | null>(null);
+
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            gainIntent.current += 1;
+            if (focusFrame.current !== null) {
+                window.cancelAnimationFrame(focusFrame.current);
+            }
+        };
+    }, []);
+
+    const slider = (): HTMLElement | null =>
+        gainControlRef.current?.querySelector<HTMLElement>('[role="slider"]') ?? null;
+    const closeGainMenu = (): void => setGainMenu(null);
+    useContextMenuDismiss(gainMenuRef, closeGainMenu);
+
+    const openGainMenu = (x: number, y: number): void => {
+        gainIntent.current += 1;
+        setCtxMenu(null);
+        slider()?.focus();
+        setGainMenu({ x, y });
+    };
+
+    const gainContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        openGainMenu(event.clientX, event.clientY);
+    };
+
+    const gainMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (
+            !gainControlRef.current?.contains(event.target as Node) ||
+            (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey))
+        ) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const bounds = slider()?.getBoundingClientRect();
+        openGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0);
+    };
+
+    const restoreGainFocus = (intent: number): void => {
+        if (focusFrame.current !== null) {
+            window.cancelAnimationFrame(focusFrame.current);
+        }
+        focusFrame.current = window.requestAnimationFrame(() => {
+            focusFrame.current = null;
+            if (mounted.current && gainIntent.current === intent && document.activeElement === document.body) {
+                slider()?.focus();
+            }
+        });
+    };
+
+    const captureGainIntent = () => {
+        const authority = captureProjectTransitionAuthority();
+        const target = trackStore.value?.tracks.find((candidate) => candidate.id === track.id);
+        const intent = ++gainIntent.current;
+        closeGainMenu();
+        if (!target) {
+            return null;
+        }
+        const expectedGain = target.gain;
+        return {
+            trackId: target.id,
+            expectedGain,
+            intent,
+            shouldExecute: () =>
+                mounted.current &&
+                gainIntent.current === intent &&
+                authority.isCurrent() &&
+                trackStore.value?.tracks.find((candidate) => candidate.id === target.id) === target &&
+                target.gain === expectedGain,
+        };
+    };
+
+    const commitMenuGain = (receipt: NonNullable<ReturnType<typeof captureGainIntent>>, gain: number): void => {
+        if (receipt.shouldExecute() && gain !== receipt.expectedGain) {
+            actions.setGainFromMenu({ ...receipt, gain });
+        }
+        restoreGainFocus(receipt.intent);
+    };
+
+    const resetGain = (): void => {
+        const receipt = captureGainIntent();
+        if (receipt) {
+            commitMenuGain(receipt, 0.8);
+        }
+    };
+
+    const enterGain = async (): Promise<void> => {
+        const receipt = captureGainIntent();
+        if (!receipt) {
+            return;
+        }
+        const initialValue = `${formatGainDb(receipt.expectedGain)} dB`;
+        const input = await promptUser({
+            title: 'Enter Track Gain',
+            message: `Enter track gain from ${TRACK_FADER_LAW.floorDb} to +${TRACK_FADER_LAW.ceilingDb} dB; -∞ for silence.`,
+            initialValue,
+            confirmLabel: 'Set Gain',
+        });
+        if (!receipt.shouldExecute()) {
+            return;
+        }
+        restoreGainFocus(receipt.intent);
+        if (input === null || input === initialValue) {
+            return;
+        }
+        const gain = parseMasterGainEntry(input);
+        if (gain === null) {
+            notifyUser('Enter a valid track gain in dB, or -∞ for silence.', 'error');
+            return;
+        }
+        commitMenuGain(receipt, gain);
+    };
+
+    const copyGain = async (): Promise<void> => {
+        const receipt = captureGainIntent();
+        if (!receipt) {
+            return;
+        }
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error('Clipboard unavailable');
+            }
+            await navigator.clipboard.writeText(`gain:${String(receipt.expectedGain)}`);
+            if (receipt.shouldExecute()) {
+                restoreGainFocus(receipt.intent);
+            }
+        } catch {
+            if (receipt.shouldExecute()) {
+                notifyUser('Could not copy track gain to the clipboard.', 'error');
+                restoreGainFocus(receipt.intent);
+            }
+        }
+    };
+
+    const pasteGain = async (): Promise<void> => {
+        const receipt = captureGainIntent();
+        if (!receipt) {
+            return;
+        }
+        let text: string;
+        try {
+            if (!navigator.clipboard?.readText) {
+                throw new Error('Clipboard unavailable');
+            }
+            text = await navigator.clipboard.readText();
+        } catch {
+            if (receipt.shouldExecute()) {
+                notifyUser('Could not read track gain from the clipboard.', 'error');
+                restoreGainFocus(receipt.intent);
+            }
+            return;
+        }
+        if (!receipt.shouldExecute()) {
+            return;
+        }
+        const encoded = text.startsWith('gain:') ? text.slice(5) : '';
+        const gain = Number(encoded);
+        if (!encoded || String(gain) !== encoded || !Number.isFinite(gain) || gain < 0 || gain > FADER_MAX_GAIN) {
+            notifyUser('Clipboard does not contain a valid track gain value.', 'error');
+            restoreGainFocus(receipt.intent);
+            return;
+        }
+        commitMenuGain(receipt, gain);
+    };
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
+        setGainMenu(null);
         setCtxMenu({ x: event.clientX, y: event.clientY });
     };
 
@@ -290,11 +473,14 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                      * is marked presentational — the slider inside carries the semantics.
                      */
                     <div
+                        ref={gainControlRef}
                         role="presentation"
                         className="shrink-0"
                         data-testid={`channel-gain-${track.id}`}
                         onPointerUp={actions.releaseGainAutomation}
                         onKeyUp={actions.releaseGainAutomation}
+                        onContextMenu={gainContextMenu}
+                        onKeyDown={gainMenuKeyDown}
                     >
                         <Fader
                             // Mid-drag the strip draws the gesture, not project
@@ -303,7 +489,10 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             // here would leave the cap pinned while the level
                             // moved.
                             value={actions.displayGain}
-                            onChange={actions.setGain}
+                            onChange={(value, isTransient) => {
+                                gainIntent.current += 1;
+                                actions.setGain(value, isTransient);
+                            }}
                             min={0}
                             // The fader law's own ceiling — the same bound the
                             // writer clamps to, so this control can never ask
@@ -345,6 +534,66 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
             <IOSection track={track} />
             {/* Context menu */}
             {renderContextMenu()}
+            {gainMenu ? (
+                <DawContextMenuSurface
+                    ref={gainMenuRef}
+                    role="menu"
+                    aria-label={`${track.name} gain actions`}
+                    x={gainMenu.x}
+                    y={gainMenu.y}
+                    onClose={closeGainMenu}
+                    onClick={(event) => event.stopPropagation()}
+                    onContextMenu={(event) => event.stopPropagation()}
+                    onBlurCapture={(event) => {
+                        const destination = event.relatedTarget;
+                        if (!(destination instanceof HTMLElement) || event.currentTarget.contains(destination)) {
+                            return;
+                        }
+                        const intent = gainIntent.current;
+                        window.requestAnimationFrame(() => {
+                            if (
+                                mounted.current &&
+                                gainIntent.current === intent &&
+                                destination.isConnected &&
+                                (document.activeElement === slider() || document.activeElement === document.body)
+                            ) {
+                                destination.focus();
+                            }
+                        });
+                    }}
+                    onKeyDown={(event) => {
+                        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                            return;
+                        }
+                        const items = Array.from(
+                            event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
+                        );
+                        const current = items.findIndex((item) => item === document.activeElement);
+                        const next =
+                            event.key === 'Home' || (current < 0 && event.key === 'ArrowDown')
+                                ? 0
+                                : event.key === 'End' || current < 0
+                                  ? items.length - 1
+                                  : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        items[next]?.focus();
+                    }}
+                >
+                    <DawMenuButton role="menuitem" onClick={resetGain}>
+                        Reset to Default
+                    </DawMenuButton>
+                    <DawMenuButton role="menuitem" onClick={() => void enterGain()}>
+                        Enter Value
+                    </DawMenuButton>
+                    <DawMenuButton role="menuitem" onClick={() => void copyGain()}>
+                        Copy Value
+                    </DawMenuButton>
+                    <DawMenuButton role="menuitem" onClick={() => void pasteGain()}>
+                        Paste Value
+                    </DawMenuButton>
+                </DawContextMenuSurface>
+            ) : null}
         </div>
     );
 };

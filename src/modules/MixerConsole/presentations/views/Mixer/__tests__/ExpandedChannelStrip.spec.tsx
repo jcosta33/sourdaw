@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -26,6 +26,9 @@ const mocks = vi.hoisted(() => ({
     getVcaGroups: vi.fn<() => TestVcaGroup[]>(() => []),
     confirmUser: vi.fn<() => Promise<boolean>>(),
     releaseTouchAutomation: vi.fn(),
+    promptUser: vi.fn<() => Promise<string | null>>(),
+    notifyUser: vi.fn(),
+    projectEpoch: 0,
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -59,6 +62,16 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 
 vi.mock('#/utils/Notification/confirmUser', () => ({
     confirmUser: mocks.confirmUser,
+}));
+
+vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: mocks.promptUser }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    captureProjectTransitionAuthority: () => {
+        const epoch = mocks.projectEpoch;
+        return { isCurrent: () => mocks.projectEpoch === epoch };
+    },
 }));
 
 /**
@@ -147,6 +160,7 @@ describe('ExpandedChannelStrip', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.projectEpoch = 0;
         mocks.getVcaGroups.mockReturnValue([{ id: 'vca-1', name: 'Drums VCA', gain: 1, muted: false, trackIds: [] }]);
         mocks.confirmUser.mockResolvedValue(true);
         // The pad-child case below seeds the store with a Toaster parent, so
@@ -323,6 +337,203 @@ describe('ExpandedChannelStrip', () => {
             { skipUndo: true }
         );
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('opens four working gain actions from the slider without opening the channel menu', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        const target = trackStore.value?.tracks[0];
+        mocks.promptUser.mockResolvedValue('-6 dB');
+        const writeText = vi.fn(() => Promise.resolve());
+        const readText = vi.fn(() => Promise.resolve('gain:0.25'));
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText, readText } });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+        const slider = screen.getByRole('slider', { name: 'Track 1 gain' });
+        const open = () => fireEvent.contextMenu(slider, { clientX: 42, clientY: 17 });
+        open();
+        const menu = screen.getByRole('menu', { name: 'Track 1 gain actions' });
+        expect(menu).toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', { name: 'Mute' })).not.toBeInTheDocument();
+        expect(['Reset to Default', 'Enter Value', 'Copy Value', 'Paste Value']).toEqual(
+            Array.from(menu.querySelectorAll('[role="menuitem"]'), (item) => item.textContent)
+        );
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
+        open();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        expect(mocks.promptUser).toHaveBeenCalledTimes(1);
+        expect(trackStore.value?.tracks[0]?.gain).toBe(0.8);
+        expect(trackStore.value?.tracks[0]).toBe(target);
+        await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setTrackGain',
+                payload: {
+                    trackId: 'track-1',
+                    gain: 10 ** (-6 / 20),
+                    expectedGain: 0.8,
+                    automationRecordingPolicy: 'suppressed',
+                },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), onCommitted: expect.any(Function) })
+        );
+
+        open();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Value' }));
+        await waitFor(() => expect(writeText).toHaveBeenCalledWith('gain:0.8'));
+        open();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        expect(trackStore.value?.tracks[0]?.gain).toBe(0.8);
+        await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(2));
+        expect(mocks.executeUserAppAction).toHaveBeenLastCalledWith(
+            {
+                type: 'setTrackGain',
+                payload: { trackId: 'track-1', gain: 0.25, expectedGain: 0.8, automationRecordingPolicy: 'suppressed' },
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
+        );
+    });
+
+    it('rejects malformed gain clipboard text without dispatch', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: vi.fn(() => Promise.resolve('gain:1junk')) },
+        });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        await waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Clipboard does not contain a valid track gain value.',
+                'error'
+            )
+        );
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it.each([0, 1e-7])('copies the exact linear gain %s, including below the displayed fader floor', async (gain) => {
+        trackStore.set({ tracks: [createProjectTrack({ gain })], selectedTrackId: null, ghostClips: [] });
+        const writeText = vi.fn(() => Promise.resolve());
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+        renderWithTooltip(<ExpandedChannelStrip track={{ ...mockTrack, gain }} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Value' }));
+        await waitFor(() => expect(writeText).toHaveBeenCalledWith(`gain:${String(gain)}`));
+    });
+
+    it('reports clipboard denial without writing gain', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: vi.fn(() => Promise.reject(new Error('denied'))) },
+        });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        await waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Could not read track gain from the clipboard.', 'error')
+        );
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it.each([0, 1e-7])('accepts exact linear gain %s from the clipboard', async (gain) => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: vi.fn(() => Promise.resolve(`gain:${String(gain)}`)) },
+        });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        await waitFor(() =>
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
+                {
+                    type: 'setTrackGain',
+                    payload: { trackId: 'track-1', gain, expectedGain: 0.8, automationRecordingPolicy: 'suppressed' },
+                },
+                expect.objectContaining({ shouldExecute: expect.any(Function) })
+            )
+        );
+    });
+
+    it('drops an entered value after a same-ID successor replaces the captured track', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        let releasePrompt: (value: string) => void = () => undefined;
+        mocks.promptUser.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    releasePrompt = resolve;
+                })
+        );
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        expect(mocks.promptUser).toHaveBeenCalledTimes(1);
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        await act(async () => releasePrompt('-6 dB'));
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('drops a held clipboard value after a newer fader intent', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        let releaseRead: (value: string) => void = () => undefined;
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: {
+                readText: vi.fn(
+                    () =>
+                        new Promise<string>((resolve) => {
+                            releaseRead = resolve;
+                        })
+                ),
+            },
+        });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        const slider = screen.getByRole('slider', { name: 'Track 1 gain' });
+        fireEvent.contextMenu(slider);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        fireEvent.keyDown(slider, { key: 'ArrowUp' });
+        await act(async () => releaseRead('gain:0.25'));
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('drops a held clipboard value after unmount or project transition', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        let releaseRead: (value: string) => void = () => undefined;
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: {
+                readText: vi.fn(
+                    () =>
+                        new Promise<string>((resolve) => {
+                            releaseRead = resolve;
+                        })
+                ),
+            },
+        });
+        const view = renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        mocks.projectEpoch += 1;
+        view.unmount();
+        await act(async () => releaseRead('gain:0.25'));
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('keeps an outside focus choice after the gain menu closes', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 gain' }));
+        const menu = screen.getByRole('menu', { name: 'Track 1 gain actions' });
+        const outside = document.createElement('button');
+        document.body.append(outside);
+        outside.focus();
+        fireEvent.blur(menu, { relatedTarget: outside });
+        await waitFor(() => expect(outside).toHaveFocus());
+        outside.remove();
     });
 
     // The strip writes through the canonical action path, so these pin the
