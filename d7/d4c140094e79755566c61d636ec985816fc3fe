@@ -1,0 +1,37 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_29d8df116c5b92::t_d136168f2634f6 73,87-90
+src/modules/Arrangement/useCases/clipEditing/captureRestoreClipCommitValidation.ts
+  s_29d8df116c5b92::t_165ba0ef92726f 59-63
+src/app/__tests__/main.spec.tsx
+  s_29d8df116c5b92::t_f40e491a993c83 89-163
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_29d8df116c5b92::t_24f778584e04ec 16
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_29d8df116c5b92::t_4b7af7384ab13c 94
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_29d8df116c5b92::t_ab2c04890ec2f6 82
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_29d8df116c5b92::t_1db7bc6dcdd8f5 85
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_29d8df116c5b92::t_30a92d176533d0 149
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_29d8df116c5b92::t_9fc5352be627f0 228
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_29d8df116c5b92::t_657609fbccb1b3 125-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7d4c140094e79755566c61d636ec985816fc3fe",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
