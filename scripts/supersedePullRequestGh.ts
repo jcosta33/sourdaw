@@ -19,6 +19,7 @@ import {
 } from './githubAppIdentity.ts';
 import { fail, PR_STATE } from './prContract.ts';
 import { REVIEW_THREAD_COMMENT_FIELDS, readCommentDatabaseId } from './reviewRepair.ts';
+import { readRegisteredLaneStack, type LaneStack } from './stackedLanes.ts';
 
 export type IssueComment = {
     id: string;
@@ -36,6 +37,7 @@ export type SupersededPullRequest = {
     headRepository: string | null;
     repository: string;
     base: string;
+    baseRefOid?: string;
     baseRef?: { name: string; repository: string; target: string } | null;
     merged: boolean;
     mergeCommit?: string | null;
@@ -51,6 +53,7 @@ export type SupersedePullRequestPort = {
     assertCurrentPullRequest: (number: number, expected: SupersededPullRequest) => void;
     inspectReviewThreads: (number: number) => SupersededReviewThread[];
     isCommitAncestor?: (repository: string, ancestor: string, descendant: string) => boolean;
+    readRegisteredLaneStack?: (childBranch: string) => LaneStack | undefined;
     comment: (number: number, body: string) => AddedIssueCommentReceipt;
     close: (number: number) => PullRequestCloseReceipt;
     deleteComment: (id: string) => void;
@@ -83,6 +86,14 @@ export function shellPort(
         inspectReviewThreads: (number) => inspectReviewThreads(number, gh),
         isCommitAncestor: (repository, ancestor, descendant) =>
             inspectCommitAncestry(repository, ancestor, descendant, gh),
+        readRegisteredLaneStack: (branch) => {
+            const marker = capture(
+                'git',
+                ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`],
+                { cwd: primaryRoot, env: session.env }
+            );
+            return readRegisteredLaneStack(primaryRoot, branch, marker);
+        },
         comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),
         close: (number) => closePullRequest(nodeId(number), gh),
         deleteComment: (id) => deleteComment(id, gh),
@@ -228,6 +239,15 @@ function readBaseRef(value: unknown, number: number): SupersededPullRequest['bas
     }
     return { name: ref.name, repository: ref.repository.nameWithOwner, target: ref.target.oid };
 }
+function readCachedBaseOid(value: unknown, number: number): string | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isCommit(value)) {
+        fail(`cannot inspect PR #${number} cached base commit`);
+    }
+    return value;
+}
 export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const core = readPullRequestCore(number, gh);
     ids.set(number, core.id);
@@ -253,7 +273,7 @@ function assertPullRequestIdentity<PullRequestShape extends { id?: unknown; numb
 
 function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullRequestCore } {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt mergeCommit{oid} baseRef{name repository{nameWithOwner} target{oid}}}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName baseRefOid merged closedAt mergeCommit{oid} baseRef{name repository{nameWithOwner} target{oid}}}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
         data?: {
             repository?: {
@@ -266,6 +286,7 @@ function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullR
                     headRefName?: unknown;
                     headRepository?: { nameWithOwner?: unknown } | null;
                     baseRefName?: unknown;
+                    baseRefOid?: unknown;
                     baseRef?: unknown;
                     merged?: unknown;
                     mergeCommit?: { oid?: unknown } | null;
@@ -303,6 +324,7 @@ function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullR
             headRepository,
             repository: repository.nameWithOwner,
             base: pullRequest.baseRefName,
+            baseRefOid: readCachedBaseOid(pullRequest.baseRefOid, number),
             baseRef: readBaseRef(pullRequest.baseRef, number),
             merged: pullRequest.merged,
             mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
@@ -319,6 +341,7 @@ function coreIdentity(value: PullRequestCore) {
         headRefName: value.headRefName,
         headRepository: value.headRepository,
         base: value.base,
+        baseRefOid: value.baseRefOid,
         state: value.state,
         merged: value.merged,
         mergeCommit: value.mergeCommit,

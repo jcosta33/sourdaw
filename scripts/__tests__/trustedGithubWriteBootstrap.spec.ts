@@ -35,6 +35,7 @@ const supersessionPaths = [
     'scripts/trustedGithubWriteBootstrap.ts',
     'scripts/supersedePullRequest.ts',
     'scripts/supersedePullRequestGh.ts',
+    'scripts/stackedLanes.ts',
     'scripts/findingLineage.ts',
     'scripts/pullRequestMutationLock.ts',
     'scripts/reviewRepair.ts',

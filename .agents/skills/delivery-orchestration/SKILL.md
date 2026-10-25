@@ -93,26 +93,42 @@ merge, own the child's old base branch from the child's base repository, target
 the replacement's base, and carry exactly one canonical author-Bot supersession
 receipt and one total finding lineage marker naming the merged replacement. The
 child's live `baseRef` must name that parent branch in the child's repository and
-target the parent's final head commit; a reused branch name is insufficient. The
-cached `baseRefOid` may legitimately predate the current branch tip and does not
-establish this identity. The command snapshots the live ref's repository, name
+target the parent's final head commit. The parent's final head must also belong
+to the old child's immutable history. When that head advanced after the published
+child, only the existing native registered lane provenance can establish the
+historical association: the protected-primary descriptor and matching
+`branch.<child>.sourdaw-stack-fork`, exact child/parent branches and parent PR,
+and the recorded fork commit retained in both old child and final parent. This
+uses the existing same-account native provenance boundary, not cryptographic
+ownership. A missing descriptor is never reconstructed from shared ancestry,
+reviews, workflow associations or prose. A reused branch name is insufficient.
+Any observed cached child `baseRefOid` must belong to both histories during fresh
+admission; that cached commit alone is not parent provenance. The command
+snapshots the live ref's repository, name
 and target, re-reading the child after the parent proof at each mutation boundary.
 It checks the child's finding set after that last remote proof immediately before
 close, and again after the final post-close proof, so a finding added or removed
 during parent inspection cannot inherit an earlier coverage check.
 
-An already CLOSED child with exactly one matching author-Bot receipt and one
-canonical total lineage marker may replay without writes after its live base ref
-has been deleted. Its named parent's identity, canonical receipt and total live
-lineage are still checked; a present contradictory live ref still refuses. This
-replay distinction confirms an existing completion only and cannot admit a fresh
-closure with an absent ref. It does not reconstruct historical ref state.
+Stacked closure posts a third canonical author-Bot
+`sourdaw-supersession-parent-v1` marker binding the child, parent, both replacement
+identities and immutable commits to the admitted provenance kind, fork and cached
+base. It participates in exact observation, convergence, journaled writes,
+compensation and ambiguous-write retention alongside receipt and lineage.
+An already CLOSED child may replay without writes after its live base ref or
+local lane metadata has been deleted only with exactly one strictly parsed,
+canonical authorized binding marker, receipt and total lineage. Replay uses the
+stored historical fork and cached base, verifies current identities and immutable
+ancestry, and refuses a present contradictory descriptor or live ref. A later
+cached base does not rewrite the admitted history. An old two-marker completion
+cannot acquire this binding during CLOSED replay. The distinction confirms an
+existing completion only and cannot admit fresh closure with an absent live ref.
 
 The command revalidates that live parent proof before the first child write, before
 closing, and after closing before reporting success. A refusal before writing
 leaves no child mutation, a refusal after adding child markers compensates those
 markers, and a post-close authority failure reports ambiguity while retaining
-the closed child's two markers as durable evidence.
+all the closed child's markers as durable evidence.
 
 When the parent was superseded by a different merged PR, name it explicitly with
 `--parent-replacement <pr>` after `--superseded-parent`. All four PR identities

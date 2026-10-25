@@ -22,6 +22,44 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-25 — a current branch ref substituted an unrelated historical parent (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) bound the child's current base
+ref to the named parent's final head but never established that parent belonged to the old child's
+history. Source inspection establishes the older same-replacement gap; base-head execution was
+not performed. PR #5627's new distinct-replacement path reproduced it with real Git commits:
+the old child's original parent work was absent from the merged replacement, while a reused
+parent ref and genuine replacement ancestry still permitted closure. Two unbound child markers
+also permitted deleted-ref replay through the wrong parent. No live occurrence is claimed.
+The public #5615 approval describes changed-target probes; exact historical prompts/tier are
+unavailable. The missed risk was historical association, beyond present ref equality.
+
+Use a real content-bearing Git DAG with unrelated parents sharing a base. Require final-parent
+containment or previously registered native fork provenance, and reject cached/common ancestry
+alone. Keep a genuine late-parent control whose final head is absent from the old child. Preserve
+the exact admitted binding in an authorized canonical marker; delete local metadata and the ref
+before replay, then substitute another parent or malformed/missing binding and require zero writes.
+Never reconstruct missing provenance from reviews, workflow associations or prose.
+
+### 2026-10-25 — dependency authority changed during its final thread response (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) introduced stacked supersession
+whose parent core was read before separate marker and thread requests. Source inspection shows
+the older same-replacement route retained that split; a base-head execution was not performed.
+PR #5627 carried it into distinct replacements. Controlled native-adapter cases at its reviewed
+head reopened the parent during its last thread response while head, branch and child ref stayed
+unchanged; post-close verification and CLOSED replay still reported success. No live occurrence is
+claimed. The published #5615 approval describes changed-target and late-finding probes; exact
+historical reviewer prompts and tier are unavailable. The missed risk was movement inside each
+dependency authority's composed proof, beyond the child-only final witness.
+
+For every proof subject, mutate its core during its last dependent response. Drive actual shell
+adapters and the serialized transaction at pre-write, mid-proof, post-close and replay boundaries.
+Require an independent current core for parent and both replacements after all dependent reads,
+then the existing final child witness. Preserve compensation before close and retained owner and
+markers after uncertain closure. These observations bound client composition, not later remote
+changes or a server-side compare-and-swap.
+
 ### 2026-10-24 — split PR metadata could close a head that arrived during comment reads (introduced by PR #2357, retained by #4420)
 
 PR #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) read PR core metadata before a
