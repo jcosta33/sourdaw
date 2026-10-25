@@ -1,0 +1,46 @@
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_59e31a5c6f3e31::t_19ca2c55c0aaf1 720-748
+  s_59e31a5c6f3e31::t_07da59947d78f9 749-766,768-769
+  s_59e31a5c6f3e31::t_a943caa7da8051 35-38,767
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_59e31a5c6f3e31::t_d7f4a51338f8c8 35-40,395-418
+  s_59e31a5c6f3e31::t_b7a96941fd31a1 419
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_59e31a5c6f3e31::t_f78adc424a33e8 1,6-7,17-21,35,48,52-68,71-87,92-225,230,476,482-483,492-495,537-544,564-567,571,578-582,595-596
+  s_59e31a5c6f3e31::t_0e8d4e9db5ddd2 69-70,547-563,568-570,572,574,576-577,583-594
+  s_59e31a5c6f3e31::t_e2396d9aeabf08 546
+  s_59e31a5c6f3e31::t_dc91cdac1e3b20 88-91,573,575
+  s_59e31a5c6f3e31::t_3f35cf55471360 545
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_59e31a5c6f3e31::t_5d98940887cf6a 474,488,495-501,510-514,516-518
+  s_59e31a5c6f3e31::t_d1a1191f69d8e5 31,69-75,163
+  s_59e31a5c6f3e31::t_fe1b18e337f434 369-377,389-392,406-411,458-463,479-486,502-509,519-532,538
+  s_59e31a5c6f3e31::t_abea15b6229e37 415-439
+  s_59e31a5c6f3e31::t_a94f1dfc9b42ed 1,413-414,455-457,464-473,475-478,487,489-494,515
+  s_59e31a5c6f3e31::t_705de79beda2bf 364-365,386
+  s_59e31a5c6f3e31::t_daf4305bf49cb2 440-454
+  s_59e31a5c6f3e31::t_553167f0f8d2a2 29-30,67-68,76,342-343,345-363,367-368,378-385,387-388,393-405,412
+  s_59e31a5c6f3e31::t_d084284837cc99 344,366
+  s_59e31a5c6f3e31::t_b4a40fc78d46b0 533-537
+tests/e2e/mixerChannelGainTestId.spec.ts
+  s_59e31a5c6f3e31::t_c2cad970136a34 18,34-39,42-58,62-83,90-110
+  s_59e31a5c6f3e31::t_8e00e9708e5063 23,59-61
+  s_59e31a5c6f3e31::t_80e0de984bacf2 41,84-89
+  s_59e31a5c6f3e31::t_90d0df6ef6a513 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b314db933026a23920d93336a8beb02243c5acbe",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
