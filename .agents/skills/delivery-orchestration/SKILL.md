@@ -19,29 +19,29 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 
 ## Command reference
 
-| Need                                                        | Command                                                                                                                                                                                       |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                                                 | `pnpm lane:open [issue] [slug] --type <type> [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                           |
-| Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                    |
-| Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
-| Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
-| Write the review bundle                                     | `pnpm review:prepare <pr>`                                                                                                                                                                    |
-| Post `review.json`                                          | `pnpm review:publish <pr>`                                                                                                                                                                    |
-| Post final `acceptance.json` (legacy pre-policy heads only) | `pnpm review:accept <pr>`                                                                                                                                                                     |
-| Record a repair, leave open                                 | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
-| Confirm repairs, resolve                                    | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
-| Explain the retired resolution command                      | `pnpm review:resolve --help`                                                                                                                                                                  |
-| Rebuild rounds; shadow-compare                              | `pnpm review:reconstruct <pr>`                                                                                                                                                                |
-| Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
-| Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
-| Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`  |
-| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                               |
-| Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
-| Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
-| Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
-| Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
-| Restamp author identity on lanes                            | `pnpm lane:identity`                                                                                                                                                                          |
+| Need                                                        | Command                                                                                                                                                                                                                          |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open a lane                                                 | `pnpm lane:open [issue] [slug] --type <type> [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                                              |
+| Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                                                       |
+| Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                                                             |
+| Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--title "<conventional-subject>"] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
+| Write the review bundle                                     | `pnpm review:prepare <pr>`                                                                                                                                                                                                       |
+| Post `review.json`                                          | `pnpm review:publish <pr>`                                                                                                                                                                                                       |
+| Post final `acceptance.json` (legacy pre-policy heads only) | `pnpm review:accept <pr>`                                                                                                                                                                                                        |
+| Record a repair, leave open                                 | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                                                          |
+| Confirm repairs, resolve                                    | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                                                     |
+| Explain the retired resolution command                      | `pnpm review:resolve --help`                                                                                                                                                                                                     |
+| Rebuild rounds; shadow-compare                              | `pnpm review:reconstruct <pr>`                                                                                                                                                                                                   |
+| Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                                                              |
+| Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                                                                 |
+| Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                                                               |
+| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`                                     |
+| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                                                                  |
+| Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                                                      |
+| Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                                                        |
+| Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                                                      |
+| Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                                                         |
+| Restamp author identity on lanes                            | `pnpm lane:identity`                                                                                                                                                                                                             |
 
 `pr:supersede` refuses to close a superseded pull request until every live
 review thread on it has exactly one recorded disposition on the replacement.
@@ -260,8 +260,11 @@ names an exact absolute lane root, which is what disambiguates write-disjoint
 lanes sharing one issue.
 
 For conforming lanes (typed or legacy `agent/`), `lane:publish` opens a PR titled from the newest
-non-merge commit above `origin/main`; it refuses lanes lacking one and never
-retitles existing PRs, including after follow-up commits or merges. The body
+non-merge lane commit, excluding everything reached by resolved `origin/main` and stack parent
+heads; it refuses lanes lacking one. Existing titles stay frozen through follow-up commits and
+merges unless `--title "<conventional-subject>"` explicitly supplies the creation or replacement
+title. The same effective title governs body validation, derived metadata, and branch-type
+warnings. Off-convention legacy lanes refuse `--title` and remain push-only. The body
 follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
 the script controls format and rejects malformed bodies. New PRs require
 explicit `--summary` and `--test`; later supplied flags replace their section,
@@ -308,7 +311,7 @@ issueless lane derives its project from its derived type label and keeps it only
 when the live listing names that project.
 
 When a typed branch's type differs from the type of the title the PR will show
-(the newest commit on a first publish, the frozen title afterwards),
+(the explicit `--title`, otherwise the newest lane commit on a first publish or frozen title afterwards),
 `lane:publish` logs a `warning:` line and publishes anyway: the branch name
 cannot change after `lane:open`, and a `feat` lane routinely ends on a `test:`
 or `chore:` follow-up. `agent/` lanes name no type and never warn.
