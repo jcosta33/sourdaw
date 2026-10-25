@@ -814,6 +814,7 @@ function nativeSupersessionFixture(
         }
     }
     const events: string[] = [];
+    const cachedBasePresence: boolean[] = [];
     const capture = (command: string, args: string[]): string => {
         if (command === 'git') {
             if (args[0] === 'config') {
@@ -909,7 +910,7 @@ function nativeSupersessionFixture(
                 if (omitChildCachedBaseOid) {
                     Reflect.deleteProperty(pullRequest, 'baseRefOid');
                 }
-                events.push(`old-core-wire-has-cached-base:${Object.hasOwn(pullRequest, 'baseRefOid')}`);
+                cachedBasePresence.push(Object.hasOwn(pullRequest, 'baseRefOid'));
             }
             return JSON.stringify({
                 data: {
@@ -1088,6 +1089,7 @@ function nativeSupersessionFixture(
     return {
         port,
         events,
+        cachedBaseWirePresence: () => [...cachedBasePresence],
         state: () => state,
         comments: () => comments,
         bindingBody: nativeBindingBody,
@@ -1793,10 +1795,16 @@ describe('pull-request supersession', () => {
         },
     ])('requires selected cached-base evidence through native serialized closure: $label', async (scenario) => {
         await withLockRoot(async (root) => {
-            const current = nativeSupersessionFixture(root, undefined, true, {}, {
-                initialMarkers: false,
-                cachedBaseOid: scenario.cachedBaseOid,
-            });
+            const current = nativeSupersessionFixture(
+                root,
+                undefined,
+                true,
+                {},
+                {
+                    initialMarkers: false,
+                    cachedBaseOid: scenario.cachedBaseOid,
+                }
+            );
             if (scenario.omit) {
                 current.omitChildCachedBaseOidFromNativeResponse();
             }
@@ -1841,7 +1849,11 @@ describe('pull-request supersession', () => {
                 expect(parseSupersessionParentBinding(binding.body).child.cachedBase).toBe(parentHead);
                 expect(current.comments()).toHaveLength(4);
             }
-            expect(current.events).toContain(`old-core-wire-has-cached-base:${!scenario.omit}`);
+            const cachedReads = current.cachedBaseWirePresence();
+            expect(cachedReads.length).toBeGreaterThan(0);
+            for (const present of cachedReads) {
+                expect(present).toBe(!scenario.omit);
+            }
             expect(
                 current.events.filter((event) => event === `cached-base-comparison:${movedHead}:${parentHead}:diverged`)
             ).toHaveLength(scenario.divergentReads);
@@ -1867,10 +1879,11 @@ describe('pull-request supersession', () => {
             current.setChildBaseRef(null);
             current.omitChildCachedBaseOidFromNativeResponse();
             const start = current.events.length;
+            const cachedReadStart = current.cachedBaseWirePresence().length;
             await expect(run()).rejects.toThrow(/cached base commit/i);
             const observed = current.events.slice(start);
             expect(observed).toContain('old-base-ref:null');
-            expect(observed).toContain('old-core-wire-has-cached-base:false');
+            expect(current.cachedBaseWirePresence().slice(cachedReadStart)).toEqual([false]);
             expect(observed).not.toContain('old-comments');
             expect(
                 observed.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
