@@ -16,8 +16,10 @@ Reference-grade chromatic tuner and pitch detection DSP engine compiling to WebA
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-cargo test --package scoring
+pnpm cargo:test --package scoring <filter>
 pnpm wasm:scoring
 pnpm wasm:verify
 ```

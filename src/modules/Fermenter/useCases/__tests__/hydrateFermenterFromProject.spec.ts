@@ -91,6 +91,22 @@ describe('hydrateFermenterFromProject', () => {
         expect(patch?.macros[1]).toBe(DEFAULT_PATCH.macros[1]);
     });
 
+    it('restores the default engine when project truth removes a previously hydrated engine', () => {
+        trackStore.set({
+            tracks: [makeTrack({ oscEngine: 2, filterCutoff: 600 })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        hydrateFermenterFromProject(DEVICE_ID);
+        expect(getFermenterState(DEVICE_ID).patch.oscEngine).toBe(2);
+
+        trackStore.set({ tracks: [makeTrack({ filterCutoff: 600 })], selectedTrackId: 'track-1', ghostClips: [] });
+        const patch = hydrateFermenterFromProject(DEVICE_ID);
+        expect(patch?.oscEngine).toBe(DEFAULT_PATCH.oscEngine);
+        expect(getFermenterState(DEVICE_ID).patch.oscEngine).toBe(DEFAULT_PATCH.oscEngine);
+        expect(patch?.filterCutoff).toBe(600);
+    });
+
     it('ignores non-numeric or non-finite values', () => {
         trackStore.set({
             tracks: [
