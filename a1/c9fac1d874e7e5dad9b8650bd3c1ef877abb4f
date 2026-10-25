@@ -1,0 +1,41 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  s_3168504f6ce387::t_98603383554035 23,249-257
+  s_3168504f6ce387::t_0443878378b9b6 258-260
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts
+  s_3168504f6ce387::t_98603383554035 63
+src/modules/AiRuntime/useCases/agentRequestOrchestration/beginConfirmedCommandExecution.ts
+  s_3168504f6ce387::t_98603383554035 24,89-91
+  s_d99a62fe2de3a3::t_6bac11fbec3129 92
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/beginConfirmedCommandExecution.spec.ts
+  s_3168504f6ce387::t_98603383554035 23,33,63,646-652,670,685,690
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  s_3168504f6ce387::t_d2d6d9f27e34c0 1054-1159
+  s_3168504f6ce387::t_4aa359c047e2ef 60,70,82-85,289,325,329-388,396,401
+  s_3168504f6ce387::t_45d26e1b4c4439 389-395,397-400,402-406,1160-1170
+src/modules/AiRuntime/useCases/agentRequestOrchestration/readApprovedProtectionFailure.ts
+  s_3168504f6ce387::t_98603383554035 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1c9fac1d874e7e5dad9b8650bd3c1ef877abb4f",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
