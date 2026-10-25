@@ -314,6 +314,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     createBufferSource: vi.fn(),
+    createNativeRecordingCaptureClock: vi.fn(() => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    })),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
     discardDecodedAudioFile: vi.fn(),

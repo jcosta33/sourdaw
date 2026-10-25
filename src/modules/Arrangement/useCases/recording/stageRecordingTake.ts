@@ -1,5 +1,8 @@
-import { createTake, createTakeLane } from '../../models/TakeLane';
+import { createTake, createTakeLane, type Take } from '../../models/TakeLane';
+import { getTrackState } from '../../repositories/track/getTrackState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+
+import { recordingPassTiming } from './recordingPassTiming';
 
 type StageRecordingTakeInput = {
     trackId: string;
@@ -8,6 +11,12 @@ type StageRecordingTakeInput = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
+    /** Reuse this recording's still-open audio take when its final lap closes. */
+    provisionalTakeId?: string;
+    /** Physical seam ending this recorded pass, on the capture clock. */
+    passEndContextSeconds?: number;
+    plannedPassEnd?: boolean;
+    nextPassStartBeat?: number;
 };
 
 /**
@@ -23,13 +32,61 @@ type StageRecordingTakeInput = {
  * and for armed MIDI tracks, whose notes are committed by their own actions.
  */
 export function stageRecordingTake(input: StageRecordingTakeInput): void {
+    const track = getTrackState()?.tracks.find((candidate) => candidate.id === input.trackId);
+    if (!track || !recordingPassTiming.isCurrent(input.clipId, track.kind === 'midi' ? 'midi' : 'audio')) {
+        return;
+    }
     const state = takeLaneStore.value;
     if (!state) {
+        if (input.provisionalTakeId !== undefined) {
+            throw new Error('Recording provisional take is not available');
+        }
         return;
     }
 
-    const take = createTake(input.clipId, input.name, input.startBeat, input.endBeat, input.sourceOffsetBeats);
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
+    let replacement: Take | undefined;
+    let take: Take;
+    if (input.provisionalTakeId !== undefined) {
+        replacement = lane?.takes.find((candidate) => candidate.id === input.provisionalTakeId);
+        if (
+            !replacement ||
+            replacement.clipId !== input.clipId ||
+            replacement.sourceOffsetBeats !== undefined ||
+            input.sourceOffsetBeats === undefined
+        ) {
+            throw new Error('Recording provisional take is not available');
+        }
+        take = {
+            ...replacement,
+            startBeat: input.startBeat,
+            endBeat: input.endBeat,
+            sourceOffsetBeats: input.sourceOffsetBeats,
+        };
+    } else {
+        const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
+        if (replacementId !== undefined) {
+            replacement = lane?.takes.find(
+                (candidate) => candidate.id === replacementId && candidate.clipId === input.clipId
+            );
+        }
+        if (replacement) {
+            take = { ...replacement, endBeat: input.endBeat };
+        } else {
+            take = createTake(
+                input.clipId,
+                input.name,
+                recordingPassTiming.nextStartBeat(input.clipId) ?? input.startBeat,
+                input.endBeat,
+                input.sourceOffsetBeats
+            );
+        }
+    }
+    recordingPassTiming.ownTake(input.clipId, take.id);
+    recordingPassTiming.stage(take, input.passEndContextSeconds, input.plannedPassEnd);
+    if (input.nextPassStartBeat !== undefined) {
+        recordingPassTiming.relocateEntry(input.clipId, input.nextPassStartBeat);
+    }
     if (!lane) {
         takeLaneStore.set({
             lanes: [...state.lanes, { ...createTakeLane(input.trackId), takes: [take] }],
@@ -37,8 +94,17 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
         return;
     }
     takeLaneStore.set({
-        lanes: state.lanes.map((existing) =>
-            existing.trackId === input.trackId ? { ...existing, takes: [...existing.takes, take] } : existing
-        ),
+        lanes: state.lanes.map((existing) => {
+            if (existing.trackId !== input.trackId) {
+                return existing;
+            }
+            if (!replacement) {
+                return { ...existing, takes: [...existing.takes, take] };
+            }
+            return {
+                ...existing,
+                takes: existing.takes.map((current) => (current.id === replacement.id ? take : current)),
+            };
+        }),
     });
 }
