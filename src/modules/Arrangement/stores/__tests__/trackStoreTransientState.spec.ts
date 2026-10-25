@@ -230,6 +230,54 @@ describe('trackStore transient-state fallback', () => {
         }
     });
 
+    it.each([null, 'survivor'] as const)(
+        'does not promote a provisional selection from an aborted owner: %s',
+        (selection) => {
+            const selected = TrackDummy.create({ id: 'selected', name: 'Selected', kind: 'audio' });
+            const survivor = TrackDummy.create({ id: 'survivor', name: 'Survivor', kind: 'audio' });
+            const originalGhost = ClipDummy.create({ id: 'owner-original-ghost', trackId: selected.id });
+            trackStore.set({ tracks: [selected, survivor], selectedTrackId: selected.id, ghostClips: [originalGhost] });
+            flushAutomergeStorageWrites();
+            const raw = structuredClone(fake_doc);
+            setArrangementEventBus({ emit: () => Promise.resolve() });
+            const pending = runWithAutomergeStorageTransaction(undefined, () => {
+                trackStore.set({ tracks: [survivor], selectedTrackId: null, ghostClips: [] });
+                selectTrack(selection);
+            });
+            expect(pending.status).toBe('returned');
+            expect(trackStore.value?.selectedTrackId).toBe(selection);
+            pending.abort();
+            expect(trackStore.value?.tracks).toEqual([selected, survivor]);
+            expect(trackStore.value?.selectedTrackId).toBe(selected.id);
+            expect(trackStore.value?.ghostClips).toEqual([originalGhost]);
+            expect(fake_doc).toEqual(raw);
+        }
+    );
+
+    it('retains an explicit same-value deselection without adopting the aborted owner ghosts', () => {
+        const selected = TrackDummy.create({ id: 'selected', name: 'Selected', kind: 'audio' });
+        const survivor = TrackDummy.create({ id: 'survivor', name: 'Survivor', kind: 'audio' });
+        const originalGhost = ClipDummy.create({ id: 'original-ghost', trackId: selected.id });
+        const provisionalGhost = ClipDummy.create({ id: 'pending-ghost', trackId: survivor.id });
+        trackStore.set({ tracks: [selected, survivor], selectedTrackId: selected.id, ghostClips: [originalGhost] });
+        flushAutomergeStorageWrites();
+        const raw = structuredClone(fake_doc);
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        const pending = runWithAutomergeStorageTransaction(undefined, () => {
+            trackStore.set({ tracks: [survivor], selectedTrackId: null, ghostClips: [provisionalGhost] });
+        });
+        expect(pending.status).toBe('returned');
+        expect(trackStore.value?.selectedTrackId).toBeNull();
+        const writes = countPendingAutomergeStorageWrites();
+        selectTrack(null);
+        expect(countPendingAutomergeStorageWrites()).toBe(writes);
+        pending.abort();
+        expect(trackStore.value?.tracks).toEqual([selected, survivor]);
+        expect(trackStore.value?.selectedTrackId).toBeNull();
+        expect(trackStore.value?.ghostClips).toEqual([originalGhost]);
+        expect(fake_doc).toEqual(raw);
+    });
+
     it.each(['none', 'selection', 'ghosts'] as const)(
         'does not copy a later provisional selection into an earlier owner commit, explicit edit=%s',
         (edit) => {

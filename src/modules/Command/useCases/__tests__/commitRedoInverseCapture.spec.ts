@@ -10,10 +10,9 @@ import {
 import {
     captureDurableDocumentWitness,
     captureProjectIdentity,
-    captureProjectMutationAuthorization,
     createCrdtDoc,
     getCrdtDoc,
-    getCrdtDocIds,
+    readOwnedProjectPublications,
     mutateCrdtDoc,
     removeCrdtDoc,
     replaceCrdtDoc,
@@ -38,6 +37,7 @@ describe('committed Redo inverse capture publication', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        removeCrdtDoc('receipt-child');
         createCrdtDoc('root');
         configureAutomergeStoragePort({
             getDoc: (id) => getCrdtDoc(id),
@@ -63,74 +63,127 @@ describe('committed Redo inverse capture publication', () => {
         removeCrdtDoc('root');
     });
 
-    function stage(fresh: readonly AppAction[]) {
+    function stage(fresh: readonly AppAction[], otherStorage?: typeof storage) {
         return runWithAutomergeStorageTransaction(undefined, () => {
-            const ownsPublication = captureProjectMutationAuthorization();
-            ownsPublication();
             for (const [index, action] of actions.entries()) {
                 commitRedoInverseCapture({
                     phase: 'stage',
                     action,
                     inverseAction: fresh[index]!,
-                    ownsPublication,
                     publicationAuthority: {
                         captureIdentity: captureProjectIdentity,
                         captureWitness: captureDurableDocumentWitness,
-                        captureCurrentGuard: () => {
+                        captureOwnedPublication: (owner) => {
                             const identity = captureProjectIdentity();
-                            const documents = getCrdtDocIds().map((id) => ({
-                                id,
-                                heads: Automerge.getHeads(getCrdtDoc(id)!),
-                            }));
-                            return () =>
-                                captureProjectIdentity() === identity &&
-                                documents.every(({ id, heads }) => {
-                                    const document = getCrdtDoc(id);
-                                    return document !== undefined && Automerge.hasHeads(document, heads);
-                                });
+                            const baseline = readOwnedProjectPublications(owner).length;
+                            return () => {
+                                const publications = readOwnedProjectPublications(owner).slice(baseline);
+                                if (publications.length === 0) {
+                                    return null;
+                                }
+                                return () =>
+                                    captureProjectIdentity() === identity &&
+                                    publications.every(({ docId, heads }) => {
+                                        const document = getCrdtDoc(docId);
+                                        return document !== undefined && Automerge.hasHeads(document, [...heads]);
+                                    });
+                            };
                         },
                     },
                 });
             }
             storage.set({ revision: storage.get()!.revision + 1 });
+            if (otherStorage) {
+                otherStorage.set({ revision: otherStorage.get()!.revision + 1 });
+            }
         });
     }
 
-    it.each(['clone', 'rollback', 'replacement', 'unproved', 'missing-entry', 'partial-set'] as const)(
-        'settles the complete group only on its proven installed publication: %s',
-        (terminal) => {
-            const before = Automerge.clone(getCrdtDoc('root')!);
-            const previous = entries.map((entry) => entry.inverseAction);
-            const fresh = [rename('first', 'Fresh first'), rename('second', 'Fresh second')];
-            const transaction = stage(fresh);
-            transaction.commit();
-            if (terminal === 'unproved') {
-                replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
-            }
-            commitRedoInverseCapture({ phase: 'published', actions });
-            if (terminal === 'rollback') {
-                replaceCrdtDocInLineage({ id: 'root', doc: before });
-            } else if (terminal === 'replacement') {
-                // Same exact published heads, but a different project installation.
-                replaceCrdtDoc({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
-            } else if (terminal === 'clone') {
-                replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
-            } else if (terminal === 'missing-entry') {
-                undoStore.set({ past: [], future: [entries[0]!] });
-            }
-            const installed = getCrdtDoc('root');
-            commitRedoInverseCapture({
-                phase: 'settle',
-                actions: terminal === 'partial-set' ? [actions[0]!] : actions,
+    it.each([
+        'clone',
+        'descendant-before',
+        'rollback',
+        'replacement',
+        'unproved',
+        'missing-entry',
+        'partial-set',
+    ] as const)('settles the complete group only on its proven installed publication: %s', (terminal) => {
+        const before = Automerge.clone(getCrdtDoc('root')!);
+        const previous = entries.map((entry) => entry.inverseAction);
+        const fresh = [rename('first', 'Fresh first'), rename('second', 'Fresh second')];
+        const transaction = stage(fresh);
+        if (terminal === 'unproved') {
+            // A foreign witness change cannot stand in for this aborted owner's receipt.
+            transaction.abort();
+            mutateCrdtDoc({
+                id: 'root',
+                changeFn: (draft) => {
+                    draft.foreignWitness = true;
+                },
             });
-            expect(getCrdtDoc('root')).toBe(installed);
-            for (const [index, entry] of entries.entries()) {
-                expect(entry.inverseAction).toBe(terminal === 'clone' ? fresh[index] : previous[index]);
+        } else {
+            transaction.commit();
+        }
+        if (terminal === 'descendant-before') {
+            replaceCrdtDocInLineage({
+                id: 'root',
+                doc: Automerge.change(Automerge.clone(getCrdtDoc('root')!), (draft) => {
+                    draft.peerDescendant = true;
+                }),
+            });
+        }
+        commitRedoInverseCapture({ phase: 'published', actions });
+        if (terminal === 'rollback') {
+            replaceCrdtDocInLineage({ id: 'root', doc: before });
+        } else if (terminal === 'replacement') {
+            // Same exact published heads, but a different project installation.
+            replaceCrdtDoc({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
+        } else if (terminal === 'clone') {
+            replaceCrdtDocInLineage({ id: 'root', doc: Automerge.clone(getCrdtDoc('root')!) });
+        } else if (terminal === 'missing-entry') {
+            undoStore.set({ past: [], future: [entries[0]!] });
+        }
+        const installed = getCrdtDoc('root');
+        commitRedoInverseCapture({
+            phase: 'settle',
+            actions: terminal === 'partial-set' ? [actions[0]!] : actions,
+        });
+        expect(getCrdtDoc('root')).toBe(installed);
+        for (const [index, entry] of entries.entries()) {
+            expect(entry.inverseAction).toBe(
+                terminal === 'clone' || terminal === 'descendant-before' ? fresh[index] : previous[index]
+            );
+        }
+        commitRedoInverseCapture({ phase: 'settle', actions });
+        for (const [index, entry] of entries.entries()) {
+            expect(entry.inverseAction).toBe(
+                terminal === 'clone' || terminal === 'descendant-before' ? fresh[index] : previous[index]
+            );
+        }
+    });
+
+    it.each(['before-publication', 'after-publication'] as const)(
+        'refuses the whole group after one of its owned documents rolls back: %s',
+        (timing) => {
+            createCrdtDoc('receipt-child');
+            const childStorage = createAutomergeStorage<{ revision: number }>('receipt-child', 'captureProof');
+            childStorage.set({ revision: 0 });
+            flushAutomergeStorageWrites();
+            const childBefore = Automerge.clone(getCrdtDoc('receipt-child')!);
+            const previous = entries.map((entry) => entry.inverseAction);
+            stage([rename('first', 'Fresh first'), rename('second', 'Fresh second')], childStorage).commit();
+            if (timing === 'after-publication') {
+                commitRedoInverseCapture({ phase: 'published', actions });
+            }
+            replaceCrdtDocInLineage({ id: 'receipt-child', doc: childBefore });
+            if (timing === 'before-publication') {
+                commitRedoInverseCapture({ phase: 'published', actions });
             }
             commitRedoInverseCapture({ phase: 'settle', actions });
             for (const [index, entry] of entries.entries()) {
-                expect(entry.inverseAction).toBe(terminal === 'clone' ? fresh[index] : previous[index]);
+                expect(entry.inverseAction).toBe(previous[index]);
             }
+            removeCrdtDoc('receipt-child');
         }
     );
 

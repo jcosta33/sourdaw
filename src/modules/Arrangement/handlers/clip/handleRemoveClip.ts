@@ -1,4 +1,4 @@
-import { getHeads, hasHeads } from '@automerge/automerge';
+import { hasHeads } from '@automerge/automerge';
 
 import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { commitRedoInverseCapture } from '#/modules/Command/useCases';
@@ -7,7 +7,7 @@ import {
     captureProjectIdentity,
     captureProjectMutationAuthorization,
     getCrdtDoc,
-    getCrdtDocIds,
+    readOwnedProjectPublications,
     hasForeignPendingProjectWrites,
 } from '#/modules/CrdtDocument/useCases';
 import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
@@ -17,6 +17,7 @@ import { type AppAction, type HandlerValidationContext } from '#/utils/handlerCo
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
@@ -42,15 +43,21 @@ const pendingRedoCaptures = new WeakMap<object, RemoveClipAction>();
 const preflightRedoTargets = new WeakMap<object, { owningTrackId: string; clip: unknown }>();
 
 /** The inverse producer owns document authority; Command only settles its staged history. */
-function captureRemovalPublicationGuard(): () => boolean {
+function captureRemovalPublication(owner: object): () => (() => boolean) | null {
+    const baseline = readOwnedProjectPublications(owner).length;
     const identity = captureProjectIdentity();
-    const documents = getCrdtDocIds().map((id) => ({ id, heads: getHeads(getCrdtDoc(id)!) }));
-    return () =>
-        captureProjectIdentity() === identity &&
-        documents.every(({ id, heads }) => {
-            const document = getCrdtDoc(id);
-            return document !== undefined && hasHeads(document, heads);
-        });
+    return () => {
+        const publications = readOwnedProjectPublications(owner).slice(baseline);
+        if (publications.length === 0) {
+            return null;
+        }
+        return () =>
+            captureProjectIdentity() === identity &&
+            publications.every(({ docId, heads }) => {
+                const document = getCrdtDoc(docId);
+                return document !== undefined && hasHeads(document, [...heads]);
+            });
+    };
 }
 
 function findOwningTrackId(clipId: string): string | undefined {
@@ -61,6 +68,23 @@ function replayTargetMatches(clipId: string, expected: { owningTrackId: string; 
     const owner = getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId));
     const clip = owner?.clips.find((candidate) => candidate.id === clipId);
     return owner?.id === expected.owningTrackId && clip !== undefined && valuesEqual(clip, expected.clip);
+}
+
+function clipForSavedReplayComparison(
+    target: { owningTrackId: string; clip: unknown },
+    clipId: string,
+    priorActions: readonly AppAction[]
+): unknown {
+    if (!priorActions.some((action) => action.type === 'duplicateClipAt' && action.payload.targetClipId === clipId)) {
+        return target.clip;
+    }
+    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === target.owningTrackId);
+    if (!track) {
+        return undefined;
+    }
+    // The producer's unset runtime optionals disappear from saved history. Keep
+    // the raw target for execute, and compare its canonical saved view here only.
+    return sanitizeTrackSnapshot({ tracks: [{ ...track, clips: [target.clip] }] }).tracks[0]?.clips[0];
 }
 
 /** A saved Redo may remove only the material its own inverse restored. */
@@ -76,12 +100,16 @@ function admittedRedoTarget(action: RemoveClipAction, context: HandlerValidation
     }
     // Earlier group members may have shifted this target before its own removal.
     // Compare the paired capture to that completed prefix, then pin it for execute.
-    const projected = projectClipReplayPrefix(context.actions.slice(0, context.actionIndex));
+    const priorActions = context.actions.slice(0, context.actionIndex);
+    const projected = projectClipReplayPrefix(priorActions);
     const target = projected?.clips.find((owner) => owner.clip.id === action.payload.clipId);
     if (
         !target ||
         target.owningTrackId !== paired.payload.trackId ||
-        !valuesEqual(target.clip, paired.payload.clipSnapshot)
+        !valuesEqual(
+            clipForSavedReplayComparison(target, action.payload.clipId, priorActions),
+            paired.payload.clipSnapshot
+        )
     ) {
         preflightRedoTargets.delete(action);
         return false;
@@ -207,11 +235,10 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                 phase: 'stage',
                 action: alpha,
                 inverseAction: fresh,
-                ownsPublication,
                 publicationAuthority: {
                     captureIdentity: captureProjectIdentity,
                     captureWitness: captureDurableDocumentWitness,
-                    captureCurrentGuard: captureRemovalPublicationGuard,
+                    captureOwnedPublication: captureRemovalPublication,
                 },
             });
         }

@@ -1,5 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    createAutomergeStorage,
+    getCurrentAutomergeStorageMutationOwner,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
@@ -59,6 +62,13 @@ type PlainObject = {
 };
 
 type TrackTransientState = Pick<TrackStoreState, 'selectedTrackId' | 'ghostClips'>;
+
+// Ephemeral intent, separate from both document fields and an owner's optimistic value.
+const selectionIntents = new WeakMap<TrackStoreState, { owner: object | undefined }>();
+
+export function recordTrackSelectionIntent(value: TrackStoreState): void {
+    selectionIntents.set(value, { owner: getCurrentAutomergeStorageMutationOwner() });
+}
 
 type TrackSnapshotState = Pick<TrackStoreState, 'tracks' | 'selectedTrackId'>;
 
@@ -790,8 +800,11 @@ function project_track_local_state(input: {
     const transient_state = local_state ?? defaultTrackTransientState;
     const previous = local_state ? input.previousLocalValue : undefined;
     const authority_state = get_valid_transient_state(input.authorityValue) ?? defaultTrackTransientState;
+    const selection_intent = selectionIntents.get(input.localValue);
     const requested_selection =
-        previous && input.localValue.selectedTrackId === previous.selectedTrackId
+        previous &&
+        (selection_intent?.owner !== undefined ||
+            (selection_intent === undefined && input.localValue.selectedTrackId === previous.selectedTrackId))
             ? authority_state.selectedTrackId
             : transient_state.selectedTrackId;
     const selected_track_id = input.authorityValue.tracks.some((track) => track.id === requested_selection)
