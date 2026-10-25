@@ -1659,9 +1659,9 @@ describe('pull-request supersession', () => {
                 })}`
             );
             expect(replay.slice(changedAt + 1)).toContain('old-core');
-            expect(
-                replay.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
-            ).toEqual([]);
+            expect(replay.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual(
+                []
+            );
             expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
             expect(current.comments().map((comment) => comment.body)).toEqual([
                 oldComment.body,
@@ -1762,9 +1762,9 @@ describe('pull-request supersession', () => {
             expect(current.events.slice(changedAt + 1)).toContain('old-core');
             expect(current.state()).toBe('CLOSED');
             expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
-            expect(current.events.filter((event) => /^(?:comment|delete|pull-request-superseded:)/.test(event))).toEqual(
-                []
-            );
+            expect(
+                current.events.filter((event) => /^(?:comment|delete|pull-request-superseded:)/.test(event))
+            ).toEqual([]);
             expect(current.comments().map((comment) => comment.body)).toEqual([
                 oldComment.body,
                 receiptBody,
