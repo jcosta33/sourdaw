@@ -1,8 +1,16 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+    withPullRequestMutationLock,
+    withPullRequestReviewPublicationMutationLock,
+    type PullRequestMutationSerialization,
+} from '../pullRequestMutationLock.ts';
+import { runRecoverDeliveryLockCli } from '../recoverDeliveryLock.ts';
 
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
@@ -24,6 +32,10 @@ import {
     type RepairReviewFindingPort,
     type RepairReviewFindingThread,
 } from '../repairReviewFinding.ts';
+import {
+    coordinateConfirmReviewRepairs,
+    defaultConfirmReviewRepairsCoordinatorDependencies,
+} from '../confirmReviewRepairs.ts';
 import { parseReviewRepairReply, renderReviewRepairReply } from '../reviewRepair.ts';
 import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
@@ -1256,6 +1268,12 @@ function fakeDependencies(overrides: Partial<RepairReviewFindingCoordinatorDepen
     const events: string[] = [];
     const dependencies: RepairReviewFindingCoordinatorDependencies = {
         primaryRoot: () => '/repo',
+        serialize: async (_root, _number, operation) =>
+            operation({
+                ownerOid: 'unit-owner',
+                markRemoteMutationAttempt: () => undefined,
+                registerSuccessfulCompletion: () => undefined,
+            }),
         authenticateAuthor: async (primaryRoot) => {
             events.push(`auth:${primaryRoot}`);
             return {
@@ -1341,6 +1359,217 @@ describe('runRepairReviewFindingCli', () => {
 describe('defaultRepairReviewFindingCoordinatorDependencies', () => {
     it('should bind the author role and the module record function', () => {
         const dependencies = defaultRepairReviewFindingCoordinatorDependencies();
+        expect(dependencies.serialize).toBe(withPullRequestMutationLock);
         expect(dependencies.repair).toBe(repairReviewFinding);
+    });
+});
+
+function lockGit(root: string, args: string[]): string {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+}
+
+function mutationFixture() {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-mutation-'));
+    lockGit(root, ['init', '--quiet']);
+    const serialize: PullRequestMutationSerialization = (directory, number, operation) =>
+        withPullRequestMutationLock(directory, number, operation, {
+            ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'controlled-review-owner' },
+        });
+    return { root, serialize };
+}
+
+function deferredBoundary() {
+    let release: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return { promise, release };
+}
+
+async function recoverReviewMutation(root: string, ownerOid: string) {
+    const reads = vi.fn(() => ({ state: 'open' as const, head: HEAD, merged: false, receipts: [] }));
+    const auth = vi.fn(async () => ({
+        minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+        session: { configDir: root, env: {}, dispose: () => undefined },
+    }));
+    const dependencies = {
+        trustedLauncher: { primaryRoot: root, gitPath: 'git', ghPath: 'gh' },
+        authenticateAuthor: auth,
+        repositoryName: () => 'jcosta33/sourdaw',
+        readJournaledRemoteState: reads,
+        ownerFenceIsLive: () => false,
+        currentOwnerFence: () => ({ kind: 'pid' as const, pid: process.pid, startedAt: 'controlled-recovery-owner' }),
+    };
+    await expect(runRecoverDeliveryLockCli([String(PR), '--owner', ownerOid], dependencies)).resolves.toBe(0);
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(auth).toHaveBeenCalledTimes(1);
+    reads.mockClear();
+    auth.mockClear();
+    await expect(runRecoverDeliveryLockCli([String(PR), '--owner', ownerOid], dependencies)).resolves.toBe(0);
+    expect(reads).not.toHaveBeenCalled();
+    expect(auth).not.toHaveBeenCalled();
+}
+
+describe('serialized author repair transaction', () => {
+    // The global Trace2 git-ai observer writes .git/ai after Git returns; keep disposable repos private.
+    beforeEach(() => vi.stubEnv('GIT_TRACE2_EVENT', '0'));
+    afterEach(() => vi.unstubAllEnvs());
+    it('refuses repair and confirmation competitors before auth while another PR remains independent', async () => {
+        const { root, serialize } = mutationFixture();
+        const entered = deferredBoundary();
+        const resume = deferredBoundary();
+        const { port, posted } = fakePort();
+        const { dependencies } = fakeDependencies({
+            primaryRoot: () => root,
+            serialize,
+            repair: repairReviewFinding,
+            port: () => port,
+        });
+        const authenticate = dependencies.authenticateAuthor;
+        const first = coordinateRepairReviewFinding(PR, repairInput(), {
+            ...dependencies,
+            authenticateAuthor: async (directory) => {
+                entered.release();
+                await resume.promise;
+                return authenticate(directory);
+            },
+        });
+        try {
+            await entered.promise;
+            const competitorAuth = vi.fn(authenticate);
+            const competitorPort = vi.fn(() => port);
+            await expect(
+                coordinateRepairReviewFinding(PR, repairInput(), {
+                    ...dependencies,
+                    authenticateAuthor: competitorAuth,
+                    port: competitorPort,
+                })
+            ).rejects.toThrow(`PR #${PR} is already being delivered`);
+            expect(competitorAuth).not.toHaveBeenCalled();
+            expect(competitorPort).not.toHaveBeenCalled();
+            const reviewerAuth = vi.fn(defaultConfirmReviewRepairsCoordinatorDependencies().authenticateReviewer);
+            await expect(
+                coordinateConfirmReviewRepairs(PR, HEAD, {
+                    ...defaultConfirmReviewRepairsCoordinatorDependencies(),
+                    primaryRoot: () => root,
+                    serialize,
+                    authenticateReviewer: reviewerAuth,
+                })
+            ).rejects.toThrow(`PR #${PR} is already being delivered`);
+            expect(reviewerAuth).not.toHaveBeenCalled();
+            await expect(
+                coordinateRepairReviewFinding(PR + 1, repairInput(), {
+                    ...dependencies,
+                    repair: () => 'independent PR',
+                })
+            ).resolves.toBeUndefined();
+            expect(posted).toHaveLength(0);
+        } finally {
+            resume.release();
+            await first;
+        }
+        try {
+            await coordinateRepairReviewFinding(PR, repairInput(), dependencies);
+            expect(posted).toHaveLength(1);
+            expect(() => lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a held publication owner before authentication or reads', async () => {
+        const { root, serialize } = mutationFixture();
+        const { dependencies } = fakeDependencies({ primaryRoot: () => root, serialize });
+        const auth = vi.fn(dependencies.authenticateAuthor);
+        const port = vi.fn(dependencies.port);
+        try {
+            await withPullRequestReviewPublicationMutationLock(
+                root,
+                PR,
+                async () => {
+                    await expect(
+                        coordinateRepairReviewFinding(PR, repairInput(), {
+                            ...dependencies,
+                            authenticateAuthor: auth,
+                            port,
+                        })
+                    ).rejects.toThrow(`PR #${PR} is already being delivered`);
+                    const reviewerAuth = vi.fn(
+                        defaultConfirmReviewRepairsCoordinatorDependencies().authenticateReviewer
+                    );
+                    await expect(
+                        coordinateConfirmReviewRepairs(PR, HEAD, {
+                            ...defaultConfirmReviewRepairsCoordinatorDependencies(),
+                            primaryRoot: () => root,
+                            serialize,
+                            authenticateReviewer: reviewerAuth,
+                        })
+                    ).rejects.toThrow(`PR #${PR} is already being delivered`);
+                    expect(reviewerAuth).not.toHaveBeenCalled();
+                },
+                {
+                    reviewPublication: {
+                        expectedHead: HEAD,
+                        payloadDigest: 'a'.repeat(64),
+                        reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                        ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'controlled-publication-owner' },
+                    },
+                }
+            );
+            expect(auth).not.toHaveBeenCalled();
+            expect(port).not.toHaveBeenCalled();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the v4 owner after an ambiguous reply and recovers before one-record replay', async () => {
+        const { root, serialize } = mutationFixture();
+        const { port: base, posted } = fakePort();
+        const port: RepairReviewFindingPort = {
+            ...base,
+            postReply: (...args) => {
+                base.postReply(...args);
+                throw new Error('reply transport failed after posting');
+            },
+        };
+        const { dependencies } = fakeDependencies({
+            primaryRoot: () => root,
+            serialize,
+            port: () => port,
+            repair: repairReviewFinding,
+        });
+        try {
+            let refusal: unknown;
+            try {
+                await coordinateRepairReviewFinding(PR, repairInput(), dependencies);
+            } catch (error) {
+                refusal = error;
+            }
+            const ownerOid = lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`]);
+            expect(String(refusal)).toContain('reply transport failed after posting');
+            expect(String(refusal)).toContain(`pnpm deliver --recover-lock ${PR} --owner ${ownerOid}`);
+            expect(JSON.parse(lockGit(root, ['cat-file', 'blob', ownerOid]))).toMatchObject({
+                version: 4,
+                operation: 'delivery',
+                number: PR,
+                ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'controlled-review-owner' },
+                mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+            });
+            const blockedAuth = vi.fn(dependencies.authenticateAuthor);
+            await expect(
+                coordinateRepairReviewFinding(PR, repairInput(), {
+                    ...dependencies,
+                    authenticateAuthor: blockedAuth,
+                })
+            ).rejects.toThrow(`PR #${PR} is already being delivered`);
+            expect(blockedAuth).not.toHaveBeenCalled();
+            await recoverReviewMutation(root, ownerOid);
+            await coordinateRepairReviewFinding(PR, repairInput(), dependencies);
+            expect(posted).toHaveLength(1);
+            expect(() => lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });
