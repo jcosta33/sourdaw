@@ -492,16 +492,21 @@ class LevainProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _rejectBankLoad(error: unknown): void {
+    /**
+     * `ownerEnded` marks a follower rejected only because the load it waited on
+     * ended: the follower's own processor is healthy, so its host can load again.
+     */
+    _rejectBankLoad(error: unknown, ownerEnded = false): void {
         const loadToken = this._bankLoadToken;
         try {
             this._leaveBankLoad(error);
         } finally {
-            this.port.postMessage({
+            const message = {
                 type: 'sampleBankError',
                 loadToken,
                 message: error instanceof Error ? error.message : String(error),
-            });
+            };
+            this.port.postMessage(ownerEnded ? { ...message, ownerEnded } : message);
         }
     }
 
@@ -595,7 +600,7 @@ class LevainProcessor extends AudioWorkletProcessor {
             inFlightBanks.delete(bankKey);
             for (const follower of inFlight.followers) {
                 try {
-                    follower._rejectBankLoad(error);
+                    follower._rejectBankLoad(error, true);
                 } catch (followerError) {
                     console.error('LevainProcessor follower cleanup failed:', followerError);
                 }

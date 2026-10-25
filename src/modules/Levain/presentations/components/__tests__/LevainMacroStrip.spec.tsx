@@ -4,17 +4,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { createDefaultPatch } from '../../../models/LevainPatch';
 import { LevainMacroStrip } from '../LevainMacroStrip';
 
-// Expose each RotaryKnob as a labelled range input so the per-macro onChange is
-// observable. The label is still rendered so the render-smoke test holds.
-vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({ value, onChange, label }: { value: number; onChange: (v: number) => void; label?: string }) => (
-        <label>
-            {label}
-            <input type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
-        </label>
-    ),
-}));
-
 describe('LevainMacroStrip', () => {
     it('should render', () => {
         const patch = createDefaultPatch('violin-1');
@@ -29,8 +18,51 @@ describe('LevainMacroStrip', () => {
         render(<LevainMacroStrip macros={patch.macros} labels={patch.macroLabels} onMacroChange={onMacroChange} />);
 
         // Index 4 is the 'Space' macro in the default labels.
-        fireEvent.change(screen.getByLabelText(patch.macroLabels[4]), { target: { value: '0.7' } });
+        fireEvent.keyDown(screen.getByRole('slider', { name: patch.macroLabels[4] }), { key: 'ArrowUp' });
 
-        expect(onMacroChange).toHaveBeenCalledWith(4, 0.7);
+        expect(onMacroChange).toHaveBeenCalledWith(4, expect.any(Number));
+    });
+
+    it('makes only Space unavailable when the bank has no Room microphone', () => {
+        const patch = createDefaultPatch('violin-1');
+        const onMacroChange = vi.fn();
+        render(
+            <LevainMacroStrip
+                macros={patch.macros}
+                labels={patch.macroLabels}
+                onMacroChange={onMacroChange}
+                spaceAvailable={false}
+            />
+        );
+
+        const space = screen.getByRole('slider', { name: 'Space' });
+        expect(space).toHaveAttribute('aria-disabled', 'true');
+        expect(space).toHaveAttribute('title', 'Space requires a loaded Room microphone position.');
+        expect(screen.getByText('Requires a Room mic')).toBeInTheDocument();
+        const otherKnobs = screen.getAllByRole('slider').filter((knob) => knob !== space);
+        expect(otherKnobs).toHaveLength(patch.macroLabels.length - 1);
+        for (const knob of otherKnobs) {
+            expect(knob).not.toHaveAttribute('aria-disabled', 'true');
+        }
+
+        fireEvent.keyDown(space, { key: 'ArrowUp' });
+        expect(onMacroChange).not.toHaveBeenCalled();
+    });
+
+    it('keeps Space enabled when the bank has a Room microphone', () => {
+        const patch = createDefaultPatch('violin-1');
+        const onMacroChange = vi.fn();
+        render(
+            <LevainMacroStrip
+                macros={patch.macros}
+                labels={patch.macroLabels}
+                onMacroChange={onMacroChange}
+                spaceAvailable
+            />
+        );
+
+        const space = screen.getByRole('slider', { name: 'Space' });
+        fireEvent.keyDown(space, { key: 'ArrowUp' });
+        expect(onMacroChange).toHaveBeenCalledWith(4, expect.any(Number));
     });
 });

@@ -93,6 +93,11 @@ Where the posts come from, beyond the table:
 - **A throwing handler.** A throw inside a live handler posts `sampleBankError { loadToken, message }`
   when a bank load is in flight (the load rejects, the processor stays live) and otherwise faults the
   processor with `error { message }`. A throw in `process()` faults it.
+- **A follower whose owner ends.** When the processor that uploads a shared bank leaves its load
+  (disposed, aborted, faulted, or its upload refused), each follower of that bank posts
+  `sampleBankError { loadToken, message, ownerEnded: true }` with the owner's reason. The follower's
+  own processor is healthy, so its host loads again rather than reporting a failure; the owner's own
+  rejection never carries `ownerEnded`.
 - **A sample upload.** `beginSample` reserves the sample's whole storage in the engine, `sampleChunk`
   copies at most one chunk (`LEVAIN_SAMPLE_CHUNK_FLOATS`) into it, and `sealSample` publishes it. The
   engine offers a write window of at most one chunk, so the worklet refuses, before writing a byte, a

@@ -22,6 +22,10 @@ function selectRpn(msb: number, lsb: number, channel = 0): Message[] {
     return [message(RPN_MSB, msb, channel), message(RPN_LSB, lsb, channel)];
 }
 
+function selectNrpn(msb: number, lsb: number, channel = 0): Message[] {
+    return [message(NRPN_MSB, msb, channel), message(NRPN_LSB, lsb, channel)];
+}
+
 function dataEntry(msb: number, lsb: number, channel = 0): Message[] {
     return [message(DATA_MSB, msb, channel), message(DATA_LSB, lsb, channel)];
 }
@@ -165,11 +169,34 @@ describe('reconcileRegisteredParameterMessages', () => {
             expect(declaration(declareRange(12), declareRange(12))).toEqual([]);
         });
 
-        it('brings a channel that declared no range back to the default range and the Null RPN', () => {
+        it('brings a channel that declared no range back to the default range and the Null NRPN', () => {
             const reconciled = declaration([], declareRange(12));
 
-            expect(replay(reconciled)).toEqual(replay(declareRange(2)));
-            expect(reconciled).toEqual(declareRange(2));
+            expect(reconciled).toEqual([...selectRpn(0, 0), ...dataEntry(2, 0), ...selectNrpn(127, 127)]);
+        });
+
+        it.each([
+            ['an RPN left selected', selectRpn(0, 1)],
+            ['a range closed by the Null RPN', declareRange(12)],
+            ['an NRPN left selected', [message(NRPN_MSB, 1), message(NRPN_LSB, 5)]],
+        ])('leaves a channel that selected %s answering what follows as a channel that never did', (_name, held) => {
+            const reconciled = declaration([], held);
+
+            // The range a fresh channel reads as undefined is the default two semitones everywhere it is read.
+            const bendRangeAfter = (tail: readonly Message[]) =>
+                replay([...held, ...reconciled, ...tail]).bendRangeSemitones ?? 2;
+            const freshBendRangeAfter = (tail: readonly Message[]) => replay(tail).bendRangeSemitones ?? 2;
+            for (const tail of [
+                [message(RPN_MSB, 0), message(DATA_INCREMENT, 0)],
+                [message(RPN_MSB, 0), message(97, 0)],
+                [message(RPN_MSB, 0), message(DATA_MSB, 5)],
+                [message(RPN_LSB, 0), message(DATA_MSB, 5)],
+                [message(DATA_MSB, 5)],
+                [message(DATA_INCREMENT, 0)],
+                [message(RPN_MSB, 3), message(RPN_LSB, 0), message(DATA_MSB, 5)],
+            ]) {
+                expect(bendRangeAfter(tail)).toBe(freshBendRangeAfter(tail));
+            }
         });
 
         it('brings a channel that selected a parameter back to no selection', () => {

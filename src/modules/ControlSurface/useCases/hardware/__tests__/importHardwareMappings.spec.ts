@@ -116,4 +116,59 @@ describe('importHardwareMappings', () => {
         expect(mocks.notifyUser.mock.calls[0]?.[0]).toContain('unknown-profile');
         expect(mocks.notifyUser.mock.calls[0]?.[1]).toBe('error');
     });
+
+    it.each([
+        { id: '' },
+        { id: ' play ' },
+        { controlIndex: -1 },
+        { controlIndex: 128 },
+        { controlIndex: 1.5 },
+        { channel: 0 },
+        { channel: 17 },
+        { channel: 1.5 },
+    ])('rejects invalid MIDI mapping fields before any store write: %j', (invalid) => {
+        const before = hardwareControllerStore.value;
+        expect(importHardwareMappings('p1', JSON.stringify([{ ...baseMapping, ...invalid }]))).toBe(false);
+        expect(hardwareControllerStore.value).toBe(before);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([null, { type: 'unknown' }, { type: 'transport', target: 42 }])(
+        'rejects malformed actions without replacing the profile: %j',
+        (action) => {
+            const before = hardwareControllerStore.value;
+            expect(importHardwareMappings('p1', JSON.stringify([{ ...baseMapping, action }]))).toBe(false);
+            expect(hardwareControllerStore.value).toBe(before);
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('accepts MIDI range endpoints and an action without an optional target', () => {
+        const before = hardwareControllerStore.value!;
+        const mappings = [
+            { ...baseMapping, id: 'first', controlIndex: 0, channel: 1, action: { type: 'transport' } },
+            { ...baseMapping, id: 'last', controlIndex: 127, channel: 16, action: { type: 'workflow' } },
+        ];
+        expect(importHardwareMappings('p1', JSON.stringify(mappings))).toBe(true);
+        expect(hardwareControllerStore.value?.profiles[0]?.mappings).toEqual(mappings);
+        expect(hardwareControllerStore.value?.profiles[1]).toBe(before.profiles[1]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects a numeric overflow and duplicate mapping IDs without replacing any profile', () => {
+        const before = hardwareControllerStore.value;
+        const overflow = JSON.stringify([baseMapping]).replace('"channel":1', '"channel":1e400');
+        expect(importHardwareMappings('p1', overflow)).toBe(false);
+        expect(hardwareControllerStore.value).toBe(before);
+        expect(importHardwareMappings('p1', JSON.stringify([baseMapping, baseMapping]))).toBe(false);
+        expect(hardwareControllerStore.value).toBe(before);
+    });
+
+    it('accepts the established empty mapping array and retains profile metadata', () => {
+        const before = hardwareControllerStore.value!;
+        expect(importHardwareMappings('p1', '[]')).toBe(true);
+        expect(hardwareControllerStore.value?.profiles[0]).toEqual({ ...before.profiles[0], mappings: [] });
+        expect(hardwareControllerStore.value?.profiles[1]).toBe(before.profiles[1]);
+        expect(hardwareControllerStore.value?.connectedDevices).toBe(before.connectedDevices);
+    });
 });

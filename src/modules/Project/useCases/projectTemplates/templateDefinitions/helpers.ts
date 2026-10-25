@@ -19,7 +19,8 @@ export type ProjectTemplate = {
     category: TemplateCategory;
     executionBoundary: 'app-action' | 'project-replacement';
     platform?: 'web' | 'native';
-    create: () => Promise<boolean>;
+    /** A project-replacement template keeps its caller's `shouldProceed` until the switch. */
+    create: (options?: { readonly shouldProceed?: () => boolean }) => Promise<boolean>;
 };
 
 async function createSuccessfulTemplate(create: () => Promise<void> | void): Promise<boolean> {
@@ -34,7 +35,7 @@ export const templates: ProjectTemplate[] = [
         description: 'A blank canvas — no tracks, no devices.',
         category: 'empty',
         executionBoundary: 'project-replacement',
-        create: () => newProject('Untitled'),
+        create: (options) => newProject('Untitled', options),
     },
     {
         id: 'pop-song',

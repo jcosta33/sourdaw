@@ -147,13 +147,16 @@ function insertAdjustmentBusChains({
         // A moving blend would need per-block crossfade writes through the
         // live bus node's slewed API; until that exists, a steady layer is
         // rendered and a moving one is skipped — loudly, never silently.
-        if (!composition.constant) {
+        const steadyDsp = composition.dsp.filter((layer) => layer.constant);
+        if (steadyDsp.length !== composition.dsp.length) {
             if (!warnedMovingDsp) {
                 warnedMovingDsp = true;
                 onWarning?.(
                     'A DSP adjustment layer that fades across this export is skipped; only steady layers render offline.'
                 );
             }
+        }
+        if (steadyDsp.length === 0) {
             continue;
         }
         const outputTarget = resolveOutputTarget({
@@ -173,7 +176,7 @@ function insertAdjustmentBusChains({
             // The edge `set-track-output` wired is the one being replaced; if
             // it was already gone there is nothing to unwind.
         }
-        const buses = createOfflineAdjustmentBusChain({ context: offlineCtx, layers: composition.dsp });
+        const buses = createOfflineAdjustmentBusChain({ context: offlineCtx, layers: steadyDsp });
         wireAdjustmentBusChain(strip.outputNode, buses, targetNode);
     }
 }

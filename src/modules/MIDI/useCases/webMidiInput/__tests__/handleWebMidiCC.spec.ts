@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+import { channelControllerState } from '../../../repositories/webMidi/channelControllerState';
+import { ingestChannelControlChange } from '../../../repositories/webMidi/ingestChannelControlChange';
 import { recordedControllerTakeState } from '../../../repositories/webMidi/recordedControllerTakeState';
 import { bufferRecordedMidiCC } from '../../recordedControllerTake/bufferRecordedMidiCC';
 import { bufferRecordedMidiPitchBend } from '../../recordedControllerTake/bufferRecordedMidiPitchBend';
@@ -984,6 +986,30 @@ describe('handleWebMidiCC', () => {
                 { controller: 38, value: 0, beat: 2, channel: 0 },
                 { controller: 101, value: 127, beat: 2, channel: 0 },
                 { controller: 100, value: 127, beat: 2, channel: 0 },
+            ]);
+        });
+
+        it('keeps the state from before a Data Entry that is the take first row into the clip', () => {
+            channelControllerState.clear();
+            for (const [controller, value] of [
+                [101, 0],
+                [100, 0],
+                [6, 12],
+                [38, 0],
+            ] as const) {
+                ingestChannelControlChange({ channel: 0, cc: controller, value });
+            }
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 6, 2, at_beat(6));
+
+            const stateAtFirstRow =
+                recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.registeredStateAtFirstRow;
+            expect(stateAtFirstRow?.map(({ controller, value }) => [controller, value])).toEqual([
+                [101, 0],
+                [100, 0],
+                [6, 12],
+                [38, 0],
             ]);
         });
 

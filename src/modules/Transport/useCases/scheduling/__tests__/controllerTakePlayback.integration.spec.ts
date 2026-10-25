@@ -217,10 +217,14 @@ describe('a recorded controller-only take, played by the window scheduler', () =
      * Record a pitch-wheel bend out to full at beat 4.5 and back to centre at 5.5 on the live input into a
      * clip spanning beats 4 to 8, then give the clip the held note the performer played over it.
      */
-    async function recordBendTake(): Promise<string> {
+    async function recordBendTake(beforeTake: readonly number[][] = []): Promise<string> {
         setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
         await initWebMidi();
         setMidiInputTrack(TRACK_ID);
+        // What the keyboard sent while no take was recording: it reaches only the live channel state.
+        for (const bytes of beforeTake) {
+            liveMidi.input.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
+        }
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional recording clip');
@@ -290,6 +294,35 @@ describe('a recorded controller-only take, played by the window scheduler', () =
             { note: 60, pitchBend: undefined, range: undefined, frame: 4 * BEAT_FRAMES },
             { note: 60, pitchBend: 8191, range: 2, frame: 4.5 * BEAT_FRAMES },
             { note: 60, pitchBend: 0, range: 2, frame: 5.5 * BEAT_FRAMES },
+        ]);
+    });
+
+    it('plays the recorded bend at the range the keyboard declared before the take began', async () => {
+        const clipId = await recordBendTake([
+            [0xb0, 101, 0],
+            [0xb0, 100, 0],
+            [0xb0, 6, 12],
+            [0xb0, 38, 0],
+            [0xb0, 101, 127],
+            [0xb0, 100, 127],
+        ]);
+        expect(
+            midiStore.value?.ccByClipId[clipId]?.map(({ controller, value, beat }) => [controller, value, beat])
+        ).toEqual([
+            [101, 0, 0],
+            [100, 0, 0],
+            [6, 12, 0],
+            [38, 0, 0],
+            [101, 127, 0],
+            [100, 127, 0],
+        ]);
+
+        await playWindow(0, 12);
+
+        expect(engineStub.expressions).toEqual([
+            { note: 60, pitchBend: undefined, range: undefined, frame: 4 * BEAT_FRAMES },
+            { note: 60, pitchBend: 8191, range: 12, frame: 4.5 * BEAT_FRAMES },
+            { note: 60, pitchBend: 0, range: 12, frame: 5.5 * BEAT_FRAMES },
         ]);
     });
 

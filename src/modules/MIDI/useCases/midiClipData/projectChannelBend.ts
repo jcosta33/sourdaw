@@ -39,7 +39,7 @@ type ChannelBendPoint = {
     recordedBeat: number;
     /** The signed 14-bit wire delta, -8192..8191, 0 at centre. */
     value: number;
-    /** The depth `value` is read against, in semitones. */
+    /** The depth `value` is read against, in semitones: the one in force where the row was recorded, even for a carry. */
     rangeSemitones: number;
 };
 
@@ -79,7 +79,7 @@ export function projectChannelBend({
                     frame: frameAtBeat(bend.beat),
                     recordedBeat: bend.recordedBeat,
                     value: bend.value,
-                    rangeSemitones: readRange(bend.channel, bend.contentBeat),
+                    rangeSemitones: readRange(bend.channel, bend.recordedContentBeat),
                 },
                 clipIndex,
                 rowIndex,

@@ -7,6 +7,7 @@ import {
     isDataEntryCc,
     MPE_FIRST_MEMBER_CHANNEL,
 } from '../../models/MidiControllerState';
+import { type MidiCC } from '../../models/MidiNote';
 import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
@@ -14,6 +15,8 @@ import { ingestChannelControlChange } from '../../repositories/webMidi/ingestCha
 import { memberExpressionState, setMemberExpression } from '../../repositories/webMidi/memberExpressionState';
 import { pendingMemberAdmission } from '../../repositories/webMidi/pendingMemberAdmission';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
+import { isRegisteredParameterController } from '../../services/registeredParameterState';
+import { readLiveRegisteredStateRows } from '../recordedControllerTake/readLiveRegisteredStateRows';
 
 import { isCapturedByMidiLearn } from './isCapturedByMidiLearn';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
@@ -67,6 +70,12 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             ) {
                 earlierBendRange = resolveBendRangeSemitones({ channel, mpeEnabled });
             }
+            // Only a message to the RPN/NRPN machine moves the registered-parameter state, and a take's
+            // first row into a clip needs the state from before that row's own message.
+            let registeredStateBefore: MidiCC[] | undefined;
+            if (isRegisteredParameterController(cc)) {
+                registeredStateBefore = readLiveRegisteredStateRows();
+            }
             const controlChange = ingestChannelControlChange({ channel, cc, value });
             if (controlChange.consumed && earlierBendRange !== undefined) {
                 const bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
@@ -109,7 +118,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                 recordChannelEvent(deps, {
                     trackId: getTargetTrackId(),
                     channel,
-                    event: { kind: 'controlChange', controller: cc, value },
+                    event: { kind: 'controlChange', controller: cc, value, registeredStateBefore },
                     timeStamp,
                 });
             }

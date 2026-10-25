@@ -6,6 +6,18 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
+
+The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load
+path at epoch 0, where the epoch term is bypassed, and mocked `captureProjectRevision` to a
+constant with a no-op `stopPlayback`. None of them could observe the guard reading the discard's
+own load transaction, transport halt and `loading` publication as a newer transition or an edit
+(#5573). The full lesson is in `project-integrity.md`.
+
+Probe: run the real revision and identity capture over a real root document, after one real
+transition has activated, with every wait the action crosses spanning a frame so pending document
+writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
+
 ### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
 
 PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and

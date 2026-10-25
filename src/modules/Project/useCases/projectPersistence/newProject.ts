@@ -19,6 +19,7 @@ import { projectStore, type ProjectStoreState } from '../../stores/projectStore'
 import { createFreshProjectMetadata } from '../createFreshProjectMetadata';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
+import { markOutgoingProjectDirtyAfterAbort } from './helpers/markOutgoingProjectDirtyAfterAbort';
 import {
     resetCrdtProjectWithTransportStopped,
     type OutgoingProjectDisposition,
@@ -35,12 +36,15 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 type NewProjectOptions = {
     /** `discard` when the replacement exists to drop the outgoing project's unsaved state. */
     readonly outgoingProject?: OutgoingProjectDisposition;
+    /** The caller keeps this true only while the user still wants this replacement. */
+    readonly shouldProceed?: () => boolean;
 };
 
 type ActivateNewProjectInput = {
     name: string;
     outgoingProject: OutgoingProjectDisposition;
     previousTransientState: Pick<ProjectStoreState, 'initialized' | 'loading'> | null;
+    shouldProceed: () => boolean;
     transaction: ProjectLoadTransaction;
 };
 
@@ -52,6 +56,9 @@ function failNewProjectActivation({
         const project = projectStore.value;
         if (project && previousTransientState) {
             projectStore.set({ ...project, ...previousTransientState });
+            // A take the replacement's stop committed while `loading` hid it
+            // from `markDirty` belongs to the project that stays open.
+            markOutgoingProjectDirtyAfterAbort();
         }
     }
 }
@@ -125,6 +132,7 @@ async function switchToNewProject({
     name,
     outgoingProject,
     previousTransientState,
+    shouldProceed,
     transaction,
 }: ActivateNewProjectInput): Promise<ReplacedProject | null> {
     let graphTeardownStarted = false;
@@ -133,8 +141,11 @@ async function switchToNewProject({
     // Hoisted out of the try: a throw past the switch has to be able to settle
     // the reset this activation began.
     let replaced: ReplacedProject | null = null;
+    // A caller's withdrawal starts no transaction, so it never supersedes this
+    // one: every check before the switch asks the caller as well.
+    const shouldContinue = (): boolean => transaction.isCurrent() && shouldProceed();
     try {
-        if (!(await transaction.prepare()) || !transaction.activate()) {
+        if (!(await transaction.prepare()) || !shouldProceed() || !transaction.activate()) {
             failNewProjectActivation({ previousTransientState, transaction });
             return null;
         }
@@ -142,7 +153,7 @@ async function switchToNewProject({
         const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
         try {
             await stopPlayback();
-            if (!transaction.isCurrent()) {
+            if (!shouldContinue()) {
                 failNewProjectActivation({ previousTransientState, transaction });
                 return null;
             }
@@ -151,7 +162,7 @@ async function switchToNewProject({
             graphTeardownStarted = true;
             resetAudioGraph();
             await unloadLoadedExternalPlugins();
-            if (!transaction.isCurrent()) {
+            if (!shouldContinue()) {
                 restorePreviousProjectRuntime();
                 failNewProjectActivation({ previousTransientState, transaction });
                 return null;
@@ -163,7 +174,7 @@ async function switchToNewProject({
                 () => {
                     authorityReplaced = true;
                 },
-                transaction.isCurrent,
+                shouldContinue,
                 outgoingProject
             );
             if (reset.status === 'refused') {
@@ -284,7 +295,7 @@ async function activateNewProject(input: ActivateNewProjectInput): Promise<boole
 
 export function newProject(
     name = 'Untitled Project',
-    { outgoingProject = 'save-closed-takes' }: NewProjectOptions = {}
+    { outgoingProject = 'save-closed-takes', shouldProceed = () => true }: NewProjectOptions = {}
 ): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     const currentProject = projectStore.value;
@@ -294,5 +305,5 @@ export function newProject(
     if (currentProject) {
         projectStore.set({ ...currentProject, loading: true, initialized: false });
     }
-    return activateNewProject({ name, outgoingProject, previousTransientState, transaction });
+    return activateNewProject({ name, outgoingProject, previousTransientState, shouldProceed, transaction });
 }

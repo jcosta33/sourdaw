@@ -17,7 +17,7 @@ export function openRecordedControllerBuffer(clipId: string): RecordedController
     if (existing) {
         return existing;
     }
-    const created: RecordedControllerBuffer = { cc: [], pitchBend: [] };
+    const created: RecordedControllerBuffer = { cc: [], pitchBend: [], registeredStateAtFirstRow: undefined };
     buffers.set(clipId, created);
     return created;
 }

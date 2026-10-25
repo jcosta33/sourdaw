@@ -25,6 +25,7 @@ import { setAutoSaveHandle } from './autoSaveHandle';
 import { collectProjectAudioBufferIds } from './collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from './hydrateArrangementStoreFromProjectData';
 import { hydrateModuleStoresFromProjectData } from './hydrateModuleStoresFromProjectData';
+import { markOutgoingProjectDirtyAfterAbort } from './markOutgoingProjectDirtyAfterAbort';
 import { markProjectDurabilityPending } from './markProjectDurabilityPending';
 import {
     resetCrdtProjectWithTransportStopped,
@@ -149,6 +150,9 @@ export async function replaceProjectData({
             const project = projectStore.value;
             if (project && previousTransientState) {
                 projectStore.set({ ...project, ...previousTransientState });
+                // `markDirty` ignored the edits this window committed into the
+                // outgoing project; it is the open project again, so account for them.
+                markOutgoingProjectDirtyAfterAbort();
             }
         }
         return { status: 'aborted' };
