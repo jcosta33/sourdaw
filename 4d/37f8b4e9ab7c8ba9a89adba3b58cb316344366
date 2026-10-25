@@ -1,0 +1,27 @@
+src/modules/Transport/useCases/tempoMapping/operations/detectProjectTempo.ts
+  s_29d8df116c5b92::t_264d326a0d8cd3 7-8,12
+src/modules/AudioAnalysis/handlers/analysis/handleDetectTempo.ts
+  s_29d8df116c5b92::t_264d326a0d8cd3 23
+src/modules/AudioAnalysis/handlers/analysis/__tests__/detectTempoCommand.integration.spec.ts
+  s_29d8df116c5b92::t_264d326a0d8cd3 1-2,6,9-10,14,71,73-74,88-89,109,114-117
+  s_29d8df116c5b92::t_642f1c1ee1d46c 3-5,7-8,11-13,15-70,72,75-87,90-108,110-113,118-196
+  s_29d8df116c5b92::t_1df9fafe0015be 197-303
+src/modules/Transport/useCases/tempoMapping/operations/__tests__/detectProjectTempo.spec.ts
+  s_29d8df116c5b92::t_264d326a0d8cd3 39,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d37f8b4e9ab7c8ba9a89adba3b58cb316344366",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
