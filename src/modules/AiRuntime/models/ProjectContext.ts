@@ -257,6 +257,12 @@ export type ProjectContextClip = {
     loopLength?: number;
     minimumLoopLengthBeats?: number;
     /**
+     * The timeline beat the loop was established at, when the clip is anchored (#4988). The
+     * scheduler admits notes against the anchored loop window, which the trim advance derives
+     * from this anchor, so note validation needs it here; absent for an unanchored clip.
+     */
+    loopOriginBeat?: number;
+    /**
      * Where the clip's content starts, in the clip's own media coordinates. Note beats are stored in
      * those coordinates, so this is what maps a note to the beat it actually sounds on: slipping a
      * clip moves the window without moving a single note.

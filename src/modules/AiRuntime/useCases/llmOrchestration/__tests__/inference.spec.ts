@@ -477,6 +477,50 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
+    // Red when the strict wire loses a refinement's `refines`, or keeps the `null` an OpenAI strict
+    // reply must send for it when the proposal refines nothing, which the canonical schema refuses.
+    it.each([
+        { label: 'carries the confirmation id a strict reply names', refines: 'prompt-confirmation-pending' },
+        { label: 'drops the null a strict reply sends for no refinement', refines: null },
+    ])('$label in refines', async ({ refines }) => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'refinement-1',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [{ name: 'setTrackGain', argumentsJson: '{"trackId":"track-kick","gainDb":-1.5}' }],
+                        list: null,
+                        plan: null,
+                        compiledCallIds: null,
+                        refines,
+                    },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'less, make it 1.5', [proposalSchema!]);
+
+        const advertised: unknown = mocks.generateCloudToolCalls.mock.calls[0]?.[2];
+        expect(advertised).toHaveProperty([0, 'function', 'parameters', 'properties', 'refines', 'type'], 'string');
+        const expected: Record<string, unknown> = {
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'track-kick', gainDb: -1.5 } }],
+        };
+        if (refines !== null) {
+            expected.refines = refines;
+        }
+        expect(outcome.status === 'complete' ? outcome.toolCalls[0]?.arguments : null).toEqual(expected);
+    });
+
     // Red when a strict host is shown the open arguments object of a measured proposal, or the
     // encoded leaves of a preview measurement are not restored before the loop reads them.
     it('encodes a preview measurement’s proposal leaves for a strict host and decodes the reply', async () => {

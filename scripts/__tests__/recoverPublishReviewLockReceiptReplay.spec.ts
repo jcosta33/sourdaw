@@ -110,20 +110,12 @@ function fixture(
     }
     const { canonical } = buildReviewDossier({
         plan,
-        raw: {
-            format: 'dossier-input-v1',
-            pr: number,
-            headSha: head,
-            baseSha: base,
-            stances: [
-                { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-                { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-            ],
-            evidence: [{ observable: 'an exact approval', verification: 'two live reads', observed: 'same review' }],
-            limitations: [],
-            assessmentImpact: 'none',
-        },
-        discarded: [],
+        persisted: undefined,
+        draws: [
+            { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'clean' },
+            { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+        ],
+        evidence: [{ observable: 'an exact approval', verification: 'two live reads', observed: 'same review' }],
         comments: [],
         recommendation: 'approve',
     });

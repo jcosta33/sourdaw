@@ -21,7 +21,7 @@ import {
 import { assertTrustedExecutingBlobs, trustedExecutingPaths } from '../prepareReviewEntry.ts';
 import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSummary.ts';
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
-import { REVIEW_ROUND_ESCALATION_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD } from '../reviewRoundEscalation.ts';
+import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 const SEMANTIC_CI_TEXT = '{"state":"no-assessment","reason":"absent"}';
 
@@ -167,84 +167,37 @@ describe('review prepare', () => {
         }
     });
 
-    it('logs the escalation flag and the required reassessment once the request-changes rounds meet the threshold', () => {
+    it.each([
+        [0, false],
+        [REVIEW_ROUND_FREEZE_THRESHOLD - 1, false],
+        [REVIEW_ROUND_FREEZE_THRESHOLD, true],
+        [REVIEW_ROUND_FREEZE_THRESHOLD + 1, true],
+    ])('logs the freeze flag after %s request-changes rounds, naming the freeze once reached', (rounds, frozen) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
         const { port, logs } = fakePort(root);
-        port.reviews = () => [
-            {
-                id: 1,
+        port.reviews = () =>
+            Array.from({ length: rounds }, (_, index) => ({
+                id: index + 1,
                 state: 'CHANGES_REQUESTED',
                 commitId: 'headsha',
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 body: 'round',
-            },
-            {
-                id: 2,
-                state: 'CHANGES_REQUESTED',
-                commitId: 'headsha',
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            },
-            {
-                id: 3,
-                state: 'CHANGES_REQUESTED',
-                commitId: 'headsha',
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                body: 'round',
-            },
-        ];
+            }));
         port.reviewComments = () => [];
         try {
-            const destination = prepareReview(42, port);
+            prepareReview(42, port);
             expect(logs).toContain(
-                `review-round-escalation:42:request-changes=${REVIEW_ROUND_ESCALATION_THRESHOLD}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+                `review-round-freeze:42:request-changes=${rounds}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
             );
-            expect(logs).toContain(
-                `review-round-escalation:42:write ${join(destination, 'reassessment.json')} before the next publication`
-            );
+            expect(
+                logs.includes(
+                    'review-round-freeze:42:frozen; review:publish will refuse, respin the change as a fresh PR'
+                )
+            ).toBe(frozen);
         } finally {
             removeTempRoot(root);
         }
     });
-
-    it.each([
-        [REVIEW_ROUND_ESCALATION_THRESHOLD, undefined, true],
-        [REVIEW_ROUND_WARNING_THRESHOLD - 1, undefined, true],
-        [REVIEW_ROUND_WARNING_THRESHOLD, 'review-round-warning', true],
-        [REVIEW_ROUND_WARNING_THRESHOLD + 1, 'review-round-warning', true],
-    ])(
-        'logs %s rounds with a warning and reassessment direction when applicable',
-        (rounds, flag, directsReassessment) => {
-            const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
-            const { port, logs } = fakePort(root);
-            port.reviews = () =>
-                Array.from({ length: rounds }, (_, index) => ({
-                    id: index + 1,
-                    state: 'CHANGES_REQUESTED',
-                    commitId: 'headsha',
-                    actorNodeId: REVIEWER_BOT_NODE_ID,
-                    body: 'round',
-                }));
-            port.reviewComments = () => [];
-            try {
-                prepareReview(42, port);
-                const warningLines = logs.filter((line) => line.includes('review-round-warning'));
-                if (flag === undefined) {
-                    expect(warningLines).toEqual([]);
-                } else {
-                    expect(warningLines).toEqual([
-                        expect.stringContaining(
-                            `${flag}:42:request-changes=${rounds}:threshold=${REVIEW_ROUND_WARNING_THRESHOLD}`
-                        ),
-                    ]);
-                    expect(warningLines[0]).toContain('make sure you know what you are doing');
-                }
-                expect(logs.some((line) => line.includes('before the next publication'))).toBe(directsReassessment);
-            } finally {
-                removeTempRoot(root);
-            }
-        }
-    );
 
     it('pins the trusted executing closure to the entry local-import graph', () => {
         const entryFile = join(import.meta.dirname, '..', 'prepareReviewEntry.ts');

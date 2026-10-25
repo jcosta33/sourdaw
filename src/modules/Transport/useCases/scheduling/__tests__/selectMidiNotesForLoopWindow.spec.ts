@@ -21,6 +21,10 @@ function select(
         toBeat: 2,
         lastScheduledBeat: 1,
         grooveLookaroundBeats: 0,
+        // Unanchored: the window falls back to the pre-anchor one-sided law.
+        clipStartBeat: 0,
+        loopOriginBeat: undefined,
+        loopEnabled: false,
         ...overrides,
     });
 }
