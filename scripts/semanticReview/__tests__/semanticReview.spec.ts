@@ -6700,9 +6700,18 @@ describe('test-case admission question', () => {
         );
     });
 
-    it('withholds an unsupported case that shares a changed line with a complete case', async () => {
+    it.each([
+        ['property access', "it.only('checks admission', () => {"],
+        ['computed access', "it['only']('checks admission', () => {"],
+        ['aliased call', "aliasedCase('checks admission', () => {"],
+        ['regex literal', "aliasedCase('checks admission', () => {"],
+    ])('withholds an unsupported case (%s) that shares a changed line with a complete case', async (_form, call) => {
         const sharedPath = 'scripts/__tests__/sharedLineAdmission.spec.ts';
-        const firstLine = "it('control', () => { expect(true).toBe(true); }); it.only('checks admission', () => {";
+        let control = "it('control', () => { expect(true).toBe(true); });";
+        if (_form === 'regex literal') {
+            control = String.raw`it('control', () => { expect(/\/\//.test('x')).toBe(false); });`;
+        }
+        const firstLine = `${control} ${call}`;
         const padding = Array.from({ length: 9 }, (_, index) => `    const context${index} = ${index};`);
         const oldSource = [firstLine, ...padding, '    expect(run()).toBe(1);', '});', ''].join('\n');
         const newSource = [
@@ -6767,6 +6776,16 @@ describe('test-case admission question', () => {
             expect(sent).not.toHaveLength(0);
             expect(JSON.stringify(sent)).not.toContain('expect(run()).toBe(1)');
         }
+    });
+
+    it.each(['it', 'test'])('keeps a complete direct %s case with a semicolon and whitespace askable', async (call) => {
+        const after = `  ${call}('checks admission', () => { expect(run()).toBe(1); });   \n`;
+        const { state } = await plannedRequest(after, {
+            path,
+            before: [{ startLine: 1, endLine: 7 }],
+            after: [{ startLine: 1, endLine: 1 }],
+        });
+        expect(JSON.stringify(state)).toContain('expect(run()).toBe(1)');
     });
 
     async function plannedRequest(

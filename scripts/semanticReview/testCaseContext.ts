@@ -3,7 +3,7 @@
 import ts from 'typescript';
 
 import type { EvidenceReference } from './contracts.ts';
-import { sliceLines, splitLines, type LineRange } from './slicing.ts';
+import { sliceLines, type LineRange } from './slicing.ts';
 
 export type TestCaseContextProof = {
     readonly complete: boolean;
@@ -12,6 +12,13 @@ export type TestCaseContextProof = {
 };
 
 type SideProof = { readonly complete: boolean; readonly evidenceIds: readonly string[] };
+type OffsetRange = { readonly start: number; readonly end: number };
+type CaseRange = LineRange & { readonly startOffset: number; readonly endOffset: number };
+type ParsedCases = {
+    readonly recognized: readonly CaseRange[];
+    readonly unrecognized: readonly LineRange[];
+    readonly tokens: readonly OffsetRange[];
+};
 
 /** Match the collector's `split('\n')` bounds, including bare CR and Unicode separators. */
 function lfLineStarts(source: string): number[] {
@@ -51,18 +58,16 @@ function testRoot(expression: ts.Expression): boolean {
     return false;
 }
 
-function testCaseRanges(
-    path: string,
-    source: string
-): { readonly recognized: readonly LineRange[]; readonly unrecognized: readonly LineRange[] } | undefined {
+function testCaseRanges(path: string, source: string): ParsedCases | undefined {
     const kind = path.endsWith('.tsx') || path.endsWith('.jsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
     const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, kind);
     if ('parseDiagnostics' in file && Array.isArray(file.parseDiagnostics) && file.parseDiagnostics.length > 0) {
         return undefined;
     }
     const starts = lfLineStarts(source);
-    const recognized: LineRange[] = [];
+    const recognized: CaseRange[] = [];
     const unrecognized: LineRange[] = [];
+    let invalidBounds = false;
     const visit = (node: ts.Node): void => {
         if (ts.isCallExpression(node) && testRoot(node.expression)) {
             const callback = node.arguments.at(-1);
@@ -72,12 +77,21 @@ function testCaseRanges(
                 callback !== undefined &&
                 (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
                 ts.isBlock(callback.body);
+            const startOffset = node.getStart(file);
+            let endOffset = node.end;
+            if (ts.isExpressionStatement(node.parent) && node.parent.expression === node) {
+                endOffset = node.parent.end;
+            }
+            if (startOffset < 0 || endOffset <= startOffset || endOffset > source.length) {
+                invalidBounds = true;
+                return;
+            }
             const range = {
-                startLine: lfLineAt(starts, node.getStart(file)),
-                endLine: lfLineAt(starts, node.end - 1),
+                startLine: lfLineAt(starts, startOffset),
+                endLine: lfLineAt(starts, endOffset - 1),
             };
             if (complete) {
-                recognized.push(range);
+                recognized.push({ ...range, startOffset, endOffset });
             } else {
                 unrecognized.push(range);
             }
@@ -85,34 +99,93 @@ function testCaseRanges(
         ts.forEachChild(node, visit);
     };
     visit(file);
-    return { recognized, unrecognized };
+    if (invalidBounds) {
+        return undefined;
+    }
+    const tokens = codeTokens(file);
+    if (tokens === undefined) {
+        return undefined;
+    }
+    return { recognized, unrecognized, tokens };
 }
 
 function overlaps(left: LineRange, right: LineRange): boolean {
     return left.startLine <= right.endLine && right.startLine <= left.endLine;
 }
 
+/** Parsed leaves retain the parser's regex, template, and JSX lexical context. */
+function codeTokens(file: ts.SourceFile): readonly OffsetRange[] | undefined {
+    const tokens: OffsetRange[] = [];
+    let invalidBounds = false;
+    const visit = (node: ts.Node): void => {
+        const children = node.getChildren(file);
+        if (children.length > 0) {
+            for (const child of children) {
+                visit(child);
+            }
+            return;
+        }
+        if (node.kind === ts.SyntaxKind.EndOfFileToken || node.kind === ts.SyntaxKind.SyntaxList) {
+            return;
+        }
+        const start = node.getStart(file);
+        const end = node.end;
+        if (start < 0 || end <= start || end > file.text.length) {
+            invalidBounds = true;
+            return;
+        }
+        tokens.push({ start, end });
+    };
+    visit(file);
+    if (invalidBounds) {
+        return undefined;
+    }
+    return tokens;
+}
+
 function hasUncoveredHunk(input: {
     readonly range: LineRange;
     readonly changed: readonly number[] | undefined;
-    readonly matched: readonly LineRange[];
+    readonly matched: readonly CaseRange[];
     readonly unrecognized: readonly LineRange[];
-    readonly sourceLines: readonly string[];
+    readonly tokens: readonly OffsetRange[];
+    readonly lineStarts: readonly number[];
+    readonly sourceLength: number;
 }): boolean {
     if (input.unrecognized.some((range) => overlaps(range, input.range))) {
         return true;
     }
+    if (
+        input.changed?.some((line) => !input.matched.some((range) => line >= range.startLine && line <= range.endLine))
+    ) {
+        return true;
+    }
+    if (input.changed?.length === 0) {
+        // The opposite revision carries this deletion's changed lines; this side is context only.
+        return false;
+    }
+    let lines: readonly number[];
     if (input.changed !== undefined) {
-        return input.changed.some(
-            (line) => !input.matched.some((range) => line >= range.startLine && line <= range.endLine)
+        lines = input.changed;
+    } else {
+        lines = Array.from(
+            { length: input.range.endLine - input.range.startLine + 1 },
+            (_, index) => input.range.startLine + index
         );
     }
-    return input.sourceLines.some(
-        (line, index) =>
-            index + 1 >= input.range.startLine &&
-            index + 1 <= input.range.endLine &&
-            line.trim() !== '' &&
-            !input.matched.some((range) => index + 1 >= range.startLine && index + 1 <= range.endLine)
+    const lineSpans: OffsetRange[] = [];
+    for (const line of lines) {
+        const start = input.lineStarts[line - 1];
+        const end = input.lineStarts[line] ?? input.sourceLength;
+        if (start === undefined || end < start || end > input.sourceLength) {
+            return true;
+        }
+        lineSpans.push({ start, end });
+    }
+    return input.tokens.some(
+        (token) =>
+            lineSpans.some((line) => token.start < line.end && token.end > line.start) &&
+            !input.matched.some((range) => range.startOffset <= token.start && token.end <= range.endOffset)
     );
 }
 
@@ -127,7 +200,7 @@ function certifySide(input: {
     if (cases === undefined || cases.recognized.length === 0) {
         return { complete: false, evidenceIds: [] };
     }
-    const sourceLines = splitLines(input.source);
+    const lineStarts = lfLineStarts(input.source);
     const relevant = new Set<LineRange>();
     for (const hunk of input.hunks ?? [{ startLine: 1, endLine: Number.MAX_SAFE_INTEGER }]) {
         const sliced = sliceLines(input.source, hunk);
@@ -151,7 +224,9 @@ function certifySide(input: {
                 changed,
                 matched,
                 unrecognized: cases.unrecognized,
-                sourceLines,
+                tokens: cases.tokens,
+                lineStarts,
+                sourceLength: input.source.length,
             })
         ) {
             return { complete: false, evidenceIds: [] };
