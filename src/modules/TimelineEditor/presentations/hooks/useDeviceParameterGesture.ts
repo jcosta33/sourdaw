@@ -11,6 +11,7 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { releaseTouchAutomation } from '#/modules/Automation/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -110,6 +111,16 @@ function restoreGesturePreview(gesture: ParameterGesture): void {
     }
 }
 
+function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
+    if (!ownsDeviceParameterPreview(gesture.previewKey, gesture.session) || !readGestureDevice(gesture, false)) {
+        return;
+    }
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === gesture.trackId);
+    if (track?.automationMode === 'touch') {
+        releaseTouchAutomation(gesture.trackId, `${gesture.deviceId}:${gesture.paramId}`);
+    }
+}
+
 type DeviceParameterGestureProps = {
     param: DeviceParameterView | undefined;
     device: Device;
@@ -121,6 +132,7 @@ function cancelDeviceParameterGesture(context: DeviceParameterGestureContext, ge
         return;
     }
     gesture.invalidated = true;
+    releaseGestureTouchAutomation(gesture);
     try {
         restoreGesturePreview(gesture);
     } catch (error) {
@@ -227,6 +239,7 @@ function commitDeviceParameterGesture(
     gesture: ParameterGesture,
     nextValue: number
 ): void {
+    releaseGestureTouchAutomation(gesture);
     gesture.settling = true;
     void executeUserAppAction(
         {
@@ -328,6 +341,7 @@ function settleDeviceParameterGesture(context: DeviceParameterGestureContext): v
     }
     const nextValue = gesture.previewValue;
     if (nextValue === undefined || nextValue === (gesture.value ?? gesture.defaultValue)) {
+        releaseGestureTouchAutomation(gesture);
         finishDeviceParameterGesture(context, gesture);
         return;
     }

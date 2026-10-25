@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { clone } from '@automerge/automerge';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -40,6 +41,7 @@ import {
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
     sessionUndoWitnessStampPort,
     settlePendingProjectWritesAndCaptureRevision,
@@ -49,6 +51,7 @@ import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } f
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { useDeviceParameterGesture } from '../../../../hooks/useDeviceParameterGesture';
 import { resolveDeviceLayout } from '../../deviceLayoutRegistry';
 import '../CompressorLayout';
 
@@ -154,6 +157,23 @@ function depth(): number {
 }
 function writes(): typeof engineWrites {
     return engineWrites.filter((write) => write.deviceId === DEVICE_ID);
+}
+function recordedPoints(): number[][] | undefined {
+    return automationStore.value?.lanes[0]?.points.map(({ beat, value }) => [beat, value]);
+}
+function mountThresholdGesture() {
+    return renderHook(() => {
+        const state = useStore(trackStore, { tracks: [], selectedTrackId: null });
+        const device = state.tracks[0]?.devices.find((candidate) => candidate.id === DEVICE_ID);
+        if (!device) {
+            throw new Error('Required real gesture target is absent');
+        }
+        const param = getPluginById(device.type)?.parameters.find((candidate) => candidate.id === 'comp-threshold');
+        if (!param) {
+            throw new Error('Required real gesture parameter is absent');
+        }
+        return useDeviceParameterGesture({ device, param, trackId: 'track-1' });
+    });
 }
 function Layout({ displayed }: { displayed?: Device }) {
     const state = useStore(trackStore, { tracks: [], selectedTrackId: null });
@@ -464,11 +484,15 @@ describe('actual registered Compressor curve through real project and history', 
     );
 
     it.each(['pointerCancel', 'lostPointerCapture', 'windowBlur', 'hidden', 'unmount', 'nonfinite'])(
-        'restores only runtime after %s and does not persist an unfinished preview',
+        'restores the parameter preview and releases its real Touch ride after %s',
         async (finish) => {
+            recordMode('builtin-compressor', 'touch');
+            const parameterId = `${DEVICE_ID}:comp-threshold`;
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => 2 });
             const view = render(<Layout />);
             const canvas = begin();
             move(-45, canvas);
+            expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(true);
             if (finish === 'pointerCancel') {
                 fireEvent.pointerCancel(canvas, { pointerId: 5 });
             } else if (finish === 'lostPointerCapture') {
@@ -485,8 +509,10 @@ describe('actual registered Compressor curve through real project and history', 
                 Object.defineProperties(malformed, { pointerId: { value: 5 }, clientY: { value: Number.NaN } });
                 fireEvent(canvas, malformed);
             }
+            expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(false);
             end(canvas);
             await drainActions();
+            expect(recordedPoints()).toEqual([[2, -45]]);
             expect(rawValues()['comp-threshold']).toBe(-20);
             expect(values()['comp-threshold']).toBe(-20);
             expect(depth()).toBe(0);
@@ -677,6 +703,9 @@ describe('actual registered Compressor curve through real project and history', 
                 await entered.promise;
                 beat = 4;
                 end();
+                expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:sc-comp-threshold`)).toBe(
+                    mode === 'write' || mode === 'latch'
+                );
                 expect(recording.mock.calls).toEqual(expected);
                 expect(rawValues()['sc-comp-threshold']).toBe(-20);
                 expect(depth()).toBe(0);
@@ -688,6 +717,9 @@ describe('actual registered Compressor curve through real project and history', 
                 await committed(type, -45);
                 await act(() => undo());
                 await act(() => redo());
+                expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:sc-comp-threshold`)).toBe(
+                    mode === 'write' || mode === 'latch'
+                );
                 expect(recording.mock.calls).toEqual(expected);
                 stopAutomationRecording(3);
                 const expectedPoints: [number, number][] = [];
@@ -703,6 +735,195 @@ describe('actual registered Compressor curve through real project and history', 
                     await snapshot;
                 });
             }
+        }
+    );
+
+    it('releases Touch recording before its real queued final and retains only the physical sample', async () => {
+        recordMode('builtin-compressor', 'touch');
+        const parameterId = `${DEVICE_ID}:comp-threshold`;
+        let beat = 2;
+        setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+        render(<Layout />);
+        begin();
+        move(-45);
+        expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(true);
+        expect(automationStore.value?.lanes[0]?.points).toEqual([]);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await release.promise;
+        });
+        try {
+            await entered.promise;
+            end();
+            expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(false);
+            expect(depth()).toBe(0);
+            beat = 19;
+        } finally {
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+        }
+        await drainActions();
+        await committed('builtin-compressor', -45);
+        const physicalPoints = [[2, -45]];
+        expect(recordedPoints()).toEqual(physicalPoints);
+        await act(() => undo());
+        expect(recordedPoints()).toEqual(physicalPoints);
+        await act(() => redo());
+        expect(recordedPoints()).toEqual(physicalPoints);
+        expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(false);
+    });
+
+    it('releases a returned-to-start Touch ride without adding parameter history', async () => {
+        recordMode('builtin-compressor', 'touch');
+        let beat = 2;
+        setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+        render(<Layout />);
+        begin();
+        move(-45);
+        beat = 3;
+        move(-20);
+        end();
+        expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:comp-threshold`)).toBe(false);
+        await drainActions();
+        expect(recordedPoints()).toEqual([
+            [2, -45],
+            [3, -20],
+        ]);
+        expect(depth()).toBe(0);
+        expect(rawValues()['comp-threshold']).toBe(-20);
+    });
+
+    it.each(['cancel', 'unmount', 'release', 'sample'] as const)(
+        'keeps the real successor Touch session active after its former preview owner attempts %s',
+        async (finish) => {
+            recordMode('builtin-compressor', 'touch');
+            let beat = 2;
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+            const former = mountThresholdGesture();
+            const successor = mountThresholdGesture();
+            act(() => {
+                former.result.current.startGesture();
+                former.result.current.change(-45, true);
+                successor.result.current.startGesture();
+                beat = 3;
+                successor.result.current.change(-35, true);
+            });
+            act(() => {
+                if (finish === 'unmount') {
+                    former.unmount();
+                } else if (finish === 'cancel') {
+                    former.result.current.cancel();
+                } else if (finish === 'release') {
+                    former.result.current.settleGesture();
+                } else {
+                    former.result.current.change(-15, true);
+                }
+            });
+            expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:comp-threshold`)).toBe(true);
+            expect(recordedPoints()).toEqual([]);
+            act(() => successor.result.current.cancel());
+            expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:comp-threshold`)).toBe(false);
+            await drainActions();
+            expect(recordedPoints()).toEqual([
+                [2, -45],
+                [3, -35],
+            ]);
+            expect(depth()).toBe(0);
+        }
+    );
+
+    it('does not release a successor Touch session when the former queued final completes', async () => {
+        recordMode('builtin-compressor', 'touch');
+        let beat = 2;
+        setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+        const former = mountThresholdGesture();
+        const successor = mountThresholdGesture();
+        act(() => {
+            former.result.current.startGesture();
+            former.result.current.change(-45, true);
+        });
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await release.promise;
+        });
+        try {
+            await entered.promise;
+            act(() => former.result.current.settleGesture());
+            expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:comp-threshold`)).toBe(false);
+            act(() => {
+                successor.result.current.startGesture();
+                beat = 3;
+                successor.result.current.change(-35, true);
+            });
+        } finally {
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+        }
+        await drainActions();
+        expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:comp-threshold`)).toBe(true);
+        expect(recordedPoints()).toEqual([[2, -45]]);
+        expect(successor.result.current.value).toBe(-35);
+        act(() => successor.result.current.cancel());
+        await drainActions();
+        expect(recordedPoints()).toEqual([
+            [2, -45],
+            [3, -35],
+        ]);
+        expect(depth()).toBe(0);
+    });
+
+    it.each(['cancel', 'unmount', 'release', 'sample'] as const)(
+        'does not release an equal-target incoming root Touch session after old-root %s',
+        async (finish) => {
+            recordMode('builtin-compressor', 'touch');
+            let beat = 2;
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+            const former = mountThresholdGesture();
+            act(() => {
+                former.result.current.startGesture();
+                former.result.current.change(-45, true);
+            });
+            // A real project boundary ends the outgoing recording before equal
+            // target IDs are installed in the replacement document.
+            act(() => {
+                stopAutomationRecording(2);
+                clearUndoHistory();
+                const doc = getCrdtDoc<Record<string, unknown>>('root');
+                if (!doc) {
+                    throw new Error('Required outgoing root is absent');
+                }
+                replaceCrdtDoc({ id: 'root', doc: clone(doc) });
+                recordMode('builtin-compressor', 'touch');
+            });
+            const successor = mountThresholdGesture();
+            act(() => {
+                successor.result.current.startGesture();
+                beat = 3;
+                successor.result.current.change(-35, true);
+                if (finish === 'unmount') {
+                    former.unmount();
+                } else if (finish === 'cancel') {
+                    former.result.current.cancel();
+                } else if (finish === 'release') {
+                    former.result.current.settleGesture();
+                } else {
+                    former.result.current.change(-15, true);
+                }
+            });
+            expect(automationUseCases.isRecordingAutomation('track-1', `${DEVICE_ID}:comp-threshold`)).toBe(true);
+            expect(recordedPoints()).toEqual([]);
+            act(() => successor.result.current.cancel());
+            await drainActions();
+            expect(recordedPoints()).toEqual([[3, -35]]);
+            expect(depth()).toBe(0);
         }
     );
 

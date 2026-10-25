@@ -6,6 +6,7 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import * as arrangement from '#/modules/Arrangement/useCases';
+import * as automation from '#/modules/Automation/useCases';
 import * as command from '#/modules/Command/useCases';
 import {
     captureProjectRootIdentity,
@@ -93,6 +94,7 @@ describe('shared continuous device parameter gesture authority', () => {
                         kind: 'audio',
                         withoutDefaultDevice: true,
                     }),
+                    automationMode: 'touch',
                     devices: ['device-1', 'device-2'].map((id) => ({
                         id,
                         name: 'Distortion',
@@ -118,6 +120,7 @@ describe('shared continuous device parameter gesture authority', () => {
             queued.push({ action, options, completion });
             return completion.promise;
         });
+        vi.spyOn(automation, 'releaseTouchAutomation').mockImplementation(() => undefined);
     });
 
     afterEach(async () => {
@@ -182,7 +185,9 @@ describe('shared continuous device parameter gesture authority', () => {
             expect(samples.map(({ value }) => value)).toEqual([30, 40]);
             expect(knob.result.current.value).toBe(40);
             expect(queued).toHaveLength(0);
+            expect(automation.releaseTouchAutomation).not.toHaveBeenCalled();
             act(() => knob.result.current.settleGesture());
+            expect(automation.releaseTouchAutomation).toHaveBeenCalledExactlyOnceWith('track-1', 'device-1:dist-drive');
             expect(queued).toHaveLength(1);
             expect(queued[0]?.options?.shouldExecute?.()).toBe(true);
             expect(queued[0]?.action).toMatchObject({
@@ -254,6 +259,7 @@ describe('shared continuous device parameter gesture authority', () => {
             act(() => replaceRoot());
             expect(captureProjectRootIdentity()).not.toBe(identity);
             samples.length = 0;
+            vi.mocked(automation.releaseTouchAutomation).mockClear();
             if (route === 'queued') {
                 expect(queued[0]?.options?.shouldExecute?.()).toBe(false);
                 await act(async () => {
@@ -272,6 +278,31 @@ describe('shared continuous device parameter gesture authority', () => {
                 expect(queued).toHaveLength(0);
             }
             expect(samples).toEqual([]);
+            expect(automation.releaseTouchAutomation).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['read', 'touch', 'write', 'latch'] as const)(
+        'releases the recording owner only for Touch on a direct physical final in %s mode',
+        (automationMode) => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) => ({ ...track, automationMode })),
+            });
+            const gesture = mountGesture();
+            act(() => {
+                gesture.result.current.startGesture();
+                gesture.result.current.change(30);
+            });
+            if (automationMode === 'touch') {
+                expect(automation.releaseTouchAutomation).toHaveBeenCalledExactlyOnceWith(
+                    'track-1',
+                    'device-1:dist-drive'
+                );
+            } else {
+                expect(automation.releaseTouchAutomation).not.toHaveBeenCalled();
+            }
+            expect(queued).toHaveLength(1);
         }
     );
 
