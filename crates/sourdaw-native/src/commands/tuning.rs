@@ -104,8 +104,28 @@ mod scala_parse_errors {
                 .enumerate()
             {
                 let actual = actual.as_f64().expect("native frequency");
-                let expected = expected.as_f64().expect("reference frequency");
+                let reference = expected.as_f64().expect("reference frequency");
                 assert!(actual.is_finite() && actual > 0.0, "{id}: note {note}");
+                let expected = if id == "integer-octave-each-key" {
+                    assert_eq!(content, "Octave each key\n1\n2\n");
+                    // The default JSON reader can round this fixture's large decimal
+                    // tokens one ULP away. Integer octaves have an exact binary oracle,
+                    // independent of the native cents/log2 calculation and JSON reader.
+                    let exponent = i32::try_from(note).expect("MIDI note fits i32") - 69;
+                    let exact = 440.0 * 2.0_f64.powi(exponent);
+                    assert!(
+                        reference.to_bits().abs_diff(exact.to_bits()) <= 1,
+                        "{id}: note {note}: reference {reference} must encode {exact}"
+                    );
+                    assert_eq!(
+                        actual.to_bits(),
+                        exact.to_bits(),
+                        "{id}: note {note}: exact integer octave"
+                    );
+                    exact
+                } else {
+                    reference
+                };
                 assert!(
                     (actual - expected).abs() < 1e-9,
                     "{id}: note {note}: expected {expected}, got {actual}"
