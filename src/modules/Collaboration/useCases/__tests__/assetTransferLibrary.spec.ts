@@ -676,7 +676,7 @@ describe('local library fulfillment through the real asset request boundary', ()
         expect(installed.decode).not.toHaveBeenCalled();
 
         const bufferId = `library-later-${crypto.randomUUID()}`;
-        const clip: Clip = {
+        const clip = {
             id: 'later-clip',
             trackId: 'later-track',
             name: 'Later clip',
@@ -691,7 +691,7 @@ describe('local library fulfillment through the real asset request boundary', ()
             color: '#ff0000',
             locked: false,
             muted: false,
-        };
+        } satisfies Clip;
         installed.tracks.push({ id: 'later-track', clips: [clip] });
         hydrateTracksForProject({ tracks: [{ id: 'later-track', name: 'Later track', kind: 'audio', clips: [clip] }] });
 
