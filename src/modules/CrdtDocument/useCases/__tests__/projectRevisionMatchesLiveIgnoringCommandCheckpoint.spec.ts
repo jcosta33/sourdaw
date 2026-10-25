@@ -219,7 +219,7 @@ describe('projectRevisionMatchesLiveIgnoringCommandCheckpoint', () => {
         expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(checkpointRevision)).toBe(true);
     });
 
-    it('accepts a concurrent checkpoint merge that retains the captured head as another active head', () => {
+    it('accepts a concurrent checkpoint merge when only one active branch descends from the captured head', () => {
         const base = automergeRepository.getDoc<Record<string, unknown>>('root');
         if (!base) {
             throw new Error('Expected the root document');
@@ -232,11 +232,22 @@ describe('projectRevisionMatchesLiveIgnoringCommandCheckpoint', () => {
         });
         automergeRepository.replaceDocInLineage('root', local);
         const committedRevision = captureProjectRevision();
+        const capturedHead = getHeads(local)[0];
+        if (!capturedHead) {
+            throw new Error('Expected the captured local change head');
+        }
+        expect(hasHeads(remote, [capturedHead])).toBe(false);
+        const advancedLocal = change(local, (doc) => {
+            doc.commandBatchIdempotency = { records: [{ batchId: 'batch-local-next' }] };
+        });
 
-        automergeRepository.replaceDocInLineage('root', merge(local, remote));
+        automergeRepository.replaceDocInLineage('root', merge(advancedLocal, remote));
 
-        expect(automergeRepository.getHeads('root')).toContain(getHeads(local)[0]);
-        expect(automergeRepository.getHeads('root')).toHaveLength(2);
+        const mergedHeads = automergeRepository.getHeads('root');
+        expect(mergedHeads).toHaveLength(2);
+        expect(mergedHeads).not.toContain(capturedHead);
+        expect(mergedHeads).toContain(getHeads(advancedLocal)[0]);
+        expect(mergedHeads).toContain(getHeads(remote)[0]);
         expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(committedRevision)).toBe(true);
     });
 });
