@@ -1,0 +1,19 @@
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  s_59e31a5c6f3e31::t_00c482275b0580 2489-2494,2497,2501
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea9c3a3a80846b9713c70d2185dfc6ec9fb11443",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
