@@ -1,26 +1,115 @@
 import { getHeads } from '@automerge/automerge';
 
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
+import { automationStore } from '#/modules/Automation/stores';
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { type AppAction, type HandlerCommitValidation } from '#/utils/handlerContract';
-import { valuesEqual } from '#/utils/structuralEquality';
+import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
+import { gainEnvelopeStore } from '../../stores/gainEnvelopeStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
+import { discard_warp_states_raw_keys, warpStateStore } from '../../stores/warpStates';
 
 type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
 type LocatedClip = { trackId: string; clipIndex: number; clip: Readonly<Record<string, unknown>> };
-type Owners = Map<string, LocatedClip[]>;
+type Entry = { present: boolean; value?: unknown };
+type Programme = { notes: Entry; controllers: Entry; bends: Entry; gain: Entry; warp: Entry };
+type ClipOwner = { clips: LocatedClip[]; automation: unknown[]; programme?: Programme };
+type Snapshot = {
+    owners: Map<string, ClipOwner>;
+    identities: Map<string, number>;
+    automationLaneIdentities: Map<string, number>;
+};
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+function cloneValue(value: unknown): unknown {
+    return JSON.parse(JSON.stringify(value));
 }
 
-function readOwners(slot: unknown, ids: ReadonlySet<string>): Owners | null {
-    if (!isRecord(slot) || !Array.isArray(slot.tracks)) {
+function readEntry(slot: unknown, key: string, id: string): Entry {
+    if (!isRecord(slot) || !isRecord(slot[key]) || !Object.hasOwn(slot[key], id)) {
+        return { present: false };
+    }
+    return { present: true, value: cloneValue(slot[key][id]) };
+}
+
+function identityCounts(document: Readonly<Record<string, unknown>>, ids: ReadonlySet<string>): Map<string, number> {
+    if (ids.size === 0) return new Map();
+    const live = Object.fromEntries(Object.entries(document).filter(([key]) => key !== 'arrangements'));
+    const gain = document.gainEnvelopes;
+    if (isRecord(gain) && isRecord(gain.envelopes)) {
+        live.gainEnvelopes = {
+            ...gain,
+            envelopes: Object.fromEntries(
+                Object.entries(gain.envelopes).map(([id, envelope]) => [
+                    id,
+                    isRecord(envelope) && Array.isArray(envelope.points)
+                        ? {
+                              ...envelope,
+                              points: envelope.points.map((point) =>
+                                  isRecord(point)
+                                      ? Object.fromEntries(Object.entries(point).filter(([key]) => key !== 'id'))
+                                      : point
+                              ),
+                          }
+                        : envelope,
+                ])
+            ),
+        };
+    }
+    // Match readClipSplitIdentityIds: arrangements are a separate namespace,
+    // and canonical gain-point IDs are local to their clip. Mutable document
+    // proxies need not preserve identity across reads, so omit just those IDs
+    // from the census instead of relying on a WeakSet of point objects.
+    const counts = new Map([...ids].map((id) => [id, 0]));
+    for (const id of collectClipSplitIdentityIds(live)) {
+        if (ids.has(id)) {
+            counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+    }
+    return counts;
+}
+
+function readSnapshot(
+    document: Readonly<Record<string, unknown>>,
+    ids: ReadonlySet<string>,
+    restoredIds: ReadonlySet<string>,
+    childIds: ReadonlySet<string>,
+    laneIds: ReadonlySet<string>
+): Snapshot | null {
+    if (!isRecord(document.tracks) || !Array.isArray(document.tracks.tracks)) {
         return null;
     }
-    const owners: Owners = new Map([...ids].map((id) => [id, []]));
-    for (const track of slot.tracks) {
+    const owners = new Map<string, ClipOwner>();
+    const lanes =
+        isRecord(document.automation) && Array.isArray(document.automation.lanes) ? document.automation.lanes : [];
+    const warp = discard_warp_states_raw_keys(document.warpStates);
+    for (const id of ids) {
+        owners.set(id, {
+            clips: [],
+            automation: lanes
+                .filter((lane) => isRecord(lane) && lane.clipId === id)
+                .map((lane) => cloneValue(lane))
+                .sort((left, right) => {
+                    if (!isRecord(left) || !isRecord(right)) return 0;
+                    return String(left.id).localeCompare(String(right.id));
+                }),
+            ...(restoredIds.has(id)
+                ? {
+                      programme: {
+                          notes: readEntry(document.midi, 'notesByClipId', id),
+                          controllers: readEntry(document.midi, 'ccByClipId', id),
+                          bends: readEntry(document.midi, 'pitchBendByClipId', id),
+                          gain: readEntry(document.gainEnvelopes, 'envelopes', id),
+                          warp: readEntry(warp, 'states', id),
+                      },
+                  }
+                : {}),
+        });
+    }
+    for (const track of document.tracks.tracks) {
         if (!isRecord(track) || typeof track.id !== 'string' || !Array.isArray(track.clips)) {
             return null;
         }
@@ -28,21 +117,43 @@ function readOwners(slot: unknown, ids: ReadonlySet<string>): Owners | null {
             if (!isRecord(clip) || typeof clip.id !== 'string') {
                 return null;
             }
-            const located = owners.get(clip.id);
-            if (located) {
-                const captured: unknown = JSON.parse(JSON.stringify(clip));
-                if (!isRecord(captured)) {
-                    return null;
-                }
-                located.push({ trackId: track.id, clipIndex, clip: captured });
+            const owner = owners.get(clip.id);
+            if (owner) {
+                const captured = cloneValue(clip);
+                if (!isRecord(captured)) return null;
+                owner.clips.push({ trackId: track.id, clipIndex, clip: captured });
             }
         }
     }
-    return owners;
+    return {
+        owners,
+        identities: identityCounts(document, childIds),
+        automationLaneIdentities: new Map(
+            [...laneIds].map((id) => [id, lanes.filter((lane) => isRecord(lane) && lane.id === id).length])
+        ),
+    };
 }
 
-function ownersMatch(left: Owners | null, right: Owners | null): boolean {
-    return left !== null && right !== null && [...left].every(([id, owners]) => valuesEqual(owners, right.get(id)));
+function snapshotsMatch(left: Snapshot | null, right: Snapshot | null): boolean {
+    return (
+        left !== null &&
+        right !== null &&
+        [...left.owners].every(([id, owner]) => valuesEqual(owner, right.owners.get(id))) &&
+        [...left.identities].every(([id, count]) => count === right.identities.get(id)) &&
+        [...left.automationLaneIdentities].every(([id, count]) => count === right.automationLaneIdentities.get(id))
+    );
+}
+
+function projectedDocument(root: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+    return {
+        ...root,
+        tracks: trackStore.value,
+        midi: midiStore.value,
+        automation: automationStore.value,
+        gainEnvelopes: gainEnvelopeStore.value,
+        warpStates: warpStateStore.value,
+        takeLanes: takeLaneStore.value,
+    };
 }
 
 /** Retain affected-owner intent independently from a peer-rebased optimistic projection. */
@@ -51,27 +162,42 @@ export function captureRestoreClipCommitValidation(
 ): { validation: HandlerCommitValidation; captureWrittenState: () => boolean } | undefined {
     const owner = getCurrentAutomergeStorageMutationOwner();
     const root = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
-    if (!owner || !root) {
-        return undefined;
-    }
+    if (!owner || !root) return undefined;
+    const restoredIds = new Set(
+        action.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [action.payload.clipId]
+    );
     const ids = new Set([
-        ...(action.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [action.payload.clipId]),
+        ...restoredIds,
         ...(action.payload.ripplePlan?.shiftedClips.map((clip) => clip.clipId) ?? []),
     ]);
-    const before = readOwners(root.tracks, ids);
-    let observed = readOwners(trackStore.value, ids);
-    let expected: Owners | null = null;
+    const childIds = new Set(
+        collectClipSplitIdentityIds([
+            action.payload.midiNotesSnapshot,
+            action.payload.midiCcSnapshot,
+            action.payload.midiPitchBendSnapshot,
+        ])
+    );
+    const laneIds = new Set(action.payload.ripplePlan?.clipAutomationLanes.map((lane) => lane.id) ?? []);
+    const read = (document: Readonly<Record<string, unknown>>) =>
+        readSnapshot(document, ids, restoredIds, childIds, laneIds);
+    const before = read(root);
+    let observed = read(projectedDocument(root));
+    let expected: Snapshot | null = null;
     let observedHeads = getHeads(root).toSorted();
     let authorityIntervened = false;
-    let release = trackStore.subscribe((state) => {
-        const next = readOwners(state, ids);
-        const currentRoot = getCrdtDoc('root');
-        const nextHeads = currentRoot ? getHeads(currentRoot).toSorted() : [];
+    const observe = (): void => {
+        const currentRoot = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+        if (!currentRoot) {
+            observed = null;
+            authorityIntervened = true;
+            return;
+        }
+        const next = read(projectedDocument(currentRoot));
+        const nextHeads = getHeads(currentRoot).toSorted();
         authorityIntervened ||= !valuesEqual(observedHeads, nextHeads);
         // A publication may hydrate under an entered owner scope, even after
-        // another notification observed its heads. Keep the admitted intent
-        // once authority intervenes; the final owner check still permits it
-        // when the intended effect survives that publication.
+        // another notification observed its heads. Refresh the baseline only;
+        // prospective owner checks still admit an effect that survived it.
         if (
             expected &&
             observed &&
@@ -80,34 +206,51 @@ export function captureRestoreClipCommitValidation(
             getCurrentAutomergeStorageMutationOwner() === owner
         ) {
             for (const id of ids) {
-                if (!valuesEqual(observed.get(id), next.get(id))) {
-                    expected.set(id, next.get(id) ?? []);
+                const nextOwner = next.owners.get(id);
+                if (nextOwner && !valuesEqual(observed.owners.get(id), nextOwner)) expected.owners.set(id, nextOwner);
+            }
+            for (const id of childIds) {
+                const count = next.identities.get(id);
+                if (count !== undefined && observed.identities.get(id) !== count) expected.identities.set(id, count);
+            }
+            for (const id of laneIds) {
+                const count = next.automationLaneIdentities.get(id);
+                if (count !== undefined && observed.automationLaneIdentities.get(id) !== count) {
+                    expected.automationLaneIdentities.set(id, count);
                 }
             }
         }
         observed = next;
         observedHeads = nextHeads;
-    });
+    };
+    const releases = [
+        trackStore.subscribe(observe),
+        midiStore.subscribe(observe),
+        automationStore.subscribe(observe),
+        gainEnvelopeStore.subscribe(observe),
+        warpStateStore.subscribe(observe),
+        takeLaneStore.subscribe(observe),
+    ];
     const validation: HandlerCommitValidation = {
-        beforeCommit: () =>
-            ownersMatch(before, readOwners(getCrdtDoc<Readonly<Record<string, unknown>>>('root')?.tracks, ids))
+        beforeCommit: () => {
+            const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+            return current && snapshotsMatch(before, read(current))
                 ? null
-                : 'Clip restore owners changed before commit',
+                : 'Clip restore owners changed before commit';
+        },
         documentId: 'root',
         validateDocument: (document) =>
-            ownersMatch(expected, readOwners(document.tracks, ids))
-                ? null
-                : 'Clip restore did not reach the committed owners',
+            snapshotsMatch(expected, read(document)) ? null : 'Clip restore did not reach the committed owners',
         release: () => {
-            release();
-            release = () => undefined;
+            for (const release of releases.splice(0)) release();
         },
     };
     return {
         validation,
         captureWrittenState: () => {
-            expected = readOwners(trackStore.value, ids);
-            const restored = expected?.get(action.payload.clipId);
+            const current = getCrdtDoc<Readonly<Record<string, unknown>>>('root');
+            expected = current ? read(projectedDocument(current)) : null;
+            const restored = expected?.owners.get(action.payload.clipId)?.clips;
             return restored?.length === 1 && restored[0]?.trackId === action.payload.trackId;
         },
     };
