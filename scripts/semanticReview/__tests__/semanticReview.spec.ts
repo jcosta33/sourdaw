@@ -6691,13 +6691,19 @@ describe('test-case admission question', () => {
         const preview = result.previews.find((entry) => entry.path === path);
         expect(preview?.ruleIds).toContain('admission_branch_completes_without_asserting');
         expect(preview?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
-        expect(result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting'))
-            .toMatchObject({ outcome: 'insufficient_context' });
+        expect(
+            result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting')
+        ).toMatchObject({ outcome: 'insufficient_context' });
         expect(result.report.execution).toBe('partial');
-        expect(sent.some((request) => JSON.stringify(request.state).includes('expect(result.status).toBe(1)'))).toBe(false);
+        expect(sent.some((request) => JSON.stringify(request.state).includes('expect(result.status).toBe(1)'))).toBe(
+            false
+        );
     });
 
-    async function plannedRequest(after: string, hunks?: PathHunks): Promise<{
+    async function plannedRequest(
+        after: string,
+        hunks?: PathHunks
+    ): Promise<{
         state: unknown;
         question: { instructions: string; criteria: { true: string; false: string } };
     }> {
@@ -6722,8 +6728,7 @@ describe('test-case admission question', () => {
         expect(sent).toHaveLength(1);
         const request = sent[0];
         const question = request?.questions.admission_branch_completes_without_asserting as
-            | { instructions: string; criteria: { true: string; false: string } }
-            | undefined;
+            { instructions: string; criteria: { true: string; false: string } } | undefined;
         expect(question).toBeDefined();
         if (request === undefined || question === undefined) {
             throw new Error('the production request planner did not ask the admission question');
@@ -6802,7 +6807,9 @@ describe('test-case admission question', () => {
         const source = fakeSource({
             files: [changedFile(path)],
             blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
-            hunks: new Map([[path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 6 }] }]]),
+            hunks: new Map([
+                [path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 6 }] }],
+            ]),
         });
         const result = await runScan({
             ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
@@ -6822,9 +6829,14 @@ const broken = (;\n`;
         const source = fakeSource({
             files: [changedFile(path)],
             blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
-            hunks: new Map([[path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 4 }] }]]),
+            hunks: new Map([
+                [path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 4 }] }],
+            ]),
         });
-        const result = await runScan({ ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)), profile: SEMANTIC_BUDGET_PROFILES.ci });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
         expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
         expect(result.report.scope.truncated).toContainEqual({ path, reason: 'test-case-context-not-supplied' });
     });
@@ -6838,9 +6850,22 @@ const broken = (;\n`;
         const source = fakeSource({
             files: [changedFile(path, { kind: 'renamed', previousPath })],
             blobs: { [`${MERGE_BASE}:${previousPath}`]: before, [`${HEAD}:${path}`]: after },
-            hunks: new Map([[path, { path, previousPath, before: [{ startLine: 1, endLine: 5 }], after: [{ startLine: 1, endLine: 5 }] }]]),
+            hunks: new Map([
+                [
+                    path,
+                    {
+                        path,
+                        previousPath,
+                        before: [{ startLine: 1, endLine: 5 }],
+                        after: [{ startLine: 1, endLine: 5 }],
+                    },
+                ],
+            ]),
         });
-        const result = await runScan({ ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)), profile: SEMANTIC_BUDGET_PROFILES.ci });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
         expect(result.previews[0]?.askedRuleIds).toContain('admission_branch_completes_without_asserting');
         expect(result.report.execution).toBe('completed');
     });
@@ -6851,10 +6876,14 @@ const broken = (;\n`;
             blobs: { [`${MERGE_BASE}:${path}`]: before },
             hunks: new Map([[path, { path, before: [{ startLine: 1, endLine: 5 }], after: [] }]]),
         });
-        const result = await runScan({ ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)), profile: SEMANTIC_BUDGET_PROFILES.ci });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
         expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
-        expect(result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting'))
-            .toMatchObject({ outcome: 'insufficient_context' });
+        expect(
+            result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting')
+        ).toMatchObject({ outcome: 'insufficient_context' });
     });
 
     it('requires every relevant case across separate hunks in the same answering pass', async () => {
@@ -6864,8 +6893,14 @@ const broken = (;\n`;
 });\n`;
         const hunks: PathHunks = {
             path,
-            before: [{ startLine: 1, endLine: 4 }, { startLine: 5, endLine: 8 }],
-            after: [{ startLine: 1, endLine: 4 }, { startLine: 5, endLine: 8 }],
+            before: [
+                { startLine: 1, endLine: 4 },
+                { startLine: 5, endLine: 8 },
+            ],
+            after: [
+                { startLine: 1, endLine: 4 },
+                { startLine: 5, endLine: 8 },
+            ],
         };
         const source = fakeSource({
             files: [changedFile(path)],
@@ -6882,9 +6917,18 @@ const broken = (;\n`;
             contractSourceSha: MERGE_BASE,
             limits: base.limits,
         });
-        const singleRegion = Math.max(...set.references.map((reference) => regionCost(reference, set.contents.get(reference.evidenceId) ?? '')));
-        const reservation = unitReservationBytes(changedFile(path), applicableRules([path]), changedLineFacts(undefined));
-        const splitProfile = { ...SEMANTIC_BUDGET_PROFILES.ci, maxStatePlusQuestionBytes: reservation + singleRegion + 1 };
+        const singleRegion = Math.max(
+            ...set.references.map((reference) => regionCost(reference, set.contents.get(reference.evidenceId) ?? ''))
+        );
+        const reservation = unitReservationBytes(
+            changedFile(path),
+            applicableRules([path]),
+            changedLineFacts(undefined)
+        );
+        const splitProfile = {
+            ...SEMANTIC_BUDGET_PROFILES.ci,
+            maxStatePlusQuestionBytes: reservation + singleRegion + 1,
+        };
         const split = await runScan({ ...base, profile: splitProfile });
         expect(split.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
         expect(split.report.scope.truncated).toContainEqual({ path, reason: 'test-case-context-not-supplied' });
@@ -6919,9 +6963,14 @@ const broken = (;\n`;
         const source = fakeSource({
             files: [changedFile(path)],
             blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
-            hunks: new Map([[path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 8 }] }]]),
+            hunks: new Map([
+                [path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 8 }] }],
+            ]),
         });
-        const result = await runScan({ ...scanPorts(provider, source, fixedClock(1_000)), profile: SEMANTIC_BUDGET_PROFILES.ci });
+        const result = await runScan({
+            ...scanPorts(provider, source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
         expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
         expect(JSON.stringify(sent)).not.toContain(credential);
         expect(result.report.scope.truncated).toContainEqual({ path, reason: 'test-case-context-not-supplied' });

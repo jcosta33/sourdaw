@@ -92,6 +92,30 @@ function overlaps(left: LineRange, right: LineRange): boolean {
     return left.startLine <= right.endLine && right.startLine <= left.endLine;
 }
 
+function hasUncoveredHunk(input: {
+    readonly range: LineRange;
+    readonly changed: readonly number[] | undefined;
+    readonly matched: readonly LineRange[];
+    readonly unrecognized: readonly LineRange[];
+    readonly sourceLines: readonly string[];
+}): boolean {
+    if (input.changed !== undefined) {
+        return input.changed.some(
+            (line) => !input.matched.some((range) => line >= range.startLine && line <= range.endLine)
+        );
+    }
+    if (input.unrecognized.some((range) => overlaps(range, input.range))) {
+        return true;
+    }
+    return input.sourceLines.some(
+        (line, index) =>
+            index + 1 >= input.range.startLine &&
+            index + 1 <= input.range.endLine &&
+            line.trim() !== '' &&
+            !input.matched.some((range) => index + 1 >= range.startLine && index + 1 <= range.endLine)
+    );
+}
+
 function certifySide(input: {
     readonly path: string;
     readonly source: string;
@@ -116,22 +140,19 @@ function certifySide(input: {
         const matched = cases.recognized.filter(
             (range) =>
                 overlaps(range, sliced.range) &&
-                (changed === undefined || changed.length === 0 || changed.some((line) => line >= range.startLine && line <= range.endLine))
+                (changed === undefined ||
+                    changed.length === 0 ||
+                    changed.some((line) => line >= range.startLine && line <= range.endLine))
         );
         if (
             matched.length === 0 ||
-            (changed === undefined
-                ? cases.unrecognized.some((range) => overlaps(range, sliced.range)) ||
-                  sourceLines.some(
-                      (line, index) =>
-                          index + 1 >= sliced.range.startLine &&
-                          index + 1 <= sliced.range.endLine &&
-                          line.trim() !== '' &&
-                          !matched.some((range) => index + 1 >= range.startLine && index + 1 <= range.endLine)
-                  )
-                : changed.some(
-                      (line) => !matched.some((range) => line >= range.startLine && line <= range.endLine)
-                  ))
+            hasUncoveredHunk({
+                range: sliced.range,
+                changed,
+                matched,
+                unrecognized: cases.unrecognized,
+                sourceLines,
+            })
         ) {
             return { complete: false, evidenceIds: [] };
         }
@@ -176,8 +197,14 @@ export function certifyTestCaseContext(input: {
         references: readonly EvidenceReference[];
     };
 }): TestCaseContextProof {
-    const before = input.before === undefined ? { complete: true, evidenceIds: [] } : certifySide(input.before);
-    const after = input.after === undefined ? { complete: false, evidenceIds: [] } : certifySide(input.after);
+    let before: SideProof = { complete: true, evidenceIds: [] };
+    if (input.before !== undefined) {
+        before = certifySide(input.before);
+    }
+    let after: SideProof = { complete: false, evidenceIds: [] };
+    if (input.after !== undefined) {
+        after = certifySide(input.after);
+    }
     return {
         complete: before.complete && after.complete,
         beforeEvidenceIds: before.evidenceIds,
