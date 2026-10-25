@@ -84,15 +84,16 @@ const CONTEXT: ProjectContext = {
 };
 
 function facts(operation: string, trackId = 'track-vocals', complement = false): ProposalProtectionFacts {
+    const control: ProposalProtectionFacts['protectedControls'][number] = {
+        trackId,
+        operations: complement ? [] : [operation],
+    };
+    if (complement) {
+        control.exceptOperations = [operation];
+    }
     return {
         protectedUnchanged: [],
-        protectedControls: [
-            {
-                trackId,
-                operations: complement ? [] : [operation],
-                ...(complement ? { exceptOperations: [operation] } : {}),
-            },
-        ],
+        protectedControls: [control],
     };
 }
 
@@ -270,7 +271,15 @@ describe('semantic mixer protection', () => {
             }
         }
         for (const { operation, action } of routes) {
-            const label = `${action.type} ${String(action.payload.parameterId ?? action.payload.laneId ?? operation)}`;
+            const parameterId = action.payload.parameterId;
+            const laneId = action.payload.laneId;
+            let labelTarget = operation;
+            if (typeof parameterId === 'string') {
+                labelTarget = parameterId;
+            } else if (typeof laneId === 'string') {
+                labelTarget = laneId;
+            }
+            const label = `${action.type} ${labelTarget}`;
             expect(proposalProtection.findChange([action], facts(operation), CONTEXT), label).toEqual({
                 id: 'track-vocals',
                 name: 'Vocals',

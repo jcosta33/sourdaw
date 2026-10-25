@@ -91,7 +91,9 @@ function isSentenceInitial(masked: string, index: number): boolean {
 /** An instruction verb cuts a clause only where a new instruction can start, never inside its owner's name. */
 function opensInstruction(masked: string, index: number): boolean {
     return (
-        opensClause(masked, index) || followsConjunction(masked, index) || /,$/u.test(masked.slice(0, index).trimEnd())
+        opensClause(masked, index) ||
+        followsConjunction(masked, index) ||
+        masked.slice(0, index).trimEnd().endsWith(',')
     );
 }
 
