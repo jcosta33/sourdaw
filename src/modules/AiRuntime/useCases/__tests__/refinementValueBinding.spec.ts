@@ -6035,7 +6035,7 @@ function asCommandBatchProposal(script: ProposalScript): ProviderCall {
             items: calls.map((call, index) => {
                 const { trackId, ...args } = call.arguments;
                 if (typeof trackId !== 'string') {
-                    throw new Error('Expected a track-scoped compiled fixture.');
+                    throw new TypeError('Expected a track-scoped compiled fixture.');
                 }
                 const name = trackStore.value?.tracks.find((track) => track.id === trackId)?.name;
                 if (name === undefined) {
@@ -6207,11 +6207,14 @@ describe('refining a held card through the chat', () => {
             expect(compiledReplacementId).not.toBe(pendingId);
             const replacement = getPendingActionConfirmation(compiledReplacementId);
             expect(replacement?.approvalSnapshot.groundingBasis).toBeUndefined();
-            expect(replacement?.approvalSnapshot.protectionFacts?.protectedControls).toContainEqual({
+            const expectedProtection: NonNullable<ProposalGroundingBasis['protectedControls']>[number] = {
                 trackId: 'track-vocals',
                 operations: faderOnly ? ['setTrackGain'] : [],
-                ...(faderOnly ? {} : { exceptOperations: ['setTrackGain'] }),
-            });
+            };
+            if (!faderOnly) {
+                expectedProtection.exceptOperations = ['setTrackGain'];
+            }
+            expect(replacement?.approvalSnapshot.protectionFacts?.protectedControls).toContainEqual(expectedProtection);
             expect(replacement?.protectedUnchanged).toEqual([]);
             expect(replacement?.approvalSnapshot.commandBatch?.authority.scope.protectedTargetIds).toEqual([]);
             pendingId = compiledReplacementId;

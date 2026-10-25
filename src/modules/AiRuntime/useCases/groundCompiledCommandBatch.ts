@@ -328,50 +328,53 @@ function composeGroundingBasis(
     ) {
         return undefined;
     }
-    const basis =
-        input.refinementBasis !== undefined && bridged.refinement !== undefined
-            ? proposalGroundingBasis.extend({
-                  previous: input.refinementBasis,
-                  prompt: input.prompt,
-                  calls: input.toolCalls,
-                  inheritedCommandIndexes: bridged.refinement.inheritedCommandIndexes,
-                  protectedUnchanged: [],
-                  protectedControls: [],
-              })
-            : proposalGroundingBasis.create({
-                  prompt: input.prompt,
-                  calls: input.toolCalls,
-                  ...protectionFacts,
-              });
+    let basis: ProposalGroundingBasis;
+    if (input.refinementBasis !== undefined && bridged.refinement !== undefined) {
+        basis = proposalGroundingBasis.extend({
+            previous: input.refinementBasis,
+            prompt: input.prompt,
+            calls: input.toolCalls,
+            inheritedCommandIndexes: bridged.refinement.inheritedCommandIndexes,
+            protectedUnchanged: [],
+            protectedControls: [],
+        });
+    } else {
+        basis = proposalGroundingBasis.create({
+            prompt: input.prompt,
+            calls: input.toolCalls,
+            ...protectionFacts,
+        });
+    }
     return { ...basis, ...protectionFacts };
 }
 
 function readControlFacts(
     reading: ReturnType<typeof readExplicitProtections>
 ): ProposalProtectionFacts['protectedControls'] {
-    return reading.protectedControls.map(({ trackId, actionTypes, exceptActionTypes }) => ({
-        trackId,
-        operations: actionTypes,
-        ...(exceptActionTypes === undefined ? {} : { exceptOperations: exceptActionTypes }),
-    }));
+    return reading.protectedControls.map(({ trackId, actionTypes, exceptActionTypes }) => {
+        const control: ProposalProtectionFacts['protectedControls'][number] = { trackId, operations: actionTypes };
+        if (exceptActionTypes !== undefined) {
+            control.exceptOperations = exceptActionTypes;
+        }
+        return control;
+    });
 }
 
 /** Old cards may carry only a basis; its absent controls retain the established source replay fallback. */
 function readPriorProtectionFacts(input: GroundCompiledCommandBatchInput): ProposalProtectionFacts {
+    if (input.refinementProtections !== undefined) {
+        return unionProposalProtectionFacts(input.refinementProtections);
+    }
     const basis = input.refinementBasis;
-    return unionProposalProtectionFacts(
-        input.refinementProtections ?? { protectedUnchanged: [], protectedControls: [] },
-        basis === undefined || input.refinementProtections !== undefined
-            ? { protectedUnchanged: [], protectedControls: [] }
-            : {
-                  protectedUnchanged: basis.protectedUnchanged,
-                  protectedControls:
-                      basis.protectedControls ??
-                      basis.sources.flatMap((source) =>
-                          readControlFacts(readExplicitProtections(source.text, input.context))
-                      ),
-              }
-    );
+    if (basis === undefined) {
+        return { protectedUnchanged: [], protectedControls: [] };
+    }
+    return unionProposalProtectionFacts({
+        protectedUnchanged: basis.protectedUnchanged,
+        protectedControls:
+            basis.protectedControls ??
+            basis.sources.flatMap((source) => readControlFacts(readExplicitProtections(source.text, input.context))),
+    });
 }
 
 /** Every route captures restrictions now, independently of whether its commands align to provider calls. */

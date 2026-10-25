@@ -151,13 +151,15 @@ export function validateRefinedProposalActions(input: {
         for (const action of input.actions) {
             const touched = new Set(readTouchedObjectIds(action.type, payloadOf(action)));
             const whole = facts.protectedUnchanged.find((object) => touched.has(object.id));
-            const control = facts.protectedControls.find(
-                ({ trackId, operations, exceptOperations }) =>
-                    touched.has(trackId) &&
-                    (exceptOperations === undefined
-                        ? operations.includes(action.type)
-                        : !exceptOperations.includes(action.type))
-            );
+            const control = facts.protectedControls.find(({ trackId, operations, exceptOperations }) => {
+                if (!touched.has(trackId)) {
+                    return false;
+                }
+                if (exceptOperations !== undefined) {
+                    return !exceptOperations.includes(action.type);
+                }
+                return operations.includes(action.type);
+            });
             if (whole !== undefined || control !== undefined) {
                 const name = whole?.name ?? input.context.tracks.find((track) => track.id === control?.trackId)?.name;
                 return {

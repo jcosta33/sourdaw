@@ -241,10 +241,13 @@ describe('reproposePendingChatActions', () => {
             mocks.refresh.mockReturnValue(readyRefresh(subsetBatch));
         }
 
-        const result = await reproposePendingChatActions({
+        const options: Parameters<typeof reproposePendingChatActions>[0] = {
             confirmationId: 'confirmation-protection-facts',
-            ...(subset ? { selectedIntentGroupIds: [COMMAND_IDS[2]] } : {}),
-        });
+        };
+        if (subset) {
+            options.selectedIntentGroupIds = [COMMAND_IDS[2]];
+        }
+        const result = await reproposePendingChatActions(options);
 
         expect(result.status).toBe('reproposed');
         expect(mocks.persistConfirmation).toHaveBeenCalledWith(expect.objectContaining({ protectionFacts }));

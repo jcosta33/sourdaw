@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type ProposalProtectionFacts } from '../../models/ProposalGroundingBasis';
+
 import {
     commitPendingActionResourceLease,
     clearPendingActionConfirmations,
@@ -18,7 +20,7 @@ describe('pendingActionConfirmationStore', () => {
     });
 
     it('isolates protection facts without an ordinary grounding basis at proposal and read boundaries', () => {
-        const protectionFacts = {
+        const protectionFacts: ProposalProtectionFacts = {
             protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
             protectedControls: [
                 { trackId: 'track-vocals', operations: ['setTrackGain'] },
@@ -30,7 +32,7 @@ describe('pendingActionConfirmationStore', () => {
             id: 'confirmation-protection-facts',
             prompt: 'turn Snare down 3 dB; leave the selected fader alone',
             assistantMessageId: 'message-protection-facts',
-            actions: [{ type: 'setTrackGain', payload: { trackId: 'track-snare', deltaDb: -3 } }],
+            actions: [{ type: 'setTrackGain', payload: { trackId: 'track-snare', deltaDb: -3, expectedGain: 1 } }],
             actionLabels: ['Turn Snare down'],
             protectionFacts,
             projectRevision: 'revision-protection-facts',

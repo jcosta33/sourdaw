@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { type ProposalProtectionFacts } from '../../../models/ProposalGroundingBasis';
 import { proposalGroundingBasis, unionProposalProtectionFacts } from '../proposalGroundingBasis';
 
 const snare = { name: 'setTrackGain', arguments: { trackId: 'track-snare', deltaDb: -3 } };
@@ -18,11 +19,12 @@ function createCard(protectedControls: Array<{ trackId: string; operations: stri
 
 describe('proposalGroundingBasis protected controls', () => {
     it('unions independent facts without widening either whole-object exception', () => {
-        const first = {
+        const firstExceptOperations: string[] = ['setTrackGain'];
+        const first: ProposalProtectionFacts = {
             protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
-            protectedControls: [{ trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackGain'] }],
+            protectedControls: [{ trackId: 'track-vocals', operations: [], exceptOperations: firstExceptOperations }],
         };
-        const second = {
+        const second: ProposalProtectionFacts = {
             protectedUnchanged: [],
             protectedControls: [
                 structuredClone(fader),
@@ -34,7 +36,7 @@ describe('proposalGroundingBasis protected controls', () => {
             protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
             protectedControls: [fader, first.protectedControls[0], second.protectedControls[1]],
         });
-        first.protectedControls[0]!.exceptOperations.push('muteTrack');
+        firstExceptOperations.push('muteTrack');
         second.protectedControls[0]!.operations.push('setTrackPan');
         expect(facts.protectedControls).toEqual([
             { trackId: 'track-vocals', operations: ['setTrackGain'] },
