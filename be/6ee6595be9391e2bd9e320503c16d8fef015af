@@ -1,0 +1,33 @@
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  s_59e31a5c6f3e31::t_2ac7066ac056b3 844,855
+  s_59e31a5c6f3e31::t_9042b1c8870ad6 845-850
+  s_59e31a5c6f3e31::t_0668b0050247ea 853-854
+  s_59e31a5c6f3e31::t_b2b15d6653f5d2 831-843,851-852,856-857,1025-1034
+  s_59e31a5c6f3e31::t_ea4da89c55a2cc 369,375,378-380,385,388,396-398,404-405,414,424
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  s_59e31a5c6f3e31::t_f04ef17b2666f7 465-467,476-515
+  s_59e31a5c6f3e31::t_76832e4222b4fc 468-475
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  s_59e31a5c6f3e31::t_97d0c24cef4b57 2361-2379,2386-2394,2414-2415,2436-2443,2447-2450,2452-2453,2455,2457
+  s_59e31a5c6f3e31::t_8266751171ca91 2445-2446,2454,2456
+  s_59e31a5c6f3e31::t_9df6f36930b25f 2380-2385,2395-2413
+  s_59e31a5c6f3e31::t_621febea1edbc1 2458-2484
+  s_59e31a5c6f3e31::t_820c5a39771b4a 2444,2451
+  s_59e31a5c6f3e31::t_8cff9f62d77c9d 2416-2435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be6ee6595be9391e2bd9e320503c16d8fef015af",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
