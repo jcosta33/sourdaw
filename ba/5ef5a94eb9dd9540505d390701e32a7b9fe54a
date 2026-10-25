@@ -1,0 +1,73 @@
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_92e31095b89538 201-225,228,231-232,234-238,245-253,299-301,325,333
+  s_29d8df116c5b92::t_31ded45076288d 226-227,229-230,233,239-244
+src/modules/Arrangement/handlers/clip/createdClipMidiCapture.ts
+  s_29d8df116c5b92::t_e1725d1aa896aa 49-51,53,58,62,72,78,83,119,121
+  s_29d8df116c5b92::t_6654a1177929d6 1-12,16-39,47-48,52,54-57,59-61,63-71,73-77,79-82,84-117,120,122
+  s_29d8df116c5b92::t_4ee80a516bdc16 13-15
+  s_29d8df116c5b92::t_553c4dae16f7bb 40-46,118
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_8dd881b1244b27 2885-2909,6598,6601-6602,6607-6612,6626,6628-6631,6633-6639,6641,6644-6645
+  s_29d8df116c5b92::t_1a6d072b566fc3 6595-6597,6599-6600,6603-6606,6613-6625,6627,6632,6640,6642-6643,6646-6655
+  s_29d8df116c5b92::t_37ff3010ec2913 981-1018,6656
+  s_29d8df116c5b92::t_0c885bc144c815 884-977
+  s_29d8df116c5b92::t_93b6fd54abf6e0 6657
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/duplicateClipNotes.spec.ts
+  s_29d8df116c5b92::t_2d5928de4e56f3 1,16-30,38-59
+  s_29d8df116c5b92::t_d218e454b416fd 31-37
+  s_29d8df116c5b92::t_07d8ffed3d9103 60
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_29d8df116c5b92::t_22162a7825e4f8 1096-1135
+src/modules/Arrangement/handlers/clip/__tests__/createdClipMidiCapture.spec.ts
+  s_29d8df116c5b92::t_ac5ea045a9af66 5,35,47,95-107
+  s_29d8df116c5b92::t_553c4dae16f7bb 1-4,6-34,36-46,48-94,108-144
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_29d8df116c5b92::t_014d24099bcaa0 29,150,156-159,166,207,210
+src/modules/Arrangement/useCases/comping/__tests__/projectedTakeLaneOwners.spec.ts
+  s_29d8df116c5b92::t_31ded45076288d 72-73
+  s_29d8df116c5b92::t_0c885bc144c815 10,78-103
+  s_29d8df116c5b92::t_93ff57a488db98 104-105
+src/modules/Arrangement/useCases/comping/reKeyedTakeLaneOwnersMatchStore.ts
+  s_29d8df116c5b92::t_31ded45076288d 4,12-47,58-59,68
+src/modules/Arrangement/useCases/clipEditing/readClipMidiSnapshot.ts
+  s_29d8df116c5b92::t_6654a1177929d6 1-21
+src/modules/Arrangement/handlers/clip/handleDuplicateClipAt.ts
+  s_29d8df116c5b92::t_6654a1177929d6 10-11,90,93-112
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_29d8df116c5b92::t_4ee80a516bdc16 18
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipAt.spec.ts
+  s_29d8df116c5b92::t_4ee80a516bdc16 68
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  s_29d8df116c5b92::t_22162a7825e4f8 158-192
+src/modules/MIDI/useCases/midiNoteCrud/duplicateClipNotes.ts
+  s_29d8df116c5b92::t_d218e454b416fd 4,6-9,23,26-31,39-44,46
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_29d8df116c5b92::t_8dd881b1244b27 1,35,401-461
+  s_29d8df116c5b92::t_7287a5efa3ac62 462-463
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_92e31095b89538 589-590
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_29d8df116c5b92::t_014d24099bcaa0 13,16,24,31,45-50,52-73,94-95,97-99,101,103-106,108-112,118,122,124-125,127-148,211-212,215-217,227,244-255,258
+  s_29d8df116c5b92::t_288344131d7091 51,74-93,96,100,102,107,113-117,119-121,123,126
+src/modules/Arrangement/useCases/comping/projectedTakeLaneOwners.ts
+  s_29d8df116c5b92::t_2d5928de4e56f3 8,42,101,109
+  s_29d8df116c5b92::t_31ded45076288d 11-14,24-27,30-33,38-41,43-59,72-73,91-93,118
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_29d8df116c5b92::t_d218e454b416fd 21,125-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba5ef5a94eb9dd9540505d390701e32a7b9fe54a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
