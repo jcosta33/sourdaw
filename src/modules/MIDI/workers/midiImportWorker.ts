@@ -265,7 +265,6 @@ function parseMidiFile(buffer: ArrayBuffer): {
                 const ordinal = eventOrdinal++;
                 if (reader.position > chunkEnd) {
                     timingComplete = false;
-                    break;
                 }
 
                 // The status bytes and meta-event ids below (0xff, 0x03, 0x51,
@@ -280,13 +279,17 @@ function parseMidiFile(buffer: ArrayBuffer): {
 
                     if (metaStart > chunkEnd) {
                         timingComplete = false;
-                        break;
                     }
                     const isTimingMeta = metaType === 0x51 || metaType === 0x58;
                     if (isTimingMeta && (metaLen !== (metaType === 0x51 ? 3 : 4) || metaStart + metaLen > chunkEnd)) {
                         timingComplete = false;
                     }
                     if (isTimingMeta && metaStart + metaLen > chunkEnd) {
+                        // The legacy tempo reader would reach physical EOF and
+                        // recover this track through its RangeError path.
+                        if (metaType === 0x51 && metaLen === 3 && metaStart + metaLen > reader.length) {
+                            lostTrackData = true;
+                        }
                         break;
                     }
 

@@ -995,6 +995,51 @@ describe('midiImportWorker', () => {
     });
 
     describe('malformed input', () => {
+        it('recovers an intact note track when a later tempo payload ends at physical EOF', () => {
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const tornTempo = mTrkRaw([0, 0xff, 0x51, 3, 0x07, 0xa1]);
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...tornTempo]));
+
+            expect(parsedTracks()).toHaveLength(1);
+            expect(firstNote()).toMatchObject({ pitch: 60, startBeat: 0, duration: 1 });
+            expect(lastPosted()).toMatchObject({
+                declaredTrackCount: 2,
+                truncated: true,
+                timing: { events: [], complete: false },
+            });
+        });
+
+        it('rejects a tempo payload ending at physical EOF when no track content was recovered', () => {
+            const tornTempo = mTrkRaw([0, 0xff, 0x51, 3, 0x07, 0xa1]);
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...tornTempo]));
+            expect(lastPosted()).toEqual({ type: 'error', message: 'Invalid MIDI file: no readable track data' });
+        });
+
+        it('retains the legacy EOF signal when a status falls past the declared chunk boundary', () => {
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const tornNote = [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, 0, 1), 0, 0x90, 60];
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...tornNote]));
+            expect(parsedTracks()).toHaveLength(1);
+            expect(lastPosted()).toMatchObject({ truncated: true, timing: { complete: false } });
+        });
+
+        it('retains the legacy EOF signal when a tempo header crosses the declared chunk boundary', () => {
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const tornTempo = [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, 0, 3), 0, 0xff, 0x51, 3, 0x07, 0xa1];
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...tornTempo]));
+            expect(parsedTracks()).toHaveLength(1);
+            expect(lastPosted()).toMatchObject({ truncated: true, timing: { events: [], complete: false } });
+        });
+
         it('keeps the tracks it already parsed when a later chunk length overruns the buffer', () => {
             // A partial download: two intact tracks, then a third whose declared
             // length runs past the end of what arrived.
