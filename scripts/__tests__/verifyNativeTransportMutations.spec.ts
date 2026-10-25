@@ -682,10 +682,12 @@ describe('source restoration and completed observable', () => {
             build: async () => {
                 const current = readFileSync(options.sourcePath, 'utf8');
                 builds.push(current);
-                const result: NativeTestResult =
-                    builds.length === 1
-                        ? await compile(600_000)
-                        : { code: 0, signal: null, output: 'Finished test profile\n' };
+                let result: NativeTestResult;
+                if (builds.length === 1) {
+                    result = await compile(600_000);
+                } else {
+                    result = { code: 0, signal: null, output: 'Finished test profile\n' };
+                }
                 if (result.code === 0 && result.failure === undefined) {
                     compiled = current;
                 }
@@ -774,12 +776,15 @@ describe('source restoration and completed observable', () => {
                         expect(readFileSync(options.sourcePath, 'utf8')).toBe(
                             mutateTransportSource(source, 'adjacent-keep-first')
                         );
-                        return {
+                        const result: NativeTestResult = {
                             code: 101,
                             signal: null,
                             output,
-                            ...(failure === 'compile-error' ? {} : { failure }),
                         };
+                        if (failure !== 'compile-error') {
+                            result.failure = failure;
+                        }
+                        return result;
                     },
                     runCase: async (spec) => {
                         caseCalls += 1;
