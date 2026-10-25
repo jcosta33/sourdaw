@@ -1,0 +1,35 @@
+scripts/removeLane.ts
+  s_d99a62fe2de3a3::t_bcb4eab24a5009 741-742
+  s_29d8df116c5b92::t_7cc79c044a3230 743-751
+.agents/skills/review-stances/git-path-framing.md
+  s_d99a62fe2de3a3::t_8537ac82627b33 1-7
+scripts/__tests__/removeLane.spec.ts
+  s_d99a62fe2de3a3::t_93bbf959df743c 17,251,255-262,265,274,281
+  s_d99a62fe2de3a3::t_27d8b9899cfc58 19,266
+  s_d99a62fe2de3a3::t_8b11dc52ee5256 189-203,246-250,252-254,263-264,267-273,275-280,282-287
+  s_d99a62fe2de3a3::t_8353236b78064b 288-289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5685497e483bbd030fde45d6315ef841daf6a8a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
