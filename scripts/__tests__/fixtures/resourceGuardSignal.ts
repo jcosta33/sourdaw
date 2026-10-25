@@ -14,6 +14,7 @@ let fallbackAdmitted = false;
 let ownedChild: StorageProcessIdentity | undefined;
 let tempDirectory: string | undefined;
 let storageReleaseEntered = false;
+let guardedSigtermHandler: ReturnType<typeof process.listeners>[number] | undefined;
 let holdAbort = process.env.SOURDAW_SIGNAL_HOLD_ABORT === '1';
 let holdIdentity = process.env.SOURDAW_SIGNAL_HOLD_IDENTITY === '1';
 let releaseStorage: (() => void) | undefined;
@@ -31,6 +32,15 @@ function publishIdentity(): void {
     }
 }
 
+function admitFallback(): void {
+    if (fallbackAdmitted) {
+        return;
+    }
+    fallbackAdmitted = true;
+    originalClearTimeout(fallbackHandle);
+    fallback?.();
+}
+
 function abort(): void {
     if (holdAbort) {
         report('abort-held', {
@@ -41,9 +51,15 @@ function abort(): void {
     }
     releaseStorage?.();
     if (!storageReleaseEntered && ownedChild !== undefined) {
-        process.emit('SIGTERM');
-        queueMicrotask(() => process.emit('SIGTERM'));
+        if (capturedTimers === 0) {
+            process.emit('SIGTERM');
+        }
+        admitFallback();
     }
+}
+
+function suppressRepeatedSignal(): void {
+    report('repeated-signal-suppressed');
 }
 
 function captureFirstSignal(): void {
@@ -92,7 +108,20 @@ globalThis.clearTimeout = (handle) => {
 
 process.prependOnceListener('SIGTERM', captureFirstSignal);
 process.on('message', (message: string) => {
-    if (message === 'abort') {
+    if (message === 'suppress-repeat') {
+        if (
+            capturedTimers !== 1 ||
+            fallback === undefined ||
+            fallbackAdmitted ||
+            guardedSigtermHandler === undefined ||
+            !process.listeners('SIGTERM').includes(guardedSigtermHandler)
+        ) {
+            throw new Error('repeated-signal suppression requires the captured fallback and identified guard handler');
+        }
+        process.removeListener('SIGTERM', guardedSigtermHandler);
+        process.on('SIGTERM', suppressRepeatedSignal);
+        report('repeat-suppression-installed');
+    } else if (message === 'abort') {
         abort();
     } else if (message === 'admit-abort') {
         holdAbort = false;
@@ -101,15 +130,15 @@ process.on('message', (message: string) => {
         holdIdentity = false;
         publishIdentity();
     } else if (message === 'admit-fallback') {
-        fallbackAdmitted = true;
-        originalClearTimeout(fallbackHandle);
-        fallback?.();
+        admitFallback();
     } else if (message === 'release-storage') {
         releaseStorage?.();
     } else if (message === 'inspect') {
         report('inspection', { fallbackAdmitted });
     }
 });
+
+const fixtureSigtermHandlers = new Set(process.listeners('SIGTERM'));
 
 try {
     process.exitCode = await main(process.argv.slice(2), {
@@ -126,6 +155,15 @@ try {
                         recordProcesses: (child, tracked) => {
                             storage.recordProcesses(child, tracked);
                             if (child !== undefined) {
+                                const addedHandlers = process
+                                    .listeners('SIGTERM')
+                                    .filter((handler) => !fixtureSigtermHandlers.has(handler));
+                                if (addedHandlers.length !== 1 || addedHandlers[0]?.name !== 'onSigterm') {
+                                    throw new Error(
+                                        'expected exactly the guard SIGTERM handler after child identity publication'
+                                    );
+                                }
+                                guardedSigtermHandler = addedHandlers[0];
                                 ownedChild = child;
                                 publishIdentity();
                             }
@@ -151,5 +189,6 @@ try {
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
     process.removeListener('SIGTERM', captureFirstSignal);
+    process.removeListener('SIGTERM', suppressRepeatedSignal);
     process.disconnect?.();
 }

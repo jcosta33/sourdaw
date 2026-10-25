@@ -558,6 +558,38 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         });
     }
 
+    it('cleans a resistant child through fallback when repeated-signal handling is suppressed', async () => {
+        const fixture = startSignalFixture({ root: fixtureRoot('suppressed-repeat-signal') });
+        try {
+            await fixture.barrier(() => existsSync(fixture.readyPath) && fixture.child() !== undefined);
+            const child = fixture.child()!;
+            expect(fixture.guard.kill('SIGTERM')).toBe(true);
+            await fixture.barrier(() => existsSync(fixture.termPath) && fixture.hasEvent('fallback-scheduled'));
+            expect(readSignalAcknowledgement(fixture.termPath)).toEqual({ pid: child.pid, tempExists: true });
+            fixture.send('suppress-repeat');
+            await fixture.barrier(() => fixture.hasEvent('repeat-suppression-installed'));
+            expect(fixture.guard.kill('SIGTERM')).toBe(true);
+            await fixture.barrier(() => fixture.hasEvent('repeated-signal-suppressed'));
+            expect(isAlive(child.pid)).toBe(true);
+            expect(fixture.hasEvent('fallback-invoked')).toBe(false);
+            expect(fixture.hasEvent('storage-release-entered')).toBe(false);
+            const cleanup = await fixture.cleanup();
+            expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            expect(fixture.messages.filter((message) => message.event === 'fallback-invoked')).toHaveLength(1);
+            expect(await fixture.completion).toBe(143);
+            expect(() => process.kill(child.pid, 0)).toThrow();
+            expect(isAlive(fixture.unrelated.pid!)).toBe(false);
+        } finally {
+            if (!fixture.isClosed()) {
+                fixture.send('admit-fallback');
+                fixture.send('release-storage');
+                await fixture.completion;
+            }
+            const cleanup = await fixture.cleanup();
+            expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+        }
+    });
+
     for (const repeatedSignal of [true, false]) {
         const name = repeatedSignal
             ? 'escalates a repeated signal and waits for child cleanup'

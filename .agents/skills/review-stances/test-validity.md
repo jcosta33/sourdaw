@@ -32,6 +32,12 @@ readiness parse. Fail readiness while abort is held, with that identity present 
 clean the unrelated child, retain fixture and temporary storage, and report missing exit proof.
 Only matching affirmative supervisor-owned exit and storage-removal evidence admits root deletion.
 
+Teardown must not depend on the behavior under test. After first-TERM acknowledgement and fallback
+capture, suppress only the identified production repeated-signal handler and require abort cleanup
+to finish through the independently admitted fallback. Keep a fallback-admitting finally around
+this probe so its failing version also leaves no child. Fallback stays held throughout the deciding
+repeated-signal assertions; abort may admit it only after that path finishes or fails.
+
 ### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
 
 Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420
