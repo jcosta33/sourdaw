@@ -19,7 +19,6 @@
 import { readFileSync } from 'node:fs';
 
 import { shellIsAncestor } from './gitAncestry.ts';
-
 import {
     AUTHOR_BOT_NODE_ID,
     assertRequiredRepository,
