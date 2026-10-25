@@ -2172,6 +2172,68 @@ describe('serialized reviewer confirmation transaction', () => {
         }
     );
 
+    it('recovers a remotely applied resolve after its response is lost and replays without any write', async () => {
+        const { root, serialize } = mutationFixture();
+        let liveHead = HEAD;
+        const { port: base, mutations, threads } = fakePort(HEAD, [subjectThread()]);
+        const postConfirmation = vi.fn(base.postConfirmation);
+        const resolve = vi.fn((...args: Parameters<ConfirmReviewRepairsPort['resolve']>) => {
+            base.resolve(...args);
+            throw new Error('resolve response lost after remote apply');
+        });
+        const attempts = vi.fn();
+        const observedSerialize: PullRequestMutationSerialization = (directory, number, operation) =>
+            serialize(directory, number, async (boundary) => {
+                const markAttempt = boundary.markRemoteMutationAttempt;
+                boundary.markRemoteMutationAttempt = () => {
+                    attempts();
+                    markAttempt();
+                };
+                return operation(boundary);
+            });
+        const port: ConfirmReviewRepairsPort = {
+            ...base,
+            pullRequestHead: () => liveHead,
+            postConfirmation,
+            resolve,
+        };
+        const { dependencies } = fakeDependencies({
+            primaryRoot: () => root,
+            serialize: observedSerialize,
+            port: () => port,
+            confirm: confirmReviewRepairs,
+        });
+        try {
+            let refusal: unknown;
+            try {
+                await coordinateConfirmReviewRepairs(PR, HEAD, dependencies);
+            } catch (error) {
+                refusal = error;
+            }
+            expect(threads.get(THREAD)?.resolved).toBe(true);
+            expect(mutations.map((entry) => entry.kind)).toEqual(['post', 'resolve']);
+            expect(attempts).toHaveBeenCalledTimes(2);
+            const ownerOid = lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`]);
+            expect(String(refusal)).toContain('resolve response lost after remote apply');
+            expect(String(refusal)).toContain(`pnpm deliver --recover-lock ${PR} --owner ${ownerOid}`);
+            expect(JSON.parse(lockGit(root, ['cat-file', 'blob', ownerOid]))).toMatchObject({
+                version: 4,
+                mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+            });
+            await recoverReviewMutation(root, ownerOid);
+            liveHead = MOVED_HEAD;
+            attempts.mockClear();
+            await expect(coordinateConfirmReviewRepairs(PR, MOVED_HEAD, dependencies)).resolves.toBeUndefined();
+            expect(attempts).not.toHaveBeenCalled();
+            expect(postConfirmation).toHaveBeenCalledTimes(1);
+            expect(resolve).toHaveBeenCalledTimes(1);
+            expect(mutations.map((entry) => entry.kind)).toEqual(['post', 'resolve']);
+            expect(() => lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('releases an unattempted owner after whole-batch refusal without posting or resolving', async () => {
         const { root, serialize } = mutationFixture();
         const { port, mutations } = fakePort(HEAD, [
