@@ -1,0 +1,42 @@
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_59e31a5c6f3e31::t_c4e44523289ea9 740,754,757
+  s_59e31a5c6f3e31::t_585cc84ebf5d6b 758-763,773-774
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_59e31a5c6f3e31::t_d446486e626742 40,397,414
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_59e31a5c6f3e31::t_5d53f7461136f9 587-589,591,594,602,610-611,613-634
+  s_59e31a5c6f3e31::t_57a24ba5a5deef 545,553,596-600
+  s_59e31a5c6f3e31::t_114c4ac136d7ec 528-544,546-552,554-557
+  s_59e31a5c6f3e31::t_26d53a19f278c9 558-586
+  s_59e31a5c6f3e31::t_cc3fcb94c2df3d 2,172
+  s_59e31a5c6f3e31::t_ba0f12f3dd178d 590,592-593,595,601,603-609,612
+  s_b3201877f50e8a::t_575530eb7e21c7 173
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_59e31a5c6f3e31::t_16fa96c87598d3 100,106,121,132-140
+  s_59e31a5c6f3e31::t_dfe2bac3f66dc3 148,173,196,201,220,231
+  s_59e31a5c6f3e31::t_e0ec24b61ca5a8 582-590
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca3a2988b61cc24ca69860e12854a386cff719ef",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
