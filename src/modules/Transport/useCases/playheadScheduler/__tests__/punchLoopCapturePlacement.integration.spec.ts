@@ -308,7 +308,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
         },
         stopAudioRecording: () => {
             if (hardware.inputs.size > 0) {
-                const captures = [...hardware.inputs.values()]
+                const captures = Array.from(hardware.inputs.values())
                     .filter((input) => input.terminal !== null)
                     .map((input) => ({
                         input,
