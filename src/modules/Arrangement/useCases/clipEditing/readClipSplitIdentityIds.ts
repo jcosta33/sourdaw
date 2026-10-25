@@ -101,7 +101,7 @@ function committedIdentityMaterialAfterPrefix(root: Record<string, unknown>, ret
 }
 
 /** Automation shares the live project's identity namespace. Arrangement snapshots
- * have their own namespace, and canonical gain points are local to their clip.
+ * have their own namespace; canonical gain points and warp markers are clip-local.
  * Read Automation from the current/prefix owner state so replay can retire its
  * expected right lanes without treating their own committed IDs as peer reuse. */
 export function readClipSplitIdentityIds(
@@ -111,7 +111,7 @@ export function readClipSplitIdentityIds(
 ): Set<string> {
     const ids = collectClipSplitIdentityIds(lanes);
     const root = getCrdtDoc('root');
-    const localPoints = new WeakSet<object>();
+    const localIdentities = new WeakSet<object>();
     if (root) {
         const retiredClipIds = new Set(
             priorActions.flatMap((action) => {
@@ -133,14 +133,26 @@ export function readClipSplitIdentityIds(
             }
             for (const point of envelope.points) {
                 if (isRecord(point)) {
-                    localPoints.add(point);
+                    localIdentities.add(point);
+                }
+            }
+        }
+        const warp = retainedRoot.warpStates;
+        const states = isRecord(warp) && isRecord(warp.states) ? warp.states : {};
+        for (const state of Object.values(states)) {
+            if (!isRecord(state) || !Array.isArray(state.markers)) {
+                continue;
+            }
+            for (const marker of state.markers) {
+                if (isRecord(marker)) {
+                    localIdentities.add(marker);
                 }
             }
         }
         const live = Object.fromEntries(
             Object.entries(retainedRoot).filter(([key]) => key !== 'arrangements' && key !== 'automation')
         );
-        ids.push(...collectClipSplitIdentityIds(live, localPoints));
+        ids.push(...collectClipSplitIdentityIds(live, localIdentities));
     }
     // Earlier writes in an open transaction are already visible here while
     // its committed root is still the previous document.

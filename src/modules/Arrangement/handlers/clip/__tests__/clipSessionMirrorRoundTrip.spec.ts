@@ -2064,6 +2064,90 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
     });
 
+    it.each(['disjoint', 'warp-local', 'gain-local'] as const)(
+        'saved MIDI removal replays with a %s peer identity',
+        async (namespace) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            const otherClip = {
+                ...createClipFixture('other-audio', 10, 14),
+                trackId: 'other-track',
+                type: 'audio' as const,
+                audioBufferId: 'other-buffer',
+            };
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [
+                    ...trackStore.value!.tracks,
+                    TrackDummy.create({
+                        id: otherClip.trackId,
+                        kind: 'audio',
+                        clips: [otherClip],
+                        alternatives: [],
+                        activeAlternativeId: '',
+                    }),
+                ],
+            });
+            const note = { id: 'captured-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
+            midiStore.set({ ...midiStore.value!, notesByClipId: { 'clip-a': [note] } });
+            setWarpState(otherClip.id, {
+                enabled: true,
+                markers: [{ id: 'initial-marker', originalBeat: 0, warpedBeat: 0.5 }],
+                stretchMode: 'repitch',
+                originalTempo: 120,
+            });
+            setEnvelope(otherClip.id, {
+                clipId: otherClip.id,
+                enabled: true,
+                points: [{ id: 'initial-gain-point', beatOffset: 0, gainDb: -6 }],
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            expectValidProject();
+
+            await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            expect(persistedInverse().payload.midiNotesSnapshot).toEqual([note]);
+            reloadSavedProject();
+            syncPeerProject((project) => {
+                project.warpStates.states[otherClip.id]!.markers[0]!.id =
+                    namespace === 'warp-local' ? note.id : 'disjoint-marker';
+                project.gainEnvelopes.envelopes[otherClip.id]!.points[0]!.id =
+                    namespace === 'gain-local' ? note.id : 'disjoint-gain-point';
+            });
+            expectValidProject();
+            const peerWarp = structuredClone(warpStateStore.value);
+            const peerGain = structuredClone(gainEnvelopeStore.value);
+
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                expect((await undo()).headConsumed).toBe(true);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeDefined();
+                expect(midiStore.value?.notesByClipId['clip-a']).toEqual([note]);
+                expect(getCrdtDoc<PeerProject>('root')?.midi.notesByClipId['clip-a']).toEqual([note]);
+                expect(warpStateStore.value).toEqual(peerWarp);
+                expect(gainEnvelopeStore.value).toEqual(peerGain);
+                expectValidProject();
+
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                );
+                reloadSavedProject();
+                await redo();
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+                expect(midiStore.value?.notesByClipId['clip-a']).toBeUndefined();
+                expect(warpStateStore.value).toEqual(peerWarp);
+                expect(gainEnvelopeStore.value).toEqual(peerGain);
+                expectValidProject();
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+                );
+                reloadSavedProject();
+            }
+        }
+    );
+
     it.each(['satellite', 'automation'] as const)(
         'rejects a saved removeClip with a foreign %s owner before hydration and Undo',
         async (owner) => {
