@@ -135,6 +135,8 @@ vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn
 vi.mock('#/modules/Command/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
+        commitRedoInverseCapture: vi.fn(),
+
         clearUndoHistory: vi.fn(),
         resetActionReplayAuthority: actual.resetActionReplayAuthority,
         executeAppAction: actual.executeAppAction,
@@ -199,6 +201,8 @@ vi.mock('#/modules/Automation/useCases', async () => {
         getAutomationValueAtBeat: vi.fn(),
         getClipAutomationMoveState: vi.fn(),
         getSendAutomationBusId: vi.fn(),
+        isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
         isRecordingAutomation: vi.fn(),
         recordAutomationValue: vi.fn(),
         removeAutomationLane: vi.fn(),
@@ -221,6 +225,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
     return {
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
+        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         projectChannelBend: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         appendMidiNotes: vi.fn(),

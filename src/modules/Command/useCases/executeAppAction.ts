@@ -22,6 +22,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
 import { type AbortCompensation, compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
@@ -33,6 +34,7 @@ import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
+import { registerHandlerCommitValidation } from './registerHandlerCommitValidation';
 import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
@@ -195,6 +197,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                         onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                         workOwner: options?.workOwner,
                     });
+                    runtime_result?.commitValidation?.release();
                 } catch (error) {
                     logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                     throw error;
@@ -319,6 +322,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             if (storage_transaction.status === 'threw') {
                 const error = storage_transaction.error;
                 const abortFailures = await compensateRollbackAndAbort(storage_transaction, attempted);
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -344,8 +348,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             });
             try {
                 execution_result = await storage_transaction.value;
+                execution_result?.commitValidation?.release();
             } catch (error) {
                 const abortFailures = await compensateRollbackAndAbort(storage_transaction, attempted);
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -367,17 +373,23 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             // rollback would also write the runtime past the eligibility checks that refused.
             if (execution_result?.status === 'no-write') {
                 storage_transaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 clearSemanticContext();
                 return;
             }
             if (execution_result?.status === 'conflict') {
                 const refusal = execution_result.reason;
                 storage_transaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 clearSemanticContext();
                 throw new AppActionConflictError(action.type, refusal);
             }
 
             try {
+                registerHandlerCommitValidation(
+                    storage_transaction,
+                    execution_result?.commitValidation ? [execution_result.commitValidation] : []
+                );
                 storage_transaction.commit();
             } catch (error) {
                 // A commit that already reached storage cannot be undone by rolling the
@@ -387,7 +399,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     ? null
                     : await compensateRollbackAndAbort(storage_transaction, attempted);
                 if (reachedStorage) {
+                    commitRedoInverseCapture({ phase: 'published', actions: [action] });
                     storage_transaction.abort();
+                } else {
+                    commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 }
                 try {
                     clearSemanticContext();
@@ -405,6 +420,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     } catch (reconciliationError) {
                         committedFailures.push(reconciliationError);
                     }
+                    commitRedoInverseCapture({ phase: 'settle', actions: [action] });
                     const committedCause = collapseCommittedFailures(
                         committedFailures,
                         'Storage commit or runtime reconciliation failed'
@@ -427,6 +443,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw withAbortFailures(error, abortFailures);
             }
 
+            commitRedoInverseCapture({ phase: 'published', actions: [action] });
             let committed_failure: unknown;
             try {
                 clearSemanticContext();
@@ -528,6 +545,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 }
             }
 
+            commitRedoInverseCapture({ phase: 'settle', actions: [action] });
             if (committed_failure) {
                 const committed_error = new AppActionCommittedError(action.type, committed_failure);
                 logger.error(committed_error);

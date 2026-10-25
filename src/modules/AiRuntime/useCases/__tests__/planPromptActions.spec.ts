@@ -13,10 +13,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectIdentity: vi.fn(() => 'project-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
     DOC_BRANCHES: '__branches__',

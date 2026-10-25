@@ -9,6 +9,8 @@ export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
+export { readOwnedProjectPublications } from './readOwnedProjectPublications';
+export { hasForeignPendingProjectWrites } from './hasForeignPendingProjectWrites';
 export { captureUnownedProjectMutations } from './captureUnownedProjectMutations';
 export { agentProjectInspectionPort } from './agentProjectInspectionPort';
 export { inspectAgentProjectDivergence } from './inspectAgentProjectDivergence';

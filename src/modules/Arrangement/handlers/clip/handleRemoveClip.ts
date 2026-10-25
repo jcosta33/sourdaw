@@ -1,29 +1,281 @@
-import { getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
+import { hasHeads } from '@automerge/automerge';
+
+import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
+import { commitRedoInverseCapture } from '#/modules/Command/useCases';
+import {
+    captureDurableDocumentWitness,
+    captureProjectIdentity,
+    captureProjectMutationAuthorization,
+    getCrdtDoc,
+    readOwnedProjectPublications,
+    hasForeignPendingProjectWrites,
+} from '#/modules/CrdtDocument/useCases';
+import { decodeMidiClipDataSnapshots, getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerValidationContext,
+    type MidiClipDataActionSnapshot,
+} from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
+import { sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { readClipScopedAutomationLanes } from '../../useCases/clip/readClipScopedAutomationLanes';
 import { removeClip } from '../../useCases/clip/removeClip';
+import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
+import { readClipMidiSnapshot } from '../../useCases/clipEditing/readClipMidiSnapshot';
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
-import { refreshRetiredTakeLanesForRedo } from './takeRetirementRedo';
+import { createdClipMidiCapture } from './createdClipMidiCapture';
+import { pairedInverseForRedo } from './takeRetirementRedo';
+import { isRemoveClipSessionEntry, isRemoveClipSessionPayload } from './validateClipEditSessionEntries';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
 type MinimalClipShape = { id: string; trackId: string; name: string; startBeat: number; endBeat: number };
 
 type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
+type RestoreClipAction = Extract<AppAction, { type: 'restoreClip' }>;
+
+// Batch descriptions precede every write. Keep the admitted inverse object,
+// then fill it from the actual prefix when this member enters its transaction.
+const pendingInverseCaptures = new WeakMap<object, RestoreClipAction>();
+const pendingRedoCaptures = new WeakMap<object, RemoveClipAction>();
+type RedoTarget = {
+    owningTrackId: string;
+    clip: unknown;
+    midi: MidiClipDataActionSnapshot;
+    creator?: AppAction;
+};
+type ProjectedMidiTarget = { snapshot: MidiClipDataActionSnapshot; creator?: AppAction };
+const preflightRedoTargets = new WeakMap<object, RedoTarget>();
+
+function capturedMidi(payload: RestoreClipAction['payload']): MidiClipDataActionSnapshot | null {
+    const snapshots = decodeMidiClipDataSnapshots({
+        notesSnapshot: payload.midiNotesSnapshot,
+        controlChangeSnapshot: payload.midiCcSnapshot,
+        pitchBendSnapshot: payload.midiPitchBendSnapshot,
+    });
+    if (!snapshots) {
+        return null;
+    }
+    return {
+        notes: { present: snapshots.notesSnapshot !== null, value: snapshots.notesSnapshot ?? [] },
+        controlChanges: {
+            present: snapshots.controlChangeSnapshot !== null,
+            value: snapshots.controlChangeSnapshot ?? [],
+        },
+        pitchBends: { present: snapshots.pitchBendSnapshot !== null, value: snapshots.pitchBendSnapshot ?? [] },
+    };
+}
+
+function midiIsAbsent(snapshot: MidiClipDataActionSnapshot): boolean {
+    return !snapshot.notes.present && !snapshot.controlChanges.present && !snapshot.pitchBends.present;
+}
+
+function projectSplitMidiTarget(
+    clipId: string,
+    current: ProjectedMidiTarget,
+    action: Extract<AppAction, { type: 'restoreClipSplitState' }>
+): ProjectedMidiTarget | null {
+    if (action.payload.clipId === clipId) {
+        return { snapshot: action.payload.replacement.sourceMidi };
+    }
+    if (action.payload.rightClipId !== clipId) {
+        return current;
+    }
+    const createsTarget = action.payload.replacement.rightClip && !action.payload.expected.rightClip;
+    if (createsTarget && !midiIsAbsent(current.snapshot)) {
+        return null;
+    }
+    return { snapshot: action.payload.replacement.rightMidi, creator: createsTarget ? action : undefined };
+}
+
+function projectedMidiTarget(clipId: string, priorActions: readonly AppAction[]): ProjectedMidiTarget | null {
+    let current: ProjectedMidiTarget = { snapshot: readClipMidiSnapshot(clipId) };
+    for (const action of priorActions) {
+        if (
+            (action.type === 'removeClip' || action.type === 'discardDuplicatedClip') &&
+            action.payload.clipId === clipId
+        ) {
+            current = {
+                snapshot: {
+                    notes: { present: false, value: [] },
+                    controlChanges: { present: false, value: [] },
+                    pitchBends: { present: false, value: [] },
+                },
+            };
+        } else if (action.type === 'duplicateClipAt' && action.payload.targetClipId === clipId) {
+            if (!midiIsAbsent(current.snapshot)) {
+                return null;
+            }
+            // The real producer mints the note identities during execution.
+            // Only its completed pre-write receipt can authorize those rows.
+            current = { ...current, creator: action };
+        } else if (action.type === 'restoreClip' && action.payload.clipId === clipId) {
+            const restored = capturedMidi(action.payload);
+            if (!restored) {
+                return null;
+            }
+            current = {
+                snapshot: {
+                    notes: restored.notes.present ? restored.notes : current.snapshot.notes,
+                    controlChanges: restored.controlChanges.present
+                        ? restored.controlChanges
+                        : current.snapshot.controlChanges,
+                    pitchBends: restored.pitchBends.present ? restored.pitchBends : current.snapshot.pitchBends,
+                },
+            };
+        } else if (action.type === 'restoreClipSplitState') {
+            const projected = projectSplitMidiTarget(clipId, current, action);
+            if (!projected) {
+                return null;
+            }
+            current = projected;
+        }
+    }
+    return current;
+}
+
+function createdMidiMatchesCapture(
+    actual: MidiClipDataActionSnapshot,
+    expected: MidiClipDataActionSnapshot,
+    creator: AppAction
+): boolean {
+    if (creator.type !== 'duplicateClipAt') {
+        return valuesEqual(actual, expected);
+    }
+    // Duplicate remints only the note row ids randomly. Controller ids are
+    // deterministic, and nested expression/ownership fields remain exact.
+    return (
+        actual.notes.present === expected.notes.present &&
+        valuesEqual(
+            actual.notes.value.map(({ id: _id, ...note }) => note),
+            expected.notes.value.map(({ id: _id, ...note }) => note)
+        ) &&
+        valuesEqual(actual.controlChanges, expected.controlChanges) &&
+        valuesEqual(actual.pitchBends, expected.pitchBends)
+    );
+}
+
+/** The inverse producer owns document authority; Command only settles its staged history. */
+function captureRemovalPublication(owner: object): () => (() => boolean) | null {
+    const baseline = readOwnedProjectPublications(owner).length;
+    const identity = captureProjectIdentity();
+    return () => {
+        const publications = readOwnedProjectPublications(owner).slice(baseline);
+        if (publications.length === 0) {
+            return null;
+        }
+        return () =>
+            captureProjectIdentity() === identity &&
+            publications.every(({ docId, heads }) => {
+                const document = getCrdtDoc(docId);
+                return document !== undefined && hasHeads(document, [...heads]);
+            });
+    };
+}
 
 function findOwningTrackId(clipId: string): string | undefined {
     return getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId))?.id;
 }
 
-function clipStillExists(clipId: string): boolean {
-    return (getTrackStoreState()?.tracks ?? []).some((track) => track.clips.some((clip) => clip.id === clipId));
+function replayTargetMatches(clipId: string, expected: { owningTrackId: string; clip: unknown }): boolean {
+    const owner = getTrackStoreState()?.tracks.find((track) => track.clips.some((clip) => clip.id === clipId));
+    const clip = owner?.clips.find((candidate) => candidate.id === clipId);
+    return owner?.id === expected.owningTrackId && clip !== undefined && valuesEqual(clip, expected.clip);
+}
+
+function clipForSavedReplayComparison(
+    target: { owningTrackId: string; clip: unknown },
+    clipId: string,
+    priorActions: readonly AppAction[]
+): unknown {
+    if (!priorActions.some((action) => action.type === 'duplicateClipAt' && action.payload.targetClipId === clipId)) {
+        return target.clip;
+    }
+    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === target.owningTrackId);
+    if (!track) {
+        return undefined;
+    }
+    // The producer's unset runtime optionals disappear from saved history. Keep
+    // the raw target for execute, and compare its canonical saved view here only.
+    return sanitizeTrackSnapshot({ tracks: [{ ...track, clips: [target.clip] }] }).tracks[0]?.clips[0];
+}
+
+/** A saved Redo may remove only the material its own inverse restored. */
+function admittedRedoTarget(action: RemoveClipAction, context: HandlerValidationContext): boolean {
+    const paired = pairedInverseForRedo(action);
+    if (paired?.type !== 'restoreClip') {
+        preflightRedoTargets.delete(action);
+        return true;
+    }
+    if (hasForeignPendingProjectWrites()) {
+        preflightRedoTargets.delete(action);
+        return false;
+    }
+    // Earlier group members may have shifted this target before its own removal.
+    // Compare the paired capture to that completed prefix, then pin it for execute.
+    const priorActions = context.actions.slice(0, context.actionIndex);
+    const projected = projectClipReplayPrefix(priorActions);
+    const target = projected?.clips.find((owner) => owner.clip.id === action.payload.clipId);
+    const expectedMidi = capturedMidi(paired.payload);
+    const projectedMidi = projectedMidiTarget(action.payload.clipId, priorActions);
+    if (
+        !target ||
+        !expectedMidi ||
+        !projectedMidi ||
+        (projectedMidi.creator?.type !== 'duplicateClipAt' && !valuesEqual(projectedMidi.snapshot, expectedMidi)) ||
+        target.owningTrackId !== paired.payload.trackId ||
+        !valuesEqual(
+            clipForSavedReplayComparison(target, action.payload.clipId, priorActions),
+            paired.payload.clipSnapshot
+        )
+    ) {
+        preflightRedoTargets.delete(action);
+        return false;
+    }
+    preflightRedoTargets.set(action, { ...target, midi: expectedMidi, creator: projectedMidi.creator });
+    return true;
+}
+
+function redoTargetMatchesAtExecution(
+    action: RemoveClipAction,
+    context: HandlerValidationContext | undefined,
+    paired: ReturnType<typeof pairedInverseForRedo>
+): boolean {
+    const preflightTarget = preflightRedoTargets.get(action);
+    preflightRedoTargets.delete(action);
+    if (paired?.type !== 'restoreClip') {
+        return true;
+    }
+    if (!preflightTarget && context?.actions.length !== 1) {
+        return false;
+    }
+    const expectedMidi = preflightTarget?.midi ?? capturedMidi(paired.payload);
+    if (!expectedMidi) {
+        return false;
+    }
+    const creator = preflightTarget?.creator;
+    const midi = creator
+        ? createdClipMidiCapture({ phase: 'take', action: creator, clipId: action.payload.clipId })
+        : readClipMidiSnapshot(action.payload.clipId);
+    return (
+        midi !== null &&
+        (creator ? createdMidiMatchesCapture(midi, expectedMidi, creator) : valuesEqual(midi, expectedMidi)) &&
+        replayTargetMatches(
+            action.payload.clipId,
+            preflightTarget ?? {
+                owningTrackId: paired.payload.trackId,
+                clip: paired.payload.clipSnapshot,
+            }
+        )
+    );
 }
 
 /**
@@ -56,63 +308,141 @@ function batchMembersAreIndependent(action: RemoveClipAction, context: HandlerVa
 }
 
 export const handleRemoveClip = createHandler<'removeClip'>({
+    validateSessionEntry: (entry) => {
+        if (!isRemoveClipSessionEntry(entry)) {
+            return false;
+        }
+        const inverse = entry.inverseAction;
+        // Legacy saved removals omitted an empty take capture. Upgrade only
+        // the validated history payload before it reaches strict live replay.
+        if (inverse?.type === 'restoreClip' && !Object.hasOwn(inverse.payload, 'retiredTakeLanes')) {
+            inverse.payload = { ...inverse.payload, retiredTakeLanes: [] };
+        }
+        return true;
+    },
+    validateSessionActionArguments: isRemoveClipSessionPayload,
     // Batch co-execution (grouped redo, atomic batches) preflights the state the
     // action assumes — the clip it names is still present — and refuses the whole
-    // batch once a target is gone. Single-action dispatch never calls validate,
-    // so the per-clip fallbacks in execute below are unchanged.
+    // batch once a target is gone. Single-action dispatch never calls validate;
+    // execute returns no-write before mutation when no track owns its target.
     validate: (action, context) =>
-        clipStillExists(action.payload.clipId) && batchMembersAreIndependent(action, context),
-    execute: (alpha) => {
-        // A redo replays this removal with `skipUndo`, so the fresh capture
-        // `describe()` just took never reaches an entry: without this the entry
-        // keeps the first removal's capture and the undo that follows the redo
-        // cannot put back a take that landed on the restored clip in between.
-        refreshRetiredTakeLanesForRedo(alpha, alpha.payload.clipId);
-
-        const state = getTrackStoreState();
-        let trackId: string | null = null;
-        if (state) {
-            for (const track of state.tracks) {
-                if (track.clips.some((context) => context.id === alpha.payload.clipId)) {
-                    trackId = track.id;
-                    break;
-                }
+        (projectClipReplayPrefix(context.actions.slice(0, context.actionIndex))?.clips.some(
+            (owner) => owner.clip.id === action.payload.clipId
+        ) ??
+            false) &&
+        !hasForeignPendingProjectWrites() &&
+        admittedRedoTarget(action, context) &&
+        batchMembersAreIndependent(action, context),
+    execute: (alpha, context) => {
+        const trackId = findOwningTrackId(alpha.payload.clipId);
+        if (!trackId) {
+            pendingInverseCaptures.delete(alpha);
+            pendingRedoCaptures.delete(alpha);
+            return { status: 'no-write' };
+        }
+        const paired = pairedInverseForRedo(alpha);
+        if (hasForeignPendingProjectWrites() || !redoTargetMatchesAtExecution(alpha, context, paired)) {
+            preflightRedoTargets.delete(alpha);
+            pendingInverseCaptures.delete(alpha);
+            pendingRedoCaptures.delete(alpha);
+            return { status: 'conflict' };
+        }
+        const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
+        const pendingRedo = pendingRedoCaptures.get(alpha);
+        pendingRedoCaptures.delete(alpha);
+        const pendingInverse = pendingInverseCaptures.get(alpha);
+        pendingInverseCaptures.delete(alpha);
+        if (pendingInverse) {
+            const fresh = handleRemoveClip.describe(alpha).inverseAction;
+            if (fresh?.type === 'restoreClip') {
+                pendingInverse.payload = fresh.payload;
             }
         }
-        if (!trackId) {
-            removeClip(alpha.payload.clipId);
-            return;
+        // Redo runs with skipUndo. Retain its actual producer capture so the
+        // following Undo authenticates the shifted owners this replay wrote,
+        // and restores exactly the material this replay retired.
+        const fresh = paired?.type === 'restoreClip' ? handleRemoveClip.describe(alpha).inverseAction : null;
+        pendingRedoCaptures.delete(alpha);
+        const documentBeforeReplay = pendingRedo ? captureDurableDocumentWitness() : null;
+        const ownsPublication = fresh || pendingRedo ? captureProjectMutationAuthorization() : null;
+        // Bind now, inside the actual handler scope, while its exact transaction
+        // owner is visible. Later group members publish under this same owner.
+        ownsPublication?.();
+        if (fresh && ownsPublication) {
+            commitRedoInverseCapture({
+                phase: 'stage',
+                action: alpha,
+                inverseAction: fresh,
+                publicationAuthority: {
+                    captureIdentity: captureProjectIdentity,
+                    captureWitness: captureDurableDocumentWitness,
+                    captureOwnedPublication: captureRemovalPublication,
+                },
+            });
         }
-        const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId] });
+        const installCapture = () => {
+            // Publish the resolved preference only for its producer's own write.
+            if (
+                pendingRedo &&
+                getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay &&
+                ownsPublication?.()
+            ) {
+                pendingRedo.payload.ripple = ripple;
+            }
+        };
+        const committedResult = () => {
+            if (!fresh && !pendingRedo) {
+                return undefined;
+            }
+            return {
+                status: 'written' as const,
+                afterCommit: installCapture,
+                afterAmbiguousCommit: installCapture,
+            };
+        };
+
+        const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId], ripple });
         if (rippleResult === null) {
             removeClip(alpha.payload.clipId);
-            return;
+            return committedResult();
         }
         removeMidiClipData(rippleResult.removedClips.map((clip) => clip.id));
+        return committedResult();
     },
-    describe: (alpha) => {
+    describe: (alpha, context) => {
         const state = getTrackStoreState();
         let clipSnapshot: MinimalClipShape | null = null;
         let trackId: string | null = null;
+        let clipIndex: number | null = null;
         if (state) {
             for (const track of state.tracks) {
-                const clip = track.clips.find((context) => context.id === alpha.payload.clipId);
+                const index = track.clips.findIndex((context) => context.id === alpha.payload.clipId);
+                const clip = track.clips[index];
                 if (clip) {
                     clipSnapshot = structuredClone(clip);
                     trackId = track.id;
+                    clipIndex = index;
                     break;
                 }
             }
         }
-        if (!clipSnapshot || !trackId) {
+        if (!clipSnapshot || !trackId || clipIndex === null) {
             return { label: 'Remove clip' };
         }
 
-        const plan = planRippleDelete({ trackId, clipIds: [alpha.payload.clipId] });
+        const plan = planRippleDelete({ trackId, clipIds: [alpha.payload.clipId], ripple: alpha.payload.ripple });
         const ripplePlan = plan
             ? {
                   removedClips: structuredClone(plan.removedClips) as readonly MinimalClipShape[],
-                  shiftedClips: structuredClone(plan.shiftedClips),
+                  shiftedClips: plan.shiftedClips.map((shift) => ({
+                      ...shift,
+                      expectedAutomationLanes: getClipAutomationMoveState({
+                          clipId: shift.clipId,
+                          targetTrackId: trackId,
+                          beatDelta: shift.automationDelta,
+                      }).next,
+                  })),
                   clipSatellites: plan.removedClips
                       .map((clip) => readClipSatelliteEntry(clip.id))
                       .filter((entry) => entry.gainEnvelope !== null || entry.warpState !== null),
@@ -132,22 +462,32 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         const cc = midiState?.ccByClipId[alpha.payload.clipId];
         const pb = midiState?.pitchBendByClipId[alpha.payload.clipId];
 
-        return {
-            label: `Remove clip "${clipSnapshot.name}"`,
-            inverseAction: {
-                type: 'restoreClip',
-                payload: {
-                    clipId: alpha.payload.clipId,
-                    trackId,
-                    clipSnapshot,
-                    ripplePlan,
-                    midiNotesSnapshot: notes ? structuredClone(notes) : null,
-                    midiCcSnapshot: cc ? structuredClone(cc) : null,
-                    midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
-                    retiredTakeLanes,
-                },
+        const inverseAction: RestoreClipAction = {
+            type: 'restoreClip',
+            payload: {
+                clipId: alpha.payload.clipId,
+                trackId,
+                clipSnapshot,
+                clipIndex,
+                ripplePlan,
+                midiNotesSnapshot: notes ? structuredClone(notes) : null,
+                midiCcSnapshot: cc ? structuredClone(cc) : null,
+                midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
+                retiredTakeLanes,
             },
         };
+        if (context && context.actionIndex > 0) {
+            pendingInverseCaptures.set(alpha, inverseAction);
+        }
+        // Resolve the preference again at the actual execution prefix, then
+        // publish it into this history object only after its owner commits.
+        const redoPayload: RemoveClipAction['payload'] = { clipId: alpha.payload.clipId };
+        if (alpha.payload.ripple !== undefined) {
+            redoPayload.ripple = alpha.payload.ripple;
+        }
+        const redoAction: RemoveClipAction = { type: 'removeClip', payload: redoPayload };
+        pendingRedoCaptures.set(alpha, redoAction);
+        return { label: `Remove clip "${clipSnapshot.name}"`, inverseAction, redoAction };
     },
     undoable: true,
 });

@@ -35,6 +35,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    documentIdentity: { epoch: 0 },
     getCrdtDoc: vi.fn((): { chordTrack?: unknown; tracks: { tracks: never[] } } => ({
         chordTrack: undefined,
         tracks: { tracks: [] },
@@ -108,9 +109,13 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
+    captureProjectMutationAuthorization: vi.fn<() => () => boolean>(() => () => false),
     captureProjectRevision: vi.fn(),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${mocks.documentIdentity.epoch}`),
+    readOwnedProjectPublications: vi.fn(() => []),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
     DOC_BRANCHES: '__branches__',
@@ -202,12 +207,16 @@ function seedHydratedUndoEntryFor(projectId: string, witness: string): void {
 }
 
 function restoreProjectVia(projectCrdtToStoresImpl: () => void): void {
-    mocks.projectCrdtToStores.mockImplementation(projectCrdtToStoresImpl);
+    mocks.projectCrdtToStores.mockImplementation(() => {
+        mocks.documentIdentity.epoch += 1;
+        projectCrdtToStoresImpl();
+    });
 }
 
 describe('loadProject preserves session undo history for the same project (#3331)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.documentIdentity.epoch = 0;
         // `#/modules/Command/useCases` is intentionally unmocked (see file
         // header), so its undo store is a real singleton that otherwise
         // carries state across `it()` blocks in this file. `undefined` never

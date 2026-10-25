@@ -8,6 +8,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { planTakeRetirement } from '../comping/planTakeRetirement';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
+import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
 import { reverseTakeLaneTransitionPlan } from './reverseTakeLaneTransitionPlan';
@@ -197,6 +198,55 @@ function validateOwnerPlan(value: unknown): Record<string, unknown> | null {
     return properties;
 }
 
+function takeRetirementsMatchLocalState(local: LocalStateRestorePlan, takeLanes: TakeLaneTransitionPlan): boolean {
+    const expected = timeOperationStateCodec.decodeTrackState(local.expected.trackState);
+    const replacement = timeOperationStateCodec.decodeTrackState(local.replacement.trackState);
+    if (!expected || !replacement) {
+        return false;
+    }
+    const before = takeLanes.appliedEffect === 'restore' ? replacement : expected;
+    const after = takeLanes.appliedEffect === 'restore' ? expected : replacement;
+    const beforeIds = collectLiveClipIds(before.tracks);
+    const afterIds = collectLiveClipIds(after.tracks);
+    return (
+        new Set(takeLanes.removedClipIds).size === takeLanes.removedClipIds.length &&
+        takeLanes.removedClipIds.every((id) => beforeIds.has(id) && !afterIds.has(id))
+    );
+}
+
+function takeRetirementsMatchDeletedRange(
+    plan: CombinedStateRestorePlan,
+    range: { startBeat: number; endBeat: number }
+): boolean {
+    if (plan.takeLanes === null) {
+        return true;
+    }
+    const localBefore = plan.takeLanes.appliedEffect === 'restore' ? plan.local.replacement : plan.local.expected;
+    const localAfter = plan.takeLanes.appliedEffect === 'restore' ? plan.local.expected : plan.local.replacement;
+    const before = timeOperationStateCodec.decodeTrackState(localBefore.trackState);
+    const after = timeOperationStateCodec.decodeTrackState(localAfter.trackState);
+    if (!before || !after) {
+        return false;
+    }
+    const afterIds = collectLiveClipIds(after.tracks);
+    // A right fragment can replace its source id without erasing its material.
+    // Only a clip wholly inside the original delete span belongs to retirement.
+    const erasedIds = new Set(
+        before.tracks.flatMap((track) =>
+            [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)]
+                .filter(
+                    (clip) =>
+                        clip.startBeat >= range.startBeat && clip.endBeat <= range.endBeat && !afterIds.has(clip.id)
+                )
+                .map((clip) => clip.id)
+        )
+    );
+    return (
+        erasedIds.size === plan.takeLanes.removedClipIds.length &&
+        plan.takeLanes.removedClipIds.every((id) => erasedIds.has(id))
+    );
+}
+
 function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan | null {
     const cloned = timeOperationStateCodec.cloneJsonPlan(value);
     const properties =
@@ -242,6 +292,9 @@ function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan
     if (takeLanesValue !== null && takeLanes === null) {
         return null;
     }
+    if (takeLanes !== null && !takeRetirementsMatchLocalState(local, takeLanes)) {
+        return null;
+    }
 
     return {
         version: 1,
@@ -263,6 +316,25 @@ function validateCombinedPlan(value: unknown): CombinedStateRestorePlan | null {
     }
 }
 
+/** Validate a persisted replay plan without consulting or writing live project state. */
+export const timeOperationRestorePlan = {
+    isValid(value: unknown, deletedRange?: { startBeat: number; endBeat: number }): boolean {
+        const validators = timeOperationDependencies?.savedRestorePlanValidators;
+        if (!validators) {
+            return false;
+        }
+        const plan = validateCombinedPlan(value);
+        return (
+            plan !== null &&
+            (deletedRange === undefined || takeRetirementsMatchDeletedRange(plan, deletedRange)) &&
+            (plan.automation === null || validators.automation(plan.automation)) &&
+            (plan.midi === null || validators.midi(plan.midi)) &&
+            (plan.timelineMap === null || validators.timelineMap(plan.timelineMap)) &&
+            (plan.clipSatellites === null || isValidClipSatelliteStateRestorePlan(plan.clipSatellites))
+        );
+    },
+};
+
 function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState | null {
     const capturedTrackState = getTrackState();
     if (!capturedTrackState) {
@@ -274,10 +346,11 @@ function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState |
     if (!timeOperationStateCodec.trackStateMatchesSnapshot(capturedTrackState, expectedTrackSnapshot)) {
         return null;
     }
-    const replacementTrackState = timeOperationStateCodec.decodeTrackState(replacementTrackSnapshot);
-    if (!replacementTrackState) {
+    const decodedReplacement = timeOperationStateCodec.decodeTrackState(replacementTrackSnapshot);
+    if (!decodedReplacement) {
         return null;
     }
+    const replacementTrackState = { ...capturedTrackState, tracks: decodedReplacement.tracks };
 
     let capturedMarkerState: MarkerStoreState | null = null;
     let replacementMarkerState: MarkerStoreState | null = null;
@@ -306,7 +379,7 @@ function prepareLocalState(plan: CombinedStateRestorePlan): PreparedLocalState |
         capturedMarkerSnapshot: plan.local.expected.markerState,
         replacementMarkerState,
         replacementMarkerSnapshot: plan.local.replacement.markerState,
-        trackHasChanges: !timeOperationStateCodec.valuesEqual(expectedTrackSnapshot, replacementTrackSnapshot),
+        trackHasChanges: !timeOperationStateCodec.valuesEqual(capturedTrackState.tracks, replacementTrackState.tracks),
         markerHasChanges,
     };
 }

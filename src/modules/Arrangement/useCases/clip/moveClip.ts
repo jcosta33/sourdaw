@@ -18,7 +18,35 @@ type MoveClipOptions = {
      * still applies.
      */
     historicalPlacement?: boolean;
+    /** Exact captured end when restoring a historical placement. */
+    historicalEndBeat?: number;
 };
+
+function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): boolean {
+    if (!Number.isFinite(startBeat) || startBeat < 0) {
+        return false;
+    }
+    const endBeat = options?.historicalEndBeat;
+    if (endBeat === undefined) {
+        return true;
+    }
+    return options?.historicalPlacement === true && Number.isFinite(endBeat) && endBeat > startBeat;
+}
+
+function isUnchangedPlacement(
+    sourceTrackId: string,
+    targetTrackId: string,
+    oldStartBeat: number,
+    oldEndBeat: number,
+    startBeat: number,
+    options?: MoveClipOptions
+): boolean {
+    return (
+        sourceTrackId === targetTrackId &&
+        Object.is(oldStartBeat, startBeat) &&
+        (options?.historicalEndBeat === undefined || Object.is(oldEndBeat, options.historicalEndBeat))
+    );
+}
 
 export function moveClip(
     clipId: string,
@@ -29,7 +57,7 @@ export function moveClip(
     options?: MoveClipOptions
 ): boolean {
     const state = getTrackState();
-    if (!state || !Number.isFinite(startBeat) || startBeat < 0) {
+    if (!state || !hasValidMoveCoordinates(startBeat, options)) {
         return false;
     }
 
@@ -40,6 +68,7 @@ export function moveClip(
 
     let movedClip: Clip | undefined;
     let oldStartBeat: number | undefined;
+    let oldEndBeat: number | undefined;
     let sourceTrackId: string | undefined;
     const tracksWithoutClip = state.tracks.map((time) => {
         const clip = time.clips.find((context) => context.id === clipId);
@@ -48,12 +77,13 @@ export function moveClip(
                 return time;
             }
             oldStartBeat = clip.startBeat;
+            oldEndBeat = clip.endBeat;
             sourceTrackId = time.id;
             movedClip = {
                 ...clip,
                 trackId: targetTrackId,
                 startBeat,
-                endBeat: startBeat + (clip.endBeat - clip.startBeat),
+                endBeat: options?.historicalEndBeat ?? startBeat + (clip.endBeat - clip.startBeat),
                 // A drag changes the placement, never the content offset: the
                 // loop anchor rides the same delta or every move re-derives
                 // the loop window and the pass count from the new placement
@@ -64,7 +94,7 @@ export function moveClip(
         return { ...time, clips: time.clips.filter((context) => context.id !== clipId) };
     });
 
-    if (!movedClip || oldStartBeat === undefined || sourceTrackId === undefined) {
+    if (!movedClip || oldStartBeat === undefined || oldEndBeat === undefined || sourceTrackId === undefined) {
         return false;
     }
     // `acceptsClipUpdate` is true for bus/master/folder, but none of them
@@ -84,16 +114,30 @@ export function moveClip(
     if (!sameHost && options?.historicalPlacement !== true && !isClipDropCompatible(movedClip.type, targetTrack.kind)) {
         return false;
     }
-    if (sameHost && Object.is(oldStartBeat, startBeat)) {
+    if (isUnchangedPlacement(sourceTrackId, targetTrackId, oldStartBeat, oldEndBeat, startBeat, options)) {
         return false;
     }
 
-    setTrackState({
-        ...state,
-        tracks: tracksWithoutClip.map((time) =>
-            time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time
-        ),
-    });
+    const clipToMove = movedClip;
+    // Array order controls overlap drawing and edge hit testing. A retime
+    // keeps its slot so the forward move and historical restore preserve it.
+    let tracks;
+    if (sameHost) {
+        tracks = state.tracks.map((time) => {
+            if (time.id !== targetTrackId) {
+                return time;
+            }
+            return { ...time, clips: time.clips.map((clip) => (clip.id === clipId ? clipToMove : clip)) };
+        });
+    } else {
+        tracks = tracksWithoutClip.map((time) => {
+            if (time.id !== targetTrackId) {
+                return time;
+            }
+            return { ...time, clips: [...time.clips, clipToMove] };
+        });
+    }
+    setTrackState({ ...state, tracks });
 
     // Automation: shift from the original drag start (preview doesn't shift automation)
     const automationDelta = startBeat - (originalStartBeat ?? oldStartBeat);

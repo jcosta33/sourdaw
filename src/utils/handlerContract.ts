@@ -556,6 +556,10 @@ export type RippleShiftSnapshot = {
     readonly origStartBeat: number;
     readonly origEndBeat: number;
     readonly automationDelta: number;
+    /** Complete shifted-clip lane membership, owner tracks and points after
+     *  the forward ripple. Historical captures without this field can only
+     *  authenticate an empty live automation scope. */
+    readonly expectedAutomationLanes?: readonly ClipAutomationLaneActionSnapshot[];
 };
 /** A take captured inside a comp take lane — structural mirror of Arrangement's
  *  `Take`, declared here because model isolation forbids importing it. Arrays
@@ -1167,6 +1171,8 @@ export type AppAction =
               clipId: string;
               trackId: string;
               clipSnapshot: ClipSnapshot;
+              /** Original clip slot. Older entries without it append. */
+              clipIndex?: number;
               ripplePlan: RipplePlanSnapshot | null;
               midiNotesSnapshot: MidiNotesSnapshot | null;
               midiCcSnapshot: MidiCcSnapshot | null;
@@ -1394,7 +1400,7 @@ export type AppAction =
     | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateTrack'; payload: { trackId: string; targetTrackId?: string; select?: boolean } }
-    | { type: 'removeClip'; payload: { clipId: string } }
+    | { type: 'removeClip'; payload: { clipId: string; /** Internal captured replay preference. */ ripple?: boolean } }
     | { type: 'renameClip'; payload: { clipId: string; name: string } }
     | {
           type: 'splitClip';
@@ -3155,6 +3161,17 @@ export type HandlerPostCommitEffect =
     | { readonly kind: 'runtime-graph'; readonly remediation: 'retry' | 'repair' }
     | { readonly kind: 'external-effect'; readonly remediation: 'reconcile' | 'manual-repair' };
 
+/** Runtime-only owner evidence; never serialized into actions or history. */
+export type HandlerCommitValidation = {
+    /** Authenticate only the authoritative owners this write was admitted against. */
+    readonly beforeCommit: () => string | null;
+    readonly documentId: string;
+    /** Runs against the prospective document inside its atomic storage change. */
+    readonly validateDocument: (document: Readonly<Record<string, unknown>>) => string | null;
+    /** Idempotent, nonthrowing cleanup once this handler's transaction has finished executing. */
+    readonly release: () => void;
+};
+
 type HandlerDeferredEffects =
     | {
           afterCommit?: undefined;
@@ -3186,6 +3203,8 @@ export type HandlerExecutionResult = {
      *  Carried into the conflict the dispatcher raises so the caller learns the
      *  bound rather than only that the write did not happen. */
     reason?: string;
+    /** Only a written project result may supply a commit guard. */
+    commitValidation?: HandlerCommitValidation;
 } & HandlerDeferredEffects;
 
 export type HandlerValidationContext = {
