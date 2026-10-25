@@ -1,0 +1,20 @@
+src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts
+  s_29d8df116c5b92::t_65e3a03cf94387 3-5,71,83,85,107,111,125,141,145,158-161,163,165,180,209,221,235-248
+  s_29d8df116c5b92::t_b348213dee90cf 249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f488580d4e5d7581678741966226e064ffc9701",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
