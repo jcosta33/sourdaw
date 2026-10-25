@@ -112,6 +112,8 @@ function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefine
         command === 'deliver' ||
         command === 'pr:supersede' ||
         command === 'pr:retire' ||
+        command === 'review:repair' ||
+        command === 'review:confirm' ||
         command === 'review:accept' ||
         command === 'review:publish' ||
         command === 'review:publish:recover'
@@ -368,6 +370,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/wasm-artifacts.ts',
         'scripts/wasmToolchainPins.ts',
         'scripts/workspaceManifestFingerprint.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
@@ -377,6 +380,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewRepair.ts',
         'scripts/evidenceSafety.ts',
         'scripts/canonicalRecord.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],

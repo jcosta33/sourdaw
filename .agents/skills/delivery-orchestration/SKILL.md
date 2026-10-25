@@ -605,9 +605,20 @@ reviewer markers refuse the whole batch before posting or resolving. After a
 partial post-success and resolve failure, replay recognizes the same record on
 a descendant live head, logs `repair-confirmation-replayed:<pr>:<thread>`, and
 resolves without posting a second confirmation.
-Both commands are lock-free and idempotent by their
-deterministic ids, and re-running after a partial pass ignores already-resolved
-threads and completes the remainder.
+Both commands acquire the existing per-PR fenced mutation owner before authentication and
+hold it through their complete read, selection, write and replay operation. Cooperating
+processes sharing the Git common directory serialize with publication, delivery and native
+closure commands; another PR remains independent. Deterministic mutation IDs correlate
+receipts; GitHub does not deduplicate these requests by ID. This is local process
+serialization, not distributed exactly-once execution across separate clones or direct APIs.
+
+Each actual reply or resolve attempt journals the owner before the remote call. A failed
+attempt retains the owner and prints its exact recovery command:
+`pnpm deliver --recover-lock <pr> --owner <oid>`. After the recorded process fence is dead,
+recover through that existing route, then rerun the original repair or confirmation command
+with its original bound inputs. Recovery itself posts and resolves nothing. Replay reads
+existing records, skips posted confirmations, and ignores threads already resolved; it
+completes the remaining work without duplicating authoritative replies.
 
 `review:resolve` is retired. Valid invocations refuse before authentication or
 GitHub access; `--help` explains the replacement. Record every repair with
