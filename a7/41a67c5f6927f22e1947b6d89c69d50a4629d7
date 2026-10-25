@@ -1,0 +1,21 @@
+scripts/reviewDossier.ts
+  s_567a084d0540c4::t_ea344850167503 17-22,279,519-520
+scripts/reviewDossierBindings.ts
+  s_567a084d0540c4::t_4793c50252adfa 2-5,10,87-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a741a67c5f6927f22e1947b6d89c69d50a4629d7",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
