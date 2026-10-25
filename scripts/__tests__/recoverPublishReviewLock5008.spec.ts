@@ -30,14 +30,19 @@ import {
 } from '../pullRequestMutationLock.ts';
 import { readPullRequestReviewState } from '../pullRequestReviewState.ts';
 import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
-import { appendReviewDossierEvents, parseReviewDossier, serializeReviewDossier } from '../reviewDossier.ts';
-import { buildReviewDossier } from '../reviewDossierPublication.ts';
+import {
+    appendReviewDossierEvents,
+    assembleReviewDossier,
+    parseReviewDossier,
+    serializeReviewDossier,
+} from '../reviewDossier.ts';
 import { deliveryAuthorization, publishedFindings, publishedReviewId } from '../reviewDossierViews.ts';
 import { recordedPublicationReplay } from '../reviewPublicationBinding.ts';
 import { inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
 import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 import type { ReviewDraw } from '../reviewDocumentParser.ts';
+import type { ReviewDossierEvent } from '../reviewDossier.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 /*
@@ -322,8 +327,8 @@ const riskPlan: ReviewRiskPlan = {
 };
 
 /**
- * The plan-carrying files review:prepare writes, plus the canonical record the publish run derives
- * from review.json and persists before its POST.
+ * Historical plan-carrying bundle. Its source-absent finding attribution remains unknown; assemble
+ * the old record directly instead of inferring source metadata from the incident's draws.
  */
 function writePlanCarryingBundleFiles(bundle: string, landing: Landing): void {
     writeFileSync(
@@ -332,15 +337,32 @@ function writePlanCarryingBundleFiles(bundle: string, landing: Landing): void {
     );
     writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(riskPlan));
     const landed = parseReviewDocument(documentJson[landing]);
-    const { canonical } = buildReviewDossier({
+    if (landed.draws === undefined) {
+        throw new Error('historical fixture must carry completed draws');
+    }
+    const dossier = assembleReviewDossier({
         plan: riskPlan,
-        persisted: undefined,
-        draws: landed.draws,
+        events: [
+            ...landed.draws.map((draw): ReviewDossierEvent => ({
+                kind: 'stance-completed',
+                stance: draw.stance,
+                reviewerModel: draw.reviewerModel,
+                modelTier: draw.tier,
+                outcome: draw.outcome === 'findings' ? 'blocker-found' : 'clean',
+            })),
+            ...landed.comments.map((comment, index): ReviewDossierEvent => ({
+                kind: 'finding-accepted',
+                findingId: `comment-${index}`,
+                path: comment.path,
+                line: comment.line,
+                side: comment.side,
+            })),
+        ],
         evidence: [],
-        comments: landed.comments,
+        limitations: [],
         recommendation: landing === 'approve' ? 'approve' : 'request-changes',
     });
-    writeFileSync(join(bundle, 'dossier.json'), canonical);
+    writeFileSync(join(bundle, 'dossier.json'), serializeReviewDossier(dossier));
 }
 
 function writeOwner(
@@ -451,7 +473,15 @@ function crashAfterPost(root: string, remote: ReturnType<typeof fakeGitHub>): vo
         { stance: 'landed comment binding drifts', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
         { stance: 'landed review identity changes', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
     ];
-    writeFileSync(join(bundlePath(root), 'review.json'), JSON.stringify({ ...reviewDocumentJson, draws }));
+    const sources = [{ stance: draws[0]!.stance, reviewerModel: draws[0]!.reviewerModel }];
+    writeFileSync(
+        join(bundlePath(root), 'review.json'),
+        JSON.stringify({
+            ...reviewDocumentJson,
+            draws,
+            comments: reviewDocumentJson.comments.map((comment) => ({ ...comment, sources })),
+        })
+    );
     remote.state.failCommentReadsAfterPost = 1;
     expect(() => publishReview(number, publicationPort(root, remote.gh))).toThrow(/transient comment listing failure/);
     expect(remote.state.posts).toBe(1);

@@ -106,9 +106,10 @@ function assertEqualList(label: string, actual: readonly string[], expected: rea
 }
 
 function sourceKeys(sources: readonly ReviewFindingSource[] | undefined): string | undefined {
-    return sources === undefined
-        ? undefined
-        : JSON.stringify(sources.map((source) => [source.stance, source.reviewerModel]));
+    if (sources === undefined) {
+        return undefined;
+    }
+    return JSON.stringify(sources.map((source) => [source.stance, source.reviewerModel]));
 }
 
 function assertFindingsMatchComments(

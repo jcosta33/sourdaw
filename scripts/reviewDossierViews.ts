@@ -45,13 +45,18 @@ export function completedStances(dossier: ReviewDossier): CompletedReviewStance[
 export function acceptedFindings(dossier: ReviewDossier): AcceptedReviewFinding[] {
     return dossier.events
         .filter((event) => event.kind === 'finding-accepted')
-        .map((event) => ({
-            findingId: event.findingId,
-            path: event.path,
-            line: event.line,
-            side: event.side,
-            ...(event.sources !== undefined ? { sources: event.sources } : {}),
-        }));
+        .map((event) => {
+            const finding: AcceptedReviewFinding = {
+                findingId: event.findingId,
+                path: event.path,
+                line: event.line,
+                side: event.side,
+            };
+            if (event.sources !== undefined) {
+                finding.sources = event.sources;
+            }
+            return finding;
+        });
 }
 
 export function discardedDispositions(

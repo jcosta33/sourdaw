@@ -388,14 +388,10 @@ function parseCommentEntries(entries: unknown[]): ReviewComment[] {
             { defect: record.defect, consequence: record.consequence, done: record.done },
             index
         );
-        return {
-            path,
-            line,
-            side,
-            ...content,
-            ...('sources' in record
-                ? { sources: readReviewFindingSources(record.sources, `review.json comments[${index}] sources`) }
-                : {}),
-        };
+        const comment: ReviewComment = { path, line, side, ...content };
+        if ('sources' in record) {
+            comment.sources = readReviewFindingSources(record.sources, `review.json comments[${index}] sources`);
+        }
+        return comment;
     });
 }

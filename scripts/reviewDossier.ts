@@ -387,14 +387,17 @@ function readEvent(
         return completed;
     }
     if (kind === 'finding-accepted') {
-        return {
+        const finding: ReviewDossierEvent = {
             kind,
             findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
             path: readPublicationSafeString(`${label} path`, record.path),
             line: readPositiveInteger(`${label} line`, record.line),
             side: readLiteral(`${label} side`, record.side, isSide, 'LEFT or RIGHT'),
-            ...('sources' in record ? { sources: readReviewFindingSources(record.sources, `${label} sources`) } : {}),
         };
+        if ('sources' in record) {
+            finding.sources = readReviewFindingSources(record.sources, `${label} sources`);
+        }
+        return finding;
     }
     if (kind === 'review-published') {
         return { kind, reviewId: readPositiveInteger(`${label} reviewId`, record.reviewId) };
