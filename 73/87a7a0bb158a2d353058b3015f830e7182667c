@@ -1,0 +1,31 @@
+scripts/semanticReview/testCaseContext.ts
+  s_567a084d0540c4::t_b2e430b11a403b 95-118,143-145,149-155,200-207
+scripts/semanticReview/evidence.ts
+  s_567a084d0540c4::t_e23ca852a35ef9 674-718,827-834
+scripts/semanticReview/__tests__/semanticReview.spec.ts
+  s_b3201877f50e8a::t_e58248c4ee1a8e 6694-6696,6698-6700,6703-6706,6731,6810-6812,6832-6838,6853-6867,6879-6882,6884-6886,6896-6903,6920-6931,6966-6972
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7387a7a0bb158a2d353058b3015f830e7182667c",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
