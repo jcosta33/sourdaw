@@ -1,5 +1,5 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
-import { decodeMidiClipDataSnapshots } from '#/modules/MIDI/useCases';
+import { decodeMidiClipDataSnapshots, isExactMidiClipDataActionSnapshot } from '#/modules/MIDI/useCases';
 import {
     type AppAction,
     type HandlerSessionActionEntry,
@@ -359,6 +359,8 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
         typeof value.rightClipIndex === 'number' &&
         Number.isSafeInteger(value.rightClipIndex) &&
         value.rightClipIndex >= 0 &&
+        isExactMidiClipDataActionSnapshot(value.sourceMidi) &&
+        isExactMidiClipDataActionSnapshot(value.rightMidi) &&
         hasFiniteNumbers(value)
     );
 }

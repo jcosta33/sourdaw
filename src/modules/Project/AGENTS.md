@@ -45,6 +45,8 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/Project
+pnpm test:run <changed-spec>
 ```

@@ -702,16 +702,17 @@ unchanged into a passing record.
 | Command                                      | Purpose                                                                                                                                        |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test:watch`                            | Vitest watch mode for active development                                                                                                       |
-| `pnpm test:run <target>`                     | Single run; pass a file or narrow directory to stay focused. Bare `pnpm test:run` runs the full suite — do that only when explicitly requested |
-| `pnpm test:coverage`                         | Full Vitest run with **v8** coverage; run only when explicitly requested                                                                       |
-| `pnpm test:e2e <spec>`                       | Playwright run; pass a spec to stay focused. Bare `pnpm test:e2e` runs the full suite — do that only when explicitly requested                 |
-| `pnpm typecheck:test`                        | Spec-inclusive type check (`tsconfig.test.json`)                                                                                               |
+| `pnpm test:run <target>`                     | Focused local run; pass the exact changed spec. PR CI owns the broader unit matrix                                                               |
+| `pnpm test:coverage`                         | Full Vitest coverage run; PR CI owns routine repository-wide validation                                                                         |
+| `pnpm test:e2e <spec>`                       | Focused local diagnostic; PR CI selects affected E2E specs. Bare command runs the full suite and is for explicit debugging only                  |
 | `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                                                                                          |
 
-Run only checks affected by the changed files. Never expand to repository-wide tests, lint,
-coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested. Run checks
-sequentially within each lane through `package.json`. Other lanes may validate concurrently when
-RAM permits. Wrap compute-heavy agent runs with
+Run only checks affected by the changed files. Keep local verification focused on tests and
+formatting; CI owns lint, TypeScript typechecks, module boundaries, barrel-mock coverage, builds,
+and broad unit, Rust, and E2E suites. Use PR CI for those results; run a broader check locally only
+for an explicit, targeted debugging need. Run checks sequentially
+within each lane through `package.json`. Other lanes may validate concurrently when RAM permits.
+Wrap compute-heavy agent runs with
 `pnpm guard --profile <p> [--max-rss-mib <estimate>] -- <command>`. Estimate peak RAM from the
 latest observed guard peak or the nearest command; without an estimate the guard applies the
 profile ceiling, raised to the measured budget it records for known heavy scripts, and an RSS
@@ -881,7 +882,7 @@ needed. Do not rewrite or clean another agent's lane to upgrade it.
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 
-Spec files are excluded from the app `pnpm typecheck` (`tsconfig.app.json` excludes `src/**/*.spec.ts(x)`), so `pnpm typecheck:test` is the only gate that type-checks them. Run it whenever you touch a spec, a dummy factory, or a model shape that fixtures mirror. It must stay at zero errors — fix fixtures to the real types; never silence with `any` or `@ts-expect-error`.
+CI owns lint and all TypeScript typechecks, including the spec-inclusive `tsconfig.test.json` check. Do not run lint or typecheck commands locally; use the pull request's CI results as their verification evidence. When you touch a spec, dummy factory, or model shape mirrored by fixtures, keep fixtures aligned with the real types and never silence errors with `any` or `@ts-expect-error`.
 
 ---
 

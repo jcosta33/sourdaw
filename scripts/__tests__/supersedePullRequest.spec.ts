@@ -28,6 +28,7 @@ import {
     inspectIssueComments,
     inspectPullRequest,
     inspectReviewThreads,
+    shellPort,
     type IssueComment,
     type SupersedePullRequestPort,
     type SupersededReviewThread,
@@ -272,6 +273,7 @@ function fakePort(input: Input = {}) {
         };
     };
     const port: SupersedePullRequestPort = {
+        assertCurrentPullRequest: () => undefined,
         inspect: (number) => {
             input.observeOperation?.(`inspect:${number}`);
             calls.push(`inspect:${number}`);
@@ -448,6 +450,105 @@ function retainedOwner(root: string): string {
     return oid;
 }
 
+function nativeSupersessionFixture(root: string, moveAtRead?: number) {
+    let currentHead = head;
+    let state = 'OPEN';
+    let closedAt: string | null = null;
+    let commentReads = 0;
+    let moveAt = moveAtRead;
+    const comments = [
+        oldComment,
+        markerComment('IC_receipt', '2001', receiptBody),
+        markerComment('IC_lineage', '2002', lineageBody),
+    ];
+    const events: string[] = [];
+    const capture = (command: string, args: string[]): string => {
+        if (command === 'git') {
+            return join(root, '.git');
+        }
+        const query = args.find((arg) => arg.startsWith('query=')) ?? '';
+        if (query.includes('headRefOid')) {
+            const number = Number(args.find((arg) => arg.startsWith('number='))?.slice(7));
+            events.push(number === oldNumber ? 'old-core' : 'replacement-core');
+            const old = number === oldNumber;
+            return JSON.stringify({
+                data: {
+                    repository: {
+                        nameWithOwner: 'jcosta33/sourdaw',
+                        pullRequest: {
+                            id: old ? 'PR_old' : 'PR_replacement',
+                            number,
+                            state: old ? state : 'MERGED',
+                            headRefOid: old ? currentHead : 'c'.repeat(40),
+                            headRefName: old ? 'fix/old' : 'fix/replacement',
+                            headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
+                            baseRefName: 'main',
+                            baseRef: null,
+                            merged: !old,
+                            closedAt: old ? closedAt : '2026-10-24T00:00:00Z',
+                        },
+                    },
+                },
+            });
+        }
+        if (query.includes('node(id:$subjectId)')) {
+            const id = args.find((arg) => arg.startsWith('subjectId='))?.slice(10);
+            if (id === 'PR_old') {
+                events.push('old-comments');
+                commentReads += 1;
+                if (commentReads === moveAt) {
+                    currentHead = movedHead;
+                }
+            } else {
+                events.push('replacement-comments');
+            }
+            return JSON.stringify({
+                data: {
+                    node: {
+                        id,
+                        comments: {
+                            nodes: (id === 'PR_old' ? comments : []).map((entry) => ({
+                                id: entry.id,
+                                fullDatabaseId: entry.fullDatabaseId,
+                                body: entry.body,
+                                author: {
+                                    id: entry.authorNodeId,
+                                    login: entry.authorLogin,
+                                    __typename: entry.authorType,
+                                },
+                            })),
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    },
+                },
+            });
+        }
+        if (query.includes('closePullRequest(input:')) {
+            events.push('close');
+            state = 'CLOSED';
+            closedAt = '2026-10-24T00:00:00Z';
+            const clientMutationId = args.find((arg) => arg.startsWith('clientMutationId='))?.slice(17);
+            return JSON.stringify({
+                data: { closePullRequest: { clientMutationId, pullRequest: { id: 'PR_old', state, closedAt } } },
+            });
+        }
+        throw new Error(`unexpected native supersession query: ${query}`);
+    };
+    const port: SupersedePullRequestPort = {
+        ...shellPort({ configDir: root, env: {}, dispose: () => undefined }, root, capture),
+        inspectReviewThreads: () => defaultThreads,
+        log: (message) => events.push(message),
+    };
+    return {
+        port,
+        events,
+        state: () => state,
+        moveOnReplay: () => {
+            moveAt = commentReads + 1;
+        },
+    };
+}
+
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
 
 function lineagePayloadOf(body: string): string {
@@ -523,6 +624,34 @@ function sortedKeysEverywhere(value: unknown): boolean {
 }
 
 describe('pull-request supersession', () => {
+    it('keeps the real supersession inspection and close adapters valid on an unchanged head', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root);
+            await expect(runSerialized(root, current.port)).resolves.toBe('pull-request-superseded:2244:2246');
+            await expect(runSerialized(root, current.port)).resolves.toBe('pull-request-superseded:2244:2246');
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+            expect(current.events[current.events.indexOf('close') - 1]).toBe('old-core');
+        });
+    });
+
+    it('keeps a moved native head from closing after the final composite marker read', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, 3);
+            await expect(runSerialized(root, current.port)).rejects.toThrow();
+            expect(current.events).not.toContain('close');
+            expect(current.state()).toBe('OPEN');
+        });
+    });
+
+    it('rejects CLOSED supersession replay when native comments follow a moved head', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root);
+            await runSerialized(root, current.port);
+            current.moveOnReplay();
+            await expect(runSerialized(root, current.port)).rejects.toThrow();
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+        });
+    });
     it('uses client mutation receipts for forward comment and close mutations', () => {
         const source = readFileSync(join(import.meta.dirname, '../supersedePullRequestGh.ts'), 'utf8');
         expect(source).toContain(
@@ -2130,6 +2259,29 @@ describe('pull-request supersession', () => {
                 readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
             ).toBeUndefined();
             await expect(runSerialized(root, fakePort().port)).resolves.toBe('pull-request-superseded:2244:2246');
+        });
+    });
+    it('retains the owner when acknowledged created markers are omitted from rollback observations', async () => {
+        await withLockRoot(async (root) => {
+            const { port, calls, state } = fakePort();
+            const inspect = port.inspect;
+            port.inspect = (number) => {
+                const snapshot = inspect(number);
+                return number === oldNumber ? { ...snapshot, comments: [oldComment] } : snapshot;
+            };
+            const failure = runSerialized(root, port);
+
+            await expect(failure).rejects.toThrow(/preserved lock owner/u);
+            expect(state()).toMatchObject({ state: 'OPEN' });
+            expect(state().comments).toHaveLength(3);
+            expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('close:'))).toEqual([]);
+            const oid = retainedOwner(root);
+            expect(readPullRequestMutationLockOwner(root, oid, oldNumber)).toMatchObject({
+                version: 4,
+                operation: 'delivery',
+                mutation: { phase: 'remote-mutation-attempted' },
+            });
+            await expect(failure).rejects.toThrow(`pnpm deliver --recover-lock ${oldNumber} --owner ${oid}`);
         });
     });
     it('does not log success when the actual lock release loses ownership', async () => {
