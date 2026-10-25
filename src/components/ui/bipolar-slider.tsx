@@ -1,4 +1,12 @@
-import { type ReactElement, type PointerEvent, useEffect, useLayoutEffect, useRef } from 'react';
+import {
+    type FocusEvent,
+    type KeyboardEvent,
+    type ReactElement,
+    type PointerEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+} from 'react';
 
 import { Row } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
@@ -43,27 +51,19 @@ function useBipolarSliderCompletion(hasCommitHandler: boolean, commitPending: ()
     }, [hasCommitHandler]);
 }
 
-export const BipolarSlider = ({
+type BipolarSliderGestureProps = Pick<
+    BipolarSliderProps,
+    'value' | 'onValueChange' | 'onValueCommit' | 'min' | 'defaultValue'
+> & { range: number };
+
+function useBipolarSliderGesture({
     value,
     onValueChange,
     onValueCommit,
     min,
-    max,
-    step = 0.1,
+    range,
     defaultValue = 0,
-    label,
-    'aria-label': ariaLabel,
-    formatValue = (v) => v.toFixed(1),
-    className,
-}: BipolarSliderProps): ReactElement => {
-    // We visually represent this as a slider from 0-100 where 50 is center (0)
-    // assuming min is negative and max is positive and symmetric, or close to it.
-    const range = max - min;
-    const normalized = range === 0 ? 50 : ((value - min) / range) * 100;
-
-    // Default position
-    const normalizedDefault = range === 0 ? 50 : ((defaultValue - min) / range) * 100;
-
+}: BipolarSliderGestureProps) {
     const pendingValue = useRef<number | null>(null);
     const settledValue = useRef<number | null>(null);
     const activePointerId = useRef<number | null>(null);
@@ -130,23 +130,59 @@ export const BipolarSlider = ({
             commitPending();
         }
     };
+    const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>): void => {
+        handlingSliderKey.current = event.target instanceof HTMLElement && event.target.role === 'slider';
+    };
+    const handleKeyDown = (): void => {
+        handlingSliderKey.current = false;
+    };
+    const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+            commitPending();
+        }
+    };
+
+    return {
+        commitPending,
+        handleChange,
+        finishPointer,
+        handlePointerDown,
+        handleKeyDownCapture,
+        handleKeyDown,
+        handleBlur,
+    };
+}
+
+export const BipolarSlider = ({
+    value,
+    onValueChange,
+    onValueCommit,
+    min,
+    max,
+    step = 0.1,
+    defaultValue = 0,
+    label,
+    'aria-label': ariaLabel,
+    formatValue = (v) => v.toFixed(1),
+    className,
+}: BipolarSliderProps): ReactElement => {
+    // We visually represent this as a slider from 0-100 where 50 is center (0)
+    // assuming min is negative and max is positive and symmetric, or close to it.
+    const range = max - min;
+    const normalized = range === 0 ? 50 : ((value - min) / range) * 100;
+
+    // Default position
+    const normalizedDefault = range === 0 ? 50 : ((defaultValue - min) / range) * 100;
+    const gesture = useBipolarSliderGesture({ value, onValueChange, onValueCommit, min, range, defaultValue });
 
     return (
         <div
             className={cn('flex flex-col gap-1 w-full', className)}
-            onKeyDownCapture={(event) => {
-                handlingSliderKey.current = event.target instanceof HTMLElement && event.target.role === 'slider';
-            }}
-            onKeyDown={() => {
-                handlingSliderKey.current = false;
-            }}
-            onPointerCancel={finishPointer}
-            onLostPointerCapture={finishPointer}
-            onBlur={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget)) {
-                    commitPending();
-                }
-            }}
+            onKeyDownCapture={gesture.handleKeyDownCapture}
+            onKeyDown={gesture.handleKeyDown}
+            onPointerCancel={gesture.finishPointer}
+            onLostPointerCapture={gesture.finishPointer}
+            onBlur={gesture.handleBlur}
         >
             {label ? (
                 <Row justify="between" className="px-1">
@@ -154,7 +190,7 @@ export const BipolarSlider = ({
                     <span className="text-[10px] font-mono text-muted-foreground">{formatValue(value)}</span>
                 </Row>
             ) : null}
-            <Row className="relative h-6 px-1 pt-2 pb-1" onPointerDownCapture={handlePointerDown}>
+            <Row className="relative h-6 px-1 pt-2 pb-1" onPointerDownCapture={gesture.handlePointerDown}>
                 {/* Center tick */}
                 <div
                     className="absolute top-1 bottom-1 w-[2px] bg-white/10 z-0 transform -translate-x-1/2 pointer-events-none"
@@ -164,8 +200,8 @@ export const BipolarSlider = ({
                 <Slider
                     aria-label={ariaLabel ?? label ?? 'Bipolar value'}
                     value={[normalized]}
-                    onValueChange={handleChange}
-                    onValueCommit={commitPending}
+                    onValueChange={gesture.handleChange}
+                    onValueCommit={gesture.commitPending}
                     max={100}
                     step={step > 0 ? (step / range) * 100 : 0.1}
                     className="z-10"
