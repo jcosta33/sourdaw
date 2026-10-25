@@ -2,8 +2,14 @@
 
 import ts from 'typescript';
 
-import type { EvidenceReference } from './contracts.ts';
+import { isCollectedSpec } from './rules.ts';
 import { sliceLines, type LineRange } from './slicing.ts';
+
+import type { PathChangedLines } from './changeFacts.ts';
+import type { EvidenceReference } from './contracts.ts';
+import type { PathHunks } from './evidence.ts';
+import type { ChangedFileContents } from './evidenceOrdering.ts';
+import type { SemanticChangedFile } from './exclusion.ts';
 
 export type TestCaseContextProof = {
     readonly complete: boolean;
@@ -285,4 +291,49 @@ export function certifyTestCaseContext(input: {
         beforeEvidenceIds: before.evidenceIds,
         afterEvidenceIds: after.evidenceIds,
     };
+}
+
+/** Certifies only the hunk regions already admitted for collected test files. */
+export function collectTestCaseContext(input: {
+    readonly files: readonly SemanticChangedFile[];
+    readonly contents: ReadonlyMap<string, ChangedFileContents>;
+    readonly hunks: ReadonlyMap<string, PathHunks>;
+    readonly changedLines: ReadonlyMap<string, PathChangedLines>;
+    readonly references: readonly EvidenceReference[];
+    readonly attribution: ReadonlyMap<string, readonly string[]>;
+}): ReadonlyMap<string, TestCaseContextProof> {
+    const proofs = new Map<string, TestCaseContextProof>();
+    for (const file of input.files) {
+        if (!isCollectedSpec(file.path)) {
+            continue;
+        }
+        const sides = input.contents.get(file.path);
+        const hunks = input.hunks.get(file.path);
+        const lines = input.changedLines.get(file.path);
+        const ownReferences = input.references.filter((reference) =>
+            input.attribution.get(reference.evidenceId)?.includes(file.path)
+        );
+        let beforeSide: Parameters<typeof certifyTestCaseContext>[0]['before'];
+        if (sides?.before !== undefined) {
+            beforeSide = {
+                path: file.previousPath ?? file.path,
+                source: sides.before,
+                hunks: hunks?.before,
+                changedLines: lines?.removed.map((line) => line.line),
+                references: ownReferences.filter((reference) => reference.side === 'before'),
+            };
+        }
+        let afterSide: Parameters<typeof certifyTestCaseContext>[0]['after'];
+        if (sides?.after !== undefined) {
+            afterSide = {
+                path: file.path,
+                source: sides.after,
+                hunks: hunks?.after,
+                changedLines: lines?.added.map((line) => line.line),
+                references: ownReferences.filter((reference) => reference.side === 'after'),
+            };
+        }
+        proofs.set(file.path, certifyTestCaseContext({ before: beforeSide, after: afterSide }));
+    }
+    return proofs;
 }

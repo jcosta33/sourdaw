@@ -13,9 +13,9 @@ import { fitUnitEvidence, partitionUnitEvidence, type FittedPass } from './fit.t
 import { unitRequestPayload } from './requestPayload.ts';
 import { missingRequiredEvidence } from './requiredEvidence.ts';
 import { type SemanticRule, type SemanticRuleId } from './rules.ts';
-import type { TestCaseContextProof } from './testCaseContext.ts';
 
 import type { UnitChangedLineFacts } from './changeFacts.ts';
+import type { TestCaseContextProof } from './testCaseContext.ts';
 
 /**
  * One unit's evidence as every per-pass question about it is asked: the passes it travels in, the

@@ -16,6 +16,7 @@
 import { type EvidenceReference, type EvidenceSide } from './contracts.ts';
 import { type SemanticChangedFile } from './evidence.ts';
 import { isCollectedSpec, type SemanticRule } from './rules.ts';
+
 import type { TestCaseContextProof } from './testCaseContext.ts';
 
 /** The regions a token resolves against, split so an own-side drop never unsupplies a context region. */
