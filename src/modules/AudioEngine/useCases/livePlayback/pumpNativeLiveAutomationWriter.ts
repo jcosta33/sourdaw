@@ -741,6 +741,14 @@ function refreshTargets(
     for (const slot of fresh) {
         if (changed.has(targetKey(slot.target)) && !keys.has(targetKey(slot.target))) {
             result.push(slot);
+            keys.add(targetKey(slot.target));
+        }
+    }
+    // A pending apply may introduce a lane that is removed before re-arm.
+    // Its inherited cancellation still needs a slot even with no current curve.
+    for (const [key, target] of changed) {
+        if (!keys.has(key)) {
+            result.push({ target, writes: [], cursor: 0, queued: [] });
         }
     }
     return result;
@@ -867,6 +875,10 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
                 return null;
             }
             anchorStampsAtAdmission(refresh.working, input.loopWraps, input.batchesApplied);
+            // Re-arm can replace this pass before apply answers. Its submitted
+            // curve may still land, even if project truth has already reverted.
+            // Keep its cancellation duties until the accepted projection commits.
+            pass.inputs.inheritedHolds = refresh.holds;
             return backend.apply({
                 schemaVersion: 1,
                 commands,

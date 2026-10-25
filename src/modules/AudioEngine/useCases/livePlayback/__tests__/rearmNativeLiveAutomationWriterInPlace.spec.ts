@@ -49,6 +49,7 @@ import {
     type AudioGraphApplyResult,
     type AudioGraphCommand,
     type AudioGraphCommandBatch,
+    type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
 } from '../../../models/AudioGraphBackend';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
@@ -420,6 +421,164 @@ describe('live store edits on the existing writer pass', () => {
         await pump();
         expect(batches).toHaveLength(count);
     });
+
+    it.each(
+        (['device', 'loop-device', 'strip', 'new-device'] as const).flatMap((route) =>
+            (route === 'new-device' ? (['remove'] as const) : (['revert', 'remove'] as const)).flatMap((change) =>
+                (['applied', 'not-applied'] as const).map((application) => ({ route, change, application }))
+            )
+        )
+    )(
+        'cancels a pending $route edit across $change and re-arm after $application',
+        async ({ route, change, application }) => {
+            offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instance, id) => id === '7' || id === '4';
+            if (route === 'loop-device') {
+                nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 0, endSeconds: 1 };
+                nativeLiveGraphSession.loopEnabled = true;
+            }
+            const lane: StoredAutomationLane = {
+                ...hostedLane(FIRST_PLUGIN.id),
+                id: 'edited',
+                parameterId: route === 'strip' ? 'pan' : `${FIRST_PLUGIN.id}:4`,
+            };
+            const bystander: StoredAutomationLane = {
+                ...hostedLane(FIRST_PLUGIN.id),
+                points: [
+                    { beat: 0, value: 0.1, curve: 'step', tension: 0 },
+                    { beat: 0.1, value: 0.9, curve: 'step', tension: 0 },
+                ],
+            };
+            const other = { ...trackHolding([]), id: 'unrelated', name: 'Unrelated' };
+            const pan: StoredAutomationLane = {
+                ...bystander,
+                id: 'unrelated-pan',
+                trackId: other.id,
+                parameterId: 'pan',
+                points: [
+                    { beat: 0, value: 10, curve: 'step', tension: 0 },
+                    { beat: 0.1, value: 20, curve: 'step', tension: 0 },
+                ],
+            };
+            let pending = false;
+            let settle!: (result: AudioGraphApplyResult) => void;
+            let observed!: () => void;
+            const sent = new Promise<void>((resolve) => {
+                observed = resolve;
+            });
+            const batches = await playingWith(
+                [...(route === 'new-device' ? [] : [lane]), bystander, pan],
+                async () => {
+                    if (!pending) {
+                        return applied;
+                    }
+                    observed();
+                    return new Promise((resolve) => {
+                        settle = resolve;
+                    });
+                },
+                [trackHolding([FIRST_PLUGIN]), other]
+            );
+            const target: AudioGraphParameterTarget =
+                route === 'strip'
+                    ? { kind: 'track-pan', trackId: STRIP_ID }
+                    : { kind: 'device-parameter', trackId: STRIP_ID, deviceId: FIRST_PLUGIN.id, parameterId: '4' };
+            const targetWrites = (commands: readonly AudioGraphCommand[]) =>
+                commands.flatMap((command) =>
+                    (command.kind === 'write-device-parameter' || command.kind === 'write-parameter') &&
+                    JSON.stringify(command.target) === JSON.stringify(target)
+                        ? [command.write]
+                        : []
+                );
+            const outgoing = nativeLiveAutomationWriter.pass!;
+            const unaffected = outgoing.targets.filter(
+                (slot) => JSON.stringify(slot.target) !== JSON.stringify(target)
+            );
+            const preserved = unaffected.flatMap((slot) => slot.queued.filter((stamp) => stamp.startFrame >= 2880));
+            expect(preserved.length).toBeGreaterThan(0);
+            pending = true;
+            automationStore.set({
+                lanes: [
+                    {
+                        ...lane,
+                        points: [
+                            lane.points[0]!,
+                            { beat: 0.1, value: 0.3, curve: 'step', tension: 0 },
+                            lane.points[1]!,
+                        ],
+                    },
+                    bystander,
+                    pan,
+                ],
+            });
+            const flight = pump();
+            await sent;
+            if (route !== 'strip') {
+                // The real 10 ms / alpha .4 producer delivers .24 at .06, not a raw .3 at .05.
+                expect(targetWrites(batches.at(-1)!.commands)).toContainEqual({
+                    shape: 'step',
+                    time: 0.06,
+                    value: 0.24,
+                });
+            }
+            automationStore.set({ lanes: [...(change === 'revert' ? [lane] : []), bystander, pan] });
+            // A feed tick may observe the reverted truth while the edited apply is still unanswered.
+            await pump();
+            rearmNativeLiveAutomationWriterInPlace({ positionSeconds: 0.02, provenAfterBatch: 11 });
+            const successor = nativeLiveAutomationWriter.pass!;
+            const successorEpoch = nativeLiveAutomationWriter.epoch;
+            const acceptedRevision = outgoing.inputs.acceptedRevision;
+            pending = false;
+            settle(
+                application === 'applied'
+                    ? applied
+                    : {
+                          acceptance: 'rejected',
+                          application: 'not-applied',
+                          reason: 'test refusal',
+                      }
+            );
+            await flight;
+            await vi.waitFor(() => expect(nativeLiveAutomationWriter.inFlightEpoch).toBeNull());
+            expect(nativeLiveAutomationWriter.pass).toBe(successor);
+            expect(nativeLiveAutomationWriter.epoch).toBe(successorEpoch);
+            expect(outgoing.inputs.acceptedRevision).toBe(acceptedRevision);
+            const successorCommands = batches.at(-1)!.commands;
+            const corrected = targetWrites(successorCommands);
+            expect(corrected[0]).toEqual({ shape: 'hold', time: 0.02 });
+            if (route !== 'strip') {
+                expect(corrected).toEqual(
+                    change === 'revert'
+                        ? [
+                              { shape: 'hold', time: 0.02 },
+                              { shape: 'step', time: 0.02, value: 0.2 },
+                          ]
+                        : [{ shape: 'hold', time: 0.02 }]
+                );
+            }
+            expect(
+                successorCommands.filter(
+                    (command) =>
+                        (command.kind === 'write-device-parameter' || command.kind === 'write-parameter') &&
+                        command.write.shape === 'hold'
+                )
+            ).toHaveLength(1);
+            for (const stamp of preserved) {
+                expect(successor.targets.flatMap((slot) => slot.queued)).toContain(stamp);
+                expect(stamp.admittedBatch).toBe(11);
+            }
+            if (route === 'loop-device') {
+                await pumpNativeLiveAutomationWriter({
+                    positionSeconds: 0.01,
+                    loopWraps: 1,
+                    batchesApplied: 11,
+                    writerEpoch: successorEpoch,
+                });
+                expect(targetWrites(batches.at(-1)!.commands)).toEqual(
+                    change === 'revert' ? [{ shape: 'step', time: 0, value: 0.2 }] : []
+                );
+            }
+        }
+    );
 
     it('follows linked clip-scoped content and enabled/off transitions through the actual producer', async () => {
         const source = { ...hostedLane(FIRST_PLUGIN.id), id: 'source', trackId: 'source-only' };
