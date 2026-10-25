@@ -21,7 +21,7 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 
 | Need                                                        | Command                                                                                                                                                                                       |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                                                 | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
+| Open a lane                                                 | `pnpm lane:open [issue] [slug] --type <type> [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                           |
 | Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                    |
 | Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
 | Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
@@ -35,7 +35,8 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> --lineage <path-to-json>`                                                                                                    |
+| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent>] --lineage <path-to-json>`                                                     |
+| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                               |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
@@ -52,6 +53,66 @@ invocation, and a missing, unreadable, or malformed file refuses with the path.
 The transaction then posts the receipt plus a second lineage marker, converges
 duplicates to exactly one of each, and closes only afterwards, so a re-run after
 a partial transaction repairs rather than duplicates.
+
+`pr:retire` closes an owner-released obsolete PR without asserting a merged replacement. The
+caller supplies a canonical `retirement-v1` JSON record with `pr`, `head`, `base`, a one-line
+`rationale`, 1–8 repository evidence URL/observation pairs, a total `findings` list of live root
+comment/thread IDs and native author repair/reviewer confirmation comment IDs, and `reviewBodies`
+mapping each `REQUEST_CHANGES` review ID to its inline roots and `bodyDigest`, the lower-case
+SHA-256 digest of that exact review body's UTF-8 bytes (without trimming or normalization).
+The command checks this binding initially, before marker writes, before closing, after closing,
+and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new
+close or replay and must never be adopted as bound evidence.
+Each review proof reads both complete review-thread and requested-changes-review connections in
+one GraphQL response. Eligibility is bounded to 100 threads, 100 requested-changes reviews and 100
+comments per thread, with every `hasNextPage` false. Missing, malformed or truncated connections
+refuse without pagination or stitching separate responses. One response does not establish
+GraphQL resolver atomicity or prevent later changes.
+The command refuses an unconfirmed
+or unresolved root, unmatched review body, changed head/base/root set, or ambiguous role actor;
+it posts one author-App marker and closes through the native transaction. The reason, evidence,
+and mapping of review prose to inline roots are caller attestations, not machine proof of
+obsolescence. A review body with a distinct finding that cannot truthfully be mapped to a
+confirmed inline root remains a refusal; there is no discard or body-only admission in this
+version. This does not change `pr:supersede`, review, Gate, or delivery rules.
+The selected reviewer confirmation's decimal comment ID must strictly follow the selected author
+repair's ID; identity and a matching repair digest alone do not establish that chronology.
+Caller-selected IDs must identify the whole thread's authoritative native repair and sole
+confirmation. Retirement reuses native author-record supersession and reviewer replay selection,
+including historical full-record confirmations; another authorized conflicting repair or duplicate
+confirmation refuses. Older author records require verified ancestry before a descending record
+can supersede them. Plain or foreign replies do not gain authority. This does not restrict the
+original finding's actor or require every root to originate in a requested-changes review.
+Closed replay refreshes PR identity and canonical marker identity after the review proof and
+refuses movement between those observations. It cannot fence changes arriving after its last read.
+
+The replacement normally targets the old pull request's base exactly. A child
+left behind after its stack parent was natively superseded may cross that base
+only with `--superseded-parent <pr>`. The named parent must be closed without
+merge, own the child's old base branch from the child's base repository, target
+the replacement's base, and carry exactly one canonical author-Bot supersession
+receipt and one total finding lineage marker naming the merged replacement. The
+child's live `baseRef` must name that parent branch in the child's repository and
+target the parent's final head commit; a reused branch name is insufficient. The
+cached `baseRefOid` may legitimately predate the current branch tip and does not
+establish this identity. The command snapshots the live ref's repository, name
+and target, re-reading the child after the parent proof at each mutation boundary.
+It checks the child's finding set after that last remote proof immediately before
+close, and again after the final post-close proof, so a finding added or removed
+during parent inspection cannot inherit an earlier coverage check.
+
+An already CLOSED child with exactly one matching author-Bot receipt and one
+canonical total lineage marker may replay without writes after its live base ref
+has been deleted. Its named parent's identity, canonical receipt and total live
+lineage are still checked; a present contradictory live ref still refuses. This
+replay distinction confirms an existing completion only and cannot admit a fresh
+closure with an absent ref. It does not reconstruct historical ref state.
+
+The command revalidates that live parent proof before the first child write, before
+closing, and after closing before reporting success. A refusal before writing
+leaves no child mutation, a refusal after adding child markers compensates those
+markers, and a post-close authority failure reports ambiguity while retaining
+the closed child's two markers as durable evidence.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a
@@ -139,11 +200,25 @@ resolved, and refuses `BLOCKED`, non-`main` bases, and unstable reads (below).
 
 ## lane:publish mechanics
 
-An issue number resolves its lane by branch prefix; `--lane` names an exact
-absolute lane root, which is what disambiguates write-disjoint lanes sharing
-one issue.
+A lane branch is `<type>/<issue>/<slug>` or `<type>/<slug>`, where `<type>` is a
+conventional-commit type (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`,
+`perf`, `build`, `ci`; never `style`) chosen at `lane:open --type`. The legacy
+`agent/<issue>/<slug>` and `agent/<slug>` shapes of lanes opened earlier are
+recognized by every script exactly as typed ones are; new lanes never use
+`agent/`. `parseLaneBranch` in `scripts/prContract.ts` is the one reader: only
+the first segment is the type, a numeric middle segment without a leading zero
+is the issue (a number inside a slug is never an issue), and a slug is
+dash-joined lowercase words that is never purely numeric, so `fix/12-beat` is an
+issueless slug and `fix/12/34` is refused. A name is at most 100 characters
+(`MAX_LANE_BRANCH_LENGTH`). Any other name, an unknown type included, is not a
+lane branch.
 
-For conforming `agent/` lanes, `lane:publish` opens a PR titled from the newest
+An issue number resolves its lane by that parsed issue segment, across types and
+legacy prefixes alike (two lanes carrying the same issue need `--lane`); `--lane`
+names an exact absolute lane root, which is what disambiguates write-disjoint
+lanes sharing one issue.
+
+For conforming lanes (typed or legacy `agent/`), `lane:publish` opens a PR titled from the newest
 non-merge commit above `origin/main`; it refuses lanes lacking one and never
 retitles existing PRs, including after follow-up commits or merges. The body
 follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
@@ -191,7 +266,13 @@ membership to the operator backfill — the rest of the publish still lands. An
 issueless lane derives its project from its derived type label and keeps it only
 when the live listing names that project.
 
-Author-locked off-convention branches may publish via `--lane <absolute-path>`
+When a typed branch's type differs from the type of the title the PR will show
+(the newest commit on a first publish, the frozen title afterwards),
+`lane:publish` logs a `warning:` line and publishes anyway: the branch name
+cannot change after `lane:open`, and a `feat` lane routinely ends on a `test:`
+or `chore:` follow-up. `agent/` lanes name no type and never warn.
+
+Author-locked off-convention branches (any name `parseLaneBranch` rejects) may publish via `--lane <absolute-path>`
 only with an already open PR for that exact branch, proving it a genuine
 stranded lane. This path only pushes; it never writes PR title or body and
 refuses if the PR is no longer open when the push lands.
@@ -561,11 +642,48 @@ or already-merged recovery and tracker completion. Validate and refuse existing
 owners without waiting or automatic takeover, regardless of liveness. Crashes
 leave the ref; only `deliver --recover-lock` clears it.
 
+`pr:supersede` and `pr:retire` use this same per-PR owner for every live PR read, replay, comment,
+delete, close and compensation. A pre-close refusal releases only after verified
+rollback restores the original OPEN comment-ID set and removes every comment the
+invocation created; the overall command still fails. This permits corrected
+lineage on a later invocation without letting another native closer adopt markers
+while their creator can still roll them back. Retaining stale lineage alone would
+prevent such a corrected retry.
+An acknowledged created comment ID must be observed with its exact owned marker before deletion
+and must be absent after the acknowledged deletion. Omission from a later read alone cannot prove
+rollback; missing or altered created markers retain the owner without an unverified deletion.
+
+Ambiguous comment results, altered markers, attempted closure and unverified or
+failed compensation retain the journaled owner and print its exact recovery
+command. After that owner's process fence is dead, use the existing
+`deliver --recover-lock <pr> --owner <oid>` route. It can reconcile stable OPEN or
+CLOSED unmerged observations, but recovery does not prove supersession complete:
+rerun the original closure command with its verified head and complete bound record or lineage.
+Closure success is logged only after its mutation owner releases. Retirement preserves its exact
+marker and retained owner after ambiguous writes, failed or unverified compensation, or uncertainty
+after a close attempt; a verified complete OPEN rollback releases ownership while still refusing.
+Both native closers observe the bound PR core again after their marker/review reads and immediately
+before the close mutation, without fetching comments in that last observation. They compare PR
+number/node identity, head, source, base, state and closure facts. Post-close proof and CLOSED replay
+also finish with an independent core observation. A moved or unreadable witness refuses; safe
+pre-close compensation remains available, while uncertainty after a close preserves the evidence
+and owner. GitHub's `ClosePullRequestInput` has no expected-head comparison, so this bounds the
+client's split-read composition gap without eliminating external changes after its final read.
+
+Launch supersession and retirement through the protected primary package route. Their pinned
+snapshot closures include the CLI, transaction, GitHub adapter and record parsers;
+the launcher freezes POSIX `ps` or Windows PowerShell before the default process
+fence is acquired. POSIX snapshots own a detached process group. Calling the
+transaction script directly does not supply this trusted process-tool boundary.
+
 Recovery refuses a live recorded process fence, adopts the lock under its own
 fence before reading anything, then requires two matching remote reads. It
 never merges, retargets, posts, or closes, and accepts only the immutable
 author Bot or historical orchestrator User as merger. Clearing records a
 dead-owner-keyed receipt; repeat recovery replays it without GitHub access.
+The shared owner does not identify the original command. Fresh recovery and receipt replay guide
+rerunning that original operation with its original bound inputs; they do not prescribe delivery,
+certify completion or authorize a merge. All original operation and delivery gates still apply.
 
 Already-merged recovery accepts the immutable author Bot or historical
 orchestrator User as merger; fresh delivery requires the author App and rejects
@@ -624,7 +742,7 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+Run `lane:publish`, `deliver`, `pr:supersede`, `pr:retire`, `issue:claim`, and `issue:reconcile` through the
 protected primary checkout's package route; `review:accept` remains only for
 legacy pre-policy heads. This
 is the snapshot-backed write trust boundary: launcher and whole script closure

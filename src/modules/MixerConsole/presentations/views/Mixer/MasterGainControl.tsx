@@ -24,6 +24,7 @@ type MasterGainControlProps = {
     value: number;
     onChange: (value: number, isTransient?: boolean) => void;
     onEnterValue: (value: number) => void;
+    onResetToDefault: () => void;
 };
 
 type MasterGainMenuProps = {
@@ -34,25 +35,42 @@ type MasterGainMenuProps = {
     onEnterValue: () => void;
 };
 
-const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: MasterGainMenuProps): ReactElement => (
-    <DawContextMenuSurface
-        ref={menuRef}
-        role="menu"
-        aria-label="Master gain actions"
-        x={position.x}
-        y={position.y}
-        onClose={onClose}
-    >
-        <DawMenuButton role="menuitem" onClick={onReset}>
-            Reset to Default
-        </DawMenuButton>
-        <DawMenuButton role="menuitem" onClick={onEnterValue}>
-            Enter Value
-        </DawMenuButton>
-    </DawContextMenuSurface>
-);
+const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: MasterGainMenuProps): ReactElement => {
+    const handleActivationKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
+            return;
+        }
 
-export const MasterGainControl = ({ value, onChange, onEnterValue }: MasterGainControlProps): ReactElement => {
+        event.preventDefault();
+        onReset();
+    };
+
+    return (
+        <DawContextMenuSurface
+            ref={menuRef}
+            role="menu"
+            aria-label="Master gain actions"
+            x={position.x}
+            y={position.y}
+            onClose={onClose}
+            onKeyDown={handleActivationKeyDown}
+        >
+            <DawMenuButton role="menuitem" onClick={onReset}>
+                Reset to Default
+            </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={onEnterValue}>
+                Enter Value
+            </DawMenuButton>
+        </DawContextMenuSurface>
+    );
+};
+
+export const MasterGainControl = ({
+    value,
+    onChange,
+    onEnterValue,
+    onResetToDefault,
+}: MasterGainControlProps): ReactElement => {
     const [masterGainMenu, setMasterGainMenu] = useState<{ x: number; y: number } | null>(null);
     const masterGainControlRef = useRef<HTMLDivElement>(null);
     const masterGainMenuRef = useRef<HTMLDivElement>(null);
@@ -126,7 +144,7 @@ export const MasterGainControl = ({ value, onChange, onEnterValue }: MasterGainC
 
     const resetGain = (): void => {
         latestPrompt.current += 1;
-        onChange(defaultTransportState.masterGain / 100, false);
+        onResetToDefault();
         closeMasterGainMenu();
     };
 

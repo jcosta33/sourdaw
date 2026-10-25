@@ -46,7 +46,14 @@ describe('MasterGainControl', () => {
         const onChange = vi.fn();
         const onEnterValue = vi.fn();
         promptMocks.promptUser.mockResolvedValueOnce('-6 dB');
-        render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onEnterValue} />);
+        render(
+            <MasterGainControl
+                value={0.8}
+                onChange={onChange}
+                onEnterValue={onEnterValue}
+                onResetToDefault={onChange}
+            />
+        );
 
         openEnterValue();
 
@@ -66,7 +73,9 @@ describe('MasterGainControl', () => {
     ])('accepts $input as one settled gain change', async ({ input, gain }) => {
         const onChange = vi.fn();
         promptMocks.promptUser.mockResolvedValueOnce(input);
-        render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} />);
+        render(
+            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+        );
 
         openEnterValue();
 
@@ -81,7 +90,14 @@ describe('MasterGainControl', () => {
         async (input) => {
             const onChange = vi.fn();
             promptMocks.promptUser.mockResolvedValueOnce(input);
-            render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} />);
+            render(
+                <MasterGainControl
+                    value={0.8}
+                    onChange={onChange}
+                    onEnterValue={onChange}
+                    onResetToDefault={onChange}
+                />
+            );
 
             openEnterValue();
 
@@ -95,7 +111,9 @@ describe('MasterGainControl', () => {
         const onChange = vi.fn();
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
-        render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} />);
+        render(
+            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+        );
 
         openEnterValue();
         await act(async () => {
@@ -112,7 +130,9 @@ describe('MasterGainControl', () => {
         const value = 0.8123456789;
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
-        render(<MasterGainControl value={value} onChange={onChange} onEnterValue={onChange} />);
+        render(
+            <MasterGainControl value={value} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+        );
 
         openEnterValue();
         const initialValue = promptMocks.promptUser.mock.calls[0]?.[0]?.initialValue;
@@ -129,7 +149,9 @@ describe('MasterGainControl', () => {
         const onChange = vi.fn();
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
-        render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} />);
+        render(
+            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+        );
 
         openEnterValue();
         promptMocks.projectEpoch += 1;
@@ -145,7 +167,9 @@ describe('MasterGainControl', () => {
         const onChange = vi.fn();
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
-        const view = render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} />);
+        const view = render(
+            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+        );
 
         openEnterValue();
         view.unmount();
@@ -162,7 +186,9 @@ describe('MasterGainControl', () => {
         const oldPrompt = deferredPrompt();
         const newPrompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(oldPrompt.promise).mockReturnValueOnce(newPrompt.promise);
-        render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} />);
+        render(
+            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+        );
 
         openEnterValue();
         openEnterValue();
@@ -185,7 +211,9 @@ describe('MasterGainControl', () => {
         { key: 'F10', shiftKey: true },
     ])('opens with $key and returns focus to the real slider on Escape', ({ key, shiftKey }) => {
         const onChange = vi.fn();
-        render(<MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} />);
+        render(
+            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+        );
         const slider = screen.getByRole('slider', { name: 'Master gain' });
         slider.focus();
 

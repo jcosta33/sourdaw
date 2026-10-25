@@ -25,6 +25,8 @@ Acoustic grand piano physical modeling and multi-sample virtual instrument (stri
 
 ## Verification
 
-- `pnpm vitest run src/modules/GrandBoule`
-- `cargo test --package daw-dsp -- grand_boule`
-- `pnpm deps:validate`
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
+- `pnpm test:run <changed-spec>`
+- `pnpm cargo:test --package daw-dsp grand_boule`
+- PR CI checks module boundaries; inspect that result after cross-module changes.

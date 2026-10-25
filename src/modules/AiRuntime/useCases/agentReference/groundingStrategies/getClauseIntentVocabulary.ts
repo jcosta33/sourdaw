@@ -13,6 +13,8 @@ export type CreationProposal = {
 export type ClauseIntentVocabulary = {
     gaps: IntentPhraseGaps;
     phrases: readonly string[];
+    /** Phrases that name their project object with `{reference}`; they count only in a clause stating a declared level. */
+    referencedPhrases: readonly string[];
     /** Whether the clause states a decibel figure in a form this action declares. */
     statesDeclaredLevel: boolean;
 };
@@ -20,7 +22,8 @@ export type ClauseIntentVocabulary = {
 /**
  * The phrases that may name one action in a clause, and the gaps they may match across. The
  * action's intent phrases always count, contiguously. A clause stating a decibel figure in a form the
- * action declares adds its level phrases and admits one masked project reference inside a phrase;
+ * action declares adds its level phrases, and the ones that name their reference with a placeholder,
+ * and admits one masked project reference inside a phrase;
  * a creation the caller proposes names for admits one of those names inside a phrase.
  */
 export function getClauseIntentVocabulary(
@@ -32,7 +35,12 @@ export function getClauseIntentVocabulary(
     const proposedNames = creationProposal?.actionType === entry.actionType ? creationProposal.proposedNames : [];
     const gaps = { maskedReference: statesDeclaredLevel, proposedNames };
     if (!statesDeclaredLevel || entry.levelIntentPhrases === undefined) {
-        return { gaps, phrases: entry.intentPhrases, statesDeclaredLevel };
+        return { gaps, phrases: entry.intentPhrases, referencedPhrases: [], statesDeclaredLevel };
     }
-    return { gaps, phrases: [...entry.intentPhrases, ...entry.levelIntentPhrases], statesDeclaredLevel };
+    return {
+        gaps,
+        phrases: [...entry.intentPhrases, ...entry.levelIntentPhrases],
+        referencedPhrases: entry.referencedLevelIntentPhrases ?? [],
+        statesDeclaredLevel,
+    };
 }

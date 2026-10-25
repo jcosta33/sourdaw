@@ -226,6 +226,12 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         settleMasterGain(value, false, false, authority);
     };
 
+    const resetMasterGainFromMenu = (): void => {
+        gestureOpen.current = false;
+        lastGrooveSettleTime.current = null;
+        settleMasterGain(defaultTransportState.masterGain / 100, false, false);
+    };
+
     const displayGain = gestureGain ?? masterGain / 100;
 
     return (
@@ -240,7 +246,12 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
                 trackId={null}
                 clusterClassName="mt-1"
                 control={
-                    <MasterGainControl value={displayGain} onChange={handleFaderChange} onEnterValue={enterGain} />
+                    <MasterGainControl
+                        value={displayGain}
+                        onChange={handleFaderChange}
+                        onEnterValue={enterGain}
+                        onResetToDefault={resetMasterGainFromMenu}
+                    />
                 }
                 value={`${formatGainDb(displayGain)} dB`}
             />

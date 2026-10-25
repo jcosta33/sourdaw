@@ -1,7 +1,57 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
-export const TITLE_PATTERN = /^(?:feat|fix|chore|docs|test|refactor|perf|build|ci)(?:\([^)]+\))?!?: .+/;
+/**
+ * The conventional-commit types a change may carry. One list serves three readers: the pull-request
+ * title pattern, the type segment of a lane branch, and `lane:open --type`. `style` is deliberately
+ * absent from all three.
+ */
+export const LANE_CHANGE_TYPES = ['feat', 'fix', 'chore', 'docs', 'test', 'refactor', 'perf', 'build', 'ci'] as const;
+
+export type LaneChangeType = (typeof LANE_CHANGE_TYPES)[number];
+
+const LANE_CHANGE_TYPE_ALTERNATION = LANE_CHANGE_TYPES.join('|');
+const LANE_CHANGE_TYPE_LIST = LANE_CHANGE_TYPES.join(', ');
+
+export const TITLE_PATTERN = new RegExp(`^(?:${LANE_CHANGE_TYPE_ALTERNATION})(?:\\([^)]+\\))?!?: .+`);
+
+const CONVENTIONAL_TYPE_PATTERN = new RegExp(`^(${LANE_CHANGE_TYPE_ALTERNATION})(?:\\([^)]+\\))?!?: .+`);
+
+/** The type a conventional subject or title carries, or `undefined` when it carries none of the allowed ones. */
+export function conventionalType(subject: string): LaneChangeType | undefined {
+    const captured = CONVENTIONAL_TYPE_PATTERN.exec(subject)?.[1];
+    return captured !== undefined && isLaneChangeType(captured) ? captured : undefined;
+}
+
+export function isLaneChangeType(value: string): value is LaneChangeType {
+    return (LANE_CHANGE_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Validates a `lane:open --type` token. `agent` is refused by name because it is the retired
+ * prefix: existing `agent/...` lanes keep working, but no new lane is created under it.
+ */
+export function assertLaneChangeType(value: string | undefined): LaneChangeType {
+    if (value === undefined) {
+        fail(
+            `lane:open requires --type <type>: the conventional-commit type of the change, one of ${LANE_CHANGE_TYPE_LIST}`
+        );
+    }
+    if (value === 'style') {
+        fail(
+            `lane type style is not allowed: pull-request titles never use it; choose one of ${LANE_CHANGE_TYPE_LIST}`
+        );
+    }
+    if (value === 'agent') {
+        fail(
+            `lane type agent is the legacy prefix of existing lanes and is never created; choose one of ${LANE_CHANGE_TYPE_LIST}`
+        );
+    }
+    if (!isLaneChangeType(value)) {
+        fail(`unknown lane type ${JSON.stringify(value)}: choose one of ${LANE_CHANGE_TYPE_LIST}`);
+    }
+    return value;
+}
 
 /**
  * GitHub pull-request states as the delivery scripts compare them. GraphQL and
@@ -21,11 +71,65 @@ export const PR_STATE = {
 export type PullRequestState = (typeof PR_STATE)[keyof typeof PR_STATE];
 
 /**
- * Branch prefix of an author lane. `lane:open` mints it, the delivery scripts
- * recognize it, and the stack machinery requires it, so the prefix is a
- * contract of this module rather than a local of whichever script needs it.
+ * The retired fixed prefix of author lanes. Lanes opened before branches were named by change type
+ * still carry it, so the delivery scripts keep recognizing it; `lane:open` never mints it.
  */
-export const AUTHOR_LANE_BRANCH_PREFIX = 'agent/';
+export const LEGACY_LANE_BRANCH_PREFIX = 'agent';
+
+/**
+ * Upper bound on a lane branch name. Live branches stay under ~55 characters; the bound keeps a
+ * crafted name from growing paths, refs, descriptor keys and log lines without limit.
+ */
+export const MAX_LANE_BRANCH_LENGTH = 100;
+
+export type LaneBranchPrefix = LaneChangeType | typeof LEGACY_LANE_BRANCH_PREFIX;
+
+export type ParsedLaneBranch = { prefix: LaneBranchPrefix; issue?: number; slug: string };
+
+const LANE_BRANCH_PATTERN = new RegExp(
+    `^(${[...LANE_CHANGE_TYPES, LEGACY_LANE_BRANCH_PREFIX].join('|')})/(?:([1-9][0-9]*)/)?([a-z0-9]+(?:-[a-z0-9]+)*)$`
+);
+
+/**
+ * The one reader of lane branch names. Every delivery script that must decide "is this an author
+ * lane, and which issue does it track" goes through it, because the name is untrusted input: a
+ * worktree's branch is whatever its creator typed, not what `lane:open` would have minted.
+ *
+ * The grammar is `<prefix>/<slug>` or `<prefix>/<issue>/<slug>`, nothing else, where
+ *   - `<prefix>` is a lane change type or the legacy `agent`, and only the first segment is ever read
+ *     as the prefix, so a slug may be `fix` or `agent` without ambiguity (`docs/12/agent`);
+ *   - `<issue>` is a positive integer without a leading zero and exists only in the three-segment
+ *     form, so `fix/12-beat` is an issueless slug that starts with digits, never issue 12;
+ *   - `<slug>` is lowercase alphanumeric words joined by single dashes and is never purely numeric,
+ *     so a two-segment `fix/12` is refused and a three-segment `fix/12/34` cannot be read two ways.
+ * Anything else, including an unknown prefix such as `style`, any `..`, a leading dash, whitespace,
+ * a trailing newline, or a name past `MAX_LANE_BRANCH_LENGTH`, parses to nothing and is not a lane.
+ */
+export function parseLaneBranch(branch: string): ParsedLaneBranch | undefined {
+    if (branch.length > MAX_LANE_BRANCH_LENGTH) {
+        return undefined;
+    }
+    const match = LANE_BRANCH_PATTERN.exec(branch);
+    const prefix = match?.[1];
+    const slug = match?.[3];
+    if (prefix === undefined || !isLaneBranchPrefix(prefix) || slug === undefined || /^[0-9]+$/.test(slug)) {
+        return undefined;
+    }
+    const issueText = match?.[2];
+    if (issueText === undefined) {
+        return { prefix, slug };
+    }
+    const issue = Number(issueText);
+    return Number.isSafeInteger(issue) ? { prefix, issue, slug } : undefined;
+}
+
+function isLaneBranchPrefix(value: string): value is LaneBranchPrefix {
+    return value === LEGACY_LANE_BRANCH_PREFIX || isLaneChangeType(value);
+}
+
+export function isLaneBranch(branch: string): boolean {
+    return parseLaneBranch(branch) !== undefined;
+}
 
 /**
  * Environment variable names the trusted launcher binds for a GitHub-writing
@@ -569,8 +673,14 @@ export function assertLaneSlug(slug: string): void {
     }
 }
 
-export function laneBranchName(issue: number | undefined, slug: string): string {
-    return issue === undefined ? `${AUTHOR_LANE_BRANCH_PREFIX}${slug}` : `${AUTHOR_LANE_BRANCH_PREFIX}${issue}/${slug}`;
+export function laneBranchName(type: LaneChangeType, issue: number | undefined, slug: string): string {
+    const branch = issue === undefined ? `${type}/${slug}` : `${type}/${issue}/${slug}`;
+    if (!isLaneBranch(branch)) {
+        fail(
+            `${branch} is not a valid lane branch: at most ${MAX_LANE_BRANCH_LENGTH} characters, ${type}/[<issue>/]<slug>`
+        );
+    }
+    return branch;
 }
 
 /**

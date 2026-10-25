@@ -22,5 +22,7 @@ Built-in polyphonic synthesizer voice scheduling (analog-modeled subtractive syn
 
 ## Verification
 
-- `pnpm vitest run src/modules/Synth`
-- `pnpm deps:validate`
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
+- `pnpm test:run <changed-spec>`
+- PR CI checks module boundaries; inspect that result after cross-module changes.

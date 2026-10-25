@@ -354,6 +354,62 @@ describe('handleWebMidiPitchBend', () => {
         });
     });
 
+    describe('channel scope', () => {
+        function hold_note(channel: number, note: number): void {
+            activeNotes.set(createWebMidiNoteKey(channel, note), {
+                channel,
+                note,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+        }
+
+        it('moves only the notes on the channel the bend arrived on outside MPE', () => {
+            mpe_enabled.value = false;
+            hold_note(1, 60);
+            hold_note(2, 64);
+
+            handleWebMidiPitchBend(1, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledTimes(1);
+            expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ note: 60, channel: 1 }));
+        });
+
+        it('keeps a manager-channel bend zone-wide over notes on member channels in MPE mode', () => {
+            hold_note(1, 60);
+            hold_note(2, 64);
+
+            handleWebMidiPitchBend(0, 0, 96);
+
+            expect(apply_note_expression).toHaveBeenCalledTimes(2);
+            expect(apply_note_expression).toHaveBeenCalledWith(
+                expect.objectContaining({ note: 60, channel: 1, bendRangeSemitones: 2 })
+            );
+            expect(apply_note_expression).toHaveBeenCalledWith(
+                expect.objectContaining({ note: 64, channel: 2, bendRangeSemitones: 2 })
+            );
+        });
+
+        it('keeps an MPE member-channel bend on its note', () => {
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'source-track',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+
+            handleWebMidiPitchBend(2, 0, 96);
+
+            expect(activeNotes.get(key)?.pitchBend).toBe(4096);
+        });
+    });
+
     it('in non-MPE mode, retunes all active oscillators by the global ±2 semitone bend', () => {
         mpe_enabled.value = false;
         target_track_id.value = 'track-1';
