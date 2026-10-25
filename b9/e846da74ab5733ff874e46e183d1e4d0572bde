@@ -1,0 +1,19 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_b3201877f50e8a::t_6910eaddd288d1 136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b9e846da74ab5733ff874e46e183d1e4d0572bde",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
