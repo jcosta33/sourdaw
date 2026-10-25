@@ -1093,6 +1093,46 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(applied.revert()).toBe(false);
     });
 
+    it.each(['restore', 'retire'] as const)(
+        'rejects a %s take retirement naming a clip retained by both local snapshots',
+        (appliedEffect) => {
+            const erased = ClipDummy.create({ id: 'erased', trackId: 'track-1', startBeat: 2, endBeat: 4 });
+            const untouched = ClipDummy.create({ id: 'untouched', trackId: 'track-1', startBeat: 0, endBeat: 1 });
+            const before = createTrackState(1, 0, { clips: [erased, untouched] });
+            const after = createTrackState(1, 0, { clips: [untouched] });
+            const expectedTrackState = appliedEffect === 'restore' ? after : before;
+            const replacementTrackState = appliedEffect === 'restore' ? before : after;
+            const markerState = createMarkerState(8);
+            setCurrentState(expectedTrackState, markerState);
+            const dependencies = installDependencies();
+            const take = createTake(untouched.id, 'Untouched', 0, 1);
+            const lanes = { lanes: [{ ...createTakeLane('track-1'), takes: [take] }] };
+            takeLaneStore.set(lanes);
+            const transaction = prepareTimeOperationStateRestore(
+                createPlan({
+                    scope: 'global',
+                    expectedTrackState,
+                    replacementTrackState,
+                    expectedMarkerState: markerState,
+                    replacementMarkerState: markerState,
+                    takeLanes: {
+                        version: 1,
+                        appliedEffect,
+                        removedClipIds: [erased.id, untouched.id],
+                        retiredLanes: [],
+                    },
+                })
+            );
+            expect(transaction.status).toBe('rejected');
+            expect(transaction.apply()).toBe(false);
+            expect(mocks.trackState.value).toEqual(expectedTrackState);
+            expect(takeLaneStore.value).toEqual(lanes);
+            expect(dependencies.prepareAutomation).not.toHaveBeenCalled();
+            expect(dependencies.prepareMidi).not.toHaveBeenCalled();
+            expect(dependencies.prepareTimelineMap).not.toHaveBeenCalled();
+        }
+    );
+
     // #4520 — the take-lane slot: applying a restore plan puts the retired
     // lanes back, and reverting it (the reversed plan, as redo uses) retires
     // them again.

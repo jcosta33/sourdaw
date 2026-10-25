@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type MidiNote } from '../../../models/MidiNote';
 import { midiStore } from '../../../stores/midiStore';
@@ -11,6 +11,51 @@ describe('duplicateClipNotes', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('returns defensive input and constructed output before synchronous publication observers can edit them', () => {
+        const source: MidiNote = {
+            id: 'source', pitch: 60, startBeat: 0, duration: 1, velocity: 90,
+            expression: { pressure: [{ offsetBeats: 0, value: 0.25 }] },
+        };
+        midiStore.set({
+            notesByClipId: { src: [source] },
+            ccByClipId: { src: [{ id: 'source-cc', controller: 64, value: 127, beat: 0, channel: 0 }] },
+            pitchBendByClipId: { src: [{ id: 'source-bend', value: 4096, beat: 0, channel: 0 }] },
+        });
+        const publish = midiStore.set;
+        vi.spyOn(midiStore, 'set').mockImplementation((state) => {
+            publish(state);
+            const current = midiStore.value;
+            const note = current?.notesByClipId.dst?.[0];
+            if (note && current) {
+                const edited = structuredClone(note);
+                edited.velocity = 42;
+                edited.expression!.pressure![0]!.value = 0.75;
+                publish({ ...current, notesByClipId: { ...current.notesByClipId, dst: [edited] } });
+            }
+        });
+        const capture = duplicateClipNotes('src', 'dst');
+        expect(capture?.source.notes.value).toEqual([source]);
+        expect(capture?.target.notes.value[0]).toMatchObject({
+            velocity: 90, expression: { pressure: [{ offsetBeats: 0, value: 0.25 }] },
+        });
+        expect(capture?.target.controlChanges.value[0]).toMatchObject({ controller: 64, value: 127 });
+        expect(capture?.target.pitchBends.value[0]).toMatchObject({ value: 4096 });
+        expect(midiStore.value?.notesByClipId.dst?.[0]?.velocity).toBe(42);
+    });
+
+    it('does not return a creator capture when publication throws', () => {
+        midiStore.set({
+            notesByClipId: { src: [{ id: 'source', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+            ccByClipId: {}, pitchBendByClipId: {},
+        });
+        const failure = new Error('MIDI publication refused');
+        vi.spyOn(midiStore, 'set').mockImplementation(() => { throw failure; });
+        expect(() => duplicateClipNotes('src', 'dst')).toThrow(failure);
+        expect(midiStore.value?.notesByClipId.dst).toBeUndefined();
     });
 
     it('should not write when the store is null', () => {

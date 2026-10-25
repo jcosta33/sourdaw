@@ -586,8 +586,8 @@ export function isDeleteTimeSessionEntry(entry: HandlerSessionActionEntry): bool
         !Number.isFinite(action.endBeat) ||
         action.startBeat < 0 ||
         action.endBeat <= action.startBeat ||
-        !isRestoreTimeOperationSessionPayload(inverse) ||
-        !isRestoreTimeOperationSessionPayload(redo) ||
+        !timeOperationRestorePlan.isValid(inversePlan, action) ||
+        !timeOperationRestorePlan.isValid(redoPlan, action) ||
         !isRecord(inversePlan) ||
         inversePlan.scope !== 'global' ||
         !isRecord(redoPlan) ||
