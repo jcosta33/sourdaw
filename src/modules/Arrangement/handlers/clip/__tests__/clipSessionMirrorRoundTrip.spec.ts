@@ -802,6 +802,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             setWarpState('clip-a', {
                 enabled: true,
                 markers: [{ id: 'source-warp', originalBeat: 0, warpedBeat: 0.5 }],
+                stretchMode: 'repitch',
+                originalTempo: 120,
             });
             automationStore.set({ lanes: [automationLane('source-lane', 'clip-a')] });
             flushAutomergeStorageWrites();
