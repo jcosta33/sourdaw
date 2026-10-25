@@ -11,6 +11,8 @@ import { type TrackStoreState, trackStore } from '../../stores/trackStore';
 import { importMidiFile } from '../importMidiFile';
 
 type PushUndoEntry = (label: string, undo: () => void, redo: () => unknown) => void;
+type ReadMidiFileResult = Awaited<ReturnType<typeof import('#/modules/MIDI/useCases').readMidiFile>>;
+const emptyTiming = { format: 0, ticksPerBeat: 480, events: [], complete: true } satisfies ReadMidiFileResult['timing'];
 
 type Deferred<T> = {
     promise: Promise<T>;
@@ -101,6 +103,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Imported', notes: [importedNote], ccs: [], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
         mocks.setTrackState.mockImplementation((state: TrackStoreState) => {
             if (!shouldInjectConcurrentTrack) {
@@ -208,6 +211,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Drums', notes: [drumNote], ccs: [sustain], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'drums.mid'), { shouldContinue: () => true });
@@ -228,6 +232,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Drums', notes: [importedNote], ccs: [sustain], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'drums.mid'), { shouldContinue: () => true });
@@ -280,7 +285,12 @@ describe('importMidiFile', () => {
 
     it('commits nothing when a deferred parse is superseded by another project transition', async () => {
         const parsedTracks = [{ name: 'Imported', notes: [importedNote], ccs: [], endTick: 960 }];
-        const parse = createDeferred<{ declaredTrackCount: number; tracks: typeof parsedTracks; truncated: boolean }>();
+        const parse = createDeferred<{
+            declaredTrackCount: number;
+            tracks: typeof parsedTracks;
+            truncated: boolean;
+            timing: ReadMidiFileResult['timing'];
+        }>();
         const trackStateBefore = trackStore.value;
         const midiStateBefore = getMidiStoreState();
         let isCurrent = true;
@@ -292,7 +302,7 @@ describe('importMidiFile', () => {
         await vi.waitFor(() => expect(mocks.readMidiFile).toHaveBeenCalledTimes(1));
 
         isCurrent = false;
-        parse.resolve({ declaredTrackCount: 1, tracks: parsedTracks, truncated: false });
+        parse.resolve({ declaredTrackCount: 1, tracks: parsedTracks, truncated: false, timing: emptyTiming });
 
         await expect(importPromise).resolves.toBe('superseded');
         expect(trackStore.value).toBe(trackStateBefore);
@@ -409,6 +419,7 @@ describe('importMidiFile', () => {
                 { name: 'Second', notes: [concurrentNote], ccs: [], endTick: 960 },
             ],
             truncated: false,
+            timing: emptyTiming,
         });
         const midiStateBefore = getMidiStoreState();
 
@@ -427,7 +438,12 @@ describe('importMidiFile', () => {
 
     it('completes without importing when the parsed MIDI has no tracks', async () => {
         shouldInjectConcurrentTrack = false;
-        mocks.readMidiFile.mockResolvedValue({ declaredTrackCount: 0, tracks: [], truncated: false });
+        mocks.readMidiFile.mockResolvedValue({
+            declaredTrackCount: 0,
+            tracks: [],
+            truncated: false,
+            timing: emptyTiming,
+        });
 
         await expect(importMidiFile(new File([], 'empty.mid'), { shouldContinue: () => true })).resolves.toBe(
             'completed'
@@ -450,6 +466,7 @@ describe('importMidiFile', () => {
                 { name: 'Three', notes: [importedNote], ccs: [], endTick: 960 },
             ],
             truncated: true,
+            timing: { ...emptyTiming, complete: false },
         });
 
         await expect(importMidiFile(new File([], 'torn.mid'), { shouldContinue: () => true })).resolves.toBe(
@@ -474,6 +491,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 2,
             tracks: [{ name: 'Only', notes: [importedNote], ccs: [], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await expect(importMidiFile(new File([], 'sparse.mid'), { shouldContinue: () => true })).resolves.toBe(
@@ -490,13 +508,19 @@ describe('importMidiFile', () => {
             declaredTrackCount: number;
             tracks: typeof recoveredTracks;
             truncated: boolean;
+            timing: ReadMidiFileResult['timing'];
         }>();
         let isCurrent = true;
         mocks.readMidiFile.mockReturnValue(parse.promise);
 
         const importPromise = importMidiFile(new File([], 'stale-torn.mid'), { shouldContinue: () => isCurrent });
         isCurrent = false;
-        parse.resolve({ declaredTrackCount: 4, tracks: recoveredTracks, truncated: true });
+        parse.resolve({
+            declaredTrackCount: 4,
+            tracks: recoveredTracks,
+            truncated: true,
+            timing: { ...emptyTiming, complete: false },
+        });
 
         await expect(importPromise).resolves.toBe('superseded');
         expect(mocks.notifyUser).not.toHaveBeenCalled();
@@ -509,6 +533,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Short', notes: [importedNote], ccs: [], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'short.mid'), { shouldContinue: () => true });
@@ -532,6 +557,30 @@ describe('importMidiFile', () => {
         const meterBefore = timeSignatureMapStore.value;
         const note = { id: 'cut-bar-note', pitch: 60, startBeat: 4, duration: 0.5, velocity: 100, channel: 2 };
         const cc = { id: 'new-bar-cc', controller: 64, value: 127, beat: 5, channel: 2 };
+        const fileTiming = {
+            ...emptyTiming,
+            events: [
+                {
+                    kind: 'tempo',
+                    tick: 0,
+                    beat: 0,
+                    sourceTrackIndex: 0,
+                    eventOrdinal: 0,
+                    microsecondsPerQuarterNote: 400000,
+                },
+                {
+                    kind: 'meter',
+                    tick: 0,
+                    beat: 0,
+                    sourceTrackIndex: 0,
+                    eventOrdinal: 1,
+                    numerator: 7,
+                    denominatorExponent: 3,
+                    clocksPerClick: 24,
+                    notated32ndsPerQuarter: 8,
+                },
+            ],
+        } satisfies ReadMidiFileResult['timing'];
         mocks.readMidiFile.mockResolvedValue({
             declaredTrackCount: 2,
             tracks: [
@@ -539,6 +588,7 @@ describe('importMidiFile', () => {
                 { name: 'Control', notes: [], ccs: [cc], endTick: 2400 },
             ],
             truncated: false,
+            timing: fileTiming,
         });
 
         await importMidiFile(new File([], 'seam.mid'), { shouldContinue: () => true });
@@ -590,6 +640,7 @@ describe('importMidiFile', () => {
                 { name: 'Long', notes: [note], ccs: [], endTick: 1920 },
             ],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'meter.mid'), { shouldContinue: () => true });
@@ -605,6 +656,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Invalid', notes: [{ ...importedNote, startBeat: Number.NaN }], ccs: [], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'invalid.mid'), { shouldContinue: () => true });
@@ -658,6 +710,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Long', notes: [longNote], ccs: [], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'long.mid'), { shouldContinue: () => true });
@@ -677,6 +730,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Controls', notes: [], ccs: [sustain], endTick: beat * 480 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'controls.mid'), { shouldContinue: () => true });
@@ -693,6 +747,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: 'Bass', notes: [importedNote], ccs: [], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'bass.mid'), { shouldContinue: () => true });
@@ -709,6 +764,7 @@ describe('importMidiFile', () => {
                 { name: 'Lead', notes: [concurrentNote], ccs: [], endTick: 960 },
             ],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'multi.mid'), { shouldContinue: () => true });
@@ -722,6 +778,7 @@ describe('importMidiFile', () => {
             declaredTrackCount: 1,
             tracks: [{ name: undefined, notes: [importedNote], ccs: [], endTick: 960 }],
             truncated: false,
+            timing: emptyTiming,
         });
 
         await importMidiFile(new File([], 'nameless.mid'), { shouldContinue: () => true });
