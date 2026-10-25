@@ -175,6 +175,75 @@ describe('revisitHandEditedCCReturns', () => {
         expect(rangeAfter()).toBe(2);
     });
 
+    it('a lone Data Entry LSB beside a family row that replays first leaves the family untouched on a move', () => {
+        // Row order where the family replays before the same-beat fine half: without the
+        // fine-only gate the reconcile would rewrite the family to the orphaned fine half's
+        // range; with it the family keeps restoring the cut state.
+        const familyFirst: MidiCC = {
+            id: 'cc-split:right:rpn-after-carried-0',
+            controller: 6,
+            value: 2,
+            beat: 0,
+            channel: 0,
+        };
+        const loneFine: MidiCC = { id: 'cc-hand-lsb', controller: 38, value: 50, beat: 0, channel: 0 };
+        seed([familyFirst, loneFine, ...cutReturn.filter((row) => row.id !== familyFirst.id)]);
+
+        moveMidiCC('c1', loneFine.id, 0, 60);
+        revisitHandEditedCCReturns('c1', { channel: 0, beat: 0 }, { editedController: 38, editedRowId: loneFine.id });
+
+        const family = (midiStore.value?.ccByClipId.c1 ?? []).filter(({ id }) => id.includes('rpn-after-carried'));
+        expect(family.map((row) => [row.controller, row.value])).toEqual([
+            [6, 2],
+            [100, 0],
+            [6, 2],
+            [38, 0],
+            [99, 1],
+            [98, 1],
+        ]);
+    });
+
+    it('moving a writer coarse that replays after the family reconciles nothing in that order too', () => {
+        // Row order where the family replays before the same-beat writer coarse: the writer row
+        // is what the returns override, so the writer-row guard must no-op the reconcile however
+        // the beats tie.
+        const familyFirst: MidiCC = {
+            id: 'cc-split:right:rpn-after-carried-0',
+            controller: 6,
+            value: 2,
+            beat: 0,
+            channel: 0,
+        };
+        const writerCoarse: MidiCC = {
+            id: 'cc-split:right:rpn-carried-2',
+            controller: 6,
+            value: 12,
+            beat: 0,
+            channel: 0,
+        };
+        seed([familyFirst, writerCoarse, ...cutReturn.filter((row) => row.id !== familyFirst.id)]);
+
+        moveMidiCC('c1', writerCoarse.id, 0, 9);
+        revisitHandEditedCCReturns(
+            'c1',
+            { channel: 0, beat: 0 },
+            {
+                editedController: 6,
+                editedRowId: writerCoarse.id,
+            }
+        );
+
+        const family = (midiStore.value?.ccByClipId.c1 ?? []).filter(({ id }) => id.includes('rpn-after-carried'));
+        expect(family.map((row) => [row.controller, row.value])).toEqual([
+            [6, 2],
+            [100, 0],
+            [6, 2],
+            [38, 0],
+            [99, 1],
+            [98, 1],
+        ]);
+    });
+
     it('a real split origin carrying data bytes never leaves later bends at the orphaned fine half after a delete', () => {
         // A carved right half's origin declares the cut state with its data bytes (the writer's
         // `:rpn-` rows); the add replaces the origin's coarse at its key, so the delete revisits a

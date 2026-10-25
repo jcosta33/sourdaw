@@ -935,11 +935,14 @@ describe('CCLane', () => {
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             vi.mocked(restoreMidiCCPoints).mockClear();
             undoFn!();
-            // The undo re-inserts just the removed row by id — a sibling sharing
-            // the key survives, and rows other controllers hold are never touched.
-            expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [
-                { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
-            ]);
+            // The undo re-inserts just the removed row by id, ahead of the same-beat
+            // follower it preceded (the pre-delete order rides the undo) — a sibling
+            // sharing the key survives, and rows other controllers hold are never touched.
+            expect(restoreMidiCCPoints).toHaveBeenCalledWith(
+                'clip-1',
+                [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }],
+                [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }]
+            );
         });
 
         it('revisits the removed point head on delete and in both replay directions', () => {

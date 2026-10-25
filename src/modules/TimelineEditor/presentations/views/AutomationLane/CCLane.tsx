@@ -191,12 +191,16 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             // to change is a no-op.
             const head = { channel: point.channel, beat: point.beat };
             const edited = { editedController: point.controller, editedRowId: point.id };
+            // The pre-delete order rides the undo: a same-beat sibling the point
+            // preceded must stay behind it when the undo re-inserts the point, or
+            // the reader's list-order tie-break flips what later bends play under.
+            const preDeleteOrder = [...(midiStore.value?.ccByClipId[clipId] ?? [])];
             removeMidiCC(clipId, ccId);
             revisitHandEditedCCReturns(clipId, head, edited);
             pushUndoEntry(
                 'Remove CC point',
                 () => {
-                    restoreMidiCCPoints(clipId, [point]);
+                    restoreMidiCCPoints(clipId, [point], preDeleteOrder);
                     revisitHandEditedCCReturns(clipId, head, edited);
                 },
                 () => {
