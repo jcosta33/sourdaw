@@ -779,6 +779,7 @@ function nativeSupersessionFixture(
     let nextComment = 2002;
     type AuthorityChange = Partial<Pick<SupersededPullRequest, 'state' | 'head' | 'headRefName' | 'closedAt'>>;
     const authorityChanges = new Map<number, AuthorityChange>();
+    const closureEvidence = new Map<number, Record<string, unknown>>();
     let pendingChange: { number: number; atParentThreadRead: number; patch: AuthorityChange } | undefined;
     let liveParentComments = [...distinctParentComments];
     let pendingParentCommentsChange:
@@ -901,6 +902,7 @@ function nativeSupersessionFixture(
                 merged: !old && !parent,
                 mergeCommit,
                 closedAt: observedClosedAt,
+                ...closureEvidence.get(number),
             };
             if (old && omitChildBaseRef) {
                 Reflect.deleteProperty(pullRequest, 'baseRef');
@@ -1093,6 +1095,9 @@ function nativeSupersessionFixture(
         state: () => state,
         comments: () => comments,
         bindingBody: nativeBindingBody,
+        setClosureEvidence: (number: number, evidence: Record<string, unknown>) => {
+            closureEvidence.set(number, evidence);
+        },
         moveOnReplay: () => {
             moveAt = commentReads + 1;
         },
@@ -1286,6 +1291,31 @@ describe('pull-request supersession', () => {
             await expect(runSerialized(root, current.port)).resolves.toBe('pull-request-superseded:2244:2246');
             expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
             expect(current.events[current.events.indexOf('close') - 1]).toBe('old-core');
+        });
+    });
+
+    it('refuses a native closed unmerged parent with a merge commit before any closure mutation', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true, {}, { initialMarkers: false });
+            current.setClosureEvidence(parentNumber, { mergeCommit: { oid: parentMerge } });
+            await expect(
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                )
+            ).rejects.toThrow(/cannot inspect PR #2245.*closure evidence/i);
+            expect(current.state()).toBe('OPEN');
+            expect(current.comments()).toEqual([oldComment]);
+            expect(
+                current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
+            ).toEqual([]);
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
         });
     });
 
@@ -2167,11 +2197,61 @@ describe('pull-request supersession', () => {
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(2);
     });
-    it.each([null, undefined, { oid: childMerge }])(
-        'reads optional merge commit %j without a replacement branch liveness check',
-        (mergeCommit) => {
-            const calls: string[][] = [];
-            const value = inspectPullRequest(
+    it.each<{ label: string; evidence: Record<string, unknown>; valid: boolean }>([
+        {
+            label: 'open with explicit nulls',
+            evidence: { state: 'OPEN', merged: false, closedAt: null, mergeCommit: null },
+            valid: true,
+        },
+        {
+            label: 'closed without merge',
+            evidence: { state: 'CLOSED', merged: false, closedAt: '2026-08-20T12:00:00Z', mergeCommit: null },
+            valid: true,
+        },
+        {
+            label: 'merged with full commit',
+            evidence: {
+                state: 'MERGED',
+                merged: true,
+                closedAt: '2026-08-20T12:00:00Z',
+                mergeCommit: { oid: childMerge },
+            },
+            valid: true,
+        },
+        { label: 'missing selected merge commit', evidence: { mergeCommit: undefined }, valid: false },
+        { label: 'missing selected merge oid', evidence: { mergeCommit: {} }, valid: false },
+        { label: 'primitive selected merge commit', evidence: { mergeCommit: childMerge }, valid: false },
+        { label: 'null selected merge oid', evidence: { mergeCommit: { oid: null } }, valid: false },
+        { label: 'malformed selected merge oid', evidence: { mergeCommit: { oid: 'main' } }, valid: false },
+        { label: 'short selected merge oid', evidence: { mergeCommit: { oid: 'a'.repeat(39) } }, valid: false },
+        { label: 'uppercase selected merge oid', evidence: { mergeCommit: { oid: 'A'.repeat(40) } }, valid: false },
+        { label: 'merged with null commit', evidence: { mergeCommit: null }, valid: false },
+        { label: 'merged flag false', evidence: { merged: false }, valid: false },
+        { label: 'merged without close time', evidence: { closedAt: null }, valid: false },
+        { label: 'merged with empty close time', evidence: { closedAt: '' }, valid: false },
+        { label: 'merged with malformed close time', evidence: { closedAt: 'unavailable' }, valid: false },
+        { label: 'missing selected close time', evidence: { closedAt: undefined }, valid: false },
+        { label: 'missing selected merged flag', evidence: { merged: undefined }, valid: false },
+        { label: 'malformed selected merged flag', evidence: { merged: 'true' }, valid: false },
+        { label: 'unknown state', evidence: { state: 'UNKNOWN' }, valid: false },
+        { label: 'closed with merged flag', evidence: { state: 'CLOSED' }, valid: false },
+        { label: 'closed without merge with commit', evidence: { state: 'CLOSED', merged: false }, valid: false },
+        {
+            label: 'closed without close time',
+            evidence: { state: 'CLOSED', merged: false, closedAt: null, mergeCommit: null },
+            valid: false,
+        },
+        { label: 'open with close time', evidence: { state: 'OPEN', merged: false, mergeCommit: null }, valid: false },
+        {
+            label: 'open with merged flag',
+            evidence: { state: 'OPEN', closedAt: null, mergeCommit: null },
+            valid: false,
+        },
+        { label: 'open with commit', evidence: { state: 'OPEN', merged: false, closedAt: null }, valid: false },
+    ])('validates native selected closure evidence: $label', ({ evidence, valid }) => {
+        const calls: string[][] = [];
+        const inspect = () =>
+            inspectPullRequest(
                 replacementNumber,
                 (args) => {
                     calls.push(args);
@@ -2192,7 +2272,8 @@ describe('pull-request supersession', () => {
                                         baseRefOid: childMerge,
                                         baseRef: null,
                                         closedAt: '2026-08-20T12:00:00Z',
-                                        mergeCommit,
+                                        mergeCommit: { oid: childMerge },
+                                        ...evidence,
                                     },
                                 },
                             },
@@ -2212,11 +2293,17 @@ describe('pull-request supersession', () => {
                 },
                 new Map()
             );
-            expect(value.mergeCommit).toBe(mergeCommit?.oid ?? null);
+        if (valid) {
+            const value = inspect();
+            expect(value.mergeCommit).toBe(evidence.mergeCommit === null ? null : childMerge);
             expect(value.headRepository).toBeNull();
+            expect(value.baseRef).toBeNull();
             expect(calls).toHaveLength(2);
+        } else {
+            expect(inspect).toThrow(/cannot inspect PR #2246/i);
+            expect(calls).toHaveLength(1);
         }
-    );
+    });
     it.each([
         null,
         {
@@ -2247,6 +2334,7 @@ describe('pull-request supersession', () => {
                                     baseRefOid: movedHead,
                                     baseRef,
                                     closedAt: null,
+                                    mergeCommit: null,
                                 },
                             },
                         },

@@ -248,6 +248,37 @@ function readCachedBaseOid(value: unknown, number: number): string {
     }
     return value;
 }
+function readMergeCommit(value: unknown, number: number): string | null {
+    if (value === null) {
+        return null;
+    }
+    const commit = value as { oid?: unknown } | undefined;
+    if (!isCommit(commit?.oid)) {
+        fail(`cannot inspect PR #${number} selected merge commit`);
+    }
+    return commit.oid;
+}
+function assertClosureEvidence(value: PullRequestCore): void {
+    const closed = value.closedAt !== null && Number.isFinite(Date.parse(value.closedAt));
+    switch (value.state) {
+        case PR_STATE.OPEN:
+            if (!value.merged && value.closedAt === null && value.mergeCommit === null) {
+                return;
+            }
+            break;
+        case PR_STATE.CLOSED:
+            if (!value.merged && closed && value.mergeCommit === null) {
+                return;
+            }
+            break;
+        case PR_STATE.MERGED:
+            if (value.merged && closed && isCommit(value.mergeCommit)) {
+                return;
+            }
+            break;
+    }
+    fail(`cannot inspect PR #${value.number} closure evidence`);
+}
 export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const core = readPullRequestCore(number, gh);
     ids.set(number, core.id);
@@ -313,23 +344,24 @@ function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullR
         fail(`cannot inspect PR #${number}`);
     }
     const headRepository = readHeadRepository(pullRequest.headRepository, number);
-    const mergeCommit = pullRequest.mergeCommit?.oid;
+    const value = {
+        number: pullRequest.number,
+        state: pullRequest.state,
+        head: pullRequest.headRefOid,
+        headRefName: pullRequest.headRefName,
+        headRepository,
+        repository: repository.nameWithOwner,
+        base: pullRequest.baseRefName,
+        baseRefOid: readCachedBaseOid(pullRequest.baseRefOid, number),
+        baseRef: readBaseRef(pullRequest.baseRef, number),
+        merged: pullRequest.merged,
+        mergeCommit: readMergeCommit(pullRequest.mergeCommit, number),
+        closedAt: pullRequest.closedAt,
+    };
+    assertClosureEvidence(value);
     return {
         id: pullRequest.id,
-        value: {
-            number: pullRequest.number,
-            state: pullRequest.state,
-            head: pullRequest.headRefOid,
-            headRefName: pullRequest.headRefName,
-            headRepository,
-            repository: repository.nameWithOwner,
-            base: pullRequest.baseRefName,
-            baseRefOid: readCachedBaseOid(pullRequest.baseRefOid, number),
-            baseRef: readBaseRef(pullRequest.baseRef, number),
-            merged: pullRequest.merged,
-            mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
-            closedAt: pullRequest.closedAt,
-        },
+        value,
     };
 }
 
