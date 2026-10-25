@@ -1,0 +1,27 @@
+scripts/verifyNativeTransportMutations.ts
+  s_26f70b851e8f7a::t_9cf2e1aec89b5f 12,52-63,202,204,207,228,230,237,240,246-247,255,264,273,283,376-384
+  s_26f70b851e8f7a::t_44c8088e6ba67b 147-197,238-239,241-245
+scripts/nativeCommand.ts
+  s_26f70b851e8f7a::t_9cf2e1aec89b5f 20,22,28,144,148-149,159,163,224,232,264-265,267-270,273
+scripts/__tests__/verifyNativeTransportMutations.spec.ts
+  s_26f70b851e8f7a::t_9cf2e1aec89b5f 61-65,685
+  s_26f70b851e8f7a::t_011b039167e115 2,282-301,728-737,750-947,956-957,962,968,970
+  s_26f70b851e8f7a::t_c1b368a161a264 637-684,686-727,738-749,948-952
+  s_26f70b851e8f7a::t_f7346aa061fe05 953-955,958-961,963-967,969,971-972
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b33e6078a53f50830d095cd057c65811c69443db",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
