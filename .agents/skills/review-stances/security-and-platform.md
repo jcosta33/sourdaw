@@ -29,8 +29,21 @@ dispatch.
   replay success, retaining owner and markers after an attempted close. An inspected null ref is
   bound absence; an internal core-only projection omitting the field is not an observed absence.
   Keep stable present-ref and cleanup-replay controls, and reject an explicitly owned undefined
-  expectation. These are finite client observations, not a server snapshot or protection from later
+  expectation. A selected native response field must exist: omitted or undefined `baseRef` is
+  unavailable evidence, never the explicit null that admits cleanup. Probe native parser admission
+  and CLOSED replay with a moved underlying ref but the selected key omitted; require no writes or
+  success. These are finite client observations, not a server snapshot or protection from later
   external changes.
+- Bind registered historical provenance to the source identity its registration actually attests.
+  PR #5627's protected-primary lane fallback attests same-repository children; branch spelling and
+  a shared fork commit cannot authorize a foreign source. Preserve the observed child source in the
+  canonical record and require the same identity on replay after descriptor and ref cleanup. A
+  registered source becoming null or foreign refuses; a record missing that required field is not
+  upgraded. Keep real-DAG and native-adapter controls for native registration and for fork children
+  with actual final-parent containment. The latter must ignore an unrelated same-named local
+  ledger; a recorded null source is eligible only through that independent containment route and
+  only while its observed identity still matches. These are reviewed source-contract reproductions,
+  not claims of live/main occurrences or an established historical reviewer omission.
 
 ## Lessons from escapes
 

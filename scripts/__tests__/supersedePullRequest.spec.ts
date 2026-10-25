@@ -131,7 +131,14 @@ const defaultThreads: SupersededReviewThread[] = [{ threadId: 'PRRT_1', rootComm
 const parentBinding: SupersessionParentBinding = {
     format: 'supersession-parent-v1',
     repository: 'jcosta33/sourdaw',
-    child: { number: oldNumber, head, branch: 'fix/old-pull-request', base: parentBranch, cachedBase: parentMerge },
+    child: {
+        number: oldNumber,
+        head,
+        branch: 'fix/old-pull-request',
+        base: parentBranch,
+        cachedBase: parentMerge,
+        sourceRepository: 'jcosta33/sourdaw',
+    },
     parent: { number: parentNumber, head: parentHead, branch: parentBranch, base: 'main' },
     replacement: {
         number: replacementNumber,
@@ -747,7 +754,7 @@ function nativeSupersessionFixture(
     moveAtRead?: number,
     distinctParent = false,
     afterCloseIdentity: Partial<Pick<SupersededPullRequest, 'head' | 'headRefName'>> = {},
-    options: { comparison?: Record<string, unknown>; initialMarkers?: boolean } = {}
+    options: { comparison?: Record<string, unknown>; initialMarkers?: boolean; lateParent?: boolean } = {}
 ) {
     let currentHead = head;
     let currentHeadRefName = 'fix/old';
@@ -761,6 +768,8 @@ function nativeSupersessionFixture(
         repository: 'jcosta33/sourdaw',
         target: parentHead,
     };
+    let currentChildSource: string | null = 'jcosta33/sourdaw';
+    let omitChildBaseRef = false;
     let nextComment = 2002;
     type AuthorityChange = Partial<Pick<SupersededPullRequest, 'state' | 'head' | 'headRefName' | 'closedAt'>>;
     const authorityChanges = new Map<number, AuthorityChange>();
@@ -770,9 +779,15 @@ function nativeSupersessionFixture(
         { atParentThreadRead: number; change: (comments: IssueComment[]) => IssueComment[] } | undefined;
     let pendingChildBaseChange: { atParentCommentRead: number; baseRef: ChildBaseRef } | undefined;
     let moveAt = moveAtRead;
+    let historicalBase = parentHead;
+    let provenance = parentBinding.provenance;
+    if (options.lateParent) {
+        historicalBase = parentMerge;
+        provenance = { kind: 'registered-lane-stack', forkHead: parentMerge, admittedParentHead: parentMerge };
+    }
     const nativeBindingBody = bindingBody({
         ...parentBinding,
-        child: { ...parentBinding.child, branch: 'fix/old', cachedBase: parentHead },
+        child: { ...parentBinding.child, branch: 'fix/old', cachedBase: historicalBase },
         replacement: { ...parentBinding.replacement, branch: 'fix/replacement' },
         parentReplacement: {
             ...parentBinding.replacement,
@@ -780,6 +795,7 @@ function nativeSupersessionFixture(
             branch: 'fix/replacement',
             mergeCommit: parentMerge,
         },
+        provenance,
     });
     const comments = [oldComment];
     if (options.initialMarkers !== false) {
@@ -858,24 +874,36 @@ function nativeSupersessionFixture(
             if (change?.closedAt !== undefined) {
                 observedClosedAt = change.closedAt;
             }
+            let headRepository: { nameWithOwner: string } | null = { nameWithOwner: 'jcosta33/sourdaw' };
+            if (old) {
+                headRepository = null;
+                if (currentChildSource !== null) {
+                    headRepository = { nameWithOwner: currentChildSource };
+                }
+            }
+            const pullRequest = {
+                id: old ? 'PR_old' : `PR_${number}`,
+                number,
+                state: change?.state ?? pullRequestState,
+                headRefOid: change?.head ?? pullRequestHead,
+                headRefName: change?.headRefName ?? pullRequestBranch,
+                headRepository,
+                baseRefName: old && distinctParent ? parentBranch : 'main',
+                baseRefOid: old && distinctParent ? historicalBase : undefined,
+                baseRef,
+                merged: !old && !parent,
+                mergeCommit,
+                closedAt: observedClosedAt,
+            };
+            if (old && omitChildBaseRef) {
+                Reflect.deleteProperty(pullRequest, 'baseRef');
+                events.push(`old-core-wire-has-base-ref:${Object.hasOwn(pullRequest, 'baseRef')}`);
+            }
             return JSON.stringify({
                 data: {
                     repository: {
                         nameWithOwner: 'jcosta33/sourdaw',
-                        pullRequest: {
-                            id: old ? 'PR_old' : `PR_${number}`,
-                            number,
-                            state: change?.state ?? pullRequestState,
-                            headRefOid: change?.head ?? pullRequestHead,
-                            headRefName: change?.headRefName ?? pullRequestBranch,
-                            headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
-                            baseRefName: old && distinctParent ? parentBranch : 'main',
-                            baseRefOid: old && distinctParent ? parentHead : undefined,
-                            baseRef,
-                            merged: !old && !parent,
-                            mergeCommit,
-                            closedAt: observedClosedAt,
-                        },
+                        pullRequest,
                     },
                 },
             });
@@ -1026,6 +1054,11 @@ function nativeSupersessionFixture(
             if (dependency && options.comparison !== undefined) {
                 Object.assign(response, options.comparison);
             }
+            if (options.lateParent && ancestor === parentHead && descendant === head) {
+                response.status = 'diverged';
+                response.behind_by = 1;
+                response.merge_base_commit = { sha: parentMerge };
+            }
             return JSON.stringify(response);
         }
         throw new Error(`unexpected native supersession query: ${query}`);
@@ -1058,7 +1091,25 @@ function nativeSupersessionFixture(
         setChildBaseRef: (baseRef: ChildBaseRef) => {
             currentChildBaseRef = baseRef;
         },
+        setChildSource: (repository: string | null) => {
+            currentChildSource = repository;
+        },
+        omitChildBaseRefFromNativeResponse: () => {
+            omitChildBaseRef = true;
+        },
     };
+}
+
+function registerNativeParent(root: string, parentPullRequest = parentNumber): void {
+    writeLaneStack(root, {
+        version: 1,
+        childBranch: 'fix/old',
+        parentBranch,
+        forkHead: parentMerge,
+        parentHead: parentMerge,
+        parentPullRequest,
+    });
+    execFileSync('git', ['config', 'branch.fix/old.sourdaw-stack-fork', parentMerge], { cwd: root });
 }
 
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
@@ -1703,6 +1754,126 @@ describe('pull-request supersession', () => {
             ).toBeUndefined();
         });
     });
+    it.each(['jcosta33/sourdaw', 'fork/sourdaw', null])(
+        'binds native registered late-parent provenance to child source %s',
+        async (sourceRepository) => {
+            await withLockRoot(async (root) => {
+                const current = nativeSupersessionFixture(root, undefined, true, {}, {
+                    initialMarkers: false,
+                    lateParent: true,
+                });
+                registerNativeParent(root);
+                current.setChildSource(sourceRepository);
+                expect(current.port.inspect(oldNumber).headRepository).toBe(sourceRepository);
+                expect(current.port.isCommitAncestor?.('jcosta33/sourdaw', parentHead, head)).toBe(false);
+                const run = () => runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                );
+                if (sourceRepository === 'jcosta33/sourdaw') {
+                    await expect(run()).resolves.toBe('pull-request-superseded:2244:2246');
+                    const stored = current.comments().find((comment) => comment.body === current.bindingBody);
+                    expect(stored).toBeDefined();
+                    if (stored === undefined) {
+                        throw new Error('expected native registered parent binding');
+                    }
+                    expect(parseSupersessionParentBinding(stored.body)).toMatchObject({
+                        child: { sourceRepository },
+                        provenance: { kind: 'registered-lane-stack' },
+                    });
+                    expect(current.state()).toBe('CLOSED');
+                    expect(current.events.filter((event) => event === 'comment')).toHaveLength(3);
+                    expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+                } else {
+                    await expect(run()).rejects.toThrow(/head repository.*native registered parent provenance/i);
+                    expect(current.state()).toBe('OPEN');
+                    expect(current.comments()).toEqual([oldComment]);
+                    expect(current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+                }
+                expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)).toBeUndefined();
+            });
+        }
+    );
+    it('keeps native fork containment and cleanup replay independent of an unrelated local branch ledger', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true, {}, { initialMarkers: false });
+            registerNativeParent(root, 9999);
+            current.setChildSource('fork/sourdaw');
+            const run = () => runSerialized(
+                root,
+                current.port,
+                repairedLineage,
+                serializeFixture,
+                parentNumber,
+                parentReplacementNumber
+            );
+            await expect(run()).resolves.toBe('pull-request-superseded:2244:2246');
+            const stored = current.comments().find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
+            expect(stored).toBeDefined();
+            if (stored === undefined) {
+                throw new Error('expected native fork parent binding');
+            }
+            expect(parseSupersessionParentBinding(stored.body)).toMatchObject({
+                child: { sourceRepository: 'fork/sourdaw' },
+                provenance: { kind: 'final-parent-head' },
+            });
+            current.setChildBaseRef(null);
+            const start = current.events.length;
+            await expect(run()).resolves.toBe('pull-request-superseded:2244:2246');
+            expect(current.events.slice(start).filter((event) => /^(?:comment|close|delete)$/.test(event))).toEqual([]);
+            expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+        });
+    });
+    it('rejects a native core response missing its selected live base ref before comment inspection', async () => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true);
+            current.omitChildBaseRefFromNativeResponse();
+            expect(() => current.port.inspect(oldNumber)).toThrow(/selected live base ref/i);
+            expect(current.events).toContain('old-core-wire-has-base-ref:false');
+            expect(current.events).not.toContain('old-comments');
+            expect(current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+        });
+    });
+    it.each([false, true])('refuses an omitted selected live-ref witness before writes with CLOSED replay=%s', async (replay) => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(root, undefined, true);
+            const run = () => runSerialized(
+                root,
+                current.port,
+                repairedLineage,
+                serializeFixture,
+                parentNumber,
+                parentReplacementNumber
+            );
+            if (replay) {
+                await run();
+            }
+            current.setChildBaseRef({ name: parentBranch, repository: 'jcosta33/sourdaw', target: movedHead });
+            current.omitChildBaseRefFromNativeResponse();
+            const start = current.events.length;
+            await expect(run()).rejects.toThrow(/selected live base ref/i);
+            const observed = current.events.slice(start);
+            expect(observed).toContain('old-core-wire-has-base-ref:false');
+            expect(observed).toContain(`old-base-ref:${JSON.stringify({
+                name: parentBranch,
+                repository: { nameWithOwner: 'jcosta33/sourdaw' },
+                target: { oid: movedHead },
+            })}`);
+            expect(observed.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+            expect(current.state()).toBe(replay ? 'CLOSED' : 'OPEN');
+            expect(current.comments().map((comment) => comment.body)).toEqual([
+                oldComment.body,
+                receiptBody,
+                lineageBody,
+                current.bindingBody,
+            ]);
+            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)).toBeUndefined();
+        });
+    });
     it('distinguishes a missing projected ref from an explicitly owned undefined native expectation', async () => {
         await withLockRoot(async (root) => {
             const current = nativeSupersessionFixture(root, undefined, true);
@@ -1848,6 +2019,7 @@ describe('pull-request supersession', () => {
                                         headRefName: 'fix/deleted',
                                         headRepository: null,
                                         baseRefName: 'main',
+                                        baseRef: null,
                                         closedAt: '2026-08-20T12:00:00Z',
                                         mergeCommit,
                                     },
@@ -2524,7 +2696,7 @@ describe('pull-request supersession', () => {
                     .comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
                 expect(stored).toBeDefined();
                 expect(parseSupersessionParentBinding(stored!.body)).toMatchObject({
-                    child: { cachedBase: current.dag.base },
+                    child: { cachedBase: current.dag.base, sourceRepository: 'jcosta33/sourdaw' },
                     provenance: {
                         kind: 'registered-lane-stack',
                         forkHead: current.dag.originalParent,
@@ -2551,6 +2723,84 @@ describe('pull-request supersession', () => {
         }
     );
 
+    it.each(['fork/sourdaw', null])('refuses real registered provenance borrowed by child source %s', async (sourceRepository) => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'late', true);
+            current.register();
+            const inspect = current.port.inspect;
+            current.port.inspect = (number) => {
+                const value = inspect(number);
+                if (number === oldNumber) {
+                    return { ...value, headRepository: sourceRepository };
+                }
+                return value;
+            };
+            expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
+            expect(current.dag.ancestor(current.dag.finalParent, current.dag.oldChild)).toBe(false);
+            expect(() => current.run()).toThrow(/head repository.*native registered parent provenance/i);
+            expect(current.state().state).toBe('OPEN');
+            expect(current.calls.filter((call) => /^(?:comment|close|delete|log):/.test(call))).toEqual([]);
+        });
+    });
+    it.each(['fork/sourdaw', null])('preserves real final-parent containment for child source %s despite another local ledger', async (initialSource) => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'direct', true);
+            current.register({ parentPullRequest: 9999 });
+            let sourceRepository: string | null = initialSource;
+            let deletedRef = false;
+            const inspect = current.port.inspect;
+            current.port.inspect = (number) => {
+                const value = inspect(number);
+                if (number !== oldNumber) {
+                    return value;
+                }
+                let baseRef = value.baseRef;
+                if (deletedRef) {
+                    baseRef = null;
+                }
+                return { ...value, baseRef, headRepository: sourceRepository };
+            };
+            expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
+            expect(current.run()).toBe('pull-request-superseded:2244:2246');
+            const stored = current.state().comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
+            expect(stored).toBeDefined();
+            if (stored === undefined) {
+                throw new Error('expected source-bound pure ancestry marker');
+            }
+            expect(parseSupersessionParentBinding(stored.body)).toMatchObject({
+                child: { sourceRepository: initialSource },
+                provenance: { kind: 'final-parent-head' },
+            });
+            const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
+            deletedRef = true;
+            expect(current.run()).toBe('pull-request-superseded:2244:2246');
+            sourceRepository = 'another/sourdaw';
+            expect(() => current.run()).toThrow(/child source repository changed/i);
+            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
+            expect(current.state().comments).toContainEqual(stored);
+        });
+    });
+    it.each(['fork/sourdaw', null])('refuses registered replay source %s after local ledger and base-ref cleanup', async (sourceRepository) => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'late', true);
+            current.register();
+            expect(current.run()).toBe('pull-request-superseded:2244:2246');
+            const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
+            rmSync(join(root, '.agents/lane-stacks'), { recursive: true });
+            execFileSync('git', ['config', '--unset', 'branch.fix/old-pull-request.sourdaw-stack-fork'], { cwd: root });
+            const inspect = current.port.inspect;
+            current.port.inspect = (number) => {
+                const value = inspect(number);
+                if (number === oldNumber) {
+                    return { ...value, baseRef: null, headRepository: sourceRepository };
+                }
+                return value;
+            };
+            expect(() => current.run()).toThrow(/child source repository changed/i);
+            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
+            expect(current.calls.filter((call) => call.startsWith('log:'))).toHaveLength(1);
+        });
+    });
     it.each([
         'missing',
         'wrong parent PR',
@@ -2604,9 +2854,30 @@ describe('pull-request supersession', () => {
                 parentBindingBody.replace('"admittedParentHead":null', `"admittedParentHead":"${parentHead}"`)
             )
         ).toThrow(/contradictory/i);
+        const { sourceRepository: _source, ...legacyChild } = parentBinding.child;
+        expect(() => parseSupersessionParentBinding(
+            `sourdaw-supersession-parent-v1 ${canonicalJson({ ...parentBinding, child: legacyChild })}`
+        )).toThrow(/keys/i);
+        expect(() => parseSupersessionParentBinding(
+            `sourdaw-supersession-parent-v1 ${canonicalJson({
+                ...parentBinding,
+                child: { ...parentBinding.child, sourceRepository: 42 },
+            })}`
+        )).toThrow(/child source repository.*string/i);
     });
 
-    it.each(['missing', 'foreign', 'duplicate', 'malformed', 'different parent', 'contradictory descriptor'] as const)(
+    it.each(['fork/sourdaw', null])('rejects a canonical registered binding attesting source %s', (sourceRepository) => {
+        const record = {
+            ...parentBinding,
+            child: { ...parentBinding.child, sourceRepository },
+            provenance: { kind: 'registered-lane-stack', forkHead: parentHead, admittedParentHead: parentHead },
+        };
+        expect(() => parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${canonicalJson(record)}`)).toThrow(
+            /registered child source repository is invalid/i
+        );
+    });
+
+    it.each(['missing', 'foreign', 'duplicate', 'malformed', 'different parent', 'contradictory descriptor', 'missing child source'] as const)(
         'refuses CLOSED dependency replay with %s preserved binding',
         async (scenario) => {
             await withLockRoot(async (root) => {
@@ -2635,6 +2906,14 @@ describe('pull-request supersession', () => {
                         }
                         if (scenario === 'malformed') {
                             return [{ ...comment, body: `${comment.body}\nextra` }];
+                        }
+                        if (scenario === 'missing child source') {
+                            const record = parseSupersessionParentBinding(comment.body);
+                            const { sourceRepository: _source, ...child } = record.child;
+                            return [{
+                                ...comment,
+                                body: `sourdaw-supersession-parent-v1 ${canonicalJson({ ...record, child })}`,
+                            }];
                         }
                         if (scenario === 'different parent') {
                             const record = parseSupersessionParentBinding(comment.body);

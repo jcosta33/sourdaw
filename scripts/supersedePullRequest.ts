@@ -212,7 +212,7 @@ type ReplacementBinding = BindingIdentity & { mergeCommit: string };
 export type SupersessionParentBinding = {
     format: 'supersession-parent-v1';
     repository: string;
-    child: BindingIdentity & { cachedBase: string | null };
+    child: BindingIdentity & { cachedBase: string | null; sourceRepository: string | null };
     parent: BindingIdentity;
     replacement: ReplacementBinding;
     parentReplacement: ReplacementBinding;
@@ -294,6 +294,9 @@ function registeredParentProvenance(
     parent: SupersededPullRequest,
     port: SupersedePullRequestPort
 ): ParentProvenance {
+    if (child.headRepository !== REQUIRED_REPOSITORY) {
+        fail(`PR #${child.number} head repository has no matching native registered parent provenance`);
+    }
     if (stack === undefined && stored === undefined) {
         fail(`PR #${child.number} has no matching native registered parent provenance`);
     }
@@ -327,7 +330,14 @@ function historicalParentProvenance(
 ): StackedParentProof['provenance'] {
     assertFullCommit(parent.head, 'old parent head');
     assertFullCommit(child.head, 'old child head');
-    const stack = port.readRegisteredLaneStack?.(child.headRefName);
+    if (replay !== undefined && replay.child.sourceRepository !== child.headRepository) {
+        fail(`PR #${child.number} completed parent binding child source repository changed`);
+    }
+    let stack: LaneStack | undefined;
+    // A protected-primary branch ledger only attests children published from that repository.
+    if (child.headRepository === REQUIRED_REPOSITORY) {
+        stack = port.readRegisteredLaneStack?.(child.headRefName);
+    }
     if (stack !== undefined) {
         assertRegisteredParentBinding(stack, child, parent, port);
     }
@@ -382,6 +392,7 @@ function parentBindingRecord(proof: StackedParentProof): SupersessionParentBindi
             branch: child.headRefName,
             base: child.base,
             cachedBase: proof.historicalBase,
+            sourceRepository: child.headRepository,
         },
         parent: { number: parent.number, head: parent.head, branch: parent.headRefName, base: parent.base },
         replacement: replacementBinding(proof.replacement),
@@ -422,6 +433,13 @@ function nullableBindingCommit(value: unknown): string | null {
     return value === null ? null : bindingCommit(value);
 }
 
+function bindingSourceRepository(value: unknown): string | null {
+    if (value === null) {
+        return null;
+    }
+    return bindingString(value, 'child source repository');
+}
+
 const IDENTITY_KEYS = ['number', 'head', 'branch', 'base'];
 
 function readBindingIdentity(value: Record<string, unknown>): BindingIdentity {
@@ -455,6 +473,9 @@ function readParentProvenance(value: unknown): ParentProvenance {
 
 function assertParentBindingIdentities(record: SupersessionParentBinding): void {
     const { child, parent, replacement, parentReplacement } = record;
+    if (record.provenance.kind === 'registered-lane-stack' && child.sourceRepository !== REQUIRED_REPOSITORY) {
+        fail('supersession parent binding registered child source repository is invalid');
+    }
     if (
         new Set([child.number, parent.number, replacement.number]).size !== 3 ||
         parentReplacement.number === child.number ||
@@ -482,7 +503,7 @@ function readSupersessionParentBinding(value: unknown): SupersessionParentBindin
     if (record.format !== 'supersession-parent-v1' || record.repository !== REQUIRED_REPOSITORY) {
         fail('supersession parent binding format or repository is invalid');
     }
-    const child = bindingObject(record.child, [...IDENTITY_KEYS, 'cachedBase'], 'child');
+    const child = bindingObject(record.child, [...IDENTITY_KEYS, 'cachedBase', 'sourceRepository'], 'child');
     const parent = readBindingIdentity(bindingObject(record.parent, IDENTITY_KEYS, 'parent'));
     const provenance = readParentProvenance(record.provenance);
     if (provenance.kind === 'final-parent-head' && provenance.forkHead !== parent.head) {
@@ -491,7 +512,11 @@ function readSupersessionParentBinding(value: unknown): SupersessionParentBindin
     const binding: SupersessionParentBinding = {
         format: 'supersession-parent-v1',
         repository: REQUIRED_REPOSITORY,
-        child: { ...readBindingIdentity(child), cachedBase: nullableBindingCommit(child.cachedBase) },
+        child: {
+            ...readBindingIdentity(child),
+            cachedBase: nullableBindingCommit(child.cachedBase),
+            sourceRepository: bindingSourceRepository(child.sourceRepository),
+        },
         parent,
         replacement: readReplacementBinding(record.replacement),
         parentReplacement: readReplacementBinding(record.parentReplacement),

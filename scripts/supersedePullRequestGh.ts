@@ -224,8 +224,11 @@ function readHeadRepository(value: unknown, number: number): string | null {
     return repository.nameWithOwner;
 }
 function readBaseRef(value: unknown, number: number): SupersededPullRequest['baseRef'] {
-    if (value === null || value === undefined) {
+    if (value === null) {
         return null;
+    }
+    if (value === undefined) {
+        fail(`cannot inspect PR #${number} selected live base ref`);
     }
     const ref = value as { name?: unknown; repository?: { nameWithOwner?: unknown }; target?: { oid?: unknown } };
     if (
