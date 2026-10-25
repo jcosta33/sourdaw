@@ -15,8 +15,8 @@ import {
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
-import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { readExplicitProtections } from '../agentReference/readExplicitProtections';
+import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import {
     AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
     AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
