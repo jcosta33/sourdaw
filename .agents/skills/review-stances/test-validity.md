@@ -39,6 +39,38 @@ admission, verified compensation before close, durable owner/markers after close
 writes on refused replay. A no-op `assertCurrentPullRequest` or atomic inspection fake cannot prove
 that every dependency receives the final native core observation.
 
+### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
+
+Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and
+2 s close observer. No associated PR or historical review stance was established from GitHub's
+commit-to-PR lookup. Hosted runs 39973668261 and 40071014243 failed that observer; their
+uninstrumented traces do not establish which scheduling or cleanup phase consumed the deadline.
+A controlled hold at the existing storage-release seam reproduced the same timeout after the
+child was already dead, and completed with exit 143 when release was admitted.
+
+Require the resistant child's installed handler to acknowledge the first TERM before sending the
+second supervisor signal. Hold only the single fallback scheduled synchronously by that first
+signal turn, preserving its real timer handle and cancellation. With fallback admission closed,
+repeated TERM must kill the owned child; without repeated TERM, it must stay alive until explicit
+fallback admission. Hold real storage release afterward: require proved child absence, live temp
+storage, pending supervisor close, and a surviving unrelated process. Admit release, await close
+143 before removing fixture files, and require real storage removal. A sleep, larger deadline, or
+exit 143 alone cannot distinguish repeated-signal escalation from the fallback.
+
+PR #5661's initial fixture also treated file existence as a complete JSON acknowledgement.
+Stage a partial readiness record and first-TERM record before admission; each must remain
+unadmitted by the consumer until full same-directory publication by rename. Obtain child PID
+and start identity independently from the supervisor's storage process record, never from a
+readiness parse. Fail readiness while abort is held, with that identity present and withheld:
+clean the unrelated child, retain fixture and temporary storage, and report missing exit proof.
+Only matching affirmative supervisor-owned exit and storage-removal evidence admits root deletion.
+
+Teardown must not depend on the behavior under test. After first-TERM acknowledgement and fallback
+capture, suppress only the identified production repeated-signal handler and require abort cleanup
+to finish through the independently admitted fallback. Keep a fallback-admitting finally around
+this probe so its failing version also leaves no child. Fallback stays held throughout the deciding
+repeated-signal assertions; abort may admit it only after that path finishes or fails.
+
 ### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
 
 Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420
@@ -175,8 +207,8 @@ transcript with exit zero; widening admission to 101 or zero must fail that case
 The immutable event base can precede both synthetic integration parents when main advances. Drive
 the native job's configured checkout depth through a tiny real Git fetch topology; require the
 event base, candidate head and integration commit to resolve. A literal depth assertion alone does
-not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
-and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+not prove object availability. Require PR CI typecheck evidence to cover the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type. Preserve recognition of coded ESRCH from a foreign Error realm.
 
 Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
 termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
@@ -393,9 +425,10 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 - Exact-count and exact-shape assertions: verify the pinned value derives from the thing it claims
   to observe, not from whatever the code currently produces.
 - A diff that adds an export to a contract barrel, or adds a barrel import to production code,
-  changes what every spec mocking that barrel must supply. The sweep is mechanical and read-only:
-  run `pnpm test:barrel-mocks` in the lane (guard-wrapped) and report every `✗` row it prints as
-  the finding, named with the spec, the barrel, and the missing key.
+  changes what every spec mocking that barrel must supply. Require and inspect the pull request CI
+  Barrel mock coverage result; report every `✗` row as the finding, named with the spec, the barrel,
+  and the missing key. Keep the focused checker regression and a targeted mutation probe local when
+  changing the checker itself.
 - A test helper that names a production route in its doc — "one batch", "one drain", "the fenced
   path" — must emit the same fence, ordering, or envelope that production entry emits; trace the
   helper to the branch it actually drives, and a helper that reaches the loose branch while the spec
@@ -752,11 +785,11 @@ Blind spot: the stance proves specs discriminate by running them; vitest's pass 
 the strict `tsc` contracts the pipeline enforces, so a PR adding TypeScript files can carry type
 errors no spec-level probe surfaces.
 
-Probe that would have caught it: when a diff adds or edits TypeScript files, compile a narrow `tsc`
-program inside the review worktree defined in the Reviewer isolation section (extend the lane
-tsconfig with strict options, include the changed files plus the ambient types the import closure
-needs) and require exit 0; reproduce the failure pre-fix when validating a posted type finding. (PR
-#3136's dispatch already carried this probe and produced clean heads.)
+Probe that would have caught it: when a diff adds or edits TypeScript files, require the pull
+request's CI TypeScript typecheck to cover the changed files and inspect its result; a focused
+Vitest pass is not type evidence. Reproduce a posted type finding by identifying the CI diagnostic
+and the source change that removes it. PR #3136 historically used an isolated compiler probe; the
+current evidence path is the pull request's CI typecheck.
 
 ### 2026-08-30 — a new device type string that is a classified third-party mark (escaped via PR #3127, caught by the release-inventory job)
 
@@ -770,9 +803,8 @@ dependency-license proofs) as part of the diff's blast radius; a new string cons
 registry can violate a data contract no spec observes.
 
 Probe that would have caught it: when a diff adds type or name strings to registries (device types,
-plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
-minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
-any hit in the same change. The tracked-set digest variant of this gap, where no digest moves
+plugin descriptors, preset ids), require the pull request's Release inventory check to pass and
+classify any reported mark hit in the same change. The tracked-set digest variant of this gap, where no digest moves
 at all, is the 2026-10-24 entry below.
 
 ### 2026-10-24 — a tracked-set source edit left its release digest unrestamped (escaped via PR #5568, found by a manual release-inventory run on main)
@@ -784,10 +816,10 @@ not restamp `release/open-source-inventory.json`. Its checks were green. `main` 
 `pnpm test:release-inventory` with a digest mismatch until a follow-up restamp. A manual run on main
 found it after a reviewer of another PR noticed the stale digest.
 
-Blind spot: no pull-request check runs `pnpm test:release-inventory`; the nightly and
-`release:proof:assemble` are the only runners. A diff can therefore change a tracked-set source while
-its recorded digest goes stale unobserved. Stances that attack the change's behavior never touch the
-digest, so the escape reaches `main` unless a reviewer checks for it.
+Blind spot: at the time of this escape, no pull-request check ran `pnpm test:release-inventory`; the
+nightly and `release:proof:assemble` were the only runners. A diff could therefore change a
+tracked-set source while its recorded digest went stale unobserved. Stances that attack the change's
+behavior never touch the digest, so the escape reached `main` unless a reviewer checked for it.
 
 Probe that would have caught it: for each surface boundary in `scripts/checkReleaseInventory.ts`,
 find its `gitPathspecs` by its `digestLabel` (the Grand Boule project-state boundary is the one with
@@ -795,12 +827,27 @@ find its `gitPathspecs` by its `digestLabel` (the Grand Boule project-state boun
 `git diff --name-only <base> <head> -- <gitPathspecs>`, keeping its `:(exclude…)` entries. Match only
 against `gitPathspecs`: those are what the digest hashes. The boundary's `paths` is licensing
 membership and is broader, since it includes GrandBoule specs and AGENTS.md. When the command lists
-a path, require `release/open-source-inventory.json` to move in the same diff, and have the reviewer
-run `pnpm test:release-inventory` in their probe worktree (see Reviewer isolation in
-`.agents/skills/review-stances/README.md`), not in the lane; it must pass. A missing digest move is
-a finding for the reviewer, not something to leave to the author's run. If the author must restamp,
+a path, require `release/open-source-inventory.json` to move in the same diff, then inspect the
+pull request's Release inventory check for the digest result. A missing digest move is a finding for
+the reviewer, not something to leave to the author's local run. If the author must restamp,
 `pnpm release:restamp:tracked-set` refuses while tracked-set source changes are uncommitted, so the
 source commit comes first.
+
+### 2026-10-25 — script-only package routes left dependency provenance stale (escaped via PRs #5642 and #5625)
+
+PR #5642 changed the `pr:supersede` script in `package.json`; PR #5625 added `pr:retire` and a
+repository URL prefix in `scripts/retirementRecord.ts`. Neither updated release provenance. The
+pull-request Release inventory check later reported `Cargo source inputs drifted` because
+`package.json` is a fixed source input in `scripts/dependencyLicenseReport.ts`. The sanctioned
+dependency restamp then exposed the unclassified URL literal.
+
+Blind spot: a script-only package edit still changes the raw-byte Cargo source pin, and a source
+URL literal needs an external-reference assignment even when it only validates input.
+
+Probe: for every `package.json` edit, check its recorded Cargo source digest and require the
+dependency restamp artifacts to move with it. For new URL literals under `scripts/`, inspect their
+external-reference assignment. Inspect the pull request's Release inventory result on the changed
+head; a pass from an earlier head or a retry cannot discharge either obligation.
 
 ### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
 
@@ -893,9 +940,9 @@ Blind spot: the 2026-08-29 probe was phrased as a manual grep-and-judge sweep, s
 time pressure judged the specs in the diff and the modules the diff touched, never the mocks in
 modules the diff never named. Nothing in the changed lines points at them.
 
-Probe that would have caught it: the checker exists and is cheap, so the probe is to run it, not to
-reproduce it by hand — `pnpm test:barrel-mocks` on the head, every `✗` row reported. The author's
-dispatch carries the same command whenever the change adds a barrel export or a barrel import.
+Probe that would have caught it: require the pull request's Barrel mock coverage check on the head;
+report every `✗` row, named with its spec, barrel, and missing key. Keep local checker execution for
+focused checker regressions or a targeted mutation probe of the checker itself.
 
 ### 2026-09-09 — storage tests observed one terminal but not reentrant execution (escaped via PR #576)
 
@@ -992,7 +1039,7 @@ Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').fi
 
 Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
 
-Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` because Gate will not; a locator whose precondition no helper in the test produces is the finding.
+Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` as the focused regression check, and inspect the selected PR CI E2E result. A locator whose precondition no helper in the test produces is the finding.
 
 ### Parameter replay-operation escape — unregistered alternatives hide owner-validation gaps
 

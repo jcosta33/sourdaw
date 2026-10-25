@@ -167,7 +167,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:6b54ed079a44f89c35b4fd9dc4b68f2c0ba9300194e32f4b43510874760784a7:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:0276d82c57c93c64399ff7c38a97c1195b49a8f8c071c8bca5f9f51dabf4dc85:release/dependency-license-proofs.json"
+                "sha256:58df78cda8089fbabdf68134d617083619990207e1a99ab3c46b7744aafa5122:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1740,7 +1740,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "d1739e574cf3389ceebb36659f0f02f5621257749b8ed09317fa251e547173d2"
+            "sha256": "a480a2585af916e59731efea573fd3bbafd07ac2f2f2515641bf9fee55f5921e"
         },
         {
             "path": "server/package.json",
@@ -2248,6 +2248,11 @@
             "file": "scripts/retargetCapabilitySnapshot.ts",
             "value": "https://api.github.com/${slot}${slot}per_page=100&page=${slot}",
             "templateSha256": "3922199f6821c354d4734cda7d408d616ef2f881c16d52c41a0de012cc8bbe9c"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/retirementRecord.ts",
+            "value": "https://github.com/jcosta33/sourdaw/"
         },
         {
             "surface": "project-source",

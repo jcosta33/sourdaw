@@ -29,7 +29,8 @@ Owns MIDI note data, CC/pitch-bend/articulation events, note transform algorithm
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/MIDI
-pnpm deps:validate
+pnpm test:run <changed-spec>
 ```
