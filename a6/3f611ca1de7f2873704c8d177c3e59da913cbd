@@ -1,0 +1,22 @@
+docs/06-testing.md
+  s_567a084d0540c4::t_38231e99eeba12 3,9-11,15-16,36,38-41,49
+  s_567a084d0540c4::t_3bd23d105693a7 392,435,620,623-624,626,892-893
+.agents/skills/testing-file-layout/SKILL.md
+  s_567a084d0540c4::t_e24ec4645a67da 20,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a63f611ca1de7f2873704c8d177c3e59da913cbd",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
