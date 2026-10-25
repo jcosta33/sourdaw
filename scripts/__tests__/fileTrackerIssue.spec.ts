@@ -504,12 +504,13 @@ describe('runCli', () => {
         const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
         vi.spyOn(process.stdout, 'write').mockReturnValue(true);
         const gh = fakeGh(created);
-        for (const [template, fields] of [
-            ['bug', bugFields],
-            ['BUG_REPORT', bugFields],
-            ['change-plan', changePlanFields],
-            ['CHANGE_PLAN', changePlanFields],
-        ]) {
+        const forms: { template: string; fields: string }[] = [
+            { template: 'bug', fields: bugFields },
+            { template: 'BUG_REPORT', fields: bugFields },
+            { template: 'change-plan', fields: changePlanFields },
+            { template: 'CHANGE_PLAN', fields: changePlanFields },
+        ];
+        for (const { template, fields } of forms) {
             expect(runCli([template, '--title', 'valid fields', '--fields', fields], gh.run)).toBe(0);
             for (const project of ['sOuRdAw FeAtUrEs', 'ſourdaw Features']) {
                 expect(
