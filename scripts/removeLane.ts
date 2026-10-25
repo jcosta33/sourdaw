@@ -71,8 +71,10 @@ export type LaneRemovalPort = {
     clearGuardFailure: (laneName: string) => void;
 };
 
+export type ShellCaptureOptions = { preserveStdout?: true };
+
 export type ShellRunner = {
-    capture: (command: string, args: string[]) => string;
+    capture: (command: string, args: string[], options?: ShellCaptureOptions) => string;
     run: (command: string, args: string[]) => void;
 };
 
@@ -135,8 +137,18 @@ export function parseReviewLanePrNumber(name: string): number | undefined {
  */
 const DISPOSABLE_ROOT_PATHS = ['electron/out', 'release/desktop', '.agents/guard-storage-fixtures'];
 
-function underDisposableRootPath(normalized: string): boolean {
-    return DISPOSABLE_ROOT_PATHS.some((root) => normalized === root || normalized.startsWith(`${root}/`));
+function underDisposableRootPath(rawPath: string): boolean {
+    return DISPOSABLE_ROOT_PATHS.some((root) => rawPath === root || rawPath.startsWith(`${root}/`));
+}
+
+/**
+ * Operational agent state under `.agents/` must survive removal and pruning: review bundles,
+ * guard storage, lane strands and their siblings hold receipts, evidence and recording lineage,
+ * and a build-product-named component inside them (`dist/x` in a review bundle) is data, not
+ * output. Only the specific `.agents/` forms `disposableIgnored` admits explicitly may pass.
+ */
+function underProtectedAgentState(rawPath: string): boolean {
+    return rawPath === '.agents' || rawPath.startsWith('.agents/');
 }
 
 /**
@@ -145,15 +157,26 @@ function underDisposableRootPath(normalized: string): boolean {
  * pruning (`lane:prune`) deletes exactly what this admits — the same contract read from both ends.
  */
 export function disposableIgnored(path: string): boolean {
-    const normalized = path.replaceAll('\\', '/');
+    // Git's `-z` pathname output is verbatim. Its slash separators define path components; a
+    // backslash in an ignored path is part of a component and must not create a disposable match.
+    const rawPath = path;
+    // The explicit `.agents/` admissions run first: everything else under `.agents/` is protected
+    // agent state the component regex below must never reach (#5560).
+    if (
+        rawPath === '.DS_Store' ||
+        rawPath.endsWith('/.DS_Store') ||
+        /^\.agents\/ui-scripts\/[^/]+\.png$/.test(rawPath) ||
+        underDisposableRootPath(rawPath)
+    ) {
+        return true;
+    }
+    if (underProtectedAgentState(rawPath)) {
+        return false;
+    }
     return (
-        normalized === '.DS_Store' ||
-        normalized.endsWith('/.DS_Store') ||
-        /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
-        /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized) ||
-        /^crates\/sourdaw-native\/[^/]+\.node$/.test(normalized) ||
-        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(normalized) ||
-        underDisposableRootPath(normalized)
+        /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(rawPath) ||
+        /^crates\/sourdaw-native\/[^/]+\.node$/.test(rawPath) ||
+        /^crates\/sourdaw-native\/sourdaw-plugin-scan-helper(?:\.exe)?$/.test(rawPath)
     );
 }
 
@@ -649,7 +672,7 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
     }
 }
 
-function capture(command: string, args: string[]): string {
+function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
     const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
     if (result.error !== undefined) {
         throw result.error;
@@ -657,7 +680,7 @@ function capture(command: string, args: string[]): string {
     if (result.status !== 0) {
         throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
     }
-    return result.stdout.trim();
+    return options?.preserveStdout === true ? result.stdout : result.stdout.trim();
 }
 
 function run(command: string, args: string[]): void {
@@ -719,8 +742,12 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         dirty: (path) => shell.capture('git', ['-C', path, 'status', '--porcelain=v1', '--untracked-files=all']) !== '',
         ignored: (path) =>
             shell
-                .capture('git', ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory'])
-                .split('\n')
+                .capture(
+                    'git',
+                    ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
+                    { preserveStdout: true }
+                )
+                .split('\0')
                 .filter((candidate) => candidate !== ''),
         operation: (path) => {
             const candidates = [

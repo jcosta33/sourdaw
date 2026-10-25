@@ -151,5 +151,6 @@ function chooseInput(unit: MergeableUnit, rule: SemanticRule): Parameters<typeof
         unitContext: unit.evidence.context,
         ownDroppedSides: unit.evidence.ownDroppedSides,
         contextDroppedSides: unit.evidence.contextDroppedSides,
+        testCaseContext: unit.evidence.testCaseContext,
     };
 }
