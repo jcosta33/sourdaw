@@ -958,22 +958,24 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             const history = structuredClone(undoHistoryStore.value);
             let observed = false;
             const publish = midiStore.set;
-            const publication =
-                failure === 'source-midi'
-                    ? null
-                    : vi.spyOn(midiStore, 'set').mockImplementation((state) => {
-                          if (!observed && state?.notesByClipId['clip-copy']?.length) {
-                              observed = true;
-                              if (failure === 'creator-throw') throw new Error('Creator MIDI publication refused');
-                              publish(state);
-                              const current = midiStore.value!;
-                              const note = structuredClone(current.notesByClipId['clip-copy']![0]!);
-                              note.velocity = 42;
-                              publish({ ...current, notesByClipId: { ...current.notesByClipId, 'clip-copy': [note] } });
-                              return;
-                          }
-                          publish(state);
-                      });
+            let publication: { mockRestore: () => void } | null = null;
+            if (failure !== 'source-midi') {
+                publication = vi.spyOn(midiStore, 'set').mockImplementation((state) => {
+                    if (!observed && state?.notesByClipId['clip-copy']?.length) {
+                        observed = true;
+                        if (failure === 'creator-throw') {
+                            throw new Error('Creator MIDI publication refused');
+                        }
+                        publish(state);
+                        const current = midiStore.value!;
+                        const note = structuredClone(current.notesByClipId['clip-copy']![0]!);
+                        note.velocity = 42;
+                        publish({ ...current, notesByClipId: { ...current.notesByClipId, 'clip-copy': [note] } });
+                        return;
+                    }
+                    publish(state);
+                });
+            }
             try {
                 if (failure === 'creator-throw') {
                     await expect(redo()).rejects.toThrow('Creator MIDI publication refused');
@@ -988,7 +990,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(ownerProjections()).toEqual(owners);
             expect(trackStore.value).toEqual(localTracks);
             expect(undoHistoryStore.value).toEqual(history);
-            if (failure !== 'source-midi') expect(observed).toBe(true);
+            if (failure !== 'source-midi') {
+                expect(observed).toBe(true);
+            }
             projectCrdtToStores({ resetProjections: true });
             expect(ownerProjections()).toEqual(owners);
             if (failure === 'source-midi') {
@@ -6631,11 +6635,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
         trackStore.set({
             ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) =>
-                track.id === TRACK_ID
-                    ? { ...track, clips: [...track.clips, createClipFixture('unrelated-midi', 16, 20)] }
-                    : track
-            ),
+            tracks: trackStore.value!.tracks.map((track) => {
+                if (track.id === TRACK_ID) {
+                    return { ...track, clips: [...track.clips, createClipFixture('unrelated-midi', 16, 20)] };
+                }
+                return track;
+            }),
         });
         midiStore.set({
             ...midiStore.value!,

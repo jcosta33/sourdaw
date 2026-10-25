@@ -37,12 +37,15 @@ function snapshotIsAbsent(snapshot: MidiClipDataActionSnapshot): boolean {
 
 function prepare(input: PrepareInput): PreparedCapture | null {
     discardByAction.get(input.action)?.();
-    const namesTarget =
-        input.action.type === 'duplicateClipAt'
-            ? input.action.payload.targetClipId === input.clipId
-            : input.action.payload.rightClipId === input.clipId &&
-              input.action.payload.replacement.rightClip !== null &&
-              input.action.payload.expected.rightClip === null;
+    let namesTarget: boolean;
+    if (input.action.type === 'duplicateClipAt') {
+        namesTarget = input.action.payload.targetClipId === input.clipId;
+    } else {
+        namesTarget =
+            input.action.payload.rightClipId === input.clipId &&
+            input.action.payload.replacement.rightClip !== null &&
+            input.action.payload.expected.rightClip === null;
+    }
     if (!namesTarget) {
         return null;
     }
