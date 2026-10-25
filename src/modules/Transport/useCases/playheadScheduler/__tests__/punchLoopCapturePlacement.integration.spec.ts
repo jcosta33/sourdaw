@@ -1,4 +1,8 @@
-import { clone as cloneAutomergeDoc } from '@automerge/automerge';
+import {
+    clone as cloneAutomergeDoc,
+    load as loadAutomergeDoc,
+    save as saveAutomergeDoc,
+} from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -32,9 +36,11 @@ import {
 import {
     createCrdtDoc,
     getCrdtDoc,
+    projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -61,6 +67,16 @@ import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 
 type RecordingResult = Parameters<Parameters<typeof startAudioRecording>[1]>[0];
+type InputCapture = {
+    inputId: string;
+    admissionGate: Promise<void> | null;
+    zeroFrame: number;
+    readerPublished: boolean;
+    readerCalls: number;
+    terminal: ((result: RecordingResult) => void) | null;
+    buffer: AudioBuffer | null;
+    pcmOffset: number;
+};
 
 const hardware = vi.hoisted(() => ({
     now: 50,
@@ -69,6 +85,7 @@ const hardware = vi.hoisted(() => ({
     drainSeconds: 0,
     captureEndSeconds: null as number | null,
     terminal: null as ((result: RecordingResult) => void) | null,
+    inputs: new Map<string, InputCapture>(),
     zeroFrame: 0,
     deferFirstFrame: false,
     tornFirstFrame: false,
@@ -249,12 +266,29 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
         cancelTrackAutomationRamps: vi.fn(),
         stopNativeLiveGraphSession: () => Promise.resolve(),
         startAudioRecording: async (
-            _id: string,
+            id: string,
             terminal: (result: RecordingResult) => void,
-            _inputId: string | null | undefined,
+            inputId: string | null | undefined,
             onCaptureClock?: Parameters<typeof real.startAudioRecording>[3]
         ) => {
             hardware.starts++;
+            if (hardware.inputs.size > 0) {
+                const input = hardware.inputs.get(id);
+                if (!input || input.inputId !== inputId) {
+                    throw new Error('Recording did not request its track-owned input');
+                }
+                input.terminal = terminal;
+                await input.admissionGate;
+                onCaptureClock?.(() => {
+                    input.readerCalls++;
+                    if (input.zeroFrame === 0) {
+                        return { status: 'pending' };
+                    }
+                    return { status: 'captured', contextSeconds: input.zeroFrame / hardware.sampleRate };
+                });
+                input.readerPublished = true;
+                return true;
+            }
             hardware.terminal = terminal;
             await hardware.admissionGate;
             // Hardware seam: first nonempty sample is measured here on the capture clock.
@@ -277,6 +311,32 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             return true;
         },
         stopAudioRecording: () => {
+            if (hardware.inputs.size > 0) {
+                const captures = [...hardware.inputs.values()]
+                    .filter((input) => input.terminal !== null)
+                    .map((input) => ({
+                        input,
+                        length:
+                            Math.round(
+                                (hardware.captureEndSeconds ?? hardware.now + hardware.drainSeconds) *
+                                    hardware.sampleRate
+                            ) - input.zeroFrame,
+                    }));
+                hardware.flushes++;
+                return Promise.resolve(hardware.flushGate).then(() => {
+                    for (const { input, length } of captures) {
+                        const terminal = input.terminal;
+                        input.terminal = null;
+                        input.buffer = createCapturedBuffer(length, input.pcmOffset);
+                        terminal?.({
+                            kind: 'completed',
+                            buffer: input.buffer,
+                            sampleZeroContextFrame: input.zeroFrame,
+                            sampleRate: hardware.sampleRate,
+                        });
+                    }
+                });
+            }
             const terminal = hardware.terminal;
             hardware.terminal = null;
             if (!terminal) {
@@ -291,17 +351,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
                 Math.round((hardware.captureEndSeconds ?? hardware.now + hardware.drainSeconds) * hardware.sampleRate) -
                 hardware.zeroFrame;
             return Promise.resolve(hardware.flushGate).then(() => {
-                const pcm = Float32Array.from({ length }, (_value, index) => index);
-                const buffer: AudioBuffer = {
-                    duration: length / hardware.sampleRate,
-                    length,
-                    sampleRate: hardware.sampleRate,
-                    numberOfChannels: 1,
-                    getChannelData: () => pcm,
-                    copyFromChannel: (target, _channel, offset = 0) =>
-                        target.set(pcm.subarray(offset, offset + target.length)),
-                    copyToChannel: (source, _channel, offset = 0) => pcm.set(source, offset),
-                };
+                const buffer = createCapturedBuffer(length);
                 hardware.buffer = buffer;
                 terminal({
                     kind: 'completed',
@@ -350,6 +400,19 @@ vi.mock('#/modules/Automation/useCases', async (original) => ({
     applyModulation: vi.fn(),
     applyModulationToEngine: vi.fn(),
 }));
+
+function createCapturedBuffer(length: number, pcmOffset = 0): AudioBuffer {
+    const pcm = Float32Array.from({ length }, (_value, index) => pcmOffset + index);
+    return {
+        duration: length / hardware.sampleRate,
+        length,
+        sampleRate: hardware.sampleRate,
+        numberOfChannels: 1,
+        getChannelData: () => pcm,
+        copyFromChannel: (target, _channel, offset = 0) => target.set(pcm.subarray(offset, offset + target.length)),
+        copyToChannel: (source, _channel, offset = 0) => pcm.set(source, offset),
+    };
+}
 
 const TRACK_ID = 'punch-audio';
 const TICK_SECONDS = 0.0625;
@@ -426,6 +489,20 @@ function expectProjectProjection(): void {
     expect(raw.takeLanes.lanes).toEqual(takeLaneStore.value!.lanes);
 }
 
+function reloadSavedRecordingProject(): void {
+    flushAutomergeStorageWrites();
+    const current = getCrdtDoc<Project>('root');
+    if (!current) {
+        throw new Error('Expected a recorded project to save');
+    }
+    const saved = saveAutomergeDoc(current);
+    const loaded = loadAutomergeDoc<Project>(saved);
+    expect(loaded).toEqual(current);
+    replaceCrdtDocInLineage({ id: 'root', doc: loaded });
+    projectCrdtToStores({ resetProjections: true });
+    expectProjectProjection();
+}
+
 describe('punch audio capture loop placement', () => {
     beforeEach(async () => {
         configureAutomergeStoragePort(null);
@@ -466,6 +543,7 @@ describe('punch audio capture loop placement', () => {
         hardware.now = 50;
         setGestureClockSource({ getAudioTimeSeconds: () => hardware.now, readNativeCursorBeats: () => null });
         hardware.terminal = null;
+        hardware.inputs.clear();
         hardware.buffer = null;
         hardware.drainSeconds = 0;
         hardware.captureEndSeconds = null;
@@ -519,6 +597,7 @@ describe('punch audio capture loop placement', () => {
     afterEach(async () => {
         disposePlayheadScheduler();
         hardware.terminal = null;
+        hardware.inputs.clear();
         await recordingLifecycle.waitForCommits();
         activeRecordingRef.current = [];
         clearUndoHistory();
@@ -529,6 +608,174 @@ describe('punch audio capture loop placement', () => {
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('places delayed first PCM when Record joins playback and replays its saved geometry', async () => {
+        hardware.now = 50.2;
+        hardware.deferFirstFrame = true;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
+        startPlayheadScheduler();
+        expect(playheadClockRef).toEqual({ beat: 10, audioTimeSeconds: 50.2 });
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+        expect(hardware.zeroFrame).toBe(0);
+        expect(hardware.rollStarts).toBe(0);
+        expect(hardware.latencySeconds).toBe(0.1);
+
+        hardware.now = 50.4;
+        hardware.zeroFrame = Math.round(hardware.now * hardware.sampleRate);
+        await tick(0);
+        hardware.now = 50.6;
+        await stopPlayback();
+        const clips = structuredClone(recordedClips());
+        const takes = structuredClone(lane().takes);
+        const clip = clips[0]!;
+        expect(clip.startBeat).toBeCloseTo(10.2, 10);
+        expect(clip.audioOffsetBeats ?? 0).toBe(0);
+        // The short-clip carrier remains one beat; its source still ends at 10.6.
+        expect(clip.endBeat).toBeCloseTo(11.2, 10);
+        expect(clip.startBeat + hardware.buffer!.duration * 2).toBeCloseTo(10.6, 10);
+        expect(hardware.zeroFrame).toBe(2419200);
+        expect(hardware.buffer!.length).toBe(9600);
+        expect(hardware.buffer!.getChannelData(0)[0]).toBe(0);
+        expect(hardware.buffer!.getChannelData(0)[9599]).toBe(9599);
+        expect(hardware.buffer!.getChannelData(0)[9600]).toBeUndefined();
+        expect(audioBufferCache.get(clip.audioBufferId!)).toBe(hardware.buffer);
+        const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
+            '../../scheduling/scheduleAudioClips'
+        );
+        hardware.sourceStarts = [];
+        scheduleAudioClips(clip.startBeat, clip.endBeat, clip.startBeat, new Set(), new Set(), [], {
+            ...transportStore.value!,
+            isLooping: false,
+        });
+        expect(hardware.sourceStarts).toHaveLength(1);
+        expect(hardware.sourceStarts[0]!.sourceSeconds).toBe(0);
+        expect(hardware.sourceStarts[0]!.durationSeconds).toBeCloseTo(0.2, 10);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expectProjectProjection();
+        reloadSavedRecordingProject();
+        expect(recordedClips()).toEqual(clips);
+        expect(lane().takes).toEqual(takes);
+        await undo();
+        expect(recordedClips()).toEqual([]);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expectProjectProjection();
+        reloadSavedRecordingProject();
+        await redo();
+        expect(recordedClips()).toEqual(clips);
+        expect(lane().takes).toEqual(takes);
+        expect(audioBufferCache.get(clip.audioBufferId!)).toBe(hardware.buffer);
+        expectProjectProjection();
+    });
+
+    it('retains the first input across a sounded seam while another armed input awaits admission', async () => {
+        const secondTrackId = 'second-punch-audio';
+        await executeAppAction(
+            { type: 'addTrack', payload: { id: secondTrackId, kind: 'audio', name: 'Second input' } },
+            { skipUndo: true }
+        );
+        await executeAppAction(
+            { type: 'armTrack', payload: { trackId: secondTrackId, armed: true } },
+            { skipUndo: true }
+        );
+        await executeAppAction(
+            { type: 'setTrackInput', payload: { trackId: TRACK_ID, inputId: 'mic-first' } },
+            { skipUndo: true }
+        );
+        await executeAppAction(
+            { type: 'setTrackInput', payload: { trackId: secondTrackId, inputId: 'mic-second' } },
+            { skipUndo: true }
+        );
+        let admitSecond!: () => void;
+        const first: InputCapture = {
+            inputId: 'mic-first',
+            admissionGate: null,
+            zeroFrame: 0,
+            readerPublished: false,
+            readerCalls: 0,
+            terminal: null,
+            buffer: null,
+            pcmOffset: 0,
+        };
+        const second: InputCapture = {
+            ...first,
+            inputId: 'mic-second',
+            admissionGate: new Promise<void>((resolve) => {
+                admitSecond = resolve;
+            }),
+            pcmOffset: 100000,
+        };
+        hardware.inputs.set(TRACK_ID, first);
+        hardware.inputs.set(secondTrackId, second);
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+        startPlayheadScheduler();
+        toggleRecording();
+        await vi.waitFor(() => expect(first.readerPublished).toBe(true), { interval: 1 });
+        expect(hardware.starts).toBe(2);
+        expect(second.readerPublished).toBe(false);
+        expect(recordingLifecycle.hasPendingRecordingStart()).toBe(true);
+        expect(activeRecordingRef.current).toEqual([]);
+        await tick(0.01);
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(51.1, 10);
+        hardware.now = 51.05;
+        first.zeroFrame = Math.round(hardware.now * hardware.sampleRate);
+        await tick(0.075);
+        expect(playheadWrapCountRef.current).toBe(1);
+        expect(playheadClockRef.beat).toBeCloseTo(8.05, 10);
+        expect(first.readerCalls).toBeGreaterThan(0);
+        expect(second.readerPublished).toBe(false);
+        expect(activeRecordingRef.current).toEqual([]);
+
+        hardware.now = 51.2;
+        second.zeroFrame = Math.round(hardware.now * hardware.sampleRate);
+        admitSecond();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(2), { interval: 1 });
+        expect(second.readerPublished).toBe(true);
+        expect(first.zeroFrame).toBe(2450400);
+        expect(second.zeroFrame).toBe(2457600);
+        hardware.now = 51.4;
+        await stopPlayback();
+        const tracks = structuredClone(trackStore.value!.tracks);
+        const lanes = structuredClone(takeLaneStore.value!.lanes);
+        const firstClip = recordedClips()[0]!;
+        const secondClip = tracks.find((track) => track.id === secondTrackId)!.clips[0]!;
+        expect(firstClip.startBeat - (firstClip.audioOffsetBeats ?? 0)).toBeCloseTo(11.7, 10);
+        expect(secondClip.startBeat - (secondClip.audioOffsetBeats ?? 0)).toBeCloseTo(8, 10);
+        expect(firstClip.audioBufferId).not.toBe(secondClip.audioBufferId);
+        expect(audioBufferCache.get(firstClip.audioBufferId!)).toBe(first.buffer);
+        expect(audioBufferCache.get(secondClip.audioBufferId!)).toBe(second.buffer);
+        expect(first.buffer!.length).toBe(16800);
+        expect(first.buffer!.getChannelData(0)[0]).toBe(0);
+        expect(first.buffer!.getChannelData(0)[16799]).toBe(16799);
+        expect(first.buffer!.getChannelData(0)[16800]).toBeUndefined();
+        expect(second.buffer!.length).toBe(9600);
+        expect(second.buffer!.getChannelData(0)[0]).toBe(100000);
+        expect(second.buffer!.getChannelData(0)[9599]).toBe(109599);
+        expect(second.buffer!.getChannelData(0)[9600]).toBeUndefined();
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expectProjectProjection();
+        reloadSavedRecordingProject();
+        expect(trackStore.value!.tracks).toEqual(tracks);
+        expect(takeLaneStore.value!.lanes).toEqual(lanes);
+        await undo();
+        expect(recordedClips()).toEqual([firstClip]);
+        expectProjectProjection();
+        await undo();
+        expect(trackStore.value!.tracks.every((track) => track.clips.length === 0)).toBe(true);
+        expect(takeLaneStore.value!.lanes).toEqual([]);
+        expectProjectProjection();
+        reloadSavedRecordingProject();
+        await redo();
+        expect(recordedClips()).toEqual([firstClip]);
+        expectProjectProjection();
+        await redo();
+        expect(trackStore.value!.tracks).toEqual(tracks);
+        expect(takeLaneStore.value!.lanes).toEqual(lanes);
+        expect(audioBufferCache.get(firstClip.audioBufferId!)).toBe(first.buffer);
+        expect(audioBufferCache.get(secondClip.audioBufferId!)).toBe(second.buffer);
+        expectProjectProjection();
     });
 
     it('places automatic punch first media on its sounded traversal and retains completed-pass PCM', async () => {
@@ -767,6 +1014,102 @@ describe('punch audio capture loop placement', () => {
             await redo();
             expect(recordedClips()).toEqual(clips);
             expect(lane().takes).toEqual(takes);
+            expectProjectProjection();
+        }
+    );
+
+    it.each([
+        { firstFrame: 51.15, originSeconds: 3.95, owner: 'current' },
+        { firstFrame: 51.25, originSeconds: 8.05, owner: 'current' },
+        { firstFrame: 51.35, originSeconds: 16.15, owner: 'current' },
+        { firstFrame: 51.35, originSeconds: 16.15, owner: 'replaced' },
+    ] as const)(
+        'selects the eligible queued tied epoch for first PCM at $firstFrame with its $owner owner',
+        async ({ firstFrame, originSeconds, owner }) => {
+            hardware.now = 51;
+            hardware.deferFirstFrame = true;
+            hardware.hideFirstFrame = true;
+            transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.8 });
+            playheadClockRef.beat = 11.8;
+            playheadClockRef.audioTimeSeconds = 51;
+            playheadPositionRef.current = 11.8;
+            toggleRecording();
+            await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
+            expect(hardware.zeroFrame).toBe(0);
+
+            // Exercise the real observer's queued-consumer contract. These tied
+            // anchors are dated occurrences, not distinct scheduler ticks.
+            hardware.now = 51.1;
+            recordingLifecycle.observeCaptureClock(8, 51.1, true, undefined, 4);
+            hardware.now = 51.2;
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true });
+            recordingLifecycle.observeCaptureClock(8, 51.1, true, 51.2, 8);
+            hardware.now = 51.3;
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 30 } }, { skipUndo: true });
+            recordingLifecycle.observeCaptureClock(8, 51.1, true, 51.3, 16);
+            hardware.zeroFrame = Math.round(firstFrame * hardware.sampleRate);
+            hardware.now = 51.4;
+            let releaseFlush = () => {};
+            if (owner === 'replaced') {
+                hardware.flushGate = new Promise<void>((resolve) => {
+                    releaseFlush = resolve;
+                });
+            } else {
+                hardware.hideFirstFrame = false;
+                recordingLifecycle.observeCaptureClock(8, 51.4, false);
+            }
+            hardware.now = 51.5;
+            const stopping = stopPlayback();
+            let successor: { tracks: string; takeLanes: string } | undefined;
+            if (owner === 'replaced') {
+                await vi.waitFor(() => expect(hardware.flushes).toBe(1), { interval: 1 });
+                flushAutomergeStorageWrites();
+                replaceCrdtDoc({ id: 'root', doc: cloneAutomergeDoc(getCrdtDoc('root')!) });
+                const root = getCrdtDoc<Project>('root')!;
+                successor = { tracks: JSON.stringify(root.tracks), takeLanes: JSON.stringify(root.takeLanes) };
+                hardware.hideFirstFrame = false;
+                releaseFlush();
+            }
+            await stopping;
+            const frameCount = Math.round((51.5 - firstFrame) * hardware.sampleRate);
+            expect(hardware.buffer!.length).toBe(frameCount);
+            expect(hardware.buffer!.getChannelData(0)[0]).toBe(0);
+            expect(hardware.buffer!.getChannelData(0)[frameCount - 1]).toBe(frameCount - 1);
+            expect(hardware.buffer!.getChannelData(0)[frameCount]).toBeUndefined();
+            if (owner === 'replaced') {
+                expect(JSON.stringify(getCrdtDoc<Project>('root')!.tracks)).toBe(successor!.tracks);
+                expect(JSON.stringify(getCrdtDoc<Project>('root')!.takeLanes)).toBe(successor!.takeLanes);
+                expect(undoHistoryStore.value?.past).toEqual([]);
+                expect(notifyUser).toHaveBeenCalledWith(
+                    'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                    'warning'
+                );
+                expectProjectProjection();
+                return;
+            }
+            const clips = structuredClone(recordedClips());
+            const takes = structuredClone(lane().takes);
+            const clip = clips[0]!;
+            const clipTempo = resolveTempoAtBeat({
+                changes: tempoMapStore.value!.changes,
+                beat: clip.startBeat,
+                defaultTempo: 30,
+            });
+            const mediaOriginSeconds =
+                secondsBetweenBeats(tempoMapStore.value!.changes, 0, clip.startBeat, 30) -
+                ((clip.audioOffsetBeats ?? 0) * 60) / clipTempo;
+            expect(mediaOriginSeconds).toBeCloseTo(originSeconds, 10);
+            expect(audioBufferCache.get(clip.audioBufferId!)).toBe(hardware.buffer);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expectProjectProjection();
+            await undo();
+            expect(recordedClips()).toEqual([]);
+            expect(takeLaneStore.value?.lanes).toEqual([]);
+            expectProjectProjection();
+            await redo();
+            expect(recordedClips()).toEqual(clips);
+            expect(lane().takes).toEqual(takes);
+            expect(audioBufferCache.get(clip.audioBufferId!)).toBe(hardware.buffer);
             expectProjectProjection();
         }
     );
