@@ -228,6 +228,21 @@ function ownerProjections() {
     });
 }
 
+function seedSplitTakeLane(): void {
+    const take = { ...createTake('clip-a', 'Source pass', 0, 4), id: 'slot-source-take' };
+    takeLaneStore.set({
+        lanes: [
+            {
+                ...createTakeLane(TRACK_ID),
+                id: 'slot-take-lane',
+                takes: [take],
+                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take.id }],
+            },
+        ],
+    });
+    flushAutomergeStorageWrites();
+}
+
 type PeerProject = {
     automation: NonNullable<typeof automationStore.value>;
     takeLanes: NonNullable<typeof takeLaneStore.value>;
@@ -763,6 +778,140 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
+    });
+
+    it.each(['none'] as const)(
+        'replays a saved split after %s without losing its captured insertion slot',
+        async (peer: 'none' | 'unrelated-append') => {
+            seedSplitTakeLane();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            await executeAppAction(
+                { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+                { source: 'manual' }
+            );
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            expect((await undo()).headConsumed).toBe(true);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+            );
+            const peerNote = { id: 'peer-tail-note', pitch: 67, startBeat: 0, duration: 1, velocity: 88 };
+            if (peer === 'unrelated-append') {
+                syncPeerProject((project) => {
+                    project.tracks.tracks[0]!.clips.push(createClipFixture('peer-tail', 12, 16));
+                    project.midi.notesByClipId['peer-tail'] = [peerNote];
+                });
+            }
+            reloadSavedProject();
+            expect(undoHistoryStore.value?.future).toHaveLength(1);
+            expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes).toHaveLength(1);
+            const beforeRedo = peer === 'unrelated-append' ? ['clip-a', 'clip-b', 'peer-tail'] : ['clip-a', 'clip-b'];
+            const afterRedo =
+                peer === 'unrelated-append'
+                    ? ['clip-a', 'clip-b', 'clip-right', 'peer-tail']
+                    : ['clip-a', 'clip-b', 'clip-right'];
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                await redo();
+                const raw = getCrdtDoc<PeerProject>('root');
+                expect(raw?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(afterRedo);
+                expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(afterRedo);
+                expect(raw?.midi.notesByClipId['peer-tail']).toEqual(
+                    peer === 'unrelated-append' ? [peerNote] : undefined
+                );
+                expect(midiStore.value?.notesByClipId['peer-tail']).toEqual(raw?.midi.notesByClipId['peer-tail']);
+                expect(undoHistoryStore.value?.past).toHaveLength(1);
+                expect(undoHistoryStore.value?.future).toHaveLength(0);
+                expectValidProject();
+                if (cycle === 0) {
+                    expect((await undo()).headConsumed).toBe(true);
+                    expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(
+                        beforeRedo
+                    );
+                    expect(undoHistoryStore.value?.past).toHaveLength(0);
+                    expect(undoHistoryStore.value?.future).toHaveLength(1);
+                }
+            }
+        }
+    );
+
+    it('refuses a late saved split peer edit after staging the right clip', async () => {
+        seedSplitTakeLane();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        reloadSavedProject();
+        const before = getCrdtDoc<PeerProject>('root');
+        if (!before) {
+            throw new Error('Expected saved split project');
+        }
+        expect(before.takeLanes.lanes).toHaveLength(1);
+        const peer = Automerge.change(Automerge.clone(before), (project) => {
+            project.tracks.tracks[0]!.clips[0]!.name = 'Peer source';
+        });
+        let sawStagedRight = false;
+        let publishedPeer = false;
+        const unsubscribe = trackStore.subscribe((state) => {
+            if (publishedPeer) {
+                return;
+            }
+            const projectedRight = state?.tracks[0]?.clips.some((clip) => clip.id === 'clip-right');
+            const rawRight = getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.some(
+                (clip) => clip.id === 'clip-right'
+            );
+            if (projectedRight && !rawRight) {
+                sawStagedRight = true;
+                publishedPeer = true;
+                replaceCrdtDocInLineage({ id: 'root', doc: peer });
+            }
+        });
+        const originalExecute = handleRestoreClipSplitState.execute;
+        let returnedGuard = false;
+        let commitChecks = 0;
+        const executeSpy = vi.spyOn(handleRestoreClipSplitState, 'execute').mockImplementation((action, context) => {
+            const result = originalExecute(action, context);
+            if (!result || typeof result !== 'object' || !('commitValidation' in result) || !result.commitValidation) {
+                return result;
+            }
+            returnedGuard = true;
+            const validation = result.commitValidation;
+            return {
+                ...result,
+                commitValidation: {
+                    ...validation,
+                    beforeCommit: () => {
+                        commitChecks += 1;
+                        return validation.beforeCommit();
+                    },
+                },
+            };
+        });
+        try {
+            await redo();
+        } finally {
+            executeSpy.mockRestore();
+            unsubscribe();
+        }
+        expect(sawStagedRight).toBe(true);
+        expect(publishedPeer).toBe(true);
+        expect(returnedGuard).toBe(true);
+        expect(commitChecks).toBeGreaterThan(0);
+        expect(getCrdtDoc('root')).toEqual(peer);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a', 'clip-b']);
+        expect(trackStore.value?.tracks[0]?.clips[0]?.name).toBe('Peer source');
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
     });
 
     it('retains the saved Redo inverse through a synchronous descendant peer publication', async () => {

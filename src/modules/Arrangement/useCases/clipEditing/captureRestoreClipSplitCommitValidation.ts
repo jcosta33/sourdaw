@@ -31,16 +31,18 @@ function entry(slot: unknown, key: string, id: string): unknown {
 function takeMaterial(document: Document, takeId: string): unknown {
     const lanes =
         isRecord(document.takeLanes) && Array.isArray(document.takeLanes.lanes) ? document.takeLanes.lanes : [];
-    return lanes.flatMap((lane) => {
+    return Array.from(lanes).flatMap((lane) => {
         if (!isRecord(lane) || !Array.isArray(lane.takes)) {
             return [];
         }
         const takes: readonly unknown[] = lane.takes;
-        const matching = takes.filter((take) => isRecord(take) && take.id === takeId);
+        const matching = Array.from(takes).filter((take) => isRecord(take) && take.id === takeId);
         if (matching.length === 0) {
             return [];
         }
-        const regions: readonly unknown[] = Array.isArray(lane.activeCompRegions) ? lane.activeCompRegions : [];
+        const regions: readonly unknown[] = Array.isArray(lane.activeCompRegions)
+            ? Array.from(lane.activeCompRegions)
+            : [];
         const ownedFacets = matching.map((take) => {
             if (!isRecord(take)) {
                 return take;
@@ -61,12 +63,12 @@ function takeMaterial(document: Document, takeId: string): unknown {
 function rightTakeMaterial(document: Document, rightClipId: string): unknown {
     const lanes =
         isRecord(document.takeLanes) && Array.isArray(document.takeLanes.lanes) ? document.takeLanes.lanes : [];
-    return lanes.flatMap((lane) => {
+    return Array.from(lanes).flatMap((lane) => {
         if (!isRecord(lane) || !Array.isArray(lane.takes)) {
             return [];
         }
         const takes: readonly unknown[] = lane.takes;
-        const matching = takes.filter((take) => isRecord(take) && take.clipId === rightClipId);
+        const matching = Array.from(takes).filter((take) => isRecord(take) && take.clipId === rightClipId);
         if (matching.length === 0) {
             return [];
         }
@@ -76,7 +78,9 @@ function rightTakeMaterial(document: Document, rightClipId: string): unknown {
                 .map((take) => take.id)
                 .filter((id): id is string => typeof id === 'string')
         );
-        const regions: readonly unknown[] = Array.isArray(lane.activeCompRegions) ? lane.activeCompRegions : [];
+        const regions: readonly unknown[] = Array.isArray(lane.activeCompRegions)
+            ? Array.from(lane.activeCompRegions)
+            : [];
         return [
             {
                 laneId: lane.id,
