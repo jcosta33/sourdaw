@@ -1,0 +1,14 @@
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  h_beb54bf43b47b7 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4bd64636b29b1447a86a6c43fa8e81f7ab21f50",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
