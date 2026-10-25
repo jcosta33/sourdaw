@@ -2433,6 +2433,26 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings).toHaveLength(1);
     });
 
+    it('keeps existing nested-container warp admission separate from its supported child leaf', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo"><RealPoint time="4" value="60"/></Points><Clips>' +
+                    '<Clip id="parent" name="Parent" time="8" duration="8">' +
+                    '<Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="parent.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps>' +
+                    '<Clips><Clip id="child" name="Child" time="1" duration="1"><Notes><Note key="60"/></Notes></Clip></Clips>' +
+                    '</Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Child']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'parent', name: 'Parent', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
     it('rejects nonaffine mixed-unit leaf warps in direct and nested paths while retaining plain siblings', () => {
         const parsed = parseProjectXml(
             project(

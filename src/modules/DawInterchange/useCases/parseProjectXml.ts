@@ -829,6 +829,9 @@ function parseArrangementClips(
     }
 
     function leafTransformTempo(clip: XmlQuery, timing: ClipTiming): number | null {
+        if (hasNestedClips(clip)) {
+            return timing.tempo;
+        }
         const hasLoop = clip.attr('loopStart') !== null || clip.attr('loopEnd') !== null;
         const warps = clip.child('Warps');
         const warpPoints = warps?.children('Warp') ?? [];
