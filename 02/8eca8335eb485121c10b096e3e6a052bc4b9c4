@@ -1,0 +1,88 @@
+src/modules/AiRuntime/models/IntentResult.ts
+  s_3168504f6ce387::t_981d08b8553d75 9,71-72
+src/modules/AiRuntime/useCases/__tests__/reproposePendingChatActions.spec.ts
+  s_3168504f6ce387::t_df4d171136d9a3 168-169,181,224-250
+  s_3168504f6ce387::t_743bca7b3445cc 251-252
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_3168504f6ce387::t_df4d171136d9a3 326-329,345
+src/modules/AiRuntime/useCases/agentReference/protectionObjectForms.ts
+  s_3168504f6ce387::t_877a323c724a38 78-79,90,159-160,181-183
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_3168504f6ce387::t_09d3170cf1a6cf 5988,6031-6057,6183-6187,6191-6195,6201-6209,6215-6217,6223,6227-6229,6241-6242
+  s_3168504f6ce387::t_4acdddf9d3e983 6173-6182,6188-6190,6196-6200,6212-6213,6224-6226,6233-6235,6239
+  s_3168504f6ce387::t_d27554bd18a3c0 6210-6211,6214,6232,6236-6238,6240,6243,6260,6282,6284-6289,6297
+  s_3168504f6ce387::t_55c2735ee004b0 6218-6222,6230-6231,6244-6259,6261-6281,6283,6290-6296
+  s_3168504f6ce387::t_d7d7b3fffaf23c 6298
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_3168504f6ce387::t_85a36832e2cdcb 1767-1772,1781,1783-1798
+  s_3168504f6ce387::t_5a046b426986fe 1773-1780,1782
+  s_3168504f6ce387::t_17c581e1dde542 1799-1805
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_3168504f6ce387::t_2ac32c0b3c2808 362-364
+  s_3168504f6ce387::t_b0a89a66fa8198 371-413
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_3168504f6ce387::t_877a323c724a38 533-537
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_3168504f6ce387::t_981d08b8553d75 381
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_3168504f6ce387::t_981d08b8553d75 136,200
+  s_3168504f6ce387::t_d325b35ad75e37 166
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_3168504f6ce387::t_2fd788ea892b6c 12-13,276-287,295
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_3168504f6ce387::t_5abf91002caf67 10,22,48-49,67,138,225,287-288,313-314,331-348,352-369,373-382,398-400
+  s_3168504f6ce387::t_5a046b426986fe 262-263,269,349-351,370-372
+src/modules/AiRuntime/useCases/agentReference/__tests__/proposalGroundingBasis.spec.ts
+  s_3168504f6ce387::t_12842371ef5ab9 3,20-27,29-45
+  s_3168504f6ce387::t_c4e63235a99832 28
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_3168504f6ce387::t_cd9998232eeb83 220-231,235-249,251-254
+  s_3168504f6ce387::t_55c2735ee004b0 232-234,250
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_3168504f6ce387::t_5abf91002caf67 6,40-45
+  s_29d8df116c5b92::t_64b461c9c97cca 46-47
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_3168504f6ce387::t_981d08b8553d75 43-53,63,69
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_3168504f6ce387::t_5abf91002caf67 15-19,190,7019-7025,7029
+  s_3168504f6ce387::t_2fd788ea892b6c 187-188,6077
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_3168504f6ce387::t_2fd788ea892b6c 4,144-147,149-169
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_3168504f6ce387::t_981d08b8553d75 10,133-134,338,385
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_3168504f6ce387::t_981d08b8553d75 42,132
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3168504f6ce387::t_ec27389d057981 931-932
+  s_3168504f6ce387::t_2fd788ea892b6c 1129-1139,1176,1213-1215
+  s_29d8df116c5b92::t_b20bef6e24a912 1216-1217,1254
+src/modules/AiRuntime/stores/__tests__/pendingActionConfirmationStore.spec.ts
+  s_3168504f6ce387::t_285bf58b4056ae 20-50
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_3168504f6ce387::t_881287701f2010 27,596-605,663
+  s_3168504f6ce387::t_6683c5348b8646 588
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "028eca8335eb485121c10b096e3e6a052bc4b9c4",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
