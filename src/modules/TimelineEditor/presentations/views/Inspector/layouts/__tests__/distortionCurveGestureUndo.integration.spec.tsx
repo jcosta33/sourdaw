@@ -342,6 +342,58 @@ describe('actual registered Distortion curve through real project and history', 
         expect(writes().at(-1)?.value).toBe(40);
     });
 
+    it('starts a fresh drag after pointer capture acquisition is refused', async () => {
+        render(<Layout />);
+        const canvas = curve();
+        const before = structuredClone(rawValues());
+        const revision = settlePendingProjectWritesAndCaptureRevision();
+        const captureError = new DOMException('Pointer is not active', 'NotFoundError');
+        const setPointerCapture = canvas.setPointerCapture.bind(canvas);
+        const capture = vi.spyOn(canvas, 'setPointerCapture').mockImplementation((pointerId) => {
+            if (pointerId === 5) {
+                throw captureError;
+            }
+            setPointerCapture(pointerId);
+        });
+        const suppressExpectedCaptureError = (event: ErrorEvent): void => {
+            if (event.error === captureError) {
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('error', suppressExpectedCaptureError);
+
+        try {
+            fireEvent.pointerDown(canvas, { button: 0, pointerId: 5, clientY: 100 });
+            expect(capture).toHaveBeenCalledWith(5);
+        } finally {
+            window.removeEventListener('error', suppressExpectedCaptureError);
+            capture.mockRestore();
+        }
+
+        expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
+        expect(rawValues()).toEqual(before);
+        expect(values()).toEqual(before);
+        expect(depth()).toBe(0);
+        expect(writes()).toEqual([]);
+
+        try {
+            fireEvent.pointerDown(canvas, { button: 0, pointerId: 6, clientY: 100 });
+            fireEvent.pointerMove(canvas, { pointerId: 6, clientY: 80 });
+            fireEvent.pointerUp(canvas, { pointerId: 6 });
+            await committed(30);
+            expect(depth()).toBe(1);
+            expect(writes().map(({ value }) => value)).toEqual([30, 30]);
+
+            await act(() => undo());
+            expect(rawValues()).toEqual(before);
+            expect(values()).toEqual(before);
+            expect(depth()).toBe(0);
+            expect(writes().at(-1)?.value).toBe(20);
+        } finally {
+            fireEvent.pointerCancel(canvas, { pointerId: 5 });
+        }
+    });
+
     it('keeps two curve drags and a later Drive control edit separate', async () => {
         render(<Layout />);
         begin();

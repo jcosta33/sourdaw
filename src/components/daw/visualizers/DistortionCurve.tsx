@@ -240,7 +240,7 @@ export const DistortionCurve = ({
         if (token < 0 || (isGestureCurrent && !isGestureCurrent(token))) {
             return;
         }
-        gestureRef.current = {
+        const gesture: CurveGesture = {
             pointerId: event.pointerId,
             canvas,
             token,
@@ -251,7 +251,17 @@ export const DistortionCurve = ({
             commit: onGestureCommit,
             cancel: onGestureCancel,
         };
-        canvas.setPointerCapture(event.pointerId);
+        gestureRef.current = gesture;
+        try {
+            canvas.setPointerCapture(event.pointerId);
+        } catch (error) {
+            gestureRef.current = null;
+            gesture.cancel?.();
+            if (error instanceof DOMException && ['NotFoundError', 'InvalidStateError'].includes(error.name)) {
+                return;
+            }
+            throw error;
+        }
         canvas.style.cursor = 'grabbing';
     };
 
