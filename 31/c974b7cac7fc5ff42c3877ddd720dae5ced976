@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/admitPerceptualGoalDecline.ts
+  s_3168504f6ce387::t_eb2798a90558e9 8,11,33-35,38-39,61-66,70,72-75,78,92,96,99,144,146,155,158-162,186,200-208,210-216,225,231-232,234-235,239-244,246,253,259-267,277-296,302,312-317,322-324,326-327,329-332
+  s_3168504f6ce387::t_aa0ff855220356 297-300,303-311,318-321,325,328,401-402,405,408
+  s_3168504f6ce387::t_7e959ca5d0d647 43,45,180-184,217-221,268-276
+  s_3168504f6ce387::t_c757426bd3fb5a 46-51,54,301
+  s_b3201877f50e8a::t_7a133bb5cdb210 185,333
+src/modules/AiRuntime/useCases/agentReference/findCoordinatedTrackLists.ts
+  s_3168504f6ce387::t_eb2798a90558e9 84
+src/modules/AiRuntime/useCases/__tests__/perceptualGoalAdmission.spec.ts
+  s_3168504f6ce387::t_dcc4fc29a77fb5 223,237-252,359-384,391-392
+  s_3168504f6ce387::t_c757426bd3fb5a 387
+  s_3168504f6ce387::t_7e959ca5d0d647 224-228,253,385-386,388-390
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31c974b7cac7fc5ff42c3877ddd720dae5ced976",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
