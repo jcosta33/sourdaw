@@ -1336,7 +1336,8 @@ describe('pull-request supersession', () => {
                 []
             );
             const owner = retainedOwner(root);
-            expect(readPullRequestMutationLockOwner(root, owner, oldNumber).mutation).toBe('remote-mutation-attempted');
+            const retained = readPullRequestMutationLockOwner(root, owner, oldNumber);
+            expect(retained.mutation.phase).toBe('remote-mutation-attempted');
         });
     });
     it('uses client mutation receipts for forward comment and close mutations', () => {
@@ -1347,7 +1348,9 @@ describe('pull-request supersession', () => {
         expect(source).toContain(
             'closePullRequest(input:{pullRequestId:$pullRequestId,clientMutationId:$clientMutationId})'
         );
-        expect(source).toContain('headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt');
+        expect(source).toContain(
+            'headRefOid headRefName headRepository{nameWithOwner} baseRefName baseRefOid merged closedAt'
+        );
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
         expect(source.match(/author\{login __typename \.\.\. on Bot\{id\}\}/g)).toHaveLength(2);
     });
@@ -2118,8 +2121,10 @@ describe('pull-request supersession', () => {
                 parentBindingBody.replace('"format":', '"format":"supersession-parent-v1","format":')
             )
         ).toThrow(/canonical/i);
+        const { cachedBase, ...childWithoutBase } = parentBinding.child;
+        const unbound = { ...parentBinding, child: { ...childWithoutBase, unboundBase: cachedBase } };
         expect(() =>
-            parseSupersessionParentBinding(parentBindingBody.replace('"cachedBase":', '"unboundBase":'))
+            parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${canonicalJson(unbound)}`)
         ).toThrow(/keys/i);
         expect(() =>
             parseSupersessionParentBinding(
@@ -2952,20 +2957,30 @@ describe('pull-request supersession', () => {
         });
         expect(() => runWithParent(port)).toThrow(/proof changed during supersession/i);
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([]);
-        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:IC_post_1', 'delete:IC_post_2']);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([
+            'delete:IC_post_1',
+            'delete:IC_post_2',
+            'delete:IC_post_3',
+        ]);
         expect(state().comments).toEqual([oldComment]);
     });
-    it('reuses existing child markers while revalidating the stacked parent through close', () => {
-        const { port, calls } = fakePort({
-            bases: [parentBranch, parentBranch, parentBranch, parentBranch],
-            existingCommentCount: 1,
-            existingLineageCount: 1,
-        });
-        expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
-        expect(calls.filter((call) => call.startsWith('comment:'))).toEqual([]);
-        expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
-        expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(4);
-    });
+    it.each([false, true])(
+        'reuses existing child markers with preserved binding=%s while revalidating the parent',
+        (bound) => {
+            const { port, calls } = fakePort({
+                bases: [parentBranch, parentBranch, parentBranch, parentBranch],
+                existingCommentCount: 1,
+                existingLineageCount: 1,
+                parentBindingComments: bound ? [markerComment('IC_parent_binding', '2100', parentBindingBody)] : [],
+            });
+            expect(runWithParent(port)).toBe('pull-request-superseded:2244:2246');
+            expect(calls.filter((call) => call.startsWith('comment:'))).toEqual(
+                bound ? [] : [`comment:2244:${parentBindingBody}`]
+            );
+            expect(calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
+            expect(calls.filter((call) => call === `inspect:${parentNumber}`)).toHaveLength(4);
+        }
+    );
     it('posts and validates the lineage marker before the close', () => {
         const { port, calls, authorNodeId } = fakePort();
         run(port, repairedLineage, authorNodeId);
