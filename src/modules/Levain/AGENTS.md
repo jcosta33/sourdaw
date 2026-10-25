@@ -4,14 +4,14 @@ Orchestral multi-sample acoustic instrument engine (strings, brass, woodwinds, p
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `getDecodedBankDiagnostics`, `getLevainArticulationId`, `commitLevainDeviceState`, `hydrateLevainStateFromProject`, `initLevainDeviceStatePersistence`, `prepareOfflineLevain`, `registerLevainDevice`, `unregisterLevainDevice`.
+- **Use Cases** (`useCases/index.ts`): `configureLevainZoneTableBuilder`, `getDecodedBankDiagnostics`, `getLevainArticulationId`, `commitLevainDeviceState`, `hydrateLevainStateFromProject`, `initLevainDeviceStatePersistence`, `prepareOfflineLevain`, `registerLevainDevice`, `unregisterLevainDevice`.
 - **Stores** (`stores/index.ts`): `defaultLevainState`, `levainStore`, `setEngineReady`, `LevainState`.
 - **Views** (`presentations/views/index.ts`): `LevainPanel`.
 - **Events** (`events/index.ts`): No public events.
 
 ## Key Subsystems
 
-- **Sample Bank Loader** (`repositories/sampleLoader/`): Remote manifest parser (`sampleManifest.ts`), multi-microphone audio fetcher, and background decoder (`loadInstrumentFromManifest`, `createDecodedBankResource`).
+- **Sample Bank Loader** (`repositories/sampleLoader/`): Remote manifest parser (`sampleManifest.ts`), multi-microphone audio fetcher, and background decoder (`loadInstrumentFromManifest`, `createDecodedBankResource`). The loader never asks the worklet to build zone tables: it takes them from an injected builder (`autoLoadLevainSamples` passes the one `configureLevainZoneTableBuilder` bound, which the composition root sets to AudioEngine's `buildLevainZoneTables`, a Worker, so no Levain file imports that use case) and stages them in bounded chunks on every route that loads a bank, live and offline alike. With no builder bound a load rejects; nothing falls back to the worklet.
 - **Instrument Catalog** (`models/LevainPatch.ts`): Source-of-truth instrument IDs (`INSTRUMENT_IDS`), articulation mappings, dynamic velocity layers, and microphone position mixes (close, tree, ambient).
 - **Param Bridge** (`useCases/levainParamBridge/`): Registers device instances with the AudioEngine node, synchronizes macro controls, and prepares offline render state (`prepareOfflineLevain`).
 - **Store & State** (`stores/levainStore.ts`): Reactive state for active instrument selection, articulation switches, and download/decoding readiness.

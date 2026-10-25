@@ -6,6 +6,8 @@ import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadIns
 import { resolveSampleBasePath } from '../repositories/sampleLoader/resolveSampleBasePath';
 import { setSampleLoadError, setSampleLoadProgress } from '../stores/levainStore';
 
+import { configuredLevainZoneTableBuilder } from './configureLevainZoneTableBuilder';
+
 /**
  * Load levain samples for a specific instrument into the worklet node.
  * Stages the replacement transactionally and keeps the sounding bank intact
@@ -66,6 +68,7 @@ export async function autoLoadLevainSamples(
             basePath: manifestBase,
             expectedInstrumentId: instrumentId,
             nodePort,
+            buildZoneTables: configuredLevainZoneTableBuilder.build,
             lod: WEB_LOD,
             onProgress: (progress) => {
                 if (signal?.aborted) {

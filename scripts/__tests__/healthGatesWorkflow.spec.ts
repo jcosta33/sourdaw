@@ -86,10 +86,15 @@ const USER_BROWSER_CAP_MINUTES = 3;
 const INSTALL_KILL_AFTER_SECONDS = 15;
 // The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
 const INSTALL_BACKOFF_SECONDS = 5 + 10;
+// The hosted image's standalone Microsoft product feed answered `apt-get update`
+// with 403 and failed every attempt (#5359), so each root apt run reads the
+// runner's sources without it; the filter refuses rather than guesses.
+const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
+const FILTERED_BROWSER_DEPENDENCY_INSTALL = `${APT_FEED_FILTER} node_modules/.bin/playwright install-deps chromium`;
 // Apt gets a TERM and a grace period; the browser download is killed outright,
 // because GNU timeout's grace period ends when the direct child exits even if a
 // grandchild survives.
-const ROOT_DEPENDENCY_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m node_modules/.bin/playwright install-deps chromium`;
+const ROOT_DEPENDENCY_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m ${FILTERED_BROWSER_DEPENDENCY_INSTALL}`;
 const USER_BROWSER_INSTALL_COMMAND = `timeout --signal=KILL ${USER_BROWSER_CAP_MINUTES}m pnpm exec playwright install chromium`;
 // Every attempt times out at its caps, the root half after its kill-after, so a
 // job must hold this plus the time its other steps have been measured to take.
@@ -104,7 +109,8 @@ const BROWSER_INSTALL_FAILING_EXIT = 'if [ "$attempt" -eq 3 ]; then\n    exit 1\
 // part on a slow mirror, so each attempt carries the same 8 minute root cap as
 // the browser dependency install, and apt gets a TERM before the KILL.
 const ALSA_ATTEMPT_CAP_MINUTES = 8;
-const ALSA_INSTALL_COMMAND = `sudo timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ALSA_ATTEMPT_CAP_MINUTES}m bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
+const FILTERED_ALSA_INSTALL = `${APT_FEED_FILTER} bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
+const ALSA_INSTALL_COMMAND = `sudo timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ALSA_ATTEMPT_CAP_MINUTES}m ${FILTERED_ALSA_INSTALL}`;
 // The loop sleeps `attempt * 15` seconds after a failed attempt except the last.
 const ALSA_BACKOFF_SECONDS = 15 + 30;
 const ALSA_INSTALL_WORST_CASE_SECONDS =
@@ -204,7 +210,7 @@ const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
 const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 17 * 60_000;
 const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 18;
-const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 30;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 40;
 const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     BROWSER_AI_WEBGPU_LOG,
     'test-results/**/trace.zip',
@@ -212,10 +218,13 @@ const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     'test-results/.last-run.json',
 ];
 const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
-    ['Checkout', 1],
+    // A slow merge-ref fetch timed out a 1-minute checkout (run 39588034702).
+    ['Checkout', 3],
     ['Enable Corepack', 1],
-    ['Set up pnpm', 1],
-    ['Set up Node', 1],
+    // The pnpm self-installer took about 5 minutes on macOS during a registry
+    // slowdown that killed 1-minute admissions (run 39703602835).
+    ['Set up pnpm', 7],
+    ['Set up Node', 3],
     ['Install dependencies', 2],
     ['Install Chromium', 2],
     ['Run Browser AI WebGPU admission', 18],
@@ -837,6 +846,9 @@ function assertBoundedBrowserInstall(
     if (installRun.includes('--with-deps')) {
         throw new Error(`${label} must not install system dependencies through the runner-user browser install`);
     }
+    if (!installRun.includes(FILTERED_BROWSER_DEPENDENCY_INSTALL)) {
+        throw new Error(`${label} must run the root dependency install through the Microsoft apt feed filter`);
+    }
     if (!installRun.includes(ROOT_DEPENDENCY_INSTALL_COMMAND)) {
         throw new Error(`${label} must bound the root dependency install from the root side with sudo timeout`);
     }
@@ -866,6 +878,9 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     const run = stringAt(step, 'run');
     if (!run.includes('for attempt in 1 2 3')) {
         throw new Error(`${label} must retry the ALSA header install against mirror outages`);
+    }
+    if (!run.includes(FILTERED_ALSA_INSTALL)) {
+        throw new Error(`${label} must run the ALSA header install through the Microsoft apt feed filter`);
     }
     if (!run.includes(ALSA_INSTALL_COMMAND)) {
         throw new Error(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
@@ -1532,6 +1547,32 @@ function jobSteps(file: string, jobId: string, job: UnknownRecord): UnknownRecor
         : arrayAt(job, 'steps').map((step) => asRecord(step, `${file} job ${jobId} step`));
 }
 
+// Commands that run apt on a hosted runner: apt itself, Playwright's system
+// dependency install, and its Chrome channel install script.
+const APT_COMMAND =
+    /\bapt-get\b|\bapt\s+(?:update|install)\b|playwright install-deps|--with-deps|playwright install --force chrome/;
+
+// A new or edited apt route that skips the filter fails on the next Microsoft
+// feed 403 (#5359), so every apt-invoking command line must carry it.
+function assertAptRoutesFiltered(set: WorkflowSet): void {
+    for (const [file, parsed] of workflowFiles(set)) {
+        for (const [jobId, job] of Object.entries(recordAt(parsed, 'jobs'))) {
+            for (const step of jobSteps(file, jobId, asRecord(job, `${file} job ${jobId}`))) {
+                if (typeof step.run !== 'string') {
+                    continue;
+                }
+                for (const line of step.run.split('\n')) {
+                    if (APT_COMMAND.test(line) && !line.includes(APT_FEED_FILTER)) {
+                        throw new Error(
+                            `${file} job ${jobId} step ${String(step.name)} must run apt through the Microsoft apt feed filter`
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
     const name = typeof step.name === 'string' ? step.name : '<unnamed>';
     return `${file} job ${jobId} step ${name}`;
@@ -1977,7 +2018,9 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
     }
     if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
-        throw new Error('Browser AI WebGPU job must retain its 30-minute failure limit');
+        throw new Error(
+            `Browser AI WebGPU job must retain its ${BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES}-minute failure limit`
+        );
     }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
@@ -3469,8 +3512,12 @@ describe('health gates workflow contract', () => {
         }
         expect(staticSteps).toHaveLength(STEP_INVENTORY['validation.yml']!.static!.length);
         expect(jobAt(validationWorkflow, 'tooling-unit').if).toBe("needs.decide.outputs.tooling == 'true'");
+        // The runner account holds uninspectable same-UID processes, so the guard
+        // storage specs run only in the isolated unit account.
         expect(stringAt(stepNamed(jobAt(validationWorkflow, 'tooling-unit'), 'Run script suite'), 'run')).toBe(
-            "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'"
+            "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'" +
+                " --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts'" +
+                " --exclude='**/resourceGuardShowOutput.spec.ts'"
         );
     });
 
@@ -3600,6 +3647,10 @@ describe('health gates workflow contract', () => {
             ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
 
             expect(() =>
+                check(rewriteInstall('unfiltered apt sources', (run) => run.replace(`${APT_FEED_FILTER} `, '')))
+            ).toThrow(`${label} must run the root dependency install through the Microsoft apt feed filter`);
+
+            expect(() =>
                 check(
                     rewriteInstall('runner-owned root timeout', (run) =>
                         run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, rootRunAsRunner)
@@ -3683,13 +3734,14 @@ describe('health gates workflow contract', () => {
             expect(() =>
                 check(
                     rewriteInstall('unbounded attempt', (run) =>
-                        run.replace(
-                            ALSA_INSTALL_COMMAND,
-                            'sudo apt-get update && sudo apt-get install -y libasound2-dev'
-                        )
+                        run.replace(ALSA_INSTALL_COMMAND, `sudo ${FILTERED_ALSA_INSTALL}`)
                     )
                 )
             ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
+
+            expect(() =>
+                check(rewriteInstall('unfiltered apt sources', (run) => run.replace(`${APT_FEED_FILTER} `, '')))
+            ).toThrow(`${label} must run the ALSA header install through the Microsoft apt feed filter`);
 
             expect(() =>
                 check(
@@ -3848,10 +3900,20 @@ export -f sudo timeout sleep apt-get
         const sleepLog = join(probeDirectory, 'sleeps.log');
         const stalledPidFile = join(probeDirectory, 'stalled.pid');
         const preludePath = join(probeDirectory, 'functions.bash');
+        // The real apt feed filter runs between sudo and apt, over a hosted
+        // Ubuntu source fixture and the apt-config stub, so its exit status is
+        // what the retry loop sees.
+        const aptSourceParts = join(probeDirectory, 'apt', 'sources.list.d');
         let groupPid: number | undefined;
         const ownedGroup = options.ownedGroup ?? { pid: undefined };
         try {
             writeFileSync(preludePath, alsaCommandFunctions);
+            mkdirSync(aptSourceParts, { recursive: true });
+            writeFileSync(
+                join(aptSourceParts, 'ubuntu.sources'),
+                'Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble\nComponents: main\n' +
+                    'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n'
+            );
             writeFileSync(attemptLog, '');
             writeFileSync(sleepLog, '');
             const child = spawn('bash', ['-c', run], {
@@ -3860,6 +3922,10 @@ export -f sudo timeout sleep apt-get
                 env: {
                     ...process.env,
                     BASH_ENV: preludePath,
+                    PATH: `${join(repositoryRoot, 'scripts/__tests__/fixtures/aptConfigStub')}${delimiter}${process.env.PATH ?? ''}`,
+                    TMPDIR: probeDirectory,
+                    FAKE_APT_SOURCE_LIST: join(probeDirectory, 'apt', 'sources.list'),
+                    FAKE_APT_SOURCE_PARTS: aptSourceParts,
                     ATTEMPT_LOG: attemptLog,
                     SLEEP_LOG: sleepLog,
                     SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
@@ -4083,6 +4149,39 @@ export -f sudo timeout sleep apt-get
             }
         }
         expect(retiredIdSignals).toEqual([]);
+    });
+
+    it('runs every hosted apt route through the Microsoft apt feed filter', () => {
+        expect(() => assertAptRoutesFiltered(workflowSet())).not.toThrow();
+
+        const routes: ReadonlyArray<readonly [keyof WorkflowSet, string, string, string]> = [
+            ['heavy', 'heavy-gates.yml', 'e2e', 'Install Playwright browsers'],
+            ['validation', 'validation.yml', 'smoke', 'Install Playwright browsers'],
+            ['validation', 'validation.yml', 'rust', 'Install ALSA development headers'],
+            ['nightly', 'nightly.yml', 'e2e', 'Install Playwright browsers'],
+            ['nightly', 'nightly.yml', 'rust', 'Install ALSA development headers'],
+            ['cargoDependencySeed', 'cargo-dependency-seed.yml', 'rust', 'Install ALSA development headers'],
+            ['hostedQuantumMeasurement', 'quantum-measurements.yml', 'measure', 'Install Google Chrome'],
+        ];
+        for (const [key, file, jobId, stepName] of routes) {
+            const unfiltered = cloneWorkflows(`unfiltered ${file} ${jobId}`);
+            const step = stepNamed(jobAt(unfiltered[key], jobId), stepName);
+            const run = stringAt(step, 'run');
+            expect(run).toContain(APT_FEED_FILTER);
+            step.run = run.replace(`${APT_FEED_FILTER} `, '');
+            expect(() => assertAptRoutesFiltered(unfiltered)).toThrow(
+                `${file} job ${jobId} step ${stepName} must run apt through the Microsoft apt feed filter`
+            );
+        }
+
+        const addedRoute = cloneWorkflows('added unfiltered apt route');
+        arrayAt(jobAt(addedRoute.validation, 'lint'), 'steps').push({
+            name: 'Install a package',
+            run: 'sudo apt-get install -y jq',
+        });
+        expect(() => assertAptRoutesFiltered(addedRoute)).toThrow(
+            'validation.yml job lint step Install a package must run apt through the Microsoft apt feed filter'
+        );
     });
 
     it('fails every Linux browser install step after its third failed attempt', () => {
@@ -4754,15 +4853,15 @@ export -f sudo timeout sleep apt-get
         expect(() => assertPnpmBeforeNodeOrder(heavyWorkflow)).not.toThrow();
 
         const missingPnpmSetup = asRecord(structuredClone(nightly), 'missing pnpm setup nightly');
-        removeStepNamed(jobAt(missingPnpmSetup, 'unit'), PNPM_SETUP_STEP);
+        removeStepNamed(jobAt(missingPnpmSetup, 'build'), PNPM_SETUP_STEP);
         expect(() => assertPnpmBeforeNodeOrder(missingPnpmSetup)).toThrow(
-            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+            `build must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
 
         const reversedSetup = asRecord(structuredClone(nightly), 'reversed pnpm setup nightly');
-        swapStepsNamed(jobAt(reversedSetup, 'unit'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        swapStepsNamed(jobAt(reversedSetup, 'build'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
         expect(() => assertPnpmBeforeNodeOrder(reversedSetup)).toThrow(
-            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+            `build must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
 
         const reversedDeploySetup = asRecord(structuredClone(nightly), 'reversed deploy pnpm setup nightly');
@@ -5000,8 +5099,14 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('runs required unit install and shards through a fresh unprivileged identity', () => {
-        const unit = jobAt(validationWorkflow, 'unit');
+    // The guard storage specs require an account with no uninspectable same-UID
+    // process; the hosted runner account has them, so every unit shard route,
+    // scheduled or required, enters the fresh unprivileged account.
+    it.each([
+        ['validation.yml', validationWorkflow],
+        ['nightly.yml', nightly],
+    ])('runs %s unit install and shards through a fresh unprivileged identity', (_file, workflow) => {
+        const unit = jobAt(workflow, 'unit');
         const prepare = stepNamed(unit, 'Prepare isolated unit account');
         const install = stepNamed(unit, 'Install dependencies');
         const shard = stepNamed(unit, 'Run shard');
@@ -5029,6 +5134,8 @@ export -f sudo timeout sleep apt-get
             'persist-credentials': false,
         });
         expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(4);
+        // One shard's failure must not cancel the others' evidence.
+        expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {

@@ -2,6 +2,7 @@ import { getAutomationLanes, getAutomationValueAtBeat } from '#/modules/Automati
 import { resolveBezierControls, subdivideBezierRightHalf } from '#/utils/automationCurve';
 import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
+import { gainSeamPointId } from '../../models/GainSeamPointId';
 import { type WarpState } from '../../models/WarpMarker';
 import { type ClipSatelliteEntry, readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../../stores/gainEnvelopeStore';
@@ -54,6 +55,55 @@ const NO_GAIN_ENVELOPES: SplitGainEnvelopes = { left: null, right: null };
 const NO_WARP_STATES: SplitWarpStates = { left: null, right: null };
 
 /**
+ * First free `-authored` name off `base`, counted against every id the half
+ * holds, so two renamed copies can never land on one name.
+ */
+function freshSeamClashId(base: string, taken: Set<string>): string {
+    let renamedId = `${base}-authored`;
+    let attempt = 1;
+    while (taken.has(renamedId)) {
+        renamedId = `${base}-authored-${attempt}`;
+        attempt += 1;
+    }
+    taken.add(renamedId);
+    return renamedId;
+}
+
+/**
+ * A legacy project can still carry an authored point squatting on a derived
+ * seam id — the digest made the collision practically unautherable, not
+ * impossible — and a duplicated legacy envelope can even hold one twice. The
+ * half that inserts a seam reclaims its id from every squatting copy, one
+ * fresh id per copy; the other side's derived id has no seam to place here,
+ * so a lone copy stays untouched and only a repeat moves aside. Names come
+ * from one counter per envelope, so neither half ever emits an id twice, and
+ * the same restored source re-splits to the same names.
+ */
+function renameSeamIdClashes(
+    points: GainEnvelopePoint[],
+    insertedSeamId: string,
+    otherSeamId: string
+): GainEnvelopePoint[] {
+    const taken = new Set(points.map((point) => point.id));
+    if (!taken.has(insertedSeamId) && !taken.has(otherSeamId)) {
+        return points;
+    }
+    let retainedSeen = false;
+    return points.map((point) => {
+        if (point.id === insertedSeamId) {
+            return { ...point, id: freshSeamClashId(insertedSeamId, taken) };
+        }
+        if (point.id === otherSeamId) {
+            if (retainedSeen) {
+                return { ...point, id: freshSeamClashId(otherSeamId, taken) };
+            }
+            retainedSeen = true;
+        }
+        return point;
+    });
+}
+
+/**
  * Place a point without disturbing `beatOffset` order: `sampleGainEnvelopePoints`
  * walks adjacent pairs, so an out-of-order list reads as a different curve.
  */
@@ -86,29 +136,33 @@ function splitGainEnvelope(
         beatOffset: point.beatOffset - clipRelativeSplitBeats,
     }));
     const seamIsAuthored = envelope.points.some((point) => point.beatOffset === clipRelativeSplitBeats);
+    if (seamIsAuthored) {
+        return {
+            left: { clipId, enabled: envelope.enabled, points: leftPoints },
+            right: { clipId: rightClipId, enabled: envelope.enabled, points: rightPoints },
+        };
+    }
 
+    const leftSeamId = gainSeamPointId(rightClipId, 'left');
+    const rightSeamId = gainSeamPointId(rightClipId, 'right');
     return {
         left: {
             clipId,
             enabled: envelope.enabled,
-            points: seamIsAuthored
-                ? leftPoints
-                : insertPointInOrder(leftPoints, {
-                      id: `gep-split-${rightClipId}-left`,
-                      beatOffset: clipRelativeSplitBeats,
-                      gainDb: seamGainDb,
-                  }),
+            points: insertPointInOrder(renameSeamIdClashes(leftPoints, leftSeamId, rightSeamId), {
+                id: leftSeamId,
+                beatOffset: clipRelativeSplitBeats,
+                gainDb: seamGainDb,
+            }),
         },
         right: {
             clipId: rightClipId,
             enabled: envelope.enabled,
-            points: seamIsAuthored
-                ? rightPoints
-                : insertPointInOrder(rightPoints, {
-                      id: `gep-split-${rightClipId}-right`,
-                      beatOffset: 0,
-                      gainDb: seamGainDb,
-                  }),
+            points: insertPointInOrder(renameSeamIdClashes(rightPoints, rightSeamId, leftSeamId), {
+                id: rightSeamId,
+                beatOffset: 0,
+                gainDb: seamGainDb,
+            }),
         },
     };
 }

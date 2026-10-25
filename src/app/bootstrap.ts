@@ -44,6 +44,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
+    buildLevainZoneTables,
     updateDeviceParam,
     updateDevicePatch,
     getAudioContext,
@@ -140,6 +141,7 @@ import { updateGrinderTelemetry } from '#/modules/Grinder/stores';
 import { setPitchEditDependencies } from '#/modules/Knead/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
 import {
+    configureLevainZoneTableBuilder,
     initLevainDeviceStatePersistence,
     registerLevainDevice,
     unregisterLevainDevice,
@@ -394,6 +396,7 @@ setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 setCrumbsEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
+configureLevainZoneTableBuilder(buildLevainZoneTables);
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
