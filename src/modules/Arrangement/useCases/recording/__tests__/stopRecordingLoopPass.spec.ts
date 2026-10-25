@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { defaultTransportState, type TransportState } from '#/modules/Transport/stores';
+
 import { recordingPassTiming } from '../recordingPassTiming';
 import { stopRecording } from '../stopRecording';
 
 import type { TakeLaneStoreState, takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
-import { defaultTransportState, type TransportState } from '#/modules/Transport/stores';
 import type { Take } from '../../../models/TakeLane';
 import type { TrackState, getTrackState } from '../../../repositories/track/getTrackState';
 import type { setTrackState } from '../../../repositories/track/setTrackState';

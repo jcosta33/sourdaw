@@ -1,6 +1,6 @@
-import type { createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
 import { countSettledOverdubPasses, isOverdubLanding } from '#/modules/MIDI/useCases';
 
+import type { createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
 import type { NativeCaptureSnapshot, NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
 
 type NativeCaptureReader = () => ReturnType<ReturnType<typeof createNativeRecordingCaptureClock>['read']>;
