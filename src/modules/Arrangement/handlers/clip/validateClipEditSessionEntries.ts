@@ -13,6 +13,7 @@ import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLane
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 
@@ -128,7 +129,7 @@ function hasValidClipFields(value: Record<string, unknown>): boolean {
     );
 }
 
-function isRetiredTakeLane(value: unknown, clipId: string, trackId?: string): boolean {
+function isRetiredTakeLane(value: unknown, lane: TakeLane, clipId: string, trackId?: string): boolean {
     if (
         !isRecord(value) ||
         typeof value.laneIndex !== 'number' ||
@@ -137,8 +138,7 @@ function isRetiredTakeLane(value: unknown, clipId: string, trackId?: string): bo
     ) {
         return false;
     }
-    const lane = decodeExactTakeLaneSnapshots([value.lane])?.[0];
-    if (!lane || (trackId !== undefined && lane.trackId !== trackId)) {
+    if (trackId !== undefined && lane.trackId !== trackId) {
         return false;
     }
     return (
@@ -156,7 +156,16 @@ function isRetiredTakeLane(value: unknown, clipId: string, trackId?: string): bo
 }
 
 function isRetiredTakeLanes(value: unknown, clipId: string, trackId?: string): boolean {
-    return Array.isArray(value) && value.every((entry) => isRetiredTakeLane(entry, clipId, trackId));
+    if (!Array.isArray(value)) {
+        return false;
+    }
+    const lanes = decodeExactTakeLaneSnapshots(value.map((entry) => (isRecord(entry) ? entry.lane : undefined)));
+    return (
+        lanes !== null &&
+        new Set(lanes.map((lane) => lane.id)).size === lanes.length &&
+        new Set(lanes.map((lane) => lane.trackId)).size === lanes.length &&
+        value.every((entry, index) => isRetiredTakeLane(entry, lanes[index]!, clipId, trackId))
+    );
 }
 
 function isClipSnapshot(value: unknown, clipId: string, trackId: string): value is Clip {
