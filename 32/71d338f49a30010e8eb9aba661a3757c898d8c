@@ -1,0 +1,23 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_567a084d0540c4::t_fdfb178f34b18d 1461
+.agents/skills/delivery-orchestration/SKILL.md
+  s_567a084d0540c4::t_fdfb178f34b18d 33,610-616
+scripts/trustedGithubWriteBootstrap.ts
+  s_567a084d0540c4::t_73483c00952ec8 383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3271d338f49a30010e8eb9aba661a3757c898d8c",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
