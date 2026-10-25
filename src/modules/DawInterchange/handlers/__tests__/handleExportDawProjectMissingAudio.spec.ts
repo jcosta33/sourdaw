@@ -10,7 +10,7 @@
  * the same warning on the interchange path.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     exportDawProject: vi.fn(),
@@ -32,6 +32,10 @@ describe('handleExportDawProject — unbundled audio (audit M-263)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.stubGlobal('URL', { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('warns the user, naming how many audio files were left out', async () => {
@@ -62,5 +66,19 @@ describe('handleExportDawProject — unbundled audio (audit M-263)', () => {
         // Pin the negative: the warning must be conditional, not unconditional.
         expect(notificationsOfSeverity('warning')).toEqual([]);
         expect(notificationsOfSeverity('success')).toEqual(['Exported Song.dawproject']);
+    });
+
+    it('does not warn about missing audio when the browser save is cancelled', async () => {
+        mocks.exportDawProject.mockResolvedValue({
+            bytes: new Uint8Array([1, 2, 3]),
+            fileName: 'Song.dawproject',
+            missingAudioCount: 2,
+        });
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockRejectedValue(new DOMException('Cancelled', 'AbortError')));
+
+        await handleExportDawProject.execute({ type: 'exportDawProject' });
+
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(mocks.logError).not.toHaveBeenCalled();
     });
 });

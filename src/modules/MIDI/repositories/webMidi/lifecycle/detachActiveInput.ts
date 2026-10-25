@@ -1,5 +1,5 @@
 import { getActiveInput } from '../getActiveInput';
-import { resetChannelControllerState } from '../resetChannelControllerState';
+import { resetInputDeviceControllerState } from '../resetInputDeviceControllerState';
 import { setActiveInput } from '../setActiveInput';
 import { webMidiRuntime } from '../state';
 
@@ -13,7 +13,7 @@ export function detachActiveInput(): void {
 
     if (input) {
         input.onmidimessage = null;
-        resetChannelControllerState();
+        resetInputDeviceControllerState();
     }
 
     webMidiRuntime.midiMessageListener = null;

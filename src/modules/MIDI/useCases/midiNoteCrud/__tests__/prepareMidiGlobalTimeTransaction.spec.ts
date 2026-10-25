@@ -120,7 +120,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
                     target: [{ id: 'cc-1', controller: 74, value: 64, beat: 4, channel: 1 }],
                 },
                 pitchBendByClipId: {
-                    target: [{ id: 'pb-1', value: 0.25, beat: 4, channel: 1 }],
+                    target: [{ id: 'pb-1', value: 2048, beat: 4, channel: 1 }],
                 },
                 migratedAbsoluteNoteClipIds,
             }),
@@ -173,7 +173,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
                 remove: [{ id: 'remove-cc', controller: 2, value: 3, beat: 0, channel: 1 }],
             },
             pitchBendByClipId: {
-                remove: [{ id: 'remove-pb', value: 0.2, beat: 0, channel: 1 }],
+                remove: [{ id: 'remove-pb', value: 1600, beat: 0, channel: 1 }],
             },
         });
         mocks.state.value = preparedState;
@@ -237,7 +237,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
                 ],
             },
             ccByClipId: { source: [{ id: 'cc', controller: 1, value: 2, beat: 4, channel: 1 }] },
-            pitchBendByClipId: { source: [{ id: 'pb', value: 0.5, beat: 4, channel: 1 }] },
+            pitchBendByClipId: { source: [{ id: 'pb', value: 4096, beat: 4, channel: 1 }] },
         });
         mocks.state.value = preparedState;
 
@@ -268,7 +268,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
             { id: 'cc-dup:target:0', controller: 1, value: 2, beat: 8, channel: 1 },
         ]);
         expect(appliedState.pitchBendByClipId.target).toEqual([
-            { id: 'pb-dup:target:0', value: 0.5, beat: 8, channel: 1 },
+            { id: 'pb-dup:target:0', value: 4096, beat: 8, channel: 1 },
         ]);
     });
 
@@ -283,7 +283,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
                     { id: 'cc-2', controller: 64, value: 127, beat: 1, channel: 0 },
                 ],
             },
-            pitchBendByClipId: { source: [{ id: 'pb-1', value: 0.5, beat: 2, channel: 0 }] },
+            pitchBendByClipId: { source: [{ id: 'pb-1', value: 4096, beat: 2, channel: 0 }] },
         });
         mocks.state.value = preparedState;
 

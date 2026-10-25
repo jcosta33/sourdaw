@@ -6,10 +6,10 @@ import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases';
+import { clampPitchBend, PITCH_BEND_CENTER } from '#/utils/midiData';
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiPitchBend } from '../../../models/MidiNoteViewTypes';
-import { PITCH_BEND_CENTER } from '../../helpers/laneConstants';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type PitchBendLaneProps = {
@@ -39,7 +39,13 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     const points = [...allPb].sort((alpha: MidiPitchBend, b: MidiPitchBend) => alpha.beat - b.beat);
 
     const beatToX = (beat: number): number => beat * beatWidth + 8;
-    const valueToY = (value: number, height: number): number => height - (value / 127) * (height - 8) - 4;
+    // Centre (0) sits at the lane's vertical middle; the 4px margins keep the
+    // extremes inside the lane.
+    const valueToY = (value: number, height: number): number =>
+        height / 2 - (value / PITCH_BEND_CENTER) * ((height - 8) / 2);
+    // `|| 0` folds a rounded -0 into 0 so the store never holds a signed zero.
+    const yToValue = (y: number, height: number): number =>
+        clampPitchBend(Math.round(((height / 2 - y) / ((height - 8) / 2)) * PITCH_BEND_CENTER)) || 0;
 
     const handleContainerClick = (event: MouseEvent<HTMLDivElement>) => {
         if (!clipId) {
@@ -60,7 +66,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         const height = rect.height;
 
         const beat = Math.max(0, (x - 8) / beatWidth);
-        const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
+        const value = yToValue(y, height);
 
         const pb = addPitchBend(clipId, value, beat);
         pushUndoEntry(
@@ -95,7 +101,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
             const my = clientY - rect.top;
 
             const beat = Math.max(0, (mx - 8) / beatWidth);
-            const value = Math.round(Math.max(0, Math.min(127, ((height - my - 4) / (height - 8)) * 127)));
+            const value = yToValue(my, height);
 
             movePitchBend(clipId, pbId, beat, value);
         };
@@ -160,7 +166,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     }
 
     const containerHeight = containerRef.current?.clientHeight ?? 80;
-    const centerY = valueToY(PITCH_BEND_CENTER, containerHeight);
+    const centerY = valueToY(0, containerHeight);
 
     // The move/end handlers live on the lane, not on the pressed handle: a point handle unmounts
     // as soon as the editor focuses another clip or the point leaves it, and the gesture must not
@@ -217,7 +223,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                                 : 'bg-[var(--color-accent-cyan)]/80 hover:bg-[var(--color-accent-cyan)] hover:shadow-[0_0_4px_rgba(80,180,220,0.4)]'
                         )}
                         style={{ left: x, top: y, touchAction: 'none' }}
-                        title={`Beat ${point.beat.toFixed(2)}: ${point.value} (center: ${PITCH_BEND_CENTER})`}
+                        title={`Beat ${point.beat.toFixed(2)}: ${point.value} (center: 0)`}
                         onPointerDown={(event) => handlePointPointerDown(point.id, event)}
                         onDoubleClick={(event) => handlePointDoubleClick(point.id, event)}
                     />

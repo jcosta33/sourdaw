@@ -5,11 +5,14 @@
  * newline in a source file costs two bytes on the wire. Regions are therefore costed by their
  * serialized size, not their raw size.
  *
- * A region is supplied whole or not at all. Cutting one to a prefix was the earlier policy, and it
+ * A changed side is supplied whole or not at all. Cutting one to a prefix was the earlier policy, and it
  * was wrong in both directions: the model answered over a fragment while the report said the region
  * had been sent, and a prefix cannot answer a question about a side of a change. A region that does
  * not fit is dropped, counted, and named — so the questions that needed it report the evidence as not
- * supplied instead of answering from a third of it.
+ * supplied instead of answering from a third of it. A contract-context region is the one exception,
+ * truncated to whole leading lines by the collector before admission, with a marker line and a
+ * recorded limitation (see `evidence.ts`); the fitter itself still carries every region it accepts
+ * whole.
  */
 
 import { EVIDENCE_SIDES, type EvidenceReference, type EvidenceSide } from './contracts.ts';

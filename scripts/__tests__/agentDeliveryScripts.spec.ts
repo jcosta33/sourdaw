@@ -609,7 +609,6 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewDossierChain.ts',
         'reviewDossierReassessed.ts',
         'reviewDossierViews.ts',
-        'reviewDossierSemanticAssessment.ts',
         'evidenceSafety.ts',
         'canonicalRecord.ts',
         'reviewDossierPublication.ts',
@@ -628,6 +627,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'reviewPublicationRemoteInspection.ts',
         'reviewPublicationBinding.ts',
         'pullRequestReviewState.ts',
+        'reviewApprovalLabel.ts',
         ...approvalSources.map((path) => path.slice('scripts/'.length)),
     ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
@@ -1037,7 +1037,7 @@ describe('package scripts and gitignore', () => {
             'only the gate job may emit the stable Gate summary check name'
         );
         expect(gate.if).toBe(REQUIRED_GATE_CONDITION);
-        expect(workflowArrayAt(gate, 'needs')).toEqual(['scope', 'validation', 'affected', 'codeql']);
+        expect(workflowArrayAt(gate, 'needs')).toEqual(['admission', 'scope', 'validation', 'affected', 'codeql']);
         const gateStep = workflowStep(gate, 'Require selected checks to succeed');
         expect(gateStep.if).toBe(REQUIRED_GATE_CONDITION);
         expect(workflowRecordAt(gateStep, 'env')).toEqual({ RESULTS: '${{ toJSON(needs) }}' });
@@ -1092,6 +1092,7 @@ describe('package scripts and gitignore', () => {
             'publishLane.ts',
             'prepareReview.ts',
             'publishReview.ts',
+            'reviewApprovalLabel.ts',
             'recoverPublishReviewLock.ts',
             'reviewPublicationReceiptAdoption.ts',
             'reviewCommentDiffPreflight.ts',
@@ -1169,6 +1170,7 @@ describe('package scripts and gitignore', () => {
             'scripts/reviewRepair.ts',
             'scripts/reviewRoundEscalation.ts',
             'scripts/publishReview.ts',
+            'scripts/reviewApprovalLabel.ts',
             'scripts/pullRequestReviewState.ts',
             'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewDocumentParser.ts',
@@ -1188,7 +1190,6 @@ describe('package scripts and gitignore', () => {
             'scripts/reviewPublicationRecoveryReceipt.ts',
             'scripts/reviewPublicationRemoteInspection.ts',
             'scripts/reviewPublicationBinding.ts',
-            'scripts/reviewDossierSemanticAssessment.ts',
             'scripts/prepareReview.ts',
             'scripts/reviewBundleLocator.ts',
             'scripts/pullRequestMutationLock.ts',
@@ -1310,6 +1311,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reviewApprovalLabel.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
@@ -1327,7 +1329,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/savedProjectStatePaths.ts',
                     'scripts/reviewPublicationRemoteInspection.ts',
                     'scripts/reviewPublicationBinding.ts',
-                    'scripts/reviewDossierSemanticAssessment.ts',
                     'scripts/prepareReview.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
@@ -1343,6 +1344,7 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reviewApprovalLabel.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
@@ -1363,7 +1365,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/savedProjectStatePaths.ts',
                     'scripts/reviewPublicationRemoteInspection.ts',
                     'scripts/reviewPublicationBinding.ts',
-                    'scripts/reviewDossierSemanticAssessment.ts',
                     'scripts/prepareReview.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
@@ -1384,6 +1385,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewRepair.ts',
                     'scripts/reviewRoundEscalation.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reviewApprovalLabel.ts',
                     'scripts/pullRequestReviewState.ts',
                     'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewDocumentParser.ts',
@@ -1403,7 +1405,6 @@ describe('package scripts and gitignore', () => {
                     'scripts/reviewPublicationRecoveryReceipt.ts',
                     'scripts/reviewPublicationRemoteInspection.ts',
                     'scripts/reviewPublicationBinding.ts',
-                    'scripts/reviewDossierSemanticAssessment.ts',
                     'scripts/prepareReview.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/pullRequestMutationLock.ts',
@@ -3518,7 +3519,16 @@ describe('package scripts and gitignore', () => {
                 readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
                 publicReviews: () => [],
                 publicReviewComments: () => [],
+                // The fence case drives a minimal port; the approval-thread gate
+                // still needs its reader to let the flow reach the fence.
+                reviewState: () => ({
+                    latestReviewerStateOnHead: null,
+                    latestReviewerReviewDatabaseId: null,
+                    unresolvedThreads: 0,
+                }),
                 postReview: () => expect.fail('review creation should not start'),
+                applyApprovalLabel: () => expect.fail('review creation should not start'),
+                removeApprovalLabel: () => expect.fail('review creation should not start'),
                 log: () => undefined,
             }),
             publish: () => {

@@ -37,6 +37,8 @@ type PersistPromptActionConfirmationInput = {
     measuredPreview?: MeasuredPreview;
     /** Which of the run's successive batches this proposal is; absent for a request that fits one batch. */
     batchPosition?: ConfirmationProposal['batchPosition'];
+    /** What a terse refinement of this card inherits; present only for an ordinary card. */
+    groundingBasis?: ConfirmationProposal['groundingBasis'];
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -125,6 +127,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             adoptedRecipes: input.adoptedRecipes,
             measuredPreview: bindMeasuredPreviewToBatch(input.measuredPreview, input.parsedCommandBatch.envelope),
             batchPosition: input.batchPosition,
+            groundingBasis: input.groundingBasis,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,

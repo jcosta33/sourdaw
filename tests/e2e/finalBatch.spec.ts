@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_from_template, launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -157,6 +158,7 @@ test.describe('Status bar live metrics', () => {
         await launch_new_project(page);
     });
 
+    // Owns the UI CPU display format, not processor measurement accuracy.
     test('CPU metric renders a percentage or idle marker', async ({ page }) => {
         const status = page.getByRole('contentinfo', { name: 'Application status' });
         const text = (await status.getByText(/CPU/i).locator('..').textContent()) ?? '';

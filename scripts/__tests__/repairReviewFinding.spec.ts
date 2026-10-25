@@ -25,7 +25,7 @@ import {
     type RepairReviewFindingThread,
 } from '../repairReviewFinding.ts';
 import { parseReviewRepairReply, renderReviewRepairReply } from '../reviewRepair.ts';
-import { REVIEW_ROUND_ESCALATION_THRESHOLD } from '../reviewRoundEscalation.ts';
+import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
 import type { ReviewRepairRecord } from '../reviewRepair.ts';
 
@@ -358,20 +358,23 @@ describe('repairReviewFinding', () => {
         expect(postedRecords(posted)).toEqual([recordFor()]);
     });
 
-    it('logs the escalation flag at the threshold and never refuses the repair because of it', () => {
+    it('logs the freeze flag at the threshold and never refuses the repair because of it', () => {
         const { port, logs, posted } = fakePort();
-        port.reviews = () => [
-            { id: 1, state: 'CHANGES_REQUESTED', commitId: HEAD, actorNodeId: REVIEWER_BOT_NODE_ID, body: 'round' },
-            { id: 2, state: 'CHANGES_REQUESTED', commitId: HEAD, actorNodeId: REVIEWER_BOT_NODE_ID, body: 'round' },
-            { id: 3, state: 'CHANGES_REQUESTED', commitId: HEAD, actorNodeId: REVIEWER_BOT_NODE_ID, body: 'round' },
-        ];
+        port.reviews = () =>
+            Array.from({ length: REVIEW_ROUND_FREEZE_THRESHOLD }, (_, index) => ({
+                id: index + 1,
+                state: 'CHANGES_REQUESTED',
+                commitId: HEAD,
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                body: 'round',
+            }));
         port.reviewComments = () => [];
 
         expect(repairReviewFinding(PR, repairInput(), port)).toBe(
             `repair-recorded:${PR}:${THREAD}:${COMMIT.slice(0, 12)}`
         );
         expect(logs).toContain(
-            `review-round-escalation:${PR}:request-changes=${REVIEW_ROUND_ESCALATION_THRESHOLD}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
+            `review-round-freeze:${PR}:request-changes=${REVIEW_ROUND_FREEZE_THRESHOLD}:threshold=${REVIEW_ROUND_FREEZE_THRESHOLD}`
         );
         expect(posted).toHaveLength(1);
     });
