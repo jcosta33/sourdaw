@@ -6,8 +6,8 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { projectedTakeLaneOwners } from '../projectedTakeLaneOwners';
-import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
 import { reKeyedTakeLaneOwnersMatchStore } from '../reKeyedTakeLaneOwnersMatchStore';
+import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
 
 const mocks = vi.hoisted(() => ({ state: { value: null as TakeLaneStoreState | null } }));
 vi.mock('../../../stores/takeLaneStore', () => ({ takeLaneStore: mocks.state }));

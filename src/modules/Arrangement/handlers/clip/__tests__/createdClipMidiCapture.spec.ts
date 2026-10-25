@@ -1,10 +1,11 @@
 import * as Automerge from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { getMidiStoreState } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createdClipMidiCapture } from '../createdClipMidiCapture';
+
+import type { getMidiStoreState } from '#/modules/MIDI/useCases';
 
 const mocks = vi.hoisted(() => ({
     owner: undefined as object | undefined,

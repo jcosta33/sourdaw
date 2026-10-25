@@ -127,7 +127,7 @@ export function createdClipMidiCapture(
     }
     if (input.phase === 'discard') {
         discardByAction.get(input.action)?.();
-        return;
+        return undefined;
     }
     const owner = getCurrentAutomergeStorageMutationOwner();
     const capture = owner ? capturesByOwner.get(owner)?.get(input.action) : undefined;

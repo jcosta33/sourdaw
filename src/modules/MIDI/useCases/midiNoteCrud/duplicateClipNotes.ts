@@ -14,7 +14,7 @@ export function duplicateClipNotes(
     | undefined {
     const state = midiStore.value;
     if (!state) {
-        return;
+        return undefined;
     }
 
     const commands = [
@@ -26,7 +26,7 @@ export function duplicateClipNotes(
     ];
     const planned = transformMidiGlobalTimeState({ state, commands });
     if (planned.status === 'rejected') {
-        return;
+        return undefined;
     }
     if (!planned.hasChanges) {
         return {
@@ -38,7 +38,7 @@ export function duplicateClipNotes(
     const targetNoteIds = planned.identityRequests.map(() => createMidiNote(0, 0, 0).id);
     const transformed = transformMidiGlobalTimeState({ state, commands, targetNoteIds });
     if (transformed.status === 'rejected' || !transformed.hasChanges) {
-        return;
+        return undefined;
     }
 
     // These are the producer's constructed values, isolated before a synchronous
