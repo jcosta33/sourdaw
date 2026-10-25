@@ -70,6 +70,12 @@ type RecordedControllerTakeState = {
      * stands in for part of it.
      */
     bendRangeSeeds: Map<string, readonly MidiCC[]>;
+    /**
+     * The tail of the overdub passes landing in the store, one after another in the order they
+     * ended. A pass plans its declarations against the rows the clip holds when its turn comes,
+     * so an earlier pass that landed is in them and one that was refused is not. It never rejects.
+     */
+    overdubLanding: Promise<void>;
 };
 
 export const recordedControllerTakeState: RecordedControllerTakeState = {
@@ -79,4 +85,5 @@ export const recordedControllerTakeState: RecordedControllerTakeState = {
     carriedOverClips: new Map(),
     heldPedalSeeds: new Map(),
     bendRangeSeeds: new Map(),
+    overdubLanding: Promise.resolve(),
 };

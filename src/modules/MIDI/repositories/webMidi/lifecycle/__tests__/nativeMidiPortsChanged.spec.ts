@@ -71,6 +71,9 @@ vi.mock('../selectMidiInputNative', () => ({
 }));
 
 import { type WebMidiInputMessage } from '../../../../models/WebMidiTypes';
+import { admitPitchBend } from '../../admitPitchBend';
+import { channelPitchBendState } from '../../channelPitchBendState';
+import { heldPedalState } from '../../heldPedalState';
 import { initWebMidi } from '../initWebMidi';
 
 const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
@@ -166,6 +169,25 @@ describe('native midi-ports-changed handling', () => {
         expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ inputs: [], selectedInputId: null }), {
             persistSelection: false,
         });
+    });
+
+    it('drops the lost device wheel and pedals when the last native port is gone', async () => {
+        desktopInvokeMock.mockResolvedValue([{ index: 0, id: '2001', name: 'Launchkey' }]);
+        readPersistedInputIdMock.mockReturnValue('2001');
+        await initWebMidi({ onMidiMessage });
+        admitPitchBend(0, 0, 96);
+        heldPedalState.set(0, new Map([[64, 127]]));
+
+        desktopInvokeMock.mockResolvedValue([]);
+        registeredPortsChangedListener()({ event: 'midi-ports-changed', payload: null });
+
+        await vi.waitFor(() => {
+            expect(setStateMock).toHaveBeenCalledWith(expect.objectContaining({ inputs: [], selectedInputId: null }), {
+                persistSelection: false,
+            });
+        });
+        expect(channelPitchBendState.get(0)).toBeUndefined();
+        expect(heldPedalState.size).toBe(0);
     });
 
     it('re-enumerates on receipt instead of trusting a payload', async () => {

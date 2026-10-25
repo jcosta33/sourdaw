@@ -1,4 +1,4 @@
-import { captureProjectRevision, compactProject } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, compactProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
@@ -8,6 +8,7 @@ import { loadRecentProject } from '../recentProjects/loadRecentProject';
 
 import { captureProjectTransitionAuthority } from './captureProjectTransitionAuthority';
 import { getProjectSnapshotKey } from './getProjectSnapshotKey';
+import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { newProject } from './newProject';
 
 const notifyDiscardFailure = (message: string): false => {
@@ -26,19 +27,27 @@ export async function discardProjectChanges(): Promise<boolean> {
     const hasRecentEntry = getRecentProjects().some((entry) => entry.key === snapshotKey);
     const transitionAuthority = captureProjectTransitionAuthority();
     const transitionWasCurrent = transitionAuthority.isCurrent();
-    const projectRevision = captureProjectRevision();
-    const stillOwnsDiscard = (): boolean => {
-        const current = projectStore.value;
-        return (
-            // replaceProjectData claims `loading` before it validates the
-            // caller's predicate. That publication belongs to this exact
-            // transition, not to a user project switch, so it must retain the
-            // captured created-at/revision authority through the commit gate.
-            (current === project || (current?.createdAt === project.createdAt && current.loading === true)) &&
-            (!transitionWasCurrent || transitionAuthority.isCurrent()) &&
-            captureProjectRevision() === projectRevision
-        );
-    };
+    // Allocated before the first read, in the same turn as the epoch capture:
+    // transitions win by creation order, so a transition the user starts while
+    // the discard reads gets a higher id and supersedes it even if it prepares
+    // and activates after the checks below. A transaction allocated only for the
+    // saved-copy load would let such a transition lose to the discard.
+    const transaction = runProjectLoadTransaction();
+    const projectIdentity = captureProjectIdentity();
+    // Identity, not revision: Don't Save already discards every edit, and the
+    // native close request is only honoured while the document is unchanged from
+    // the dialog. The discard's own writes (the stop's transport halt, the
+    // replacement's `loading` publication, a closing take's commit) move the
+    // revision and the store object, and must never refuse it; only another
+    // project, which moves the document identity, does.
+    const stillOwnsProject = (): boolean =>
+        projectStore.value?.createdAt === project.createdAt && captureProjectIdentity() === projectIdentity;
+    // Checked only before this discard's load transaction prepares. Its
+    // prepare() claims the newest epoch, so the captured one reads as superseded
+    // by the discard itself; from then on the transaction's own supersession is
+    // what detects a newer transition.
+    const stillOwnsDiscard = (): boolean =>
+        stillOwnsProject() && (!transitionWasCurrent || transitionAuthority.isCurrent());
     let snapshot: string | null;
     try {
         snapshot = await readNamedProjectJson(snapshotKey);
@@ -59,7 +68,8 @@ export async function discardProjectChanges(): Promise<boolean> {
             (await loadRecentProject(snapshotKey, {
                 outgoingProject: 'discard',
                 requireDurable: true,
-                shouldProceed: stillOwnsDiscard,
+                shouldProceed: stillOwnsProject,
+                transaction,
             })) === 'committed';
         if (restored && projectStore.value?.dirty === false) {
             return true;
@@ -92,6 +102,10 @@ export async function discardProjectChanges(): Promise<boolean> {
         return freshReplacementFailure();
     }
 
+    return settleFreshReplacement();
+}
+
+async function settleFreshReplacement(): Promise<boolean> {
     const replacement = projectStore.value;
     if (!replacement?.projectId) {
         return notifyDiscardFailure(

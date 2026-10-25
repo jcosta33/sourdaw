@@ -190,10 +190,12 @@ mod tests {
 
     #[test]
     fn a_non_finite_computed_frequency_is_rejected() {
-        // A cents line may parse to infinity even though every ratio term is
-        // well formed, so the table is validated after it is computed too.
-        let scale = Scale::from_scl("! test.scl\ninfinite cents\n 1\n 1.0e400\n")
-            .expect("the line parses as f64 infinity");
+        // Table validation must also protect callers constructing scales directly.
+        let scale = Scale {
+            name: "Invalid scale".into(),
+            description: "Infinite cents".into(),
+            tones: vec![super::scala::Tone::Cents(f64::INFINITY)],
+        };
 
         let error = TuningTable::from_scale(&scale, 69, 440.0)
             .expect_err("an infinite table must not be handed back as a value");

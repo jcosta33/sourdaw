@@ -27,8 +27,11 @@ export { appendRecordedMidiNote } from './appendRecordedMidiNote';
 export { createMidiNote } from './createMidiNote';
 export { isValidMidiNoteSnapshot } from './isValidMidiNoteSnapshot';
 export { commitRecordedControllers } from './recordedControllerTake/commitRecordedControllers';
+export { countSettledOverdubPasses } from './recordedControllerTake/countSettledOverdubPasses';
 export { discardRecordedControllers } from './recordedControllerTake/discardRecordedControllers';
+export { isOverdubLanding } from './recordedControllerTake/isOverdubLanding';
 export { planRecordedControllers } from './recordedControllerTake/planRecordedControllers';
+export { waitForOverdubLanding } from './recordedControllerTake/waitForOverdubLanding';
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 export { downloadMidiFile } from './exportMidiFile';

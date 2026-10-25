@@ -84,6 +84,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../scheduling/scheduleFrozenTrack', () => ({ scheduleFrozenTrack: () => false }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
@@ -104,6 +109,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: () => ({ duration: 10 }),
     nativeLiveGraphSessionOffered: () => false,
     startNativeLiveGraphSession: mocks.startNativeLiveGraphSession,
+}));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    // The recording terminal's root-identity witness reads one function; these
+    // specs exercise no branch machinery, so the identity never moves.
+    captureProjectRootIdentity: () => 'root-identity',
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 

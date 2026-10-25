@@ -25,6 +25,8 @@ Client-side neural audio inference (DDSP instrument synthesis, Kokoro TTS, DiffS
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/BrowserAi
+pnpm test:run <changed-spec>
 ```

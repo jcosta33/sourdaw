@@ -6,6 +6,7 @@ import { getMidiAccess } from '../getMidiAccess';
 import { getState } from '../getState';
 import { persistInputId } from '../persistInputId';
 import { readPersistedInputId } from '../readPersistedInputId';
+import { resetInputDeviceControllerState } from '../resetInputDeviceControllerState';
 import { NATIVE_IDENTITY_SCHEME, WEB_MIDI_IDENTITY_SCHEME } from '../selectedInputIdStorageKeys';
 import { setMidiAccess } from '../setMidiAccess';
 import { setNativeMode } from '../setNativeMode';
@@ -217,6 +218,9 @@ async function onPortsChangedTick({ generation, onMidiMessage }: PortsChangedTic
 
     const standIn = ports[0];
     if (!standIn) {
+        // Native mode never sets an active input, so detaching reset nothing:
+        // the lost device's wheel and pedals would stand for the on-screen keyboard.
+        resetInputDeviceControllerState();
         setState({ inputs: [], selectedInputId: null, enumerationError: null }, { persistSelection: false });
         return;
     }
