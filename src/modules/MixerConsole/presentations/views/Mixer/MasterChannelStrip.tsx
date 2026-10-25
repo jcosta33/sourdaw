@@ -42,16 +42,18 @@ async function dispatchMasterGainAction(
     entryAuthority?: ProjectTransitionAuthority
 ): Promise<void> {
     // Command rechecks this authority after waiting for snapshot ownership.
-    const options = entryAuthority
-        ? { coalesceWithPrevious: coalesceWithPrevious === true, shouldExecute: entryAuthority.isCurrent }
-        : coalesceWithPrevious
-          ? { coalesceWithPrevious: true }
-          : undefined;
-    if (options) {
-        await executeUserAppAction(action, options);
-    } else {
-        await executeUserAppAction(action);
+    if (entryAuthority) {
+        await executeUserAppAction(action, {
+            coalesceWithPrevious: coalesceWithPrevious === true,
+            shouldExecute: entryAuthority.isCurrent,
+        });
+        return;
     }
+    if (coalesceWithPrevious) {
+        await executeUserAppAction(action, { coalesceWithPrevious: true });
+        return;
+    }
+    await executeUserAppAction(action);
 }
 
 async function dispatchCurrentMasterGainAction(

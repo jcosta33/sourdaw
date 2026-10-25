@@ -48,6 +48,7 @@ describe('MasterChannelStrip command admission', () => {
     afterEach(() => {
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
+        vi.restoreAllMocks();
     });
 
     it.each([false, true])(
@@ -66,8 +67,8 @@ describe('MasterChannelStrip command admission', () => {
                 },
             });
             const handler = getTransportHandlers().setMasterGain;
-            const execute = vi.fn(handler.execute);
-            registerHandlerMap({ setMasterGain: { ...handler, execute } });
+            const execute = vi.spyOn(handler, 'execute');
+            registerHandlerMap({ setMasterGain: handler });
             const authority = captureProjectTransitionAuthority();
             render(<MasterChannelStrip widthClass="w-36" />);
             const slider = screen.getByRole('slider', { name: 'Master gain' });
