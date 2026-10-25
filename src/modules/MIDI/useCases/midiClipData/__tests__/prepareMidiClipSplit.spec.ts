@@ -20,6 +20,7 @@ vi.mock('../../../stores/midiStore', () => ({
 }));
 
 const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { removeHandEditedReturnFamily } = await import('../../midiEvent/removeHandEditedReturnFamily');
 const { removeMidiCC } = await import('../../midiEvent/removeMidiCC');
 const { restoreMidiCCPoints } = await import('../../midiEvent/restoreMidiCCPoints');
 const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
@@ -324,14 +325,12 @@ describe('prepareMidiClipSplit bend range', () => {
              * What the CC lane's undo does for one click: removes the rows the add created, puts back the rows it
              * displaced where they stood in `before`. Returns the rows it displaced.
              */
-            function undoAdd(before: readonly Controller[]) {
+            function undoAdd(before: readonly Controller[], pointId: string) {
+                // The gesture contract: sweep the head's return family (whatever ids its
+                // revisits left standing), remove the clicked point, restore the displaced.
+                removeHandEditedReturnFamily('right', { channel: 0, beat: 0 });
+                removeMidiCC('right', pointId);
                 const afterIds = new Set(storedRows().map(({ id }) => id));
-                const beforeIds = new Set(before.map(({ id }) => id));
-                for (const { id } of storedRows()) {
-                    if (!beforeIds.has(id)) {
-                        removeMidiCC('right', id);
-                    }
-                }
                 const displaced = before.filter(({ id }) => !afterIds.has(id));
                 restoreMidiCCPoints('right', displaced, before);
                 return displaced;
@@ -412,8 +411,8 @@ describe('prepareMidiClipSplit bend range', () => {
                 const before = [...storedRows()];
                 const rangeBefore = createStoredBendRangeReader(before)(0, 1);
 
-                addMidiCC('right', 6, 7, 0, 0);
-                const displaced = undoAdd(before);
+                const point = addMidiCC('right', 6, 7, 0, 0);
+                const displaced = undoAdd(before, point.id);
 
                 expect(rangeBefore).toBe(5);
                 expect(displaced.some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
@@ -471,7 +470,7 @@ describe('prepareMidiClipSplit bend range', () => {
 
                     const edit = addMidiCC('right', 6, 7, 0, 0);
                     const afterEdit = [...storedRows()];
-                    undoAdd(before);
+                    undoAdd(before, edit.id);
 
                     expect(storedRows()).toEqual(before);
                     expect(readRanges([0.5, 1.5])).toEqual([2, 2]);

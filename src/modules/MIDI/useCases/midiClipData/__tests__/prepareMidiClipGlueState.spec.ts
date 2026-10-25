@@ -19,6 +19,7 @@ vi.mock('../../../stores/midiStore', () => ({
 }));
 
 const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { removeHandEditedReturnFamily } = await import('../../midiEvent/removeHandEditedReturnFamily');
 const { removeMidiCC } = await import('../../midiEvent/removeMidiCC');
 const { restoreMidiCCPoints } = await import('../../midiEvent/restoreMidiCCPoints');
 const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
@@ -690,14 +691,12 @@ describe('prepareMidiClipGlueState', () => {
                         expect(read()).toEqual([7, 7]);
                         expect(storedRows().some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
 
-                        // The CC lane's undo: remove what the add created, put back what it displaced in place.
-                        const afterIds = new Set(afterEdit.map(({ id }) => id));
-                        const beforeIds = new Set(before.map(({ id }) => id));
-                        for (const { id } of afterEdit) {
-                            if (!beforeIds.has(id)) {
-                                removeMidiCC('target', id);
-                            }
-                        }
+                        // The CC lane's undo: sweep the head's return family (whatever ids its
+                        // revisits left standing), remove the clicked point, put back what the add
+                        // displaced in place.
+                        removeHandEditedReturnFamily('target', { channel: 0, beat: 0 });
+                        removeMidiCC('target', edit.id);
+                        const afterIds = new Set(storedRows().map(({ id }) => id));
                         restoreMidiCCPoints(
                             'target',
                             before.filter(({ id }) => !afterIds.has(id)),

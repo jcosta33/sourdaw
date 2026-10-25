@@ -484,15 +484,16 @@ export function reconcileHandEditedReturns(
     // emptied, because a revisit that later finds no returns could not restore them.
     const rewrittenSource = messages.length > 0 ? messages : targetDeclaration;
 
+    // The rewritten rows reuse the standing family's ids in order, minting only for rows beyond
+    // it: every later revisit then rewrites the same ids, so an undo entry that captured the
+    // family at add time removes exactly the rows that stand when the undo runs.
     const idPrefix = firstReturn.id.replace(CARRIED_BEND_RETURN_ID, ':');
     const firstIndex = nextCarriedBendReturnIndex(rows);
-    const rewritten: MidiCC[] = rewrittenSource.map(({ controller, value, channel }, index) => ({
-        id: `${idPrefix}${carriedBendReturnIdKey(firstIndex + index)}`,
-        controller,
-        value,
-        beat: firstReturn.beat,
-        channel,
-    }));
+    const rewritten: MidiCC[] = rewrittenSource.map(({ controller, value, channel }, index) => {
+        const standing = returns[index];
+        const id = standing !== undefined ? standing.id : `${idPrefix}${carriedBendReturnIdKey(firstIndex + index)}`;
+        return { id, controller, value, beat: firstReturn.beat, channel };
+    });
     const restoredState = declareChannelState(
         replayInReaderOrder(
             returns.filter((row) => row.channel === head.channel),

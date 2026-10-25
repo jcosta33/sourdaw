@@ -117,6 +117,29 @@ describe('revisitHandEditedCCReturns', () => {
         expect(rangeAfter()).toBe(7.5);
     });
 
+    it('moving a Data Entry LSB point onto a head whose only coarse is the writer row leaves the family untouched', () => {
+        // A lone LSB sets no coarse range, and the writer's declaration is the one row the returns
+        // deliberately override, so the fine-only revisit must be a no-op here and the family must
+        // keep restoring the cut state.
+        const lsbPoint: MidiCC = { id: 'cc-hand-lsb', controller: 38, value: 50, beat: 1, channel: 0 };
+        seed([...origin, ...cutReturn, lsbPoint]);
+        const before = midiStore.value?.ccByClipId.c1 ?? [];
+
+        moveMidiCC('c1', lsbPoint.id, 0, 50);
+        revisitHandEditedCCReturns('c1', { channel: 0, beat: 0 }, { editedController: 38 });
+
+        // The move itself legitimately repositions the point; the family must be untouched.
+        const after = midiStore.value?.ccByClipId.c1 ?? [];
+        expect(
+            after.filter(({ id }) => id.includes('rpn-after-carried')).map((row) => [row.id, row.controller, row.value])
+        ).toEqual(
+            before
+                .filter(({ id }) => id.includes('rpn-after-carried'))
+                .map((row) => [row.id, row.controller, row.value])
+        );
+        expect(rangeAfter()).toBe(2);
+    });
+
     it('a real split origin carrying data bytes never leaves later bends at the orphaned fine half after a delete', () => {
         // A carved right half's origin declares the cut state with its data bytes (the writer's
         // `:rpn-` rows); the add replaces the origin's coarse at its key, so the delete revisits a

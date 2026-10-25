@@ -7,6 +7,7 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
     addMidiCC,
+    removeHandEditedReturnFamily,
     removeMidiCC,
     moveMidiCC,
     restoreMidiCCPoints,
@@ -81,12 +82,8 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const cc = addMidiCC(clipId, controller, value, beat, channel);
         const afterClick = midiStore.value?.ccByClipId[clipId] ?? [];
         const afterIds = new Set(afterClick.map((context) => context.id));
-        const preClickIds = new Set(allCc.map((context: MidiCC) => context.id));
         const preClickPoints = allCc.filter((context: MidiCC) => !afterIds.has(context.id));
-        const createdIds = new Set([
-            cc.id,
-            ...afterClick.filter((context) => !preClickIds.has(context.id)).map((context) => context.id),
-        ]);
+        const head = { channel: cc.channel, beat: cc.beat };
         // Redo must re-create the clicked point under the SAME id: a fresh id would
         // leave the undo side removing an id the store no longer holds.
         const redo = (): void => {
@@ -95,9 +92,8 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         pushUndoEntry(
             'Add CC point',
             () => {
-                for (const createdId of createdIds) {
-                    removeMidiCC(clipId, createdId);
-                }
+                removeHandEditedReturnFamily(clipId, head);
+                removeMidiCC(clipId, cc.id);
                 restoreMidiCCPoints(clipId, preClickPoints, allCc);
             },
             redo

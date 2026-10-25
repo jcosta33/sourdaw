@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiCC,
+    removeHandEditedReturnFamily,
     removeMidiCC,
     moveMidiCC,
     restoreMidiCCPoints,
@@ -93,6 +94,13 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
             }
         }
         laneMocks.midiState.ccByClipId[clipId] = restored;
+    }),
+    removeHandEditedReturnFamily: vi.fn((clipId: string, head: { channel: number; beat: number }): void => {
+        // Mirrors the real use case: sweeps the head's return family by its id shape.
+        const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
+        laneMocks.midiState.ccByClipId[clipId] = existing.filter(
+            (point) => !(point.beat <= head.beat + 0.002 && point.id.includes('rpn-after-carried'))
+        );
     }),
     moveMidiCC: vi.fn((clipId: string, ccId: string, beat: number, value: number): void => {
         const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
@@ -373,9 +381,11 @@ describe('CCLane', () => {
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             undoFn!();
 
-            expect(vi.mocked(removeMidiCC).mock.calls.map(([, id]) => id)).toEqual(
-                expect.arrayContaining(['clicked', rewrittenReturn.id])
-            );
+            expect(removeHandEditedReturnFamily).toHaveBeenCalledWith('clip-1', {
+                channel: 0,
+                beat: 0,
+            });
+            expect(vi.mocked(removeMidiCC).mock.calls.map(([, id]) => id)).toEqual(['clicked']);
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
             expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [returnRow], [returnRow, unrelated]);
             expect(pushUndoEntry).toHaveBeenCalledTimes(1);
