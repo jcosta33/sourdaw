@@ -703,3 +703,21 @@ PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — 
 Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
 
 Probe: before merging, when the base tip has moved since the head's last Gate, verify the actual merge ref (base tip + head) compiles — `pnpm typecheck` and `typecheck:e2e` — not just the head. Reverting the base-side hunk or the head-side removal must each fail to compile in the combined tree when the other side stays, which is what no validated run observed here.
+
+### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
+
+PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
+At #5613 head `af579c26`, real Undo-first peer sync could publish an unrelated surviving-clip
+rename after restoreClip staged its track write but before Command committed. Hydration erased
+the local restoration; Undo still consumed history. Historical introducing-review stance coverage
+is unverified. The missing probe was actual commit preservation after replay admission.
+
+Drive real Command removal/Undo and actual AutomergeSync continuations in both admission orders.
+Require either both edits in raw authority/projection or zero-write refusal with past retained.
+Repeat with identical and different same-ID recreation, plus no-peer, fully published unrelated
+peer, grouped/ripple and same-target placement/split controls. A setter-injected microtask alone
+does not establish the production receive protocol. Authenticate affected raw pre-images and the
+prospective committed owners; a written handler result or optimistic store does not prove either.
+A projection may run inside an entered transaction scope, so ambient owner equality cannot
+certify its data as newly authored intent. Interpose publication and hydration there, with an
+unrelated notification before hydration, and require the original restoration obligation to remain.

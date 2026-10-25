@@ -1204,3 +1204,21 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
+
+PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
+At #5613 head `af579c26`, real Undo-first peer sync could publish an unrelated surviving-clip
+rename after restoreClip staged its track write but before Command committed. Hydration erased
+the local restoration; Undo still consumed history. Historical introducing-review stance coverage
+is unverified. The missing probe was actual commit preservation after replay admission.
+
+Drive real Command removal/Undo and actual AutomergeSync continuations in both admission orders.
+Require either both edits in raw authority/projection or zero-write refusal with past retained.
+Repeat with identical and different same-ID recreation, plus no-peer, fully published unrelated
+peer, grouped/ripple and same-target placement/split controls. A setter-injected microtask alone
+does not establish the production receive protocol. Authenticate affected raw pre-images and the
+prospective committed owners; a written handler result or optimistic store does not prove either.
+A projection may run inside an entered transaction scope, so ambient owner equality cannot
+certify its data as newly authored intent. Interpose publication and hydration there, with an
+unrelated notification before hydration, and require the original restoration obligation to remain.

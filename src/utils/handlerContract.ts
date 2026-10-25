@@ -3161,6 +3161,17 @@ export type HandlerPostCommitEffect =
     | { readonly kind: 'runtime-graph'; readonly remediation: 'retry' | 'repair' }
     | { readonly kind: 'external-effect'; readonly remediation: 'reconcile' | 'manual-repair' };
 
+/** Runtime-only owner evidence; never serialized into actions or history. */
+export type HandlerCommitValidation = {
+    /** Authenticate only the authoritative owners this write was admitted against. */
+    readonly beforeCommit: () => string | null;
+    readonly documentId: string;
+    /** Runs against the prospective document inside its atomic storage change. */
+    readonly validateDocument: (document: Readonly<Record<string, unknown>>) => string | null;
+    /** Idempotent, nonthrowing cleanup once this handler's transaction has finished executing. */
+    readonly release: () => void;
+};
+
 type HandlerDeferredEffects =
     | {
           afterCommit?: undefined;
@@ -3192,6 +3203,8 @@ export type HandlerExecutionResult = {
      *  Carried into the conflict the dispatcher raises so the caller learns the
      *  bound rather than only that the write did not happen. */
     reason?: string;
+    /** Only a written project result may supply a commit guard. */
+    commitValidation?: HandlerCommitValidation;
 } & HandlerDeferredEffects;
 
 export type HandlerValidationContext = {
