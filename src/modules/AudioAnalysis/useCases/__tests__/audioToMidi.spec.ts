@@ -8,13 +8,39 @@ const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn(),
     executeAppAction: vi.fn(),
     clipStartTempo: null as number | null,
+    tempoChangeBeat: null as number | null,
+    tempoAfterChange: null as number | null,
 }));
 
-vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
-    ...(await importOriginal<Record<string, unknown>>()),
-    readTempoAtBeat: ({ beat }: { beat: number }) =>
-        (beat === 4 ? mocks.clipStartTempo : null) ?? mocks.getTransportState()?.tempo ?? 120,
-}));
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const baseTempo = () => mocks.getTransportState()?.tempo ?? 120;
+    const changeBeat = () => mocks.tempoChangeBeat ?? (mocks.clipStartTempo === null ? null : 4);
+    const changedTempo = () => mocks.tempoAfterChange ?? mocks.clipStartTempo;
+    const secondsAtBeat = (beat: number) => {
+        const boundary = changeBeat();
+        const after = changedTempo();
+        if (boundary === null || after === null || beat <= boundary) return (beat * 60) / baseTempo();
+        return (boundary * 60) / baseTempo() + ((beat - boundary) * 60) / after;
+    };
+    return {
+        ...(await importOriginal<Record<string, unknown>>()),
+        readTempoAtBeat: ({ beat }: { beat: number }) => {
+            const boundary = changeBeat();
+            const after = changedTempo();
+            return boundary !== null && after !== null && beat >= boundary ? after : baseTempo();
+        },
+        readSecondsAtBeat: ({ beat }: { beat: number }) => secondsAtBeat(beat),
+        readBeatAtSamples: ({ samples, sampleRate }: { samples: number; sampleRate: number }) => {
+            const seconds = samples / sampleRate;
+            const boundary = changeBeat();
+            const after = changedTempo();
+            if (boundary === null || after === null || seconds <= secondsAtBeat(boundary)) {
+                return (seconds * baseTempo()) / 60;
+            }
+            return boundary + ((seconds - secondsAtBeat(boundary)) * after) / 60;
+        },
+    };
+});
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mocks.addClip,
@@ -46,6 +72,12 @@ import { detectOnsets } from '../detectOnsets';
 const SAMPLE_RATE = 44100;
 const HOP_SIZE = 512;
 const FRAME_SIZE = 1024;
+
+beforeEach(() => {
+    mocks.clipStartTempo = null;
+    mocks.tempoChangeBeat = null;
+    mocks.tempoAfterChange = null;
+});
 
 /**
  * Build a mono AudioBuffer-like object. `fill(index)` returns the sample value at
@@ -132,6 +164,133 @@ describe('audioToMidi track creation routes through the command boundary (Fix 1)
         expect(mocks.executeAppAction).toHaveBeenCalled();
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.addMidiNote).not.toHaveBeenCalled();
+    });
+});
+
+describe('audioToMidi follows the physical source and tempo map', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.addMidiNote.mockReset();
+        mocks.getTransportState.mockReturnValue({ tempo: 120 });
+        mocks.addClip.mockReturnValue({ id: 'new-midi-clip' });
+    });
+
+    function arrangeClip(clip: Record<string, unknown>): void {
+        mocks.getAllTracks.mockReturnValue([{ id: 't1', kind: 'midi', clips: [clip] }]);
+    }
+
+    function stepBuffer(onsetSeconds: number, durationSeconds: number): AudioBuffer {
+        return makeBuffer(Math.round(durationSeconds * SAMPLE_RATE), (index) =>
+            index >= Math.round(onsetSeconds * SAMPLE_RATE) ? 0.8 : 0
+        );
+    }
+
+    function notes(): Array<{ pitch: number; beat: number }> {
+        return mocks.addMidiNote.mock.calls.map((call) => ({ pitch: call[1] as number, beat: call[2] as number }));
+    }
+
+    it('honours canonical zero over stale beat offset and integrates a tempo change before the onset', () => {
+        mocks.tempoChangeBeat = 3;
+        mocks.tempoAfterChange = 60;
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 2,
+            endBeat: 5,
+            name: 'Drum',
+            audioOffsetSeconds: 0,
+            audioOffsetBeats: 3,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(1.5, 2));
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
+        expect(notes()).toHaveLength(1);
+        expect(notes()[0]!.pitch).toBe(36);
+        // Beat 2→3 takes 0.5 s; beat 3→4 takes 1 s. The attack is two beats into the clip.
+        expect(notes()[0]!.beat).toBeCloseTo(2, 1);
+    });
+
+    it.each([
+        { rate: 0.5, expectedBeat: 3 },
+        { rate: 2, expectedBeat: 1.125 },
+    ])('places a $rate-rate source attack after signed pre-roll across the tempo change', ({ rate, expectedBeat }) => {
+        mocks.tempoChangeBeat = 3;
+        mocks.tempoAfterChange = 60;
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 2,
+            endBeat: 6,
+            name: 'Drum',
+            audioOffsetSeconds: -0.5,
+            audioOffsetBeats: 0,
+            stretchMode: 'repitch',
+            stretchRatio: rate,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(stepBuffer(0.75, 1.5));
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(true);
+        expect(notes()).toHaveLength(1);
+        // The detector reports a leading energy frame, about 0.06 beat before the sample step.
+        expect(Math.abs(notes()[0]!.beat - expectedBeat)).toBeLessThan(0.08);
+    });
+
+    it('uses original pass seams and distinct first, wrap, and later-head sources', () => {
+        const regionTone = (index: number, sourceStart: number, sourceEnd: number, frequency: number) => {
+            const seconds = index / SAMPLE_RATE;
+            if (seconds < sourceStart || seconds >= sourceEnd) return 0;
+            const amplitude = seconds - sourceStart >= 0.14 ? 0.9 : 0.06;
+            return amplitude * Math.sin((2 * Math.PI * frequency * index) / SAMPLE_RATE);
+        };
+        const buffer = makeBuffer(
+            3 * SAMPLE_RATE,
+            (index) =>
+                regionTone(index, 0, 1, 660) +
+                regionTone(index, 1, 1.5, 440) +
+                regionTone(index, 2, 2.5, 330) +
+                regionTone(index, 2.6, 3, 990)
+        );
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 1,
+            endBeat: 5,
+            name: 'Three-part loop',
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: -2,
+            audioOffsetSeconds: 2,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 1,
+            audioLoopPassOriginBeat: 0,
+            audioOffsetBeats: 7,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1, mode: 'pitched' })).toBe(true);
+        const emitted = notes().sort((left, right) => left.beat - right.beat);
+        expect(emitted).toHaveLength(3);
+        expect(emitted.map((note) => note.pitch)).toEqual([64, 76, 69]);
+        expect(emitted[0]!.beat).toBeCloseTo(0.28, 1);
+        expect(emitted[1]!.beat).toBeCloseTo(1.28, 1);
+        expect(emitted[2]!.beat).toBeCloseTo(3.28, 1);
+    });
+
+    it('does not read an onset when the canonical entry is the exclusive physical source end', () => {
+        const buffer = stepBuffer(0.25, 1);
+        arrangeClip({
+            id: 'c1',
+            audioBufferId: 'buf1',
+            startBeat: 0,
+            endBeat: 2,
+            name: 'Ended source',
+            audioOffsetSeconds: buffer.duration,
+            audioOffsetBeats: 0,
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(buffer);
+
+        expect(audioToMidi({ clipId: 'c1', trackId: 't1', sensitivity: 0.1 })).toBe(false);
+        expect(notes()).toHaveLength(0);
     });
 });
 
