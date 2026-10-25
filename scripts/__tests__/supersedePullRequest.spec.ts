@@ -1758,22 +1758,29 @@ describe('pull-request supersession', () => {
         'binds native registered late-parent provenance to child source %s',
         async (sourceRepository) => {
             await withLockRoot(async (root) => {
-                const current = nativeSupersessionFixture(root, undefined, true, {}, {
-                    initialMarkers: false,
-                    lateParent: true,
-                });
+                const current = nativeSupersessionFixture(
+                    root,
+                    undefined,
+                    true,
+                    {},
+                    {
+                        initialMarkers: false,
+                        lateParent: true,
+                    }
+                );
                 registerNativeParent(root);
                 current.setChildSource(sourceRepository);
                 expect(current.port.inspect(oldNumber).headRepository).toBe(sourceRepository);
                 expect(current.port.isCommitAncestor?.('jcosta33/sourdaw', parentHead, head)).toBe(false);
-                const run = () => runSerialized(
-                    root,
-                    current.port,
-                    repairedLineage,
-                    serializeFixture,
-                    parentNumber,
-                    parentReplacementNumber
-                );
+                const run = () =>
+                    runSerialized(
+                        root,
+                        current.port,
+                        repairedLineage,
+                        serializeFixture,
+                        parentNumber,
+                        parentReplacementNumber
+                    );
                 if (sourceRepository === 'jcosta33/sourdaw') {
                     await expect(run()).resolves.toBe('pull-request-superseded:2244:2246');
                     const stored = current.comments().find((comment) => comment.body === current.bindingBody);
@@ -1792,9 +1799,15 @@ describe('pull-request supersession', () => {
                     await expect(run()).rejects.toThrow(/head repository.*native registered parent provenance/i);
                     expect(current.state()).toBe('OPEN');
                     expect(current.comments()).toEqual([oldComment]);
-                    expect(current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+                    expect(
+                        current.events.filter((event) =>
+                            /^(?:comment|close|delete|pull-request-superseded:)/.test(event)
+                        )
+                    ).toEqual([]);
                 }
-                expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)).toBeUndefined();
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeUndefined();
             });
         }
     );
@@ -1803,16 +1816,19 @@ describe('pull-request supersession', () => {
             const current = nativeSupersessionFixture(root, undefined, true, {}, { initialMarkers: false });
             registerNativeParent(root, 9999);
             current.setChildSource('fork/sourdaw');
-            const run = () => runSerialized(
-                root,
-                current.port,
-                repairedLineage,
-                serializeFixture,
-                parentNumber,
-                parentReplacementNumber
-            );
+            const run = () =>
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                );
             await expect(run()).resolves.toBe('pull-request-superseded:2244:2246');
-            const stored = current.comments().find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
+            const stored = current
+                .comments()
+                .find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
             expect(stored).toBeDefined();
             if (stored === undefined) {
                 throw new Error('expected native fork parent binding');
@@ -1835,45 +1851,57 @@ describe('pull-request supersession', () => {
             expect(() => current.port.inspect(oldNumber)).toThrow(/selected live base ref/i);
             expect(current.events).toContain('old-core-wire-has-base-ref:false');
             expect(current.events).not.toContain('old-comments');
-            expect(current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+            expect(
+                current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
+            ).toEqual([]);
         });
     });
-    it.each([false, true])('refuses an omitted selected live-ref witness before writes with CLOSED replay=%s', async (replay) => {
-        await withLockRoot(async (root) => {
-            const current = nativeSupersessionFixture(root, undefined, true);
-            const run = () => runSerialized(
-                root,
-                current.port,
-                repairedLineage,
-                serializeFixture,
-                parentNumber,
-                parentReplacementNumber
-            );
-            if (replay) {
-                await run();
-            }
-            current.setChildBaseRef({ name: parentBranch, repository: 'jcosta33/sourdaw', target: movedHead });
-            current.omitChildBaseRefFromNativeResponse();
-            const start = current.events.length;
-            await expect(run()).rejects.toThrow(/selected live base ref/i);
-            const observed = current.events.slice(start);
-            expect(observed).toContain('old-core-wire-has-base-ref:false');
-            expect(observed).toContain(`old-base-ref:${JSON.stringify({
-                name: parentBranch,
-                repository: { nameWithOwner: 'jcosta33/sourdaw' },
-                target: { oid: movedHead },
-            })}`);
-            expect(observed.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
-            expect(current.state()).toBe(replay ? 'CLOSED' : 'OPEN');
-            expect(current.comments().map((comment) => comment.body)).toEqual([
-                oldComment.body,
-                receiptBody,
-                lineageBody,
-                current.bindingBody,
-            ]);
-            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)).toBeUndefined();
-        });
-    });
+    it.each([false, true])(
+        'refuses an omitted selected live-ref witness before writes with CLOSED replay=%s',
+        async (replay) => {
+            await withLockRoot(async (root) => {
+                const current = nativeSupersessionFixture(root, undefined, true);
+                const run = () =>
+                    runSerialized(
+                        root,
+                        current.port,
+                        repairedLineage,
+                        serializeFixture,
+                        parentNumber,
+                        parentReplacementNumber
+                    );
+                if (replay) {
+                    await run();
+                }
+                current.setChildBaseRef({ name: parentBranch, repository: 'jcosta33/sourdaw', target: movedHead });
+                current.omitChildBaseRefFromNativeResponse();
+                const start = current.events.length;
+                await expect(run()).rejects.toThrow(/selected live base ref/i);
+                const observed = current.events.slice(start);
+                expect(observed).toContain('old-core-wire-has-base-ref:false');
+                expect(observed).toContain(
+                    `old-base-ref:${JSON.stringify({
+                        name: parentBranch,
+                        repository: { nameWithOwner: 'jcosta33/sourdaw' },
+                        target: { oid: movedHead },
+                    })}`
+                );
+                expect(
+                    observed.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
+                ).toEqual([]);
+                expect(current.state()).toBe(replay ? 'CLOSED' : 'OPEN');
+                expect(current.comments().map((comment) => comment.body)).toEqual([
+                    oldComment.body,
+                    receiptBody,
+                    lineageBody,
+                    current.bindingBody,
+                ]);
+                expect(
+                    readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+                ).toBeUndefined();
+            });
+        }
+    );
     it('distinguishes a missing projected ref from an explicitly owned undefined native expectation', async () => {
         await withLockRoot(async (root) => {
             const current = nativeSupersessionFixture(root, undefined, true);
@@ -2723,84 +2751,97 @@ describe('pull-request supersession', () => {
         }
     );
 
-    it.each(['fork/sourdaw', null])('refuses real registered provenance borrowed by child source %s', async (sourceRepository) => {
-        await withLockRoot(async (root) => {
-            const current = realDependencyFixture(root, 'late', true);
-            current.register();
-            const inspect = current.port.inspect;
-            current.port.inspect = (number) => {
-                const value = inspect(number);
-                if (number === oldNumber) {
-                    return { ...value, headRepository: sourceRepository };
-                }
-                return value;
-            };
-            expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
-            expect(current.dag.ancestor(current.dag.finalParent, current.dag.oldChild)).toBe(false);
-            expect(() => current.run()).toThrow(/head repository.*native registered parent provenance/i);
-            expect(current.state().state).toBe('OPEN');
-            expect(current.calls.filter((call) => /^(?:comment|close|delete|log):/.test(call))).toEqual([]);
-        });
-    });
-    it.each(['fork/sourdaw', null])('preserves real final-parent containment for child source %s despite another local ledger', async (initialSource) => {
-        await withLockRoot(async (root) => {
-            const current = realDependencyFixture(root, 'direct', true);
-            current.register({ parentPullRequest: 9999 });
-            let sourceRepository: string | null = initialSource;
-            let deletedRef = false;
-            const inspect = current.port.inspect;
-            current.port.inspect = (number) => {
-                const value = inspect(number);
-                if (number !== oldNumber) {
+    it.each(['fork/sourdaw', null])(
+        'refuses real registered provenance borrowed by child source %s',
+        async (sourceRepository) => {
+            await withLockRoot(async (root) => {
+                const current = realDependencyFixture(root, 'late', true);
+                current.register();
+                const inspect = current.port.inspect;
+                current.port.inspect = (number) => {
+                    const value = inspect(number);
+                    if (number === oldNumber) {
+                        return { ...value, headRepository: sourceRepository };
+                    }
                     return value;
-                }
-                let baseRef = value.baseRef;
-                if (deletedRef) {
-                    baseRef = null;
-                }
-                return { ...value, baseRef, headRepository: sourceRepository };
-            };
-            expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
-            expect(current.run()).toBe('pull-request-superseded:2244:2246');
-            const stored = current.state().comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
-            expect(stored).toBeDefined();
-            if (stored === undefined) {
-                throw new Error('expected source-bound pure ancestry marker');
-            }
-            expect(parseSupersessionParentBinding(stored.body)).toMatchObject({
-                child: { sourceRepository: initialSource },
-                provenance: { kind: 'final-parent-head' },
+                };
+                expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
+                expect(current.dag.ancestor(current.dag.finalParent, current.dag.oldChild)).toBe(false);
+                expect(() => current.run()).toThrow(/head repository.*native registered parent provenance/i);
+                expect(current.state().state).toBe('OPEN');
+                expect(current.calls.filter((call) => /^(?:comment|close|delete|log):/.test(call))).toEqual([]);
             });
-            const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
-            deletedRef = true;
-            expect(current.run()).toBe('pull-request-superseded:2244:2246');
-            sourceRepository = 'another/sourdaw';
-            expect(() => current.run()).toThrow(/child source repository changed/i);
-            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
-            expect(current.state().comments).toContainEqual(stored);
-        });
-    });
-    it.each(['fork/sourdaw', null])('refuses registered replay source %s after local ledger and base-ref cleanup', async (sourceRepository) => {
-        await withLockRoot(async (root) => {
-            const current = realDependencyFixture(root, 'late', true);
-            current.register();
-            expect(current.run()).toBe('pull-request-superseded:2244:2246');
-            const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
-            rmSync(join(root, '.agents/lane-stacks'), { recursive: true });
-            execFileSync('git', ['config', '--unset', 'branch.fix/old-pull-request.sourdaw-stack-fork'], { cwd: root });
-            const inspect = current.port.inspect;
-            current.port.inspect = (number) => {
-                const value = inspect(number);
-                if (number === oldNumber) {
-                    return { ...value, baseRef: null, headRepository: sourceRepository };
+        }
+    );
+    it.each(['fork/sourdaw', null])(
+        'preserves real final-parent containment for child source %s despite another local ledger',
+        async (initialSource) => {
+            await withLockRoot(async (root) => {
+                const current = realDependencyFixture(root, 'direct', true);
+                current.register({ parentPullRequest: 9999 });
+                let sourceRepository: string | null = initialSource;
+                let deletedRef = false;
+                const inspect = current.port.inspect;
+                current.port.inspect = (number) => {
+                    const value = inspect(number);
+                    if (number !== oldNumber) {
+                        return value;
+                    }
+                    let baseRef = value.baseRef;
+                    if (deletedRef) {
+                        baseRef = null;
+                    }
+                    return { ...value, baseRef, headRepository: sourceRepository };
+                };
+                expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
+                expect(current.run()).toBe('pull-request-superseded:2244:2246');
+                const stored = current
+                    .state()
+                    .comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
+                expect(stored).toBeDefined();
+                if (stored === undefined) {
+                    throw new Error('expected source-bound pure ancestry marker');
                 }
-                return value;
-            };
-            expect(() => current.run()).toThrow(/child source repository changed/i);
-            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
-            expect(current.calls.filter((call) => call.startsWith('log:'))).toHaveLength(1);
-        });
-    });
+                expect(parseSupersessionParentBinding(stored.body)).toMatchObject({
+                    child: { sourceRepository: initialSource },
+                    provenance: { kind: 'final-parent-head' },
+                });
+                const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
+                deletedRef = true;
+                expect(current.run()).toBe('pull-request-superseded:2244:2246');
+                sourceRepository = 'another/sourdaw';
+                expect(() => current.run()).toThrow(/child source repository changed/i);
+                expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
+                expect(current.state().comments).toContainEqual(stored);
+            });
+        }
+    );
+    it.each(['fork/sourdaw', null])(
+        'refuses registered replay source %s after local ledger and base-ref cleanup',
+        async (sourceRepository) => {
+            await withLockRoot(async (root) => {
+                const current = realDependencyFixture(root, 'late', true);
+                current.register();
+                expect(current.run()).toBe('pull-request-superseded:2244:2246');
+                const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
+                rmSync(join(root, '.agents/lane-stacks'), { recursive: true });
+                execFileSync('git', ['config', '--unset', 'branch.fix/old-pull-request.sourdaw-stack-fork'], {
+                    cwd: root,
+                });
+                const inspect = current.port.inspect;
+                current.port.inspect = (number) => {
+                    const value = inspect(number);
+                    if (number === oldNumber) {
+                        return { ...value, baseRef: null, headRepository: sourceRepository };
+                    }
+                    return value;
+                };
+                expect(() => current.run()).toThrow(/child source repository changed/i);
+                expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
+                expect(current.calls.filter((call) => call.startsWith('log:'))).toHaveLength(1);
+            });
+        }
+    );
     it.each([
         'missing',
         'wrong parent PR',
@@ -2855,95 +2896,109 @@ describe('pull-request supersession', () => {
             )
         ).toThrow(/contradictory/i);
         const { sourceRepository: _source, ...legacyChild } = parentBinding.child;
-        expect(() => parseSupersessionParentBinding(
-            `sourdaw-supersession-parent-v1 ${canonicalJson({ ...parentBinding, child: legacyChild })}`
-        )).toThrow(/keys/i);
-        expect(() => parseSupersessionParentBinding(
-            `sourdaw-supersession-parent-v1 ${canonicalJson({
+        expect(() =>
+            parseSupersessionParentBinding(
+                `sourdaw-supersession-parent-v1 ${canonicalJson({ ...parentBinding, child: legacyChild })}`
+            )
+        ).toThrow(/keys/i);
+        expect(() =>
+            parseSupersessionParentBinding(
+                `sourdaw-supersession-parent-v1 ${canonicalJson({
+                    ...parentBinding,
+                    child: { ...parentBinding.child, sourceRepository: 42 },
+                })}`
+            )
+        ).toThrow(/child source repository.*string/i);
+    });
+
+    it.each(['fork/sourdaw', null])(
+        'rejects a canonical registered binding attesting source %s',
+        (sourceRepository) => {
+            const record = {
                 ...parentBinding,
-                child: { ...parentBinding.child, sourceRepository: 42 },
-            })}`
-        )).toThrow(/child source repository.*string/i);
-    });
-
-    it.each(['fork/sourdaw', null])('rejects a canonical registered binding attesting source %s', (sourceRepository) => {
-        const record = {
-            ...parentBinding,
-            child: { ...parentBinding.child, sourceRepository },
-            provenance: { kind: 'registered-lane-stack', forkHead: parentHead, admittedParentHead: parentHead },
-        };
-        expect(() => parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${canonicalJson(record)}`)).toThrow(
-            /registered child source repository is invalid/i
-        );
-    });
-
-    it.each(['missing', 'foreign', 'duplicate', 'malformed', 'different parent', 'contradictory descriptor', 'missing child source'] as const)(
-        'refuses CLOSED dependency replay with %s preserved binding',
-        async (scenario) => {
-            await withLockRoot(async (root) => {
-                const current = realDependencyFixture(root, 'late', true);
-                current.register();
-                expect(current.run()).toBe('pull-request-superseded:2244:2246');
-                const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
-                const inspect = current.port.inspect;
-                current.port.inspect = (number) => {
-                    const value = inspect(number);
-                    if (number !== oldNumber) {
-                        return value;
-                    }
-                    const comments = value.comments.flatMap((comment) => {
-                        if (!comment.body.startsWith('sourdaw-supersession-parent-v1 ')) {
-                            return [comment];
-                        }
-                        if (scenario === 'missing') {
-                            return [];
-                        }
-                        if (scenario === 'foreign') {
-                            return [{ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID }];
-                        }
-                        if (scenario === 'duplicate') {
-                            return [comment, { ...comment, id: 'IC_duplicate_binding' }];
-                        }
-                        if (scenario === 'malformed') {
-                            return [{ ...comment, body: `${comment.body}\nextra` }];
-                        }
-                        if (scenario === 'missing child source') {
-                            const record = parseSupersessionParentBinding(comment.body);
-                            const { sourceRepository: _source, ...child } = record.child;
-                            return [{
-                                ...comment,
-                                body: `sourdaw-supersession-parent-v1 ${canonicalJson({ ...record, child })}`,
-                            }];
-                        }
-                        if (scenario === 'different parent') {
-                            const record = parseSupersessionParentBinding(comment.body);
-                            return [
-                                {
-                                    ...comment,
-                                    body: bindingBody({ ...record, parent: { ...record.parent, number: 9999 } }),
-                                },
-                            ];
-                        }
-                        return [comment];
-                    });
-                    return { ...value, baseRef: null, comments };
-                };
-                if (scenario === 'contradictory descriptor') {
-                    const read = current.port.readRegisteredLaneStack;
-                    current.port.readRegisteredLaneStack = (branch) => {
-                        const stack = read?.(branch);
-                        if (stack === undefined) {
-                            throw new Error('expected registered fixture');
-                        }
-                        return { ...stack, parentPullRequest: 9999 };
-                    };
-                }
-                expect(() => current.run()).toThrow(/binding|provenance|JSON|canonical/i);
-                expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
-                expect(current.calls.filter((call) => call.startsWith('log:'))).toHaveLength(1);
-            });
+                child: { ...parentBinding.child, sourceRepository },
+                provenance: { kind: 'registered-lane-stack', forkHead: parentHead, admittedParentHead: parentHead },
+            };
+            expect(() =>
+                parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${canonicalJson(record)}`)
+            ).toThrow(/registered child source repository is invalid/i);
         }
     );
+
+    it.each([
+        'missing',
+        'foreign',
+        'duplicate',
+        'malformed',
+        'different parent',
+        'contradictory descriptor',
+        'missing child source',
+    ] as const)('refuses CLOSED dependency replay with %s preserved binding', async (scenario) => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'late', true);
+            current.register();
+            expect(current.run()).toBe('pull-request-superseded:2244:2246');
+            const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
+            const inspect = current.port.inspect;
+            current.port.inspect = (number) => {
+                const value = inspect(number);
+                if (number !== oldNumber) {
+                    return value;
+                }
+                const comments = value.comments.flatMap((comment) => {
+                    if (!comment.body.startsWith('sourdaw-supersession-parent-v1 ')) {
+                        return [comment];
+                    }
+                    if (scenario === 'missing') {
+                        return [];
+                    }
+                    if (scenario === 'foreign') {
+                        return [{ ...comment, authorNodeId: REVIEWER_BOT_NODE_ID }];
+                    }
+                    if (scenario === 'duplicate') {
+                        return [comment, { ...comment, id: 'IC_duplicate_binding' }];
+                    }
+                    if (scenario === 'malformed') {
+                        return [{ ...comment, body: `${comment.body}\nextra` }];
+                    }
+                    if (scenario === 'missing child source') {
+                        const record = parseSupersessionParentBinding(comment.body);
+                        const { sourceRepository: _source, ...child } = record.child;
+                        return [
+                            {
+                                ...comment,
+                                body: `sourdaw-supersession-parent-v1 ${canonicalJson({ ...record, child })}`,
+                            },
+                        ];
+                    }
+                    if (scenario === 'different parent') {
+                        const record = parseSupersessionParentBinding(comment.body);
+                        return [
+                            {
+                                ...comment,
+                                body: bindingBody({ ...record, parent: { ...record.parent, number: 9999 } }),
+                            },
+                        ];
+                    }
+                    return [comment];
+                });
+                return { ...value, baseRef: null, comments };
+            };
+            if (scenario === 'contradictory descriptor') {
+                const read = current.port.readRegisteredLaneStack;
+                current.port.readRegisteredLaneStack = (branch) => {
+                    const stack = read?.(branch);
+                    if (stack === undefined) {
+                        throw new Error('expected registered fixture');
+                    }
+                    return { ...stack, parentPullRequest: 9999 };
+                };
+            }
+            expect(() => current.run()).toThrow(/binding|provenance|JSON|canonical/i);
+            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
+            expect(current.calls.filter((call) => call.startsWith('log:'))).toHaveLength(1);
+        });
+    });
 
     it('never infers the distinct replacement from the parent receipt', () => {
         const { port, calls } = distinctPort();
