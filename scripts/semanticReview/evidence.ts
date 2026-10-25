@@ -77,8 +77,10 @@ import {
 } from './evidenceOrdering.ts';
 import { exclusionReason, isSensitivePath } from './exclusion.ts';
 import { regionFitsRequest } from './fit.ts';
+import { isCollectedSpec } from './rules.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
+import { certifyTestCaseContext, type TestCaseContextProof } from './testCaseContext.ts';
 import {
     CREDENTIAL_SHAPED_WITHHELD_CODE,
     nothingSentReason,
@@ -162,6 +164,8 @@ export type SemanticEvidenceSet = {
     readonly attribution: ReadonlyMap<string, readonly string[]>;
     /** Each changed path's own added and removed lines; a path that could not be read is absent. */
     readonly changedLines: ReadonlyMap<string, PathChangedLines>;
+    /** Private planner proof: no new source is admitted to satisfy the case-level question. */
+    readonly testCaseContext?: ReadonlyMap<string, TestCaseContextProof>;
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
@@ -775,6 +779,43 @@ export function collectEvidence(input: {
     for (const [evidenceId, changedPaths] of admission.attribution) {
         attribution.set(evidenceId, [...changedPaths].sort(compareLexicographic));
     }
+    const testCaseContext = new Map<string, TestCaseContextProof>();
+    for (const file of assessed) {
+        if (!isCollectedSpec(file.path)) {
+            continue;
+        }
+        const sides = contents.get(file.path);
+        const hunks = hunksByPath.get(file.path);
+        const lines = changedLines.get(file.path);
+        const ownReferences = admission.references.filter((reference) =>
+            attribution.get(reference.evidenceId)?.includes(file.path)
+        );
+        testCaseContext.set(
+            file.path,
+            certifyTestCaseContext({
+                before:
+                    sides?.before === undefined
+                        ? undefined
+                        : {
+                              path: file.previousPath ?? file.path,
+                              source: sides.before,
+                              hunks: hunks?.before,
+                              changedLines: lines?.removed.map((line) => line.line),
+                              references: ownReferences.filter((reference) => reference.side === 'before'),
+                          },
+                after:
+                    sides?.after === undefined
+                        ? undefined
+                        : {
+                              path: file.path,
+                              source: sides.after,
+                              hunks: hunks?.after,
+                              changedLines: lines?.added.map((line) => line.line),
+                              references: ownReferences.filter((reference) => reference.side === 'after'),
+                          },
+            })
+        );
+    }
     const ownWithheld = new Map<string, ReadonlySet<EvidenceSide>>();
     for (const [changedPath, sides] of admission.ownWithheldSides) {
         ownWithheld.set(changedPath, sides);
@@ -784,6 +825,7 @@ export function collectEvidence(input: {
         contents: admission.contents,
         attribution,
         changedLines,
+        testCaseContext,
         excluded: admission.excluded,
         truncated: admission.truncated,
         limitations: admission.limitations,
