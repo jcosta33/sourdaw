@@ -8,6 +8,11 @@ test.describe('Toaster Level and Pan knobs', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await open_browser_instrument({ page, instrument: 'Toaster' });
+        const view = page.getByRole('combobox', { name: 'Toaster view', exact: true });
+        await expect(view).toBeVisible();
+        await expect(view).toHaveValue('simple');
+        await view.selectOption('full');
+        await expect(view).toHaveValue('full');
     });
 
     test('ArrowUp steps Kick Level and Pan by 0.01', async ({ page }) => {

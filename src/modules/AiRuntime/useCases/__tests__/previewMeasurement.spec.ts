@@ -26,6 +26,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
@@ -449,6 +450,7 @@ afterEach(() => {
     resetActionReplayAuthority();
     clearAgentMeasurementArtifacts();
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    projectStore.set(structuredClone(defaultProjectStoreState));
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
 });
@@ -572,6 +574,170 @@ describe('a measured preview through proposal and approval', () => {
         expect(loudness?.preview).toMatchObject({ unit: 'LUFS' });
         expect(loudness?.delta?.value).toBeCloseTo(-6, 1);
         expect(drumsLevel()).toBe(0);
+    });
+
+    // Red when the order the planning prompt states (resolve, measure, discover and expand a recipe, measure
+    // the planned list as a preview, then propose adopting only the preview by call id) stops completing
+    // with measured deltas.
+    it('completes the prompt-stated method: resolve, measure, recipe, preview measure, then a propose adopting the preview', async () => {
+        const revision = captureProjectRevision();
+        const recipeValues = [
+            { paramId: 'comp-threshold', value: -16 },
+            { paramId: 'comp-ratio', value: 4 },
+            { paramId: 'comp-attack', value: 25 },
+            { paramId: 'comp-release', value: 90 },
+            { paramId: 'comp-makeup', value: 4.5 },
+        ];
+        const addCompressor = {
+            id: 'add-compressor',
+            name: 'addDevice',
+            arguments: { deviceType: 'builtin-compressor', binding: 'compressor' },
+            selector: {
+                targetArgument: 'trackId',
+                entity: 'track',
+                where: { name: 'Drums' },
+                quantity: { unit: 'targets', exactly: 1 },
+            },
+        };
+        const plannedList: Proposal = {
+            schemaVersion: 1,
+            items: [
+                addCompressor,
+                ...recipeValues.map(({ paramId, value }) => ({
+                    id: `set-${paramId}`,
+                    name: 'setDeviceParameter',
+                    arguments: { deviceId: '$compressor', paramId, value },
+                    dependsOn: ['add-compressor'],
+                })),
+            ],
+        };
+        const ADOPTED_CALL_IDS = ['measure-preview'];
+        scriptTurns(revision, [
+            // The target is resolved from the project context, so no project.query turn is spent. The
+            // measure and the discovery need no earlier receipt and share a turn: four tool turns, after
+            // the interpretation turn above.
+            [
+                {
+                    id: 'measure-target',
+                    name: 'analysis.measure',
+                    arguments: {
+                        scope: DRUMS_SCOPE,
+                        range: RANGE,
+                        metrics: ['integratedLoudness'],
+                        subject: 'project',
+                    },
+                },
+                {
+                    id: 'discover-1',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+            ],
+            [{ id: 'expand-1', name: 'recipe.expand', arguments: { recipeId: 'drums-punchy', targetId: 'drums' } }],
+            [measureCallFor('measure-preview', plannedList)],
+            [proposeCall({ commands: [], compiledCallIds: ADOPTED_CALL_IDS })],
+        ]);
+
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
+
+        const receipts = planned.applicationToolReceipts ?? [];
+        const failedReads = receipts.flatMap((receipt) => (receipt.error === null ? [] : [receipt.error.safeMessage]));
+        expect({ rejection: planned.rejectionReason ?? null, failedReads }).toEqual({
+            rejection: null,
+            failedReads: [],
+        });
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        const turnOf = (callId: string) => receipts.find((receipt) => receipt.callId === callId)?.turn;
+        expect(turnOf('discover-1')).toBe(turnOf('measure-target'));
+        expect(turnOf('expand-1')).toBeGreaterThan(turnOf('discover-1') ?? Number.POSITIVE_INFINITY);
+        expect(turnOf('measure-preview')).toBeGreaterThan(turnOf('expand-1') ?? Number.POSITIVE_INFINITY);
+        expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual(
+            expect.arrayContaining(
+                ['measure-target', 'discover-1', 'expand-1', 'measure-preview'].map((callId) => ({
+                    callId,
+                    status: 'success',
+                }))
+            )
+        );
+        const expansion: unknown = receipts.find(({ callId }) => callId === 'expand-1')?.data;
+        const expandedValues =
+            typeof expansion === 'object' && expansion !== null && 'values' in expansion ? expansion.values : null;
+        expect(expandedValues).toMatchObject(recipeValues);
+        expect(planned.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            ...recipeValues.map(({ paramId, value }) => ({
+                type: 'setDeviceParameter',
+                payload: { paramId, value },
+            })),
+        ]);
+
+        const confirmationId = persistForApproval(planned, revision);
+        const [target] = getAgentApprovalView({ confirmationId })?.measuredPreview?.targets ?? [];
+        const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
+        expect(target?.targetId).toBe('drums');
+        expect(typeof loudness?.delta?.value).toBe('number');
+    });
+
+    // Red when the query branch the planning prompt states (the context cannot resolve the target: the
+    // interpretation, project.query alone, discovery, expansion, then a propose adopting the expansion)
+    // stops fitting the loop's turns or completing without a rejection.
+    it('completes the prompt-stated query branch in the loop turns: query alone, discover, expand, then adopt the expansion', async () => {
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+        });
+        // The identity is persisted through the CRDT, so the revision is captured only once that write has landed.
+        flushAutomergeStorageWrites();
+        const revision = captureProjectRevision();
+        const recipeValues = [
+            { paramId: 'comp-threshold', value: -16 },
+            { paramId: 'comp-ratio', value: 4 },
+            { paramId: 'comp-attack', value: 25 },
+            { paramId: 'comp-release', value: 90 },
+            { paramId: 'comp-makeup', value: 4.5 },
+        ];
+        scriptTurns(revision, [
+            [{ id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } }],
+            [
+                {
+                    id: 'discover-1',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+            ],
+            [{ id: 'expand-1', name: 'recipe.expand', arguments: { recipeId: 'drums-punchy', targetId: 'drums' } }],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
+
+        const receipts = planned.applicationToolReceipts ?? [];
+        const failedReads = receipts.flatMap((receipt) => (receipt.error === null ? [] : [receipt.error.safeMessage]));
+        expect({ rejection: planned.rejectionReason ?? null, failedReads }).toEqual({
+            rejection: null,
+            failedReads: [],
+        });
+        // The interpretation turn, then query, discover, expand and the propose: five turns, the loop's
+        // four plus the one an admitted interpretation adds.
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual(
+            expect.arrayContaining(
+                ['resolve-target', 'discover-1', 'expand-1'].map((callId) => ({ callId, status: 'success' }))
+            )
+        );
+        expect(planned.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            ...recipeValues.map(({ paramId, value }) => ({ type: 'setDeviceParameter', payload: { paramId, value } })),
+        ]);
+        expect(planned.measuredPreview).toBeUndefined();
     });
 
     // Red when the batch hash counts the ids each compilation mints for the objects it creates.

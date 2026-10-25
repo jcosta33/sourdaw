@@ -8,7 +8,9 @@ import {
     beatAtSecondsFromAnchor,
 } from '#/modules/Transport/useCases';
 
+import { offlineMidiEventProjectorState } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { configureOfflineMidiEventProjection } from '../../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
 import { resolveRenderContext } from '../resolveRenderContext';
 
@@ -112,6 +114,28 @@ describe('resolveRenderContext', () => {
         expect(ctx.durationSeconds).toBeCloseTo(2, 6);
         expect(ctx.startBeat).toBe(0);
         expect(ctx.tailSeconds).toBe(0);
+    });
+
+    it('carries the channel bend projection the composition root injected, which a render places stored bend with', () => {
+        const projectChannelBend = () => [];
+        configureOfflineMidiEventProjection({
+            createProjector:
+                () =>
+                ({ events }) =>
+                    events,
+            selectProbability: () => true,
+            createChordPitchProjector:
+                () =>
+                ({ pitch }) =>
+                    pitch,
+            evaluateAutomationValue: () => null,
+            projectChannelBend,
+        });
+        try {
+            expect(resolveRenderContext(4).projectChannelBend).toBe(projectChannelBend);
+        } finally {
+            offlineMidiEventProjectorState.projectChannelBend = null;
+        }
     });
 
     it('snapshots the PPQ projector for the lifetime of one render context', () => {

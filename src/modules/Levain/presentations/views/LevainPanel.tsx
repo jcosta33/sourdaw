@@ -307,6 +307,7 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             macros={patch.macros}
                             labels={patch.macroLabels}
                             onMacroChange={(macro, value) => setMacroWithAudio(deviceId, macro, value)}
+                            spaceAvailable={loadedMicPositions?.includes('room') ?? false}
                             compact
                         />
                     </SectionCard>

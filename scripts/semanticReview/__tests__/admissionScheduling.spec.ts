@@ -246,6 +246,7 @@ async function verifyScan(provider: SemanticProviderPort, findings: readonly Can
         profile: SEMANTIC_BUDGET_PROFILES.local,
         findings,
         runId: 'admission-scheduling-verify',
+        dryRun: false,
     });
 }
 

@@ -13,7 +13,6 @@ describe('levainParamBridge', () => {
     });
 
     it('registers a device by id and exposes it through the bridge singleton', async () => {
-        const getAllTracks = vi.fn(() => []);
         const persistDeviceParam = vi.fn();
         const autoLoadLevainSamples = vi.fn().mockResolvedValue(null);
         const setLoadedMicPositions = vi.fn();
@@ -23,7 +22,6 @@ describe('levainParamBridge', () => {
             deviceId,
         }));
         injectDependencies(levainBridge, {
-            getAllTracks,
             persistDeviceParam,
             autoLoadLevainSamples,
             setLoadedMicPositions,

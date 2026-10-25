@@ -22,6 +22,98 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-24 — split PR metadata could close a head that arrived during comment reads (introduced by PR #2357, retained by #4420)
+
+PR #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) read PR core metadata before a
+separate comment request, then closed by node ID alone. PR #4420 (`789351350ae323da1bac0aa68fc35b80a294c328`)
+extracted the same mechanism into `supersedePullRequestGh.ts`. Primary GitHub source at those named
+commits establishes the path; later Toaster integration #5413 is not its introduction. A controlled
+production-adapter probe moved the head during the final comment response and observed CLOSE before
+the command refused. No live occurrence is established. The missed risk is head movement inside
+metadata composition; unavailable historical reviewer prompts do not establish whether its stance
+was missing, mis-prompted or mis-tiered.
+
+Drive the real inspection and close adapters together, move the head between core and comment
+responses, and require refusal before CLOSE. Observe an independent, bound core response after all
+composite marker/review reads, directly before mutation; malformed or wrongly bound witnesses must
+refuse too. Finish post-close and CLOSED replay proof with the same witness. Preserve a stable
+control and ambiguous-close evidence. `ClosePullRequestInput` carries no expected-head CAS: this
+bounds client composition, not external changes after observation.
+
+### 2026-10-24 — an acknowledged marker vanished from reads and released its owner (introduced by PR #5639)
+
+PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) added the serialized owner and
+`VerifiedSupersessionCompensationError` release path around preexisting visibility-dependent
+cleanup. An acknowledged comment ID omitted from later inspections received no delete, yet an
+apparently original OPEN comment set certified rollback and released ownership. The final review
+record included a strongest-tier ambiguous-write/altered-rollback stance; the acknowledged-write,
+omitted-read input was missed. Exact historical raw prompts are unestablished. This is a controlled
+source/reproduction escape, not evidence of a physical or API-lag production occurrence.
+
+Keep a real marker after a valid creation receipt while every later inspection omits its ID. Drive
+both serialized retirement and supersession; require zero unverified deletes, the real journaled
+owner retained, and its exact native recovery command. Pair that with observed exact deletion and
+verified OPEN rollback release. A missing read cannot discharge a known remote write.
+After shared-owner recovery on stable OPEN or CLOSED state, require guidance to rerun the original
+operation with its original bound inputs. Clearing a shared owner does not select delivery or
+authorize a merge.
+
+### 2026-10-24 — supersession bypassed its trusted process-tool launcher (introduced by PR #5639)
+
+PR #5639 added a process-fenced supersession owner without routing its native package command
+through the trusted write bootstrap. Its injected-fence lock tests passed while the real command
+had no trusted `ps` pin and refused before PR I/O. Strongest-tier review was present; native CLI
+and platform-tool admission was the missed stance.
+
+Require the command registry, static source closure, risk-classification union and fenced-command
+set to cover the actual package route. Drive its default process-fence consumer with a launcher-
+resolved POSIX `ps`; verify Windows PowerShell selection independently. Inherited forged pins
+must not survive snapshot isolation, and a missing platform tool must refuse rather than fall
+back to ambient execution. A direct-script route and removal from the fenced set must each break
+the real admission probe before any remote port call.
+
+### 2026-10-24 — Linux cleanup proof went stale across process arrival, exit settlement, and output attribution (introduced by PR #5274, retained by PR #5443)
+
+PR #5274 introduced two Linux whole-account observations, terminal file release only after an
+ENOENT inspection, and immediate emission of the first unavailable-proof diagnostic. Its final
+review did probe one unrelated newborn under `unrelated-process-churn-prevents-safe-reclamation`,
+but not successive arrivals beyond that replacement. The retained review records contain no
+EACCES-during-exit probe; the exact blind prompt and tier for that gap are unestablished. PR #5443
+retained eager diagnostic output while adding final warning/leak classification. Its review
+measured those outcomes and explicitly noted that a first-attempt diagnostic remained, but did not
+require byte-exact parseable child output after startup recovery or a superseding release proof;
+the exact blind prompt for that output path is unestablished.
+
+Probe: run `bounds complete Linux replacement proof` with one new same-UID PID in each fresh
+catalog; require reclamation when arrivals settle and bounded retention when they do not. Run
+`counts a denied same-UID process as released only once it is gone or a zombie` with an EACCES FD
+list progressing through live, reaped, and multithreaded-to-single-thread-zombie states; persistent
+live and cwd denials stay unknown. Run `never proves Linux release from an observation that waited
+on an exit` and require a new complete process observation after any wait, including retention when
+a previously inspected process becomes a borrower. Run `keeps storage proof evidence out of the
+child output unless it explains retention`; startup, superseded, and successful proofs leave
+byte-exact parseable child output, while a retained run emits only its own final obstruction.
+
+### 2026-10-21 — a capped catalog count could not converge on a busy Mac (introduced by PR #5274, retained by PR #5331)
+
+PR #5274 allowed two Darwin `lsof` observations and PR #5331 three, within one five-second
+deadline. `lsof` intermittently omits live same-UID processes, newborn or already listed, so under
+real load every allowed catalog could miss one: guarded runs whose own work succeeded ended
+`FAILED (leak)` and stopped their lanes (issue #5337). Both reviews accepted a fixed catalog count
+as the conservative bound; no stance measured availability under natural process churn. This
+supersedes the three-observation limit in the 2026-10-12 Darwin lesson below.
+
+Probe: omit a listed live same-UID process from one whole catalog and require reclamation from a
+fresh one; omit it from every catalog and require retention naming it at the deadline; alternate
+the omission of two processes and require retention, never pooled coverage. For a missed holder
+that forks into storage and exits before its liveness check, state sample, or scoped read, require
+a fresh whole observation that finds the heir; one that forks after the closing process list and
+stays an unreaped zombie must still reach the closing parent listing. Require a missed process gone
+before the closing list to cost no fresh observation. Require the closing parent listing to catch a
+heir handed storage by a live missed holder, including one reparented to launchd, and to ignore an
+unrelated newcomer and another account's launchd children. Measure convergence with repeated
+guarded real specs beside the base guard.
+
 ### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
 
 PR #5345 excused an uninspectable same-UID process only when it predated the run's live

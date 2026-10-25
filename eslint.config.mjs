@@ -2821,13 +2821,15 @@ export default defineConfig(
     },
 
     // ─── Root-level data config ──────────────────────────────────────────────
-    // eslint.size-baseline.mjs sits at the repo root (so eslint.config.mjs can
-    // import it), not under scripts/; tsconfig.eslint.json's project does not
-    // reach it, and without `allowJs` naming it in `include` would not help
-    // (same reasoning as the Node scripts block above). Same treatment: no
-    // type-aware parsing, so the file lints instead of failing to parse.
+    // eslint.size-baseline.mjs and oxlint.craft-baseline.mjs sit at the repo
+    // root, not under scripts/ (this config imports the former; the oxlintCraft
+    // plugin imports the latter, and both ship in the release inventory);
+    // tsconfig.eslint.json's project does not reach them, and without
+    // `allowJs` naming them in `include` would not help (same reasoning as
+    // the Node scripts block above). Same treatment: no type-aware parsing,
+    // so the files lint instead of failing to parse.
     {
-        files: ['eslint.size-baseline.mjs'],
+        files: ['eslint.size-baseline.mjs', 'oxlint.craft-baseline.mjs'],
         extends: [tseslint.configs.disableTypeChecked],
         languageOptions: {
             parserOptions: {

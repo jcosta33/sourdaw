@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { devServerOnlySpecs } from '../../tests/e2e/devServerOnlySpecs.ts';
 import {
     DEFAULT_E2E_PORT,
     SOURDAW_E2E_PORT_ENV,
@@ -175,6 +176,99 @@ describe('playwright config port derivation', () => {
     it('refuses to load the config when the env value is not a usable port', async () => {
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, '70000');
         await expect(loadPlaywrightConfig()).rejects.toThrow(SOURDAW_E2E_PORT_ENV);
+    });
+
+    function webServers(config: PlaywrightTestConfig): SingleWebServer[] {
+        const webServer = config.webServer;
+        if (webServer === undefined) {
+            throw new Error('playwright config must define a webServer');
+        }
+        return Array.isArray(webServer) ? webServer : [webServer];
+    }
+
+    it('keeps one dev server and one project without a shard selection', async () => {
+        vi.stubEnv('CI', 'true');
+        vi.stubEnv('E2E_SPECS', undefined);
+        const config = await loadPlaywrightConfig();
+        expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
+        expect(webServers(config).map((server) => server.command)).toEqual([
+            'pnpm dev --mode e2e --port 5173 --strictPort',
+        ]);
+    });
+
+    it('keeps the dev server for a local run even when a spec selection is set', async () => {
+        vi.stubEnv('CI', undefined);
+        vi.stubEnv('E2E_SPECS', JSON.stringify(['tests/e2e/smoke.spec.ts']));
+        const config = await loadPlaywrightConfig();
+        expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
+        expect(webServers(config).map((server) => server.command)).toEqual([
+            'pnpm dev --mode e2e --port 5173 --strictPort',
+        ]);
+    });
+
+    it('keeps the last port available to a local dev server', async () => {
+        vi.stubEnv('CI', undefined);
+        vi.stubEnv(SOURDAW_E2E_PORT_ENV, '65535');
+        const config = await loadPlaywrightConfig();
+        const webServer = requiredSingleWebServer(config);
+        expect(requiredBaseURL(config)).toBe('http://localhost:65535');
+        expect(webServer.url).toBe('http://localhost:65535');
+        expect(webServer.command).toBe('pnpm dev --mode e2e --port 65535 --strictPort');
+    });
+
+    it('serves a build with one worker to a CI shard that needs no dev server', async () => {
+        vi.stubEnv('CI', 'true');
+        vi.stubEnv('E2E_SPECS', JSON.stringify(['tests/e2e/browserAiPanelsTestId.spec.ts']));
+        const config = await loadPlaywrightConfig();
+        expect(config.workers).toBe(1);
+        expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
+        const servers = webServers(config);
+        expect(servers.map((server) => server.command)).toEqual([
+            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port 5173 --strictPort',
+        ]);
+        expect(servers.map((server) => server.reuseExistingServer)).toEqual([false]);
+    });
+
+    it('serves a built-only shard at the last port without deriving a companion', async () => {
+        vi.stubEnv('CI', 'true');
+        vi.stubEnv(SOURDAW_E2E_PORT_ENV, '65535');
+        vi.stubEnv('E2E_SPECS', JSON.stringify(['tests/e2e/browserAiPanelsTestId.spec.ts']));
+        const config = await loadPlaywrightConfig();
+        const servers = webServers(config);
+        expect(servers.map((server) => server.url)).toEqual(['http://localhost:65535']);
+        expect(servers.map((server) => server.command)).toEqual([
+            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port 65535 --strictPort',
+        ]);
+        expect(servers.map((server) => server.reuseExistingServer)).toEqual([false]);
+    });
+
+    it('adds a dev server project for the dev-only files a CI shard selects', async () => {
+        vi.stubEnv('CI', 'true');
+        vi.stubEnv(SOURDAW_E2E_PORT_ENV, '6123');
+        vi.stubEnv('E2E_SPECS', JSON.stringify(['tests/e2e/browserAiPanelsTestId.spec.ts', devServerOnlySpecs[0]]));
+        const config = await loadPlaywrightConfig();
+        const [builtProject, devProject] = config.projects ?? [];
+        expect(config.workers).toBe(1);
+        expect(builtProject?.name).toBe('chromium');
+        expect(devProject?.name).toBe('chromium-dev');
+        expect(devProject?.use?.baseURL).toBe('http://localhost:6124');
+        expect(builtProject?.testIgnore).toHaveLength(devServerOnlySpecs.length + 1);
+        expect(devProject?.testMatch).toHaveLength(devServerOnlySpecs.length);
+        const servers = webServers(config);
+        expect(servers.map((server) => server.url)).toEqual(['http://localhost:6123', 'http://localhost:6124']);
+        expect(servers.map((server) => server.command)).toEqual([
+            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port 6123 --strictPort',
+            'pnpm dev --mode e2e --port 6124 --strictPort',
+        ]);
+        expect(servers.map((server) => server.reuseExistingServer)).toEqual([false, false]);
+    });
+
+    it('refuses the last port when a CI shard needs a dev companion', async () => {
+        vi.stubEnv('CI', 'true');
+        vi.stubEnv(SOURDAW_E2E_PORT_ENV, '65535');
+        vi.stubEnv('E2E_SPECS', JSON.stringify([devServerOnlySpecs[0]]));
+
+        await expect(loadPlaywrightConfig()).rejects.toThrow(/SOURDAW_E2E_PORT.*65535.*dev companion/);
     });
 });
 

@@ -15,20 +15,3 @@ export type ToolSchema = {
         };
     };
 };
-
-/** Convenience builder — avoids repeating the nested structure every time. */
-export function tool(
-    name: string,
-    description: string,
-    properties: Record<string, unknown>,
-    required: string[] = []
-): ToolSchema {
-    return {
-        type: 'function',
-        function: {
-            name,
-            description,
-            parameters: { type: 'object', properties, required },
-        },
-    };
-}

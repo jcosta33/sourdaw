@@ -1,4 +1,5 @@
 import { type AdjustmentEffectType } from '#/modules/Arrangement/stores';
+import { runAllEffects } from '#/utils/runEffects';
 
 import { AdjustmentBusNode } from './AdjustmentBusNode';
 
@@ -220,19 +221,23 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
         getBusInputForTrack: getBusChainInputForTrack,
         getBusChainInputForTrack,
         reset: (): void => {
-            const trackIds = new Set<string>();
-            for (const live of liveBuses.values()) {
-                trackIds.add(live.trackId);
-                if (live.disposalTimer) {
-                    clearTimeout(live.disposalTimer);
-                    live.disposalTimer = null;
-                }
-                live.bus.dispose();
-            }
-            liveBuses.clear();
-            for (const trackId of trackIds) {
-                deps.rerouteTrack(trackId);
-            }
+            const retiringBuses = Array.from(liveBuses.values());
+            const trackIds = new Set(retiringBuses.map((live) => live.trackId));
+            // A retired bus or failed reroute must not retain peer ownership or
+            // leave a grace timer able to dispose the same bus a second time.
+            runAllEffects([
+                ...retiringBuses.flatMap((live) => [
+                    () => {
+                        if (live.disposalTimer) {
+                            clearTimeout(live.disposalTimer);
+                            live.disposalTimer = null;
+                        }
+                    },
+                    () => live.bus.dispose(),
+                ]),
+                () => liveBuses.clear(),
+                ...Array.from(trackIds, (trackId) => () => deps.rerouteTrack(trackId)),
+            ]);
         },
         listLiveBusKeys: (): string[] => {
             return Array.from(liveBuses.keys()).sort();

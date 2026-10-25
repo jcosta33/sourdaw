@@ -84,6 +84,25 @@ Schema version 2 carries, per corpus file:
   batch may affect, the ids it must not touch, and the most commands it may compile to. Ids the
   batch itself mints carry a published creation prefix and belong to no project snapshot, so they
   are inside by construction rather than listed.
+- `cases[].prior` and `cases[].refinementKind` — a `refinement` case only, and every one of them.
+  The case is one prior turn, then the follow-up, both sent through the chat route a musician's
+  follow-up takes, so the follow-up is planned with the thread the chat reads. `prior` carries the
+  prior turn's request `prompt`, its scripted `providerTurns`, and its `outcome`: `pending`, a card
+  awaiting confirmation, or `committed`, a batch committed through the real batch path (confirmed
+  where the risk policy holds it for approval), so the undo history holds its revert group. The
+  case's own `prompt`, `providerTurns` and `oracle` are the follow-up's; its provider turns are
+  empty where the application compiles the follow-up from the commit. A proposal turn that refines
+  names the prior card by `refinesPriorProposal`, never by the confirmation id the application
+  mints. `refinementKind` is one of five, each carrying at least as many cases as a sealed class:
+  `scale-pending` and `exclude-pending` follow a pending card, and their oracle is the replacement
+  batch with `replaces: prior-proposal` — it must supersede that card and write nothing, never
+  apply beside it; `relative-to-commit` and `retarget-commit` follow a commit, and their oracle is
+  the follow-up's own compiled batch, its values relative to the committed ones, whether it commits
+  or waits for approval; `undo-commit` follows a commit, and its oracle is `kind: revert` with
+  `group: prior-commit`, the revert outcome naming the committed group, which the follow-up then
+  leaves undone whole. A revert is an executed reversible change and scores as `execute-exact`. A
+  write the prior turn makes to reach its commit is the case's setup; any other write its oracle
+  does not name is an unintended mutation.
 
 ## Frozen thresholds
 

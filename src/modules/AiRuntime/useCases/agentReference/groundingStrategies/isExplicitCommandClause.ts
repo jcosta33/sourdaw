@@ -1,6 +1,7 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { findGappedIntentPhrase, type IntentPhraseGaps } from './findGappedIntentPhrase';
+import { findReferencedIntentPhrase } from './findReferencedIntentPhrase';
 import { getClauseIntentVocabulary, type CreationProposal } from './getClauseIntentVocabulary';
 import { getStatedDecibelLevelForms } from './getStatedDecibelLevelForms';
 import { normalizePromptText } from './normalizePromptText';
@@ -54,9 +55,12 @@ export function isExplicitCommandClause(
         if (!vocabulary.statesDeclaredLevel && vocabulary.gaps.proposedNames.length === 0) {
             return false;
         }
-        return vocabulary.phrases.some(
-            (phrase) =>
-                startsWithPhrase(commandText, phrase) || startsWithGappedPhrase(commandSource, phrase, vocabulary.gaps)
+        return (
+            vocabulary.phrases.some(
+                (phrase) =>
+                    startsWithPhrase(commandText, phrase) ||
+                    startsWithGappedPhrase(commandSource, phrase, vocabulary.gaps)
+            ) || vocabulary.referencedPhrases.some((phrase) => findReferencedIntentPhrase(maskedText, phrase) !== null)
         );
     });
 }

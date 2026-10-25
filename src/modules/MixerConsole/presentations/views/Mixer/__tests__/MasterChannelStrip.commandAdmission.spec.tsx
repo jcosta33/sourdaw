@@ -1,0 +1,367 @@
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { logger } from '#/infra/logger/appLogger';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+    resetAutomergeStorageProjections,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppAction,
+    undo,
+    redo,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
+import {
+    recordActionHistoryEntry,
+    markActionHistoryEntryReverted,
+    clearActionHistory,
+} from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectTransitionAuthority,
+    runProjectLoadTransaction,
+    setProjectIdentityTransitionDependencies,
+} from '#/modules/Project/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { dbToGain, formatGainDb } from '#/utils/audioLevelLaw';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { MasterChannelStrip } from '../MasterChannelStrip';
+
+const external = vi.hoisted(() => ({
+    promptUser: vi.fn<() => Promise<string | null>>(),
+    setMasterGainValue: vi.fn<(value: number) => void>(),
+    notification: vi.fn(async () => undefined),
+}));
+
+vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: external.promptUser }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    cancelPendingAudioBufferImport: vi.fn(),
+    setMasterGainValue: external.setMasterGainValue,
+}));
+vi.mock('../MixerLevelReadout', () => ({
+    MixerLevelReadout: ({ control, value }: { control: React.ReactNode; value: string }) => (
+        <>
+            {control}
+            <output>{value}</output>
+        </>
+    ),
+}));
+
+async function activateProject(): Promise<void> {
+    const transition = runProjectLoadTransaction();
+    expect(await transition.prepare()).toBe(true);
+    expect(transition.activate()).toBe(true);
+}
+
+describe('MasterChannelStrip command admission', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        vi.spyOn(logger, 'error');
+        injectDependencies(notifyUser, { eventBus: { emit: external.notification, on: () => () => undefined } });
+        clearUndoHistory();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+        transportStore.set({ ...defaultTransportState, masterGain: 80 });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        await activateProject();
+        external.promptUser.mockResolvedValue('0 dB');
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' }),
+            clear: () => undefined,
+        });
+        expect(logger.error).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+    });
+
+    it.each([false, true])(
+        'admits the typed entry only while its real Project authority survives the real Command snapshot wait (replace=%s)',
+        async (replaceProject) => {
+            const enteredWait = Promise.withResolvers<void>();
+            const snapshot = Promise.withResolvers<void>();
+            configureAutomergeStoragePort({
+                getDoc: () => undefined,
+                getSemanticMessage: () => undefined,
+                hasDoc: () => false,
+                mutateDoc: () => undefined,
+                waitForSnapshotTransaction: () => {
+                    enteredWait.resolve();
+                    return snapshot.promise;
+                },
+            });
+            const handler = getTransportHandlers().setMasterGain;
+            const execute = vi.spyOn(handler, 'execute');
+            registerHandlerMap({ setMasterGain: handler });
+            const authority = captureProjectTransitionAuthority();
+            render(<MasterChannelStrip widthClass="w-36" />);
+            const slider = screen.getByRole('slider', { name: 'Master gain' });
+
+            await act(async () => {
+                fireEvent.contextMenu(slider);
+            });
+            await act(async () => {
+                fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+                await enteredWait.promise;
+            });
+            expect(authority.isCurrent()).toBe(true);
+            expect(execute).not.toHaveBeenCalled();
+            expect(external.setMasterGainValue).toHaveBeenLastCalledWith(1);
+
+            if (replaceProject) {
+                await activateProject();
+                // Equal gain deliberately defeats an expectedPercent-only guard.
+                expect(transportStore.value?.masterGain).toBe(80);
+                expect(authority.isCurrent()).toBe(false);
+            }
+            external.setMasterGainValue.mockClear();
+            await act(async () => {
+                snapshot.resolve();
+                await snapshot.promise;
+            });
+            await waitFor(() => expect(external.setMasterGainValue).toHaveBeenCalled());
+
+            expect(execute).toHaveBeenCalledTimes(replaceProject ? 0 : 1);
+            expect(external.setMasterGainValue).toHaveBeenLastCalledWith(replaceProject ? 0.8 : 1);
+            expect(slider).toHaveAttribute('aria-valuenow', replaceProject ? '0.8' : '1');
+        }
+    );
+});
+
+type RawProject = {
+    transport: typeof defaultTransportState;
+    actionHistory: { entries: unknown[] };
+    [key: string]: unknown;
+};
+
+function installProjectPort(waitForSnapshotTransaction: () => Promise<void>): { read: () => RawProject } {
+    let document: RawProject = {
+        transport: { ...defaultTransportState, masterGain: 80 },
+        actionHistory: { entries: [] },
+    };
+    configureAutomergeStoragePort({
+        getDoc: () => document,
+        getSemanticMessage: () => undefined,
+        hasDoc: () => true,
+        mutateDoc: ({ changeFn }) => {
+            const next = structuredClone(document);
+            changeFn(next);
+            document = next;
+        },
+        waitForSnapshotTransaction,
+    });
+    transportStore.hydrate();
+    actionHistoryStore.hydrate();
+    setActionHistoryMetadataPort({
+        record: recordActionHistoryEntry,
+        markReverted: markActionHistoryEntryReverted,
+        clear: clearActionHistory,
+    });
+    const handlers = getTransportHandlers();
+    registerHandlerMap({ setMasterGain: handlers.setMasterGain, restoreMasterGain: handlers.restoreMasterGain });
+    return { read: () => document };
+}
+
+async function typeEntry(input = '0 dB'): Promise<void> {
+    external.promptUser.mockResolvedValueOnce(input);
+    fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+    await waitFor(() => expect(external.setMasterGainValue).toHaveBeenCalledWith(input === '0 dB' ? 1 : 0));
+}
+
+function expectCommitted(project: { read: () => RawProject }, percent: number, entries: number): void {
+    act(() => flushAutomergeStorageWrites());
+    expect(project.read().transport.masterGain).toBeCloseTo(percent);
+    expect(transportStore.value?.masterGain).toBeCloseTo(percent);
+    expect(screen.getByRole('slider', { name: 'Master gain' })).toHaveAttribute('aria-valuenow', String(percent / 100));
+    expect(screen.getByText(`${formatGainDb(percent / 100)} dB`)).toHaveTextContent(
+        `${formatGainDb(percent / 100)} dB`
+    );
+    expect(external.setMasterGainValue).toHaveBeenLastCalledWith(percent / 100);
+    expect(undoHistoryStore.value?.past).toHaveLength(entries);
+    expect(project.read().actionHistory.entries).toHaveLength(entries);
+}
+
+describe('MasterChannelStrip queued typed value guard', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        vi.spyOn(logger, 'error');
+        injectDependencies(notifyUser, { eventBus: { emit: external.notification, on: () => () => undefined } });
+        configureAutomergeStoragePort(null);
+        resetAutomergeStorageProjections('root');
+        clearHandlerRegistry();
+        clearUndoHistory();
+        transportStore.set({ ...defaultTransportState, masterGain: 80 });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        await activateProject();
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' }),
+            clear: () => undefined,
+        });
+        expect(logger.error).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+    });
+
+    it.each(['-61 dB', '-120 dB'])('rejects %s before dispatch, history or engine changes', async (input) => {
+        const project = installProjectPort(() => Promise.resolve());
+        render(<MasterChannelStrip widthClass="w-36" />);
+        external.promptUser.mockResolvedValueOnce(input);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() =>
+            expect(external.notification).toHaveBeenCalledWith('ui.notify', expect.objectContaining({ level: 'error' }))
+        );
+        act(() => flushAutomergeStorageWrites());
+        expect(project.read().transport.masterGain).toBe(80);
+        expect(transportStore.value?.masterGain).toBe(80);
+        expect(screen.getByRole('slider', { name: 'Master gain' })).toHaveAttribute('aria-valuenow', '0.8');
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(project.read().actionHistory.entries).toHaveLength(0);
+        expect(external.setMasterGainValue).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { input: '-60 dB', gain: dbToGain(-60) },
+        { input: '+6 dB', gain: dbToGain(6) },
+        { input: '-inf', gain: 0 },
+    ])('commits admitted boundary $input through the shared authority', async ({ input, gain }) => {
+        const project = installProjectPort(() => Promise.resolve());
+        render(<MasterChannelStrip widthClass="w-36" />);
+        external.promptUser.mockResolvedValueOnce(input);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() => expect(project.read().transport.masterGain).toBe(gain * 100));
+        expectCommitted(project, gain * 100, 1);
+        expect(external.notification).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])(
+        'anchors entry before the queue wait while accepting already present gain (foreignBeforeEntry=%s)',
+        async (foreignBeforeEntry) => {
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            let waits = 0;
+            const project = installProjectPort(() => {
+                if (++waits === 1) {
+                    entered.resolve();
+                    return release.promise;
+                }
+                return Promise.resolve();
+            });
+            const errors = vi.spyOn(logger, 'error');
+            const authority = captureProjectTransitionAuthority();
+            render(<MasterChannelStrip widthClass="w-36" />);
+            const slider = screen.getByRole('slider', { name: 'Master gain' });
+            await act(async () => {
+                fireEvent.keyDown(slider, { key: 'ArrowUp' });
+                await entered.promise;
+            });
+            if (foreignBeforeEntry) {
+                await act(async () => {
+                    await executeAppAction({ type: 'setMasterGain', payload: { gain: 0.4, expectedPercent: 80 } });
+                });
+            }
+            await typeEntry();
+            if (!foreignBeforeEntry) {
+                await act(async () => {
+                    await executeAppAction({ type: 'setMasterGain', payload: { gain: 0.4, expectedPercent: 80 } });
+                });
+            }
+            expect(authority.isCurrent()).toBe(true);
+            await act(async () => {
+                release.resolve();
+                await release.promise;
+            });
+            const expected = foreignBeforeEntry ? 100 : 40;
+            await waitFor(() => expect(slider).toHaveAttribute('aria-valuenow', String(expected / 100)));
+            expectCommitted(project, expected, foreignBeforeEntry ? 2 : 1);
+            expect(errors).not.toHaveBeenCalled();
+        }
+    );
+
+    it('advances entry only over its captured successful own predecessors and preserves separate Undo/Redo', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let waits = 0;
+        const project = installProjectPort(() => {
+            if (++waits === 1) {
+                entered.resolve();
+                return release.promise;
+            }
+            return Promise.resolve();
+        });
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        await act(async () => {
+            fireEvent.keyDown(slider, { key: 'ArrowUp' });
+            await entered.promise;
+        });
+        fireEvent.keyDown(slider, { key: 'ArrowUp' });
+        await typeEntry();
+        await act(async () => {
+            release.resolve();
+            await release.promise;
+        });
+        await waitFor(() => expect(project.read().transport.masterGain).toBe(100));
+        expectCommitted(project, 100, 3);
+        await act(async () => {
+            await undo();
+        });
+        expect(project.read().transport.masterGain).toBeCloseTo(82);
+        expect(transportStore.value?.masterGain).toBeCloseTo(82);
+        expect(external.setMasterGainValue).toHaveBeenLastCalledWith(0.82);
+        await act(async () => {
+            await redo();
+        });
+        expectCommitted(project, 100, 3);
+    });
+
+    it('keeps the accepted value guard through the real Command snapshot wait', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let waits = 0;
+        const project = installProjectPort(() => {
+            if (++waits === 1) {
+                entered.resolve();
+                return release.promise;
+            }
+            return Promise.resolve();
+        });
+        const errors = vi.spyOn(logger, 'error');
+        render(<MasterChannelStrip widthClass="w-36" />);
+        await typeEntry();
+        await entered.promise;
+        await act(async () => {
+            await executeAppAction({ type: 'setMasterGain', payload: { gain: 0.4, expectedPercent: 80 } });
+        });
+        await act(async () => {
+            release.resolve();
+            await release.promise;
+        });
+        await waitFor(() =>
+            expect(screen.getByRole('slider', { name: 'Master gain' })).toHaveAttribute('aria-valuenow', '0.4')
+        );
+        expectCommitted(project, 40, 1);
+        expect(errors).not.toHaveBeenCalled();
+    });
+});

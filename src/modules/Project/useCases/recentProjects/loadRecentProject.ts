@@ -10,6 +10,8 @@ import {
     type ProjectLoadTransaction,
 } from '../projectPersistence/helpers/runProjectLoadTransaction';
 
+import type { OutgoingProjectDisposition } from '../projectPersistence/helpers/resetCrdtProjectWithTransportStopped';
+
 /**
  * Why a recent-project load ended the way it did. Callers must distinguish
  * these before reacting: 'not-found' is the only definitive-dead-entry
@@ -20,10 +22,14 @@ import {
 export type LoadRecentProjectOutcome = 'committed' | 'not-found' | 'failed' | 'aborted';
 
 type LoadRecentProjectOptions = {
+    /** A discard caller restores the saved state in place of the edits, so those edits must not be saved. */
+    readonly outgoingProject?: OutgoingProjectDisposition;
     /** A recovery path may only accept a load whose CRDT snapshot compacted. */
     readonly requireDurable?: boolean;
     /** A discard caller keeps this true only while its captured project authority is still current. */
     readonly shouldProceed?: () => boolean;
+    /** A caller that must claim its place in the transition order before it reads allocates the transaction itself. */
+    readonly transaction?: ProjectLoadTransaction;
 };
 
 function isTransitionSuperseded(transaction: ProjectLoadTransaction, shouldProceed?: () => boolean): boolean {
@@ -34,9 +40,13 @@ function isTransitionSuperseded(transaction: ProjectLoadTransaction, shouldProce
 
 export async function loadRecentProject(
     key: string,
-    { requireDurable = false, shouldProceed }: LoadRecentProjectOptions = {}
+    {
+        outgoingProject,
+        requireDurable = false,
+        shouldProceed,
+        transaction = runProjectLoadTransaction(),
+    }: LoadRecentProjectOptions = {}
 ): Promise<LoadRecentProjectOutcome> {
-    const transaction = runProjectLoadTransaction();
     let raw: string | null;
     try {
         // Reads IndexedDB, the only store project content is written to. A
@@ -78,6 +88,7 @@ export async function loadRecentProject(
             afterCommit: () => writeProjectJson(JSON.stringify(data)),
             context: 'loadRecentProject',
             data,
+            outgoingProject,
             shouldProceed,
             transaction,
         });
