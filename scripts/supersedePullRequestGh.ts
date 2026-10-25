@@ -163,6 +163,7 @@ function readCommitComparison(output: string, endpoint: string, ancestor: string
         status?: unknown;
         ahead_by?: unknown;
         behind_by?: unknown;
+        total_commits?: unknown;
         base_commit?: { sha?: unknown };
         merge_base_commit?: { sha?: unknown };
         commits?: unknown;
@@ -174,6 +175,7 @@ function readCommitComparison(output: string, endpoint: string, ancestor: string
         typeof value.ahead_by !== 'number' ||
         !Number.isSafeInteger(value.ahead_by) ||
         value.ahead_by < 0 ||
+        value.total_commits !== value.ahead_by ||
         typeof value.behind_by !== 'number' ||
         !Number.isSafeInteger(value.behind_by) ||
         value.behind_by < 0
@@ -185,20 +187,31 @@ function readCommitComparison(output: string, endpoint: string, ancestor: string
         aheadBy: value.ahead_by,
         behindBy: value.behind_by,
         mergeBase: value.merge_base_commit.sha,
-        head: comparisonHead(value.commits),
+        head: comparisonHead(value.commits, value.ahead_by),
     };
 }
 
-/** Without paging parameters GitHub returns the comparison's newest commit last, even above 250. */
-function comparisonHead(commits: unknown): string | undefined {
-    if (!isUnknownArray(commits)) {
-        return undefined;
+/** Unpaged BASE..HEAD returns at most 250 distinct commits, with the comparison's newest last. */
+function comparisonHead(commits: unknown, aheadBy: number): string | undefined {
+    if (!isUnknownArray(commits) || commits.length !== Math.min(aheadBy, 250)) {
+        fail('incomplete supersession commit ancestry list');
     }
-    const commit = commits.at(-1);
-    if (typeof commit !== 'object' || commit === null || !('sha' in commit) || !isCommit(commit.sha)) {
-        return undefined;
+    const seen = new Set<string>();
+    let head: string | undefined;
+    for (const commit of commits) {
+        if (
+            typeof commit !== 'object' ||
+            commit === null ||
+            !('sha' in commit) ||
+            !isCommit(commit.sha) ||
+            seen.has(commit.sha)
+        ) {
+            fail('invalid supersession commit ancestry list');
+        }
+        seen.add(commit.sha);
+        head = commit.sha;
     }
-    return commit.sha;
+    return head;
 }
 function isUnknownArray(value: unknown): value is readonly unknown[] {
     return Array.isArray(value);

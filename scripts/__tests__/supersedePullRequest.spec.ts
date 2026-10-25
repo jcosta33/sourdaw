@@ -749,6 +749,16 @@ function realDependencyFixture(root: string, kind: 'direct' | 'late' | 'unrelate
 
 type ChildBaseRef = NonNullable<SupersededPullRequest['baseRef']> | null;
 
+function comparisonCommits(count: number, terminal: string): { sha: string }[] {
+    if (count === 0) {
+        return [];
+    }
+    return [
+        ...Array.from({ length: count - 1 }, (_, index) => ({ sha: (index + 1).toString(16).padStart(40, '0') })),
+        { sha: terminal },
+    ];
+}
+
 function nativeSupersessionFixture(
     root: string,
     moveAtRead?: number,
@@ -1062,6 +1072,7 @@ function nativeSupersessionFixture(
                 status: identical ? 'identical' : 'ahead',
                 ahead_by: identical ? 0 : 1,
                 behind_by: 0,
+                total_commits: identical ? 0 : 1,
                 base_commit: { sha: ancestor },
                 merge_base_commit: { sha: ancestor },
                 commits: identical ? [] : [{ sha: descendant }],
@@ -1215,6 +1226,99 @@ function sortedKeysEverywhere(value: unknown): boolean {
 }
 
 describe('pull-request supersession', () => {
+    it.each([
+        { label: 'one commit', ahead: 1, total: 1, commits: comparisonCommits(1, replacementHead), admitted: true },
+        { label: 'three commits', ahead: 3, total: 3, commits: comparisonCommits(3, replacementHead), admitted: true },
+        {
+            label: '250 of 300 commits',
+            ahead: 300,
+            total: 300,
+            commits: comparisonCommits(250, replacementHead),
+            admitted: true,
+        },
+        {
+            label: 'three-count terminal only',
+            ahead: 3,
+            total: 3,
+            commits: comparisonCommits(1, replacementHead),
+            admitted: false,
+        },
+        {
+            label: 'three entries padded with missing SHAs',
+            ahead: 3,
+            total: 3,
+            commits: [{}, {}, { sha: replacementHead }],
+            admitted: false,
+        },
+        {
+            label: 'three entries padded with malformed SHA',
+            ahead: 3,
+            total: 3,
+            commits: [{ sha: 'main' }, { sha: movedHead }, { sha: replacementHead }],
+            admitted: false,
+        },
+        {
+            label: 'three entries padded with duplicate SHA',
+            ahead: 3,
+            total: 3,
+            commits: [{ sha: movedHead }, { sha: movedHead }, { sha: replacementHead }],
+            admitted: false,
+        },
+        {
+            label: 'contradictory commit-set totals',
+            ahead: 1,
+            total: 3,
+            commits: comparisonCommits(1, replacementHead),
+            admitted: false,
+        },
+    ])('requires complete unpaged commit evidence for native distinct-parent closure: $label', async (scenario) => {
+        await withLockRoot(async (root) => {
+            const current = nativeSupersessionFixture(
+                root,
+                undefined,
+                true,
+                {},
+                {
+                    initialMarkers: false,
+                    comparison: { ahead_by: scenario.ahead, total_commits: scenario.total, commits: scenario.commits },
+                }
+            );
+            const result = runSerialized(
+                root,
+                current.port,
+                repairedLineage,
+                serializeFixture,
+                parentNumber,
+                parentReplacementNumber
+            );
+            if (scenario.admitted) {
+                await expect(result).resolves.toBe('pull-request-superseded:2244:2246');
+                expect(current.state()).toBe('CLOSED');
+                expect(current.comments().map((comment) => comment.body)).toEqual([
+                    oldComment.body,
+                    receiptBody,
+                    lineageBody,
+                    current.bindingBody,
+                ]);
+                expect(current.events.filter((event) => event === 'parent-merge-ancestry')).toHaveLength(4);
+                expect(current.events.filter((event) => event === 'comment')).toHaveLength(3);
+                expect(current.events.filter((event) => event === 'close')).toHaveLength(1);
+                expect(current.events.filter((event) => event === 'delete')).toEqual([]);
+                expect(current.events.filter((event) => event === 'pull-request-superseded:2244:2246')).toHaveLength(1);
+            } else {
+                await expect(result).rejects.toThrow(/ancestry/i);
+                expect(current.state()).toBe('OPEN');
+                expect(current.comments()).toEqual([oldComment]);
+                expect(current.events.filter((event) => event === 'parent-merge-ancestry')).toHaveLength(1);
+                expect(
+                    current.events.filter((event) => /^(?:comment|close|delete|pull-request-superseded:)/.test(event))
+                ).toEqual([]);
+            }
+            expect(
+                readPullRequestMutationLockOid(root, pullRequestMutationLockRef(oldNumber), oldNumber)
+            ).toBeUndefined();
+        });
+    });
     it.each([
         { label: 'correct', comparison: {}, admitted: true },
         { label: 'wrong terminal', comparison: { commits: [{ sha: movedHead }] }, admitted: false },
@@ -2676,7 +2780,8 @@ describe('pull-request supersession', () => {
                     status: 'ahead',
                     ahead_by: 3,
                     behind_by: 0,
-                    commits: [{ sha: replacementHead }],
+                    total_commits: 3,
+                    commits: comparisonCommits(3, replacementHead),
                 });
             })
         ).toBe(true);
@@ -2692,7 +2797,8 @@ describe('pull-request supersession', () => {
                     status: 'ahead',
                     ahead_by: 300,
                     behind_by: 0,
-                    commits: [...Array.from({ length: 249 }, () => ({ sha: movedHead })), { sha: replacementHead }],
+                    total_commits: 300,
+                    commits: comparisonCommits(250, replacementHead),
                 })
             )
         ).toBe(true);
@@ -2707,6 +2813,7 @@ describe('pull-request supersession', () => {
                     status: 'identical',
                     ahead_by: 0,
                     behind_by: 0,
+                    total_commits: 0,
                     commits: [],
                 })
             )
@@ -2725,6 +2832,8 @@ describe('pull-request supersession', () => {
                     status,
                     ahead_by: aheadBy,
                     behind_by: behindBy,
+                    total_commits: aheadBy,
+                    commits: comparisonCommits(aheadBy, replacementHead),
                 })
             )
         ).toBe(false);
@@ -2745,12 +2854,14 @@ describe('pull-request supersession', () => {
         ['ahead but unrelated', { merge_base_commit: { sha: movedHead } }],
         ['unknown status', { status: 'unknown' }],
         ['missing counts', { ahead_by: null }],
+        ['missing commit-set total', { total_commits: undefined }],
+        ['contradictory commit-set total', { total_commits: 1 }],
         ['contradictory counts', { behind_by: 1 }],
-        ['wrong terminal object', { commits: [{ sha: movedHead }] }],
+        ['wrong terminal object', { commits: comparisonCommits(3, movedHead) }],
         ['missing terminal object', { commits: undefined }],
         ['empty terminal object', { commits: [] }],
-        ['malformed terminal object', { commits: [{ sha: 'main' }] }],
-        ['contradictory terminal object', { commits: [{ sha: replacementHead }, { sha: parentMerge }] }],
+        ['malformed terminal object', { commits: comparisonCommits(3, 'main') }],
+        ['contradictory terminal object', { commits: [{ sha: head }, { sha: replacementHead }, { sha: parentMerge }] }],
     ])('fails closed on %s ancestry evidence', (label, patch) => {
         let response: unknown = patch;
         if (label !== 'status-only') {
@@ -2761,7 +2872,8 @@ describe('pull-request supersession', () => {
                 status: 'ahead',
                 ahead_by: 3,
                 behind_by: 0,
-                commits: [{ sha: replacementHead }],
+                total_commits: 3,
+                commits: comparisonCommits(3, replacementHead),
                 ...patch,
             };
         }
