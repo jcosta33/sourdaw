@@ -1,0 +1,77 @@
+src/modules/AiRuntime/models/AgentRun.ts
+  s_29d8df116c5b92::t_1cb7c881ffbdde 6,109-110
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_29d8df116c5b92::t_3d6943731420c5 54-60
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_59e31a5c6f3e31::t_5ccbaa3c127667 41,1243-1305,1326-1329,1348,1359-1362
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_3168504f6ce387::t_dc20db034f8fa0 30,36,47,1486,1518-1519,1524,1534-1545,1630-1650,1652-1671,1861-2019,2070-2076,2110,2115-2124,2135
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_3168504f6ce387::t_19518b2ee1aab7 6305-6306,6597-6762
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_3168504f6ce387::t_c32aeb5a43bb8e 8943-8975
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_3168504f6ce387::t_f67d6eb2331fca 4,21,90,388-395,398-403,405
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_3168504f6ce387::t_eac0b250094356 16,159,193-194,221,4562,4855,4991,6111,6115,6136-6152,6990-6992,7015-7021,7097,7118-7134,7136,7138,7941
+src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts
+  s_3168504f6ce387::t_f3dbcc52bec1dc 5,35,43-51
+src/modules/AiRuntime/useCases/agentReference/proposalCommandShape.ts
+  s_3168504f6ce387::t_e1fa0ef88973d7 174-175,177,289-325,328
+src/modules/AiRuntime/useCases/agentReference/proposalProtection.ts
+  s_3168504f6ce387::t_716eb4c9532568 1-42
+src/modules/AiRuntime/useCases/agentReference/refinementRemovalReading.ts
+  s_3168504f6ce387::t_b5721dfc26ec4e 6,269-280,282,293-297,302
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_3168504f6ce387::t_538155efb76c7e 85
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_3168504f6ce387::t_b9303fbf65205e 64-70,109,127,176
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_3168504f6ce387::t_acf90604e5d238 13,31-32,315,343-350
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_3168504f6ce387::t_c8b5bdbfee4ec6 10-14,54-55,132,145-149,243,397-399
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_b3201877f50e8a::t_f982a8a704992b 60-61,1140-1143,1208-1237,1253-1254,1288-1289
+src/modules/AiRuntime/validators/admitProposalRefinement.ts
+  s_3168504f6ce387::t_c5d143a9756150 147,151,155,157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b12aecf1e5b7c8312274dccdd62206bf88791ec9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
