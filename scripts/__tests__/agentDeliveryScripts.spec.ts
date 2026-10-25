@@ -3484,7 +3484,7 @@ describe('package scripts and gitignore', () => {
                         },
                     ],
                 },
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'gpt-6-luna',
             })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');

@@ -2,8 +2,8 @@
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { reviewStanceFloor } from './reviewRiskPolicy.ts';
 import { assertReviewModelEligible } from './reviewerModelDiversity.ts';
+import { reviewStanceFloor } from './reviewRiskPolicy.ts';
 
 import type { ReviewDocument } from './reviewDocumentParser.ts';
 import type { CompletedReviewStance } from './reviewDossier.ts';
