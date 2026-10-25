@@ -106,12 +106,19 @@ export function takeReKeySourceValuesMatch(
     const toKeys = new Set(to.map(regionKey));
     const removed = new Set(from.filter((region) => !toKeys.has(regionKey(region))).map(regionKey));
     const live = lane?.activeCompRegions ?? [];
+    const liveTakeIds = new Set(lane?.takes.map((take) => take.id) ?? []);
+    // A missing take may recover its captured region. A surviving take still
+    // owns the exact physical source value, including an independent deletion.
     if (
         from.some(
-            (region) => removed.has(regionKey(region)) && !live.some((candidate) => valuesEqual(candidate, region))
+            (region) =>
+                removed.has(regionKey(region)) &&
+                liveTakeIds.has(region.takeId) &&
+                !live.some((candidate) => valuesEqual(candidate, region))
         )
-    )
+    ) {
         return false;
+    }
     const kept = live.filter((region) => !removed.has(regionKey(region)));
     if (
         to.some(

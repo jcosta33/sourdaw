@@ -72,4 +72,32 @@ describe('take re-key source-value ownership', () => {
         expect(reKeyedTakeLaneOwnersMatchStore([transition], 'restore')).toBe(false);
         expect(mocks.state.value).toEqual(before);
     });
+
+    it('allows captured physical regions to recover with their missing take owner', () => {
+        const state = mocks.state.value!;
+        state.lanes[0]!.takes = [transition.takesAfter[0]!];
+        state.lanes[0]!.activeCompRegions = [leftRegion];
+        const before = structuredClone(state);
+
+        expect(reKeyedTakeLaneOwnersMatchStore([transition], 'restore')).toBe(true);
+        expect(mocks.state.value).toEqual(before);
+    });
+
+    it('refuses a missing physical region while its take owner remains live', () => {
+        const state = mocks.state.value!;
+        state.lanes[0]!.activeCompRegions = [leftRegion];
+        const before = structuredClone(state);
+
+        expect(reKeyedTakeLaneOwnersMatchStore([transition], 'restore')).toBe(false);
+        expect(mocks.state.value).toEqual(before);
+    });
+
+    it('refuses to retire a take carrying a later region outside the captured physical programme', () => {
+        const state = mocks.state.value!;
+        state.lanes[0]!.activeCompRegions.push({ ...rightRegion, startBeat: 5, endBeat: 6 });
+        const before = structuredClone(state);
+
+        expect(reKeyedTakeLaneOwnersMatchStore([transition], 'restore')).toBe(false);
+        expect(mocks.state.value).toEqual(before);
+    });
 });

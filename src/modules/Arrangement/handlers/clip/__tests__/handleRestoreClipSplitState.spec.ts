@@ -15,6 +15,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
         decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         getGrooveTemplate: actual.getGrooveTemplate,
+        getMidiStoreState: actual.getMidiStoreState,
         getScopedGrooveAssignment: actual.getScopedGrooveAssignment,
         getScopedGrooveConsumerId: actual.getScopedGrooveConsumerId,
         getStraightGrooveTemplateId: actual.getStraightGrooveTemplateId,

@@ -25,6 +25,7 @@ import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip'
 import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
+import { createdClipMidiCapture } from './createdClipMidiCapture';
 import { clipSplitCaptureOwnersMatch, isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
 
 type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
@@ -145,23 +146,34 @@ function applySplitTakeTransition(
     return [];
 }
 
+function prepareCreatedMidi(action: RestoreClipSplitStateAction) {
+    if (!action.payload.replacement.rightClip || action.payload.expected.rightClip) {
+        return null;
+    }
+    return createdClipMidiCapture({ phase: 'prepare', action, clipId: action.payload.rightClipId });
+}
+
 export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'>({
     validateSessionActionArguments: isRestoreClipSplitSessionPayload,
     // `expected`/`replacement` are mandatory on this payload, so every instance carries a real
     // precondition `validate` re-checks.
     canReapplyAfterDivergence: () => true,
     validate: clipSplitStateMatches,
+    prepareAbort: (action) => () => createdClipMidiCapture({ phase: 'discard', action }),
     execute: (action) => {
         if (hasForeignPendingProjectWrites() || !clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
+        const createdMidi = prepareCreatedMidi(action);
+        createdMidi?.stage(action.payload.replacement.rightMidi);
         const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
         const ownsPublication = capture ? captureProjectMutationAuthorization() : null;
         // Bind inside this handler's storage transaction, before any owner writes.
         ownsPublication?.();
         let stagedRetired: ReturnType<typeof removeTakesForClips> = [];
         const installCapture = () => {
+            createdClipMidiCapture({ phase: 'discard', action });
             if (
                 capture &&
                 getCrdtDoc('root') &&
@@ -202,9 +214,10 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             }
         }
         stagedRetired = applySplitTakeTransition(action.payload);
+        createdMidi?.complete();
         // The paired arrays belong to history, outside the project transaction.
         // Publish their staged capture only once this exact owner committed.
-        if (capture) {
+        if (capture || createdMidi) {
             return { status: 'written', afterCommit: installCapture, afterAmbiguousCommit: installCapture };
         }
         return { status: 'written' };

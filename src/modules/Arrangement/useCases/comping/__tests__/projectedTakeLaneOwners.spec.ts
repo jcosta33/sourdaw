@@ -6,6 +6,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { projectedTakeLaneOwners } from '../projectedTakeLaneOwners';
+import { reKeyedTakeLaneOwnersMatchStore } from '../reKeyedTakeLaneOwnersMatchStore';
 import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
 
 const mocks = vi.hoisted(() => ({ state: { value: null as TakeLaneStoreState | null } }));
@@ -72,6 +73,39 @@ describe('projectedTakeLaneOwners split Undo prefix', () => {
             { id: 'peer-lane', trackId: 'peer-track', takes: [peerTake], activeCompRegions: [] },
         ]);
         expect(mocks.state.value).toEqual(before);
+    });
+
+    it('projects owned comp deltas for a later guard and preserves unrelated live regions', () => {
+        const before = { ...originalTake, startBeat: 0, endBeat: 4 };
+        const left = { ...before, endBeat: 2 };
+        const right = { ...before, id: 'right-take', clipId: 'split-right', startBeat: 2 };
+        const beforeRegion = { startBeat: 0, endBeat: 4, takeId: before.id };
+        const afterRegions = [
+            { startBeat: 0, endBeat: 2, takeId: left.id },
+            { startBeat: 2, endBeat: 4, takeId: right.id },
+        ];
+        const transition = {
+            laneId: 'source-lane',
+            trackId: 'track',
+            takesBefore: [before],
+            takesAfter: [left, right],
+            regionsBefore: [beforeRegion],
+            regionsAfter: afterRegions,
+        };
+        const peerRegion = { startBeat: 8, endBeat: 12, takeId: peerTake.id };
+        mocks.state.value!.lanes[0]!.takes = [left, right];
+        mocks.state.value!.lanes[0]!.activeCompRegions = afterRegions;
+        mocks.state.value!.lanes[1]!.activeCompRegions = [peerRegion];
+        const action = structuredClone(undoSplit);
+        action.payload.reKeyedTakeLanes = [transition];
+        const live = structuredClone(mocks.state.value);
+        expect(reKeyedTakeLaneOwnersMatchStore([transition], 'apply')).toBe(false);
+        expect(reKeyedTakeLaneOwnersMatchStore([transition], 'apply', [action])).toBe(true);
+        expect(projectedTakeLaneOwners([action]).map((lane) => lane.activeCompRegions)).toEqual([
+            [beforeRegion],
+            [peerRegion],
+        ]);
+        expect(mocks.state.value).toEqual(live);
     });
 
     it('refuses a later captured global take id collision with the owner restored by the prefix', () => {

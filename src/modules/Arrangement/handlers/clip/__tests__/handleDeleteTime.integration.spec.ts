@@ -1,3 +1,4 @@
+import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -31,6 +32,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    replaceCrdtDocInLineage,
     setupProjectionBridge,
     getDrumPreviewBranchHandlers,
 } from '#/modules/CrdtDocument/useCases';
@@ -394,6 +396,72 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         expect(trackStore.value).toMatchObject({ selectedTrackId: 'midi-track', ghostClips: [ghost] });
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it.each([false, true])('binds saved time retirement to erased clips: forged=%s', async (forged) => {
+        hydrateProductionContracts();
+        arrangeJoinedOwners();
+        warpStateStore.set({ states: {} });
+        const untouchedTake = createTake('before-range', 'Untouched', 0, 1);
+        mutateCrdtDoc<Project>({
+            id: 'root',
+            changeFn: (project) => {
+                project.tracks.tracks.push(
+                    TrackDummy.create({
+                        id: 'untouched-track',
+                        kind: 'audio',
+                        clips: [
+                            ClipDummy.create({
+                                id: 'before-range',
+                                trackId: 'untouched-track',
+                                startBeat: 0,
+                                endBeat: 1,
+                            }),
+                        ],
+                    })
+                );
+                project.takeLanes.lanes.push({
+                    ...createTakeLane('untouched-track'),
+                    takes: [untouchedTake],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 1, takeId: untouchedTake.id }],
+                });
+            },
+        });
+        flushAutomergeStorageWrites();
+        const original = durableOwners();
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
+        await vi.waitFor(() =>
+            expect(
+                (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past
+            ).toHaveLength(1)
+        );
+        const deleted = durableOwners();
+        const saved = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: SavedDeleteEntry[] };
+        const entry = saved.past[0]!;
+        for (const plan of [entry.inverseAction.payload.plan, entry.redoAction.payload.plan]) {
+            const takeLanes = plan.takeLanes as { removedClipIds: string[] };
+            expect(takeLanes.removedClipIds).toEqual(['gone']);
+            if (forged) {
+                takeLanes.removedClipIds.push('before-range');
+            }
+        }
+        sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(saved));
+        const document = getCrdtDoc<Project>('root')!;
+        replaceCrdtDocInLineage({ id: 'root', doc: Automerge.load<Project>(Automerge.save(document)) });
+        projectCrdtToStores({ resetProjections: true });
+        hydrateProductionContracts();
+        expectDurableOwners(deleted);
+        expect(undoStore.value?.past).toHaveLength(forged ? 0 : 1);
+        const history = structuredClone(undoStore.value);
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            await undo();
+            expectDurableOwners(forged ? deleted : original);
+            await redo();
+            expectDurableOwners(deleted);
+        }
+        if (forged) {
+            expect(undoStore.value).toEqual(history);
+        }
     });
 
     it.each(
