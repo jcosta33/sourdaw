@@ -112,6 +112,12 @@ function placedPassMedia(
                 depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
         },
+        offsetSecondsAt: (beat) => {
+            if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
+                return depthSeconds + (((beat - passStartBeat) * 60) / passStartTempo) * sourceRate;
+            }
+            return depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
+        },
     };
     if (sourceEndSeconds !== undefined) {
         const passEndBeat = beatAfterSourceSeconds(
@@ -160,9 +166,12 @@ export function resolveTakeMedia(
     >,
     clip: Clip,
     timeline: TempoTimeline
-): TakeMedia {
+): TakeMedia | null {
     if (clip.type === 'audio') {
         const physical = resolveAudioTakeSource(take, clip, timeline);
+        if (physical && 'status' in physical) {
+            return null;
+        }
         if (physical) {
             return physical;
         }

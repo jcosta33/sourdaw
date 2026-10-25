@@ -1,4 +1,9 @@
-import { audioSourceSnapshotAtBeat, partitionAudioSourceTiles, audioTakeFragmentSource } from '#/utils/audioSourceTime';
+import {
+    audioSourceSnapshotAtBeat,
+    partitionAudioSourceTiles,
+    audioTakeFragmentSource,
+    hasCanonicalAudioTakeSource,
+} from '#/utils/audioSourceTime';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import { compBaseGapWindows } from '#/utils/compBaseGapWindows';
@@ -65,6 +70,9 @@ export function resolveCompingProgramme(
         }
 
         const media = resolveTakeMedia(take, sourceClip, timeline);
+        if (!media) {
+            continue;
+        }
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
         if (overlapStart >= overlapEnd) {
@@ -102,12 +110,8 @@ export function resolveCompingProgramme(
                     sourceClip.loopEnabled ?? false,
                     timeline.secondsAtBeat
                 );
-            } else {
-                audioSource = audioTakeFragmentSource(
-                    media.offsetSecondsAt?.(overlapStart) ??
-                        media.offsetAt(overlapStart) * (60 / timeline.tempoAtBeat(overlapStart)),
-                    overlapStart
-                );
+            } else if (hasCanonicalAudioTakeSource(take, sourceClip) && media.offsetSecondsAt) {
+                audioSource = audioTakeFragmentSource(media.offsetSecondsAt(overlapStart), overlapStart);
             }
         }
         resolved.push({

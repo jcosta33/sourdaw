@@ -463,6 +463,33 @@ describe('split audio loop source compatibility', () => {
 describe('live and offline comp resolution', () => {
     afterEach(() => {
         takeLaneStore.set({ lanes: [] });
+        tempoMapStore.set({ changes: [] });
+    });
+
+    it('uses direct placed seconds when a canonical clip keeps an older placed take', () => {
+        tempoMapStore.set({ changes: [{ id: 'flat', beat: 0, tempo: 140, curve: 'instant' }] });
+        const clip = { ...recording(3.3, 6), audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: 0 };
+        const take = placedPass('older-placement', [3.3, 4], 0, 0.1);
+        const state = lane([take], take.id, 3.3, 4);
+        takeLaneStore.set(state);
+        const live = resolveClipsWithComping('t1', [clip]);
+        const offline = resolveTrackClipsWithComping('t1', [clip], state);
+        for (const fragments of [live, offline]) {
+            const selected = fragments.find((fragment) => fragment.regionStartBeat === 3.3)!;
+            expect(selected).toBeDefined();
+            expect(selected.audioOffsetSeconds).toBe(0.1);
+            const [playback] = projectOfflineAudioClipPlaybacks({
+                clip: selected,
+                bufferDurationSeconds: 8,
+                regionStartBeat: 0,
+                regionStartSec: 0,
+                durationSeconds: 40,
+                compensationDelay: 0,
+                projectBeatToSeconds: (beat) => (beat * 60) / 140,
+                resolveTempoAtBeat: () => 140,
+            });
+            expect(playback?.bufferOffsetSec).toBe(0.1);
+        }
     });
 
     it.each(cases)('resolve the same fragments for a pass $name', ({ state, clip }) => {

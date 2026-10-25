@@ -5,6 +5,7 @@ import {
     partitionAudioSourceTiles,
     audioTakeFragmentSource,
     resolveAudioTakeSource,
+    hasCanonicalAudioTakeSource,
 } from '#/utils/audioSourceTime';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -138,7 +139,8 @@ function placedPassMedia(
 ): TakeMedia {
     const sourceRate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline, sourceRate);
-    const depthBeats = (depthSeconds * timeline.tempoAtBeat(passStartBeat)) / 60;
+    const passStartTempo = timeline.tempoAtBeat(passStartBeat);
+    const depthBeats = (depthSeconds * passStartTempo) / 60;
     const media: TakeMedia = {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat: passStartBeat - depthBeats / sourceRate,
@@ -149,6 +151,12 @@ function placedPassMedia(
             const mediaSeconds =
                 depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
+        },
+        offsetSecondsAt: (beat) => {
+            if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
+                return depthSeconds + (((beat - passStartBeat) * 60) / passStartTempo) * sourceRate;
+            }
+            return depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
         },
     };
     if (sourceEndSeconds !== undefined) {
@@ -171,9 +179,12 @@ function placedPassMedia(
     return media;
 }
 
-function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia {
+function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia | null {
     if (clip.type === 'audio') {
         const physical = resolveAudioTakeSource(take, clip, timeline);
+        if (physical && 'status' in physical) {
+            return null;
+        }
         if (physical) {
             return physical;
         }
@@ -272,6 +283,9 @@ export function resolveTrackClipsWithComping(
         }
 
         const media = resolveTakeMedia(take, sourceClip, timeline);
+        if (!media) {
+            continue;
+        }
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
         if (overlapStart >= overlapEnd) {
@@ -309,12 +323,8 @@ export function resolveTrackClipsWithComping(
                     sourceClip.loopEnabled ?? false,
                     timeline.secondsAtBeat
                 );
-            } else {
-                audioSource = audioTakeFragmentSource(
-                    media.offsetSecondsAt?.(overlapStart) ??
-                        media.offsetAt(overlapStart) * (60 / timeline.tempoAtBeat(overlapStart)),
-                    overlapStart
-                );
+            } else if (hasCanonicalAudioTakeSource(take, sourceClip) && media.offsetSecondsAt) {
+                audioSource = audioTakeFragmentSource(media.offsetSecondsAt(overlapStart), overlapStart);
             }
         }
         resolvedClips.push({

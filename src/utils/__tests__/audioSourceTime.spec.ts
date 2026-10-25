@@ -7,7 +7,79 @@ import {
     projectAudioLoopPassSegments,
     resolveAudioLoopStartSeconds,
     captureAudioSourceState,
+    resolveAudioTakeSource,
 } from '../audioSourceTime';
+
+describe('audio take clock admission', () => {
+    const clip = { startBeat: 3.3, audioOffsetBeats: 0.1 };
+    const timeline = {
+        secondsAtBeat: (beat: number) => (beat * 60) / 140,
+        beatAtSeconds: (seconds: number) => (seconds * 140) / 60,
+        tempoAtBeat: () => 140,
+    };
+
+    it.each([{}, { sourceOffsetBeats: 0 }, { sourceOffsetBeats: 0.25 }])(
+        'leaves beat-only input to the legacy arithmetic without promoting a read %j',
+        (take) => {
+            expect(resolveAudioTakeSource(take, clip, timeline)).toBeNull();
+        }
+    );
+
+    it('keeps canonical clip zero authoritative over legacy clip beats', () => {
+        const media = resolveAudioTakeSource({}, { ...clip, audioOffsetSeconds: 0 }, timeline);
+        expect(media).not.toBeNull();
+        if (!media || 'status' in media) {
+            throw new Error('Expected canonical media');
+        }
+        expect(media.offsetSecondsAt(clip.startBeat)).toBe(0);
+    });
+
+    it('keeps canonical take depth zero authoritative over legacy take beats', () => {
+        const media = resolveAudioTakeSource(
+            { sourceOffsetBeats: 8, sourceOffsetSeconds: 0 },
+            { ...clip, audioOffsetSeconds: 0 },
+            timeline
+        );
+        expect(media).not.toBeNull();
+        if (!media || 'status' in media) {
+            throw new Error('Expected canonical media');
+        }
+        expect(media.offsetSecondsAt(clip.startBeat)).toBe(0);
+    });
+
+    it.each([
+        { audioOffsetSeconds: Number.NaN },
+        { audioUnwrappedOffsetSeconds: 0 },
+        { audioLoopStartSeconds: 0 },
+        { audioLoopPassEntrySeconds: 0 },
+        { audioLoopPassOriginBeat: 0 },
+    ])('does not reinterpret malformed or orphan modern clip fields as legacy %j', (fields) => {
+        expect(resolveAudioTakeSource({}, { ...clip, ...fields }, timeline)).toEqual({ status: 'invalid' });
+    });
+
+    it.each([{ sourceOffsetSeconds: Number.NaN }, { passOriginBeat: 0 }, { passSourceEndSeconds: 2 }])(
+        'does not reinterpret malformed or orphan modern take fields as legacy %j',
+        (take) => {
+            expect(resolveAudioTakeSource(take, clip, timeline)).toEqual({ status: 'invalid' });
+        }
+    );
+
+    it('keeps an old placed pass on its existing physical placement algorithm until its basis is captured', () => {
+        expect(
+            resolveAudioTakeSource({ sourceOffsetBeats: 0, passAnchorSeconds: 1, passDepthSeconds: 2 }, clip, timeline)
+        ).toBeNull();
+    });
+
+    it('rejects an orphan original pass basis instead of falling back to legacy placed media', () => {
+        expect(
+            resolveAudioTakeSource(
+                { sourceOffsetBeats: 0, passAnchorSeconds: 1, passDepthSeconds: 2, passOriginBeat: 0 },
+                clip,
+                timeline
+            )
+        ).toEqual({ status: 'invalid' });
+    });
+});
 
 describe('resolveAudioSourceOffsetSeconds', () => {
     it('prefers canonical zero over a nonzero legacy offset', () => {

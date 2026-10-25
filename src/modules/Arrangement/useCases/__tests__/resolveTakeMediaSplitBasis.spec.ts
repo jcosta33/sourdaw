@@ -89,6 +89,11 @@ describe('placed and unplaced take origins through a stretched split', () => {
         const { clip, unplaced, right, rightUnplaced } = splitWithUnselectedTakes();
         const before = resolveTakeMedia(unplaced, clip, timeline);
         const after = resolveTakeMedia(rightUnplaced, right, timeline);
+        expect(before).not.toBeNull();
+        expect(after).not.toBeNull();
+        if (!before || !after) {
+            throw new Error('Expected valid unplaced source media');
+        }
         expect(before.offsetAt(18) / 2).toBe(11);
         expect(after.offsetAt(18) / 2).toBe(11);
     });
@@ -102,6 +107,11 @@ describe('placed and unplaced take origins through a stretched split', () => {
             const { clip, placed, right, rightPlaced } = splitWithUnselectedTakes();
             const before = resolveTakeMedia(placed, { ...clip, stretchRatio: rate }, timeline);
             const after = resolveTakeMedia(rightPlaced, { ...right, stretchRatio: rate }, timeline);
+            expect(before).not.toBeNull();
+            expect(after).not.toBeNull();
+            if (!before || !after) {
+                throw new Error('Expected valid placed source media');
+            }
             expect(before.earliestBeat).toBe(firstBeat);
             expect(after.earliestBeat).toBe(firstBeat);
             expect(after.latestBeatAt?.(firstBeat)).toBe(lastBeat);

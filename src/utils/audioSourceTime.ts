@@ -40,12 +40,46 @@ type AudioTakeSource = {
     passOriginSourceSeconds?: number;
 };
 
+/** Presence chooses authority. Invalid modern data must never become a legacy read. */
+export function hasCanonicalAudioTakeSource(take: AudioTakeSource, clip: LoopedAudioSource): boolean {
+    return [
+        clip.audioOffsetSeconds,
+        clip.audioUnwrappedOffsetSeconds,
+        clip.audioLoopStartSeconds,
+        clip.audioLoopPassEntrySeconds,
+        clip.audioLoopPassOriginBeat,
+        take.sourceOffsetSeconds,
+        take.passOriginBeat,
+        take.passOriginSourceSeconds,
+    ].some((value) => value !== undefined);
+}
+
 /** Physical take media shared by live and offline comp resolution. */
 export function resolveAudioTakeSource(
     take: AudioTakeSource,
-    clip: AudioSourceOffset & { startBeat: number; stretchMode?: string; stretchRatio?: number },
+    clip: LoopedAudioSource & { stretchMode?: string; stretchRatio?: number },
     timeline: AudioSourceTimeline
 ) {
+    const hasPlacement = [take.passAnchorSeconds, take.passDepthSeconds, take.passSourceEndSeconds].some(
+        (value) => value !== undefined
+    );
+    if (
+        !hasValidAudioSourceState(clip) ||
+        !hasValidAudioPassOrigin(take) ||
+        (take.sourceOffsetSeconds !== undefined &&
+            (!Number.isFinite(take.sourceOffsetSeconds) || take.sourceOffsetSeconds < 0)) ||
+        (hasPlacement &&
+            (take.passAnchorSeconds === undefined ||
+                !Number.isFinite(take.passAnchorSeconds) ||
+                take.passDepthSeconds === undefined ||
+                !Number.isFinite(take.passDepthSeconds) ||
+                take.passDepthSeconds < 0 ||
+                (take.passSourceEndSeconds !== undefined &&
+                    (!Number.isFinite(take.passSourceEndSeconds) ||
+                        take.passSourceEndSeconds <= take.passDepthSeconds))))
+    ) {
+        return { status: 'invalid' as const };
+    }
     const rate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
         // Old placed records retain their historical constant-span shortcut until
@@ -79,6 +113,9 @@ export function resolveAudioTakeSource(
                 return timeline.beatAtSeconds(timeline.secondsAtBeat(beat) + remaining / rate);
             },
         };
+    }
+    if (!hasCanonicalAudioTakeSource(take, clip)) {
+        return null;
     }
     const tempo = timeline.tempoAtBeat(clip.startBeat);
     const depth = take.sourceOffsetSeconds ?? ((take.sourceOffsetBeats ?? 0) * 60) / tempo;
