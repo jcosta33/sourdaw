@@ -424,6 +424,49 @@ describe('createAutomergeStorage', () => {
         expect(doc.state).toEqual({ templates: ['occupied-name', 'groove-clip-source-v1'] });
     });
 
+    it('keeps ordinary supersession when a configured metadata hook captures null', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const reduce = vi.fn(({ captured }: { captured: readonly number[] }) => captured);
+        const storage = createAutomergeStorage<{ count: number }, readonly number[]>('root', 'state', {
+            writeMetadata: { capture: () => null, reduce },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
+        storage.set({ count: 3 });
+        transaction.scope(() => storage.set({ count: 4 }));
+        transaction.commit();
+        flushAutomergeStorageWrites();
+        expect(doc.state).toEqual({ count: 4 });
+        expect(storage.get()).toEqual({ count: 4 });
+        expect(reduce).not.toHaveBeenCalled();
+    });
+
+    it('keeps an empty captured journal on its owner replay path after a newer scoped commit', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const replayed: unknown[] = [];
+        const storage = createAutomergeStorage<{ count: number }, readonly number[]>('root', 'state', {
+            writeMetadata: { capture: () => [], reduce: ({ current, captured }) => [...(current ?? []), ...captured] },
+            mutateCrdtWithMetadata: ({ authorityValue, metadata, reconcile }) => {
+                // This owner's empty journal means no durable operation, even
+                // if its optimistic projection differs from current authority.
+                replayed.push(metadata);
+                reconcile(authorityValue, authorityValue);
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => storage.set({ count: 2 }));
+        storage.set({ count: 3 });
+        transaction.scope(() => storage.set({ count: 4 }));
+        transaction.commit();
+        expect(replayed).toEqual([[]]);
+        flushAutomergeStorageWrites();
+        expect(replayed).toEqual([[], []]);
+        expect(doc.state).toEqual({ count: 0 });
+        expect(storage.get()).toEqual({ count: 0 });
+    });
+
     it('still commits a pending write whose last set is newer than the latest commit', () => {
         const { doc, port } = createTestPort();
         configureAutomergeStoragePort(port);

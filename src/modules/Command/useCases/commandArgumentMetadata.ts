@@ -108,9 +108,17 @@ function appendValueMetadata(metadata: CommandArgumentMetadata, value: unknown, 
     }
 }
 
-export function isCompSourceSupportPath(operation: string | undefined, path: string): boolean {
-    if (operation !== 'setCompRegion' && operation !== 'removeCompRegion' && operation !== 'restoreCompRegionInterval')
+export function isDerivedSourceSupportPath(operation: string | undefined, path: string): boolean {
+    if (operation === 'setTempo' || operation === 'restoreTempoEdit') {
+        return path === 'audioSourcePromotion' || path.startsWith('audioSourcePromotion.');
+    }
+    if (
+        operation !== 'setCompRegion' &&
+        operation !== 'removeCompRegion' &&
+        operation !== 'restoreCompRegionInterval'
+    ) {
         return false;
+    }
     return (
         path.startsWith('audioSourcePromotions[') || /^(expected|replacement)\[\d+\]\.audioSource(?:\.|$)/.test(path)
     );
@@ -137,15 +145,15 @@ export function compileCommandArgumentMetadata(
             }
         }
     }
-    // Source preservation on complements is derived support. Its owner still
-    // validates every value; it does not expand the musician's requested scope.
+    // Source preservation is derived support. Its owner still validates every
+    // value; these captures do not expand the musician's requested scope.
     return {
         objectReferences: metadata.objectReferences.filter(
-            (reference) => !isCompSourceSupportPath(operation, reference.argument)
+            (reference) => !isDerivedSourceSupportPath(operation, reference.argument)
         ),
         parameterUnits: metadata.parameterUnits.filter(
-            (parameter) => !isCompSourceSupportPath(operation, parameter.argument)
+            (parameter) => !isDerivedSourceSupportPath(operation, parameter.argument)
         ),
-        time: metadata.time.filter((time) => !isCompSourceSupportPath(operation, time.argument)),
+        time: metadata.time.filter((time) => !isDerivedSourceSupportPath(operation, time.argument)),
     };
 }

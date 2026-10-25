@@ -13,6 +13,8 @@ import {
     type CompAudioSourceAuthorization,
 } from './compAudioSourcePromotions';
 import { type CompAudioSourceInputContext } from './compAudioSourceInputs';
+import { projectTempoAudioSourceLanes } from './tempoAudioSources';
+import { tempoAudioSourceWriteIntentMatches, type TempoAudioSourceWriteIntent } from './tempoAudioSourceWriteIntent';
 import {
     captureBaseGapAudioSources,
     replaceBaseGapAudioSources,
@@ -90,6 +92,7 @@ type TakeFieldOperation =
       };
 
 export type TakeLaneWriteOperation =
+    | { readonly kind: 'tempo-audio-sources'; readonly intent: TempoAudioSourceWriteIntent }
     | {
           readonly kind: 'replace-state';
           readonly expected: TakeLaneStoreValue | null;
@@ -138,6 +141,7 @@ export type TakeLaneWriteOperation =
 export type TakeLaneWriteJournal = readonly TakeLaneWriteOperation[];
 
 type TakeLaneWriteIntent =
+    | { readonly kind: 'tempo-audio-sources'; readonly intent: TempoAudioSourceWriteIntent }
     | {
           readonly kind: 'comp-region-interval';
           readonly patch: TakeLaneCompRegionPatch;
@@ -149,6 +153,7 @@ type LaneWriteOperation = Exclude<
     TakeLaneWriteOperation,
     | { readonly kind: 'replace-state' }
     | { readonly kind: 'comp-region-interval' }
+    | { readonly kind: 'tempo-audio-sources' }
     | { readonly kind: 'insert-lane' }
     | { readonly kind: 'remove-lane' }
 >;
@@ -368,19 +373,22 @@ export function captureTakeLaneWriteJournal(input: {
 }): TakeLaneWriteJournal {
     const pending = pendingWriteIntent;
     pendingWriteIntent = undefined;
-    if (pending && pending.owner !== getCurrentAutomergeStorageMutationOwner())
+    if (pending && pending.owner !== getCurrentAutomergeStorageMutationOwner()) {
         throw new AutomergeStorageWriteConflictError('Comp source intent belongs to another mutation owner');
+    }
     const intent = pending?.intent;
+    if (intent?.kind === 'tempo-audio-sources') {
+        return [cloneValue(intent)];
+    }
     if (intent?.kind === 'comp-region-interval') {
-        return [
-            {
-                kind: 'comp-region-interval',
-                patch: cloneValue(intent.patch),
-                ...(intent.sourceAuthorizations === undefined
-                    ? {}
-                    : { sourceAuthorizations: cloneValue(intent.sourceAuthorizations) }),
-            },
-        ];
+        const operation: Extract<TakeLaneWriteOperation, { kind: 'comp-region-interval' }> = {
+            kind: 'comp-region-interval',
+            patch: cloneValue(intent.patch),
+        };
+        if (intent.sourceAuthorizations !== undefined) {
+            return [{ ...operation, sourceAuthorizations: cloneValue(intent.sourceAuthorizations) }];
+        }
+        return [operation];
     }
     if (intent?.kind === 'replace-state') {
         return [
@@ -457,15 +465,23 @@ function applyCompRegionPatch(
         return null;
     }
     const retained = lane.activeCompRegions.flatMap((region) => {
-        if (region.endBeat <= patch.startBeat || region.startBeat >= patch.endBeat) return [region];
+        if (region.endBeat <= patch.startBeat || region.startBeat >= patch.endBeat) {
+            return [region];
+        }
         const fragments: CompRegion[] = [];
-        if (region.startBeat < patch.startBeat) fragments.push({ ...region, endBeat: patch.startBeat });
-        if (region.endBeat > patch.endBeat) fragments.push({ ...region, startBeat: patch.endBeat });
+        if (region.startBeat < patch.startBeat) {
+            fragments.push({ ...region, endBeat: patch.startBeat });
+        }
+        if (region.endBeat > patch.endBeat) {
+            fragments.push({ ...region, startBeat: patch.endBeat });
+        }
         return fragments;
     });
     const regions = [...retained, ...patch.replacement.map(cloneValue)].sort((a, b) => a.startBeat - b.startBeat);
     const promoted = applyCompAudioSourcePromotions(lane, regions, patch, context, authorizations);
-    if (!promoted) return null;
+    if (!promoted) {
+        return null;
+    }
     const next = {
         ...promoted,
         activeCompRegions: coalesceSelection(
@@ -595,14 +611,24 @@ function applyLaneOperation(
 function applyOperation(
     current: TakeLaneStoreValue | null,
     operation: TakeLaneWriteOperation,
-    context?: CompAudioSourceInputContext,
-    authorizations: readonly CompAudioSourceAuthorization[] = []
+    context?: CompAudioSourceInputContext
 ): TakeLaneStoreValue | null | undefined {
     if (operation.kind === 'replace-state') {
         return valuesEqual(current, operation.expected) ? cloneValue(operation.replacement) : undefined;
     }
     if (current === null) {
         return undefined;
+    }
+    if (operation.kind === 'tempo-audio-sources') {
+        if (!context || !tempoAudioSourceWriteIntentMatches(operation.intent, context)) {
+            return undefined;
+        }
+        const lanes = projectTempoAudioSourceLanes(
+            current.lanes,
+            operation.intent.promotion,
+            operation.intent.direction
+        );
+        return lanes ? { lanes } : undefined;
     }
     if (operation.kind === 'comp-region-interval') {
         return applyCompRegionPatch(current, operation.patch, context, operation.sourceAuthorizations) ?? undefined;

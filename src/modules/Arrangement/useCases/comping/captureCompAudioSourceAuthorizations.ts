@@ -9,7 +9,8 @@ import {
 } from '../../stores/compAudioSourceInputs';
 import { type CompAudioSourceAuthorization } from '../../stores/compAudioSourcePromotions';
 import { type TakeLaneCompRegionPatch, type TakeLaneStoreValue } from '../../stores/takeLaneWriteJournal';
-import { resolveCompBaseGapWindow, resolveCompingProgramme } from '../resolveComping';
+import { resolveCompBaseGapWindow } from './resolveCompBaseGapWindow';
+import { resolveCompingProgramme } from './resolveCompingProgramme';
 
 import { captureResolvedAudioSourceSnapshot } from './captureResolvedAudioSourceSnapshot';
 

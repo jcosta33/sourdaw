@@ -2,12 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { type AppAction } from '#/utils/handlerContract';
+
+import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
 
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
+import { prepareCommandBatchPreflight } from '../prepareCommandBatchPreflight';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
@@ -319,6 +323,117 @@ describe('command batch preflight', () => {
         });
         expectNonAppliedReceipt(receipt, 'rejected');
         expect(execute).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {
+            title: 'forward exact guard',
+            operation: 'setTempo',
+            argument: 'audioSourcePromotion',
+            field: 'inputs',
+            allowed: true,
+        },
+        {
+            title: 'internal exact guard',
+            operation: 'restoreTempoEdit',
+            argument: 'audioSourcePromotion',
+            field: 'inputs',
+            allowed: true,
+        },
+        {
+            title: 'other operation',
+            operation: 'addClip',
+            argument: 'audioSourcePromotion',
+            field: 'inputs',
+            allowed: false,
+        },
+        {
+            title: 'similarly named root',
+            operation: 'setTempo',
+            argument: 'audioSourcePromotionExtra',
+            field: 'inputs',
+            allowed: false,
+        },
+        {
+            title: 'sibling source object',
+            operation: 'setTempo',
+            argument: 'audioSourcePromotion',
+            field: 'replacement',
+            allowed: false,
+        },
+        {
+            title: 'similarly named input',
+            operation: 'setTempo',
+            argument: 'audioSourcePromotion',
+            field: 'inputsExtra',
+            allowed: false,
+        },
+    ] satisfies readonly {
+        title: string;
+        operation: AppAction['type'];
+        argument: string;
+        field: string;
+        allowed: boolean;
+    }[])('keeps tempo media identity guard exclusion exact: $title', ({ operation, argument, field, allowed }) => {
+        registerHandlerMap({
+            setTempo: {
+                execute: () => ({ status: 'written' }),
+                describe: () => ({ label: 'Set tempo', inverseAction: null }),
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        commandProjectRevisionPort.setProvider(() => 'revision-1');
+        let assets: Parameters<typeof commandBatchPreflightPort.capture>[0]['assetReferences'] = [];
+        commandBatchPreflightPort.setProvider((input) => {
+            assets = input.assetReferences;
+            return {
+                audioGraphValid: true,
+                availableAssetHashes: [],
+                availableAudioBufferIds: [],
+                lockedRanges: [],
+                projectId: 'project-1',
+                projectInvariantsValid: true,
+                targetFingerprints: {},
+            };
+        });
+        const command = createExecutionCommandEnvelope({
+            action: { type: 'setTempo', payload: { bpm: 240 } },
+            expectedEffect: 'Set tempo',
+            normalizedProjectRevision: 'revision-1',
+        });
+        const compiled = compileVersionedCommandBatchEnvelope({
+            runId: 'guard-run',
+            batchId: 'guard-batch',
+            projectId: 'project-1',
+            baseRevision: 'revision-1',
+            intent: 'Set tempo',
+            commands: [JSON.stringify(command.envelope)],
+        });
+        const envelope: VersionedCommandBatchEnvelope = JSON.parse(compiled.serialized);
+        // Exercise the private preflight traversal independently of the
+        // registry's separate argument and owner admission contracts.
+        const commands = envelope.commands.map((entry) => ({
+            ...entry,
+            operation,
+            arguments: { bpm: 240, [argument]: { clips: [{ [field]: { audioBufferId: 'guard-missing' } }] } },
+        }));
+        const result = prepareCommandBatchPreflight({ ...envelope, commands });
+        if (allowed) {
+            expect(result.status).toBe('ready');
+            expect(assets).toEqual([]);
+        } else {
+            expect(result).toEqual({ status: 'rejected', reason: 'Command batch asset is unavailable: guard-missing' });
+            expect(assets).toEqual([{ audioBufferId: 'guard-missing' }]);
+        }
+        const outside = commands.map((entry) => ({
+            ...entry,
+            arguments: { ...entry.arguments, audioBufferId: 'real-missing' },
+        }));
+        expect(prepareCommandBatchPreflight({ ...envelope, commands: outside })).toEqual({
+            status: 'rejected',
+            reason: 'Command batch asset is unavailable: real-missing',
+        });
     });
 
     it('requires application-assigned created targets to be absent before and present after execution', async () => {

@@ -198,6 +198,10 @@ function isCompleteCompRegionIntervalPatch(value: unknown): value is CompRegionI
         return false;
     }
     const patch = value;
+    const { startBeat, endBeat } = patch;
+    if (typeof startBeat !== 'number' || typeof endBeat !== 'number') {
+        return false;
+    }
     return (
         typeof patch.laneId === 'string' &&
         patch.laneId.length > 0 &&
@@ -231,7 +235,7 @@ function isCompleteCompRegionIntervalPatch(value: unknown): value is CompRegionI
                                     : 0),
                             0
                         ) <
-                        patch.endBeat - patch.startBeat
+                        endBeat - startBeat
                 ),
             })) &&
         (!('baseGapAudioSourceFieldPresence' in patch) ||

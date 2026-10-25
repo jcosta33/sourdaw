@@ -4,6 +4,7 @@ import { getTransportHandlers } from '../getTransportHandlers';
 
 const EXPECTED_KEYS = [
     'setTempo',
+    'restoreTempoEdit',
     'setPlayback',
     'togglePlayback',
     'stopPlayback',

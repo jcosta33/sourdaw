@@ -7,7 +7,7 @@ import {
 import { commandBatchPreflightPort } from './commandBatchPreflightPort';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
-import { isCompSourceSupportPath } from './commandArgumentMetadata';
+import { isDerivedSourceSupportPath } from './commandArgumentMetadata';
 
 type CommandBatchAssetReference = {
     assetHash?: string;
@@ -31,8 +31,13 @@ function collectAssetReferences(
 ): void {
     // A persisted identity guard is checked against its actual source owner;
     // it neither imports an asset nor asserts runtime cache availability.
-    if (isCompSourceSupportPath(operation, path) && /^audioSourcePromotions\[\d+\]\.sourceInputs\.media$/.test(path))
+    if (
+        isDerivedSourceSupportPath(operation, path) &&
+        (/^audioSourcePromotions\[\d+\]\.sourceInputs\.media$/.test(path) ||
+            /^audioSourcePromotion\.clips\[\d+\]\.inputs$/.test(path))
+    ) {
         return;
+    }
     if (Array.isArray(value)) {
         for (const [index, item] of value.entries()) {
             collectAssetReferences(item, references, operation, `${path}[${index}]`);

@@ -1,5 +1,10 @@
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    AutomergeStorageWriteConflictError,
+    createAutomergeStorage,
+} from '#/infra/store/storage/createAutomergeStorage';
+
+import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoWriteIntent } from './tempoWriteIntent';
 
 import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../models/TempoMap';
 
@@ -111,10 +116,22 @@ export function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
 }
 
 export const tempoMapStore = createStore<TempoMapStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tempoMap', {
+    storage: createAutomergeStorage<TempoMapStoreState, readonly TempoWriteIntent[]>(DOC_PREFIX_ROOT, 'tempoMap', {
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => create_empty_tempo_map_state(),
+        writeMetadata: {
+            capture: () => captureTempoWriteMetadata('tempoMap'),
+            reduce: ({ current, captured }) => [...(current ?? []), ...captured],
+        },
+        mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
+            if (metadata && !tempoWriteIntentsMatch(doc, metadata, 'tempoMap')) {
+                throw new AutomergeStorageWriteConflictError(
+                    'Tempo edit conflicts with current source or tempo-map state'
+                );
+            }
+            reconcile(value, baseValue);
+        },
     }),
     initialData: create_empty_tempo_map_state(),
     sanitize: sanitize_tempo_map_state,

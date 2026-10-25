@@ -66,6 +66,8 @@ export type ClipRenderModel = {
     audioLoopPassEntrySeconds?: number;
     audioLoopPassOriginBeat?: number;
     loopOriginBeat?: number;
+    /** Derived audible fragments for this rectangle. An empty list means silence. */
+    audioProgramme?: readonly AudioWaveformProgrammePart[];
     /** Tempo governing this clip's source offset, which may differ from the project base tempo. */
     clipStartTempo?: number;
     /** Source seconds consumed per destination second while stretch is enabled. */
@@ -81,3 +83,20 @@ export type ClipRenderModel = {
     isLinkedInstance?: boolean;
     isInlineEditing?: boolean;
 };
+
+export type AudioWaveformProgrammePart = Pick<
+    ClipRenderModel,
+    | 'startBeat'
+    | 'endBeat'
+    | 'audioOffsetBeats'
+    | 'audioOffsetSeconds'
+    | 'audioLoopStartSeconds'
+    | 'audioLoopPassEntrySeconds'
+    | 'audioLoopPassOriginBeat'
+    | 'loopOriginBeat'
+    | 'clipStartTempo'
+    | 'stretchRatio'
+    | 'stretchMode'
+    | 'loopEnabled'
+    | 'loopLength'
+>;

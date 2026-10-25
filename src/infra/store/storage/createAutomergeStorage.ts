@@ -1824,7 +1824,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         // Scoped pendings are exempt: transaction commit order is deliberate
         // terminal order (compensating transactions legitimately commit older
         // values last).
-        if (!pending.scoped && !writeMetadata && frozen.revision < committedSetRevision) {
+        // Installing a hook does not make every write journaled. A null
+        // capture keeps ordinary supersession; even an empty journal is intent.
+        if (!pending.scoped && frozen.metadata === null && frozen.revision < committedSetRevision) {
             return { status: 'abandon' };
         }
 

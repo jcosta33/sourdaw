@@ -4,7 +4,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandObjectReference } from '../../models/VersionedCommandEnvelope';
 import { collectCommandIdReferences } from '../collectCommandIdReferences';
-import { compileCommandArgumentMetadata } from '../commandArgumentMetadata';
+import { compileCommandArgumentMetadata, isDerivedSourceSupportPath } from '../commandArgumentMetadata';
 import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
@@ -65,6 +65,55 @@ function parseWithReferences(objectReferences: readonly CommandObjectReference[]
 }
 
 describe('compileCommandArgumentMetadata object references', () => {
+    it.each(['setTempo', 'restoreTempoEdit'])('omits only derived tempo source metadata for %s', (operation) => {
+        const payload = {
+            bpm: 240,
+            audioSourcePromotion: {
+                clips: [
+                    {
+                        trackId: 'audio',
+                        clipId: 'source',
+                        inputs: { audioBufferId: 'bursts', startBeat: 0, endBeat: 12 },
+                        after: { audioOffsetSeconds: 4 },
+                    },
+                ],
+            },
+            audioSourcePromotionExtra: { clipId: 'sibling', startBeat: 2 },
+            other: { audioSourcePromotion: { clipId: 'nested', startBeat: 3 } },
+            clipId: 'requested',
+        };
+        const metadata = compileCommandArgumentMetadata(payload, operation);
+        expect(metadata.objectReferences).toEqual([
+            { argument: 'audioSourcePromotionExtra.clipId', id: 'sibling', scope: 'stable' },
+            { argument: 'other.audioSourcePromotion.clipId', id: 'nested', scope: 'stable' },
+            { argument: 'clipId', id: 'requested', scope: 'stable' },
+        ]);
+        expect(metadata.time.map((time) => time.argument)).toEqual([
+            'audioSourcePromotionExtra.startBeat',
+            'other.audioSourcePromotion.startBeat',
+        ]);
+        expect(metadata.parameterUnits.map((parameter) => parameter.argument)).toEqual([
+            'bpm',
+            'audioSourcePromotionExtra.startBeat',
+            'other.audioSourcePromotion.startBeat',
+        ]);
+        expect(collectCommandIdReferences(payload).map((reference) => reference.id)).toContain('bursts');
+        for (const other of [undefined, 'setCompRegion', 'addClip', 'unknown-operation']) {
+            expect(
+                compileCommandArgumentMetadata(payload, other).objectReferences.map((reference) => reference.id)
+            ).toContain('bursts');
+        }
+        expect(isDerivedSourceSupportPath(operation, 'audioSourcePromotion')).toBe(true);
+        for (const path of [
+            'audioSourcePromotions',
+            'audioSourcePromotionExtra',
+            'other.audioSourcePromotion',
+            'audioSourcePromotion[0]',
+        ]) {
+            expect(isDerivedSourceSupportPath(operation, path)).toBe(false);
+        }
+    });
+
     // Red when a parameter id is read as an object: the batch preflight then requires a project
     // object called `gain`, which no project holds.
     it('reads no object under a nested parameterId while its sibling id and clipId stay references', () => {

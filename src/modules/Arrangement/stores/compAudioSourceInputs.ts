@@ -3,7 +3,10 @@ import { type CompAudioSourceInputProof, type CompAudioSourceOwnerSnapshot } fro
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 
-import { type TakeLane } from '../models/TakeLane';
+type CompAudioSourceLaneInputs = {
+    readonly trackId: string;
+    readonly takes: readonly { readonly id: string; readonly clipId: string }[];
+};
 
 export type CompAudioSourceInputContext = Readonly<Record<string, unknown>>;
 
@@ -52,20 +55,33 @@ function mediaIdentity(clip: Record<string, unknown>): CompAudioSourceInputProof
     if (
         (clip.audioBufferId !== undefined && typeof clip.audioBufferId !== 'string') ||
         (clip.assetHash !== undefined && typeof clip.assetHash !== 'string')
-    )
+    ) {
         return null;
-    return {
-        ...(typeof clip.audioBufferId === 'string' ? { audioBufferId: clip.audioBufferId } : {}),
-        ...(typeof clip.assetHash === 'string' ? { assetHash: clip.assetHash } : {}),
-    };
+    }
+    const media: { audioBufferId?: string; assetHash?: string } = {};
+    if (typeof clip.audioBufferId === 'string') {
+        media.audioBufferId = clip.audioBufferId;
+    }
+    if (typeof clip.assetHash === 'string') {
+        media.assetHash = clip.assetHash;
+    }
+    return media;
 }
 
-function sourceOwner(lane: TakeLane, owner: CompAudioSourceOwnerSnapshot, context: CompAudioSourceInputContext) {
+function sourceOwner(
+    lane: CompAudioSourceLaneInputs,
+    owner: CompAudioSourceOwnerSnapshot,
+    context: CompAudioSourceInputContext
+) {
     const take = owner.kind === 'take' ? lane.takes.find((candidate) => candidate.id === owner.takeId) : undefined;
     const clipId = owner.kind === 'base' ? owner.clipId : take?.clipId;
-    if (!clipId || !isRecord(context.tracks) || !Array.isArray(context.tracks.tracks)) return null;
+    if (!clipId || !isRecord(context.tracks) || !Array.isArray(context.tracks.tracks)) {
+        return null;
+    }
     const track = context.tracks.tracks.find((candidate) => isRecord(candidate) && candidate.id === lane.trackId);
-    if (!isRecord(track) || !Array.isArray(track.clips)) return null;
+    if (!isRecord(track) || !Array.isArray(track.clips)) {
+        return null;
+    }
     const clip = track.clips.find((candidate) => isRecord(candidate) && candidate.id === clipId);
     if (
         !isRecord(clip) ||
@@ -73,9 +89,11 @@ function sourceOwner(lane: TakeLane, owner: CompAudioSourceOwnerSnapshot, contex
         clip.trackId !== lane.trackId ||
         typeof clip.startBeat !== 'number' ||
         !Number.isFinite(clip.startBeat)
-    )
+    ) {
         return null;
-    return { clip: { ...clip, startBeat: clip.startBeat }, take };
+    }
+    const sourceClip: Record<string, unknown> & { startBeat: number } = { ...clip, startBeat: clip.startBeat };
+    return { clip: sourceClip, take };
 }
 
 type Change = { readonly beat: number; readonly tempo: number; readonly curve: 'instant' | 'linear' };
@@ -95,25 +113,35 @@ function isChange(value: unknown): value is Change {
 /** Only events governing this original source span participate. UI fields,
  * unrelated clips and later tempo events do not acquire source ownership. */
 function sourceDigest(
-    lane: TakeLane,
+    lane: CompAudioSourceLaneInputs,
     owner: CompAudioSourceOwnerSnapshot,
     proof: Pick<CompAudioSourceInputProof, 'clipId' | 'startBeat' | 'endBeat'>,
     context: CompAudioSourceInputContext
 ): string | null {
     const source = sourceOwner(lane, owner, context);
-    if (!source || source.clip.id !== proof.clipId) return null;
+    if (!source || source.clip.id !== proof.clipId) {
+        return null;
+    }
     const rawChanges = isRecord(context.tempoMap) ? context.tempoMap.changes : [];
-    if (!Array.isArray(rawChanges) || !rawChanges.every(isChange)) return null;
+    if (!Array.isArray(rawChanges) || !rawChanges.every(isChange)) {
+        return null;
+    }
     const changes = [...rawChanges].sort((a, b) => a.beat - b.beat);
     const previous = changes.findLastIndex((change) => change.beat <= proof.startBeat);
     let end = changes.findIndex((change) => change.beat > proof.endBeat);
-    if (end === -1) end = changes.length;
-    if (end > 0 && changes[end - 1]?.curve === 'linear' && end < changes.length) end += 1;
+    if (end === -1) {
+        end = changes.length;
+    }
+    if (end > 0 && changes[end - 1]?.curve === 'linear' && end < changes.length) {
+        end += 1;
+    }
     const tempo =
         isRecord(context.transport) && typeof context.transport.tempo === 'number'
             ? context.transport.tempo
             : DEFAULT_TEMPO_BPM;
-    if (!Number.isFinite(tempo) || tempo <= 0) return null;
+    if (!Number.isFinite(tempo) || tempo <= 0) {
+        return null;
+    }
     return digest({
         clip: pick(source.clip, clipFields),
         take: source.take ? pick(source.take, takeFields) : null,
@@ -123,12 +151,14 @@ function sourceDigest(
 }
 
 export function captureCompAudioSourceInputProof(
-    lane: TakeLane,
+    lane: CompAudioSourceLaneInputs,
     owner: CompAudioSourceOwnerSnapshot,
     context: CompAudioSourceInputContext
 ): CompAudioSourceInputProof | null {
     const source = sourceOwner(lane, owner, context);
-    if (!source) return null;
+    if (!source) {
+        return null;
+    }
     const range = {
         clipId: String(source.clip.id),
         startBeat: Math.min(source.clip.startBeat, owner.startBeat),
@@ -140,7 +170,7 @@ export function captureCompAudioSourceInputProof(
 }
 
 export function compAudioSourceInputsMatch(
-    lane: TakeLane,
+    lane: CompAudioSourceLaneInputs,
     owner: CompAudioSourceOwnerSnapshot,
     proof: CompAudioSourceInputProof | undefined,
     context: CompAudioSourceInputContext | undefined
@@ -149,14 +179,15 @@ export function compAudioSourceInputsMatch(
 }
 
 export function compAudioSourceOwnerExists(
-    lane: TakeLane,
+    lane: CompAudioSourceLaneInputs,
     owner: CompAudioSourceOwnerSnapshot,
     proof: CompAudioSourceInputProof,
     context: CompAudioSourceInputContext
 ): boolean {
     const source = sourceOwner(lane, owner, context);
-    if (!source || source.clip.id !== proof.clipId || !valuesEqual(mediaIdentity(source.clip), proof.media))
+    if (!source || source.clip.id !== proof.clipId || !valuesEqual(mediaIdentity(source.clip), proof.media)) {
         return false;
+    }
     return (
         owner.kind !== 'base' ||
         (source.clip.startBeat <= owner.startBeat &&

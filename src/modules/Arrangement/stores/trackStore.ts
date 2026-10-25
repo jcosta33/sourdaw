@@ -1,10 +1,17 @@
 import { createStore } from '#/infra/store/createStore';
 import {
+    AutomergeStorageWriteConflictError,
     createAutomergeStorage,
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { hasValidAudioSourceState } from '#/utils/audioSourceTime';
 import { valuesEqual } from '#/utils/structuralEquality';
+
+import {
+    captureTempoAudioSourceTrackMetadata,
+    tempoAudioSourceTrackIntentMatches,
+    type TempoAudioSourceWriteIntent,
+} from './tempoAudioSourceWriteIntent';
 
 import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
 import { normalizeTrack } from '../models/Track';
@@ -283,13 +290,18 @@ function normalize_clip(value: unknown): Clip | null {
     }
     if (clip.type === 'audio' && hasValidAudioSourceState(value) && is_finite_number(value.audioOffsetSeconds)) {
         clip.audioOffsetSeconds = value.audioOffsetSeconds;
-        if (is_finite_number(value.audioUnwrappedOffsetSeconds))
+        if (is_finite_number(value.audioUnwrappedOffsetSeconds)) {
             clip.audioUnwrappedOffsetSeconds = value.audioUnwrappedOffsetSeconds;
-        if (is_finite_number(value.audioLoopStartSeconds)) clip.audioLoopStartSeconds = value.audioLoopStartSeconds;
-        if (is_finite_number(value.audioLoopPassEntrySeconds))
+        }
+        if (is_finite_number(value.audioLoopStartSeconds)) {
+            clip.audioLoopStartSeconds = value.audioLoopStartSeconds;
+        }
+        if (is_finite_number(value.audioLoopPassEntrySeconds)) {
             clip.audioLoopPassEntrySeconds = value.audioLoopPassEntrySeconds;
-        if (is_finite_number(value.audioLoopPassOriginBeat))
+        }
+        if (is_finite_number(value.audioLoopPassOriginBeat)) {
             clip.audioLoopPassOriginBeat = value.audioLoopPassOriginBeat;
+        }
     }
     if (is_finite_number(value.midiOffsetBeats)) {
         clip.midiOffsetBeats = value.midiOffsetBeats;
@@ -860,23 +872,37 @@ function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
 }
 
 export const trackStore = createStore<TrackStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
-        toCrdt: ({ tracks }) => ({ tracks }),
-        fromCrdt: sanitize_track_store_state_from_crdt,
-        isLocalRuntimeStateUpdate: ({ currentValue, nextValue }) => nextValue.tracks === currentValue.tracks,
-        preserveLocalRuntimeStateOnRecompute: true,
-        projectCommittedLocalState: project_track_local_state,
-        // Tracks, clips, devices, midiFx and alternatives all carry an `id`, so
-        // the slot reconciles row by row on its own. Sends are the one
-        // collection here without one: a send is identified by the bus it
-        // feeds, and naming that lets two peers adjust sends to different buses
-        // on the same track without overwriting each other.
-        crdtEntityIdentity: {
-            sends: (row) => (typeof row.busId === 'string' && row.busId.length > 0 ? row.busId : null),
-        },
-        // Audit CC-2 — projection default for a document without this slot, so
-        // hydrate never writes the previous project's cache back into truth.
-        hydrateMissing: () => defaultTrackState,
-    }),
+    storage: createAutomergeStorage<TrackStoreState, readonly TempoAudioSourceWriteIntent[]>(
+        DOC_PREFIX_ROOT,
+        'tracks',
+        {
+            toCrdt: ({ tracks }) => ({ tracks }),
+            fromCrdt: sanitize_track_store_state_from_crdt,
+            isLocalRuntimeStateUpdate: ({ currentValue, nextValue }) => nextValue.tracks === currentValue.tracks,
+            preserveLocalRuntimeStateOnRecompute: true,
+            projectCommittedLocalState: project_track_local_state,
+            writeMetadata: {
+                capture: captureTempoAudioSourceTrackMetadata,
+                reduce: ({ current, captured }) => [...(current ?? []), ...captured],
+            },
+            mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
+                if (metadata?.some((intent) => !tempoAudioSourceTrackIntentMatches(intent, doc))) {
+                    throw new AutomergeStorageWriteConflictError('Tempo source inputs changed before the track write');
+                }
+                reconcile(value, baseValue);
+            },
+            // Tracks, clips, devices, midiFx and alternatives all carry an `id`, so
+            // the slot reconciles row by row on its own. Sends are the one
+            // collection here without one: a send is identified by the bus it
+            // feeds, and naming that lets two peers adjust sends to different buses
+            // on the same track without overwriting each other.
+            crdtEntityIdentity: {
+                sends: (row) => (typeof row.busId === 'string' && row.busId.length > 0 ? row.busId : null),
+            },
+            // Audit CC-2 — projection default for a document without this slot, so
+            // hydrate never writes the previous project's cache back into truth.
+            hydrateMissing: () => defaultTrackState,
+        }
+    ),
     initialData: defaultTrackState,
 });

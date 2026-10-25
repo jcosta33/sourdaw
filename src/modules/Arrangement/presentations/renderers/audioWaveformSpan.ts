@@ -88,6 +88,7 @@ export type AudioWaveformOccurrence = {
 
 type CachedLayout = {
     timeline: TimelineRenderModel['sourceTimeline'];
+    programme: ClipRenderModel['audioProgramme'];
     key: string;
     occurrences: readonly AudioWaveformOccurrence[];
     peakPositions: Map<string, Float64Array>;
@@ -193,68 +194,84 @@ export function getAudioWaveformOccurrences({
     const timeline = model.sourceTimeline ?? flatSourceTimeline(60 / model.tempo);
     const key = layoutKey(clip, model, sampleRate, bufferLength, maxBins);
     const cached = layoutCache.get(clip);
-    if (cached && cached.timeline === model.sourceTimeline && cached.key === key) {
+    if (
+        cached &&
+        cached.timeline === model.sourceTimeline &&
+        cached.programme === clip.audioProgramme &&
+        cached.key === key
+    ) {
         return cached.occurrences;
     }
 
-    const clipBeats = clip.endBeat - clip.startBeat;
-    const loop = projectClipLoopExpansion({
-        clipDurationBeats: clipBeats,
-        configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const ratio = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     const occurrences: AudioWaveformOccurrence[] = [];
-    const firstIteration = Math.max(0, Math.floor((model.viewportStartBeat - clip.startBeat) / loop.loopLengthBeats));
-    const lastIteration = Math.min(
-        loop.iterationCount,
-        Math.ceil((model.viewportEndBeat - clip.startBeat) / loop.loopLengthBeats)
-    );
-    for (let iteration = firstIteration; iteration < lastIteration; iteration++) {
-        const iterationStartBeat = clip.startBeat + iteration * loop.loopLengthBeats;
-        const iterationEndBeat = Math.min(clip.endBeat, iterationStartBeat + loop.loopLengthBeats);
-        const segments = projectAudioLoopPassSegments({
-            clip: { ...clip },
-            loopLengthBeats: loop.loopLengthBeats,
-            iterationStartBeat,
-            iterationEndBeat,
-            stretchRatio: ratio,
-            tempoAtClipStart: clip.clipStartTempo ?? model.tempo,
-            secondsAtBeat: timeline.secondsAtBeat,
+    const visibleStartBeat = Math.max(model.viewportStartBeat, clip.startBeat);
+    const visibleEndBeat = Math.min(model.viewportEndBeat, clip.endBeat);
+    for (const source of clip.audioProgramme ?? [clip]) {
+        const clipBeats = source.endBeat - source.startBeat;
+        const loop = projectClipLoopExpansion({
+            clipDurationBeats: clipBeats,
+            configuredLoopLengthBeats: source.loopLength,
+            loopEnabled: source.loopEnabled ?? false,
         });
-        for (const segment of segments) {
-            const segmentStartBeat = iterationStartBeat + segment.startOffsetBeats;
-            const segmentEndBeat = iterationStartBeat + segment.endOffsetBeats;
-            const span = computeAudioWaveformDrawSpan({
-                offsetBeats: clip.audioOffsetBeats ?? 0,
-                offsetSeconds: segment.sourceStartSeconds,
+        const ratio =
+            source.stretchMode && source.stretchMode !== 'off' ? boundStretchRatio(source.stretchRatio ?? 1) : 1;
+        const firstIteration = Math.max(0, Math.floor((visibleStartBeat - source.startBeat) / loop.loopLengthBeats));
+        const lastIteration = Math.min(
+            loop.iterationCount,
+            Math.ceil((visibleEndBeat - source.startBeat) / loop.loopLengthBeats)
+        );
+        for (let iteration = firstIteration; iteration < lastIteration; iteration++) {
+            const iterationStartBeat = source.startBeat + iteration * loop.loopLengthBeats;
+            const iterationEndBeat = Math.min(source.endBeat, iterationStartBeat + loop.loopLengthBeats);
+            const segments = projectAudioLoopPassSegments({
+                clip: { ...source },
+                loopLengthBeats: loop.loopLengthBeats,
+                iterationStartBeat,
+                iterationEndBeat,
                 stretchRatio: ratio,
-                clipBeats: segmentEndBeat - segmentStartBeat,
-                secondsPerBeat: 60 / (clip.clipStartTempo ?? model.tempo),
-                sampleRate,
-                clipStartBeat: segmentStartBeat,
-                timeline,
-                bufferLengthSamples: bufferLength,
+                tempoAtClipStart: source.clipStartTempo ?? model.tempo,
+                secondsAtBeat: timeline.secondsAtBeat,
             });
-            const visibleSpan = visibleSourceWindow(
-                span,
-                timeline,
-                segmentEndBeat,
-                model.viewportStartBeat,
-                model.viewportEndBeat,
-                sampleRate
-            );
-            if (!visibleSpan) {
-                continue;
-            }
-            const numBins = Math.min(maxBins, Math.floor(visibleSpan.audibleTimelineBeats * model.pixelsPerBeat));
-            if (numBins > 0) {
-                occurrences.push({ iteration: occurrences.length, span: visibleSpan, numBins });
+            for (const segment of segments) {
+                const segmentStartBeat = iterationStartBeat + segment.startOffsetBeats;
+                const segmentEndBeat = iterationStartBeat + segment.endOffsetBeats;
+                const span = computeAudioWaveformDrawSpan({
+                    offsetBeats: source.audioOffsetBeats ?? 0,
+                    offsetSeconds: segment.sourceStartSeconds,
+                    stretchRatio: ratio,
+                    clipBeats: segmentEndBeat - segmentStartBeat,
+                    secondsPerBeat: 60 / (source.clipStartTempo ?? model.tempo),
+                    sampleRate,
+                    clipStartBeat: segmentStartBeat,
+                    timeline,
+                    bufferLengthSamples: bufferLength,
+                });
+                const visibleSpan = visibleSourceWindow(
+                    span,
+                    timeline,
+                    segmentEndBeat,
+                    visibleStartBeat,
+                    visibleEndBeat,
+                    sampleRate
+                );
+                if (!visibleSpan) {
+                    continue;
+                }
+                const numBins = Math.min(maxBins, Math.floor(visibleSpan.audibleTimelineBeats * model.pixelsPerBeat));
+                if (numBins > 0) {
+                    occurrences.push({ iteration: occurrences.length, span: visibleSpan, numBins });
+                }
             }
         }
     }
 
-    layoutCache.set(clip, { timeline: model.sourceTimeline, key, occurrences, peakPositions: new Map() });
+    layoutCache.set(clip, {
+        timeline: model.sourceTimeline,
+        programme: clip.audioProgramme,
+        key,
+        occurrences,
+        peakPositions: new Map(),
+    });
     return occurrences;
 }
 

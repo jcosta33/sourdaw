@@ -50,7 +50,9 @@ export function resolveAudioTakeSource(
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
         // Old placed records retain their historical constant-span shortcut until
         // a producer captures the original basis. Do not infer it after a cut.
-        if (take.passOriginBeat === undefined || take.passOriginSourceSeconds === undefined) return null;
+        if (take.passOriginBeat === undefined || take.passOriginSourceSeconds === undefined) {
+            return null;
+        }
         const startSeconds =
             timeline.secondsAtBeat(take.passOriginBeat) +
             (take.passAnchorSeconds - take.passOriginSourceSeconds) / rate;
@@ -58,21 +60,24 @@ export function resolveAudioTakeSource(
         const depth = take.passDepthSeconds;
         const offsetSecondsAt = (beat: number) => depth + (timeline.secondsAtBeat(beat) - startSeconds) * rate;
         const sourceEnd = take.passSourceEndSeconds;
-        return {
+        const physical = {
             earliestBeat: Math.max(clip.startBeat, passStart),
             sourceStartBeat: passStart - (depth * timeline.tempoAtBeat(passStart)) / (60 * rate),
             offsetAt: (beat: number) => (offsetSecondsAt(beat) * timeline.tempoAtBeat(beat)) / 60,
             offsetSecondsAt,
-            ...(sourceEnd === undefined
-                ? {}
-                : {
-                      latestBeatAt: (beat: number) => {
-                          const remaining = sourceEnd - offsetSecondsAt(beat);
-                          return remaining <= 0
-                              ? beat
-                              : timeline.beatAtSeconds(timeline.secondsAtBeat(beat) + remaining / rate);
-                      },
-                  }),
+        };
+        if (sourceEnd === undefined) {
+            return physical;
+        }
+        return {
+            ...physical,
+            latestBeatAt: (beat: number) => {
+                const remaining = sourceEnd - offsetSecondsAt(beat);
+                if (remaining <= 0) {
+                    return beat;
+                }
+                return timeline.beatAtSeconds(timeline.secondsAtBeat(beat) + remaining / rate);
+            },
         };
     }
     const tempo = timeline.tempoAtBeat(clip.startBeat);
@@ -156,10 +161,14 @@ export function isAudioSourceTile(value: unknown): value is AudioSourceTile {
 }
 
 export function hasValidAudioSourceTiles(value: unknown): value is AudioSourceTile[] {
-    if (!Array.isArray(value) || !value.every(isAudioSourceTile)) return false;
+    if (!Array.isArray(value) || !value.every(isAudioSourceTile)) {
+        return false;
+    }
     const endByClip = new Map<string, number>();
     for (const tile of value) {
-        if (tile.startBeat < (endByClip.get(tile.clipId) ?? -Infinity)) return false;
+        if (tile.startBeat < (endByClip.get(tile.clipId) ?? -Infinity)) {
+            return false;
+        }
         endByClip.set(tile.clipId, tile.endBeat);
     }
     return true;
@@ -175,13 +184,19 @@ export function partitionAudioSourceTiles(
     const parts: { startBeat: number; endBeat: number; audioSource?: AudioSourceSnapshot }[] = [];
     let cursor = startBeat;
     for (const tile of tiles) {
-        if (tile.clipId !== clipId || tile.endBeat <= cursor || tile.startBeat >= endBeat) continue;
-        if (tile.startBeat > cursor) parts.push({ startBeat: cursor, endBeat: Math.min(tile.startBeat, endBeat) });
+        if (tile.clipId !== clipId || tile.endBeat <= cursor || tile.startBeat >= endBeat) {
+            continue;
+        }
+        if (tile.startBeat > cursor) {
+            parts.push({ startBeat: cursor, endBeat: Math.min(tile.startBeat, endBeat) });
+        }
         const end = Math.min(tile.endBeat, endBeat);
         parts.push({ startBeat: Math.max(cursor, tile.startBeat), endBeat: end, audioSource: tile.audioSource });
         cursor = end;
     }
-    if (cursor < endBeat) parts.push({ startBeat: cursor, endBeat });
+    if (cursor < endBeat) {
+        parts.push({ startBeat: cursor, endBeat });
+    }
     return parts;
 }
 
@@ -192,7 +207,9 @@ export function captureAudioSourceSnapshot(
     tempo: number
 ): AudioSourceSnapshot | null {
     const source = captureAudioSourceState(clip, loopLength, tempo);
-    if (!source || !(Number.isFinite(loopLength) && loopLength > 0)) return null;
+    if (!source || !(Number.isFinite(loopLength) && loopLength > 0)) {
+        return null;
+    }
     return {
         startBeat: clip.startBeat,
         audioOffsetSeconds: source.audioOffsetSeconds,
@@ -222,7 +239,9 @@ export function audioSourceSnapshotAtBeat(
         tempoAtClipStart: 120,
         secondsAtBeat,
     })[0];
-    if (!part) return null;
+    if (!part) {
+        return null;
+    }
     const { startBeat: _sourceStart, ...source } = snapshot;
     return { ...source, audioOffsetSeconds: part.sourceStartSeconds };
 }
@@ -261,10 +280,14 @@ export function isAudioSourceSnapshot(value: unknown): value is AudioSourceSnaps
 
 /** A placed pass keeps its original clip-media basis when a cut rebases the clip head. */
 export function hasValidAudioPassOrigin(value: unknown): boolean {
-    if (!isRecord(value)) return false;
+    if (!isRecord(value)) {
+        return false;
+    }
     const hasBeat = Object.hasOwn(value, 'passOriginBeat');
     const hasSource = Object.hasOwn(value, 'passOriginSourceSeconds');
-    if (!hasBeat && !hasSource) return true;
+    if (!hasBeat && !hasSource) {
+        return true;
+    }
     return (
         hasBeat &&
         hasSource &&
@@ -281,7 +304,9 @@ export function hasValidAudioPassOrigin(value: unknown): boolean {
 }
 
 export function hasValidAudioSourceState(value: unknown): boolean {
-    if (!isRecord(value)) return false;
+    if (!isRecord(value)) {
+        return false;
+    }
     const clip = value;
     const provenanceFields = [
         clip.audioUnwrappedOffsetSeconds,
@@ -290,7 +315,9 @@ export function hasValidAudioSourceState(value: unknown): boolean {
         clip.audioLoopPassOriginBeat,
     ];
     const fields = [clip.audioOffsetSeconds, ...provenanceFields];
-    if (clip.type === 'midi' && fields.some((field) => field !== undefined)) return false;
+    if (clip.type === 'midi' && fields.some((field) => field !== undefined)) {
+        return false;
+    }
     if (clip.audioOffsetSeconds === undefined && provenanceFields.some((value) => value !== undefined)) {
         return false;
     }
@@ -314,18 +341,23 @@ export function captureAudioSourceState(
     if (!clip.loopEnabled) {
         const entry = resolveAudioSourceOffsetSeconds(clip, tempoAtClipStart);
         const unwrapped = resolveAudioUnwrappedOffsetSeconds(clip, tempoAtClipStart);
-        if (!Number.isFinite(entry) || !Number.isFinite(unwrapped)) return null;
-        return {
+        if (!Number.isFinite(entry) || !Number.isFinite(unwrapped)) {
+            return null;
+        }
+        const state: AudioSourceState = {
             audioOffsetSeconds: entry,
             audioUnwrappedOffsetSeconds: unwrapped,
-            ...(clip.audioLoopStartSeconds === undefined ? {} : { audioLoopStartSeconds: clip.audioLoopStartSeconds }),
-            ...(clip.audioLoopPassEntrySeconds === undefined
-                ? {}
-                : { audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds }),
-            ...(clip.audioLoopPassOriginBeat === undefined
-                ? {}
-                : { audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat }),
         };
+        if (clip.audioLoopStartSeconds !== undefined) {
+            state.audioLoopStartSeconds = clip.audioLoopStartSeconds;
+        }
+        if (clip.audioLoopPassEntrySeconds !== undefined) {
+            state.audioLoopPassEntrySeconds = clip.audioLoopPassEntrySeconds;
+        }
+        if (clip.audioLoopPassOriginBeat !== undefined) {
+            state.audioLoopPassOriginBeat = clip.audioLoopPassOriginBeat;
+        }
+        return state;
     }
     if (!(Number.isFinite(loopLengthBeats) && loopLengthBeats > 0)) {
         return null;
@@ -347,7 +379,9 @@ export function captureAudioSourceState(
     );
     const head = reset + resolveAudioSourceOffsetSeconds({ audioOffsetBeats: phase }, tempoAtClipStart);
     const unwrapped = resolveAudioSourceOffsetSeconds(clip, tempoAtClipStart);
-    if (!Number.isFinite(reset) || !Number.isFinite(head) || !Number.isFinite(unwrapped)) return null;
+    if (!Number.isFinite(reset) || !Number.isFinite(head) || !Number.isFinite(unwrapped)) {
+        return null;
+    }
     return {
         audioOffsetSeconds: head,
         audioUnwrappedOffsetSeconds: unwrapped,
@@ -437,7 +471,14 @@ export function projectAudioLoopPassSegments({
             return [];
         }
         const isFirstVisiblePart = partStart <= clip.startBeat && clip.startBeat < partEnd;
-        const sourceAnchor = isFirstVisiblePart ? source.audioOffsetSeconds : isHead ? headSource : resetSource;
+        let sourceAnchor: number;
+        if (isFirstVisiblePart) {
+            sourceAnchor = source.audioOffsetSeconds;
+        } else if (isHead) {
+            sourceAnchor = headSource;
+        } else {
+            sourceAnchor = resetSource;
+        }
         const beatAnchor = isFirstVisiblePart ? clip.startBeat : partStart;
         segments.push({
             startOffsetBeats: cursor - iterationStartBeat,
@@ -449,7 +490,9 @@ export function projectAudioLoopPassSegments({
             ),
         });
         cursor = endBeat;
-        if (cursor === passEnd) passIndex += 1;
+        if (cursor === passEnd) {
+            passIndex += 1;
+        }
     }
     return segments;
 }

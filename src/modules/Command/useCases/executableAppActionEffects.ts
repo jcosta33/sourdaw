@@ -333,7 +333,7 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
     },
     setTempo: {
-        dimensions: ['project-timing'],
+        dimensions: ['project-timing', 'arrangement', 'clip-audio'],
         scope: 'project',
     },
     setTimeSignature: {

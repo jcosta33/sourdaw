@@ -45,6 +45,25 @@ type DivergedFixture = {
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     {
+        title: 'setTempo refuses a changed pinned scalar before source capture',
+        actionType: 'setTempo',
+        divergedAction: { type: 'setTempo', payload: { bpm: 133, expectedBpm: 99, tempoChangeId: null } },
+    },
+    {
+        title: 'restoreTempoEdit refuses a changed pinned scalar without source writes',
+        actionType: 'restoreTempoEdit',
+        divergedAction: {
+            type: 'restoreTempoEdit',
+            payload: {
+                bpm: 120,
+                expectedBpm: 99,
+                tempoChangeId: null,
+                sourceDirection: 'restore',
+                audioSourcePromotion: { version: 1, clips: [], takes: [], regions: [], gaps: [], gapFieldPresence: [] },
+            },
+        },
+    },
+    {
         title: 'restoreLoopRegion refuses to write against a collaborator loop edit',
         actionType: 'restoreLoopRegion',
         divergedAction: {

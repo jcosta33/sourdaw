@@ -1,5 +1,20 @@
 # Lesson library: project integrity
 
+## Lesson from nullable write-metadata admission
+
+PR #4071 (`436bfbd49e40f63080c7638f42f822bd005066a8`) introduced nullable metadata capture but
+exempted every hook-equipped adapter from ordinary unscoped-write supersession. Optional source-time
+and tempo intents exposed that inherited contract gap in an author-lane reproduction; this does not
+establish a previous user incident on main. The missing integrity case was an installed hook whose
+current write carries no journal.
+
+Review actual captured intent rather than hook presence: `null` keeps ordinary supersession, while
+every nonnull journal, including `[]`, retains its owner's replay semantics. Hold a scoped write,
+queue an ordinary unscoped value, advance the same scoped owner again, commit, then flush the older
+unscoped value. Raw truth and projection must keep the newer commit. Repeat with a null-capturing
+hook, an empty journal whose owner applies no operation, and a real journal rebased over peer truth;
+neither array length nor truthiness may substitute for the nullable contract.
+
 ## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
 
 `waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.

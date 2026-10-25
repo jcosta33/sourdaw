@@ -163,7 +163,9 @@ export function resolveTakeMedia(
 ): TakeMedia {
     if (clip.type === 'audio') {
         const physical = resolveAudioTakeSource(take, clip, timeline);
-        if (physical) return physical;
+        if (physical) {
+            return physical;
+        }
     }
     if (take.sourceOffsetBeats === undefined) {
         return {

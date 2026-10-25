@@ -174,3 +174,75 @@ describe('computeAudioWaveformDrawSpan', () => {
         expect(span.endSample).toBe(168_000);
     });
 });
+
+describe('getAudioWaveformOccurrences — explicit audible programme', () => {
+    const model: TimelineRenderModel = {
+        dataDirty: true,
+        tracks: [],
+        selectedTrackId: null,
+        selectedClipId: null,
+        selectedClipIds: [],
+        playheadPosition: 0,
+        viewportStartBeat: 0,
+        viewportEndBeat: 8,
+        beatsPerPixel: 0.01,
+        pixelsPerBeat: 100,
+        trackHeight: 80,
+        scrollY: 0,
+        tempo: 120,
+        timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
+    };
+    const clip: ClipRenderModel = {
+        id: 'comped',
+        startBeat: 0,
+        endBeat: 8,
+        name: 'Comped',
+        color: '',
+        type: 'audio',
+        muted: false,
+        midiNotes: [],
+        audioBufferId: 'recording',
+        audioOffsetSeconds: 0,
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+    };
+
+    it('does not fall back to the rectangle source when the programme is empty', () => {
+        const silentClip = { ...clip, audioProgramme: [] };
+        expect(
+            getAudioWaveformOccurrences({
+                clip: silentClip,
+                model,
+                sampleRate: sampleRate48k,
+                bufferLength: sampleRate48k * 12,
+                maxBins: 800,
+            })
+        ).toEqual([]);
+    });
+
+    it('draws only the chosen programme fragment inside the original rectangle', () => {
+        const selectedClip = {
+            ...clip,
+            audioProgramme: [{ ...clip, startBeat: 2, endBeat: 4, audioOffsetSeconds: 4 }],
+        };
+        const occurrences = getAudioWaveformOccurrences({
+            clip: selectedClip,
+            model,
+            sampleRate: sampleRate48k,
+            bufferLength: sampleRate48k * 12,
+            maxBins: 800,
+        });
+        expect(occurrences.map(({ span }) => [span.startSample, span.endSample])).toEqual([[192_000, 240_000]]);
+        expect(
+            Array.from(
+                getAudioWaveformPeakPositions({
+                    clip: selectedClip,
+                    model,
+                    occurrence: occurrences[0]!,
+                    binCount: 1,
+                })
+            )
+        ).toEqual([200, 400]);
+    });
+});

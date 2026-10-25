@@ -174,7 +174,9 @@ function placedPassMedia(
 function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia {
     if (clip.type === 'audio') {
         const physical = resolveAudioTakeSource(take, clip, timeline);
-        if (physical) return physical;
+        if (physical) {
+            return physical;
+        }
     }
     if (take.sourceOffsetBeats === undefined) {
         return {
@@ -292,24 +294,29 @@ export function resolveTrackClipsWithComping(
         // there unchanged.
         const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
         const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
-        const audioSource =
-            sourceClip.type === 'audio'
-                ? region.audioSource && take.passAnchorSeconds === undefined
-                    ? audioSourceSnapshotAtBeat(
-                          region.audioSource,
-                          overlapStart,
-                          sourceClip.stretchMode && sourceClip.stretchMode !== 'off'
-                              ? boundStretchRatio(sourceClip.stretchRatio ?? 1)
-                              : 1,
-                          sourceClip.loopEnabled ?? false,
-                          timeline.secondsAtBeat
-                      )
-                    : audioTakeFragmentSource(
-                          media.offsetSecondsAt?.(overlapStart) ??
-                              media.offsetAt(overlapStart) * (60 / timeline.tempoAtBeat(overlapStart)),
-                          overlapStart
-                      )
-                : null;
+        let audioSource:
+            ReturnType<typeof audioSourceSnapshotAtBeat> | ReturnType<typeof audioTakeFragmentSource> | null = null;
+        if (sourceClip.type === 'audio') {
+            if (region.audioSource && take.passAnchorSeconds === undefined) {
+                let rate = 1;
+                if (sourceClip.stretchMode && sourceClip.stretchMode !== 'off') {
+                    rate = boundStretchRatio(sourceClip.stretchRatio ?? 1);
+                }
+                audioSource = audioSourceSnapshotAtBeat(
+                    region.audioSource,
+                    overlapStart,
+                    rate,
+                    sourceClip.loopEnabled ?? false,
+                    timeline.secondsAtBeat
+                );
+            } else {
+                audioSource = audioTakeFragmentSource(
+                    media.offsetSecondsAt?.(overlapStart) ??
+                        media.offsetAt(overlapStart) * (60 / timeline.tempoAtBeat(overlapStart)),
+                    overlapStart
+                );
+            }
+        }
         resolvedClips.push({
             ...takeFragmentBasis,
             ...audioSource,
@@ -351,24 +358,24 @@ export function resolveTrackClipsWithComping(
             for (const window of windows) {
                 const rate =
                     clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
-                const snapshot =
-                    window.audioSource ??
-                    (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
-                        ? captureAudioSourceSnapshot(
-                              clip,
-                              clip.loopLength ?? clip.endBeat - clip.startBeat,
-                              timeline.tempoAtBeat(clip.startBeat)
-                          )
-                        : null);
-                const source = snapshot
-                    ? audioSourceSnapshotAtBeat(
-                          snapshot,
-                          window.startBeat,
-                          rate,
-                          clip.loopEnabled ?? false,
-                          timeline.secondsAtBeat
-                      )
-                    : null;
+                let snapshot = window.audioSource ?? null;
+                if (snapshot === null && clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+                    snapshot = captureAudioSourceSnapshot(
+                        clip,
+                        clip.loopLength ?? clip.endBeat - clip.startBeat,
+                        timeline.tempoAtBeat(clip.startBeat)
+                    );
+                }
+                let source: ReturnType<typeof audioSourceSnapshotAtBeat> = null;
+                if (snapshot) {
+                    source = audioSourceSnapshotAtBeat(
+                        snapshot,
+                        window.startBeat,
+                        rate,
+                        clip.loopEnabled ?? false,
+                        timeline.secondsAtBeat
+                    );
+                }
                 resolvedClips.push({
                     ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, window.startBeat, timeline)),
                     ...source,

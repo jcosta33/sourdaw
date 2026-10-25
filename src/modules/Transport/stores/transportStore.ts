@@ -1,5 +1,9 @@
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    AutomergeStorageWriteConflictError,
+    createAutomergeStorage,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoWriteIntent } from './tempoWriteIntent';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { defaultTransportState, type TransportState } from '../models/TransportState';
@@ -386,11 +390,21 @@ function sanitize_transport_state(value: unknown): TransportState {
 }
 
 export const transportStore = createStore<TransportState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'transport', {
+    storage: createAutomergeStorage<TransportState, readonly TempoWriteIntent[]>(DOC_PREFIX_ROOT, 'transport', {
         fromCrdt: sanitize_transport_state,
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTransportState,
+        writeMetadata: {
+            capture: () => captureTempoWriteMetadata('transport'),
+            reduce: ({ current, captured }) => [...(current ?? []), ...captured],
+        },
+        mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
+            if (metadata && !tempoWriteIntentsMatch(doc, metadata, 'transport')) {
+                throw new AutomergeStorageWriteConflictError('Tempo edit conflicts with current source or base tempo');
+            }
+            reconcile(value, baseValue);
+        },
         projectCommittedLocalState: ({ authorityValue, localValue }) => ({
             ...authorityValue,
             isPlaying: localValue.isPlaying,

@@ -9,7 +9,8 @@ import {
     type TakeLaneCompRegionPatch,
     type TakeLaneStoreValue,
 } from '../../stores/takeLaneWriteJournal';
-import { resolveCompingProgramme, type ResolvedClip } from '../resolveComping';
+import { type ResolvedClip } from '../../models/ResolvedClip';
+import { resolveCompingProgramme } from './resolveCompingProgramme';
 import { captureResolvedAudioSourceSnapshot as snapshot } from './captureResolvedAudioSourceSnapshot';
 import { captureCompAudioSourceAuthorizations } from './captureCompAudioSourceAuthorizations';
 

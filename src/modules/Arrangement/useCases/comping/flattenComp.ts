@@ -11,7 +11,8 @@ import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { restoreClipGlueState } from '../clipEditing/restoreClipGlueState';
-import { resolveClipsWithComping, type ResolvedClip } from '../resolveComping';
+import { type ResolvedClip } from '../../models/ResolvedClip';
+import { resolveClipsWithComping } from '../resolveComping';
 
 import { insertTakeLane } from './insertTakeLane';
 import { removeTakeLane } from './removeTakeLane';
