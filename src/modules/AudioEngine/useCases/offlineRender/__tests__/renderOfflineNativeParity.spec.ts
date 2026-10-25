@@ -319,7 +319,7 @@ class StubAudioBuffer {
     readonly numberOfChannels: number;
     readonly sampleRate: number;
     readonly duration: number;
-    private readonly channels: Float32Array[];
+    private readonly channels: Float32Array<ArrayBuffer>[];
 
     constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
         this.length = options.length;
@@ -329,7 +329,7 @@ class StubAudioBuffer {
         this.channels = Array.from({ length: options.numberOfChannels }, () => new Float32Array(options.length));
     }
 
-    getChannelData(channel: number): Float32Array {
+    getChannelData(channel: number): Float32Array<ArrayBuffer> {
         const data = this.channels[channel];
         if (!data) {
             throw new Error(`StubAudioBuffer has no channel ${String(channel)}`);
@@ -337,7 +337,7 @@ class StubAudioBuffer {
         return data;
     }
 
-    copyToChannel(source: Float32Array, channel: number): void {
+    copyToChannel(source: Float32Array<ArrayBuffer>, channel: number): void {
         this.getChannelData(channel).set(source);
     }
 }
@@ -569,9 +569,37 @@ function fixtureRenderContext(busShape: BusShape = {}, audioTrackPan?: number): 
 }
 
 /** Distinct material per clip, so a cross-wired track cannot null by luck. */
-function fixtureMaterial(): { matA: HarnessAudioBuffer; matB: HarnessAudioBuffer } {
-    const matA = createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE });
-    const matB = createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE });
+function nativeAudioBuffer(material: HarnessAudioBuffer): AudioBuffer {
+    const channels = Array.from({ length: material.numberOfChannels }, (_, channelIndex) => {
+        const channel: Float32Array<ArrayBuffer> = new Float32Array(material.length);
+        channel.set(material.getChannelData(channelIndex));
+        return channel;
+    });
+    const getChannelData = (channelNumber: number): Float32Array<ArrayBuffer> => {
+        const channel = channels[channelNumber];
+        if (!channel) {
+            throw new Error(`Native fixture has no channel ${String(channelNumber)}`);
+        }
+        return channel;
+    };
+    return {
+        length: material.length,
+        sampleRate: material.sampleRate,
+        duration: material.duration,
+        numberOfChannels: material.numberOfChannels,
+        getChannelData,
+        copyFromChannel(destination, channelNumber, bufferOffset = 0) {
+            destination.set(getChannelData(channelNumber).subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel(source, channelNumber, bufferOffset = 0) {
+            getChannelData(channelNumber).set(source, bufferOffset);
+        },
+    };
+}
+
+function fixtureMaterial(): { matA: AudioBuffer; matB: AudioBuffer } {
+    const matA = nativeAudioBuffer(createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE }));
+    const matB = nativeAudioBuffer(createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE }));
     for (let channel = 0; channel < matB.numberOfChannels; channel++) {
         const data = matB.getChannelData(channel);
         const scale = channel === 0 ? -0.8 : 0.65;
@@ -587,9 +615,9 @@ function fixtureMaterial(): { matA: HarnessAudioBuffer; matB: HarnessAudioBuffer
  * (#3773). Both engines receive a single channel, so the pan law each applies
  * to it is what the parity leg measures.
  */
-function toMono(material: HarnessAudioBuffer): HarnessAudioBuffer {
+function toMono(material: HarnessAudioBuffer): AudioBuffer {
     const channel = material.getChannelData(0);
-    return { ...material, numberOfChannels: 1, getChannelData: () => channel };
+    return nativeAudioBuffer({ ...material, numberOfChannels: 1, getChannelData: () => channel });
 }
 
 // ── Running one leg ────────────────────────────────────────────────────────

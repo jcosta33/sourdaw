@@ -26,6 +26,8 @@ function track(): Track {
                 type: 'audio',
                 startBeat: 0,
                 endBeat: 1,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
                 audioBufferId: 'take',
                 gain: 1,
                 color: '#fff',
@@ -63,14 +65,14 @@ class OwnedAudioBuffer {
     readonly length = 4;
     readonly sampleRate = 48_000;
     readonly duration = 4 / 48_000;
-    private readonly pcm = new Float32Array(4);
-    getChannelData(): Float32Array {
+    private readonly pcm: Float32Array<ArrayBuffer> = new Float32Array(4);
+    getChannelData(): Float32Array<ArrayBuffer> {
         return this.pcm;
     }
-    copyToChannel(data: Float32Array): void {
+    copyToChannel(data: Float32Array<ArrayBuffer>): void {
         this.pcm.set(data);
     }
-    copyFromChannel(destination: Float32Array): void {
+    copyFromChannel(destination: Float32Array<ArrayBuffer>): void {
         destination.set(this.pcm);
     }
 }
