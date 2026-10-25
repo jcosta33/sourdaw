@@ -79,6 +79,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: mocks.captureProjectRevision,
     createCrdtDoc: vi.fn(),

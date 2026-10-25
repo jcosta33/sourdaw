@@ -9,7 +9,7 @@ import { undoStore } from '../stores/undoStore';
 type PublicationAuthority = {
     captureIdentity: () => string;
     captureWitness: () => string;
-    captureCurrentGuard: () => () => boolean;
+    captureOwnedPublication: (owner: object) => () => (() => boolean) | null;
 };
 
 type Publication = {
@@ -23,7 +23,7 @@ type StagedCapture = {
     owner: object;
     identity: string;
     before: string;
-    ownsPublication: () => boolean;
+    readOwnedPublication: () => (() => boolean) | null;
     authority: PublicationAuthority;
     publication?: Publication;
 };
@@ -33,7 +33,6 @@ type CaptureLifecycle =
           phase: 'stage';
           action: AppAction;
           inverseAction: AppAction;
-          ownsPublication: () => boolean;
           publicationAuthority: PublicationAuthority;
       }
     | { phase: 'published' | 'settle' | 'discard'; actions: readonly AppAction[] };
@@ -73,16 +72,20 @@ function captureOwnedPublication(
                 capture.identity === identity &&
                 capture.authority.captureIdentity() === identity &&
                 capture.before !== witness &&
-                capture.authority.captureWitness() === witness &&
-                capture.ownsPublication()
+                capture.authority.captureWitness() === witness
         )
     ) {
         return null;
     }
-    return {
-        actions: [...actions],
-        guards: captures.map((capture) => capture.authority.captureCurrentGuard()),
-    };
+    const guards: Array<() => boolean> = [];
+    for (const capture of captures) {
+        const guard = capture.readOwnedPublication();
+        if (!guard || !guard()) {
+            return null;
+        }
+        guards.push(guard);
+    }
+    return { actions: [...actions], guards };
 }
 
 function discardStagedCaptures(actions: readonly AppAction[], captures: readonly StagedCapture[]): void {
@@ -143,7 +146,7 @@ export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, in
             owner,
             identity: input.publicationAuthority.captureIdentity(),
             before: input.publicationAuthority.captureWitness(),
-            ownsPublication: input.ownsPublication,
+            readOwnedPublication: input.publicationAuthority.captureOwnedPublication(owner),
             authority: input.publicationAuthority,
         });
         return;

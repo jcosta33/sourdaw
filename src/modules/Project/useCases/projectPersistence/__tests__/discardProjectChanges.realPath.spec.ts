@@ -140,6 +140,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
         captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
         captureProjectRevision: actual.captureProjectRevision,
         captureProjectIdentity: actual.captureProjectIdentity,
+        readOwnedProjectPublications: actual.readOwnedProjectPublications,
         registerCrdtStorageRuntime: actual.registerCrdtStorageRuntime,
         resetCrdtProjectAuthority: actual.resetCrdtProjectAuthority,
         compactProject: vi.fn(),

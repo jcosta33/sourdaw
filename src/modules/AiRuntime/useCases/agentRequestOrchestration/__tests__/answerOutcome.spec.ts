@@ -27,6 +27,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectIdentity: vi.fn(() => 'project-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     captureProjectRevision: vi.fn(() => 'revision-1'),
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-1'),
     DOC_BRANCHES: '__branches__',
