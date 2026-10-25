@@ -1,0 +1,25 @@
+tests/e2e/mixerChannelGainTestId.spec.ts
+  s_59e31a5c6f3e31::t_686c35e37ef18e 67,72-75
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_59e31a5c6f3e31::t_ac2b347ca454d2 612,614-616
+  s_59e31a5c6f3e31::t_aa52640eae329b 613,641-643
+  s_59e31a5c6f3e31::t_6b39d493846a35 639-640,644-651
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_59e31a5c6f3e31::t_db6a1789a10286 38,49,75-81,85,91,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5feb62400fe8c2775466eee9326fa553178fe183",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
