@@ -417,11 +417,14 @@ export function landEditOnRows(stored: readonly MidiCC[], edit: MidiCC): MidiCC[
 /**
  * The rows after a hand edit touched the point at a clip's head, with the returns a split or glue wrote just after
  * that head reconciled to what the rows now set there: they keep restoring the cut state with only RPN 0's range
- * replaced by the one the visible rows leave, rewritten in place under new ids. The returns are the last word the
- * reader replays at the head, so an edit that leaves them carrying a range neither a visible point nor the cut
- * state sets would govern every later bend wrongly. `fineOnlyEdit` marks an edit of a Data Entry LSB, which sets
- * no coarse range alone: it refines the returns only when a hand coarse stands at the head for it to complete, and
- * is a no-op otherwise.
+ * replaced by the one the visible rows leave, rewritten in place under the standing family's own ids — reused in
+ * order, minted from the next free index only for rows beyond it, which is why an undo sweeps the family by shape
+ * (`removeHandEditedReturnFamily`) instead of capturing ids. The returns are the last word the reader replays at
+ * the head, so an edit that leaves them carrying a range neither a visible point nor the cut state sets would
+ * govern every later bend wrongly. `fineOnlyEdit` marks an edit of a Data Entry LSB, which sets no coarse range
+ * alone: it refines the returns only when a hand coarse stands at the head for it to complete, and is a no-op
+ * otherwise. No edit of a writer row (ids carrying `:rpn-`) reaches this function: those rows are what the
+ * returns exist to override, not hand edits of the range.
  *
  * A lone Data Entry LSB among the visible rows sets no range either — the coarse it would refine is gone — so the
  * target is then the cut state the returns restore, untouched. The family is never emptied: a revisit that finds
@@ -459,13 +462,24 @@ export function reconcileHandEditedReturns(
             return null;
         }
     }
-    // A coarse Data Entry among the visible rows is what sets the range the returns must carry; a
-    // lone Data Entry LSB refines nothing, so the target stays the cut state the returns restore.
-    const coarseStands =
-        replayInReaderOrder(
-            visible.filter((row) => row.controller !== CC_DATA_ENTRY_LSB),
-            head.channel
-        ).bendRangeSemitones !== undefined;
+    // A hand coarse Data Entry is what sets the range the returns must carry: the writer's
+    // declaration and carried coarses (ids carrying `:rpn-`) are the rows the returns exist to
+    // override, and a lone Data Entry LSB refines nothing. The range provenance runs through the
+    // full replay — a hand coarse only sets the range under the selection the writer rows left —
+    // tracking which row last moved it.
+    let rangeSourceId: string | undefined;
+    const rangeState = createMidiChannelControllerState();
+    for (const row of visible
+        .filter((row) => row.channel === head.channel)
+        .toSorted((first, second) => first.beat - second.beat)) {
+        const before = rangeState.bendRangeSemitones;
+        applyRegisteredParameterChange(rangeState, row.controller, row.value);
+        if (rangeState.bendRangeSemitones !== before && row.controller !== CC_DATA_ENTRY_LSB) {
+            // A Data Entry LSB refines a range a coarse authored; it never authors one alone.
+            rangeSourceId = row.id;
+        }
+    }
+    const coarseStands = rangeSourceId !== undefined && !rangeSourceId.includes(':rpn-');
     const cut = replayInReaderOrder(
         rows.filter((row) => row.beat <= head.beat + SAME_BEAT_TOLERANCE || isCarriedBendReturnOnEditedHead(row, head)),
         head.channel

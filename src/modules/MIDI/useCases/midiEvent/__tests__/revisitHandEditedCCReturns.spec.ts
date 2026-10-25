@@ -140,6 +140,41 @@ describe('revisitHandEditedCCReturns', () => {
         expect(rangeAfter()).toBe(2);
     });
 
+    it('moving a writer carried row at the head reconciles nothing', () => {
+        // The writer's carried coarse is the row the returns exist to override; dragging it is not
+        // a hand edit of the range, and the family must keep restoring the cut state.
+        const writerCarried: MidiCC = {
+            id: 'cc-split:right:rpn-carried-2',
+            controller: 6,
+            value: 12,
+            beat: 0,
+            channel: 0,
+        };
+        seed([...origin, writerCarried, ...cutReturn]);
+        const before = midiStore.value?.ccByClipId.c1 ?? [];
+
+        moveMidiCC('c1', writerCarried.id, 0, 9);
+        revisitHandEditedCCReturns(
+            'c1',
+            { channel: 0, beat: 0 },
+            {
+                editedController: 6,
+                editedRowId: writerCarried.id,
+            }
+        );
+
+        // The move itself legitimately repositions the writer row; the family must be untouched.
+        const after = midiStore.value?.ccByClipId.c1 ?? [];
+        expect(
+            after.filter(({ id }) => id.includes('rpn-after-carried')).map((row) => [row.id, row.controller, row.value])
+        ).toEqual(
+            before
+                .filter(({ id }) => id.includes('rpn-after-carried'))
+                .map((row) => [row.id, row.controller, row.value])
+        );
+        expect(rangeAfter()).toBe(2);
+    });
+
     it('a real split origin carrying data bytes never leaves later bends at the orphaned fine half after a delete', () => {
         // A carved right half's origin declares the cut state with its data bytes (the writer's
         // `:rpn-` rows); the add replaces the origin's coarse at its key, so the delete revisits a

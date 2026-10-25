@@ -9,11 +9,13 @@ import { midiStore } from '../../stores/midiStore';
  * last word the stored reader replays there: left stale, they govern later bends with a range neither a visible
  * point nor the cut state sets. `editedController` names the controller the gesture edited: a Data Entry LSB
  * sets no coarse range alone, so an edit of one refines the returns only beside a coarse Data Entry.
+ * `editedRowId` names the row the gesture edited — a writer row (its id carries `:rpn-`) is never a hand edit
+ * of the range, and the call is a no-op for one.
  */
 export function revisitHandEditedCCReturns(
     clipId: string,
     head: { channel: number; beat: number },
-    options: { editedController?: number } = {}
+    options: { editedController?: number; editedRowId?: string } = {}
 ): void {
     const state = midiStore.value;
     if (!state) {
@@ -21,6 +23,11 @@ export function revisitHandEditedCCReturns(
     }
     const rows = state.ccByClipId[clipId];
     if (!rows) {
+        return;
+    }
+    // The writer's declaration and carried rows at the head are the rows the returns exist to
+    // override; moving or deleting one is not a hand edit of the range and must not reconcile.
+    if (options.editedRowId !== undefined && options.editedRowId.includes(':rpn-')) {
         return;
     }
     const revisited = reconcileHandEditedReturns(rows, head, {

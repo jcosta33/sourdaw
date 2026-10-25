@@ -92,9 +92,22 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         pushUndoEntry(
             'Add CC point',
             () => {
-                removeHandEditedReturnFamily(clipId, head);
+                // The sweep runs first and returns what it removed: a rewrite reuses the family's
+                // own ids (so the family never shows up in the click-time displaced capture), and
+                // the undo restores those rows from the pre-click list after removing the point.
+                const removedFamily = removeHandEditedReturnFamily(clipId, head);
                 removeMidiCC(clipId, cc.id);
-                restoreMidiCCPoints(clipId, preClickPoints, allCc);
+                // The swept rows carry their standing ids; their pre-gesture values live in the
+                // click capture, so the restore maps the swept ids back onto the captured rows.
+                const removedIds = new Set(removedFamily.map((row) => row.id));
+                const standingIds = new Set((midiStore.value?.ccByClipId[clipId] ?? []).map((context) => context.id));
+                restoreMidiCCPoints(
+                    clipId,
+                    [...preClickPoints, ...allCc.filter((context: MidiCC) => removedIds.has(context.id))].filter(
+                        (context: MidiCC, index, list) => list.findIndex((row) => row.id === context.id) === index
+                    ),
+                    allCc
+                );
             },
             redo
         );
@@ -136,7 +149,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                 // Moving a hand point off or along a clip's head changes what its returns must restore, so
                 // both the head it left and the one it joined are revisited; the undo and redo replay the
                 // same revisits after the move, and a revisit that finds nothing to change is a no-op.
-                const edited = { editedController: finalPoint.controller };
+                const edited = { editedController: finalPoint.controller, editedRowId: finalPoint.id };
                 const revisitBothEnds = (): void => {
                     revisitHandEditedCCReturns(clipId, { channel: finalPoint.channel, beat: origBeat }, edited);
                     revisitHandEditedCCReturns(clipId, { channel: finalPoint.channel, beat: finalBeat }, edited);
@@ -178,7 +191,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             // so every gesture direction ends in a revisit; one that finds nothing
             // to change is a no-op.
             const head = { channel: point.channel, beat: point.beat };
-            const edited = { editedController: point.controller };
+            const edited = { editedController: point.controller, editedRowId: point.id };
             removeMidiCC(clipId, ccId);
             revisitHandEditedCCReturns(clipId, head, edited);
             pushUndoEntry(

@@ -95,13 +95,18 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
         }
         laneMocks.midiState.ccByClipId[clipId] = restored;
     }),
-    removeHandEditedReturnFamily: vi.fn((clipId: string, head: { channel: number; beat: number }): void => {
-        // Mirrors the real use case: sweeps the head's return family by its id shape.
-        const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
-        laneMocks.midiState.ccByClipId[clipId] = existing.filter(
-            (point) => !(point.beat <= head.beat + 0.002 && point.id.includes('rpn-after-carried'))
-        );
-    }),
+    removeHandEditedReturnFamily: vi.fn(
+        (clipId: string, head: { channel: number; beat: number }): readonly MidiCC[] => {
+            // Mirrors the real use case: sweeps the head's return family by its id shape and
+            // returns the rows it removed, so the undo can restore them from its capture.
+            const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
+            const removed = existing.filter(
+                (point) => !(point.beat > head.beat + 0.002 || !point.id.includes('rpn-after-carried'))
+            );
+            laneMocks.midiState.ccByClipId[clipId] = existing.filter((point) => !removed.includes(point));
+            return removed;
+        }
+    ),
     moveMidiCC: vi.fn((clipId: string, ccId: string, beat: number, value: number): void => {
         const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
         laneMocks.midiState.ccByClipId[clipId] = existing.map((point) =>
@@ -359,7 +364,7 @@ describe('CCLane', () => {
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
         });
 
-        it('removes every row the add created, such as a rewritten return, and restores the one it replaced, on undo', () => {
+        it('sweeps the rewritten return family and restores the pre-gesture rows on undo', () => {
             const returnRow = {
                 id: 'cc-split:right:rpn-after-carried-0',
                 controller: 6,
@@ -368,7 +373,9 @@ describe('CCLane', () => {
                 channel: 0,
             };
             const unrelated = { id: 'cc-peer', controller: 11, value: 50, beat: 2, channel: 0 };
-            const rewrittenReturn = { ...returnRow, id: 'cc-split:right:rpn-after-carried-1', value: 7 };
+            // The real rewrite reuses the standing family's ids, so the rewritten row keeps the
+            // pre-gesture id and only its value changes.
+            const rewrittenReturn = { ...returnRow, value: 7 };
             laneMocks.midiState.ccByClipId['clip-1'] = [returnRow, unrelated];
             vi.mocked(addMidiCC).mockImplementationOnce((clipId, controller, value, beat, channel = 0): MidiCC => {
                 const cc: MidiCC = { id: 'clicked', controller, value, beat, channel };
@@ -566,12 +573,12 @@ describe('CCLane', () => {
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: 0 },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: draggedBeat },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
@@ -581,19 +588,19 @@ describe('CCLane', () => {
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: 0 },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: draggedBeat },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
             vi.mocked(revisitHandEditedCCReturns).mockClear();
             redoFn!();
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: draggedBeat },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
         });
 
@@ -945,7 +952,7 @@ describe('CCLane', () => {
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: 0 },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
@@ -955,14 +962,14 @@ describe('CCLane', () => {
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: 0 },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
             vi.mocked(revisitHandEditedCCReturns).mockClear();
             redoFn!();
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
                 { channel: 0, beat: 0 },
-                { editedController: 1 }
+                { editedController: 1, editedRowId: 'cc-a' }
             );
         });
     });
