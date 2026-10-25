@@ -84,7 +84,10 @@ function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>)
         if (unreachedHeads.delete(head)) {
             continue;
         }
-        pending.push(...(dependencies.get(head) ?? []));
+        const dependentHeads = dependencies.get(head);
+        if (dependentHeads) {
+            pending.push(...dependentHeads);
+        }
     }
     return unreachedHeads.size === 0;
 }
