@@ -1,0 +1,39 @@
+.agents/skills/review-stances/review-authorization.md
+  s_567a084d0540c4::t_ad9f12e8b97eac 40-41
+  s_567a084d0540c4::t_d41ebe0dd17425 27-39,42
+scripts/__tests__/resolveThread.spec.ts
+  s_567a084d0540c4::t_3ee3000d421655 1,6,8,50,52-53,56-57,59,75-81,87,92-95,99,109-113,117-120,123,127-135,138-141,146-149,159
+  s_567a084d0540c4::t_1cee4ce71a2948 3
+  s_567a084d0540c4::t_f5e57da8cbfb42 4,15,22-23,28-31,33-49
+  s_567a084d0540c4::t_b3f95a246712cd 51,60-63,70-74,88,100-102,105-106
+  s_567a084d0540c4::t_52906c33f98c31 10,91,150-152,156-157,160-163,165,169-170
+  s_567a084d0540c4::t_52d67fdea47859 64-65
+AGENTS.md
+  s_567a084d0540c4::t_d41ebe0dd17425 220,222,604,609
+  s_567a084d0540c4::t_19a2bc9573ebc1 610
+scripts/resolveThread.ts
+  s_567a084d0540c4::t_b4aeb134e1cf7f 2,5-6,41-43,45,49
+  s_567a084d0540c4::t_dd58eb687ecd93 52
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_567a084d0540c4::t_fdfb178f34b18d 1461
+.agents/skills/delivery-orchestration/SKILL.md
+  s_567a084d0540c4::t_fdfb178f34b18d 33,631-637
+scripts/trustedGithubWriteBootstrap.ts
+  s_567a084d0540c4::t_73483c00952ec8 383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81c48e77eed6d4cb3a3ed7cf6a507d9d09d38477",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
