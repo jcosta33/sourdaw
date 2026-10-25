@@ -6636,6 +6636,111 @@ describe('budget profiles', () => {
     });
 });
 
+describe('test-case admission question', () => {
+    const path = 'scripts/__tests__/runIsolatedUnitShard.spec.ts';
+    const previousRulesDigest = 'd794f0d0d577d991c558cee16718a440df20ceda44bd0cad271da4c97af78f9d';
+    const before = `it('checks admission', () => {
+    const result = run();
+    expect(result.status).toBe(0);
+});\n`;
+
+    async function plannedRequest(after: string): Promise<{
+        state: unknown;
+        question: { instructions: string; criteria: { true: string; false: string } };
+    }> {
+        const sent: { state: unknown; questions: SemanticProviderQuestions }[] = [];
+        const provider: SemanticProviderPort = {
+            systemOne: async ({ state, questions }) => {
+                sent.push({ state, questions });
+                const answers = Object.fromEntries(
+                    Object.keys(questions).map((key) => [key, { type: 'noul', noul: 0.02 }])
+                );
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        };
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+        });
+        const base = scanPorts(provider, source, fixedClock(1_000));
+        const { report } = await runScan({ ...base, profile: SEMANTIC_BUDGET_PROFILES.ci });
+        expect(report.scope.assessed).toBe(1);
+        expect(sent).toHaveLength(1);
+        const request = sent[0];
+        const question = request?.questions.admission_branch_completes_without_asserting as
+            | { instructions: string; criteria: { true: string; false: string } }
+            | undefined;
+        expect(question).toBeDefined();
+        if (request === undefined || question === undefined) {
+            throw new Error('the production request planner did not ask the admission question');
+        }
+        return { state: request.state, question };
+    }
+
+    it('asks about a completed case, not an ordinary mock callback return', async () => {
+        // Frozen pilot J13: the mock returns within the case, then the case asserts the result.
+        const after = `it('checks admission', () => {
+    const run = vi.fn(() => {
+        if (missingModule) {
+            return { status: 1 };
+        }
+        return { status: 0 };
+    });
+    const result = run();
+    expect(result.status).toBe(1);
+});\n`;
+        const { state, question } = await plannedRequest(after);
+        const supplied = JSON.stringify(state);
+        expect(supplied).toContain('return { status: 1 }');
+        expect(supplied).toContain('expect(result.status).toBe(1)');
+        expect(question.instructions).toMatch(/test case.*complete.*assertion/iu);
+        expect(question.instructions).toMatch(/mock.*return.*case/iu);
+        expect(question.criteria.false).toMatch(/mock.*return.*assertion/iu);
+    });
+
+    it('still asks about a case-level early return before its sole assertion', async () => {
+        // The shipped paired positive adds this return inside the test case itself.
+        const after = `it('exposes the snap value control', () => {
+    const toolbar = readToolbar();
+    if (!toolbar.mounted) {
+        return;
+    }
+    expect(toolbar.snapValue).toBe('1/16');
+});\n`;
+        const { state, question } = await plannedRequest(after);
+        const supplied = JSON.stringify(state);
+        expect(supplied).toContain('if (!toolbar.mounted)');
+        expect(supplied).toContain("expect(toolbar.snapValue).toBe('1/16')");
+        expect(question.criteria.true).toMatch(/test case.*complet.*without.*assertion/iu);
+    });
+
+    it('records an unasked question when the case source exceeds the fixed region budget', async () => {
+        const after = `${before}${'// unrelated case content\n'.repeat(300)}`;
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+        });
+        const base = scanPorts(constantProvider(0.02), source, fixedClock(1_000));
+        const result = await runScan({ ...base, profile: SEMANTIC_BUDGET_PROFILES.ci });
+        const preview = result.previews.find((entry) => entry.path === path);
+        expect(preview?.ruleIds).toContain('admission_branch_completes_without_asserting');
+        expect(preview?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'region-exceeds-per-region-budget (after)',
+        });
+        expect(result.report.execution).toBe('unavailable');
+    });
+
+    it('refuses to replay answers to the earlier branch-body question', () => {
+        expect(semanticRule('admission_branch_completes_without_asserting').version).toBe('2');
+        expect(computeRulesDigest()).not.toBe(previousRulesDigest);
+        expect(() => assertQuestionsAreReplayable({ rulesDigest: previousRulesDigest })).toThrow(
+            /changed question needs a new assessment/u
+        );
+    });
+});
+
 describe('report contract', () => {
     async function scanOnce() {
         const clock = fixedClock(1_000);
