@@ -109,8 +109,7 @@ function withNativeReviewMutation(
         expect(identity).toContain(authDeclaration);
         writeFileSync(
             identityPath,
-            identity.replace(authDeclaration, 'export async function unusedFixtureAuthenticateRole(') +
-                `
+            `${identity.replace(authDeclaration, 'export async function unusedFixtureAuthenticateRole(')}
             export async function authenticateRole(input) {
                 const git = args => {
                     const result = spawnSync(process.env.SOURDAW_TRUSTED_GIT_PATH, args,
