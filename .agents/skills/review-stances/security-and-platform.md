@@ -19,6 +19,18 @@ dispatch.
   internal consumer of a broad platform directory does not grant the renderer authority over it.
 - Follow canonical paths through existing symlinks and missing tails before evaluating a root or
   grant. Check component boundaries and platform spelling behavior rather than string prefixes.
+- Trace every authoritative field from its native response parser through the final equality
+  witness. PR #5627's new historical-parent observation cut exposed an inherited omission of the
+  child's live `baseRef`; cached `baseRefOid` did not bind its name, repository, target or presence.
+  The omission is source-established at the base, and the reviewed head has a native-adapter
+  reproduction; no base-head execution or live/main occurrence is claimed. Change each ref field,
+  remove it, or recreate it after an admitted cleanup while returning the final parent marker
+  response. Require the actual final child core to observe and refuse the change before closure or
+  replay success, retaining owner and markers after an attempted close. An inspected null ref is
+  bound absence; an internal core-only projection omitting the field is not an observed absence.
+  Keep stable present-ref and cleanup-replay controls, and reject an explicitly owned undefined
+  expectation. These are finite client observations, not a server snapshot or protection from later
+  external changes.
 
 ## Lessons from escapes
 

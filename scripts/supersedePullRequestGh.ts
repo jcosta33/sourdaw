@@ -348,12 +348,25 @@ function coreIdentity(value: PullRequestCore) {
     };
 }
 
+function liveBaseRefIdentity(value: SupersededPullRequest['baseRef']) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    return { name: value.name, repository: value.repository, target: value.target };
+}
+
 /** Bound the split-read composition gap; GitHub's close input has no expected-head CAS. */
 function assertCurrentPullRequest(number: number, expected: SupersededPullRequest, expectedId: string, gh: Gh): void {
     const current = readPullRequestCore(number, gh);
+    // Internal core-only authority projections omit this field; inspected snapshots own it even when null.
+    const baseRefChanged =
+        Object.hasOwn(expected, 'baseRef') &&
+        JSON.stringify(liveBaseRefIdentity(current.value.baseRef)) !==
+            JSON.stringify(liveBaseRefIdentity(expected.baseRef));
     if (
         current.id !== expectedId ||
-        JSON.stringify(coreIdentity(current.value)) !== JSON.stringify(coreIdentity(expected))
+        JSON.stringify(coreIdentity(current.value)) !== JSON.stringify(coreIdentity(expected)) ||
+        baseRefChanged
     ) {
         fail(`PR #${number} core identity changed before completion`);
     }
