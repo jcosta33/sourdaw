@@ -449,25 +449,26 @@ describe('runCli', () => {
     it('routes a generic Task to Features in both preview and create arguments', () => {
         const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
         const gh = fakeGh(created);
-        const args = [...taskFiling, '--project', 'sOuRdAw FeAtUrEs'];
-
-        expect(runCli(args, gh.run)).toBe(0);
-        expect(JSON.parse(String(stdout.mock.calls[0]?.[0])).labels).toEqual([
-            'status:ready',
-            'priority:P2',
-            'project:features',
-        ]);
-        expect(runCli([...args, '--create'], gh.run)).toBe(0);
-        expect(gh.calls).toHaveLength(1);
-        expect(gh.calls[0]?.filter((arg) => arg === 'project:features')).toEqual(['project:features']);
-        expect(gh.calls[0]?.slice(-2)).toEqual(['--project', 'sOuRdAw FeAtUrEs']);
-        expect(JSON.parse(String(stdout.mock.calls[1]?.[0])).labels).toContain('project:features');
+        for (const project of ['sOuRdAw FeAtUrEs', 'ſourdaw Features']) {
+            const args = [...taskFiling, '--project', project];
+            expect(runCli(args, gh.run)).toBe(0);
+            expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0])).labels).toEqual([
+                'status:ready',
+                'priority:P2',
+                'project:features',
+            ]);
+            expect(runCli([...args, '--create'], gh.run)).toBe(0);
+            expect(gh.calls.at(-1)?.filter((arg) => arg === 'project:features')).toEqual(['project:features']);
+            expect(gh.calls.at(-1)?.slice(-2)).toEqual(['--project', project]);
+            expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0])).labels).toContain('project:features');
+        }
+        expect(gh.calls).toHaveLength(2);
     });
 
     it('suppresses a Feature form route when Bugs or Refactors is selected', () => {
         const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
         const gh = fakeGh(created);
-        for (const project of ['sOuRdAw BuGs', 'sOuRdAw ReFaCtOrS']) {
+        for (const project of ['sOuRdAw BuGs', 'sOuRdAw ReFaCtOrS', 'Sourdaw Refactorſ']) {
             const args = [...featureFiling, '--project', project];
             expect(runCli(args, gh.run)).toBe(0);
             expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0])).labels).not.toContain('project:features');
@@ -480,13 +481,15 @@ describe('runCli', () => {
         const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
         const gh = fakeGh(created);
         for (const template of ['bug', 'change-plan']) {
-            expect(
-                runCli(
-                    [template, '--title', 'misrouted', '--fields', '{}', '--project', 'sOuRdAw FeAtUrEs', '--create'],
-                    gh.run
-                )
-            ).toBe(1);
-            expect(String(consoleError.mock.calls.at(-1)?.[0])).toContain('Sourdaw Features');
+            for (const project of ['sOuRdAw FeAtUrEs', 'ſourdaw Features']) {
+                expect(
+                    runCli(
+                        [template, '--title', 'misrouted', '--fields', '{}', '--project', project, '--create'],
+                        gh.run
+                    )
+                ).toBe(1);
+                expect(String(consoleError.mock.calls.at(-1)?.[0])).toContain('Sourdaw Features');
+            }
         }
         expect(gh.calls).toEqual([]);
     });

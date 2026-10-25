@@ -38,11 +38,13 @@ const TEMPLATE_ALIASES: Record<string, string> = {
 
 const FEATURES_PROJECT = 'Sourdaw Features';
 const FEATURES_ROUTE_LABEL = 'project:features';
-const NON_FEATURES_PROJECTS = ['Sourdaw Bugs', 'Sourdaw Refactors'];
+const FEATURES_PROJECT_PATTERN = /^Sourdaw Features$/iu;
+const NON_FEATURES_PROJECT_PATTERNS = [/^Sourdaw Bugs$/iu, /^Sourdaw Refactors$/iu];
 const NON_FEATURES_TEMPLATES = new Set(['bug_report', 'change_plan']);
 
-function isProject(project: string | undefined, title: string): boolean {
-    return project?.toLowerCase() === title.toLowerCase();
+function isProject(project: string | undefined, pattern: RegExp): boolean {
+    // gh resolves project titles with Go EqualFold, which shares Unicode simple folding with /iu.
+    return project !== undefined && pattern.test(project);
 }
 
 const USAGE =
@@ -161,10 +163,10 @@ export function renderIssueSubmission(
 }
 
 function routeIssueSubmission(submission: IssueSubmission, project: string | undefined): IssueSubmission {
-    if (isProject(project, FEATURES_PROJECT) && !submission.labels.includes(FEATURES_ROUTE_LABEL)) {
+    if (isProject(project, FEATURES_PROJECT_PATTERN) && !submission.labels.includes(FEATURES_ROUTE_LABEL)) {
         return { ...submission, labels: [...submission.labels, FEATURES_ROUTE_LABEL] };
     }
-    if (NON_FEATURES_PROJECTS.some((title) => isProject(project, title))) {
+    if (NON_FEATURES_PROJECT_PATTERNS.some((pattern) => isProject(project, pattern))) {
         return { ...submission, labels: submission.labels.filter((label) => label !== FEATURES_ROUTE_LABEL) };
     }
     return submission;
@@ -467,7 +469,10 @@ export function runCli(argv: string[], runGh: GhRunner = spawnGh): number {
         }
         const templatesDir = join(dirname(fileURLToPath(import.meta.url)), '..', '.github/ISSUE_TEMPLATE');
         const templatePath = resolveTemplatePath(templatesDir, parsed.template);
-        if (isProject(parsed.project, FEATURES_PROJECT) && NON_FEATURES_TEMPLATES.has(basename(templatePath, '.yml'))) {
+        if (
+            isProject(parsed.project, FEATURES_PROJECT_PATTERN) &&
+            NON_FEATURES_TEMPLATES.has(basename(templatePath, '.yml'))
+        ) {
             fail(`${parsed.template} cannot target ${FEATURES_PROJECT}`);
         }
         const form = parseIssueForm(readFileSync(templatePath, 'utf8'));
