@@ -1015,7 +1015,7 @@ describe('renderOffline — native/web export parity (#2225)', () => {
             } = {};
             mocks.probe.transport = {
                 ...transport,
-                async renderGraphOffline(input) {
+                async renderGraphOffline(input: Parameters<NativeGraphTransport['renderGraphOffline']>[0]) {
                     // Both renders borrow the backend's admitted lease, before
                     // renderOffline's finally disposes that backend.
                     const fromExport = await transport.renderGraphOffline(input);
