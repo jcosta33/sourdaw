@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_3168504f6ce387::t_7abc5764108b15 1216
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_3168504f6ce387::t_33783f29811fa1 6142,6171
+  s_3168504f6ce387::t_d5e6361f05da45 6574
+  s_3168504f6ce387::t_7abc5764108b15 35,47,6123,6159-6161,6179-6192,6522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bdb7c2c6f8ae87425c69f6363f9dda41d9a77db5",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
