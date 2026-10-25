@@ -35,6 +35,30 @@ describe('BipolarSlider', () => {
         expect(onValueCommit).toHaveBeenCalledWith(expect.any(Number));
     });
 
+    it('commits the End key value before blur and does not commit it again on unmount', () => {
+        const onValueChange = vi.fn();
+        const onValueCommit = vi.fn();
+        const view = render(
+            <BipolarSlider
+                value={-20}
+                onValueChange={onValueChange}
+                onValueCommit={onValueCommit}
+                min={-60}
+                max={0}
+                aria-label="Threshold"
+            />
+        );
+        const slider = screen.getByRole('slider', { name: 'Threshold' });
+
+        fireEvent.keyDown(slider, { key: 'End' });
+        expect(onValueChange).toHaveBeenCalledWith(0);
+        expect(onValueCommit.mock.calls).toEqual([[0]]);
+
+        fireEvent.blur(slider);
+        view.unmount();
+        expect(onValueCommit.mock.calls).toEqual([[0]]);
+    });
+
     it.each(['metaKey', 'ctrlKey'])('commits a %s reset once without a later ghost commit', (modifier) => {
         const onValueChange = vi.fn();
         const onValueCommit = vi.fn();
@@ -47,6 +71,64 @@ describe('BipolarSlider', () => {
         fireEvent.blur(window);
         expect(onValueChange.mock.calls).toEqual([[0]]);
         expect(onValueCommit.mock.calls).toEqual([[0]]);
+    });
+
+    it('previews the End callback value before settling a held pointer edit', () => {
+        const calls: [string, number][] = [];
+        const view = render(
+            <BipolarSlider
+                value={-20}
+                onValueChange={(value) => calls.push(['change', value])}
+                onValueCommit={(value) => calls.push(['commit', value])}
+                min={-60}
+                max={0}
+                aria-label="Threshold"
+            />
+        );
+        const slider = screen.getByRole('slider', { name: 'Threshold' });
+        const root = slider.closest('[data-slot="slider"]');
+        if (!(root instanceof HTMLElement)) {
+            throw new Error('Missing Slider root');
+        }
+        Object.defineProperties(root, {
+            setPointerCapture: { configurable: true, value: vi.fn() },
+            releasePointerCapture: { configurable: true, value: vi.fn() },
+            hasPointerCapture: { configurable: true, value: () => true },
+        });
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+            x: 0,
+            y: 0,
+            top: 0,
+            bottom: 20,
+            left: 0,
+            right: 100,
+            width: 100,
+            height: 20,
+            toJSON: () => ({}),
+        });
+        fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
+        fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
+        expect(calls).toEqual([
+            ['change', -36],
+            ['change', -48],
+        ]);
+
+        fireEvent.keyDown(slider, { key: 'End' });
+        expect(calls).toEqual([
+            ['change', -36],
+            ['change', -48],
+            ['change', 0],
+            ['commit', 0],
+        ]);
+        fireEvent.pointerUp(root, { pointerId: 2 });
+        fireEvent.blur(slider);
+        view.unmount();
+        expect(calls).toEqual([
+            ['change', -36],
+            ['change', -48],
+            ['change', 0],
+            ['commit', 0],
+        ]);
     });
 
     it.each(['pointerCancel', 'lostPointerCapture', 'windowBlur', 'unmount'])(

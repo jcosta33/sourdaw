@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:ace2c25e8368a28fdf535938f4a7858c9b8e30e1e460ca83fc94cc03bbe5752e:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:22d6c8bdce602ce07ca04f402d985ae92ef9a274126955cec4aa44f3b075486a:release/dependency-license-proofs.json"
+                "sha256:6b54ed079a44f89c35b4fd9dc4b68f2c0ba9300194e32f4b43510874760784a7:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:09011009c586bac272e9bac6a71e68b187f89a8260c5116a31122941ae03102f:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -277,7 +277,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:06ebdb9b81a5072b9e043c013e16f9d53f7db90c76c21b736dc0f167f9b2df50",
+                "sha256:07cffebaa5cfe9f04acde83557ef7ec6a5dce9c8f3a598657789ec7d5f5c74b2",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -1342,13 +1342,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:bb40b6cbc383e65aa9a7b634db017c97f8f10d56cdcd977421d5394ab7d81c62",
+                "daw-dsp sha256:ff907bfb93d42299ba99a5d3977f5c7538d478c622f5b5083dfac17dea13aaca",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:1c3a4e4ed1ac200437a1f99ac185f1ccaf465c903afc864fa204968ff6e866b2",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:d5a66dbdfdbb8f02a013d043b93e1eba6cfa3d951d41970415c27e90d8c40364:public/wasm/manifest.json"
+                "sha256:b552491574abf7cbf03162d47fd02a443d0cc3b01ca756fa63e57e3393f88238:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1740,7 +1740,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "9668930c62197bf8a6555865edc5411436dee1395d20f055bd730f7558378f2a"
+            "sha256": "e5363a7578117ef19b686af78e1375616c2eaf64058479fcf0cb9f71607defde"
         },
         {
             "path": "server/package.json",
@@ -1752,7 +1752,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "06ebdb9b81a5072b9e043c013e16f9d53f7db90c76c21b736dc0f167f9b2df50"
+            "sha256": "07cffebaa5cfe9f04acde83557ef7ec6a5dce9c8f3a598657789ec7d5f5c74b2"
         },
         {
             "path": "Cargo.toml",
@@ -1768,7 +1768,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "d5a66dbdfdbb8f02a013d043b93e1eba6cfa3d951d41970415c27e90d8c40364"
+            "sha256": "b552491574abf7cbf03162d47fd02a443d0cc3b01ca756fa63e57e3393f88238"
         }
     ],
     "externalReferences": [
@@ -2124,6 +2124,11 @@
             "file": "scripts/dependencyLicenseReport.ts",
             "value": "https://registry.npmjs.org/${slot}/-/${slot}-${slot}.tgz",
             "templateSha256": "7e8d6289056275cf7b0f11ed3e5143bbf19fa89cbbe4de4ab4dea3624bc4dd30"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/aptWithoutMicrosoftFeed.sh",
+            "value": "https://packages.microsoft.com/ubuntu/"
         },
         {
             "surface": "project-source",
