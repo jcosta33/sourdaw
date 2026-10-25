@@ -859,10 +859,10 @@ describe('a coordinated level list keeps the protections of tracks outside it', 
 
 /**
  * An explicit protection is only as good as the references it binds. One holding a concrete reference
- * that binds to nothing (a quoted or capitalized name no object carries, a position, a selection phrase
- * with nothing selected) cannot be enforced, so the request grounds nothing: an incomplete protection
- * is a rejection, never an empty permission set, for one target, a coordinated list and every route
- * alike. Anything else a protection holds is no target and never refuses: a quality, the rest of the
+ * in a singular object form that binds to nothing (an owner qualified by a control or object kind,
+ * a position, or an unavailable selection phrase) cannot be enforced, so the request grounds nothing:
+ * an incomplete protection is a rejection, never an empty permission set, for one target, a coordinated
+ * list and every route alike. Anything else a protection holds is no target and never refuses: a quality, the rest of the
  * mix, a project setting, filler, a kind noun beside a name, or the selected clip.
  */
 describe('an explicit protection naming a reference that binds to nothing refuses the request', () => {
@@ -1664,6 +1664,31 @@ describe('level requests outside a coordinated list ground as before', () => {
 });
 
 describe('a protection grounds what main grounds outside its object forms', () => {
+    it('keeps a closed then-list protection on direct and atomic routes', () => {
+        const allowed = 'turn Drums down 3 dB; leave Bass then Keys alone';
+        const refused = 'turn Keys down 3 dB; leave Bass then Keys alone';
+
+        expect(bridge([gainCall(drums.id, { deltaDb: -3 })], allowed).actions).toEqual([
+            gainAction(drums.id, { deltaDb: -3 }),
+        ]);
+        expect(groundGainList(allowed, [drums]).status).toBe('grounded');
+        expect(bridge([gainCall(keys.id, { deltaDb: -3 })], refused).actions).toEqual([]);
+        expect(groundGainList(refused, [keys]).status).toBe('rejected');
+    });
+
+    it('keeps the known then-tail owner protected beside an unbound bare member', () => {
+        const allowed = 'turn Drums down 3 dB; leave Ghost then Keys alone';
+        const refused = 'turn Keys down 3 dB; leave Ghost then Keys alone';
+
+        expect(bridge([gainCall(drums.id, { deltaDb: -3 })], allowed).actions).toEqual([
+            gainAction(drums.id, { deltaDb: -3 }),
+        ]);
+        expect(bridge([gainCall(keys.id, { deltaDb: -3 })], refused)).toMatchObject({
+            actions: [],
+            rejections: [{ reason: expect.stringContaining('Request changes "Keys"') }],
+        });
+    });
+
     it.each([
         'turn the Drums down 3 dB and keep the Kick level punchy',
         'turn the Drums down 3 dB and keep an eye on the Kick level',

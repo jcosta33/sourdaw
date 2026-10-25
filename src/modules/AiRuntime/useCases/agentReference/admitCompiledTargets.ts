@@ -385,21 +385,29 @@ function getProtectedIds(
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): Set<string> {
     const protectedIds = new Set(input.compilerExcludedIds);
-    const wholeObjects =
-        input.requestProtections?.facts.protectedUnchanged ??
-        getApplicationProtectedObjects({
-            actions: [],
-            context: input.context,
-            prompt: input.prompt,
-        });
+    let wholeObjects: ReturnType<typeof getApplicationProtectedObjects>;
+    let consumed: AgentReferenceTextRange[];
+    if (input.requestProtections !== undefined) {
+        wholeObjects = input.requestProtections.facts.protectedUnchanged;
+        consumed = input.requestProtections.resolvedTrackClauses;
+    } else {
+        const reading = readExplicitProtections(input.prompt, input.context);
+        wholeObjects = [
+            ...getApplicationProtectedObjects({ actions: [], context: input.context, prompt: input.prompt }),
+            ...input.context.tracks
+                .filter((track) => reading.protectedTrackIds.includes(track.id))
+                .map(({ id, name }) => ({ id, name })),
+        ];
+        consumed = reading.resolvedTrackClauses;
+    }
     for (const object of wholeObjects) {
         protectedIds.add(object.id);
+        for (const ownedId of getTrackOwnedObjectIds(object.id, input.context)) {
+            protectedIds.add(ownedId);
+        }
     }
-    // The canonical reader distinguishes whole objects from their controls. Those consumed clauses
-    // are enforced after grounding against the actual mutation owners, never as blanket exclusions.
-    const consumed =
-        input.requestProtections?.resolvedTrackClauses ??
-        readExplicitProtections(input.prompt, input.context).resolvedTrackClauses;
+    // Whole owners are transferred before their source clauses are masked. Control facets remain
+    // enforced after grounding against the actual mutation owners, never as blanket exclusions.
     const genericRestrictions = consumed.reduce(blankRange, request.prompt);
     for (const range of restrictionRanges) {
         const restriction = genericRestrictions.slice(range.start, range.end);

@@ -22,13 +22,6 @@ import { readExplicitProtections } from './readExplicitProtections';
 
 export type ApplicationProtectedObject = { id: string; name: string };
 
-function normalizeText(value: string): string {
-    return value
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
-
 /** Derives every protected object from application state, actions, and workflow semantics. */
 export function getApplicationProtectedObjects(input: {
     actions: readonly AppAction[];
@@ -39,29 +32,18 @@ export function getApplicationProtectedObjects(input: {
 }): ApplicationProtectedObject[] {
     const { actions, context, prompt, wholeProjectVibeMixPlan, workflowCapabilityId } = input;
     const readProtections = readExplicitProtections(prompt, context);
-    const carvedOutTrackIds = new Set(
-        readProtections.protectedControls
-            .filter((control) => control.exceptActionTypes !== undefined)
-            .map((control) => control.trackId)
-    );
-    const protectedScopes = [
-        ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
-    ].flatMap((match) => (match[1] ? [normalizeText(match[1])] : []));
     const excludedFrozenTrackIds = new Set(
         getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
     );
     const structurallyProtectedTrackIds = new Set(
         getMutedEmptyTrackDeletionScope(prompt, context)?.protectedTrackIds ?? []
     );
-    const protectedTracks = context.tracks.filter((track) => {
-        const normalizedName = normalizeText(track.name);
-        return (
+    const protectedTracks = context.tracks.filter(
+        (track) =>
             excludedFrozenTrackIds.has(track.id) ||
             structurallyProtectedTrackIds.has(track.id) ||
-            (protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `)) &&
-                (!carvedOutTrackIds.has(track.id) || readProtections.protectedTrackIds.includes(track.id)))
-        );
-    });
+            readProtections.namedTrackIds.includes(track.id)
+    );
     const deviceParameterScope = getDeviceParameterPromptScope(prompt, context);
     const protectedParameters = deviceParameterScope
         ? deviceParameterScope.protectedParameters.map((parameter) => {

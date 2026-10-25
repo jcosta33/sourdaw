@@ -86,6 +86,22 @@ an unknown clip or unread suffix must not discharge the residual restriction.
 
 ## Lessons from escapes
 
+### 2026-10-25 — a protected clip or control became a whole track (introduced by PR #2811)
+
+PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
+(`beb59d2e74a4d98992b692ff07a40635db22ee39`) inferred whole-track protection from a track name
+contained in raw unchanged text. With a Bass track owning a Bass Verse clip, `leave Bass Verse
+unchanged` could protect the whole track and block a sibling clip edit. `leave Bass fader
+unchanged` requires control-facet authority rather than whole-track authority. The historical
+review stance, prompt and tier are unestablished.
+
+Use canonical whole-owner facts. When a track and a clip or device share the exact name Bass,
+retain actual track candidates conservatively while leaving the mixed original range unconsumed
+for generic non-track admission. Probe the real producer, initial recorded facts, a permitted
+sibling clip edit, and later admission against a frozen whole owner's actual descendants.
+Independent `leave Bass alone` and structural or frozen roots must remain whole restrictions
+beside a separately protected clip.
+
 ### 2026-10-24 — a fenced transaction had no native process-tool admission (introduced by PR #5639)
 
 PR #5639 serialized supersession with the shared fenced owner, but its package command still

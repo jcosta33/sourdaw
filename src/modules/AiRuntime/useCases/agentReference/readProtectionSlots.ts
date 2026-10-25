@@ -41,12 +41,19 @@ const LAST_WITH = /\bwith\s+(?![\s\S]*\bwith\s)/iu;
 
 type StartKind = 'verb' | 'prohibition' | 'carve-out';
 type Event = { index: number; end: number; kind: StartKind | 'cut' };
-type Piece = { start: number; end: number; lead: { kind: StartKind; end: number; text: string } | null };
+type Piece = {
+    start: number;
+    end: number;
+    lead: { kind: StartKind; end: number; text: string } | null;
+    memberSeparators: Range[];
+};
 export type Slot = {
     start: number;
     end: number;
     /** The whole clause, only when no unread text follows its closer. */
     completeRange: Range | null;
+    /** Original then separators continuing an explicitly opened, still-unclosed protection. */
+    memberSeparators: Range[];
     /** Whether a closing word shows the clause is a closed protection, which a selection phrase needs. */
     strict: boolean;
     /** The word that closed the slot. */
@@ -104,11 +111,22 @@ function splitPieces(masked: string): Piece[] {
     const pieces: Piece[] = [];
     let cursor = 0;
     let lead: Piece['lead'] = null;
+    let memberSeparators: Range[] = [];
     for (const event of collectEvents(masked)) {
         if (event.index < cursor) {
             continue;
         }
-        pieces.push({ start: cursor, end: event.index, lead });
+        if (
+            event.kind === 'cut' &&
+            masked.slice(event.index, event.end).toLowerCase() === 'then' &&
+            lead?.kind === 'verb' &&
+            findCloser(masked, lead.end, event.index, closerPattern, lead.text) === null
+        ) {
+            memberSeparators.push({ start: event.index, end: event.end });
+            continue;
+        }
+        pieces.push({ start: cursor, end: event.index, lead, memberSeparators });
+        memberSeparators = [];
         if (event.kind === 'cut') {
             cursor = event.end;
             lead = null;
@@ -117,7 +135,7 @@ function splitPieces(masked: string): Piece[] {
             lead = { kind: event.kind, end: event.end, text: masked.slice(event.index, event.end) };
         }
     }
-    pieces.push({ start: cursor, end: masked.length, lead });
+    pieces.push({ start: cursor, end: masked.length, lead, memberSeparators });
     return pieces;
 }
 
@@ -169,6 +187,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
             start,
             end: Math.max(start, end),
             completeRange: readCompleteRange(masked, piece, closer, true),
+            memberSeparators: piece.memberSeparators,
             strict: true,
             closer: closer.word,
             exempts: false,
@@ -180,6 +199,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
             start: lead.end,
             end: piece.end,
             completeRange: { start: piece.start, end: piece.end },
+            memberSeparators: piece.memberSeparators,
             strict: true,
             closer: null,
             exempts: false,
@@ -192,6 +212,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
             start: lead.end,
             end: closer?.start ?? piece.end,
             completeRange: readCompleteRange(masked, piece, closer, false),
+            memberSeparators: piece.memberSeparators,
             strict: true,
             closer: closer?.word ?? null,
             exempts: false,
@@ -203,6 +224,7 @@ function readSlot(masked: string, piece: Piece): Slot | null {
         start: lead.end,
         end: closer?.start ?? piece.end,
         completeRange: readCompleteRange(masked, piece, closer, true),
+        memberSeparators: piece.memberSeparators,
         strict: closer !== null,
         closer: closer?.word ?? null,
         exempts: false,

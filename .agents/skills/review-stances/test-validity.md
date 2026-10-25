@@ -516,6 +516,23 @@ combine a positive fader protection and an exception through the basis producer 
 
 ## Lessons from escapes
 
+### 2026-10-25 — fixed protected IDs proved forwarding without source resolution (introduced by PR #2811)
+
+PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
+(`beb59d2e74a4d98992b692ff07a40635db22ee39`) introduced raw substring inference in
+`getApplicationProtectedObjects`. Its `getApplicationWorkflowScope` spec mocked that producer
+with fixed protected IDs, proving forwarding without proving which whole object the text
+protected. The historical review stance, prompt and tier are unestablished.
+
+Call the real producer for `leave Bass Verse unchanged`, `leave Bass fader unchanged`, and
+`leave Bass unchanged` with an exact track/clip or track/device name collision. Assert clip-only
+and facet-only independence, conservative track candidates, and an unconsumed mixed source
+range. Read the initial caller's recorded facts and require a sibling clip edit to survive;
+separately require frozen whole-owner descendants to remain refused. A structural preservation
+control must first assert its actual scope producer's `targetIds` and `excludedFrozenTrackIds`.
+An all-frozen fixture can produce no bulk scope, so an incidental named restriction cannot stand
+in for proof that the structural branch ran.
+
 ### 2026-10-21 — census specs pinned an observation count instead of the deadline (issue #5337)
 
 PR #5331's controlled Darwin census cases asserted retention after exactly three catalogs for

@@ -165,6 +165,7 @@ type SelectionMember = {
 type BoundMember = { trackIds: string[]; controls: string[] };
 type SlotReading = {
     complete: boolean;
+    unreadContinuations: Range[];
     unresolved: string[];
     selection: SelectionMember[];
     bound: BoundMember[];
@@ -193,13 +194,13 @@ function fullyStatesTrackMember(tokens: readonly Token[]): boolean {
     return words.length > 0 && (words.every(isControl) || owner(words.slice(0, trailingControl + 1)));
 }
 
-/** The single track owner a bound member names in full, preserving the controls attached to it. */
+/** Track candidates named in full, with mixed object candidates kept outside consumed track-only spans. */
 function readBoundTrackMember(
     member: MemberReading,
     references: readonly NamedRange[],
     range: Range,
     trackIds: ReadonlySet<string>
-): BoundMember | null {
+): { member: BoundMember; complete: boolean } | null {
     if (member.kind !== 'bound' || !member.onlyNames) {
         return null;
     }
@@ -207,16 +208,19 @@ function readBoundTrackMember(
         (reference) => reference.start >= range.start && reference.end <= range.end
     );
     const [only] = memberReferences;
-    // A member protects a track only when it names that one track alone: "the Vocals compressor" names a
-    // device, and "the return into the Drum Bus" names two objects, one of which it merely routes to.
-    if (
-        memberReferences.length !== 1 ||
-        only === undefined ||
-        !Array.from(only.denotes).every((id) => trackIds.has(id))
-    ) {
+    // Separate references do not establish one owner: a named device or a route destination must
+    // not buy track authority. One shared name conservatively keeps every track candidate it denotes.
+    if (memberReferences.length !== 1 || only === undefined) {
         return null;
     }
-    return { trackIds: Array.from(only.denotes), controls: [...member.controls] };
+    const owners = Array.from(only.denotes).filter((id) => trackIds.has(id));
+    if (owners.length === 0) {
+        return null;
+    }
+    return {
+        member: { trackIds: owners, controls: [...member.controls] },
+        complete: owners.length === only.denotes.size,
+    };
 }
 
 function readSlotMembers(input: {
@@ -229,21 +233,47 @@ function readSlotMembers(input: {
     objects: readonly ProtectableObjectName[];
 }): SlotReading {
     const { prompt, blanked, masked, slot, references, context, objects } = input;
-    const reading: SlotReading = { complete: true, unresolved: [], selection: [], bound: [], controls: [] };
+    const reading: SlotReading = {
+        complete: true,
+        unreadContinuations: [],
+        unresolved: [],
+        selection: [],
+        bound: [],
+        controls: [],
+    };
     const trackIds = new Set(context.tracks.map((track) => track.id));
-    const bounds: Range[] = [];
+    const separators = [
+        ...Array.from(masked.slice(slot.start, slot.end).matchAll(MEMBER_SEPARATOR), (separator) => ({
+            start: slot.start + separator.index,
+            end: slot.start + separator.index + separator[0].length,
+            continues: false,
+        })),
+        ...slot.memberSeparators
+            .filter((separator) => separator.start >= slot.start && separator.end <= slot.end)
+            .map((separator) => ({ ...separator, continues: true })),
+    ].toSorted((left, right) => left.start - right.start);
+    const bounds: Array<Range & { afterThen: boolean; resetsOwner: boolean }> = [];
     let start = slot.start;
-    for (const separator of masked.slice(slot.start, slot.end).matchAll(MEMBER_SEPARATOR)) {
-        bounds.push({ start, end: slot.start + separator.index });
-        start = slot.start + separator.index + separator[0].length;
+    let afterThen = false;
+    let resetsOwner = false;
+    for (const separator of separators) {
+        bounds.push({ start, end: separator.start, afterThen, resetsOwner });
+        start = separator.end;
+        afterThen ||= separator.continues;
+        resetsOwner = separator.continues;
     }
-    bounds.push({ start, end: slot.end });
+    bounds.push({ start, end: slot.end, afterThen, resetsOwner });
     let namedBefore = false;
     // Controls listed before their owner ("the fader and pan of Vocals") wait for it; ones after an owner that
     // names a control ("the Vocals pan and fader") join it. An owner protected whole never narrows to them.
     let pendingControls: string[] = [];
     let lastOwner: { controls: string[] } | null = null;
     for (const range of bounds) {
+        if (range.resetsOwner) {
+            reading.complete &&= pendingControls.length === 0;
+            pendingControls = [];
+            lastOwner = null;
+        }
         const raw = readTokens(blanked, masked, range);
         const isPossessiveS = (token: Token, index: number) => token.lower === 's' && index > 0;
         const tokens = raw.filter((token, index) => !isPossessiveS(token, index));
@@ -255,7 +285,15 @@ function readSlotMembers(input: {
             slot.strict && incompleteQuotedOwner ? readObjectForm(original, raw.some(isPossessiveS), objects) : null;
         const member =
             unboundOwner ?? readMember({ tokens, phrase, slot, possessive: raw.some(isPossessiveS), objects });
-        reading.complete &&= fullyStatesTrackMember(tokens);
+        const completeMember = fullyStatesTrackMember(tokens);
+        reading.complete &&= completeMember;
+        if (range.afterThen && !completeMember && member.kind !== 'variant') {
+            reading.unreadContinuations.push({ start: range.start, end: range.end });
+            if (member.kind === 'unbound' || member.kind === 'position') {
+                reading.unresolved.push(member.text);
+            }
+            continue;
+        }
         if (member.kind === 'controls') {
             if (lastOwner === null) {
                 pendingControls.push(...member.controls);
@@ -285,13 +323,16 @@ function readSlotMembers(input: {
             reading.bound.push({ trackIds: member.trackIds, controls: [] });
         } else {
             const owner = readBoundTrackMember(member, references, range, trackIds);
-            reading.complete &&= owner !== null;
+            reading.complete &&= owner !== null && owner.complete;
             if (owner !== null) {
-                reading.bound.push(owner);
-                lastOwner = adoptControls(owner, pending);
+                reading.bound.push(owner.member);
+                lastOwner = adoptControls(owner.member, pending);
             }
         }
         namedBefore ||= tokens.some(isBoundToken);
+    }
+    if (slot.memberSeparators.length > 0 && pendingControls.length > 0) {
+        reading.complete = false;
     }
     reading.controls.push(...pendingControls);
     return reading;
@@ -448,10 +489,16 @@ function readSelectionMembers(
 function readVcaMemberTracks(
     references: readonly NamedRange[],
     slot: Range,
-    vcaGroups: ReadonlyMap<string, readonly string[]>
+    vcaGroups: ReadonlyMap<string, readonly string[]>,
+    unreadContinuations: readonly Range[]
 ): string[] {
     return references
-        .filter((reference) => reference.start >= slot.start && reference.end <= slot.end)
+        .filter(
+            (reference) =>
+                reference.start >= slot.start &&
+                reference.end <= slot.end &&
+                !unreadContinuations.some((range) => reference.start < range.end && reference.end > range.start)
+        )
         .flatMap((reference) => Array.from(reference.denotes).flatMap((id) => vcaGroups.get(id) ?? []));
 }
 
@@ -560,7 +607,7 @@ export function readExplicitProtections(prompt: string, context: ProjectContext)
                 // "Leave the Drums alone otherwise" keeps everything but the request's own targets.
                 const exempt = slot.otherwise ? targetTrackIds : new Set<string>();
                 protectBoundMembers(reading.bound, found, exempt);
-                for (const trackId of readVcaMemberTracks(references, slot, vcaGroups)) {
+                for (const trackId of readVcaMemberTracks(references, slot, vcaGroups, reading.unreadContinuations)) {
                     found.wholeTrackIds.add(trackId);
                 }
                 wholeBeforeCarveOut = [...found.wholeTrackIds];

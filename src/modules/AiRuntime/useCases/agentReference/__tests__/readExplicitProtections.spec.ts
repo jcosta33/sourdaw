@@ -325,6 +325,118 @@ describe('readExplicitProtections', () => {
     });
 
     describe('reserved and complete owners', () => {
+        it('retains a whole-track candidate without consuming a mixed track-and-device name', () => {
+            const sameNameBass = createTrack('track-device-name-bass', 'Bass', {
+                devices: [{ id: 'device-same-name-bass', name: 'Bass', type: 'builtin-eq', bypassed: false }],
+                deviceCount: 1,
+            });
+            const reading = readExplicitProtections('leave Bass unchanged', {
+                ...context,
+                tracks: [sameNameBass],
+            });
+
+            expect(reading.protectedTrackIds).toEqual([sameNameBass.id]);
+            expect(reading.unresolved).toEqual([]);
+            expect(reading.resolvedTrackClauses).toEqual([]);
+        });
+
+        it('retains a whole-track candidate without consuming a mixed track-and-clip name', () => {
+            const sameNameBass = createTrack('track-same-name-bass', 'Bass', {
+                clips: [
+                    { id: 'clip-same-name-bass', name: 'Bass', type: 'audio', startBeat: 0, endBeat: 8, noteCount: 0 },
+                ],
+                clipCount: 1,
+            });
+            const reading = readExplicitProtections('leave Bass unchanged', {
+                ...context,
+                tracks: [sameNameBass],
+            });
+
+            expect(reading.protectedTrackIds).toEqual([sameNameBass.id]);
+            expect(reading.unresolved).toEqual([]);
+            expect(reading.resolvedTrackClauses).toEqual([]);
+        });
+
+        const piano = createTrack('track-piano', 'Piano');
+        it.each([
+            ['leave Ghost then Keys alone', keys.id, context],
+            ['Piano and Ghost stay as they are', piano.id, { ...context, tracks: [...context.tracks, piano] }],
+        ])('keeps the known compound member in "%s"', (protection, trackId, project) => {
+            expect(readExplicitProtections(`turn Drums down 3 dB; ${protection}`, project)).toMatchObject({
+                unresolved: [],
+                protectedTrackIds: [trackId],
+                protectedControls: [],
+                resolvedTrackClauses: [],
+            });
+        });
+
+        it('keeps a closed then-list as one complete original UTF16 protection span', () => {
+            const emojiDrums = createTrack('track-emoji-drums', '🥁 Drums');
+            const protection = 'leave Bass then Keys alone';
+            const prompt = `turn "🥁 Drums" down 3 dB; ${protection}`;
+            const reading = readExplicitProtections(prompt, { ...context, tracks: [...context.tracks, emojiDrums] });
+
+            expect(reading.protectedTrackIds).toEqual([bass.id, keys.id]);
+            expect(reading.protectedControls).toEqual([]);
+            expect(reading.resolvedTrackClauses.map(({ start, end }) => prompt.slice(start, end).trim())).toEqual([
+                protection,
+            ]);
+        });
+
+        it('retains an unresolved object-form member beside a known then-tail owner', () => {
+            const reading = readExplicitProtections('leave the Ghost track then Keys alone', context);
+
+            expect(reading.unresolved).toEqual(['Ghost']);
+            expect(reading.protectedTrackIds).toEqual([keys.id]);
+            expect(reading.resolvedTrackClauses).toEqual([]);
+        });
+
+        it.each([
+            ['leave Bass then mute Keys alone', [bass.id], context],
+            ['leave Bass then mute Strings alone', [bass.id], context],
+            ['leave Bass then mute the selected track alone', [bass.id], drumsSelected],
+            ['leave Bass then pan then Keys alone', [bass.id, keys.id], context],
+            ['leave pan then Keys alone', [keys.id], context],
+        ])('keeps an unread then member from adopting an owner in "%s"', (prompt, trackIds, project) => {
+            const reading = readExplicitProtections(prompt, project);
+
+            expect(reading.protectedTrackIds).toEqual(trackIds);
+            expect(reading.protectedControls).toEqual([]);
+            expect(reading.resolvedTrackClauses).toEqual([]);
+        });
+
+        it.each([
+            ['leave Ghost then turn Keys down 2 dB', []],
+            ['leave Keys alone then turn Bass down 2 dB', [keys.id]],
+            ['leave Ghost; Keys alone', []],
+            ['leave Ghost. Keys alone', []],
+            ['Keys alone', []],
+            ['keep Ghost then Keys punchy', []],
+            ['leave Ghost then keep Keys unchanged', [keys.id]],
+        ])('ends protection authority at the existing boundary in "%s"', (prompt, trackIds) => {
+            expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual(trackIds);
+        });
+
+        it.each(['leave "Now Then" alone', 'leave Now Then alone'])(
+            'keeps a project name containing then whole in "%s"',
+            (prompt) => {
+                const named = createTrack('track-now-then', 'Now Then');
+                const reading = readExplicitProtections(prompt, { ...context, tracks: [...context.tracks, named] });
+
+                expect(reading.protectedTrackIds).toEqual([named.id]);
+                expect(reading.resolvedTrackClauses.map(({ start, end }) => prompt.slice(start, end))).toEqual([
+                    prompt,
+                ]);
+            }
+        );
+
+        it.each([
+            'leave Bass then Keys and the Missing clip alone',
+            'leave Bass then Keys alone with the Missing clip',
+        ])('leaves unread compound clip residue unconsumed in "%s"', (prompt) => {
+            expect(readExplicitProtections(prompt, context).resolvedTrackClauses).toEqual([]);
+        });
+
         it('reads unquoted selection before a project display name, while quotes stay literal', () => {
             const collision = createTrack('track-selected-name', 'Selected Track');
             const project = { ...context, tracks: [...context.tracks, collision] };

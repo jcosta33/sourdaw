@@ -7134,7 +7134,11 @@ function bridgeUnrefinedLlmToolCalls(
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));
-        const targetIds = getCompiledTransformTargetIds(calls, context);
+        let protectionCalls = calls;
+        if (compilerEvidence !== undefined) {
+            protectionCalls = transformCalls;
+        }
+        const targetIds = getCompiledTransformTargetIds(protectionCalls, context);
         if (!complete || targetIds.some((id) => protectedIds.has(id))) {
             return {
                 actions: [],

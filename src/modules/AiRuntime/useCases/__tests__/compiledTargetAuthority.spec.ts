@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
+import { type RetainedCompilation } from '../../models/RetainedCompilation';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { executeTransformCompile } from '../executeTransformCompile';
+import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
+import { materializeTransformToolCalls } from '../materializeTransformToolCalls';
+import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
 
 /**
  * A compiled command list proves which objects its selectors resolve to, never that the user asked
@@ -160,7 +166,7 @@ const createPlateBusItem: CompiledItem = {
     arguments: { name: 'Plate Bus', binding: 'plate-bus' },
 };
 
-function compileAndBridge(
+function compileEvidence(
     prompt: string,
     items: CompiledItem[],
     targetIds: string[],
@@ -192,14 +198,28 @@ function compileAndBridge(
     if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
         throw new Error(`Expected the list to compile: ${JSON.stringify(compiled)}`);
     }
-    const { compilerEvidence } = compiled;
-    return bridgeGroundedLlmToolCalls({
+    return compiled.compilerEvidence;
+}
+
+function compileAndBridge(
+    prompt: string,
+    items: CompiledItem[],
+    targetIds: string[],
+    context: ProjectContext = projectContext,
+    requestProtections?: BoundRequestProtections
+) {
+    const compilerEvidence = compileEvidence(prompt, items, targetIds, context);
+    const input: Parameters<typeof bridgeGroundedLlmToolCalls>[0] = {
         calls: compilerEvidence.commands,
         compilerEvidence,
         context,
         projectRevision: REVISION,
         prompt,
-    });
+    };
+    if (requestProtections !== undefined) {
+        input.requestProtections = requestProtections;
+    }
+    return bridgeGroundedLlmToolCalls(input);
 }
 
 function targetsOf(result: ReturnType<typeof compileAndBridge>, argument = 'trackId') {
@@ -597,6 +617,108 @@ function everyAudioTrackExceptVocals(name: string, arguments_: Record<string, un
 }
 
 describe('a selection never reaches a track the request excepts', () => {
+    function compileMixedPrefix(track: ProjectTrack, protection?: string) {
+        let prompt = `turn ${track.name} down 3 dB; add an EQ to every audio track except Vocals`;
+        if (protection !== undefined) {
+            prompt += `; ${protection}`;
+        }
+        const compiled = executeTransformCompile({
+            call: {
+                name: 'transform.compile',
+                arguments: {
+                    document: JSON.stringify({
+                        schemaVersion: 1,
+                        name: 'mix-protected-prefix',
+                        seed: 7,
+                        variables: {},
+                        selectors: {},
+                        steps: [
+                            {
+                                id: 'prefix-gain',
+                                kind: 'emit',
+                                operation: 'setTrackGain',
+                                arguments: { trackId: { literal: track.id }, deltaDb: { literal: -3 } },
+                            },
+                        ],
+                        assertions: [],
+                    }),
+                },
+            },
+            callId: 'compile-prefix',
+            turn: 1,
+            snapshot: projectDeclarativeTransformSnapshot(mixContext, REVISION),
+        });
+        expect(compiled.receipt.status).toBe('success');
+        if (compiled.commands === null) {
+            throw new Error('Expected the real transform compiler to emit the requested gain prefix.');
+        }
+        const retained: RetainedCompilation = {
+            kind: 'transform',
+            callId: compiled.receipt.callId,
+            revision: REVISION,
+            commands: compiled.commands,
+        };
+        const transformCalls = materializeTransformToolCalls([retained]);
+        expect(transformCalls).toEqual([{ name: 'setTrackGain', arguments: { trackId: track.id, deltaDb: -3 } }]);
+        const compilerEvidence = compileEvidence(
+            prompt,
+            [
+                roleItem(
+                    'addDevice',
+                    { deviceType: 'builtin-eq' },
+                    { targetArgument: 'trackId', entity: 'track', where: { kind: 'audio' } },
+                    4
+                ),
+            ],
+            [],
+            mixContext
+        );
+        const calls = [...transformCalls, ...compilerEvidence.commands];
+        const result = bridgeGroundedLlmToolCalls({
+            calls,
+            compilerEvidence,
+            context: mixContext,
+            prompt,
+            projectRevision: REVISION,
+            transformProof: { revision: REVISION, creativeAuthorityId: null, compilations: [retained] },
+        });
+        return { result, calls, compilerEvidence, prompt, retained, transformCalls };
+    }
+
+    it('retains a real safe transform prefix beside a rejected compiler member without authorizing execution', () => {
+        const mixed = compileMixedPrefix(mixGuitar);
+
+        expect(targetsOf(mixed.result)).toEqual([mixGuitar.id, mixDrums.id, mixBass.id, mixGuitar.id]);
+        expect(mixed.result.rejections).toEqual([{ index: 1, name: 'addDevice', reason: UNAUTHORIZED_TRACK }]);
+        expect(
+            groundCompiledCommandBatch({
+                toolCalls: mixed.calls,
+                compilerEvidence: mixed.compilerEvidence,
+                context: mixContext,
+                prompt: mixed.prompt,
+                projectRevision: REVISION,
+                workflowCapabilityId: undefined,
+                selectedCompilations: [mixed.retained],
+                transformCommands: mixed.transformCalls,
+                transformTargetIds: [mixGuitar.id],
+                creativeAuthority: undefined,
+                providerProposal: null,
+            })
+        ).toMatchObject({
+            status: 'rejected',
+            rejectionReason: `Provider action rejected: addDevice: ${UNAUTHORIZED_TRACK}`,
+        });
+    });
+
+    it('refuses a real protected transform prefix before compiler siblings are admitted', () => {
+        const mixed = compileMixedPrefix(mixVocals, 'leave Vocals alone');
+
+        expect(mixed.result.actions).toEqual([]);
+        expect(mixed.result.rejections).toEqual([
+            { index: 0, name: '<batch>', reason: 'Transform compilation includes a protected or unresolved target' },
+        ]);
+    });
+
     it('refuses the excepted track a kind selection reaches', () => {
         const result = compileMix('add an EQ to every audio track except Vocals', [
             roleItem(
@@ -612,6 +734,194 @@ describe('a selection never reaches a track the request excepts', () => {
             { index: 0, name: 'addDevice', reason: 'Compiled target trackId is not authorized by the user request' },
         ]);
     });
+
+    it('refuses the executable compiled batch when per-target admission rejects a protected member', () => {
+        const prompt = 'add an EQ to every audio track except Vocals';
+        const compilerEvidence = compileEvidence(
+            prompt,
+            [
+                roleItem(
+                    'addDevice',
+                    { deviceType: 'builtin-eq' },
+                    { targetArgument: 'trackId', entity: 'track', where: { kind: 'audio' } },
+                    4
+                ),
+            ],
+            [],
+            mixContext
+        );
+        const result = groundCompiledCommandBatch({
+            toolCalls: compilerEvidence.commands,
+            compilerEvidence,
+            context: mixContext,
+            prompt,
+            projectRevision: REVISION,
+            workflowCapabilityId: undefined,
+            selectedCompilations: [],
+            transformCommands: [],
+            transformTargetIds: [],
+            creativeAuthority: undefined,
+            providerProposal: null,
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            rejectionReason: `Provider action rejected: addDevice: ${UNAUTHORIZED_TRACK}`,
+        });
+    });
+});
+
+describe('whole-track compiled protections include owned targets', () => {
+    const context: ProjectContext = {
+        ...mixContext,
+        tracks: [
+            {
+                ...mixVocals,
+                clipCount: 1,
+                clips: [
+                    { id: 'clip-owner-vocals', name: 'Verse', type: 'audio', startBeat: 0, endBeat: 8, noteCount: 0 },
+                ],
+            },
+            {
+                ...mixKeys,
+                clipCount: 1,
+                clips: [{ id: 'clip-owner-keys', name: 'Verse', type: 'midi', startBeat: 0, endBeat: 8, noteCount: 0 }],
+            },
+            master,
+        ],
+        automationLanes: [mixVocals, mixKeys].map((track): NonNullable<ProjectContext['automationLanes']>[number] => ({
+            id: `lane-owner-${track.name.toLowerCase()}`,
+            trackId: track.id,
+            parameterId: 'volume',
+            name: 'Volume',
+            enabled: true,
+            minValue: 0,
+            maxValue: 1,
+            points: [{ beat: 0, value: 0.5, curve: 'linear' }],
+        })),
+    };
+    const cases: Array<{
+        kind: string;
+        request: string;
+        item: CompiledItem;
+        argument: string;
+        kept: string;
+    }> = [
+        {
+            kind: 'device',
+            request: 'bypass the EQs',
+            item: roleItem(
+                'bypassDevice',
+                { bypassed: true },
+                { targetArgument: 'deviceId', entity: 'device', where: { type: 'builtin-eq' } },
+                2
+            ),
+            argument: 'deviceId',
+            kept: mixVocalsEq.id,
+        },
+        {
+            kind: 'clip',
+            request: 'mute the Verse clips',
+            item: roleItem(
+                'muteClip',
+                { muted: true },
+                { targetArgument: 'clipId', entity: 'clip', match: { all: [{ nameIncludes: 'Verse' }] } },
+                2
+            ),
+            argument: 'clipId',
+            kept: 'clip-owner-vocals',
+        },
+        {
+            kind: 'automation lane',
+            request: 'invert automation of the Volume lanes',
+            item: roleItem(
+                'invertAutomation',
+                {},
+                { targetArgument: 'laneId', entity: 'automation-lane', match: { all: [{ nameIncludes: 'Volume' }] } },
+                2
+            ),
+            argument: 'laneId',
+            kept: 'lane-owner-vocals',
+        },
+    ];
+
+    it.each(cases)('retains permitted $kind targets beside a protected owner', ({ request, item, argument, kept }) => {
+        const result = compileAndBridge(`${request} but leave Keys alone`, [item], [], context);
+
+        expect(targetsOf(result, argument)).toEqual([kept]);
+        expect(result.rejections).toEqual([
+            { index: 1, name: item.name, reason: `Compiled target ${argument} is not authorized by the user request` },
+        ]);
+    });
+
+    it('retains a frozen whole owner independently of its separately protected clip', () => {
+        const prompt = 'bypass the EQs; leave Keys alone; leave selected clips unchanged';
+        const requestProtections: BoundRequestProtections = {
+            request: prompt,
+            facts: {
+                protectedUnchanged: [
+                    { id: mixKeys.id, name: mixKeys.name },
+                    { id: 'clip-owner-keys', name: 'Verse' },
+                ],
+                protectedControls: [],
+            },
+            resolvedTrackClauses: [],
+        };
+        const result = compileAndBridge(
+            prompt,
+            [
+                roleItem(
+                    'bypassDevice',
+                    { bypassed: true },
+                    { targetArgument: 'deviceId', entity: 'device', where: { type: 'builtin-eq' } },
+                    2
+                ),
+            ],
+            [],
+            { ...context, selectedTrackId: mixVocals.id },
+            requestProtections
+        );
+
+        expect(targetsOf(result, 'deviceId')).toEqual([mixVocalsEq.id]);
+        expect(result.rejections).toEqual([
+            {
+                index: 1,
+                name: 'bypassDevice',
+                reason: 'Compiled target deviceId is not authorized by the user request',
+            },
+        ]);
+    });
+
+    it.each(cases)(
+        'retains frozen $kind owner protection after selection moves',
+        ({ request, item, argument, kept }) => {
+            const prompt = `${request} but leave the selected track alone`;
+            const requestProtections: BoundRequestProtections = {
+                request: prompt,
+                facts: {
+                    protectedUnchanged: [{ id: mixKeys.id, name: mixKeys.name }],
+                    protectedControls: [],
+                },
+                resolvedTrackClauses: [{ start: prompt.indexOf('leave'), end: prompt.length }],
+            };
+            const result = compileAndBridge(
+                prompt,
+                [item],
+                [],
+                { ...context, selectedTrackId: mixVocals.id },
+                requestProtections
+            );
+
+            expect(targetsOf(result, argument)).toEqual([kept]);
+            expect(result.rejections).toEqual([
+                {
+                    index: 1,
+                    name: item.name,
+                    reason: `Compiled target ${argument} is not authorized by the user request`,
+                },
+            ]);
+        }
+    );
 });
 
 describe('a name stated only inside a protection picks no target', () => {
@@ -843,6 +1153,31 @@ function renameClip(prompt: string, clipName: string) {
 }
 
 describe('a compiled clip rename answers to the request that names its source', () => {
+    it('records only the protected clip in the initial sibling-rename facts', () => {
+        const result = groundCompiledCommandBatch({
+            toolCalls: [{ name: 'renameClip', arguments: { clipId: 'clip-rename-lead', name: 'Bridge Solo' } }],
+            compilerEvidence: undefined,
+            context: renameContext,
+            prompt: 'rename Lead to Bridge Solo; leave Bass Verse unchanged',
+            projectRevision: REVISION,
+            workflowCapabilityId: undefined,
+            selectedCompilations: [],
+            transformCommands: [],
+            transformTargetIds: [],
+            creativeAuthority: undefined,
+            providerProposal: null,
+        });
+
+        expect(result.status).toBe('grounded');
+        if (result.status !== 'grounded') {
+            throw new Error('Expected the sibling clip rename to ground before recording its protections.');
+        }
+        expect(result.protectionFacts).toEqual({
+            protectedUnchanged: [{ id: 'clip-rename-verse', name: 'Bass Verse' }],
+            protectedControls: [],
+        });
+    });
+
     it('grounds the named source clip when a protected clip name contains the track name', () => {
         const result = renameClip('rename Lead to Bridge Solo; leave Bass Verse unchanged', 'Lead');
 

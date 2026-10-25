@@ -4,6 +4,7 @@ import { type ProposalGroundingBasis } from '../../models/ProposalGroundingBasis
 import { type RefinementClause } from './bindRefinementFigure';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
 import { proposalCommandShape } from './proposalCommandShape';
+import { readExplicitProtections, type ProtectionReading } from './readExplicitProtections';
 import { refinementCardCommands, type CommandView } from './refinementCardCommands';
 import { refinementProtectionForms } from './refinementProtectionForms';
 import { refinementRequestReading, type ReferenceCandidate, type StatedReference } from './refinementRequestReading';
@@ -52,6 +53,8 @@ type RemovalClauseInput = {
     candidates: readonly ReferenceCandidate[];
     /** Every object id a pending command acts on, the removed ones included. */
     pendingIds: ReadonlySet<string>;
+    /** The controls the complete refinement text canonically keeps unchanged. */
+    protectedControls: ProtectionReading['protectedControls'];
     context: ProjectContext;
     removed: Set<number>;
     removedTargets: ProtectedObject[];
@@ -251,6 +254,24 @@ function readListStretch(clauses: readonly RefinementClause[], index: number, te
     return stretch;
 }
 
+function protectsOperations(
+    controls: ProtectionReading['protectedControls'],
+    trackId: string,
+    operations: readonly string[]
+): boolean {
+    return operations.every((operation) =>
+        controls.some((control) => {
+            if (control.trackId !== trackId) {
+                return false;
+            }
+            if (control.exceptActionTypes !== undefined) {
+                return !control.exceptActionTypes.includes(operation);
+            }
+            return control.actionTypes.includes(operation);
+        })
+    );
+}
+
 /**
  * Remove the pending changes on the one object a removal names in whole, or protect the object it
  * names off the card when the removal is a negation or a "leave ... alone".
@@ -266,20 +287,20 @@ function removeNamedObject(
 ): { kind: 'read' } | { kind: 'refused'; reason: string } {
     const { commands, context } = input;
     const { stated, reference, candidate } = named;
-    const eligible = commands
-        .filter((view) => reference.operations === null || reference.operations.includes(view.command.type))
-        .map((view) => {
-            let denotes = view.denotes;
-            if (reference.operations !== null) {
-                denotes = new Set(
-                    proposalCommandShape.controlOwnerIds(view.command.type, view.command.payload, context)
-                );
-            }
-            return { view, denotes };
-        });
-    const onTarget = eligible.filter((entry) => refinementCardCommands.intersects(entry.denotes, candidate.denotes));
+    const pending = commands.map((view) => {
+        let denotes = view.denotes;
+        if (reference.operations !== null) {
+            denotes = new Set(proposalCommandShape.controlOwnerIds(view.command.type, view.command.payload, context));
+        }
+        return { view, denotes };
+    });
+    const onTarget = pending.filter(
+        (entry) =>
+            (reference.operations === null || reference.operations.includes(entry.view.command.type)) &&
+            refinementCardCommands.intersects(entry.denotes, candidate.denotes)
+    );
     const pendingObjectIds = Array.from(candidate.denotes).filter((id) =>
-        eligible.some((entry) => entry.denotes.has(id))
+        pending.some((entry) => entry.denotes.has(id))
     );
     const [pendingObjectId] = pendingObjectIds;
     if (onTarget.length === 0 || pendingObjectId === undefined || pendingObjectIds.length !== 1) {
@@ -288,10 +309,12 @@ function removeNamedObject(
             named.protects &&
             pendingObjectIds.length === 0 &&
             candidate.denotes.size === 1 &&
-            outsideId !== undefined
+            outsideId !== undefined &&
+            (reference.operations === null ||
+                protectsOperations(input.protectedControls, outsideId, reference.operations))
         ) {
-            // A qualified control is captured by the canonical protection reader; it never promotes
-            // an owner off the card into a whole-object restriction.
+            // A qualified off-owner restriction is consumed only when the canonical reading keeps
+            // its controls. It never promotes that owner into a whole-object restriction.
             if (reference.operations === null) {
                 input.protectedTargets.push({ id: outsideId, name: refinementCardCommands.name(context, outsideId) });
             }
@@ -355,6 +378,7 @@ function readRefinementRemovals(input: {
 }): RefinementRemovals {
     const commands = refinementCardCommands.view(input.basis, input.context);
     const candidates = refinementRequestReading.candidates(input.context);
+    const protectedControls = readExplicitProtections(input.text, input.context).protectedControls;
     const removed = new Set<number>();
     const removedTargets: ProtectedObject[] = [];
     const protectedTargets: ProtectedObject[] = [];
@@ -371,6 +395,7 @@ function readRefinementRemovals(input: {
             commands,
             candidates,
             pendingIds,
+            protectedControls,
             context: input.context,
             removed,
             removedTargets,

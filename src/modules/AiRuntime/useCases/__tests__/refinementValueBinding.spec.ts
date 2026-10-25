@@ -5089,6 +5089,13 @@ describe('binding a terse refinement to the pending card it refines', () => {
             });
         });
 
+        it('refuses a qualified missing pan change even when both pending gains remain', () => {
+            expect(readOf(refine(P1_CARD, 'not the snare pan', P1_PLAN))).toEqual({
+                status: 'rejected',
+                said: expect.stringContaining(`"the snare pan", ${NO_SINGLE_CHANGE}`),
+            });
+        });
+
         it('a removal naming a name two pending objects share removes neither', () => {
             const context = projectContext([
                 ...BASE_TRACKS,
@@ -6614,6 +6621,32 @@ describe('recorded protection facet owners', () => {
         expect(first.protectionFacts.protectedControls).toContainEqual(protection);
         expect(first.protectionFacts.protectedUnchanged).toEqual([]);
         expect(ground(prompt, [incoming], first.groundingBasis, context).status).toBe('grounded');
+    });
+
+    it('refuses a bare qualified off-owner negation that records no control protection', () => {
+        const basis = cardBasis('route Vocals to Drum Bus', [incoming], context);
+
+        expect(ground('not the Drum Bus output', [incoming], basis, context)).toMatchObject({
+            status: 'rejected',
+            rejectionReason: expect.stringContaining(
+                '"the drum bus output", which names no single change of the pending proposal'
+            ),
+        });
+    });
+
+    it('records an explicit leave-output protection for an off-owner routing destination', () => {
+        const basis = cardBasis('route Vocals to Drum Bus', [incoming], context);
+        const result = ground('leave the Drum Bus output alone', [incoming], basis, context);
+
+        expect(result.status).toBe('grounded');
+        if (result.status !== 'grounded') {
+            throw new Error('Expected the incoming routing to retain its explicit destination-output protection.');
+        }
+        expect(result.protectionFacts).toEqual({ protectedUnchanged: [], protectedControls: [protection] });
+        expect(result.groundingBasis?.protectedControls).toEqual([protection]);
+        expect(result.actions).toEqual([
+            expect.objectContaining({ type: incoming.name, payload: expect.objectContaining(incoming.arguments) }),
+        ]);
     });
 
     it('keeps incoming routing while removing a pending command that changes the protected output itself', () => {
