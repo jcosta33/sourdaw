@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { clone as cloneDoc } from '@automerge/automerge';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -27,6 +28,7 @@ import {
 } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    captureProjectRootIdentity,
     captureDurableDocumentWitness,
     clearActionHistory,
     compactProject,
@@ -39,6 +41,7 @@ import {
     projectCrdtToStores,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
+    replaceCrdtDoc,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     sessionUndoWitnessStampPort,
@@ -611,6 +614,66 @@ describe('actual registered Distortion curve through real project and history', 
         expect(rawValues()[PARAM_ID]).toBe(20);
         expect(depth()).toBe(0);
         expect(writes()).toEqual([]);
+    });
+
+    it('retires a live preview when the root document is replaced by a clone', async () => {
+        render(<Layout />);
+        const canvas = begin();
+        move(80, canvas);
+        expect(writes().map(({ value }) => value)).toEqual([30]);
+        expect(rawValues()[PARAM_ID]).toBe(20);
+        expect(values()[PARAM_ID]).toBe(20);
+        expect(depth()).toBe(0);
+
+        const previousIdentity = captureProjectRootIdentity();
+        const currentDoc = getCrdtDoc('root');
+        if (!currentDoc) {
+            throw new Error('Missing live root document');
+        }
+        act(() => {
+            replaceCrdtDoc({ id: 'root', doc: cloneDoc(currentDoc) });
+            projectCrdtToStores({ resetProjections: true });
+        });
+        expect(captureProjectRootIdentity()).not.toBe(previousIdentity);
+        expect(rawValues()[PARAM_ID]).toBe(20);
+        expect(values()[PARAM_ID]).toBe(20);
+
+        engineWrites.length = 0;
+        end(canvas);
+        fireEvent.lostPointerCapture(canvas, { pointerId: 5 });
+        await drainActions();
+        expect(rawValues()[PARAM_ID]).toBe(20);
+        expect(values()[PARAM_ID]).toBe(20);
+        expect(depth()).toBe(0);
+        expect(writes()).toEqual([]);
+    });
+
+    it('keeps a real Drive gesture coherent when an older curve pointer is canceled', async () => {
+        render(<Layout />);
+        const canvas = begin();
+        move(80, canvas);
+        const drive = screen.getByRole('slider', { name: 'Drive' });
+        fireEvent.pointerDown(drive, { button: 0, pointerId: 6, clientY: 100 });
+        expect(drive).toHaveAttribute('data-dragging', '');
+        fireEvent.pointerMove(drive, { pointerId: 6, clientY: 85 });
+        expect(drive).toHaveAttribute('aria-valuenow', '40');
+        expect(writes().map(({ value }) => value)).toEqual([30, 40]);
+        expect(rawValues()[PARAM_ID]).toBe(20);
+        expect(depth()).toBe(0);
+
+        fireEvent.pointerCancel(canvas, { pointerId: 5 });
+        expect(drive).toHaveAttribute('data-dragging', '');
+        expect(drive).toHaveAttribute('aria-valuenow', '40');
+        expect(writes().at(-1)?.value).toBe(40);
+        expect(rawValues()[PARAM_ID]).toBe(20);
+        expect(depth()).toBe(0);
+
+        fireEvent.pointerUp(drive, { pointerId: 6 });
+        await committed(40);
+        await act(() => undo());
+        expect(rawValues()[PARAM_ID]).toBe(20);
+        expect(values()[PARAM_ID]).toBe(20);
+        expect(depth()).toBe(0);
     });
 
     it('retires a drag when its descriptor disappears so a restored target accepts a fresh drag', async () => {
