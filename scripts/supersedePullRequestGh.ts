@@ -252,11 +252,10 @@ function readMergeCommit(value: unknown, number: number): string | null {
     if (value === null) {
         return null;
     }
-    const commit = value as { oid?: unknown } | undefined;
-    if (!isCommit(commit?.oid)) {
+    if (typeof value !== 'object' || !('oid' in value) || !isCommit(value.oid)) {
         fail(`cannot inspect PR #${number} selected merge commit`);
     }
-    return commit.oid;
+    return value.oid;
 }
 function assertClosureEvidence(value: PullRequestCore): void {
     const closed = value.closedAt !== null && Number.isFinite(Date.parse(value.closedAt));
