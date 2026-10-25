@@ -1,18 +1,19 @@
 # Testing
 
-TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3). This document defines how we add and structure them — deliberately, incrementally, and with one consistent shape per layer.
+TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3). Choose the smallest test boundary that observes the behavior at risk.
 
 ---
 
 ## 1. Philosophy
 
-- **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
-- **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm test:e2e -- <spec>`. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
+- **Unit tests by default.** A pure transform needs input/output assertions with no collaborators. When the failure depends on a boundary, keep the real collaborators needed to observe it, including cross-module action routing, Automerge authority, history, or store projection. Double external seams such as hardware, OS I/O, and hosted services. Use the narrowest real path that would fail if the invariant broke.
+- **Observe the outcome.** Assert both the promised result and ownership or non-effects when they matter: an earlier revision must not overwrite a newer one, a late async completion must not revive retired state, and grouped undo must preserve unrelated edits. Control completion explicitly and await the resulting observable; do not rely on fixed microtask counts. For combinatorial invariants, use reproducible seeded property cases and retain a failing seed.
+- **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm test:e2e <spec>`. Prefer Vitest for behavior observable below the browser; use an environment that actually renders audio, uses hardware, or hosts the full UI when that is the claim.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
 - **CI browser shards serve a production-mode build.** The dev server's cold module transform is about half of all browser runner time, so a CI shard serves `vite build --mode e2e` through `vite preview` with one Playwright worker. A build serves no `/src/...` module URLs, so any file that loads one at runtime (itself, through a helper, or through an HTML probe) is listed in `tests/e2e/devServerOnlySpecs.ts` and runs against a dev server started in the same shard. Local runs, the offline smoke job, and nightly use the dev server throughout. A built shard runs a production React build, so a browser spec asserting zero console errors there cannot see React's development-only warnings; the dev-server runs still can. `scripts/__tests__/e2eDevServerOnlySpecs.spec.ts` fails when a file loads a `/src/...` URL without being listed, or stays listed after it stops.
 - **Two reference hosts, no test-only privilege.** Surfaces that have to hold in both hosts are proven in both. `tests/e2e/agentWorkspace.spec.ts` drives the agent workspace in the standalone browser — chat composer, Agent bottom tab, approval card, A/B comparison, revert — against an OpenAI-compatible endpoint on loopback admitted through `configureCloudProvider`. `pnpm desktop:agent-proof` (`scripts/proveDesktopAgentWorkspace.ts`, nightly only) drives the same flow in the packaged Electron app over the DevTools protocol, admitting the same endpoint through the Preferences AI form because the packaged renderer has no `/src/...` to import, and streaming one explain-mode answer back from it — as `tests/e2e/aiConfirmApplyUndo.spec.ts` does for the browser host — because admission alone is a local write and proves no round trip. Neither adds a hook, a test id, or a relaxed policy to the app or the preload: a proof that needs a privilege the product does not ship is proving something the product is not.
-- **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
-- **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `#/utils/desktopBridge` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
+- **Specs follow the owner.** Put each spec in **`__tests__/`** inside the folder that owns the behavior. A source-matched name is the default for one subject; a named behavior spanning several subjects may have its own integration spec there. Do **not** place `*.spec.ts` beside production files.
+- **Double only what the claim can exclude.** A unit use-case test can replace repositories; a repository test can replace `#/utils/desktopBridge` or `AudioContext`. Keep real collaborators when their interaction is the subject. Mocks of Web Audio calls prove wiring and requested parameters, not rendered sound or latency.
 - **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
 
 ---
@@ -32,15 +33,12 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - Presentation components — rendering + user interaction
 - Presentation helpers — pure utility functions
 
-**Do not test (yet):**
+**Use the environment required by the claim:**
 
-- Real desktop IPC round-trips
-- Real Web Audio rendering (AudioWorklet output, scheduler correctness with real time)
-- Real Automerge document convergence
-- Cross-module flows end-to-end
-- The DI Container's lazy-proxy behaviour — tests register fakes explicitly before reading
-- React components rendered against real stores — mock the store
-- The audio thread itself — on the TS side, audio-thread constraints (no allocation, no locks, no blocking) are enforced by code review, not by tests (`crates/daw-dsp` RT paths are test-enforced via `assert_no_alloc`)
+- Real Automerge authority, history, and store projection belong in a focused Vitest test when their interaction is the obligation. A grouped undo with a later peer edit must replay the real group and inspect the raw document and projected state.
+- A rendered view may use a real store when the subscription or user-visible projection is the obligation. Isolate and restore that store for each test.
+- Native IPC round trips, rendered Web Audio output, timing, and hardware behavior need their actual host or a suitable dedicated harness. A fake bridge or `AudioContext` establishes only the calls it records. On the TS side, code review covers audio-thread constraints; `crates/daw-dsp` RT paths use `assert_no_alloc`.
+- Tests of the DI Container's lazy-proxy behavior are outside ordinary use-case tests; register dependencies before reading them.
 
 ---
 
@@ -48,7 +46,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 
 Tests live in **`__tests__/`** subfolders **inside** the folder that owns the code under test (same “concept” as the implementation: `useCases`, `repositories`, a presentation `views` segment, etc.).
 
-**Rule:** For `path/to/SourceFile.ts`, the spec is `path/to/__tests__/SourceFile.spec.ts` (same basename). Use `*.spec.tsx` for components.
+**Rule:** For a single `path/to/SourceFile.ts` subject, default to `path/to/__tests__/SourceFile.spec.ts`. For a behavior spanning several subjects, name the spec after that behavior in the owning folder's `__tests__/`. Use `*.spec.tsx` for components.
 
 **Imports:** From `useCases/__tests__/addTrack.spec.ts`, import the subject with a **sibling-relative** path — e.g. `import { addTrack } from '../addTrack';`.
 
@@ -391,7 +389,7 @@ handler({ deviceId: 'dev-1', deviceType: 'toaster' });
 
 Subject: `src/modules/Arrangement/presentations/hooks/useTracks.ts` — thin wrapper over `useStore` reading `trackStore`.
 
-Mock the store. Use `@testing-library/react`'s `renderHook`.
+For this hook's isolated mapping test, mock the store. Use `@testing-library/react`'s `renderHook`. When subscription, projection, or action-to-view behavior is the obligation, use the real store and reset it between tests.
 
 ```typescript
 // src/modules/Arrangement/presentations/hooks/__tests__/useTracks.spec.ts
@@ -434,7 +432,7 @@ describe('useTracks', () => {
 Use `@testing-library/react` from the user's perspective.
 
 - **Leaf components** should not import useCases or business stores — pass props/callbacks from a **view/hook**, and test that surface (or pass mocked callbacks into the component).
-- **Views/hooks** may call use cases; mock those use cases (or the command bus) when testing the view.
+- **Views/hooks** may call use cases; mock them for presentation-only assertions, or keep the action and store path real when the user-visible interaction is the assertion.
 
 ```typescript
 // Prefer testing a view that owns the use-case call, or a component that receives onAddTrack:
@@ -619,12 +617,13 @@ Extend this as new node types are needed. Keep it flat and direct — this is a 
 
 `createStore` accepts a `storage` option. Tests that need an isolated store should pass `createMemoryStorage()` (or the project’s memory storage helper) rather than inventing a mock class.
 
-If a module’s store is a module-level singleton (e.g. `export const trackStore = createStore(...)`), tests must either:
+If a module’s store is a module-level singleton (e.g. `export const trackStore = createStore(...)`), tests may:
 
 1. Mock the whole store module (as in §6.9), or
-2. Call a reset helper exposed alongside the store that swaps its backing storage.
+2. Call a reset helper exposed alongside the store that swaps its backing storage, or
+3. Use the real store with explicit per-test setup and cleanup when its behavior is part of the claim.
 
-Prefer (1) unless the store is the subject under test.
+Prefer (1) for isolated mapping tests. Never let singleton state leak between cases.
 
 ### 7.6 Desktop runtime availability
 
@@ -890,8 +889,8 @@ CI owns lint and all TypeScript typechecks, including the spec-inclusive `tsconf
 
 Do not:
 
-- **Build cross-module integration flows in Vitest.** Keep real collaborator use focused within one owner, such as one subscriber with an in-memory EventBus; use Playwright only when a user flow genuinely needs end-to-end coverage.
-- **Test real Web Audio rendering.** AudioContext-in-jsdom does not exist. Use the mock from §7.4.
+- **Use a broad integration fixture without an observable reason.** Keep only the cross-module route required for the invariant. Use Playwright when the browser interaction itself matters.
+- **Claim rendered audio or latency from an `AudioContext` mock.** The mock from §7.4 proves wiring and calls only; use a rendering or hardware environment for audible output and timing claims.
 - **Mock event payloads or `AppError` values.** They are cheap plain objects. Construct them for real.
 - **Write React Query tests.** This codebase does not use TanStack Query for core state — state flows through `Store<T>`.
 - **Depend on real time.** No `setTimeout` in tests, no real `AudioContext.currentTime`, no real `Date.now()` assertions. Use fake timers (`vi.useFakeTimers()`) or explicit values.
