@@ -1018,7 +1018,7 @@ describe('midiImportWorker', () => {
         it('marks a declared track-length overrun incomplete even when every received event is readable', () => {
             const intact = mTrkRaw([0, 0x90, 60, 100, ...varlen(480), 0x80, 60, 0, ...endOfTrack(0)]);
             const declaredTooLong = [...intact];
-            declaredTooLong[7] += 5;
+            declaredTooLong[7] = intact.length - 8 + 5;
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...declaredTooLong]));
             expect(firstNote().duration).toBe(1);
             expect(lastPosted()).toMatchObject({ truncated: false, timing: { complete: false } });
@@ -1027,7 +1027,7 @@ describe('midiImportWorker', () => {
         it('keeps a readable metadata-only overrun as an empty recovered track result', () => {
             const metadata = mTrkRaw([0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20, ...endOfTrack(0)]);
             const declaredTooLong = [...metadata];
-            declaredTooLong[7] += 5;
+            declaredTooLong[7] = metadata.length - 8 + 5;
             dispatchParse(toBuffer([...mThd(0, 1, 480), ...declaredTooLong]));
             expect(lastPosted()).toMatchObject({
                 type: 'parsed',
