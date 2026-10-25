@@ -219,6 +219,71 @@ function rowsForHash(records: unknown[], hash: string): unknown[] {
     );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUint8Array(value: unknown): value is Uint8Array {
+    return ArrayBuffer.isView(value) && Object.prototype.toString.call(value) === '[object Uint8Array]';
+}
+
+async function chunkDigest(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    return `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+async function expectPartialV2Chunk(
+    records: Awaited<ReturnType<typeof rows>>,
+    hash: string,
+    bytes: Uint8Array
+): Promise<void> {
+    const metadataRows = rowsForHash(records.metadata, hash);
+    expect(metadataRows).toHaveLength(1);
+    const metadata = metadataRows[0];
+    if (!isRecord(metadata)) {
+        throw new TypeError('Expected one schema v2 asset resume metadata row');
+    }
+    const manifest = metadata.manifest;
+    if (!isRecord(manifest)) {
+        throw new TypeError('Expected asset resume manifest geometry');
+    }
+    expect(metadata).toMatchObject({
+        schemaVersion: 2,
+        ownerId: OWNER,
+        hash,
+        generation: expect.any(String),
+        writerId: expect.any(String),
+        revision: 2,
+        manifest: {
+            hash,
+            size: bytes.byteLength,
+            chunkSize: ASSET_CHUNK_SIZE,
+            chunkCount: Math.ceil(bytes.byteLength / ASSET_CHUNK_SIZE),
+        },
+        lastVerifiedProgressAt: expect.any(Number),
+    });
+    expect(metadata.generation).not.toBe('');
+    expect(metadata).not.toHaveProperty('received');
+    const chunks = rowsForHash(records.chunks, hash);
+    expect(chunks).toHaveLength(1);
+    const chunk = chunks[0];
+    if (!isRecord(chunk)) {
+        throw new TypeError('Expected one persisted asset resume chunk row');
+    }
+    if (!isUint8Array(chunk.data)) {
+        throw new TypeError('Expected persisted asset resume chunk bytes');
+    }
+    const firstChunk = bytes.slice(0, ASSET_CHUNK_SIZE);
+    expect(chunk).toMatchObject({
+        ownerId: metadata.ownerId,
+        hash: metadata.hash,
+        generation: metadata.generation,
+        index: 0,
+    });
+    expect(Array.from(chunk.data)).toEqual(Array.from(firstChunk));
+    expect(chunk.digest).toBe(await chunkDigest(firstChunk));
+}
+
 async function finishNetwork(sender: ReturnType<typeof endpoint>, receiver: ReturnType<typeof endpoint>) {
     await sender.transfer.handleMessage('replacement-receiver', receiver.sent[0]!);
     for (const response of sender.responses) {
@@ -455,28 +520,30 @@ describe('local library fulfillment through the real asset request boundary', ()
             receiver.transfer.requestAsset(hash);
             const recovery = admittedRecovery(receiver.transfer, hash);
             await entered.promise;
-            const before = await rows();
-            expect(rowsForHash(before.metadata, hash)).toMatchObject([{ received: [0] }]);
-            expect(rowsForHash(before.chunks, hash)).toHaveLength(1);
-            expect(rowsForHash(before.metadata, unrelated.hash)).toHaveLength(1);
-            expect(rowsForHash(before.chunks, unrelated.hash)).toHaveLength(1);
-            try {
-                await receiver.transfer.cancelAssetRequest(hash);
-                const cancelled = await rows();
-                expect(rowsForHash(cancelled.metadata, hash)).toEqual([]);
-                expect(rowsForHash(cancelled.chunks, hash)).toEqual([]);
-                expect(rowsForHash(cancelled.metadata, unrelated.hash)).toEqual(
-                    rowsForHash(before.metadata, unrelated.hash)
-                );
-                expect(rowsForHash(cancelled.chunks, unrelated.hash)).toEqual(
-                    rowsForHash(before.chunks, unrelated.hash)
-                );
-                expect(receiver.callbacks.onAssetAvailable).not.toHaveBeenCalled();
-                expect(receiver.transfer.hasAsset(hash)).toBe(false);
-                expect(receiver.sent).toEqual([]);
-            } finally {
-                release.resolve();
-            }
+            const before = await (async () => {
+                try {
+                    const before = await rows();
+                    await expectPartialV2Chunk(before, hash, bytes);
+                    expect(rowsForHash(before.metadata, unrelated.hash)).toHaveLength(1);
+                    expect(rowsForHash(before.chunks, unrelated.hash)).toHaveLength(1);
+                    await receiver.transfer.cancelAssetRequest(hash);
+                    const cancelled = await rows();
+                    expect(rowsForHash(cancelled.metadata, hash)).toEqual([]);
+                    expect(rowsForHash(cancelled.chunks, hash)).toEqual([]);
+                    expect(rowsForHash(cancelled.metadata, unrelated.hash)).toEqual(
+                        rowsForHash(before.metadata, unrelated.hash)
+                    );
+                    expect(rowsForHash(cancelled.chunks, unrelated.hash)).toEqual(
+                        rowsForHash(before.chunks, unrelated.hash)
+                    );
+                    expect(receiver.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+                    expect(receiver.transfer.hasAsset(hash)).toBe(false);
+                    expect(receiver.sent).toEqual([]);
+                    return before;
+                } finally {
+                    release.resolve();
+                }
+            })();
             await recovery;
             const settled = await rows();
             expect(rowsForHash(settled.metadata, hash)).toEqual([]);
@@ -534,13 +601,18 @@ describe('local library fulfillment through the real asset request boundary', ()
     it('does not publish an older lookup after a successor claims and completes its journal generation', async () => {
         const { bytes, hash } = await partialFixture();
         await seedBinding(hash);
-        armNativeLibrary(bytes);
+        const read = armNativeLibrary(bytes);
+        const nativeRead = Promise.withResolvers<void>();
+        read.mockImplementation(async () => {
+            nativeRead.resolve();
+            return bytes;
+        });
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const digest = crypto.subtle.digest.bind(crypto.subtle);
         let held = false;
         vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (...args) => {
-            if (!held) {
+            if (!held && args[1].byteLength === bytes.byteLength) {
                 held = true;
                 entered.resolve();
                 await release.promise;
@@ -550,11 +622,16 @@ describe('local library fulfillment through the real asset request boundary', ()
         const older = endpoint();
         older.transfer.requestAsset(hash);
         const olderRecovery = admittedRecovery(older.transfer, hash);
-        await entered.promise;
         const successor = endpoint();
-        successor.transfer.requestAsset(hash);
-        expect(await successor.settled).toBe('available');
-        release.resolve();
+        try {
+            await entered.promise;
+            await nativeRead.promise;
+            expect(read).toHaveBeenCalledTimes(1);
+            successor.transfer.requestAsset(hash);
+            expect(await successor.settled).toBe('available');
+        } finally {
+            release.resolve();
+        }
         await olderRecovery;
         expect(older.callbacks.onAssetAvailable).not.toHaveBeenCalled();
         expect(older.transfer.hasAsset(hash)).toBe(false);
