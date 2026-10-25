@@ -2147,4 +2147,66 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         ]);
         expect(parsed.warnings).toHaveLength(1);
     });
+
+    it('reports a direct repeating Notes leaf while retaining its plain and nonrepeating siblings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip id="repeat" name="Repeating phrase" time="0" duration="8" loopStart="0" loopEnd="4">' +
+                    '<Notes><Note time="0" duration="1" key="60"/></Notes></Clip>' +
+                    '<Clip id="plain" name="Plain phrase" time="8" duration="2"><Notes>' +
+                    '<Note time="0" duration="1" key="62"/></Notes></Clip>' +
+                    '<Clip id="one-pass" name="One pass" time="10" duration="4" loopStart="0" loopEnd="4">' +
+                    '<Notes><Note time="0" duration="1" key="64"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Plain phrase', 'One pass']);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                sourceId: 'repeat',
+                name: 'Repeating phrase',
+                context: 'Keys',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('reports a direct nonidentity warped Audio leaf while retaining identity and plain siblings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="audio">' +
+                    '<Clip id="warped" name="Stretched take" time="0" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds">' +
+                    '<Audio file="stretched.wav"/><Warp time="0" contentTime="0"/>' +
+                    '<Warp time="4" contentTime="1"/></Warps></Clip>' +
+                    '<Clip id="identity" name="Identity take" time="4" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds">' +
+                    '<Audio file="identity.wav"/><Warp time="0" contentTime="0"/>' +
+                    '<Warp time="4" contentTime="2"/></Warps></Clip>' +
+                    '<Clip id="plain-audio" name="Plain take" time="8" duration="4"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.audioAssetPath])).toEqual([
+            ['Identity take', 'identity.wav'],
+            ['Plain take', 'plain.wav'],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                sourceId: 'warped',
+                name: 'Stretched take',
+                context: 'Audio',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
 });

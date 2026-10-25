@@ -351,6 +351,41 @@ function clipNotesUnit(content: ClipNotesContent, contentUnit: TimelineUnit): Ti
     return content.route.reduce((unit, node) => readTimeUnit(node, unit), contentUnit);
 }
 
+function repeatsClipLoop(clip: XmlQuery, timing: ClipTiming): boolean {
+    const loopStart = clip.attr('loopStart');
+    const loopEnd = clip.attr('loopEnd');
+    if (loopStart === null && loopEnd === null) {
+        return false;
+    }
+    if (loopStart === null || loopEnd === null || timing.visibleEndBeat === null) {
+        return true;
+    }
+    const loopStartBeat = toBeats(clip.attrNumber('loopStart', 0), timing.contentUnit, timing.tempo);
+    const loopEndBeat = toBeats(clip.attrNumber('loopEnd', 0), timing.contentUnit, timing.tempo);
+    return (
+        loopEndBeat <= loopStartBeat || timing.playStartBeat + (timing.visibleEndBeat - timing.startBeat) > loopEndBeat
+    );
+}
+
+function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming): boolean {
+    const warps = clip.child('Warps');
+    if (!warps) {
+        return false;
+    }
+    const timeUnit = readTimeUnit(warps, timing.contentUnit);
+    const contentUnit = readContentTimeUnit(warps, timeUnit);
+    return warps.children('Warp').some((warp) => {
+        const time = readTimingScalar(warp, 'time', NaN);
+        const contentTime = readTimingScalar(warp, 'contentTime', NaN);
+        if (time === null || contentTime === null || !Number.isFinite(time) || !Number.isFinite(contentTime)) {
+            return true;
+        }
+        const timeBeat = toBeats(time, timeUnit, timing.tempo);
+        const contentBeat = toBeats(contentTime, contentUnit, timing.tempo);
+        return !Number.isFinite(timeBeat) || !Number.isFinite(contentBeat) || Math.abs(timeBeat - contentBeat) > 1e-9;
+    });
+}
+
 function parseClip(
     clip: XmlQuery,
     ownerKind: DawProjectParsedTrack['kind'],
@@ -364,6 +399,10 @@ function parseClip(
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
     const source = { sourceId: clip.attr('id') ?? undefined, sourceOrder: context.elementOrder.get(clip.element) };
+    if (repeatsClipLoop(clip, timing) || hasNonIdentityWarpPoints(clip, timing)) {
+        warn(context, clip, 'unsupported-clip', name, trackName);
+        return null;
+    }
     // `playStart` is where the clip starts reading its media, in content time.
     // Kept whenever it differs from the default 0 — negative is the slip of a
     // clip left of its media start.
