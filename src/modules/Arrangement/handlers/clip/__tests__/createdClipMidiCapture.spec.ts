@@ -36,8 +36,16 @@ function constructed() {
     return {
         notes: {
             present: true,
-            value: [{ id: 'new-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90,
-                expression: { pressure: [{ offsetBeats: 0, value: 0.25 }] } }],
+            value: [
+                {
+                    id: 'new-note',
+                    pitch: 60,
+                    startBeat: 0,
+                    duration: 1,
+                    velocity: 90,
+                    expression: { pressure: [{ offsetBeats: 0.5, value: 0.25 }] },
+                },
+            ],
         },
         controlChanges: { present: false, value: [] },
         pitchBends: { present: false, value: [] },
@@ -107,23 +115,33 @@ describe('createdClipMidiCapture execution authority', () => {
         });
     });
 
-    it.each(['owner', 'root', 'rollback', 'discard'] as const)('rejects a stale receipt after %s changes', (change) => {
-        const original = mocks.root!;
-        mocks.root = Automerge.change(original, (draft) => { draft.name = 'Current project'; });
-        const creator = action();
-        const prepared = prepare(creator);
-        prepared.stage(constructed());
-        install(constructed());
-        expect(prepared.complete()).toBe(true);
-        if (change === 'owner') mocks.owner = {};
-        if (change === 'root') {
-            mocks.root = Automerge.clone(mocks.root!);
-            mocks.identity = 'project-epoch-2';
+    it.each(['owner', 'root', 'rollback', 'frontier', 'discard'] as const)(
+        'rejects a stale receipt after %s changes',
+        (change) => {
+            const original = mocks.root!;
+            mocks.root = Automerge.change(original, (draft) => {
+                draft.name = 'Current project';
+            });
+            const creator = action();
+            const prepared = prepare(creator);
+            prepared.stage(constructed());
+            install(constructed());
+            expect(prepared.complete()).toBe(true);
+            if (change === 'owner') mocks.owner = {};
+            if (change === 'root') {
+                mocks.root = Automerge.clone(mocks.root!);
+                mocks.identity = 'project-epoch-2';
+            }
+            if (change === 'rollback') mocks.root = original;
+            if (change === 'frontier') {
+                mocks.root = Automerge.change(mocks.root!, (draft) => {
+                    draft.name = 'Later project';
+                });
+            }
+            if (change === 'discard') createdClipMidiCapture({ phase: 'discard', action: creator });
+            expect(createdClipMidiCapture({ phase: 'take', action: creator, clipId: 'copy' })).toBeNull();
         }
-        if (change === 'rollback') mocks.root = original;
-        if (change === 'discard') createdClipMidiCapture({ phase: 'discard', action: creator });
-        expect(createdClipMidiCapture({ phase: 'take', action: creator, clipId: 'copy' })).toBeNull();
-    });
+    );
 
     it('cannot complete a discarded or rolled-back creator, including an unchanged absent MIDI result', () => {
         const creator = action();

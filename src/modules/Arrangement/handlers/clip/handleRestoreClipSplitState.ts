@@ -153,9 +153,10 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             return { status: 'conflict' };
         }
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
-        const createdMidi = action.payload.replacement.rightClip && !action.payload.expected.rightClip
-            ? createdClipMidiCapture({ phase: 'prepare', action, clipId: action.payload.rightClipId })
-            : null;
+        const createdMidi =
+            action.payload.replacement.rightClip && !action.payload.expected.rightClip
+                ? createdClipMidiCapture({ phase: 'prepare', action, clipId: action.payload.rightClipId })
+                : null;
         createdMidi?.stage(action.payload.replacement.rightMidi);
         const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
         const ownsPublication = capture ? captureProjectMutationAuthorization() : null;

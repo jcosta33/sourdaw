@@ -3,10 +3,15 @@ import { transformMidiGlobalTimeState } from '../../services/transformMidiGlobal
 import { midiStore } from '../../stores/midiStore';
 import { snapshotMidiClipData } from '../midiClipData/snapshotMidiClipData';
 
-export function duplicateClipNotes(sourceClipId: string, destClipId: string): {
-    readonly source: ReturnType<typeof snapshotMidiClipData>;
-    readonly target: ReturnType<typeof snapshotMidiClipData>;
-} | undefined {
+export function duplicateClipNotes(
+    sourceClipId: string,
+    destClipId: string
+):
+    | {
+          readonly source: ReturnType<typeof snapshotMidiClipData>;
+          readonly target: ReturnType<typeof snapshotMidiClipData>;
+      }
+    | undefined {
     const state = midiStore.value;
     if (!state) {
         return;

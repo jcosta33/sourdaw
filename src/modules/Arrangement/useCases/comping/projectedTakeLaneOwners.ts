@@ -115,8 +115,11 @@ function retireClipOwners(lanes: TakeLaneOwners[], clipId: string): void {
 /** Reserve only owners produced by preceding replay members, without publishing any state. */
 export function projectedTakeLaneOwners(priorActions: readonly AppAction[]): TakeLaneOwners[] {
     const lanes: TakeLaneOwners[] =
-        takeLaneStore.value?.lanes.map((lane) => ({ ...lane, takes: [...lane.takes], activeCompRegions: [...lane.activeCompRegions] })) ??
-        [];
+        takeLaneStore.value?.lanes.map((lane) => ({
+            ...lane,
+            takes: [...lane.takes],
+            activeCompRegions: [...lane.activeCompRegions],
+        })) ?? [];
     for (const action of priorActions) {
         if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
             retireClipOwners(lanes, action.payload.clipId);

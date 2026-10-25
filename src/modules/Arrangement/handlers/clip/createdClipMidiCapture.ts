@@ -1,4 +1,4 @@
-import { getHeads, hasHeads } from '@automerge/automerge';
+import { getHeads } from '@automerge/automerge';
 
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
 import { captureProjectIdentity, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
@@ -37,10 +37,12 @@ function snapshotIsAbsent(snapshot: MidiClipDataActionSnapshot): boolean {
 
 function prepare(input: PrepareInput): PreparedCapture | null {
     discardByAction.get(input.action)?.();
-    const namesTarget = input.action.type === 'duplicateClipAt'
-        ? input.action.payload.targetClipId === input.clipId
-        : input.action.payload.rightClipId === input.clipId &&
-            input.action.payload.replacement.rightClip !== null && input.action.payload.expected.rightClip === null;
+    const namesTarget =
+        input.action.type === 'duplicateClipAt'
+            ? input.action.payload.targetClipId === input.clipId
+            : input.action.payload.rightClipId === input.clipId &&
+              input.action.payload.replacement.rightClip !== null &&
+              input.action.payload.expected.rightClip === null;
     if (!namesTarget) {
         return null;
     }
@@ -54,17 +56,22 @@ function prepare(input: PrepareInput): PreparedCapture | null {
         return null;
     }
     const identity = captureProjectIdentity();
-    const heads = getHeads(root);
+    const heads = new Set(getHeads(root));
     let closed = false;
     const isCurrent = () => {
         const current = getCrdtDoc('root');
-        return (
-            !closed &&
-            getCurrentAutomergeStorageMutationOwner() === owner &&
-            captureProjectIdentity() === identity &&
-            current !== undefined &&
-            hasHeads(current, heads)
-        );
+        if (
+            closed ||
+            getCurrentAutomergeStorageMutationOwner() !== owner ||
+            captureProjectIdentity() !== identity ||
+            current === undefined
+        ) {
+            return false;
+        }
+        // The enclosing transaction publishes only after this receipt is consumed.
+        // Available historical heads do not prove the installed frontier.
+        const currentHeads = getHeads(current);
+        return currentHeads.length === heads.size && currentHeads.every((head) => heads.has(head));
     };
     let snapshot = absent;
     let completed = false;
@@ -84,7 +91,11 @@ function prepare(input: PrepareInput): PreparedCapture | null {
                 return false;
             }
             completed = true;
-            if (!isCurrent() || !clipExists(input.clipId) || !valuesEqual(readClipMidiSnapshot(input.clipId), snapshot)) {
+            if (
+                !isCurrent() ||
+                !clipExists(input.clipId) ||
+                !valuesEqual(readClipMidiSnapshot(input.clipId), snapshot)
+            ) {
                 discard();
                 return false;
             }
@@ -105,7 +116,9 @@ function prepare(input: PrepareInput): PreparedCapture | null {
 export function createdClipMidiCapture(input: PrepareInput): PreparedCapture | null;
 export function createdClipMidiCapture(input: TakeInput): MidiClipDataActionSnapshot | null;
 export function createdClipMidiCapture(input: DiscardInput): void;
-export function createdClipMidiCapture(input: PrepareInput | TakeInput | DiscardInput): PreparedCapture | MidiClipDataActionSnapshot | null | void {
+export function createdClipMidiCapture(
+    input: PrepareInput | TakeInput | DiscardInput
+): PreparedCapture | MidiClipDataActionSnapshot | null | void {
     if (input.phase === 'prepare') {
         return prepare(input);
     }
@@ -115,7 +128,10 @@ export function createdClipMidiCapture(input: PrepareInput | TakeInput | Discard
     }
     const owner = getCurrentAutomergeStorageMutationOwner();
     const capture = owner ? capturesByOwner.get(owner)?.get(input.action) : undefined;
-    const matches = capture !== undefined && capture.clipId === input.clipId && capture.isCurrent() &&
+    const matches =
+        capture !== undefined &&
+        capture.clipId === input.clipId &&
+        capture.isCurrent() &&
         valuesEqual(readClipMidiSnapshot(input.clipId), capture.snapshot);
     discardByAction.get(input.action)?.();
     return matches && capture ? structuredClone(capture.snapshot) : null;

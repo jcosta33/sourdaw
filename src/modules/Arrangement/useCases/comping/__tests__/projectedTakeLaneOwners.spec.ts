@@ -85,8 +85,12 @@ describe('projectedTakeLaneOwners split Undo prefix', () => {
             { startBeat: 2, endBeat: 4, takeId: right.id },
         ];
         const transition = {
-            laneId: 'source-lane', trackId: 'track', takesBefore: [before], takesAfter: [left, right],
-            regionsBefore: [beforeRegion], regionsAfter: afterRegions,
+            laneId: 'source-lane',
+            trackId: 'track',
+            takesBefore: [before],
+            takesAfter: [left, right],
+            regionsBefore: [beforeRegion],
+            regionsAfter: afterRegions,
         };
         const peerRegion = { startBeat: 8, endBeat: 12, takeId: peerTake.id };
         mocks.state.value!.lanes[0]!.takes = [left, right];
@@ -98,7 +102,8 @@ describe('projectedTakeLaneOwners split Undo prefix', () => {
         expect(reKeyedTakeLaneOwnersMatchStore([transition], 'apply')).toBe(false);
         expect(reKeyedTakeLaneOwnersMatchStore([transition], 'apply', [action])).toBe(true);
         expect(projectedTakeLaneOwners([action]).map((lane) => lane.activeCompRegions)).toEqual([
-            [beforeRegion], [peerRegion],
+            [beforeRegion],
+            [peerRegion],
         ]);
         expect(mocks.state.value).toEqual(live);
     });

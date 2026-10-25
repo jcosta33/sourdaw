@@ -17,8 +17,12 @@ describe('duplicateClipNotes', () => {
 
     it('returns defensive input and constructed output before synchronous publication observers can edit them', () => {
         const source: MidiNote = {
-            id: 'source', pitch: 60, startBeat: 0, duration: 1, velocity: 90,
-            expression: { pressure: [{ offsetBeats: 0, value: 0.25 }] },
+            id: 'source',
+            pitch: 60,
+            startBeat: 0,
+            duration: 1,
+            velocity: 90,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 0.25 }] },
         };
         midiStore.set({
             notesByClipId: { src: [source] },
@@ -40,20 +44,27 @@ describe('duplicateClipNotes', () => {
         const capture = duplicateClipNotes('src', 'dst');
         expect(capture?.source.notes.value).toEqual([source]);
         expect(capture?.target.notes.value[0]).toMatchObject({
-            velocity: 90, expression: { pressure: [{ offsetBeats: 0, value: 0.25 }] },
+            velocity: 90,
+            expression: { pressure: [{ offsetBeats: 0.5, value: 0.25 }] },
         });
         expect(capture?.target.controlChanges.value[0]).toMatchObject({ controller: 64, value: 127 });
         expect(capture?.target.pitchBends.value[0]).toMatchObject({ value: 4096 });
         expect(midiStore.value?.notesByClipId.dst?.[0]?.velocity).toBe(42);
+        expect(midiStore.value?.notesByClipId.dst?.[0]?.expression?.pressure).toEqual([
+            { offsetBeats: 0.5, value: 0.75 },
+        ]);
     });
 
     it('does not return a creator capture when publication throws', () => {
         midiStore.set({
             notesByClipId: { src: [{ id: 'source', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
-            ccByClipId: {}, pitchBendByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
         });
         const failure = new Error('MIDI publication refused');
-        vi.spyOn(midiStore, 'set').mockImplementation(() => { throw failure; });
+        vi.spyOn(midiStore, 'set').mockImplementation(() => {
+            throw failure;
+        });
         expect(() => duplicateClipNotes('src', 'dst')).toThrow(failure);
         expect(midiStore.value?.notesByClipId.dst).toBeUndefined();
     });

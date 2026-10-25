@@ -23,9 +23,7 @@ function regionsMatchReplayFootprint(
     const removedTakeIds = new Set(
         from.filter((take) => !to.some((target) => target.id === take.id)).map((take) => take.id)
     );
-    const removedRegions = fromRegions.filter(
-        (region) => !toRegions.some((target) => valuesEqual(region, target))
-    );
+    const removedRegions = fromRegions.filter((region) => !toRegions.some((target) => valuesEqual(region, target)));
     // Missing-owner recovery may restore its capture. A live owner makes a
     // missing source region an independent deletion, not recovery authority.
     if (
@@ -40,8 +38,7 @@ function regionsMatchReplayFootprint(
     // Retiring a take also removes every live region naming it. Authenticate
     // that complete facet so a later region cannot disappear with its owner.
     return live.activeCompRegions.every(
-        (region) =>
-            !removedTakeIds.has(region.takeId) || fromRegions.some((source) => valuesEqual(region, source))
+        (region) => !removedTakeIds.has(region.takeId) || fromRegions.some((source) => valuesEqual(region, source))
     );
 }
 

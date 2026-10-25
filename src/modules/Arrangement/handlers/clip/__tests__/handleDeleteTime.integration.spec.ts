@@ -401,6 +401,7 @@ describe('Delete Time take ownership through Command and CRDT', () => {
     it.each([false, true])('binds saved time retirement to erased clips: forged=%s', async (forged) => {
         hydrateProductionContracts();
         arrangeJoinedOwners();
+        warpStateStore.set({ states: {} });
         const untouchedTake = createTake('before-range', 'Untouched', 0, 1);
         mutateCrdtDoc<Project>({
             id: 'root',
@@ -430,7 +431,9 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         const original = durableOwners();
         await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 6 } });
         await vi.waitFor(() =>
-            expect((JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past).toHaveLength(1)
+            expect(
+                (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past
+            ).toHaveLength(1)
         );
         const deleted = durableOwners();
         const saved = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: SavedDeleteEntry[] };

@@ -221,10 +221,8 @@ function takeRetirementsMatchDeletedRange(
     if (plan.takeLanes === null) {
         return true;
     }
-    const localBefore =
-        plan.takeLanes.appliedEffect === 'restore' ? plan.local.replacement : plan.local.expected;
-    const localAfter =
-        plan.takeLanes.appliedEffect === 'restore' ? plan.local.expected : plan.local.replacement;
+    const localBefore = plan.takeLanes.appliedEffect === 'restore' ? plan.local.replacement : plan.local.expected;
+    const localAfter = plan.takeLanes.appliedEffect === 'restore' ? plan.local.expected : plan.local.replacement;
     const before = timeOperationStateCodec.decodeTrackState(localBefore.trackState);
     const after = timeOperationStateCodec.decodeTrackState(localAfter.trackState);
     if (!before || !after) {
@@ -238,9 +236,7 @@ function takeRetirementsMatchDeletedRange(
             [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)]
                 .filter(
                     (clip) =>
-                        clip.startBeat >= range.startBeat &&
-                        clip.endBeat <= range.endBeat &&
-                        !afterIds.has(clip.id)
+                        clip.startBeat >= range.startBeat && clip.endBeat <= range.endBeat && !afterIds.has(clip.id)
                 )
                 .map((clip) => clip.id)
         )

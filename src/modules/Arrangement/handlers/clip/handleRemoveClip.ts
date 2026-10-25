@@ -13,7 +13,11 @@ import {
 import { decodeMidiClipDataSnapshots, getMidiStoreState, removeMidiClipData } from '#/modules/MIDI/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext, type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerValidationContext,
+    type MidiClipDataActionSnapshot,
+} from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
@@ -62,7 +66,10 @@ function capturedMidi(payload: RestoreClipAction['payload']): MidiClipDataAction
     }
     return {
         notes: { present: snapshots.notesSnapshot !== null, value: snapshots.notesSnapshot ?? [] },
-        controlChanges: { present: snapshots.controlChangeSnapshot !== null, value: snapshots.controlChangeSnapshot ?? [] },
+        controlChanges: {
+            present: snapshots.controlChangeSnapshot !== null,
+            value: snapshots.controlChangeSnapshot ?? [],
+        },
         pitchBends: { present: snapshots.pitchBendSnapshot !== null, value: snapshots.pitchBendSnapshot ?? [] },
     };
 }
@@ -92,12 +99,17 @@ function projectSplitMidiTarget(
 function projectedMidiTarget(clipId: string, priorActions: readonly AppAction[]): ProjectedMidiTarget | null {
     let current: ProjectedMidiTarget = { snapshot: readClipMidiSnapshot(clipId) };
     for (const action of priorActions) {
-        if ((action.type === 'removeClip' || action.type === 'discardDuplicatedClip') && action.payload.clipId === clipId) {
-            current = { snapshot: {
-                notes: { present: false, value: [] },
-                controlChanges: { present: false, value: [] },
-                pitchBends: { present: false, value: [] },
-            } };
+        if (
+            (action.type === 'removeClip' || action.type === 'discardDuplicatedClip') &&
+            action.payload.clipId === clipId
+        ) {
+            current = {
+                snapshot: {
+                    notes: { present: false, value: [] },
+                    controlChanges: { present: false, value: [] },
+                    pitchBends: { present: false, value: [] },
+                },
+            };
         } else if (action.type === 'duplicateClipAt' && action.payload.targetClipId === clipId) {
             if (!midiIsAbsent(current.snapshot)) {
                 return null;
@@ -110,11 +122,15 @@ function projectedMidiTarget(clipId: string, priorActions: readonly AppAction[])
             if (!restored) {
                 return null;
             }
-            current = { snapshot: {
-                notes: restored.notes.present ? restored.notes : current.snapshot.notes,
-                controlChanges: restored.controlChanges.present ? restored.controlChanges : current.snapshot.controlChanges,
-                pitchBends: restored.pitchBends.present ? restored.pitchBends : current.snapshot.pitchBends,
-            } };
+            current = {
+                snapshot: {
+                    notes: restored.notes.present ? restored.notes : current.snapshot.notes,
+                    controlChanges: restored.controlChanges.present
+                        ? restored.controlChanges
+                        : current.snapshot.controlChanges,
+                    pitchBends: restored.pitchBends.present ? restored.pitchBends : current.snapshot.pitchBends,
+                },
+            };
         } else if (action.type === 'restoreClipSplitState') {
             const projected = projectSplitMidiTarget(clipId, current, action);
             if (!projected) {
@@ -252,10 +268,13 @@ function redoTargetMatchesAtExecution(
     return (
         midi !== null &&
         (creator ? createdMidiMatchesCapture(midi, expectedMidi, creator) : valuesEqual(midi, expectedMidi)) &&
-        replayTargetMatches(action.payload.clipId, preflightTarget ?? {
-            owningTrackId: paired.payload.trackId,
-            clip: paired.payload.clipSnapshot,
-        })
+        replayTargetMatches(
+            action.payload.clipId,
+            preflightTarget ?? {
+                owningTrackId: paired.payload.trackId,
+                clip: paired.payload.clipSnapshot,
+            }
+        )
     );
 }
 
