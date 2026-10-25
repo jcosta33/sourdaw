@@ -1160,7 +1160,6 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/resolveThread.ts',
-            'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
@@ -1459,11 +1458,10 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:resolve' as const,
                 entry: 'scripts/resolveThread.ts',
-                required: 'scripts/githubAppIdentity.ts',
+                required: 'scripts/prContract.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/resolveThread.ts',
-                    'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
             },
