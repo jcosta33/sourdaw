@@ -2,7 +2,10 @@ import {
     getVersionedCommandBatchIdempotentReplay,
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import {
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../../models/Chat';
 import { chatStore, updateChatMessage } from '../../stores/chatStore';
@@ -235,6 +238,9 @@ async function resolveConfirmationAdmission(input: {
         return { status: 'handled', result: { status: 'not_pending', currentStatus: confirmation.status } };
     }
 
+    // The receipt lookup can yield while a local store queues another write.
+    // Drain those writes before comparing the proposal with live project truth.
+    settlePendingProjectWritesAndCaptureRevision();
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
     const recoveringPendingEffects =
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&

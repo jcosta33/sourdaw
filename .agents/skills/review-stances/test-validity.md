@@ -6,6 +6,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-25 — direct mutation-owner tests missed the queued selection producer (introduced by PR #2747)
+
+PR #2747 (`06fb56e389`) tested owner and foreign mutations, but its confirmation path lacked a
+real selected-track store write pending across authorization capture. A fixture that mutates only
+the raw CRDT document or mocks the authorization function cannot reveal a store write whose
+serialized value is unchanged while its flush advances the mutation epoch. The available public
+reviews do not expose the exact prompt that missed this case.
+
+Use the public confirmation entry with a real root and distinct tracks. Prove that changing only
+`selectedTrackId` adds a pending storage write while revision, document contents and heads remain
+unchanged; release the write at the batch boundary and require one approved execution with the
+original serialized batch and idempotency key. Remove admission settlement as one baseline
+mutation: the spec must fail on the original project-changed result. Remove final approval-binding
+alignment as a second mutation: the spec must fail on a stale approved source revision. Keep
+independent changed-project and later-foreign-writer controls.
+
 ### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
 
 Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and

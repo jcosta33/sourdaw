@@ -1,5 +1,26 @@
 # Lesson library: project integrity
 
+## 2026-10-25 — queued selection writes revoked confirmed command authority (introduced by PR #2747)
+
+PR #2747 (`06fb56e389`) added a strict mutation-owner authorization check for confirmed AI
+batches. A track selection is transient project UI state, but its CRDT-backed store still queues
+an unscoped flush. That flush can advance the repository mutation epoch without changing document
+contents or heads. If it lands after the batch captures authorization, the unchanged proposal is
+invalidated as a foreign project write. The public approvals covered collaborator changes and
+CRDT ownership; the exact historical reviewer prompts are unavailable, so no named stance or tier
+can be assigned this missed timing input.
+
+Drive a real two-track selection through `trackStore.set` after proposal, observe its pending
+write, and release the actual flush at the confirmed batch's execution boundary. Require the
+approved command to execute once, with identical root contents and heads across that selection
+flush. Check the final risk-approval binding too: it must use the same unchanged-project proof,
+or the advanced epoch still rejects the old approved source revision. Preserve the original
+serialized batch and idempotency key through execution and replay. Pair this with a real
+conflicting edit before confirmation, which must invalidate or require new approval, and an
+independent writer after authorization capture, whose mutation must still revoke execution even
+when it changes no document value. Removing admission settlement or final binding alignment must
+fail the unchanged-selection case.
+
 ## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
 
 `waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.
