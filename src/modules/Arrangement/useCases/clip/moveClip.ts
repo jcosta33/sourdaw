@@ -7,6 +7,7 @@ import { setTrackState } from '../../repositories/track/setTrackState';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 
 import { isClipDropCompatible } from './isClipDropCompatible';
+import { relocateAudioSourceTimeFields } from './relocateAudioSourceTimeFields';
 
 type MoveClipOptions = {
     /**
@@ -89,9 +90,7 @@ export function moveClip(
                 // the loop window and the pass count from the new placement
                 // (#4988) — a one-loop-length drag would silence the clip.
                 ...shiftLoopOriginEntry(clip, startBeat - clip.startBeat),
-                ...(clip.audioLoopPassOriginBeat === undefined
-                    ? {}
-                    : { audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat + (startBeat - clip.startBeat) }),
+                ...relocateAudioSourceTimeFields(clip, startBeat - clip.startBeat),
             };
         }
         return { ...time, clips: time.clips.filter((context) => context.id !== clipId) };
