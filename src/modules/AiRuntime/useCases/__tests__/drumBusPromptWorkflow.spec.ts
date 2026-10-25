@@ -4,7 +4,10 @@ import {
     captureAgentProjectInspectionState,
     captureCommandBatchPreflightState,
 } from '#/app/captureCommandBatchPreflightState';
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    countPendingAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import * as aiRuntimeUseCases from '#/modules/AiRuntime/useCases';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -57,6 +60,7 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
+import { confirmationAdmission } from '../agentRequestOrchestration/resolveConfirmationAdmission';
 import { getDrumRenderComparisonPromptScope } from '../agentReference/getDrumRenderComparisonPromptScope';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -100,6 +104,24 @@ function settleFixtureProjectWrites(): void {
     for (const key of ['tracks', 'markers', 'sidechainRoutes', 'adjustmentLayers']) {
         flushFixtureStorageOwner(key);
     }
+}
+
+function holdAnimationFramesUntilTestFinishes(): void {
+    const scheduledFrames = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 1;
+    const requestAnimationFrameSpy = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        const frameId = nextFrameId++;
+        scheduledFrames.set(frameId, callback);
+        return frameId;
+    });
+    const cancelAnimationFrameSpy = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((frameId) => {
+        scheduledFrames.delete(frameId);
+    });
+    onTestFinished(() => {
+        requestAnimationFrameSpy.mockRestore();
+        cancelAnimationFrameSpy.mockRestore();
+        scheduledFrames.clear();
+    });
 }
 
 function sendChatMessage(prompt: string) {
@@ -1006,6 +1028,24 @@ function setMf06Project(): void {
         },
     ];
     trackStore.set({ tracks: [kick, bassSynth, bassDi, guitar], selectedTrackId: null, ghostClips: [] });
+}
+
+function renameMf06FirstBassCompressorInTrackStore(): void {
+    trackStore.set({
+        ...trackStore.value!,
+        tracks: trackStore.value!.tracks.map((track) =>
+            track.id === 'track-bass-synth'
+                ? {
+                      ...track,
+                      devices: track.devices.map((device) =>
+                          device.id === 'device-bass-comp-a'
+                              ? { ...device, id: 'device-bass-comp-a-collaborator' }
+                              : device
+                      ),
+                  }
+                : track
+        ),
+    });
 }
 
 function createMf06ProviderPlanFromUserMessage(userMessage: string) {
@@ -4072,39 +4112,17 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(3);
     });
 
-    it('invalidates an unflushed sidechain target-device identity drift through the fingerprint guard', async () => {
+    it('invalidates a post-admission sidechain target-device identity drift through the fingerprint guard', async () => {
         setMf06Project();
         useMf06WebLlmFixture();
         settleFixtureProjectWrites();
-        // Every state this case asserts stays projection-only: the collaborator
-        // rename below must never reach the document, so the revision gate stays
-        // silent and the fingerprint guard is the one that detects the stale
-        // proposal. A CRDT-backed store write lands in the document on a
-        // deferred animation frame, so an unheld frame can fire inside confirm's
-        // await window and move the run onto the revision gate mid-flight. Hold
-        // frames for the whole case so the document is frozen by construction;
-        // the pending write belongs to no document after the next authority
-        // reset releases it, and onTestFinished restores the timers. Both stale
-        // routes must settle identically — `invalidated` with the same
-        // actionable sentence — and the internal detail below proves this run
-        // took the fingerprint guard rather than the revision gate.
-        const scheduledFrames = new Map<number, FrameRequestCallback>();
-        let nextFrameId = 1;
-        const requestAnimationFrameSpy = vi
-            .spyOn(globalThis, 'requestAnimationFrame')
-            .mockImplementation((callback) => {
-                const frameId = nextFrameId++;
-                scheduledFrames.set(frameId, callback);
-                return frameId;
-            });
-        const cancelAnimationFrameSpy = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((frameId) => {
-            scheduledFrames.delete(frameId);
-        });
-        onTestFinished(() => {
-            requestAnimationFrameSpy.mockRestore();
-            cancelAnimationFrameSpy.mockRestore();
-            scheduledFrames.clear();
-        });
+        // Admission explicitly drains pending project writes before its revision
+        // check, even when animation frames are held. Inject the collaborator's
+        // projection-only rename after real admission returns ready, then hold
+        // its deferred frame through the fingerprint check. The document stays
+        // unchanged, so the detail below proves the fingerprint guard detected
+        // the stale target. onTestFinished restores the frame functions.
+        holdAnimationFramesUntilTestFinishes();
         const projectBeforePlanning = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
         const tracksBeforePlanning = structuredClone(trackStore.value);
         const routesBeforePlanning = structuredClone(sidechainStore.value);
@@ -4124,26 +4142,29 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value).toEqual(undoBeforePlanning);
         expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforePlanning);
 
-        trackStore.set({
-            ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'track-bass-synth'
-                    ? {
-                          ...track,
-                          devices: track.devices.map((device) =>
-                              device.id === 'device-bass-comp-a'
-                                  ? { ...device, id: 'device-bass-comp-a-collaborator' }
-                                  : device
-                          ),
-                      }
-                    : track
-            ),
-        });
-        const collaboratorState = structuredClone(trackStore.value);
+        let collaboratorState = structuredClone(trackStore.value);
+        let injectedAfterAdmission = false;
+        const resolveAdmission = confirmationAdmission.resolveConfirmationAdmission;
+        const admissionSpy = vi
+            .spyOn(confirmationAdmission, 'resolveConfirmationAdmission')
+            .mockImplementation(async (input) => {
+                const admission = await resolveAdmission(input);
+                if (input.confirmationId !== confirmation?.id || admission.status !== 'ready') {
+                    return admission;
+                }
+                renameMf06FirstBassCompressorInTrackStore();
+                collaboratorState = structuredClone(trackStore.value);
+                injectedAfterAdmission = true;
+                expect(captureProjectRevision()).toBe(approvedRevision);
+                expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(projectBeforePlanning);
+                return admission;
+            });
+        onTestFinished(() => admissionSpy.mockRestore());
         expect(captureProjectRevision()).toBe(approvedRevision);
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
+        expect(injectedAfterAdmission).toBe(true);
         expect(result).toMatchObject({
             status: 'invalidated',
             detail: 'The approved target fingerprints no longer match.',
@@ -4153,6 +4174,53 @@ describe('drum bus prompt workflow', () => {
         expect(sidechainStore.value).toEqual(routesBeforePlanning);
         expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforePlanning);
         expect(undoStore.value).toEqual(undoBeforePlanning);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation?.id)
+                ?.content
+        ).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
+    });
+
+    it('invalidates a queued real device identity edit at the settled revision gate', async () => {
+        setMf06Project();
+        useMf06WebLlmFixture();
+        settleFixtureProjectWrites();
+        holdAnimationFramesUntilTestFinishes();
+        await sendChatMessage(MF06_PROMPT);
+        const confirmation = getPendingActionConfirmation(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                ?.pendingActionConfirmationId ?? ''
+        );
+        const approvedRevision = captureProjectRevision();
+        const rootBeforeEdit = structuredClone(getCrdtDoc<Record<string, unknown>>('root'));
+        const routesBeforeEdit = structuredClone(sidechainStore.value);
+        const undoBeforeEdit = structuredClone(undoStore.value);
+        const runtimeCallsBeforeEdit = runtimeMocks.wireSidechainRoute.mock.calls.length;
+        const pendingBeforeEdit = countPendingAutomergeStorageWrites();
+
+        renameMf06FirstBassCompressorInTrackStore();
+        const collaboratorState = structuredClone(trackStore.value);
+        expect(countPendingAutomergeStorageWrites()).toBe(pendingBeforeEdit + 1);
+        expect(captureProjectRevision()).toBe(approvedRevision);
+        expect(getCrdtDoc<Record<string, unknown>>('root')).toEqual(rootBeforeEdit);
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(captureProjectRevision()).not.toBe(approvedRevision);
+        expect(JSON.stringify(getCrdtDoc('root'))).toContain('device-bass-comp-a-collaborator');
+        expect(trackStore.value).toEqual(collaboratorState);
+        expect(sidechainStore.value).toEqual(routesBeforeEdit);
+        expect(runtimeMocks.wireSidechainRoute.mock.calls).toHaveLength(runtimeCallsBeforeEdit);
+        expect(undoStore.value).toEqual(undoBeforeEdit);
         expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
             status: 'invalidated',
             executedActions: [],

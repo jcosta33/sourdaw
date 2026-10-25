@@ -22,6 +22,12 @@ mutation: the spec must fail on the original project-changed result. Remove fina
 alignment as a second mutation: the spec must fail on a stale approved source revision. Keep
 independent changed-project and later-foreign-writer controls.
 
+Holding animation frames does not hold a queued write when confirmation explicitly drains storage.
+For a fingerprint-only stale target, apply a real projection change after admission has settled and
+checked the revision, then require the exact fingerprint detail with unchanged document heads.
+Pair it with a queued real device edit before admission: its explicit settlement must take the
+revision path without executing the old approval.
+
 ### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
 
 Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and
