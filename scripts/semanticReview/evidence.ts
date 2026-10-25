@@ -79,6 +79,7 @@ import { exclusionReason, isSensitivePath } from './exclusion.ts';
 import { regionFitsRequest } from './fit.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines, splitLines, type LineRange } from './slicing.ts';
+import { collectTestCaseContext, type TestCaseContextProof } from './testCaseContext.ts';
 import {
     CREDENTIAL_SHAPED_WITHHELD_CODE,
     nothingSentReason,
@@ -162,6 +163,8 @@ export type SemanticEvidenceSet = {
     readonly attribution: ReadonlyMap<string, readonly string[]>;
     /** Each changed path's own added and removed lines; a path that could not be read is absent. */
     readonly changedLines: ReadonlyMap<string, PathChangedLines>;
+    /** Private planner proof: no new source is admitted to satisfy the case-level question. */
+    readonly testCaseContext?: ReadonlyMap<string, TestCaseContextProof>;
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
@@ -667,6 +670,26 @@ function readOrEmpty<Entry>(read: () => ReadonlyMap<string, Entry>): ReadonlyMap
     }
 }
 
+/** Snapshot the attribution order that each later request and report reads. */
+function sortedAttribution(source: ReadonlyMap<string, ReadonlySet<string>>): Map<string, readonly string[]> {
+    const attribution = new Map<string, readonly string[]>();
+    for (const [evidenceId, changedPaths] of source) {
+        attribution.set(evidenceId, [...changedPaths].sort(compareLexicographic));
+    }
+    return attribution;
+}
+
+/** Keep the collector's mutable map private after evidence has been returned. */
+function snapshotOwnWithheldSides(
+    source: ReadonlyMap<string, ReadonlySet<EvidenceSide>>
+): Map<string, ReadonlySet<EvidenceSide>> {
+    const snapshot = new Map<string, ReadonlySet<EvidenceSide>>();
+    for (const [changedPath, sides] of source) {
+        snapshot.set(changedPath, sides);
+    }
+    return snapshot;
+}
+
 /**
  * Collects bounded evidence for one change. `mergeBaseSha` supplies before-side content and
  * `contractSourceSha` supplies the contracts used as semantic context; `headSha` supplies after-side
@@ -771,19 +794,22 @@ export function collectEvidence(input: {
     if (admission.references.length === 0) {
         admission.limitations.push('no source region was eligible for assessment');
     }
-    const attribution = new Map<string, readonly string[]>();
-    for (const [evidenceId, changedPaths] of admission.attribution) {
-        attribution.set(evidenceId, [...changedPaths].sort(compareLexicographic));
-    }
-    const ownWithheld = new Map<string, ReadonlySet<EvidenceSide>>();
-    for (const [changedPath, sides] of admission.ownWithheldSides) {
-        ownWithheld.set(changedPath, sides);
-    }
+    const attribution = sortedAttribution(admission.attribution);
+    const testCaseContext = collectTestCaseContext({
+        files: assessed,
+        contents,
+        hunks: hunksByPath,
+        changedLines,
+        references: admission.references,
+        attribution,
+    });
+    const ownWithheld = snapshotOwnWithheldSides(admission.ownWithheldSides);
     return {
         references: admission.references,
         contents: admission.contents,
         attribution,
         changedLines,
+        testCaseContext,
         excluded: admission.excluded,
         truncated: admission.truncated,
         limitations: admission.limitations,

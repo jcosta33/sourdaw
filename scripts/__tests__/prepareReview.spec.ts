@@ -220,6 +220,7 @@ describe('review prepare', () => {
             'scripts/reviewRiskPolicy.ts',
             'scripts/reviewRoundEscalation.ts',
             'scripts/savedProjectStatePaths.ts',
+            'scripts/semanticReview/admissionCaseRule.ts',
             'scripts/semanticReview/contracts.ts',
             'scripts/semanticReview/interpret.ts',
             'scripts/semanticReview/pathOrder.ts',

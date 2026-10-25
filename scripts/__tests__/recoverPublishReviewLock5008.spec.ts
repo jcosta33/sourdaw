@@ -466,18 +466,19 @@ function crashAfterPost(root: string, remote: ReturnType<typeof fakeGitHub>): vo
     const draws: ReviewDraw[] = [
         {
             stance: 'reply review mistaken for the landed review',
-            reviewerModel: 'review-model',
-            tier: 'strongest',
+            reviewerModel: 'gpt-6-luna',
+            tier: 'standard',
             outcome: 'findings',
         },
-        { stance: 'landed comment binding drifts', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
-        { stance: 'landed review identity changes', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+        { stance: 'landed comment binding drifts', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
+        { stance: 'landed review identity changes', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
     ];
     const sources = [{ stance: draws[0]!.stance, reviewerModel: draws[0]!.reviewerModel }];
     writeFileSync(
         join(bundlePath(root), 'review.json'),
         JSON.stringify({
             ...reviewDocumentJson,
+            reviewerModel: 'gpt-6-luna',
             draws,
             comments: reviewDocumentJson.comments.map((comment) => ({ ...comment, sources })),
         })
@@ -693,9 +694,20 @@ describe('review-publication recovery of a landed review among thread-reply revi
         'refuses a fresh source-absent review over an unpublished historical record, draws=%s',
         (withDraws) => {
             const fixture = fixtureFor({ planCarrying: true });
+            const fresh = {
+                ...reviewDocumentJson,
+                reviewerModel: 'gpt-6-luna',
+                draws: roundDraws.map((draw): ReviewDraw => ({
+                    ...draw,
+                    reviewerModel: 'gpt-6-luna',
+                    tier: 'standard',
+                })),
+            };
             if (!withDraws) {
-                const { draws: _draws, ...withoutDraws } = reviewDocumentJson;
+                const { draws: _draws, ...withoutDraws } = fresh;
                 writeFileSync(join(bundlePath(fixture.root), 'review.json'), JSON.stringify(withoutDraws));
+            } else {
+                writeFileSync(join(bundlePath(fixture.root), 'review.json'), JSON.stringify(fresh));
             }
             const before = dossierText(fixture.root);
             const remote = fakeGitHub({ posted: false });

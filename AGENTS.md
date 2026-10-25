@@ -93,13 +93,19 @@ Independence is distinct failure modes, never distinct files: stances pinned to 
 paths that share one probe library are one stance. Dispatch one stance per independent risk, never
 fewer than the risk plan's floor below.
 
-Tier reviewers by the criticality of the risk each stance attacks, using the task-based selection
-above without lowering specialist floors: economy for narrow low-risk checks, standard for behavioral
-and integration risk, strongest for real-time audio, security, data loss, irreversible change, or
-disputed severe findings. Also raise the tier for wide module diffusion, heavy churn on defect-prone
-surfaces, or surfaces touched by many recent lanes. Two
-independent strongest-tier draws from different models may share one stance to expose different
-findings; that extends model diversity, not the stance count.
+Reviewers use only fast, low-cost mid-tier models or below: the Luna, Terra, Sonnet and Haiku
+families, recorded by their public model names. Use economy or standard for every review stance,
+including real-time audio, security, data loss, irreversible change and disputed findings. Never
+use frontier or high-end review models: Fable, Astra, Opus, or any Sol model. Unknown families and
+premium aliases are not eligible. This ceiling applies to reviewers only; author and orchestrator
+routing above stays unchanged. Preserve specialist risk classes, independent stances, blind review,
+and discriminating evidence rather than escalating the review model.
+
+Diversify among permitted configured models, preferring a different model from the author's when
+available. When only one permitted model is available, disclose the unavailable alternatives in
+`modelExhaustion`; it never waives the cost ceiling. Independent draws from different permitted
+models may share one stance to expose different findings; that extends model diversity, not the
+stance count.
 
 Every reviewer carries the baseline posture regardless of stance: establish what must break for
 each existing check to fail and whether it observes what its name claims. A pass alone is not
@@ -144,14 +150,17 @@ the stances.
 `review.json` is the round's only caller document
 ([ADR 0054](./.agents/decisions/0054-proportional-machine-checked-review-floor.md)). Beside the
 event, body, comments, `reviewerModel`, and approval evidence it carries `draws`, one
-`{ stance, reviewerModel, tier, outcome }` per completed draw (`tier` is `economy`, `standard`, or
-`strongest`; `outcome` is `clean` or `findings`), and optional `discarded`, one `{ finding, reason }`
+`{ stance, reviewerModel, tier, outcome }` per completed draw (`tier` is `economy` or `standard`
+for fresh publication; historical `strongest` values stay readable; `outcome` is `clean` or
+`findings`), and optional `discarded`, one `{ finding, reason }`
 per discard, never posted. `review:publish` itself derives the head-bound record `deliver` reads
 from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publication is refused
 before any remote write unless its draws cover the plan's floor of distinct stances — one for
 `docs-only` and `test-only`, two for `small` (product code under `src/` only), otherwise three, or
-every stance the plan's classes earn when they earn fewer — and unless a `realtime-audio`, `native-security`, or `undo` plan carries
-a `strongest` draw. The floor is the minimum the record can prove; whether the stances attack
+every stance the plan's classes earn when they earn fewer. Every fresh publication also checks
+the summary reviewer model and each draw against the cost ceiling, including effective draws
+reused from an unpublished historical dossier; `strongest` metadata refuses a fresh publication.
+The floor is the minimum the record can prove; whether the stances attack
 independent risks and whether each probe ran stays the orchestrator's judgement. The retired caller
 files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-written `dossier.json` are
 ignored with one log line. Re-publishing a head whose record already binds its
@@ -199,8 +208,10 @@ or raw session-transcript markers. Private reviewer prose belongs nowhere in the
 A lane that adds credential-shaped or armored-key fixtures composes them at runtime from their parts;
 the pull-request diff secret scan is a required gate and matches those literals in source.
 
-A bundle with no `risk-plan.json` predates this contract and publishes exactly as before. Historical
-review and acceptance documents stay readable unchanged, and `review:accept` takes no dossier.
+A bundle with no `risk-plan.json` retains its legacy shape, but fresh publications still meet the
+reviewer cost and diversity rules. Historical review and acceptance documents stay readable
+unchanged; exact published replay and recovery do not re-run fresh model eligibility, and
+`review:accept` takes no dossier.
 
 Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review against the reviewed
 head, then dispatch repairs. The author pushes the fixed head and records each repair through
