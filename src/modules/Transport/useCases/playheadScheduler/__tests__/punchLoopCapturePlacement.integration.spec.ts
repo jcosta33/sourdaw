@@ -47,6 +47,7 @@ import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { getTransportHandlers } from '../../getTransportHandlers';
 import { projectPpqEndpoints } from '../../projectPpqEndpoints';
 import { resolveTempoAtBeat } from '../../tempoMap/resolveTempoAtBeat';
+import { captureNativeRecordingContext } from '../../transportControls/captureNativeRecordingContext';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { finalizeAutomaticRecording } from '../../transportControls/finalizeAutomaticRecording';
 import { pausePlayback } from '../../transportControls/pausePlayback';
@@ -104,7 +105,6 @@ const hardware = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (original) => {
     const real = await original<typeof import('#/modules/AudioEngine/useCases')>();
-    const { captureNativeRecordingContext } = await import('../../transportControls/captureNativeRecordingContext');
     return {
         ...real,
         getAudioContext: () => ({
