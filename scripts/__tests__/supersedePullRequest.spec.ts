@@ -5,7 +5,6 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { canonicalJson } from '../canonicalRecord.ts';
 import { runDeliverCli } from '../deliverPullRequest.ts';
 import { parseFindingLineage, renderFindingLineage, type FindingLineage } from '../findingLineage.ts';
 import * as githubIdentity from '../githubAppIdentity.ts';
