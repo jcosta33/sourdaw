@@ -188,6 +188,12 @@ describe('resolveTemplatePath', () => {
         expect(resolveTemplatePath(templates, 'feature')).toBe(join(templates, 'feature_request.yml'));
         expect(resolveTemplatePath(templates, 'change-plan')).toBe(join(templates, 'change_plan.yml'));
     });
+
+    it('returns the canonical form path for supported case variants', () => {
+        expect(resolveTemplatePath(templates, 'BUG_REPORT')).toBe(join(templates, 'bug_report.yml'));
+        expect(resolveTemplatePath(templates, 'CHANGE_PLAN')).toBe(join(templates, 'change_plan.yml'));
+        expect(resolveTemplatePath(templates, 'CHANGE-PLAN')).toBe(join(templates, 'change_plan.yml'));
+    });
 });
 
 describe('readFields', () => {
@@ -414,6 +420,23 @@ describe('runCli', () => {
         done_when: 'The command runs.',
     });
     const featureFiling = ['feature', '--title', 'new command', '--fields', featureFields];
+    const bugFields = JSON.stringify({
+        scope: 'ai',
+        priority: 'P2',
+        description: 'The command fails.',
+        reproduction: 'Run the command.',
+    });
+    const changePlanFields = JSON.stringify({
+        kind: 'refactor',
+        scope: 'ai',
+        priority: 'P2',
+        baseline: 'Existing behavior.',
+        target: 'Simpler structure.',
+        preservation: 'Keep output.',
+        waves: 'One wave.',
+        cutover: 'Swap implementation.',
+        task_split: 'None.',
+    });
 
     /**
      * The runner is injected rather than mocked at `node:child_process`, because filing is an
@@ -479,16 +502,23 @@ describe('runCli', () => {
 
     it('refuses Bug and Change plan forms targeting Features before an issue is created', () => {
         const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
+        vi.spyOn(process.stdout, 'write').mockReturnValue(true);
         const gh = fakeGh(created);
-        for (const template of ['bug', 'change-plan']) {
+        for (const [template, fields] of [
+            ['bug', bugFields],
+            ['BUG_REPORT', bugFields],
+            ['change-plan', changePlanFields],
+            ['CHANGE_PLAN', changePlanFields],
+        ]) {
+            expect(runCli([template, '--title', 'valid fields', '--fields', fields], gh.run)).toBe(0);
             for (const project of ['sOuRdAw FeAtUrEs', 'ſourdaw Features']) {
                 expect(
                     runCli(
-                        [template, '--title', 'misrouted', '--fields', '{}', '--project', project, '--create'],
+                        [template, '--title', 'misrouted', '--fields', fields, '--project', project, '--create'],
                         gh.run
                     )
                 ).toBe(1);
-                expect(String(consoleError.mock.calls.at(-1)?.[0])).toContain('Sourdaw Features');
+                expect(String(consoleError.mock.calls.at(-1)?.[0])).toContain('cannot target Sourdaw Features');
             }
         }
         expect(gh.calls).toEqual([]);

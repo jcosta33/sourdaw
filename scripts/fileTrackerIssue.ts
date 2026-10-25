@@ -51,7 +51,8 @@ const USAGE =
     'pnpm issue:file <template> --title <title> --fields <json> [--create] [--milestone <value>] [--project <value>]';
 
 export function resolveTemplatePath(templatesDir: string, name: string): string {
-    const stem = TEMPLATE_ALIASES[name] ?? name;
+    const canonicalName = name.toLowerCase();
+    const stem = TEMPLATE_ALIASES[canonicalName] ?? canonicalName;
     const path = join(templatesDir, `${stem}.yml`);
     if (!existsSync(path)) {
         fail(`unknown issue template: ${name}`);
