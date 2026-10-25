@@ -26,9 +26,10 @@ export function issueAgentCommandApprovalBinding(input: {
             // Confirmation preflight already accepts an unchanged project when a
             // no-op store flush moved only the mutation epoch. Use the same proof
             // at the final binding; the batch's own source revision stays exact.
-            const currentRevision = projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.approval.sourceRevision)
-                ? input.approval.sourceRevision
-                : captureProjectRevision();
+            let currentRevision = input.approval.sourceRevision;
+            if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.approval.sourceRevision)) {
+                currentRevision = captureProjectRevision();
+            }
             const validation = validateAgentRiskApproval({
                 approval: input.approval,
                 commandBatch: input.commandBatch,
