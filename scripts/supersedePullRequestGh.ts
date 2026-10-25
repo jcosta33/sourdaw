@@ -87,11 +87,10 @@ export function shellPort(
         isCommitAncestor: (repository, ancestor, descendant) =>
             inspectCommitAncestry(repository, ancestor, descendant, gh),
         readRegisteredLaneStack: (branch) => {
-            const marker = capture(
-                'git',
-                ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`],
-                { cwd: primaryRoot, env: session.env }
-            );
+            const marker = capture('git', ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`], {
+                cwd: primaryRoot,
+                env: session.env,
+            });
             return readRegisteredLaneStack(primaryRoot, branch, marker);
         },
         comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),

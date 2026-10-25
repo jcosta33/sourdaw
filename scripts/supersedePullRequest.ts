@@ -261,12 +261,7 @@ function assertFullCommit(value: unknown, label: string): asserts value is strin
     }
 }
 
-function requireAncestor(
-    port: SupersedePullRequestPort,
-    ancestor: string,
-    descendant: string,
-    label: string
-): void {
+function requireAncestor(port: SupersedePullRequestPort, ancestor: string, descendant: string, label: string): void {
     assertFullCommit(ancestor, label);
     assertFullCommit(descendant, label);
     if (port.isCommitAncestor?.(REQUIRED_REPOSITORY, ancestor, descendant) !== true) {
@@ -470,7 +465,10 @@ function assertParentBindingIdentities(record: SupersessionParentBinding): void 
     ) {
         fail('supersession parent binding identities are contradictory');
     }
-    if (parentReplacement.number === replacement.number && canonicalJson(parentReplacement) !== canonicalJson(replacement)) {
+    if (
+        parentReplacement.number === replacement.number &&
+        canonicalJson(parentReplacement) !== canonicalJson(replacement)
+    ) {
         fail('supersession parent binding replacement identity is contradictory');
     }
 }
@@ -508,7 +506,9 @@ export function parseSupersessionParentBinding(body: string): SupersessionParent
     if (!body.startsWith(prefix)) {
         fail('supersession parent binding marker is missing');
     }
-    const record = readSupersessionParentBinding(parseMarkerPayload(body.slice(prefix.length), 'supersession parent binding'));
+    const record = readSupersessionParentBinding(
+        parseMarkerPayload(body.slice(prefix.length), 'supersession parent binding')
+    );
     if (renderSupersessionParentBinding(record) !== body) {
         fail('supersession parent binding marker is not canonical');
     }
@@ -692,7 +692,7 @@ function inspectStackedParentProof(
         childBaseRef,
         child: oldDependencyIdentity(child),
         provenance,
-        historicalBase: replayBinding === undefined ? child.baseRefOid ?? null : replayBinding.child.cachedBase,
+        historicalBase: replayBinding === undefined ? (child.baseRefOid ?? null) : replayBinding.child.cachedBase,
     };
     if (replayBinding !== undefined && canonicalJson(parentBindingRecord(proof)) !== canonicalJson(replayBinding)) {
         fail(`PR #${child.number} completed parent binding does not match current identities`);
@@ -907,7 +907,8 @@ export function supersedePullRequest(
         { body: renderFindingLineage(lineage), label: LINEAGE_LABEL },
     ];
     const completedReplay = before.state === PR_STATE.CLOSED;
-    const replayBinding = completedReplay && replacement.base !== before.base ? completedParentBinding(before) : undefined;
+    const replayBinding =
+        completedReplay && replacement.base !== before.base ? completedParentBinding(before) : undefined;
     if (completedReplay && replayBinding === undefined) {
         assertCompletedSupersession(before, oldNumber, expectedHead, before.base, markers);
     }

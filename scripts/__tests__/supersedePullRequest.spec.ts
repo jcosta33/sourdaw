@@ -525,9 +525,10 @@ function distinctPort(
         },
         isCommitAncestor: (repository, ancestor, descendant) => {
             fixture.calls.push(`ancestor:${repository}:${ancestor}:${descendant}`);
-            const result = ancestor === parentMerge && descendant === replacementHead
-                ? changes.ancestry?.[ancestryReads++] ?? true
-                : true;
+            const result =
+                ancestor === parentMerge && descendant === replacementHead
+                    ? (changes.ancestry?.[ancestryReads++] ?? true)
+                    : true;
             if (result instanceof Error) {
                 throw result;
             }
@@ -610,12 +611,16 @@ function dependencyDag(root: string, unrelatedReplacement: boolean) {
         GIT_COMMITTER_NAME: 'Fixture',
         GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
     };
-    const git = (args: string[], input?: string) => execFileSync('git', args, { cwd: root, env, input, encoding: 'utf8' }).trim();
+    const git = (args: string[], input?: string) =>
+        execFileSync('git', args, { cwd: root, env, input, encoding: 'utf8' }).trim();
     const commit = (label: string, parents: string[], files: Record<string, string>) => {
-        const entries = Object.entries(files).sort(([left], [right]) => left.localeCompare(right)).map(([name, content]) => {
-            const blob = git(['hash-object', '-w', '--stdin'], content);
-            return `100644 blob ${blob}\t${name}\n`;
-        }).join('');
+        const entries = Object.entries(files)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([name, content]) => {
+                const blob = git(['hash-object', '-w', '--stdin'], content);
+                return `100644 blob ${blob}\t${name}\n`;
+            })
+            .join('');
         const tree = git(['mktree'], entries);
         return git(['commit-tree', tree, ...parents.flatMap((parent) => ['-p', parent]), '-m', label]);
     };
@@ -630,16 +635,37 @@ function dependencyDag(root: string, unrelatedReplacement: boolean) {
     const deliveredFiles = unrelatedReplacement ? wrongFiles : parentFiles;
     const parentReplacementHead = commit('parent replacement', [base], deliveredFiles);
     const parentReplacementMerge = commit('parent replacement merge', [base, parentReplacementHead], deliveredFiles);
-    const replacementHead = commit('child replacement', [parentReplacementMerge], { ...deliveredFiles, 'child.txt': 'child work\n' });
-    const replacementMerge = commit('child replacement merge', [parentReplacementMerge, replacementHead], { ...deliveredFiles, 'child.txt': 'child work\n' });
+    const replacementHead = commit('child replacement', [parentReplacementMerge], {
+        ...deliveredFiles,
+        'child.txt': 'child work\n',
+    });
+    const replacementMerge = commit('child replacement merge', [parentReplacementMerge, replacementHead], {
+        ...deliveredFiles,
+        'child.txt': 'child work\n',
+    });
     const ancestor = (earlier: string, later: string) => {
-        const result = spawnSync('git', ['merge-base', '--is-ancestor', earlier, later], { cwd: root, env, encoding: 'utf8' });
+        const result = spawnSync('git', ['merge-base', '--is-ancestor', earlier, later], {
+            cwd: root,
+            env,
+            encoding: 'utf8',
+        });
         if (result.status !== 0 && result.status !== 1) {
             throw new Error(`Git ancestry failed: ${result.stderr}`);
         }
         return result.status === 0;
     };
-    return { base, originalParent, oldChild, finalParent, reusedParent, parentReplacementHead, parentReplacementMerge, replacementHead, replacementMerge, ancestor };
+    return {
+        base,
+        originalParent,
+        oldChild,
+        finalParent,
+        reusedParent,
+        parentReplacementHead,
+        parentReplacementMerge,
+        replacementHead,
+        replacementMerge,
+        ancestor,
+    };
 }
 
 function realDependencyFixture(root: string, kind: 'direct' | 'late' | 'unrelated', distinct: boolean) {
@@ -656,7 +682,12 @@ function realDependencyFixture(root: string, kind: 'direct' | 'late' | 'unrelate
     fixture.port.inspect = (number) => {
         const value = inspect(number);
         if (number === oldNumber) {
-            return { ...value, head: dag.oldChild, baseRefOid: dag.base, baseRef: { name: parentBranch, repository: 'jcosta33/sourdaw', target: namedParent } };
+            return {
+                ...value,
+                head: dag.oldChild,
+                baseRefOid: dag.base,
+                baseRef: { name: parentBranch, repository: 'jcosta33/sourdaw', target: namedParent },
+            };
         }
         if (number === parentNumber) {
             return { ...value, head: namedParent };
@@ -671,15 +702,39 @@ function realDependencyFixture(root: string, kind: 'direct' | 'late' | 'unrelate
         return dag.ancestor(ancestor, descendant);
     };
     fixture.port.readRegisteredLaneStack = (branch) => {
-        const marker = execFileSync('git', ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`], { cwd: root, encoding: 'utf8' }).trim();
+        const marker = execFileSync(
+            'git',
+            ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`],
+            { cwd: root, encoding: 'utf8' }
+        ).trim();
         return readRegisteredLaneStack(root, branch, marker);
     };
     const register = (patch: Partial<LaneStack> = {}) => {
-        const descriptor: LaneStack = { version: 1, childBranch: 'fix/old-pull-request', parentBranch, forkHead: dag.originalParent, parentHead: dag.originalParent, parentPullRequest: parentNumber, ...patch };
+        const descriptor: LaneStack = {
+            version: 1,
+            childBranch: 'fix/old-pull-request',
+            parentBranch,
+            forkHead: dag.originalParent,
+            parentHead: dag.originalParent,
+            parentPullRequest: parentNumber,
+            ...patch,
+        };
         writeLaneStack(root, descriptor);
-        execFileSync('git', ['config', 'branch.fix/old-pull-request.sourdaw-stack-fork', descriptor.forkHead], { cwd: root });
+        execFileSync('git', ['config', 'branch.fix/old-pull-request.sourdaw-stack-fork', descriptor.forkHead], {
+            cwd: root,
+        });
     };
-    const run = () => supersedePullRequest(oldNumber, dag.oldChild, replacementNumber, repairedLineage, AUTHOR_BOT_NODE_ID, fixture.port, parentNumber, distinct ? parentReplacementNumber : undefined);
+    const run = () =>
+        supersedePullRequest(
+            oldNumber,
+            dag.oldChild,
+            replacementNumber,
+            repairedLineage,
+            AUTHOR_BOT_NODE_ID,
+            fixture.port,
+            parentNumber,
+            distinct ? parentReplacementNumber : undefined
+        );
     return { ...fixture, dag, comparisons, register, run };
 }
 
@@ -1262,9 +1317,25 @@ describe('pull-request supersession', () => {
                 }
                 return result;
             };
-            await expect(runSerialized(root, current.port, repairedLineage, serializeFixture, parentNumber, parentReplacementNumber)).rejects.toThrow(/third marker response lost/i);
-            expect(current.comments().map((entry) => entry.body)).toEqual([oldComment.body, receiptBody, lineageBody, current.bindingBody]);
-            expect(current.events.filter((event) => /^(?:close|delete|pull-request-superseded:)/.test(event))).toEqual([]);
+            await expect(
+                runSerialized(
+                    root,
+                    current.port,
+                    repairedLineage,
+                    serializeFixture,
+                    parentNumber,
+                    parentReplacementNumber
+                )
+            ).rejects.toThrow(/third marker response lost/i);
+            expect(current.comments().map((entry) => entry.body)).toEqual([
+                oldComment.body,
+                receiptBody,
+                lineageBody,
+                current.bindingBody,
+            ]);
+            expect(current.events.filter((event) => /^(?:close|delete|pull-request-superseded:)/.test(event))).toEqual(
+                []
+            );
             const owner = retainedOwner(root);
             expect(readPullRequestMutationLockOwner(root, owner, oldNumber).mutation).toBe('remote-mutation-attempted');
         });
@@ -1907,7 +1978,10 @@ describe('pull-request supersession', () => {
         expect(calls).toContain(`ancestor:jcosta33/sourdaw:${parentHead}:${head}`);
         expect(calls.indexOf(ancestry)).toBeLessThan(calls.findIndex((call) => call.startsWith('comment:')));
         expect(state().comments.map((comment) => comment.body)).toEqual([
-            oldComment.body, receiptBody, lineageBody, distinctBindingBody,
+            oldComment.body,
+            receiptBody,
+            lineageBody,
+            distinctBindingBody,
         ]);
         expect(state().state).toBe('CLOSED');
         const writes = calls.filter((call) => /^(?:comment|close|delete):/.test(call));
@@ -1915,95 +1989,149 @@ describe('pull-request supersession', () => {
         expect(calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
     });
 
-    it.each([false, true])('binds a real Git parent head to its old child with distinct replacements=%s', async (distinct) => {
-        await withLockRoot(async (root) => {
-            const current = realDependencyFixture(root, 'direct', distinct);
-            expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
-            expect(current.run()).toBe('pull-request-superseded:2244:2246');
-            const marker = current.state().comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
-            expect(marker).toBeDefined();
-            expect(parseSupersessionParentBinding(marker!.body)).toMatchObject({
-                child: { head: current.dag.oldChild },
-                parent: { number: parentNumber, head: current.dag.originalParent },
-                provenance: { kind: 'final-parent-head', forkHead: current.dag.originalParent },
-            });
-            expect(current.calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
-        });
-    });
-
-    it.each([false, true])('refuses a real unrelated reused parent despite coherent refs and replacement ancestry, distinct=%s', async (distinct) => {
-        await withLockRoot(async (root) => {
-            const current = realDependencyFixture(root, 'unrelated', distinct);
-            expect(current.dag.ancestor(current.dag.reusedParent, current.dag.oldChild)).toBe(false);
-            expect(current.dag.ancestor(current.dag.parentReplacementMerge, current.dag.replacementHead)).toBe(true);
-            expect(current.dag.ancestor(current.dag.originalParent, current.dag.replacementHead)).toBe(false);
-            expect(spawnSync('git', ['cat-file', '-e', `${current.dag.oldChild}:original-dependency.txt`], { cwd: root }).status).toBe(0);
-            expect(spawnSync('git', ['cat-file', '-e', `${current.dag.replacementHead}:original-dependency.txt`], { cwd: root }).status).not.toBe(0);
-            expect(() => current.run()).toThrow(/native registered parent provenance/i);
-            expect(current.state().state).toBe('OPEN');
-            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
-        });
-    });
-
-    it.each([false, true])('admits a real registered late parent and replays its binding after local cleanup, distinct=%s', async (distinct) => {
-        await withLockRoot(async (root) => {
-            const current = realDependencyFixture(root, 'late', distinct);
-            expect(current.dag.ancestor(current.dag.finalParent, current.dag.oldChild)).toBe(false);
-            current.register();
-            expect(current.run()).toBe('pull-request-superseded:2244:2246');
-            const stored = current.state().comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
-            expect(stored).toBeDefined();
-            expect(parseSupersessionParentBinding(stored!.body)).toMatchObject({
-                child: { cachedBase: current.dag.base },
-                provenance: { kind: 'registered-lane-stack', forkHead: current.dag.originalParent, admittedParentHead: current.dag.originalParent },
-            });
-            const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
-            rmSync(join(root, '.agents/lane-stacks'), { recursive: true });
-            execFileSync('git', ['config', '--unset', 'branch.fix/old-pull-request.sourdaw-stack-fork'], { cwd: root });
-            const inspect = current.port.inspect;
-            current.port.inspect = (number) => {
-                const value = inspect(number);
-                return number === oldNumber ? { ...value, baseRef: null, baseRefOid: current.dag.finalParent } : value;
-            };
-            expect(current.run()).toBe('pull-request-superseded:2244:2246');
-            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
-            expect(current.state().comments).toContainEqual(stored);
-        });
-    });
-
-    it.each(['missing', 'wrong parent PR', 'wrong parent branch', 'fork not in parent', 'fork marker mismatch'] as const)(
-        'refuses a real late-parent dependency with %s native provenance', async (scenario) => {
+    it.each([false, true])(
+        'binds a real Git parent head to its old child with distinct replacements=%s',
+        async (distinct) => {
             await withLockRoot(async (root) => {
-                const current = realDependencyFixture(root, 'late', true);
-                if (scenario === 'wrong parent PR') {
-                    current.register({ parentPullRequest: 9999 });
-                } else if (scenario === 'wrong parent branch') {
-                    current.register({ parentBranch: 'fix/unrelated' });
-                } else if (scenario === 'fork not in parent') {
-                    current.register({ forkHead: current.dag.oldChild });
-                } else if (scenario === 'fork marker mismatch') {
-                    current.register();
-                    execFileSync('git', ['config', 'branch.fix/old-pull-request.sourdaw-stack-fork', current.dag.reusedParent], { cwd: root });
-                }
-                expect(() => current.run()).toThrow(/provenance|fork|descriptor|ancestry/i);
-                expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
-                expect(current.state().state).toBe('OPEN');
+                const current = realDependencyFixture(root, 'direct', distinct);
+                expect(current.dag.ancestor(current.dag.originalParent, current.dag.oldChild)).toBe(true);
+                expect(current.run()).toBe('pull-request-superseded:2244:2246');
+                const marker = current
+                    .state()
+                    .comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
+                expect(marker).toBeDefined();
+                expect(parseSupersessionParentBinding(marker!.body)).toMatchObject({
+                    child: { head: current.dag.oldChild },
+                    parent: { number: parentNumber, head: current.dag.originalParent },
+                    provenance: { kind: 'final-parent-head', forkHead: current.dag.originalParent },
+                });
+                expect(current.calls.filter((call) => call.startsWith('close:'))).toEqual(['close:2244']);
             });
         }
     );
 
+    it.each([false, true])(
+        'refuses a real unrelated reused parent despite coherent refs and replacement ancestry, distinct=%s',
+        async (distinct) => {
+            await withLockRoot(async (root) => {
+                const current = realDependencyFixture(root, 'unrelated', distinct);
+                expect(current.dag.ancestor(current.dag.reusedParent, current.dag.oldChild)).toBe(false);
+                expect(current.dag.ancestor(current.dag.parentReplacementMerge, current.dag.replacementHead)).toBe(
+                    true
+                );
+                expect(current.dag.ancestor(current.dag.originalParent, current.dag.replacementHead)).toBe(false);
+                expect(
+                    spawnSync('git', ['cat-file', '-e', `${current.dag.oldChild}:original-dependency.txt`], {
+                        cwd: root,
+                    }).status
+                ).toBe(0);
+                expect(
+                    spawnSync('git', ['cat-file', '-e', `${current.dag.replacementHead}:original-dependency.txt`], {
+                        cwd: root,
+                    }).status
+                ).not.toBe(0);
+                expect(() => current.run()).toThrow(/native registered parent provenance/i);
+                expect(current.state().state).toBe('OPEN');
+                expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+            });
+        }
+    );
+
+    it.each([false, true])(
+        'admits a real registered late parent and replays its binding after local cleanup, distinct=%s',
+        async (distinct) => {
+            await withLockRoot(async (root) => {
+                const current = realDependencyFixture(root, 'late', distinct);
+                expect(current.dag.ancestor(current.dag.finalParent, current.dag.oldChild)).toBe(false);
+                current.register();
+                expect(current.run()).toBe('pull-request-superseded:2244:2246');
+                const stored = current
+                    .state()
+                    .comments.find((comment) => comment.body.startsWith('sourdaw-supersession-parent-v1 '));
+                expect(stored).toBeDefined();
+                expect(parseSupersessionParentBinding(stored!.body)).toMatchObject({
+                    child: { cachedBase: current.dag.base },
+                    provenance: {
+                        kind: 'registered-lane-stack',
+                        forkHead: current.dag.originalParent,
+                        admittedParentHead: current.dag.originalParent,
+                    },
+                });
+                const writes = current.calls.filter((call) => /^(?:comment|close|delete):/.test(call));
+                rmSync(join(root, '.agents/lane-stacks'), { recursive: true });
+                execFileSync('git', ['config', '--unset', 'branch.fix/old-pull-request.sourdaw-stack-fork'], {
+                    cwd: root,
+                });
+                const inspect = current.port.inspect;
+                current.port.inspect = (number) => {
+                    const value = inspect(number);
+                    return number === oldNumber
+                        ? { ...value, baseRef: null, baseRefOid: current.dag.finalParent }
+                        : value;
+                };
+                expect(current.run()).toBe('pull-request-superseded:2244:2246');
+                expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual(writes);
+                expect(current.state().comments).toContainEqual(stored);
+            });
+        }
+    );
+
+    it.each([
+        'missing',
+        'wrong parent PR',
+        'wrong parent branch',
+        'fork not in parent',
+        'fork marker mismatch',
+    ] as const)('refuses a real late-parent dependency with %s native provenance', async (scenario) => {
+        await withLockRoot(async (root) => {
+            const current = realDependencyFixture(root, 'late', true);
+            if (scenario === 'wrong parent PR') {
+                current.register({ parentPullRequest: 9999 });
+            } else if (scenario === 'wrong parent branch') {
+                current.register({ parentBranch: 'fix/unrelated' });
+            } else if (scenario === 'fork not in parent') {
+                current.register({ forkHead: current.dag.oldChild });
+            } else if (scenario === 'fork marker mismatch') {
+                current.register();
+                execFileSync(
+                    'git',
+                    ['config', 'branch.fix/old-pull-request.sourdaw-stack-fork', current.dag.reusedParent],
+                    { cwd: root }
+                );
+            }
+            expect(() => current.run()).toThrow(/provenance|fork|descriptor|ancestry/i);
+            expect(current.calls.filter((call) => /^(?:comment|close|delete):/.test(call))).toEqual([]);
+            expect(current.state().state).toBe('OPEN');
+        });
+    });
+
     it('strictly parses the preserved canonical parent binding', () => {
         expect(parseSupersessionParentBinding(parentBindingBody)).toEqual(parentBinding);
         const extra = { ...parentBinding, unexpected: true };
-        expect(() => parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${canonicalJson(extra)}`)).toThrow(/keys/i);
-        expect(() => parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${JSON.stringify(parentBinding)}`)).toThrow(/canonical/i);
-        expect(() => parseSupersessionParentBinding(parentBindingBody.replace('"format":', '"format":"supersession-parent-v1","format":'))).toThrow(/canonical/i);
-        expect(() => parseSupersessionParentBinding(parentBindingBody.replace('"cachedBase":', '"unboundBase":'))).toThrow(/keys/i);
-        expect(() => parseSupersessionParentBinding(parentBindingBody.replace('"admittedParentHead":null', `"admittedParentHead":"${parentHead}"`))).toThrow(/contradictory/i);
+        expect(() => parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${canonicalJson(extra)}`)).toThrow(
+            /keys/i
+        );
+        expect(() =>
+            parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${JSON.stringify(parentBinding)}`)
+        ).toThrow(/canonical/i);
+        expect(() =>
+            parseSupersessionParentBinding(
+                parentBindingBody.replace('"format":', '"format":"supersession-parent-v1","format":')
+            )
+        ).toThrow(/canonical/i);
+        expect(() =>
+            parseSupersessionParentBinding(parentBindingBody.replace('"cachedBase":', '"unboundBase":'))
+        ).toThrow(/keys/i);
+        expect(() =>
+            parseSupersessionParentBinding(
+                parentBindingBody.replace('"admittedParentHead":null', `"admittedParentHead":"${parentHead}"`)
+            )
+        ).toThrow(/contradictory/i);
     });
 
     it.each(['missing', 'foreign', 'duplicate', 'malformed', 'different parent', 'contradictory descriptor'] as const)(
-        'refuses CLOSED dependency replay with %s preserved binding', async (scenario) => {
+        'refuses CLOSED dependency replay with %s preserved binding',
+        async (scenario) => {
             await withLockRoot(async (root) => {
                 const current = realDependencyFixture(root, 'late', true);
                 current.register();
@@ -2025,7 +2153,12 @@ describe('pull-request supersession', () => {
                         if (scenario === 'malformed') return [{ ...comment, body: `${comment.body}\nextra` }];
                         if (scenario === 'different parent') {
                             const record = parseSupersessionParentBinding(comment.body);
-                            return [{ ...comment, body: bindingBody({ ...record, parent: { ...record.parent, number: 9999 } }) }];
+                            return [
+                                {
+                                    ...comment,
+                                    body: bindingBody({ ...record, parent: { ...record.parent, number: 9999 } }),
+                                },
+                            ];
                         }
                         return [comment];
                     });
@@ -2085,7 +2218,10 @@ describe('pull-request supersession', () => {
         expect(state().state).toBe('CLOSED');
         expect(calls.filter((call) => call.startsWith('close:'))).toEqual([`close:${oldNumber}`]);
         expect(state().comments.map((comment) => comment.body)).toEqual([
-            oldComment.body, receiptBody, lineageBody, distinctBindingBody,
+            oldComment.body,
+            receiptBody,
+            lineageBody,
+            distinctBindingBody,
         ]);
         expect(calls.filter((call) => /^(?:delete|log):/.test(call))).toEqual([]);
     });
@@ -2537,7 +2673,10 @@ describe('pull-request supersession', () => {
         expect(() => runWithParent(port)).toThrow(/ambiguous/i);
         expect(state().state).toBe('CLOSED');
         expect(state().comments.map((comment) => comment.body)).toEqual([
-            oldComment.body, receiptBody, lineageBody, parentBindingBody,
+            oldComment.body,
+            receiptBody,
+            lineageBody,
+            parentBindingBody,
         ]);
         expect(calls.filter((call) => call.startsWith('delete:') || call.startsWith('log:'))).toEqual([]);
     });
@@ -2618,12 +2757,16 @@ describe('pull-request supersession', () => {
     it.each([
         ['lineage removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== lineageBody)],
         ['receipt removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== receiptBody)],
-        ['parent binding removal', (comments: IssueComment[]) => comments.filter((comment) => comment.body !== parentBindingBody)],
+        [
+            'parent binding removal',
+            (comments: IssueComment[]) => comments.filter((comment) => comment.body !== parentBindingBody),
+        ],
         [
             'parent binding identity replacement',
-            (comments: IssueComment[]) => changeMarker(comments, parentBindingBody, () =>
-                markerComment('IC_replacement_binding', String(databaseBase + 502n), parentBindingBody)
-            ),
+            (comments: IssueComment[]) =>
+                changeMarker(comments, parentBindingBody, () =>
+                    markerComment('IC_replacement_binding', String(databaseBase + 502n), parentBindingBody)
+                ),
         ],
         [
             'receipt body change',
