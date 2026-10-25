@@ -77,7 +77,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(() => mocks.witness),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
+    captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     getCrdtDoc: vi.fn(() => ({})),
+    getCrdtDocIds: vi.fn(() => ['root']),
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({

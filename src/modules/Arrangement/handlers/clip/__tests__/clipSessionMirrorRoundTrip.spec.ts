@@ -20,6 +20,7 @@ import {
     isAppActionCommittedError,
     executeAppAction,
     executeAppActionBatch,
+    executeUserAppAction,
     productionBriefAdmissionPort,
     registerProductionCommandHandlers,
     undo,
@@ -718,6 +719,170 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         removeCrdtDoc('root');
         Container.clear();
     });
+
+    it('retains the saved Redo inverse through a synchronous descendant peer publication', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        reloadSavedProject();
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        reloadSavedProject();
+        const laterTake = { ...createTake('clip-a', 'Later peer take', 0, 4), selected: true };
+        const laterLane = {
+            ...createTakeLane(TRACK_ID),
+            id: 'descendant-listener-lane',
+            takes: [laterTake],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: laterTake.id }],
+        };
+        syncPeerProject((project) => {
+            project.takeLanes.lanes.push(laterLane);
+        });
+        let replaced = false;
+        const unsubscribe = subscribeToCrdtChanges((docId) => {
+            if (docId !== 'root' || replaced) {
+                return;
+            }
+            const current = getCrdtDoc<PeerProject>('root');
+            if (!current || current.tracks.tracks[0]?.clips.some((clip) => clip.id === 'clip-a')) {
+                return;
+            }
+            replaced = true;
+            unsubscribe();
+            replaceCrdtDocInLineage({
+                id: 'root',
+                doc: Automerge.change(Automerge.clone(current), (project) => {
+                    project.tracks.tracks[0]!.name = 'Peer descendant';
+                }),
+            });
+        });
+        try {
+            await redo();
+        } finally {
+            unsubscribe();
+        }
+        expect(replaced).toBe(true);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        reloadSavedProject();
+        expect((await undo()).headConsumed).toBe(true);
+        expect(takeLaneStore.value?.lanes).toEqual([laterLane]);
+        expect(getCrdtDoc<PeerProject>('root')!.takeLanes).toEqual({ lanes: [laterLane] });
+        expect(trackStore.value?.tracks[0]?.name).toBe('Peer descendant');
+        expectValidProject();
+    });
+
+    it.each(['none', 'source', 'target'] as const)(
+        'replays a saved sequential duplicate then removal against its created owner prefix: peer=%s',
+        async (peer) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: {
+                    'clip-a': [{ id: 'source-note', pitch: 60, startBeat: 1, duration: 2, velocity: 100 }],
+                },
+                ccByClipId: { 'clip-a': [{ id: 'source-cc', controller: 64, value: 127, beat: 2, channel: 0 }] },
+                pitchBendByClipId: {},
+            });
+            setEnvelope('clip-a', {
+                clipId: 'clip-a',
+                enabled: true,
+                points: [{ id: 'source-gain', beatOffset: 0, gainDb: -3 }],
+            });
+            setWarpState('clip-a', {
+                enabled: true,
+                markers: [{ id: 'source-warp', originalBeat: 0, warpedBeat: 0.5 }],
+                stretchMode: 'repitch',
+                originalTempo: 120,
+            });
+            automationStore.set({ lanes: [automationLane('source-lane', 'clip-a')] });
+            flushAutomergeStorageWrites();
+            trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            const original = ownerProjections();
+            const options = { groupId: 'duplicate-then-remove', groupLabel: 'Duplicate then remove clip' };
+            await executeUserAppAction(
+                {
+                    type: 'duplicateClipAt',
+                    payload: {
+                        clipId: 'clip-a',
+                        targetClipId: 'clip-copy',
+                        destinationTrackId: TRACK_ID,
+                        startBeat: 12,
+                    },
+                },
+                options
+            );
+            expect(clipOnTrack(TRACK_ID, 'clip-copy')).toBeDefined();
+            await executeUserAppAction(
+                { type: 'removeClip', payload: { clipId: 'clip-copy', ripple: false } },
+                options
+            );
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+            );
+            const raw = structuredClone(getCrdtDoc('root'));
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(undoHistoryStore.value?.future).toHaveLength(2);
+            expect(ownerProjections()).toEqual(original);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(2)
+            );
+            reloadSavedProject();
+            if (peer !== 'none') {
+                syncPeerProject((project) => {
+                    if (peer === 'source') {
+                        project.tracks.tracks[0]!.clips[0]!.name = 'Peer source rename';
+                    } else {
+                        project.tracks.tracks[0]!.clips.push(createClipFixture('clip-copy', 12, 16));
+                    }
+                });
+                await expectReplayRefused('redo');
+                return;
+            }
+            const duplicateEntry = undoHistoryStore.value?.future.find(
+                (entry) => entry.kind === 'action' && entry.action.type === 'duplicateClipAt'
+            );
+            if (duplicateEntry?.kind !== 'action') {
+                throw new Error('Expected the saved duplicate producer');
+            }
+            const projected = projectClipReplayPrefix([duplicateEntry.redoAction ?? duplicateEntry.action])?.clips.find(
+                (owner) => owner.clip.id === 'clip-copy'
+            );
+            expect(projected).toBeDefined();
+            const originalExecute = handleRemoveClip.execute;
+            let produced: Clip | undefined;
+            const removal = vi.spyOn(handleRemoveClip, 'execute').mockImplementation((action, context) => {
+                if (action.payload.clipId === 'clip-copy') {
+                    produced = structuredClone(clipOnTrack(TRACK_ID, 'clip-copy'));
+                }
+                return originalExecute(action, context);
+            });
+            try {
+                await redo();
+            } finally {
+                removal.mockRestore();
+            }
+            expect(produced).toStrictEqual(projected?.clip);
+            expect(undoHistoryStore.value?.future).toEqual([]);
+            expect(undoHistoryStore.value?.past).toHaveLength(2);
+            expect(ownerProjections()).toEqual(original);
+            expect(getCrdtDoc('root')).toEqual(raw);
+            expectValidProject();
+        }
+    );
 
     it('keeps a saved split paired take capture when a listener publishes another root', async () => {
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });

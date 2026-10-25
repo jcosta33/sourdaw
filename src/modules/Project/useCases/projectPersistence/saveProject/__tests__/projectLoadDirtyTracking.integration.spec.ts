@@ -22,6 +22,8 @@
 import { change, init } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const documentIdentity = vi.hoisted(() => ({ epoch: 0 }));
+
 const {
     mockGetAudioContext,
     mockImportCachedAudioBuffers,
@@ -48,6 +50,7 @@ const {
     mockCompactProject: vi.fn(() => Promise.resolve()),
     mockProjectActionHistoryToStore: vi.fn(),
     mockResetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        documentIdentity.epoch += 1;
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: mockFinalizeReset });
     }),
@@ -150,6 +153,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${documentIdentity.epoch}`),
+    readOwnedProjectPublications: vi.fn(() => []),
     captureProjectRevision: vi.fn(),
     compactProject: mockCompactProject,
     createCrdtDoc: vi.fn(),
@@ -318,6 +323,7 @@ describe('project load dirty tracking (audit M-011)', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        documentIdentity.epoch = 0;
         mockCompactProject.mockImplementation(async () => flushAutomergeStorageWrites());
         setArrangementEventBus(createEventBus<ArrangementEvents>());
         stopDirtyTracking();

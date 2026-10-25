@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
     logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'maps-fixture-root' }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     hasLiveNativeGraphSession: mocks.hasSession,
     updateNativeLiveGraphSessionTransportMaps: mocks.updateTransportMaps,
