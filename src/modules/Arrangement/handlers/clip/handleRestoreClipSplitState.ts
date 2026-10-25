@@ -25,8 +25,8 @@ import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip'
 import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
-import { clipSplitCaptureOwnersMatch, isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
 import { createdClipMidiCapture } from './createdClipMidiCapture';
+import { clipSplitCaptureOwnersMatch, isRestoreClipSplitSessionPayload } from './validateClipEditSessionEntries';
 
 type RestoreClipSplitStateAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
 
