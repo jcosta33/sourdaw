@@ -12,12 +12,14 @@
 import {
     REQUIRED_REPOSITORY,
     parseGraphqlResponse,
+    parseJson,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail, PR_STATE } from './prContract.ts';
 import { REVIEW_THREAD_COMMENT_FIELDS, readCommentDatabaseId } from './reviewRepair.ts';
+import { readRegisteredLaneStack, type LaneStack } from './stackedLanes.ts';
 
 export type IssueComment = {
     id: string;
@@ -35,8 +37,10 @@ export type SupersededPullRequest = {
     headRepository: string | null;
     repository: string;
     base: string;
+    baseRefOid?: string;
     baseRef?: { name: string; repository: string; target: string } | null;
     merged: boolean;
+    mergeCommit?: string | null;
     closedAt: string | null;
     comments: IssueComment[];
 };
@@ -48,6 +52,8 @@ export type SupersedePullRequestPort = {
     inspect: (number: number) => SupersededPullRequest;
     assertCurrentPullRequest: (number: number, expected: SupersededPullRequest) => void;
     inspectReviewThreads: (number: number) => SupersededReviewThread[];
+    isCommitAncestor?: (repository: string, ancestor: string, descendant: string) => boolean;
+    readRegisteredLaneStack?: (childBranch: string) => LaneStack | undefined;
     comment: (number: number, body: string) => AddedIssueCommentReceipt;
     close: (number: number) => PullRequestCloseReceipt;
     deleteComment: (id: string) => void;
@@ -78,6 +84,15 @@ export function shellPort(
         inspect: (number) => inspectPullRequest(number, gh, ids),
         assertCurrentPullRequest: (number, expected) => assertCurrentPullRequest(number, expected, nodeId(number), gh),
         inspectReviewThreads: (number) => inspectReviewThreads(number, gh),
+        isCommitAncestor: (repository, ancestor, descendant) =>
+            inspectCommitAncestry(repository, ancestor, descendant, gh),
+        readRegisteredLaneStack: (branch) => {
+            const marker = capture('git', ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`], {
+                cwd: primaryRoot,
+                env: session.env,
+            });
+            return readRegisteredLaneStack(primaryRoot, branch, marker);
+        },
         comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),
         close: (number) => closePullRequest(nodeId(number), gh),
         deleteComment: (id) => deleteComment(id, gh),
@@ -85,6 +100,119 @@ export function shellPort(
     };
 }
 type Gh = (args: string[]) => string;
+type CommitComparison = {
+    status: unknown;
+    aheadBy: number;
+    behindBy: number;
+    mergeBase: string;
+    head: string | undefined;
+};
+
+/** Compare immutable objects remotely; neither a mutable branch nor status alone proves containment. */
+export function inspectCommitAncestry(repository: string, ancestor: string, descendant: string, gh: Gh): boolean {
+    if (repository !== REQUIRED_REPOSITORY || !isCommit(ancestor) || !isCommit(descendant)) {
+        fail('ancestry requires the required repository and full commit SHAs');
+    }
+    const endpoint = `repos/${repository}/compare/${ancestor}...${descendant}`;
+    const comparison = readCommitComparison(gh(['api', endpoint]), endpoint, ancestor);
+    switch (comparison.status) {
+        case 'identical':
+            assertComparisonCounts(comparison, false, false);
+            if (ancestor !== descendant || comparison.mergeBase !== ancestor) {
+                fail('contradictory identical supersession commit ancestry');
+            }
+            return true;
+        case 'ahead':
+            assertComparisonCounts(comparison, true, false);
+            if (ancestor === descendant || comparison.mergeBase !== ancestor || comparison.head !== descendant) {
+                fail('contradictory ahead supersession commit ancestry');
+            }
+            return true;
+        case 'behind':
+            assertComparisonCounts(comparison, false, true);
+            if (ancestor === descendant || comparison.mergeBase !== descendant) {
+                fail('contradictory behind supersession commit ancestry');
+            }
+            return false;
+        case 'diverged':
+            assertComparisonCounts(comparison, true, true);
+            if (comparison.mergeBase === ancestor || comparison.mergeBase === descendant) {
+                fail('contradictory diverged supersession commit ancestry');
+            }
+            return false;
+        default:
+            return fail('unavailable supersession commit ancestry');
+    }
+}
+
+function isCommit(value: unknown): value is string {
+    return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+}
+
+function assertComparisonCounts(value: CommitComparison, ahead: boolean, behind: boolean): void {
+    const isAhead = value.aheadBy > 0;
+    const isBehind = value.behindBy > 0;
+    if (isAhead !== ahead || isBehind !== behind) {
+        fail('contradictory supersession commit ancestry counts');
+    }
+}
+
+function readCommitComparison(output: string, endpoint: string, ancestor: string): CommitComparison {
+    const value = parseJson(output, 'supersession commit ancestry') as {
+        url?: unknown;
+        status?: unknown;
+        ahead_by?: unknown;
+        behind_by?: unknown;
+        total_commits?: unknown;
+        base_commit?: { sha?: unknown };
+        merge_base_commit?: { sha?: unknown };
+        commits?: unknown;
+    };
+    if (
+        value?.url !== `https://api.github.com/${endpoint}` ||
+        value.base_commit?.sha !== ancestor ||
+        !isCommit(value.merge_base_commit?.sha) ||
+        typeof value.ahead_by !== 'number' ||
+        !Number.isSafeInteger(value.ahead_by) ||
+        value.ahead_by < 0 ||
+        value.total_commits !== value.ahead_by ||
+        typeof value.behind_by !== 'number' ||
+        !Number.isSafeInteger(value.behind_by) ||
+        value.behind_by < 0
+    ) {
+        fail('cannot bind supersession ancestry to the requested commit objects');
+    }
+    return {
+        status: value.status,
+        aheadBy: value.ahead_by,
+        behindBy: value.behind_by,
+        mergeBase: value.merge_base_commit.sha,
+        head: comparisonHead(value.commits, value.ahead_by),
+    };
+}
+
+/** Unpaged BASE..HEAD returns at most 250 distinct commits, with the comparison's newest last. */
+function comparisonHead(commits: unknown, aheadBy: number): string | undefined {
+    if (!isUnknownArray(commits) || commits.length !== Math.min(aheadBy, 250)) {
+        fail('incomplete supersession commit ancestry list');
+    }
+    const seen = new Set<string>();
+    let head: string | undefined;
+    for (const commit of commits) {
+        if (
+            typeof commit !== 'object' ||
+            commit === null ||
+            !('sha' in commit) ||
+            !isCommit(commit.sha) ||
+            seen.has(commit.sha)
+        ) {
+            fail('invalid supersession commit ancestry list');
+        }
+        seen.add(commit.sha);
+        head = commit.sha;
+    }
+    return head;
+}
 function isUnknownArray(value: unknown): value is readonly unknown[] {
     return Array.isArray(value);
 }
@@ -109,8 +237,11 @@ function readHeadRepository(value: unknown, number: number): string | null {
     return repository.nameWithOwner;
 }
 function readBaseRef(value: unknown, number: number): SupersededPullRequest['baseRef'] {
-    if (value === null || value === undefined) {
+    if (value === null) {
         return null;
+    }
+    if (value === undefined) {
+        fail(`cannot inspect PR #${number} selected live base ref`);
     }
     const ref = value as { name?: unknown; repository?: { nameWithOwner?: unknown }; target?: { oid?: unknown } };
     if (
@@ -123,6 +254,43 @@ function readBaseRef(value: unknown, number: number): SupersededPullRequest['bas
     }
     return { name: ref.name, repository: ref.repository.nameWithOwner, target: ref.target.oid };
 }
+function readCachedBaseOid(value: unknown, number: number): string {
+    // This selected native field is nonnull even after the separate live base ref is deleted.
+    if (!isCommit(value)) {
+        fail(`cannot inspect PR #${number} cached base commit`);
+    }
+    return value;
+}
+function readMergeCommit(value: unknown, number: number): string | null {
+    if (value === null) {
+        return null;
+    }
+    if (typeof value !== 'object' || !('oid' in value) || !isCommit(value.oid)) {
+        fail(`cannot inspect PR #${number} selected merge commit`);
+    }
+    return value.oid;
+}
+function assertClosureEvidence(value: PullRequestCore): void {
+    const closed = value.closedAt !== null && Number.isFinite(Date.parse(value.closedAt));
+    switch (value.state) {
+        case PR_STATE.OPEN:
+            if (!value.merged && value.closedAt === null && value.mergeCommit === null) {
+                return;
+            }
+            break;
+        case PR_STATE.CLOSED:
+            if (!value.merged && closed && value.mergeCommit === null) {
+                return;
+            }
+            break;
+        case PR_STATE.MERGED:
+            if (value.merged && closed && isCommit(value.mergeCommit)) {
+                return;
+            }
+            break;
+    }
+    fail(`cannot inspect PR #${value.number} closure evidence`);
+}
 export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, string>): SupersededPullRequest {
     const core = readPullRequestCore(number, gh);
     ids.set(number, core.id);
@@ -131,9 +299,24 @@ export function inspectPullRequest(number: number, gh: Gh, ids: Map<number, stri
 
 type PullRequestCore = Omit<SupersededPullRequest, 'comments'>;
 
+function assertPullRequestIdentity<PullRequestShape extends { id?: unknown; number?: unknown }>(
+    pullRequest: PullRequestShape | undefined,
+    number: number
+): asserts pullRequest is PullRequestShape & { id: string; number: number } {
+    if (
+        typeof pullRequest?.id !== 'string' ||
+        pullRequest.id === '' ||
+        typeof pullRequest.number !== 'number' ||
+        !Number.isSafeInteger(pullRequest.number) ||
+        pullRequest.number !== number
+    ) {
+        fail(`cannot inspect PR #${number}`);
+    }
+}
+
 function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullRequestCore } {
     const query =
-        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName merged closedAt baseRef{name repository{nameWithOwner} target{oid}}}}}';
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number state headRefOid headRefName headRepository{nameWithOwner} baseRefName baseRefOid merged closedAt mergeCommit{oid} baseRef{name repository{nameWithOwner} target{oid}}}}}';
     const response = graphql(gh, query, [...repositoryFields(), '-F', `number=${number}`], `PR #${number} query`) as {
         data?: {
             repository?: {
@@ -146,8 +329,10 @@ function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullR
                     headRefName?: unknown;
                     headRepository?: { nameWithOwner?: unknown } | null;
                     baseRefName?: unknown;
+                    baseRefOid?: unknown;
                     baseRef?: unknown;
                     merged?: unknown;
+                    mergeCommit?: { oid?: unknown } | null;
                     closedAt?: unknown;
                 };
             };
@@ -155,13 +340,11 @@ function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullR
     };
     const repository = response.data?.repository;
     const pullRequest = repository?.pullRequest;
+    if (repository?.nameWithOwner !== REQUIRED_REPOSITORY) {
+        fail(`cannot inspect PR #${number}`);
+    }
+    assertPullRequestIdentity(pullRequest, number);
     if (
-        repository?.nameWithOwner !== REQUIRED_REPOSITORY ||
-        typeof pullRequest?.id !== 'string' ||
-        pullRequest.id === '' ||
-        typeof pullRequest.number !== 'number' ||
-        !Number.isSafeInteger(pullRequest.number) ||
-        pullRequest.number !== number ||
         typeof pullRequest.state !== 'string' ||
         typeof pullRequest.headRefOid !== 'string' ||
         !/^[0-9a-f]{40}$/u.test(pullRequest.headRefOid) ||
@@ -173,20 +356,24 @@ function readPullRequestCore(number: number, gh: Gh): { id: string; value: PullR
         fail(`cannot inspect PR #${number}`);
     }
     const headRepository = readHeadRepository(pullRequest.headRepository, number);
+    const value = {
+        number: pullRequest.number,
+        state: pullRequest.state,
+        head: pullRequest.headRefOid,
+        headRefName: pullRequest.headRefName,
+        headRepository,
+        repository: repository.nameWithOwner,
+        base: pullRequest.baseRefName,
+        baseRefOid: readCachedBaseOid(pullRequest.baseRefOid, number),
+        baseRef: readBaseRef(pullRequest.baseRef, number),
+        merged: pullRequest.merged,
+        mergeCommit: readMergeCommit(pullRequest.mergeCommit, number),
+        closedAt: pullRequest.closedAt,
+    };
+    assertClosureEvidence(value);
     return {
         id: pullRequest.id,
-        value: {
-            number: pullRequest.number,
-            state: pullRequest.state,
-            head: pullRequest.headRefOid,
-            headRefName: pullRequest.headRefName,
-            headRepository,
-            repository: repository.nameWithOwner,
-            base: pullRequest.baseRefName,
-            baseRef: readBaseRef(pullRequest.baseRef, number),
-            merged: pullRequest.merged,
-            closedAt: pullRequest.closedAt,
-        },
+        value,
     };
 }
 
@@ -198,18 +385,33 @@ function coreIdentity(value: PullRequestCore) {
         headRefName: value.headRefName,
         headRepository: value.headRepository,
         base: value.base,
+        baseRefOid: value.baseRefOid,
         state: value.state,
         merged: value.merged,
+        mergeCommit: value.mergeCommit,
         closedAt: value.closedAt,
     };
+}
+
+function liveBaseRefIdentity(value: SupersededPullRequest['baseRef']) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+    return { name: value.name, repository: value.repository, target: value.target };
 }
 
 /** Bound the split-read composition gap; GitHub's close input has no expected-head CAS. */
 function assertCurrentPullRequest(number: number, expected: SupersededPullRequest, expectedId: string, gh: Gh): void {
     const current = readPullRequestCore(number, gh);
+    // Internal core-only authority projections omit this field; inspected snapshots own it even when null.
+    const baseRefChanged =
+        Object.hasOwn(expected, 'baseRef') &&
+        JSON.stringify(liveBaseRefIdentity(current.value.baseRef)) !==
+            JSON.stringify(liveBaseRefIdentity(expected.baseRef));
     if (
         current.id !== expectedId ||
-        JSON.stringify(coreIdentity(current.value)) !== JSON.stringify(coreIdentity(expected))
+        JSON.stringify(coreIdentity(current.value)) !== JSON.stringify(coreIdentity(expected)) ||
+        baseRefChanged
     ) {
         fail(`PR #${number} core identity changed before completion`);
     }

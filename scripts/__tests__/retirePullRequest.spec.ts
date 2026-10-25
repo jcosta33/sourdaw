@@ -278,8 +278,10 @@ function nativeClosureFixture(root: string, moveAtCommentRead?: number, closeErr
                     headRefName: 'fix/retire',
                     headRepository: { nameWithOwner: 'jcosta33/sourdaw' },
                     baseRefName: 'main',
+                    baseRefOid: head,
                     baseRef: null,
                     merged: false,
+                    mergeCommit: null,
                     closedAt,
                 },
             },
@@ -460,6 +462,13 @@ describe('native obsolete pull-request retirement', () => {
             'missing head',
             (value) => {
                 Reflect.deleteProperty(value.data.repository.pullRequest, 'headRefOid');
+                return value;
+            },
+        ],
+        [
+            'missing selected merge commit',
+            (value) => {
+                Reflect.deleteProperty(value.data.repository.pullRequest, 'mergeCommit');
                 return value;
             },
         ],
