@@ -53,7 +53,9 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     const clipBDelta = clipBStartBeat - clipB.startBeat;
     const contentDelta = clipBDelta * stretchFactor;
     const newClipBAudioOffsetBeats =
-        clipB.audioOffsetBeats !== undefined ? Math.max(0, clipB.audioOffsetBeats + contentDelta) : undefined;
+        clipB.audioOffsetBeats !== undefined
+            ? Math.max(Math.min(0, clipB.audioOffsetBeats), clipB.audioOffsetBeats + contentDelta)
+            : undefined;
     const newClipBMidiOffsetBeats =
         clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
 
