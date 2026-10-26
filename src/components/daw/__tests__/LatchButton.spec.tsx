@@ -141,6 +141,18 @@ describe('LatchButton — variant glow', () => {
         expect(btn.querySelector('span')!.className).toContain('drop-shadow-[0_0_5px_var(--color-state-record)]');
     });
 
+    it('keeps inactive red text muted without the active red text glow', () => {
+        render(
+            <LatchButton active={false} variant="red">
+                Rec
+            </LatchButton>
+        );
+        const label = screen.getByRole('button', { name: 'Rec' }).querySelector('span')!;
+        expect(label.className).toContain('text-text-secondary');
+        expect(label.className).not.toContain('text-accent-red');
+        expect(label.className).not.toContain('drop-shadow-[0_0_5px_var(--color-state-record)]');
+    });
+
     it('applies the muted text class when inactive', () => {
         render(
             <LatchButton active={false} variant="amber">
