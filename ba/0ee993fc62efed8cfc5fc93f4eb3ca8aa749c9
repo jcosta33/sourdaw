@@ -1,0 +1,23 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/eventTimeRecordingBeat.spec.ts
+  s_29d8df116c5b92::t_f7f2e81594a83f 120,130,145-161
+  s_29d8df116c5b92::t_a235a136a304c0 162-165
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_ffd24e697fd770 10-11,364,416,431,435-436,546,635,742-802
+  s_29d8df116c5b92::t_46968950a23672 803-817
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba0ee993fc62efed8cfc5fc93f4eb3ca8aa749c9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
