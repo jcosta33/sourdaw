@@ -1,0 +1,99 @@
+src/utils/tempoAudioSourcePromotion.ts
+  s_29d8df116c5b92::t_a07cb43c2017d7 75-86,117,204-208,216-220,254-259,268,273-278,355-358,369-371
+src/modules/Arrangement/useCases/comping/compRegionInterval.ts
+  s_29d8df116c5b92::t_9c4959d9e0cc39 13,152-154,158-160,209-251,254-273,344-348,350-355,357-359,366,368,436,442-445,460-462,470-472,547-549,551-559,565,567-572,574-577,583-585,588-590,596-598,621-624,632-634,636-639,648-650,652-654,679-681,705-707,715-717,732,737-750,755-757,766,768-776
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_e59cb9698d1ba1 332,334,346,348,356-358,363-366
+src/modules/Arrangement/handlers/comping/handleRemoveCompRegion.ts
+  s_29d8df116c5b92::t_07bccf724c2ce3 12-14,23-28,30,32
+src/modules/Arrangement/handlers/comping/handleSetCompRegion.ts
+  s_29d8df116c5b92::t_4a780b630ab9f6 22-38,57,59-60,62
+src/modules/Arrangement/services/createTrackFreezeSourceSignature.ts
+  s_29d8df116c5b92::t_ba247822b8abd3 73-82
+src/modules/Arrangement/stores/baseGapAudioSourceDelta.ts
+  s_29d8df116c5b92::t_e0bc7dbb23806e 11-14,18-21,32-34,42-50,61,63
+src/modules/Arrangement/stores/compAudioSourceInputs.ts
+  s_29d8df116c5b92::t_6de989423b784d 81-83,87
+src/modules/Arrangement/stores/compAudioSourcePromotions.ts
+  s_29d8df116c5b92::t_942481a065b40b 62-64,87-90,95-98,111,113-119,132-134,142,144,157,159,184,186-188,210,212-213,215,238,240,244,246-248,258-261,263,266-268,288-290,301,303,323-325,328-330,341-343,361,363,365-367,372,374,379,381,388-390,404-406,411,413,430-435,448,450-455,457,475,477-479
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_29d8df116c5b92::t_e786c8066329c6 197,202-205,238-240,247,254-257,260,266-269,360,362,365,372-375,378,384-387
+src/modules/Arrangement/stores/tempoAudioSourceWriteIntent.ts
+  s_29d8df116c5b92::t_55940a58968444 227-230
+src/modules/Arrangement/stores/trackStore.ts
+  s_29d8df116c5b92::t_56285466cb594b 887-891
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_29d8df116c5b92::t_675d9bb9d1adab 42
+src/modules/Arrangement/useCases/canApplyTempoAudioSources.ts
+  s_29d8df116c5b92::t_6c286b5924aaae 9
+src/modules/Arrangement/useCases/clip/addClip.ts
+  s_29d8df116c5b92::t_9ef16398340831 80-102,113
+src/modules/Arrangement/useCases/clip/relocateAudioSourceTimeFields.ts
+  s_29d8df116c5b92::t_780d110fb8ba2a 17-33
+src/modules/Arrangement/useCases/clipEditing/audioSourceAtBeat.ts
+  s_29d8df116c5b92::t_1a63ee816e0207 35-37,47-50,57-60
+src/modules/Arrangement/useCases/clipEditing/prepareAudioSourcePrefixWitness.ts
+  s_29d8df116c5b92::t_13c034bb9ed983 72-76,84-89,119,127,151,255-256,325-330
+src/modules/Arrangement/useCases/comping/captureCompAudioSourceAuthorizations.ts
+  s_29d8df116c5b92::t_f3426a4660f418 27-29,34-36,38-43,45-47,73-83,88
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_29d8df116c5b92::t_b6badb3f7b01a8 147-149,152-154,161-163,184,190-194,263-275,434-436,441-443,445-447,455-457,468-470,481-483,494,496,507,514,523-525,528-530,594-603,610-617
+src/modules/Arrangement/useCases/comping/laneWithLiveTakes.ts
+  s_29d8df116c5b92::t_7e29e4a2c99c4b 22,27-30
+src/modules/Arrangement/useCases/comping/planTakeRetirement.ts
+  s_29d8df116c5b92::t_884e306be3dec0 67-72,76-80,87,91-95
+src/modules/Arrangement/useCases/comping/prepareCompAudioSourcePatch.ts
+  s_29d8df116c5b92::t_0d8ac491190900 26-31,55-61,67-70,82-84,93,95-98,101-103,105-107,115-117,119-121,127-129,132-134,147-149,176-178,181-184,186-188,191-193
+src/modules/Arrangement/useCases/comping/prepareTempoAudioSourceWrite.ts
+  s_29d8df116c5b92::t_f3545022663b75 39-44,49-73
+src/modules/Arrangement/useCases/comping/projectedTakeLaneOwners.ts
+  s_29d8df116c5b92::t_b8ce97dd8ac40b 21-26
+src/modules/Arrangement/useCases/comping/reconcileLane.ts
+  s_29d8df116c5b92::t_909bdac14a442b 89-100
+src/modules/Arrangement/useCases/comping/reconcileTakeReKeySources.ts
+  s_29d8df116c5b92::t_64fb4a674a963e 127,129
+src/modules/Arrangement/useCases/comping/removeCompRegion.ts
+  s_29d8df116c5b92::t_2fea769fce6da6 7-9
+src/modules/Arrangement/useCases/comping/restoreTakesForClip.ts
+  s_29d8df116c5b92::t_b00e48a36709ec 3-4,68-82,85-87
+src/modules/Arrangement/useCases/comping/retireLaneInsertion.ts
+  s_29d8df116c5b92::t_a5b034de11e67c 57,59,61-65
+src/modules/Arrangement/useCases/comping/writeTakeReKeyTransitions.ts
+  s_29d8df116c5b92::t_267b31f7e59983 159-161
+src/modules/Arrangement/useCases/timeOperations/isReKeyLaneTransition.ts
+  s_29d8df116c5b92::t_28a0c66c6486a1 24,30-32
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts
+  s_29d8df116c5b92::t_c222cb1ce52b1c 9-33,45
+src/modules/Project/useCases/projectPersistence/fileIO/serializeArrangementTracks.ts
+  s_29d8df116c5b92::t_63782d1b2ee79d 45-56
+src/modules/Transport/handlers/transport/tempoAudioSourceEdit.ts
+  s_29d8df116c5b92::t_253370c7d27ed8 193-198
+src/modules/Transport/stores/tempoMapStore.ts
+  s_29d8df116c5b92::t_b50c0a70a119b6 125-129
+src/modules/Transport/stores/tempoWriteIntent.ts
+  s_29d8df116c5b92::t_ab406c9a30bb3c 11,83-88
+src/modules/Transport/stores/transportStore.ts
+  s_29d8df116c5b92::t_73e6478ab6957e 400-404
+src/modules/Transport/useCases/tempoMap/applyTempoMapRowPlan.ts
+  s_29d8df116c5b92::t_87906aa6e5556d 3
+src/modules/Transport/useCases/tempoMap/planTempoMapEdit.ts
+  s_29d8df116c5b92::t_bfb3f543dcbd43 128,132,137-141
+src/utils/tempoMapRowPlan.ts
+  s_29d8df116c5b92::t_46efa00c97705a 147-151,305,311-313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "885d0bf699f6d08b0db537a7968940206fd65154",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
