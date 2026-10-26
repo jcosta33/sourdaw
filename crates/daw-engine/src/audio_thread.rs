@@ -160,6 +160,7 @@ pub(crate) struct CapturePeriod {
     pub latency: Arc<AtomicUsize>,
     pub refusal: Arc<AtomicU8>,
     pub retrospective: RetrospectiveWriter,
+    pub revoked: Arc<AtomicBool>,
 }
 
 pub struct AudioThreadHandle {
@@ -518,6 +519,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
 /// What a successful spawn hands back to the control side.
 pub(crate) struct SpawnedAudioThread {
     pub handle: AudioThreadHandle,
+    pub capture_period_revoked: Arc<AtomicBool>,
     /// The rate the stream actually opened at.
     pub sample_rate: f32,
     /// What the capture side published as its settled latency, or zero when
@@ -578,6 +580,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let output_path_frames_slot = Arc::clone(&output_path_frames);
     let capture_refusal = new_capture_refusal_slot();
     let capture_refusal_slot = Arc::clone(&capture_refusal);
+    let capture_period_revoked = Arc::new(AtomicBool::new(false));
+    let capture_period_revoked_slot = Arc::clone(&capture_period_revoked);
     let output_stream_fault = new_output_stream_fault_slot();
     let output_stream_fault_slot = Arc::clone(&output_stream_fault);
     let liveness = new_render_liveness();
@@ -603,6 +607,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             &output_buffer_frames_slot,
             &output_path_frames_slot,
             &capture_refusal_slot,
+            &capture_period_revoked_slot,
             &output_stream_fault_slot,
             &build_liveness,
             retrospective_writer,
@@ -636,6 +641,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
         .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
     Ok(SpawnedAudioThread {
         handle,
+        capture_period_revoked,
         sample_rate,
         input_latency_frames,
         output_buffer_frames,
@@ -836,6 +842,8 @@ pub(crate) struct CaptureFeed {
     /// The input device's channel count, which is not the output device's.
     channels: usize,
     active: Option<Arc<AtomicBool>>,
+    /// Independent of owner readiness: a delayed open cannot undo revocation.
+    revoked: Option<Arc<AtomicBool>>,
     #[cfg(test)]
     drop_notice: Option<CaptureFeedDropNotice>,
 }
@@ -862,6 +870,7 @@ impl CaptureFeed {
             right: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             channels,
             active: None,
+            revoked: None,
             #[cfg(test)]
             drop_notice: None,
         }
@@ -1008,6 +1017,10 @@ impl DeviceRenderer {
             .active
             .as_ref()
             .is_some_and(|active| !active.load(Ordering::Acquire))
+            || feed
+                .revoked
+                .as_ref()
+                .is_some_and(|revoked| revoked.load(Ordering::Acquire))
         {
             return;
         }
@@ -1302,6 +1315,7 @@ struct PendingCapture {
     output_stream_fault_slot: Arc<AtomicU8>,
     retrospective: Option<RetrospectiveWriter>,
     active: Arc<AtomicBool>,
+    revoked: Arc<AtomicBool>,
 }
 
 /// Open the capture side of an engine whose output stream is already running.
@@ -1334,6 +1348,7 @@ fn open_pending_capture<B: InputBackend>(
     )
     .map(|(stream, mut feed)| {
         feed.active = Some(Arc::clone(&pending.active));
+        feed.revoked = Some(Arc::clone(&pending.revoked));
         (stream, feed)
     });
     capture_side(
@@ -1390,6 +1405,7 @@ fn answer_capture_command<B: InputBackend>(
                 request.capture_refusal_slot = period.refusal;
                 request.retrospective = Some(period.retrospective);
                 request.active = Arc::new(AtomicBool::new(false));
+                request.revoked = period.revoked;
             }
         }
         _ => {}
@@ -1473,6 +1489,7 @@ fn build_audio_stream(
     output_buffer_frames_slot: &Arc<AtomicUsize>,
     output_path_frames_slot: &Arc<AtomicUsize>,
     capture_refusal_slot: &Arc<AtomicU8>,
+    capture_period_revoked: &Arc<AtomicBool>,
     output_stream_fault_slot: &Arc<AtomicU8>,
     liveness: &RenderLiveness,
     retrospective: RetrospectiveWriter,
@@ -1545,6 +1562,7 @@ fn build_audio_stream(
                 output_stream_fault_slot: Arc::clone(output_stream_fault_slot),
                 retrospective: Some(retrospective),
                 active: Arc::new(AtomicBool::new(false)),
+                revoked: Arc::clone(capture_period_revoked),
             }),
             None => {
                 drop(retrospective);
@@ -1876,6 +1894,7 @@ mod capture_seam_tests {
                 output_stream_fault_slot: new_output_stream_fault_slot(),
                 retrospective: Some(crate::retrospective::RetrospectiveWriter::inert()),
                 active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                revoked: Arc::new(AtomicBool::new(false)),
             },
             refusal_slot,
             feed_rx,
@@ -2025,6 +2044,7 @@ mod capture_seam_tests {
         engine.capture_events = events_rx;
         engine.capture_refusal = Arc::clone(&ready.refusal_slot);
         engine.input_latency_frames = Arc::clone(&ready.pending.input_latency_slot);
+        engine.capture_period_revoked = Arc::clone(&ready.pending.revoked);
         engine.retrospective = control;
         engine.audio_thread = spawn_owned_audio_stream(
             move || {
@@ -2393,6 +2413,7 @@ mod capture_seam_tests {
                 engine.capture_events = events_rx;
                 engine.capture_refusal = Arc::clone(&ready.refusal_slot);
                 engine.input_latency_frames = Arc::clone(&ready.pending.input_latency_slot);
+                engine.capture_period_revoked = Arc::clone(&ready.pending.revoked);
                 engine.retrospective = control;
                 let (visits, visit_rx) = mpsc::channel::<OwnerVisit>();
                 let (stopped_tx, stopped) = mpsc::channel();
