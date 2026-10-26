@@ -1,0 +1,76 @@
+.github/workflows/nightly.yml
+  s_b3201877f50e8a::t_febd9d9918d316 328,624-625
+  s_b3201877f50e8a::t_c0d4638944ae3e 334,628,630
+  s_b3201877f50e8a::t_b99f0cb8967032 607-609,615-616
+scripts/aptWithoutMicrosoftFeed.sh
+  s_b3201877f50e8a::t_4fed5140a93ea6 15
+  s_b3201877f50e8a::t_e65324b9597e74 107-112,121-128,176-179,181-184
+  s_b3201877f50e8a::t_80cc98af4f5638 180
+  s_b3201877f50e8a::t_a98cdca7669c64 185
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_b3201877f50e8a::t_cdf581ee98f8df 125-126,135-136,155-159
+  s_b3201877f50e8a::t_81fe3c1458a21d 133-134,137,149,166,169,173,182
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_b3201877f50e8a::t_fb05e355ce64dc 161-165,179-190,286
+  s_b3201877f50e8a::t_688a661c1ea04b 200-205,316,327,335,344,430
+  s_b3201877f50e8a::t_1bceb9b3051d27 140-141,143
+  s_b3201877f50e8a::t_5f7b70e32fb6e5 374-429,431-434
+  s_b3201877f50e8a::t_cb933e8f1a8a4f 317,326,336-338,341
+  s_b3201877f50e8a::t_6f0e744bc5aa8f 305
+  s_b3201877f50e8a::t_7e45faccc3f3cb 293-304,306-308
+  s_b3201877f50e8a::t_af42058fdb2032 332
+  s_b3201877f50e8a::t_ac42a4f1561a5e 142,166-178,191-198
+  s_b3201877f50e8a::t_0202a6b4abdadd 435-460
+  s_b3201877f50e8a::t_e8106ef9025924 199
+.github/workflows/cargo-dependency-seed.yml
+  s_b3201877f50e8a::t_0e295d19194a56 31
+  s_b3201877f50e8a::t_427897a462c5a5 37
+scripts/hostedAptInstall.py
+  s_b3201877f50e8a::t_9ea36feda50a4c 7,93,102,133,146,202
+  s_b3201877f50e8a::t_666d372158a756 145
+  s_b3201877f50e8a::t_7227f941f69932 63-64,161-162,169-170,172-173,206-213
+  s_b3201877f50e8a::t_f610f161afa8a6 1-6,8-62,65-92,94-99,101,103-132,136-137,142-144,147-160,163-168,171,174-201,205,214-241
+  s_b3201877f50e8a::t_9cbba303d47ee2 100
+  s_b3201877f50e8a::t_5d39361f3b1cea 134-135,203-204
+  s_b3201877f50e8a::t_4ebba6ab15d0f4 138-141
+.github/workflows/heavy-gates.yml
+  s_b3201877f50e8a::t_a7a9fe5af56efb 79,81
+  s_b3201877f50e8a::t_2b75ed34687d65 65-66
+  s_b3201877f50e8a::t_f619458ec2df37 74-75
+  s_b3201877f50e8a::t_a604936eaffd8c 57-59
+.github/workflows/quantum-measurements.yml
+  s_b3201877f50e8a::t_da9025be099c75 110
+  s_b3201877f50e8a::t_c13a7eac907917 90-92
+  s_b3201877f50e8a::t_a15a612c602d82 114
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_b3201877f50e8a::t_88156ad1598752 1,93,841-844,3713-3714,3719-3720,3742-3743
+  s_b3201877f50e8a::t_4c02b624bedcfa 3696-3704,3707-3711,3716-3718,3722-3724,3728-3741,3826,3879
+  s_b3201877f50e8a::t_69487c3a8b273b 75,78,85,88,92,102-104,833,845,856,874-875,879,913
+  s_b3201877f50e8a::t_4384cad6130aa2 86-87,90,96,99-100
+  s_b3201877f50e8a::t_ebce8e5594466a 2
+.github/workflows/validation.yml
+  s_b3201877f50e8a::t_6e74e212df3f7d 609,611-613,619-620
+  s_b3201877f50e8a::t_200fdca89e1ff1 632,634,729
+  s_b3201877f50e8a::t_26703b94d004ae 628-629,722-723
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_b3201877f50e8a::t_4eb90c79a570dc 393-396,399,402,404-405,408,410
+  s_b3201877f50e8a::t_0080ab49ffccf4 413,415-426
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_b3201877f50e8a::t_a1e0f5ce4df93e 384,1000,1075,1768,2014,2606,2964
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a7a929eaa7d8f3aee05210548f07537a3b0eee2",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
