@@ -601,7 +601,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         liveMidiGate.pending = worker.promise;
         setMpeEnabledInternal(true);
 
-        const physical = handleWebMidiMessage({ data: new Uint8Array([0x90, 62, 111]), timeStamp: undefined });
+        const physical = handleWebMidiMessage({ data: new Uint8Array([0x91, 62, 111]), timeStamp: undefined });
         playheadWrapCountRef.current = 1;
         playheadClockRef.beat = 4.75;
         playheadClockRef.audioTimeSeconds = 3;
