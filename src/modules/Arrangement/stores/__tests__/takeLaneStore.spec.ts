@@ -498,6 +498,42 @@ describe('sanitize_take_lane_store_state', () => {
         expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
     });
 
+    it('retains a present frozen MIDI source through exact snapshots and hydration', async () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: { present: true, value: [] },
+                controlChanges: { present: true, value: [] },
+                pitchBends: { present: true, value: [] },
+            },
+            sourceEntryBeat: 0,
+            sourceEndBeat: 4,
+            phaseHeadBeat: -0,
+            passLengthBeats: 4,
+        };
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    midiSource: source,
+                },
+            ],
+            activeCompRegions: [],
+        };
+
+        expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
+        const sanitized = sanitize_take_lane_store_state({ lanes: [lane] });
+        expect(sanitized.lanes[0]?.takes[0]?.midiSource).toEqual(source);
+        expect(Object.is(sanitized.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat, -0)).toBe(true);
+    });
+
     it('should preserve a pass placement, a negative anchor included, and drop takes carrying a malformed one', () => {
         const take = (id: string, fields: Record<string, unknown>) => ({
             id,
