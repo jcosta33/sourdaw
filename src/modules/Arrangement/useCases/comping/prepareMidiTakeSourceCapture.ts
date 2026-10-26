@@ -1,7 +1,7 @@
 import { isFrozenMidiTakeSource } from '#/modules/MIDI/useCases';
 import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
-import { type Take } from '../../models/TakeLane';
+import { type MidiTakeSource, type Take } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
 import { resolveTakeMedia } from '../resolveTakeMedia';
@@ -13,15 +13,6 @@ type PrepareMidiTakeSourceCaptureInput = {
     /** The split or Delete Time plan's exact pre-partition snapshot. */
     readonly rows: MidiClipDataActionSnapshot;
     readonly timeline: TempoTimeline;
-};
-
-type PreparedMidiTakeSource = {
-    readonly sourceClipId: string;
-    readonly rows: MidiClipDataActionSnapshot;
-    readonly sourceEntryBeat: number;
-    readonly sourceEndBeat: number;
-    readonly phaseHeadBeat: number;
-    readonly passLengthBeats: number;
 };
 
 /**
@@ -48,7 +39,7 @@ export function prepareMidiTakeSourceCapture({
     siblingTakes,
     rows,
     timeline,
-}: PrepareMidiTakeSourceCaptureInput): PreparedMidiTakeSource | null {
+}: PrepareMidiTakeSourceCaptureInput): MidiTakeSource | null {
     if (clip.type !== 'midi' || take.clipId !== clip.id) {
         return null;
     }
@@ -59,7 +50,7 @@ export function prepareMidiTakeSourceCapture({
         return null;
     }
     const entry = media.offsetAt(take.startBeat);
-    const source: PreparedMidiTakeSource = {
+    const source: MidiTakeSource = {
         sourceClipId: clip.id,
         rows: structuredClone(rows),
         sourceEntryBeat: entry,
@@ -72,10 +63,10 @@ export function prepareMidiTakeSourceCapture({
 
 /** Preserve source rows and move only their song-time phase with a re-keyed fragment. */
 export function relocateMidiTakeSource(
-    source: PreparedMidiTakeSource,
+    source: MidiTakeSource,
     preImageStartBeat: number,
     targetStartBeat: number
-): PreparedMidiTakeSource | null {
+): MidiTakeSource | null {
     if (!isFrozenMidiTakeSource(source) || !Number.isFinite(preImageStartBeat) || !Number.isFinite(targetStartBeat)) {
         return null;
     }

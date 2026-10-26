@@ -58,6 +58,7 @@ export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueStat
 export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
 export { isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from './midiClipData/projectFrozenMidiTakeWindow';
 export { projectMidiClipPlayback } from './midiClipData/projectMidiClipPlayback';
+export { snapshotMidiClipData } from './midiClipData/snapshotMidiClipData';
 export { projectClipControllerEvents } from './midiClipData/projectClipControllerEvents';
 export { projectClipControllerRestore } from './midiClipData/projectClipControllerRestore';
 export { projectChannelBend } from './midiClipData/projectChannelBend';
