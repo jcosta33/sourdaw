@@ -2211,6 +2211,590 @@ mod capture_seam_tests {
         assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 1);
     }
 
+    mod capture_period_regressions {
+        use super::*;
+        use crate::plugin_slot::{CaptureInputBlock, NativePlugin};
+        use std::any::Any;
+        use std::sync::atomic::{AtomicU32, AtomicU64};
+
+        const OWNER_WAIT: Duration = Duration::from_secs(5);
+
+        enum PausedOwnerCommand {
+            InputError(StreamErrorKind, mpsc::Sender<()>),
+            Resume,
+        }
+
+        struct OwnerPauseRequest {
+            entered: mpsc::Sender<()>,
+            commands: mpsc::Receiver<PausedOwnerCommand>,
+        }
+
+        struct OwnerPause {
+            entered: mpsc::Receiver<()>,
+            commands: mpsc::Sender<PausedOwnerCommand>,
+        }
+
+        impl OwnerPause {
+            fn wait_until_entered(&self) {
+                self.entered
+                    .recv_timeout(OWNER_WAIT)
+                    .expect("owner reached the named command boundary");
+            }
+
+            fn report_input_error(&self, kind: StreamErrorKind) {
+                let (done, receipt) = mpsc::channel();
+                self.commands
+                    .send(PausedOwnerCommand::InputError(kind, done))
+                    .expect("the paused owner still holds the input");
+                receipt
+                    .recv_timeout(OWNER_WAIT)
+                    .expect("the input backend's error sink published the event");
+            }
+        }
+
+        impl Drop for OwnerPause {
+            fn drop(&mut self) {
+                let _ = self.commands.send(PausedOwnerCommand::Resume);
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum CaptureOwnerCommand {
+            Open,
+            Close,
+            Prepare,
+        }
+
+        struct OwnerVisit {
+            command: CaptureOwnerCommand,
+            before: Option<OwnerPauseRequest>,
+            after: Option<OwnerPauseRequest>,
+        }
+
+        fn pause_owner(request: OwnerPauseRequest, streams: &mut LifecycleStreams) {
+            request.entered.send(()).expect("test is waiting for owner");
+            loop {
+                match request.commands.recv_timeout(OWNER_WAIT) {
+                    Ok(PausedOwnerCommand::InputError(kind, receipt)) => {
+                        let input = streams.capture.as_mut().expect("input is still owned");
+                        (input._errors)(kind);
+                        receipt.send(()).expect("test is waiting for error receipt");
+                    }
+                    Ok(PausedOwnerCommand::Resume) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        return
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        panic!("test did not release the paused audio owner");
+                    }
+                }
+            }
+        }
+
+        struct ObservedLifecycleStreams {
+            streams: Option<LifecycleStreams>,
+            stopped: mpsc::Sender<()>,
+        }
+
+        impl Drop for ObservedLifecycleStreams {
+            fn drop(&mut self) {
+                drop(self.streams.take());
+                let _ = self.stopped.send(());
+            }
+        }
+
+        struct CaptureWitness {
+            blocks: AtomicUsize,
+            served: AtomicUsize,
+            frames: AtomicUsize,
+            latency: AtomicUsize,
+            left: [AtomicU32; RENDER_READ],
+            right: [AtomicU32; RENDER_READ],
+        }
+
+        impl CaptureWitness {
+            fn new() -> Arc<Self> {
+                Arc::new(Self {
+                    blocks: AtomicUsize::new(0),
+                    served: AtomicUsize::new(0),
+                    frames: AtomicUsize::new(0),
+                    latency: AtomicUsize::new(0),
+                    left: std::array::from_fn(|_| AtomicU32::new(0)),
+                    right: std::array::from_fn(|_| AtomicU32::new(0)),
+                })
+            }
+
+            fn assert_served_pcm(&self, value: f32) {
+                assert_eq!(self.served.load(Ordering::Relaxed), 1);
+                assert_eq!(self.frames.load(Ordering::Relaxed), RENDER_READ);
+                for sample in self.left.iter().chain(&self.right) {
+                    assert_eq!(f32::from_bits(sample.load(Ordering::Relaxed)), value);
+                }
+            }
+        }
+
+        struct CaptureWitnessPlugin(Arc<CaptureWitness>);
+
+        impl NativePlugin for CaptureWitnessPlugin {
+            fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _frames: usize) {}
+
+            fn process_capture_input(&mut self, block: CaptureInputBlock<'_>) {
+                assert_eq!(block.frames, RENDER_READ);
+                self.0.blocks.fetch_add(1, Ordering::Relaxed);
+                self.0.frames.store(block.frames, Ordering::Relaxed);
+                self.0
+                    .latency
+                    .store(block.latency_frames, Ordering::Relaxed);
+                if block.served {
+                    self.0.served.fetch_add(1, Ordering::Relaxed);
+                }
+                for (target, sample) in self.0.left.iter().zip(block.left) {
+                    target.store(sample.to_bits(), Ordering::Relaxed);
+                }
+                for (target, sample) in self.0.right.iter().zip(block.right) {
+                    target.store(sample.to_bits(), Ordering::Relaxed);
+                }
+            }
+
+            fn name(&self) -> &str {
+                "capture-period-witness"
+            }
+
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
+        }
+
+        struct CapturePeriodHarness {
+            engine: Option<crate::EngineHandle>,
+            renderer: super::super::DeviceRenderer,
+            retired_graphs: Consumer<crate::scheduler::RetiredGraphObjects>,
+            retired_feeds: Consumer<super::super::CaptureFeed>,
+            visits: mpsc::Sender<OwnerVisit>,
+            releases: Vec<mpsc::Sender<PausedOwnerCommand>>,
+            stopped: mpsc::Receiver<()>,
+        }
+
+        impl CapturePeriodHarness {
+            fn new() -> Self {
+                INPUT_DROPS.store(0, Ordering::SeqCst);
+                OUTPUT_DROPS.store(0, Ordering::SeqCst);
+                WRONG_DROP_THREAD.store(false, Ordering::SeqCst);
+                REFUSE_SECOND.store(0, Ordering::SeqCst);
+                let (mut engine, commands, _retired) = crate::engine_handle_for_command_capture(64);
+                let mut ready = pending_capture();
+                let (events, events_rx) = engine_event_channel();
+                let (control, writer) = crate::retrospective::retrospective_capture();
+                ready.pending.capture_event_tx = Some(events);
+                ready.pending.retrospective = Some(writer);
+                engine.capture_events = events_rx;
+                engine.capture_refusal = Arc::clone(&ready.refusal_slot);
+                engine.input_latency_frames = Arc::clone(&ready.pending.input_latency_slot);
+                engine.retrospective = control;
+                let (visits, visit_rx) = mpsc::channel::<OwnerVisit>();
+                let (stopped_tx, stopped) = mpsc::channel();
+                let mut waiting_visit: Option<OwnerVisit> = None;
+                engine.audio_thread = spawn_owned_audio_stream(
+                    move || {
+                        Ok(ObservedLifecycleStreams {
+                            streams: Some(LifecycleStreams {
+                                capture: None,
+                                pending: Some(ready.pending),
+                            }),
+                            stopped: stopped_tx,
+                        })
+                    },
+                    move |owned: &mut ObservedLifecycleStreams, command| {
+                        let streams = owned.streams.as_mut().expect("owner streams exist");
+                        if waiting_visit.is_none() {
+                            waiting_visit = visit_rx.try_recv().ok();
+                        }
+                        let kind = match &command {
+                            super::super::OwnerCommand::OpenCapture => CaptureOwnerCommand::Open,
+                            super::super::OwnerCommand::CloseCapture => CaptureOwnerCommand::Close,
+                            super::super::OwnerCommand::PrepareCapture(_) => {
+                                CaptureOwnerCommand::Prepare
+                            }
+                            _ => unreachable!("only capture commands enter the capture handler"),
+                        };
+                        let visit = if waiting_visit
+                            .as_ref()
+                            .is_some_and(|visit| visit.command == kind)
+                        {
+                            waiting_visit.take()
+                        } else {
+                            None
+                        };
+                        let after = if let Some(visit) = visit {
+                            if let Some(before) = visit.before {
+                                pause_owner(before, streams);
+                            }
+                            visit.after
+                        } else {
+                            None
+                        };
+                        super::super::answer_capture_command::<LifecycleInput>(
+                            &mut streams.capture,
+                            &mut streams.pending,
+                            command,
+                        );
+                        if let Some(after) = after {
+                            pause_owner(after, streams);
+                        }
+                    },
+                    new_render_liveness(),
+                )
+                .expect("controlled capture owner starts");
+                let (retired, retired_graphs) = RingBuffer::new(65);
+                let scheduler =
+                    crate::scheduler::AudioScheduler::new(commands, retired, ENGINE_RATE);
+                let mut renderer = super::super::DeviceRenderer::new(
+                    scheduler,
+                    ready.feed_rx,
+                    Arc::new(AtomicU64::new(0)),
+                    super::super::new_output_buffer_frames_slot(),
+                    super::super::new_output_path_frames_slot(),
+                );
+                let (retired, retired_feeds) = RingBuffer::new(1);
+                renderer.retired_capture_tx = Some(retired);
+                Self {
+                    engine: Some(engine),
+                    renderer,
+                    retired_graphs,
+                    retired_feeds,
+                    visits,
+                    releases: Vec::new(),
+                    stopped,
+                }
+            }
+
+            fn engine(&mut self) -> &mut crate::EngineHandle {
+                self.engine.as_mut().expect("engine is running")
+            }
+
+            fn settle(&self) {
+                owner_settled(self.engine.as_ref().expect("engine is running"));
+            }
+
+            fn add_consumer(&mut self, id: usize) -> Arc<CaptureWitness> {
+                let witness = CaptureWitness::new();
+                self.engine()
+                    .add_plugin_with_id(id, Box::new(CaptureWitnessPlugin(Arc::clone(&witness))))
+                    .expect("plugin reaches the real graph ring");
+                self.engine()
+                    .register_capture_consumer(id)
+                    .expect("consumer reaches the same graph ring");
+                witness
+            }
+
+            fn render(&mut self) {
+                let mut output = [0.0; RENDER_READ * DEVICE_CHANNELS];
+                assert_no_alloc::assert_no_alloc(|| {
+                    self.renderer.render(&mut output, DEVICE_CHANNELS, 0);
+                });
+                while self.retired_graphs.pop().is_ok() {}
+            }
+
+            fn new_pause(&mut self) -> (OwnerPauseRequest, OwnerPause) {
+                let (entered, receipt) = mpsc::channel();
+                let (commands, requests) = mpsc::channel();
+                self.releases.push(commands.clone());
+                (
+                    OwnerPauseRequest {
+                        entered,
+                        commands: requests,
+                    },
+                    OwnerPause {
+                        entered: receipt,
+                        commands,
+                    },
+                )
+            }
+
+            fn hold_before(&mut self, command: CaptureOwnerCommand) -> OwnerPause {
+                let (request, pause) = self.new_pause();
+                self.visits
+                    .send(OwnerVisit {
+                        command,
+                        before: Some(request),
+                        after: None,
+                    })
+                    .expect("owner accepts the pause request");
+                pause
+            }
+
+            fn hold_after(&mut self, command: CaptureOwnerCommand) -> OwnerPause {
+                let (request, pause) = self.new_pause();
+                self.visits
+                    .send(OwnerVisit {
+                        command,
+                        before: None,
+                        after: Some(request),
+                    })
+                    .expect("owner accepts the pause request");
+                pause
+            }
+
+            fn hold_around_open(&mut self) -> (OwnerPause, OwnerPause) {
+                let (before_request, before) = self.new_pause();
+                let (after_request, after) = self.new_pause();
+                self.visits
+                    .send(OwnerVisit {
+                        command: CaptureOwnerCommand::Open,
+                        before: Some(before_request),
+                        after: Some(after_request),
+                    })
+                    .expect("owner accepts both open boundaries");
+                (before, after)
+            }
+
+            fn stop(&mut self) {
+                for release in &self.releases {
+                    let _ = release.send(PausedOwnerCommand::Resume);
+                }
+                if let Some(engine) = self.engine.take() {
+                    drop(engine);
+                    let stopped = self.stopped.recv_timeout(OWNER_WAIT);
+                    if !std::thread::panicking() {
+                        stopped.expect("owner dropped input and output before teardown receipt");
+                        assert!(!WRONG_DROP_THREAD.load(Ordering::SeqCst));
+                    }
+                }
+            }
+        }
+
+        impl Drop for CapturePeriodHarness {
+            fn drop(&mut self) {
+                self.stop();
+            }
+        }
+
+        #[test]
+        fn capture_final_retrospective_release_closes_once() {
+            let _opens = counted_opens();
+            for invalid_arm in [false, true] {
+                for take_first in [None, Some(false), Some(true)] {
+                    OPENS_ATTEMPTED.store(0, Ordering::SeqCst);
+                    let mut harness = CapturePeriodHarness::new();
+                    if take_first == Some(true) {
+                        harness.add_consumer(7);
+                    }
+                    harness
+                        .engine()
+                        .arm_retrospective_capture(3, DEVICE_CHANNELS);
+                    if take_first == Some(false) {
+                        harness.add_consumer(7);
+                    }
+                    harness.settle();
+                    assert_eq!(OPENS_ATTEMPTED.load(Ordering::SeqCst), 1);
+                    if take_first == Some(true) {
+                        harness.engine().unregister_capture_consumer(7).unwrap();
+                        harness.settle();
+                        assert_eq!(INPUT_DROPS.load(Ordering::SeqCst), 0);
+                    }
+                    if invalid_arm {
+                        harness.engine().arm_retrospective_capture(4, 0);
+                    } else {
+                        harness.engine().disarm_retrospective_capture();
+                    }
+                    harness.settle();
+                    assert_eq!(harness.engine().retrospective_capture_target(), None);
+                    if take_first == Some(false) {
+                        assert_eq!(INPUT_DROPS.load(Ordering::SeqCst), 0);
+                        harness.engine().unregister_capture_consumer(7).unwrap();
+                        harness.settle();
+                    }
+                    assert_eq!(
+                        INPUT_DROPS.load(Ordering::SeqCst),
+                        1,
+                        "final holder closes input"
+                    );
+                    assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+                    harness.engine().disarm_retrospective_capture();
+                    harness.settle();
+                    assert_eq!(
+                        INPUT_DROPS.load(Ordering::SeqCst),
+                        1,
+                        "duplicate disarm is inert"
+                    );
+                    harness.engine().arm_retrospective_capture(4, 1);
+                    harness.settle();
+                    assert_eq!(
+                        OPENS_ATTEMPTED.load(Ordering::SeqCst),
+                        2,
+                        "re-arm opens a fresh period"
+                    );
+                    harness.engine().disarm_retrospective_capture();
+                    harness.settle();
+                    assert_eq!(INPUT_DROPS.load(Ordering::SeqCst), 2);
+                    assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+                    harness.stop();
+                    assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 1);
+                }
+            }
+        }
+
+        #[test]
+        fn retired_capture_feed_is_not_delivered_while_owner_close_is_delayed() {
+            let _opens = counted_opens();
+            for (adopt_first, retirement_full) in [(true, false), (false, false), (true, true)] {
+                OPENS_ATTEMPTED.store(0, Ordering::SeqCst);
+                let mut harness = CapturePeriodHarness::new();
+                let first = harness.add_consumer(7);
+                harness.settle();
+                if adopt_first {
+                    harness.render();
+                    first.assert_served_pcm(1.0);
+                }
+                if retirement_full {
+                    let (_writer, reader) = crate::capture::capture_ring(
+                        crate::capture::CaptureShape {
+                            input_block_ceiling: DELIVERED_BLOCK,
+                            output_read_ceiling: RENDER_READ,
+                            channels: DEVICE_CHANNELS,
+                        },
+                        new_input_latency_slot(),
+                    );
+                    let sentinel = super::super::CaptureFeed::new(reader, DEVICE_CHANNELS);
+                    harness
+                        .renderer
+                        .retired_capture_tx
+                        .as_mut()
+                        .unwrap()
+                        .push(sentinel)
+                        .unwrap();
+                }
+                let pause = harness.hold_before(CaptureOwnerCommand::Close);
+                harness.engine().unregister_capture_consumer(7).unwrap();
+                pause.wait_until_entered();
+                let second = harness.add_consumer(8);
+                harness.render();
+                assert_eq!(
+                    second.blocks.load(Ordering::Relaxed),
+                    0,
+                    "new consumer cannot receive any block from the retired period"
+                );
+                assert_eq!(
+                    INPUT_DROPS.load(Ordering::SeqCst),
+                    0,
+                    "owner close is still paused"
+                );
+                assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+                drop(pause);
+                harness.settle();
+                assert_eq!(INPUT_DROPS.load(Ordering::SeqCst), 1);
+                assert_eq!(OPENS_ATTEMPTED.load(Ordering::SeqCst), 2);
+                if retirement_full {
+                    harness.render();
+                    assert_eq!(
+                        second.blocks.load(Ordering::Relaxed),
+                        0,
+                        "retirement pressure cannot reactivate the old feed"
+                    );
+                    drop(harness.retired_feeds.pop().unwrap());
+                }
+                harness.render();
+                second.assert_served_pcm(2.0);
+                assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+            }
+        }
+
+        #[test]
+        fn delayed_old_open_cannot_reactivate_a_retired_period() {
+            let _opens = counted_opens();
+            let mut harness = CapturePeriodHarness::new();
+            let (before, after) = harness.hold_around_open();
+            harness.add_consumer(7);
+            before.wait_until_entered();
+            harness.engine().unregister_capture_consumer(7).unwrap();
+            let second = harness.add_consumer(8);
+            drop(before);
+            after.wait_until_entered();
+            let old_attempts = OPENS_ATTEMPTED.load(Ordering::SeqCst);
+            harness.render();
+            assert_eq!(
+                second.blocks.load(Ordering::Relaxed),
+                0,
+                "the delayed old OpenCapture must not feed a successor consumer"
+            );
+            assert_eq!(INPUT_DROPS.load(Ordering::SeqCst), 0);
+            assert_eq!(OUTPUT_DROPS.load(Ordering::SeqCst), 0);
+            drop(after);
+            harness.settle();
+            assert_eq!(OPENS_ATTEMPTED.load(Ordering::SeqCst), old_attempts + 1);
+            harness.render();
+            second.assert_served_pcm((old_attempts + 1) as f32);
+        }
+
+        fn input_error(kind: StreamErrorKind) -> EngineEvent {
+            EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind,
+            }
+        }
+
+        #[test]
+        fn retired_capture_events_drain_once_across_delayed_close() {
+            let _opens = counted_opens();
+            let mut harness = CapturePeriodHarness::new();
+            harness.add_consumer(7);
+            harness.settle();
+            let mut old_feed = take_capture_feed(&mut harness.renderer.capture_rx).unwrap();
+            let old_latency = Arc::clone(&harness.engine().input_latency_frames);
+            let close = harness.hold_before(CaptureOwnerCommand::Close);
+            harness.engine().unregister_capture_consumer(7).unwrap();
+            close.wait_until_entered();
+            close.report_input_error(StreamErrorKind::Xrun);
+            close.report_input_error(StreamErrorKind::DeviceChanged);
+            let second = harness.add_consumer(8);
+            assert_eq!(harness.engine().input_latency_frames(), 0);
+            assert_no_alloc::assert_no_alloc(|| assert!(old_feed.serve(RENDER_READ * 2)));
+            assert!(
+                old_latency.load(Ordering::Relaxed) > 0,
+                "the retired ring reader really published late latency"
+            );
+            assert_eq!(
+                harness.engine().input_latency_frames(),
+                0,
+                "old reader cannot publish into the new period"
+            );
+            assert_eq!(
+                harness.engine().drain_engine_events(),
+                vec![
+                    input_error(StreamErrorKind::Xrun),
+                    input_error(StreamErrorKind::DeviceChanged)
+                ]
+            );
+            assert!(harness.engine().drain_engine_events().is_empty());
+            close.report_input_error(StreamErrorKind::BackendSpecific);
+            let new_open = harness.hold_after(CaptureOwnerCommand::Open);
+            drop(close);
+            new_open.wait_until_entered();
+            new_open.report_input_error(StreamErrorKind::StreamInvalidated);
+            assert_eq!(
+                harness.engine().drain_engine_events(),
+                vec![
+                    input_error(StreamErrorKind::StreamInvalidated),
+                    input_error(StreamErrorKind::BackendSpecific)
+                ]
+            );
+            assert!(harness.engine().drain_engine_events().is_empty());
+            drop(new_open);
+            harness.settle();
+            harness.render();
+            second.assert_served_pcm(2.0);
+            let new_latency = harness.engine().input_latency_frames();
+            assert_eq!(new_latency, second.latency.load(Ordering::Relaxed));
+            assert!(new_latency > 0);
+            assert_ne!(new_latency, old_latency.load(Ordering::Relaxed));
+            assert!(harness.engine().drain_engine_events().is_empty());
+            harness.stop();
+        }
+    }
+
     /// Starting the engine is not what opens the microphone. On macOS the
     /// first input open is what raises the system permission prompt, and on a
     /// Bluetooth headset it is what forces the hands-free profile the output
