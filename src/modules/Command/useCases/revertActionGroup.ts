@@ -3,7 +3,7 @@ import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { commitRevertedEntries } from './commitRevertedEntries';
-import { executeAppAction } from './executeAppAction';
+import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
 import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 import { isAppActionCommittedError } from './isAppActionCommittedError';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
@@ -27,11 +27,14 @@ async function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => strin
         return true;
     }
     if (entry.inverseAction) {
-        await executeAppAction(normalizeLegacyLoopAnchorInverse(entry.inverseAction), {
+        const options: ExecuteAppActionOptions = {
             skipUndo: true,
             skipMacroRecording: true,
-            ...(authorizeFirstHandler ? { authorizeFirstHandler } : {}),
-        });
+        };
+        if (authorizeFirstHandler) {
+            options.authorizeFirstHandler = authorizeFirstHandler;
+        }
+        await executeAppAction(normalizeLegacyLoopAnchorInverse(entry.inverseAction), options);
         return true;
     }
     return false;
@@ -76,9 +79,10 @@ async function revertActionGroupImpl(groupId: string): Promise<void> {
                 .flatMap((candidate) =>
                     isActionEntry(candidate) && candidate.inverseAction ? [candidate.inverseAction] : []
                 );
-            const authorizeReplay = hasLegacyTrim
-                ? () => getLegacyTrimInverseReplayFailure(remainingInverses)
-                : undefined;
+            let authorizeReplay: (() => string | null) | undefined;
+            if (hasLegacyTrim) {
+                authorizeReplay = () => getLegacyTrimInverseReplayFailure(remainingInverses);
+            }
             if (await revertEntry(entry, authorizeReplay)) {
                 revertedEntries.unshift(entry);
             }

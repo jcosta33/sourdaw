@@ -58,6 +58,9 @@ vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({ startPlayhead
 vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({ stopPlayheadScheduler: mockStopScheduler }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: null, subscribe: vi.fn(() => () => {}) },
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'missing' })
+    ),
     getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
     adjustmentLayerStore: { hydrate: vi.fn() },
     gainEnvelopeStore: { hydrate: vi.fn() },

@@ -63,15 +63,16 @@ export async function executeActionGroupUndo(
     // state never carried — or, for a slip, re-wrap a captured offset the
     // forward law must never touch on a replay.
     const actions = [...entries].reverse().map((entry) => normalizeLegacyLoopAnchorInverse(entry.inverseAction!));
-    const result = await executeAppActionBatch(actions, {
+    const batchOptions: NonNullable<Parameters<typeof executeAppActionBatch>[1]> = {
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,
-        ...(actions.some((action) => action.type === 'trimClipStart' && action.payload.midiOffsetBeats === undefined)
-            ? { preExecutionValidation: () => getLegacyTrimInverseReplayFailure(actions) }
-            : {}),
         ...options,
-    });
+    };
+    if (actions.some((action) => action.type === 'trimClipStart' && action.payload.midiOffsetBeats === undefined)) {
+        batchOptions.preExecutionValidation = () => getLegacyTrimInverseReplayFailure(actions);
+    }
+    const result = await executeAppActionBatch(actions, batchOptions);
     if (result.status === 'conflicted' || result.status === 'cancelled') {
         return { status: 'conflict', reason: result.reason };
     }
