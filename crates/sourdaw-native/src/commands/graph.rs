@@ -5269,6 +5269,29 @@ pub async fn apply_graph_commands(
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
 
+    // An incoming owner can retire without moving the committed graph's
+    // revision or fence. Keep this exact lease alive through publication and
+    // residency recording, rather than trusting only the generation check.
+    let material_admission = if let Some(lease) = &batch.timeline_lease {
+        samples.timeline_lease_owner(lease).and_then(|owner| {
+            if working.timeline_owner.as_deref() == Some(owner) {
+                Ok(())
+            } else {
+                Err("Timeline graph belongs to another project owner".into())
+            }
+        })
+    } else if samples.residency.fenced() {
+        Err("Graph batch requires a timeline material lease".into())
+    } else {
+        Ok(())
+    };
+    if let Err(reason) = material_admission {
+        return result_json(
+            &GraphApplyResultPayload::rejected(reason)
+                .reporting_attached_crumbs(attached_crumbs.named_with(&attached_crumbs_this_batch)),
+        );
+    }
+
     // Whole-batch admission and visibility: `send_graph_batch` provisions a
     // command ring large enough for the batch when the current one is too
     // small, then publishes the batch behind a fence the audio callback

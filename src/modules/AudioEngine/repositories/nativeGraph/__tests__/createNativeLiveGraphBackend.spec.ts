@@ -59,6 +59,35 @@ function stubTransport(applyGraphCommands: NativeGraphTransport['applyGraphComma
 }
 
 describe('createNativeLiveGraphBackend', () => {
+    it('releases a refused final roll lease and never reuses its admission callback', async () => {
+        const applyGraphCommands = vi.fn().mockResolvedValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            runtimeRevision: 1,
+            reports: [],
+        });
+        const transport = stubTransport(applyGraphCommands);
+        const timelineSampleLifecycle = vi.fn(transport.timelineSampleLifecycle);
+        const backend = createNativeLiveGraphBackend({ transport: { ...transport, timelineSampleLifecycle } });
+        const finalize = vi.fn(() => {
+            throw new Error('retired NAM start');
+        });
+        await expect(backend.rollAtFinalAdmission(2.5, finalize)).resolves.toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'retired NAM start',
+        });
+        expect(finalize).toHaveBeenCalledTimes(1);
+        expect(applyGraphCommands).not.toHaveBeenCalled();
+        expect(timelineSampleLifecycle.mock.calls.filter(([request]) => request.action === 'release')).toEqual([
+            [{ action: 'release', lease: expect.any(String) }],
+        ]);
+        await expect(backend.apply(BATCH)).resolves.toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        expect(finalize).toHaveBeenCalledTimes(1);
+        expect(applyGraphCommands).toHaveBeenCalledTimes(1);
+        backend.dispose();
+    });
+
     it('applies the serialized batch through apply_graph_commands', async () => {
         const applyGraphCommands = vi.fn().mockResolvedValue({
             acceptance: 'accepted',

@@ -47,7 +47,6 @@ import {
     type AudioGraphApplyResult,
     type AudioGraphAttachedCrumbsInstance,
     type AudioGraphAttachedPlugin,
-    type AudioGraphBackend,
     type AudioGraphCommandBatch,
     type NativeGrinderModelReceipt,
 } from '../../models/AudioGraphBackend';
@@ -321,7 +320,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     };
 }
 
-export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): AudioGraphBackend {
+export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps) {
     const { transport, acquireNativeSampleBank } = deps;
     let disposed = false;
     const material = nativeTimelineMaterialLeases.createConsumer(transport, deps.materialOwner);
@@ -336,75 +335,103 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
      */
     const claimBackendId = `${NATIVE_LIVE_BACKEND_ID}:${crypto.randomUUID()}`;
 
+    async function apply(
+        batch: AudioGraphCommandBatch,
+        finalizeTransport?: () => Readonly<{ positionSeconds: number; locate: boolean }>
+    ): Promise<AudioGraphApplyResult> {
+        if (disposed) {
+            return rejected('backend disposed');
+        }
+        if (batch.schemaVersion !== 1) {
+            return rejected(`unsupported command schema version ${String(batch.schemaVersion)}`);
+        }
+        const validateAdmission = deps.captureNativeAdmission?.(batch);
+        let captured: ReturnType<typeof material.capture>;
+        try {
+            captured = material.capture(batch.commands);
+        } catch (error) {
+            return rejected(reasonOf(error));
+        }
+        return material
+            .run(async () => {
+                let claim;
+                try {
+                    claim = await material.prepare(batch.commands, batch.replaceTopology, captured);
+                } catch (error) {
+                    return rejected(reasonOf(error));
+                }
+                let retained = false;
+                try {
+                    if (acquireNativeSampleBank) {
+                        await registerNativeSampleBanks({
+                            transport,
+                            commands: batch.commands,
+                            acquire: acquireNativeSampleBank,
+                            replaceTopology: batch.replaceTopology,
+                            backendId: claimBackendId,
+                        });
+                    }
+                    material.assertOpen();
+                    let admittedBatch = batch;
+                    let raw: unknown;
+                    try {
+                        validateAdmission?.();
+                        if (finalizeTransport) {
+                            // This callback belongs only to this apply. Consume it
+                            // before calling it, including a refusal that throws.
+                            const finalize = finalizeTransport;
+                            finalizeTransport = undefined;
+                            const transportCommand = finalize();
+                            admittedBatch = {
+                                schemaVersion: 1,
+                                commands: [{ kind: 'set-transport', playing: true, ...transportCommand }],
+                            };
+                        }
+                        raw = await transport.applyGraphCommands({
+                            batch: serializeAudioGraphCommandBatch(admittedBatch, claim),
+                        });
+                    } catch (error) {
+                        return rejected(reasonOf(error));
+                    }
+                    const result = readAppliedResult(raw, admittedBatch);
+                    // A native fence is an admission fact even if this handle
+                    // closed while IPC was pending. Never recast it as not-applied.
+                    if (result.acceptance === 'accepted' && !material.isClosed()) {
+                        await material.accept(claim);
+                        retained = true;
+                    }
+                    return result;
+                } finally {
+                    if (!retained) {
+                        await material.decline(claim);
+                    }
+                }
+            })
+            .catch((error: unknown) => {
+                if (material.isClosed()) {
+                    return rejected(reasonOf(error));
+                }
+                throw error;
+            });
+    }
+
     return {
         backendId: NATIVE_LIVE_BACKEND_ID,
         get disposed(): boolean {
             return disposed;
         },
-
-        async apply(batch: AudioGraphCommandBatch): Promise<AudioGraphApplyResult> {
-            if (disposed) {
-                return rejected('backend disposed');
-            }
-            if (batch.schemaVersion !== 1) {
-                return rejected(`unsupported command schema version ${String(batch.schemaVersion)}`);
-            }
-            const validateAdmission = deps.captureNativeAdmission?.(batch);
-            let captured: ReturnType<typeof material.capture>;
-            try {
-                captured = material.capture(batch.commands);
-            } catch (error) {
-                return rejected(reasonOf(error));
-            }
-            return material
-                .run(async () => {
-                    let claim;
-                    try {
-                        claim = await material.prepare(batch.commands, batch.replaceTopology, captured);
-                    } catch (error) {
-                        return rejected(reasonOf(error));
-                    }
-                    let retained = false;
-                    try {
-                        if (acquireNativeSampleBank) {
-                            await registerNativeSampleBanks({
-                                transport,
-                                commands: batch.commands,
-                                acquire: acquireNativeSampleBank,
-                                replaceTopology: batch.replaceTopology,
-                                backendId: claimBackendId,
-                            });
-                        }
-                        material.assertOpen();
-                        let raw: unknown;
-                        try {
-                            validateAdmission?.();
-                            raw = await transport.applyGraphCommands({
-                                batch: serializeAudioGraphCommandBatch(batch, claim),
-                            });
-                        } catch (error) {
-                            return rejected(reasonOf(error));
-                        }
-                        const result = readAppliedResult(raw, batch);
-                        // A native fence is an admission fact even if this handle
-                        // closed while IPC was pending. Never recast it as not-applied.
-                        if (result.acceptance === 'accepted' && !material.isClosed()) {
-                            await material.accept(claim);
-                            retained = true;
-                        }
-                        return result;
-                    } finally {
-                        if (!retained) {
-                            await material.decline(claim);
-                        }
-                    }
-                })
-                .catch((error: unknown) => {
-                    if (material.isClosed()) {
-                        return rejected(reasonOf(error));
-                    }
-                    throw error;
-                });
+        apply(batch: AudioGraphCommandBatch): Promise<AudioGraphApplyResult> {
+            return apply(batch);
+        },
+        /** A single roll's final position and carrier handoff, after material preparation. */
+        rollAtFinalAdmission(
+            positionSeconds: number,
+            finalize: () => Readonly<{ positionSeconds: number; locate: boolean }>
+        ): Promise<AudioGraphApplyResult> {
+            return apply(
+                { schemaVersion: 1, commands: [{ kind: 'set-transport', playing: true, positionSeconds }] },
+                finalize
+            );
         },
 
         dispose(): void {

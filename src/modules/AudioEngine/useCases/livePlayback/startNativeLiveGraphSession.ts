@@ -17,14 +17,16 @@
  * `create-track-strip` commands carrying `contributesAudio: true` — so the flag
  * the engine acts on and the gates Web Audio closes have one source.
  *
- * It is stated *optimistically*, before the batch is applied, and that
- * direction is deliberate. Web Audio keeps rendering every strip whatever the
+ * Without a NAM model it is stated *optimistically*, before the batch is
+ * applied, and that direction is deliberate. Web Audio keeps rendering every strip whatever the
  * gates say, so a decline reopens them in place with no gap in its own stream;
  * waiting for the apply would instead leave the strips ungated across the whole
  * bridge round trip while the native engine was already sounding them, which is
  * a doubled mix a listener hears. Every path that ends without an audible
  * session therefore clears the set again, and the attach re-send restates it
  * because binding an instance can move a strip from web to native.
+ * A NAM start keeps Web Audio sounding through model readback and roll
+ * preparation, then claims the rebound strips immediately before the roll IPC.
  *
  * ── Material before the batch that names it ───────────────────────────────
  *
@@ -622,13 +624,15 @@ async function parkUnreadableRoll(
 async function rollNativeTransport(
     backend: ReturnType<typeof createNativeLiveGraphBackend>,
     positionSeconds: number,
-    locate: boolean
+    finalizeTransport: () => Readonly<{ positionSeconds: number; locate: boolean }>
 ): Promise<RolledNativeTransport> {
     let rolling: AudioGraphApplyResult;
+    let admittedPositionSeconds = positionSeconds;
     try {
-        rolling = await backend.apply({
-            schemaVersion: 1,
-            commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate }],
+        rolling = await backend.rollAtFinalAdmission(positionSeconds, () => {
+            const finalTransport = finalizeTransport();
+            admittedPositionSeconds = finalTransport.positionSeconds;
+            return finalTransport;
         });
         reportAttachedPlugins(rolling);
     } catch (error) {
@@ -640,7 +644,7 @@ async function rollNativeTransport(
         // reported as the parked engine it now is.
         const reason = reasonOf(error);
         logger.warn(`[AudioEngine] native transport answered the roll unreadably: ${reason}`);
-        await parkUnreadableRoll(backend, positionSeconds);
+        await parkUnreadableRoll(backend, admittedPositionSeconds);
         return { rolling: false, provenAfterBatch: null, reason };
     }
     if (rolling.application !== 'applied') {
@@ -671,6 +675,7 @@ async function rollSessionTransport(input: {
     transport: NativeSessionTransport;
     sampleRate: number;
     programmeEndSeconds: number;
+    modelRollAdmission?: Readonly<{ validate: () => void; claim: () => void }>;
 }): Promise<string | null> {
     // After the topology, never with it: the maps have their own owner and
     // their own command (the transport ownership law in `graph.rs`). Before
@@ -728,17 +733,12 @@ async function rollSessionTransport(input: {
         sampleRate: input.sampleRate,
         positionSeconds: input.positionSeconds,
     });
-    // Here, after the last await this start owes: every round trip the start
-    // paid for is behind the projection, so a join carries the whole of the
-    // time Web Audio spent rolling while the session was being built. The held
-    // reader is asked here and once only, for the same reason — asked earlier
-    // it would miss a hold released during the awaits above.
-    const webAudioAtPositionSince =
-        input.transport.kind === 'rolling'
-            ? input.transport.anchoredAtContextSeconds
-            : input.transport.webAudioRollingSince();
-    const rollPositionSeconds =
-        webAudioAtPositionSince === null
+    const readRollPosition = (): number => {
+        const webAudioAtPositionSince =
+            input.transport.kind === 'rolling'
+                ? input.transport.anchoredAtContextSeconds
+                : input.transport.webAudioRollingSince();
+        return webAudioAtPositionSince === null
             ? input.positionSeconds
             : projectRollPosition({
                   positionSeconds: input.positionSeconds,
@@ -751,11 +751,21 @@ async function rollSessionTransport(input: {
                   // a position the engine plays straight past.
                   loopEnabled: maps.applied.loopEnabled,
               });
-    const rolled = await rollNativeTransport(
-        input.backend,
-        rollPositionSeconds,
-        rollPositionSeconds !== input.positionSeconds
-    );
+    };
+    // Every join includes the backend's PCM/bank awaits in its live clock.
+    // NAM additionally validates authority and closes the actual rebound
+    // strips in the same synchronous turn as IPC.
+    const modelRollAdmission = input.modelRollAdmission;
+    let rollPositionSeconds = input.positionSeconds;
+    const rolled = await rollNativeTransport(input.backend, input.positionSeconds, () => {
+        modelRollAdmission?.validate();
+        rollPositionSeconds = readRollPosition();
+        modelRollAdmission?.claim();
+        return {
+            positionSeconds: rollPositionSeconds,
+            locate: rollPositionSeconds !== input.positionSeconds,
+        };
+    });
     nativeLiveGraphSession.rolling = rolled.rolling;
     if (!rolled.rolling) {
         // The notes went out ahead of a roll that never happened. A parked
@@ -913,6 +923,7 @@ async function installRolledSession(input: {
     installed: InstalledProjection;
     rebound: Extract<TopologyBatchOutcome, { outcome: 'applied' }>;
     monitor: LiveGraphMonitorMode;
+    validateModelRoll?: () => void;
 }): Promise<void> {
     const { session, backend, topology, installed, rebound, monitor } = input;
     nativeLiveGraphSession.backend?.dispose();
@@ -931,7 +942,7 @@ async function installRolledSession(input: {
     // contributing strip, and the note writer has to agree with the engine
     // rather than with what Web Audio was told to give up.
     const reboundStripIds = carriedStripIds(rebound.commands);
-    nativeLiveGraphSession.audibleCarrier = reboundStripIds.size > 0 && !shadowed;
+    nativeLiveGraphSession.audibleCarrier = !input.validateModelRoll && reboundStripIds.size > 0 && !shadowed;
     nativeLiveGraphSession.rolling = false;
     disarmNativeLiveAutomationWriter();
     disarmNativeLiveMidiWriter();
@@ -945,6 +956,22 @@ async function installRolledSession(input: {
         transport: session.transport,
         sampleRate: session.sampleRate,
         programmeEndSeconds: programmeEndSeconds(installed.programme),
+        modelRollAdmission: input.validateModelRoll
+            ? {
+                  validate: input.validateModelRoll,
+                  claim: () => {
+                      if (!shadowed) {
+                          claimCarriersOf({
+                              ...topology,
+                              commands: rebound.commands,
+                              attachedInstanceIds: installed.attachedInstanceIds,
+                              programme: installed.programme,
+                          });
+                      }
+                      nativeLiveGraphSession.audibleCarrier = reboundStripIds.size > 0 && !shadowed;
+                  },
+              }
+            : undefined,
     });
     if (monitor === 'audible' && parkedReason !== null) {
         // A parked engine renders no frame at all, so a strip gated out of Web
@@ -995,7 +1022,16 @@ export function startNativeLiveGraphSession(
                 notifyNativeDecline(reason);
                 return { outcome: 'declined', reason };
             }
-            const { topology, monitor, programme, backend, firstCommands, waitsForModels, projectTopology } = prepared;
+            const {
+                topology,
+                monitor,
+                programme,
+                backend,
+                firstCommands,
+                waitsForModels,
+                validateModelRoll,
+                projectTopology,
+            } = prepared;
             const audible = monitor === 'audible';
             // Everything past the claim, so that every way out of it reopens the
             // gates — a rejected sample registration, a bridge that drops mid-apply,
@@ -1029,9 +1065,6 @@ export function startNativeLiveGraphSession(
                     settleRefusedStartRecord(chainsTheStartFound);
                     notifyNativeDecline(started.reason);
                     return { outcome: 'declined', reason: started.reason };
-                }
-                if (waitsForModels && audible) {
-                    claimCarriedStrips(carriedStripIds(firstCommands));
                 }
                 const { resent, installed } = await bindAttachedPlugins({
                     transport: availability.transport,
@@ -1067,7 +1100,7 @@ export function startNativeLiveGraphSession(
                 // Restated against the batch that actually stands: binding an instance
                 // can move a strip from web to native, and the optimistic claim above
                 // was made before the engine held it.
-                if (audible) {
+                if (audible && !waitsForModels) {
                     claimCarriersOf({
                         ...topology,
                         commands: rebound.commands,
@@ -1082,6 +1115,7 @@ export function startNativeLiveGraphSession(
                     installed,
                     rebound,
                     monitor,
+                    validateModelRoll,
                 });
                 // The last topology batch the engine *applied*: a re-send that landed
                 // replaced every strip the first one built, so its reports are the only

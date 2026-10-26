@@ -1423,6 +1423,93 @@ describe('startNativeLiveGraphSession', () => {
         expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBeCloseTo(2.58, 9);
     });
 
+    it.each(['rolling', 'released-held'] as const)(
+        'refreshes the no-NAM %s join after roll material preparation while preserving optimistic ownership',
+        async (join) => {
+            mocks.topologyOverride = [
+                CARRIED_STRIP,
+                {
+                    ...SCHEDULED_CLIP,
+                    playback: { ...SCHEDULED_CLIP.playback, source: { sourceId: 'sample-1', buffer: MATERIAL } },
+                },
+            ];
+            let materialEntered!: () => void;
+            const preparingRoll = new Promise<void>((resolve) => {
+                materialEntered = resolve;
+            });
+            let releaseMaterial!: () => void;
+            const materialAnswer = new Promise<void>((resolve) => {
+                releaseMaterial = resolve;
+            });
+            const lifecycle = transport.timelineSampleLifecycle;
+            if (!lifecycle) {
+                throw new Error('the protocol fixture must expose timeline leases');
+            }
+            let preparations = 0;
+            const timelineSampleLifecycle = vi.fn(async (request: Parameters<typeof lifecycle>[0]) => {
+                const answer = await lifecycle(request);
+                if (request.action === 'prepare') {
+                    preparations += 1;
+                    if (preparations === 2) {
+                        materialEntered();
+                        await materialAnswer;
+                    }
+                }
+                return answer;
+            });
+            mocks.availability = { available: true, transport: { ...transport, timelineSampleLifecycle } };
+            let sentRollPosition: number | undefined;
+            mocks.applyGraphCommands.mockImplementation(async ({ batch }) => {
+                const wire = batch as NativeGraphWireBatch;
+                const roll = wire.commands.find((command) => command.kind === 'set-transport' && command.playing);
+                if (roll?.kind === 'set-transport') {
+                    sentRollPosition = roll.positionSeconds;
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(true);
+                }
+                return APPLIED;
+            });
+            const release = { contextSeconds: null as number | null };
+            const webAudioRollingSince = vi.fn(() => release.contextSeconds);
+            mocks.contextSeconds = 10;
+            const starting = startNativeLiveGraphSession({
+                positionSeconds: 2.5,
+                transport:
+                    join === 'rolling'
+                        ? { kind: 'rolling', anchoredAtContextSeconds: 10 }
+                        : { kind: 'held', webAudioRollingSince },
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            });
+            try {
+                await preparingRoll;
+                expect(preparations).toBe(2);
+                expect(sentRollPosition).toBeUndefined();
+                expect(mocks.applyGraphCommands).toHaveBeenCalledTimes(1);
+                expect(mocks.carriedClaims[0]).toEqual({ ids: ['audio-1'], appliesBefore: 0 });
+                expect(mocks.carriedClaims.at(-1)).toEqual({ ids: ['audio-1'], appliesBefore: 1 });
+                expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(true);
+                expect(nativeLiveGraphSession.audibleCarrier).toBe(true);
+                expect(webAudioRollingSince).not.toHaveBeenCalled();
+                const claimsBeforeRoll = mocks.carriedClaims.length;
+                release.contextSeconds = 10;
+                mocks.contextSeconds = 10.4;
+                releaseMaterial();
+                await expect(starting).resolves.toMatchObject({ outcome: 'started' });
+                expect(sentRollPosition).toBeCloseTo(2.9, 9);
+                expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBeCloseTo(2.9, 9);
+                expect(mocks.carriedClaims).toHaveLength(claimsBeforeRoll);
+                expect(nativeLiveGraphSession.rolling).toBe(true);
+                if (join === 'released-held') {
+                    expect(webAudioRollingSince).toHaveBeenCalledTimes(1);
+                }
+            } finally {
+                releaseMaterial();
+                await starting;
+            }
+        }
+    );
+
     it('wraps the roll position inside the loop region the maps installed', async () => {
         // Web Audio wrapped at the seam during the start, so an engine rolled
         // past the loop end would be a whole loop away from what is sounding.
@@ -3050,7 +3137,17 @@ describe('an edit issued while the start apply is pending (#4785)', () => {
 });
 
 describe('native NAM initial ownership requires actual model drain', () => {
-    it.each(['maps', 'roll-material', 'roll-position', 'roll-admission'] as const)(
+    const rollingJoinCheckpoints = [
+        'maps',
+        'roll-material',
+        'roll-position',
+        'roll-admission',
+        'project-retirement',
+        'epoch-retirement',
+        'backend-retirement',
+        'backend-disposal',
+    ] as const;
+    it.each(rollingJoinCheckpoints)(
         'keeps the NAM rolling join honest at %s after matching model readback',
         async (checkpoint) => {
             const receipt = {
@@ -3130,17 +3227,27 @@ describe('native NAM initial ownership requires actual model drain', () => {
                 throw new Error('the protocol fixture must expose timeline leases');
             }
             let preparations = 0;
-            const timelineSampleLifecycle = async (request: Parameters<typeof lifecycle>[0]) => {
+            let rollLease: string | undefined;
+            const timelineSampleLifecycle = vi.fn(async (request: Parameters<typeof lifecycle>[0]) => {
                 const answer = await lifecycle(request);
                 if (request.action === 'prepare') {
                     preparations += 1;
                     if (preparations === 2) {
+                        if (
+                            typeof answer !== 'object' ||
+                            answer === null ||
+                            !('lease' in answer) ||
+                            typeof answer.lease !== 'string'
+                        ) {
+                            throw new TypeError('the roll must prepare its exact timeline lease');
+                        }
+                        rollLease = answer.lease;
                         materialEntered();
                         await materialAnswer;
                     }
                 }
                 return answer;
-            };
+            });
             mocks.availability = { available: true, transport: { ...transport, timelineSampleLifecycle } };
             let rollEntered!: () => void;
             const sendingRoll = new Promise<void>((resolve) => {
@@ -3194,6 +3301,40 @@ describe('native NAM initial ownership requires actual model drain', () => {
                 if (checkpoint === 'roll-material') {
                     expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(false);
                     expect(mocks.carriedClaims.at(-1)?.ids ?? []).not.toContain('audio-1');
+                }
+                if (
+                    checkpoint === 'project-retirement' ||
+                    checkpoint === 'epoch-retirement' ||
+                    checkpoint === 'backend-retirement' ||
+                    checkpoint === 'backend-disposal'
+                ) {
+                    if (checkpoint === 'project-retirement') {
+                        trackStore.set({
+                            tracks: [createTrack({ id: 'successor' })],
+                            selectedTrackId: null,
+                            ghostClips: [],
+                        });
+                    } else if (checkpoint === 'epoch-retirement') {
+                        nativeLiveGraphSession.rearmEpoch += 1;
+                    } else if (checkpoint === 'backend-retirement') {
+                        nativeLiveGraphSession.backend = {
+                            backendId: 'successor',
+                            apply: vi.fn(),
+                            dispose: vi.fn(),
+                        };
+                    } else {
+                        nativeLiveGraphSession.backend?.dispose();
+                    }
+                    releaseMaterial();
+                    await expect(starting).resolves.toMatchObject({ outcome: 'started' });
+                    expect(sentRollPosition).toBeUndefined();
+                    expect(mocks.applyGraphCommands).toHaveBeenCalledTimes(1);
+                    expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
+                    expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+                    expect(nativeLiveGraphSession.rolling).toBe(false);
+                    expect(rollLease).toEqual(expect.any(String));
+                    expect(timelineSampleLifecycle).toHaveBeenCalledWith({ action: 'release', lease: rollLease });
+                    return;
                 }
                 // Web Audio advances while the native roll still cannot be sent.
                 mocks.contextSeconds = 10.4;

@@ -9,11 +9,7 @@ import {
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
-import {
-    type AudioGraphBackend,
-    type AudioGraphCommand,
-    type AudioGraphCommandBatch,
-} from '../../models/AudioGraphBackend';
+import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
 import { type nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
@@ -132,7 +128,7 @@ function projectSessionTopology(input: Omit<LiveGraphTopologyInput, 'masterGain'
 function createSessionBackend(
     transport: NativeGraphTransport,
     materialOwner: ReturnType<typeof nativeTimelineMaterialLeases.captureOwner>
-): AudioGraphBackend {
+) {
     return createNativeLiveGraphBackend({
         transport,
         materialOwner,
@@ -171,9 +167,10 @@ type Prepared = Readonly<{
     topology: ReturnType<typeof readSessionTopology>;
     monitor: LiveGraphMonitorMode;
     programme: LiveGraphProgramme;
-    backend: AudioGraphBackend;
+    backend: ReturnType<typeof createNativeLiveGraphBackend>;
     firstCommands: readonly AudioGraphCommand[];
     waitsForModels: boolean;
+    validateModelRoll?: () => void;
     projectTopology: (
         attachedInstanceIds: ReadonlySet<string>,
         against: LiveGraphProgramme
@@ -238,6 +235,19 @@ export function prepareNativeSessionStart(
             (command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') &&
             command.devices.some((device) => device.grinderModel !== undefined)
     );
+    const project = trackStore.value;
+    const epoch = nativeLiveGraphSession.rearmEpoch;
+    const validateModelRoll = waitsForModels
+        ? () => {
+              if (
+                  trackStore.value !== project ||
+                  nativeLiveGraphSession.backend !== backend ||
+                  nativeLiveGraphSession.rearmEpoch !== epoch
+              ) {
+                  throw new Error('Native NAM project/session changed during material preparation');
+              }
+          }
+        : undefined;
     return {
         outcome: 'prepared',
         topology,
@@ -246,6 +256,7 @@ export function prepareNativeSessionStart(
         backend,
         firstCommands,
         waitsForModels,
+        validateModelRoll,
         projectTopology,
     };
 }
