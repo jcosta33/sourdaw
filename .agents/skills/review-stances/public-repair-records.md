@@ -125,3 +125,10 @@ Exercise the real trusted snapshot route as well: both commands need the lock so
 pinned closures and trusted process tools with detached POSIX groups. Unit core success cannot
 prove launcher fencing or recoverable ownership. Removing either command's fence classification
 must fail that integration probe.
+
+Pre-merge review lesson from [PR #5701](https://github.com/jcosta33/sourdaw/pull/5701):
+extracting a helper from a trusted writer must preserve both its exact source closure and the
+semantic governance-classification union. Closure-only probes passed while `gitAncestry.ts`
+was missing from `GOVERNANCE_TRANSITION_PATHS`. Run the existing `reviewRiskPolicy.spec.ts`
+union-equality and every-closure-path `native-security` assertions alongside the closure probes
+before publication; preserve their expected sets and classifications.
