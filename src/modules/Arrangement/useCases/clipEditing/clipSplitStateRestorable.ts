@@ -17,6 +17,7 @@ function trackSnapshotMatches(
     expected: ClipSplitActionSnapshot
 ): boolean {
     const leftClip = clips.find((clip) => clip.id === clipId);
+    const leftClipIndex = clips.findIndex((clip) => clip.id === clipId);
     const rightClipIndex = clips.findIndex((clip) => clip.id === rightClipId);
     const rightClip = rightClipIndex < 0 ? null : clips[rightClipIndex]!;
     return (
@@ -24,7 +25,7 @@ function trackSnapshotMatches(
         valuesEqual(rightClip, expected.rightClip) &&
         Number.isSafeInteger(expected.rightClipIndex) &&
         expected.rightClipIndex >= 0 &&
-        (expected.rightClip === null || rightClipIndex === expected.rightClipIndex)
+        (expected.rightClip === null || rightClipIndex > leftClipIndex)
     );
 }
 
@@ -54,9 +55,9 @@ function clipOwnershipMatches(
 /** Same precondition `replaceClipSplitTrackState` writes against, kept as the sole export of its
  *  own file (rather than a second export alongside the write) so a handler's `validate` can
  *  preflight a batch without performing the write that `replaceClipSplitTrackState` performs once
- *  the precondition holds. Includes the replacement right-clip index bound check, since that is
- *  computed from current track state and is just as load-bearing as the snapshot match — a replay
- *  with a now-out-of-range index must be refused before executing, not during. */
+ *  the precondition holds. The remembered right-clip index remains paired across
+ *  the snapshots; a deleted unrelated predecessor may shorten the live track,
+ *  so insertion uses the live end while keeping the right fragment after its left. */
 export function clipSplitStateRestorable(
     { clipId, rightClipId, expected, replacement }: ClipSplitStateRestorableInput,
     state: { tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[] } | null = getTrackState()
@@ -65,6 +66,7 @@ export function clipSplitStateRestorable(
         expected.trackId !== replacement.trackId ||
         expected.leftClip.id !== clipId ||
         replacement.leftClip.id !== clipId ||
+        expected.rightClipIndex !== replacement.rightClipIndex ||
         (expected.rightClip !== null && expected.rightClip.id !== rightClipId) ||
         (replacement.rightClip !== null && replacement.rightClip.id !== rightClipId)
     ) {
@@ -79,10 +81,11 @@ export function clipSplitStateRestorable(
     }
     if (replacement.rightClip) {
         const clipsAfterRemoval = track.clips.filter((clip) => clip.id !== rightClipId).length;
+        const leftClipIndex = track.clips.findIndex((clip) => clip.id === clipId);
         if (
             !Number.isSafeInteger(replacement.rightClipIndex) ||
             replacement.rightClipIndex < 0 ||
-            replacement.rightClipIndex > clipsAfterRemoval
+            Math.min(replacement.rightClipIndex, clipsAfterRemoval) <= leftClipIndex
         ) {
             return false;
         }

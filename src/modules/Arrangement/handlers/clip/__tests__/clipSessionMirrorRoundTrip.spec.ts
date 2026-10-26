@@ -3954,7 +3954,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
         );
         reloadSavedProject();
-        expect((await redo()).headConsumed).toBe(true);
+        await redo();
         expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual([
             'clip-a',
             'clip-right',

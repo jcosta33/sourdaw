@@ -294,10 +294,14 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
     if (entry.action.type !== 'removeClip' || entry.inverseAction?.type !== 'restoreClip') {
         return false;
     }
+    const shiftedClips = entry.inverseAction.payload.ripplePlan?.shiftedClips ?? [];
     return (
         isRemoveClipSessionPayload(entry.action.payload) &&
         entry.action.payload.clipId === entry.inverseAction.payload.clipId &&
         isRestoreClipSessionPayload(entry.inverseAction.payload) &&
+        (shiftedClips.length === 0 ||
+            (entry.action.payload.ripple !== false &&
+                (entry.redoAction?.type !== 'removeClip' || entry.redoAction.payload.ripple !== false))) &&
         (!entry.redoAction ||
             (entry.redoAction.type === 'removeClip' &&
                 isRemoveClipSessionPayload(entry.redoAction.payload) &&
