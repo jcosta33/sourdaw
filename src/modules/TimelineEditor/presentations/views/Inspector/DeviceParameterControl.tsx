@@ -77,6 +77,7 @@ type EnteredModulationTarget = {
     deviceId: string;
     paramId: string;
     isCurrentProject: () => boolean;
+    sourceProjectAuthority: { isCurrent: () => boolean };
 };
 
 const NO_PARAMETER_MAPPINGS: ParameterMapping[] = [];
@@ -262,6 +263,10 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const sourceColors = colorsForSources(sourceIds);
     const modulations = useDeviceParameterModulation(trackId, device.id, param.id, sourceColors);
     const draggedModulatorId = useStoreSelector(modulationDragPreviewStore, (state) => state?.modulatorId ?? null);
+    const draggedSourceAuthority = useStoreSelector(
+        modulationDragPreviewStore,
+        (state) => state?.projectAuthority ?? null
+    );
     const draggedSourceEnabled = useStoreSelector(
         modulationStore,
         (state) =>
@@ -281,7 +286,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     useEffect(() => {
         setEnteredTarget(null);
-    }, [draggedModulatorId, draggedSourceEnabled]);
+    }, [draggedModulatorId, draggedSourceEnabled, draggedSourceAuthority]);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -358,6 +363,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const isLog = param.scaling === 'log';
     const canPreview =
         draggedModulatorId !== null &&
+        draggedSourceAuthority !== null &&
+        draggedSourceAuthority.isCurrent() &&
         draggedSourceEnabled &&
         param.automatable &&
         !isDiscrete &&
@@ -369,7 +376,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         enteredTarget.trackId === trackId &&
         enteredTarget.deviceId === device.id &&
         enteredTarget.paramId === param.id &&
-        enteredTarget.isCurrentProject();
+        enteredTarget.isCurrentProject() &&
+        enteredTarget.sourceProjectAuthority === draggedSourceAuthority &&
+        enteredTarget.sourceProjectAuthority.isCurrent();
     const previewColor = isPreviewing && draggedModulatorId ? sourceColors.get(draggedModulatorId) : null;
     let displayedModulations = param.automatable ? modulations : [];
     if (isPreviewing && draggedModulatorId && previewColor) {
@@ -391,6 +400,10 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         }
         event.preventDefault();
         dropCommittedRef.current = false;
+        const sourceProjectAuthority = draggedSourceAuthority;
+        if (!sourceProjectAuthority || !sourceProjectAuthority.isCurrent()) {
+            return;
+        }
         const authority = captureProjectTransitionAuthority();
         if (!authority.isCurrent()) {
             return;
@@ -401,6 +414,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             deviceId: device.id,
             paramId: param.id,
             isCurrentProject: authority.isCurrent,
+            sourceProjectAuthority,
         });
     };
 
@@ -424,7 +438,9 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             enteredTarget === null ||
             !isPreviewing ||
             !enteredTarget.isCurrentProject() ||
+            !enteredTarget.sourceProjectAuthority.isCurrent() ||
             modulationDragPreviewStore.value?.modulatorId !== enteredTarget.modulatorId ||
+            modulationDragPreviewStore.value?.projectAuthority !== enteredTarget.sourceProjectAuthority ||
             !modulationStore.value?.modulators.some(
                 (modulator) => modulator.id === enteredTarget.modulatorId && modulator.enabled
             ) ||
@@ -454,10 +470,13 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 shouldExecute: () =>
                     mountedRef.current &&
                     enteredTarget.isCurrentProject() &&
+                    enteredTarget.sourceProjectAuthority.isCurrent() &&
                     targetGenerationRef.current === targetGeneration &&
                     currentTargetRef.current.trackId === enteredTarget.trackId &&
                     currentTargetRef.current.deviceId === enteredTarget.deviceId &&
                     currentTargetRef.current.paramId === enteredTarget.paramId &&
+                    modulationDragPreviewStore.value?.modulatorId === enteredTarget.modulatorId &&
+                    modulationDragPreviewStore.value?.projectAuthority === enteredTarget.sourceProjectAuthority &&
                     (modulationStore.value?.modulators.some(
                         (modulator) => modulator.id === enteredTarget.modulatorId && modulator.enabled
                     ) ??

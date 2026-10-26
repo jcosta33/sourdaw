@@ -493,16 +493,11 @@ export const RotaryKnob = ({
                 {/* R-C1: Modulation halo arcs — one layer per connected modulator */}
                 {modulations?.map((mod, index) => {
                     const sweepDeg = Math.max(2, Math.min(270, Math.abs(mod.amount * 270)));
-                    let haloBg: string;
-                    if (mod.amount >= 0) {
-                        const lo = Math.min(arcAngleDeg, 270 - sweepDeg);
-                        const hi = lo + sweepDeg;
-                        haloBg = `conic-gradient(from 225deg, transparent 0deg, transparent ${lo}deg, ${mod.color} ${lo}deg, ${mod.color} ${hi}deg, transparent ${hi}deg)`;
-                    } else {
-                        const hi = Math.max(arcAngleDeg, sweepDeg);
-                        const lo = hi - sweepDeg;
-                        haloBg = `conic-gradient(from 225deg, transparent 0deg, transparent ${lo}deg, ${mod.color} ${lo}deg, ${mod.color} ${hi}deg, transparent ${hi}deg)`;
-                    }
+                    const rangeStart = mod.amount >= 0 ? arcAngleDeg : arcAngleDeg - sweepDeg;
+                    const rangeEnd = mod.amount >= 0 ? arcAngleDeg + sweepDeg : arcAngleDeg;
+                    const lo = Math.max(0, Math.min(270, rangeStart));
+                    const hi = Math.max(0, Math.min(270, rangeEnd));
+                    const haloBg = `conic-gradient(from 225deg, transparent 0deg, transparent ${lo}deg, ${mod.color} ${lo}deg, ${mod.color} ${hi}deg, transparent ${hi}deg)`;
                     return (
                         <div
                             key={mod.id}

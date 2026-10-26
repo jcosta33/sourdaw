@@ -5,12 +5,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { modulationDragPreviewStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 
 const mockProjectCurrent = vi.hoisted(() => ({ value: true }));
+const mockProjectGeneration = vi.hoisted(() => ({ value: 0 }));
 const mockSetDeviceParameter = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/Project/useCases', () => ({
-    captureProjectTransitionAuthority: () => ({ isCurrent: () => mockProjectCurrent.value }),
+    captureProjectTransitionAuthority: () => {
+        const generation = mockProjectGeneration.value;
+        return { isCurrent: () => mockProjectCurrent.value && generation === mockProjectGeneration.value };
+    },
 }));
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
@@ -21,6 +26,13 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
 }));
+
+function setDragPreview(modulatorId: string | null): void {
+    modulationDragPreviewStore.set({
+        modulatorId,
+        projectAuthority: modulatorId === null ? null : captureProjectTransitionAuthority(),
+    });
+}
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
 
@@ -95,7 +107,8 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         vi.mocked(executeUserAppAction).mockClear();
         mockSetDeviceParameter.mockClear();
         mockProjectCurrent.value = true;
-        modulationDragPreviewStore.set({ modulatorId: null });
+        mockProjectGeneration.value = 0;
+        setDragPreview(null);
         modulationStore.set({
             modulators: [
                 {
@@ -232,7 +245,7 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         expect(relatedBefore.id).toBe('mod-related');
         expect(collidingOnRate.id).toBe('mod-1');
 
-        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-1' }));
+        act(() => setDragPreview('mod-1'));
         fireEvent.dragEnter(gainTarget);
         const preview = halosAt(gainTarget);
         expect(preview.map((halo) => halo.id)).toEqual(['mod-related', 'mod-1']);
@@ -305,7 +318,7 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
                 modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
             })
         );
-        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-related' }));
+        act(() => setDragPreview('mod-related'));
         const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
         const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
         fireEvent.dragEnter(target);
@@ -342,7 +355,7 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
                 modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
             })
         );
-        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-related' }));
+        act(() => setDragPreview('mod-related'));
         const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
         const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
         fireEvent.dragEnter(target);
@@ -359,13 +372,31 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         view.unmount();
     });
 
+    it('rejects a drag that began before a project replacement with reused target identities', () => {
+        act(() =>
+            modulationStore.set({
+                modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
+            })
+        );
+        // Keep the authority captured at source dragstart, then replace the project before target entry.
+        act(() => setDragPreview('mod-related'));
+        mockProjectGeneration.value += 1;
+
+        render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        fireEvent.dragEnter(target);
+        fireEvent.drop(target);
+
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+    });
+
     it('refuses a queued mapping after the source disappears or the control unmounts', () => {
         act(() =>
             modulationStore.set({
                 modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
             })
         );
-        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-related' }));
+        act(() => setDragPreview('mod-related'));
         const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
         const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
         fireEvent.dragEnter(target);
@@ -399,7 +430,7 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
         expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
 
-        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-unrelated' }));
+        act(() => setDragPreview('mod-unrelated'));
         fireEvent.dragEnter(target);
         expect(JSON.parse(screen.getByTestId('rotary-knob').dataset.modulations!)).toEqual([
             expect.objectContaining({ id: 'mod-unrelated', amount: 0.5, activity: 0, preview: true }),
@@ -408,10 +439,10 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         fireEvent.dragLeave(target);
         expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
         fireEvent.dragEnter(target);
-        act(() => modulationDragPreviewStore.set({ modulatorId: null }));
+        act(() => setDragPreview(null));
         expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
         expect(executeUserAppAction).not.toHaveBeenCalled();
-        act(() => modulationDragPreviewStore.set({ modulatorId: 'mod-unrelated' }));
+        act(() => setDragPreview('mod-unrelated'));
         fireEvent.drop(target);
         expect(executeUserAppAction).not.toHaveBeenCalled();
         fireEvent.dragEnter(target);
@@ -434,7 +465,7 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         );
         // The source owns drag teardown. The target only owns hover and the command.
         expect(modulationDragPreviewStore.value?.modulatorId).toBe('mod-unrelated');
-        act(() => modulationDragPreviewStore.set({ modulatorId: null }));
+        act(() => setDragPreview(null));
         expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
         view.unmount();
     });

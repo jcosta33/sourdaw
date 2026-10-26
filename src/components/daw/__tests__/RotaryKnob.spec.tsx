@@ -694,6 +694,34 @@ describe('RotaryKnob', () => {
         ).toEqual(halos.map((halo) => halo.getAttribute('style')));
     });
 
+    it('clips positive and negative modulation ranges at the knob limits', () => {
+        const color = 'oklch(0.7 0.1 20)';
+        const { container, rerender } = render(
+            <RotaryKnob
+                value={100}
+                min={0}
+                max={100}
+                onChange={vi.fn()}
+                modulations={[{ id: 'positive', amount: 0.5, color }]}
+            />
+        );
+
+        const positiveHalo = container.querySelector<HTMLElement>('[data-modulation-halo="positive"]')!;
+        expect(positiveHalo.style.background).toContain(`transparent 270deg, ${color} 270deg, ${color} 270deg`);
+
+        rerender(
+            <RotaryKnob
+                value={0}
+                min={0}
+                max={100}
+                onChange={vi.fn()}
+                modulations={[{ id: 'negative', amount: -0.5, color }]}
+            />
+        );
+        const negativeHalo = container.querySelector<HTMLElement>('[data-modulation-halo="negative"]')!;
+        expect(negativeHalo.style.background).toContain(`transparent 0deg, ${color} 0deg, ${color} 0deg`);
+    });
+
     it('should render arc with every tone variant', () => {
         const tones = [
             'neutral',

@@ -79,8 +79,13 @@ const mocks = vi.hoisted(() => {
         // every store write so a drag gesture can be proven to write once.
         storeSet: vi.fn<(next: StoreValue) => void>(),
         pushUndoEntry: vi.fn<(label: string, undoFn: () => void, redoFn: () => void) => void>(),
+        captureProjectAuthority: vi.fn(() => ({ isCurrent: vi.fn(() => true) })),
     };
 });
+
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: mocks.captureProjectAuthority,
+}));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: { __id?: string }, defaultValue: unknown) => {
@@ -139,7 +144,7 @@ describe('ModulationMatrix', () => {
         vi.clearAllMocks();
         mocks.modState = { modulators: [] };
         mocks.trackState = { tracks: [] };
-        modulationDragPreviewStore.set({ modulatorId: null });
+        modulationDragPreviewStore.set({ modulatorId: null, projectAuthority: null });
     });
 
     afterEach(() => {
@@ -196,7 +201,11 @@ describe('ModulationMatrix', () => {
         const dataTransfer = { setData: vi.fn(), effectAllowed: '' };
 
         fireEvent.dragStart(handle, { dataTransfer });
+        expect(mocks.captureProjectAuthority).toHaveBeenCalledTimes(1);
         expect(modulationDragPreviewStore.value?.modulatorId).toBe('mod-1');
+        expect(modulationDragPreviewStore.value?.projectAuthority).toBe(
+            mocks.captureProjectAuthority.mock.results[0]?.value
+        );
         expect(executeUserAppAction).not.toHaveBeenCalled();
         expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-sourdaw-modulator', 'mod-1');
 

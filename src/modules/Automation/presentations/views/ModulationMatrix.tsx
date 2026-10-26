@@ -22,6 +22,7 @@ import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 
 import { type Modulator, type ModulatorKind, type ModulatorMapping } from '../../models/Modulator';
 import { modulationDragPreviewStore } from '../../stores/modulationDragPreviewStore';
@@ -569,7 +570,7 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
     useEffect(() => {
         const clearOwnedDrag = (): void => {
             if (modulationDragPreviewStore.value?.modulatorId === modulator.id) {
-                modulationDragPreviewStore.set({ modulatorId: null });
+                modulationDragPreviewStore.set({ modulatorId: null, projectAuthority: null });
             }
         };
         const cancelOnEscape = (event: KeyboardEvent): void => {
@@ -587,14 +588,15 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
     }, [modulator.id]);
 
     const handleDragStart = (event: ReactDragEvent<HTMLButtonElement>): void => {
+        const projectAuthority = captureProjectTransitionAuthority();
         event.dataTransfer.setData('application/x-sourdaw-modulator', modulator.id);
         event.dataTransfer.effectAllowed = 'copy';
-        modulationDragPreviewStore.set({ modulatorId: modulator.id });
+        modulationDragPreviewStore.set({ modulatorId: modulator.id, projectAuthority });
     };
 
     const handleDragEnd = (): void => {
         if (modulationDragPreviewStore.value?.modulatorId === modulator.id) {
-            modulationDragPreviewStore.set({ modulatorId: null });
+            modulationDragPreviewStore.set({ modulatorId: null, projectAuthority: null });
         }
     };
 
