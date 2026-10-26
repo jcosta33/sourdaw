@@ -1060,7 +1060,9 @@ describe('lane publish', () => {
         it.each(['absent remote', 'fast-forward remote'])('publishes AI notes to an %s', (state) => {
             const f = notesFixture();
             try {
-                if (state === 'fast-forward remote') f.seed();
+                if (state === 'fast-forward remote') {
+                    f.seed();
+                }
                 const notesSha = f.note(f.primary, f.headSha, 'local authorship note');
                 f.push();
                 expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(f.headSha);
