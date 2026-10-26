@@ -30,6 +30,7 @@ import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
 import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
 import { setTargetTrackId } from '#/modules/MIDI/repositories/webMidi/setTargetTrackId';
+import { getTargetTrackId } from '#/modules/MIDI/repositories/webMidi/getTargetTrackId';
 import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
 import { triggerLiveNoteOn } from '#/modules/MIDI/useCases/triggerLiveNoteOn';
 
@@ -109,6 +110,11 @@ const commitGate = vi.hoisted(() => ({
     beforePending: null as Promise<void> | null,
     pending: null as Promise<void> | null,
     release: null as (() => void) | null,
+}));
+
+const liveMidiGate = vi.hoisted(() => ({ pending: null as Promise<void> | null }));
+vi.mock('#/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn', () => ({
+    handleWebMidiNoteOn: () => liveMidiGate.pending ?? Promise.resolve(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
@@ -275,6 +281,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         vi.restoreAllMocks();
         commitGate.beforeClipId = null;
         commitGate.beforePending = null;
+        liveMidiGate.pending = null;
         agentProjectRepairStateStore.set(null);
         clearHandlerRegistry();
         clearUndoHistory();
@@ -551,6 +558,10 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         }
         flushAutomergeStorageWrites();
         mocks.audioClock.currentTime = 0.5;
+        expect(activeRecordingRef.current).toEqual([provisional.id]);
+        expect(getTargetTrackId()).toBe(TRACK_ID);
+        const worker = Promise.withResolvers<void>();
+        liveMidiGate.pending = worker.promise;
 
         const physical = handleWebMidiMessage({ data: new Uint8Array([0x90, 62, 111]), timeStamp: undefined });
         const virtual = triggerLiveNoteOn(2, 64, 99);
@@ -558,6 +569,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         mocks.audioClock.currentTime = 1;
 
         await stopActiveRecording();
+        worker.resolve();
         await Promise.all([physical, virtual]);
 
         const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
