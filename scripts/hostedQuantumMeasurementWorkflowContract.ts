@@ -147,7 +147,7 @@ const MEASUREMENT_JOB_MINUTES = 30;
 function assertBoundedChromeInstall(install: UnknownRecord): void {
     const run = install.run;
     if (typeof run !== 'string') {
-        throw new Error('Hosted quantum measurement workflow must run one Chrome transaction');
+        throw new TypeError('Hosted quantum measurement workflow must run one Chrome transaction');
     }
     if (!run.includes('playwright install --force chrome')) {
         throw new Error(

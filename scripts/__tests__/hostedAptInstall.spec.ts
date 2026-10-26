@@ -251,29 +251,9 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
     });
 
     it('re-observes the bound unit when its cgroup disappears during a read', () => {
-        const probe = spawnSync(
-            '/usr/bin/python3',
-            [
-                '-c',
-                `import importlib.util
-from unittest.mock import patch
-spec = importlib.util.spec_from_file_location('hosted', 'scripts/hostedAptInstall.py')
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-fields = {'ControlGroup': '/system.slice/example.service'}
-with patch.object(module.Path, 'read_text', side_effect=FileNotFoundError()):
-    assert module.drained(fields, 'example.service') is None
-with patch.object(module.Path, 'read_text', side_effect=PermissionError('denied')):
-    try:
-        module.drained(fields, 'example.service')
-    except module.Unproven:
-        pass
-    else:
-        raise AssertionError('unreadable cgroup was accepted')
-`,
-            ],
-            { encoding: 'utf8' }
-        );
+        const probe = spawnSync('/usr/bin/python3', ['scripts/__tests__/fixtures/hostedAptInstall/observation.py'], {
+            encoding: 'utf8',
+        });
         expect(probe.status, probe.stderr).toBe(0);
     });
 
