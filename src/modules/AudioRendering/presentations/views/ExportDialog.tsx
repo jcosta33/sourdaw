@@ -210,6 +210,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
             };
         }
+        return undefined;
     }, [open]);
 
     const loopAvailable = transport.loopEnd > transport.loopStart;
