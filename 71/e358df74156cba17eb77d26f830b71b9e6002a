@@ -1,0 +1,33 @@
+.agents/skills/review-stances/project-integrity.md
+  s_3e0dfc672a17d7::t_2c92a5c78fdbf5 308-327
+.agents/skills/review-stances/session-lifecycle.md
+  s_3e0dfc672a17d7::t_17e30ebed33a77 336-353
+release/open-source-inventory.json
+  s_d99a62fe2de3a3::t_0483b22c690261 1212
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingRootWitness.integration.spec.ts
+  s_d99a62fe2de3a3::t_9debe4e5e82256 244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "71e358df74156cba17eb77d26f830b71b9e6002a",
+  "prompts": {},
+  "sessions": {
+    "s_3e0dfc672a17d7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a175c1-dd4d-7c51-9487-2c1caa1c5919",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
