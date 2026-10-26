@@ -16,6 +16,7 @@ while [ "$#" -ge 2 ]; do
   case "$2" in
     Dir::Etc::sourcelist/f) printf "%s='%s'\n" "$1" "$list" ;;
     Dir::Etc::sourceparts/d) printf "%s='%s/'\n" "$1" "${parts%/}" ;;
+    Dir::State::status/f) printf "%s='%s'\n" "$1" "${FAKE_APT_STATUS:?private status path required}" ;;
     *) printf 'apt-config stub has no value for %s\n' "$2" >&2; exit 64 ;;
   esac
   shift 2
