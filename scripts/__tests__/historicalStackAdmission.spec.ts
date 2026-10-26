@@ -488,6 +488,47 @@ describe('historical stack native admission', () => {
         expect(() => port.addMarker(anchor)).toThrow();
         expect(port.markers()).toEqual([anchor, anchor]);
     });
+
+    it.each([
+        { order: 'foreign then matching', markers: [sha('d'), anchor] },
+        { order: 'matching then foreign', markers: [anchor, sha('d')] },
+        { order: 'duplicate matching', markers: [anchor, anchor] },
+    ])('ordinary registered-lineage reads refuse $order real Git markers', ({ markers }) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-registered-marker-read-'));
+        execFileSync('git', ['init', root], { stdio: 'pipe' });
+        const localEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+        const descriptor: LaneStack = {
+            version: 1,
+            childBranch,
+            parentBranch,
+            forkHead: anchor,
+            parentHead: next,
+            parentPullRequest: 5425,
+        };
+        const port = historicalAdmissionShellPort(
+            {
+                lane: root,
+                branch: childBranch,
+                primaryRoot: root,
+                gitPath: 'git',
+                ghPath: 'gh',
+                session: { configDir: join(root, 'session'), env: {}, dispose: () => undefined },
+                localEnv,
+            },
+            { childPullRequest: 5438, parentPullRequest: 5425, expectedHead: child }
+        );
+        port.saveReceipt({ version: 1, childPullRequest: 5438, expectedChildHead: child, descriptor });
+        port.installDescriptor(descriptor);
+        for (const marker of markers) {
+            execFileSync('git', ['config', '--add', `branch.${childBranch}.sourdaw-stack-fork`, marker], {
+                cwd: root,
+                env: localEnv,
+            });
+        }
+
+        expect(() => port.readStack(childBranch)).toThrow(/lineage marker/);
+    });
+
     it('requires explicit exact-head admission arguments and preserves ordinary sync selection', () => {
         const args = [
             '--lane',
