@@ -516,19 +516,19 @@ describe('historical stack native admission', () => {
                     parentHead: parent,
                 });
             }
-            const port =
-                kind === 'cycle'
-                    ? {
-                          ...f.port,
-                          readStack: () => ({
-                              version: 1 as const,
-                              childBranch: parentBranch,
-                              parentBranch: childBranch,
-                              forkHead: anchor,
-                              parentHead: parent,
-                          }),
-                      }
-                    : f.port;
+            let port: HistoricalAdmissionPort = f.port;
+            if (kind === 'cycle') {
+                port = {
+                    ...f.port,
+                    readStack: () => ({
+                        version: 1,
+                        childBranch: parentBranch,
+                        parentBranch: childBranch,
+                        forkHead: anchor,
+                        parentHead: parent,
+                    }),
+                };
+            }
             expect(() => admitHistoricalStack(f.input, port)).toThrow();
             expect(f.writes).toEqual([]);
         }
