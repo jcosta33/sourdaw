@@ -6,9 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
     assertTrustedExecutingBlob,
-    AUTHOR_BOT_COMMIT_EMAIL,
-    AUTHOR_BOT_COMMIT_NAME,
-    AUTHOR_BOT_NODE_ID,
     authenticateRole,
     GITHUB_HTTPS_REMOTE,
     gitAuthenticatedArgs,
@@ -22,10 +19,11 @@ import {
 import { fail, PR_STATE } from './prContract.ts';
 import { isAncestorCommit, parsePublishWorktrees, resolveAuthorLane, trustedPublishRuntime } from './publishLane.ts';
 import {
+    assertHistoricalPullRequestCandidates,
     assertStackAcyclic,
+    historicalDescriptor,
     laneStackPath,
     parseHistoricalAdmissionReceipt,
-    parseLaneStack,
     parseStackParents,
     readLaneStack,
     readHistoricalAdmissionReceipt,
@@ -34,64 +32,26 @@ import {
     stackParentCandidates,
     stackParentQuery,
     writeLaneStack,
+    type HistoricalAdmissionInput,
+    type HistoricalAdmissionPort,
+    type HistoricalPullRequest,
+    type HistoricalStackObservation,
     type LaneStack,
     type HistoricalAdmissionReceipt,
     type StackReadPort,
     type StackParent,
 } from './stackedLanes.ts';
 
-export type { HistoricalAdmissionReceipt } from './stackedLanes.ts';
+export type {
+    HistoricalAdmissionInput,
+    HistoricalAdmissionPort,
+    HistoricalAdmissionReceipt,
+    HistoricalStackObservation,
+} from './stackedLanes.ts';
 
 // @see ../.agents/skills/delivery-orchestration/historical-stack-admission.md
 export const SYNC_PARENT_USAGE =
     'usage: pnpm lane:sync-parent --lane <absolute-child-lane> [--admit-historical --child-pr <number> --parent-pr <number> --expected-head <sha>]';
-
-type HistoricalPullRequest = {
-    number: number;
-    id: string;
-    branch: string;
-    headSha: string;
-    baseBranch: string;
-    createdAt: string;
-    repository: string;
-    repositoryId: string;
-    headRepository: string;
-    headRepositoryId: string;
-    authorId: string;
-    state: string;
-    events: string[];
-};
-
-export type HistoricalStackObservation = {
-    child: HistoricalPullRequest;
-    parent: HistoricalPullRequest;
-    childPullRequests: number[];
-    parentPullRequests: number[];
-};
-
-export type HistoricalAdmissionInput = {
-    childPullRequest: number;
-    parentPullRequest: number;
-    expectedHead: string;
-    branch: string;
-};
-
-export type HistoricalAdmissionPort = {
-    head: () => string;
-    clean: () => boolean;
-    observe: () => HistoricalStackObservation;
-    childLog: () => string;
-    parentLog: () => string;
-    parentLocalHead: () => string;
-    isAncestor: (ancestor: string, descendant: string) => boolean;
-    readDescriptor: () => LaneStack | undefined;
-    readReceipt: () => HistoricalAdmissionReceipt | undefined;
-    markers: () => string[];
-    saveReceipt: (receipt: HistoricalAdmissionReceipt) => void;
-    addMarker: (fork: string) => void;
-    installDescriptor: (descriptor: LaneStack) => void;
-    readStack: (branch: string) => LaneStack | undefined;
-};
 
 const fullSha = /^[0-9a-f]{40}$/;
 
@@ -163,22 +123,8 @@ export function parseHistoricalStackObservation(
     const repository = object(object(response.data).repository);
     const child = parseHistoricalPullRequest(repository.child);
     const parent = parseHistoricalPullRequest(repository.parent);
-    for (const [pr, candidates] of [
-        [child, children],
-        [parent, parents],
-    ] as const) {
-        if (
-            candidates.length !== 1 ||
-            candidates[0]?.number !== pr.number ||
-            candidates[0]?.branch !== pr.branch ||
-            candidates[0]?.headSha !== pr.headSha ||
-            candidates[0]?.repository !== pr.repository ||
-            candidates[0]?.authorId !== pr.authorId ||
-            candidates[0]?.state !== pr.state
-        ) {
-            fail('historical head ref must have exactly one unchanged original pull request');
-        }
-    }
+    assertHistoricalPullRequestCandidates(child, children);
+    assertHistoricalPullRequestCandidates(parent, parents);
     if (
         object(object(repository.child).baseRef).target === null ||
         object(object(object(repository.child).baseRef).target).oid !== parent.headSha
@@ -203,149 +149,14 @@ function historicalStackQuery(child: number, parent: number): string[] {
     ];
 }
 
-type NativeRefEntry = { old: string; head: string; time: number };
-
-function nativeRefHistory(raw: string, port: HistoricalAdmissionPort): NativeRefEntry[] {
-    if (raw.length > 1024 * 1024 || !raw.endsWith('\n')) {
-        fail('incomplete native branch history');
-    }
-    const lines = raw.slice(0, -1).split('\n');
-    const entries: NativeRefEntry[] = [];
-    for (const [index, line] of lines.entries()) {
-        const match = /^([0-9a-f]{40}) ([0-9a-f]{40}) (.+) <([^<>]+)> ([0-9]+) [+-][0-9]{4}\t(.+)$/.exec(line);
-        if (match === null) {
-            fail('invalid native branch history');
-        }
-        const [, old, head, name, email, seconds, message] = match;
-        if (
-            old === undefined ||
-            head === undefined ||
-            seconds === undefined ||
-            message === undefined ||
-            name !== AUTHOR_BOT_COMMIT_NAME ||
-            email !== AUTHOR_BOT_COMMIT_EMAIL
-        ) {
-            fail('native branch history is not bound to the author App');
-        }
-        const time = Number(seconds);
-        if (!Number.isSafeInteger(time) || time <= 0 || /^0+$/.test(head)) {
-            fail('invalid native branch timestamp or head');
-        }
-        const previous = entries.at(-1);
-        if (index === 0) {
-            if (old !== '0'.repeat(40) || message !== `branch: Created from ${head}`) {
-                fail('native branch creation record missing');
-            }
-        } else if (
-            previous === undefined ||
-            old !== previous.head ||
-            time < previous.time ||
-            !/^(commit(?: \(merge\))?: |merge .+: )/.test(message) ||
-            !port.isAncestor(old, head)
-        ) {
-            fail('native branch history is discontinuous or rewritten');
-        }
-        entries.push({ old, head, time });
-    }
-    if (entries.length === 0) {
-        fail('native branch creation record missing');
-    }
-    return entries;
-}
-
-function historicalDescriptor(
+function descriptorForHistoricalReplay(
     input: HistoricalAdmissionInput,
-    observation: HistoricalStackObservation,
-    childLog: string,
-    parentLog: string,
-    parentLocalHead: string,
+    descriptor: LaneStack,
+    prior: HistoricalAdmissionReceipt | undefined,
+    stored: LaneStack | undefined,
+    initialMarkers: string[],
     port: HistoricalAdmissionPort
 ): LaneStack {
-    const { child, parent } = observation;
-    if (
-        child.number !== input.childPullRequest ||
-        parent.number !== input.parentPullRequest ||
-        child.number === parent.number ||
-        child.id === parent.id ||
-        child.branch !== input.branch ||
-        child.headSha !== input.expectedHead ||
-        child.baseBranch !== parent.branch ||
-        observation.childPullRequests.length !== 1 ||
-        observation.childPullRequests[0] !== child.number ||
-        observation.parentPullRequests.length !== 1 ||
-        observation.parentPullRequests[0] !== parent.number
-    ) {
-        fail('historical original parent identity does not match');
-    }
-    for (const pr of [child, parent]) {
-        if (
-            pr.repository !== REQUIRED_REPOSITORY ||
-            pr.headRepository !== REQUIRED_REPOSITORY ||
-            pr.repositoryId !== child.repositoryId ||
-            pr.headRepositoryId !== child.repositoryId ||
-            pr.authorId !== AUTHOR_BOT_NODE_ID ||
-            pr.state !== PR_STATE.OPEN ||
-            !fullSha.test(pr.headSha)
-        ) {
-            fail('historical admission requires same-repository open author pull requests');
-        }
-    }
-    if (child.events.length > 0 || parent.events.some((event) => event !== 'BaseRefChangedEvent')) {
-        fail('historical ref has retargeting, reuse or lifecycle ambiguity');
-    }
-    const children = nativeRefHistory(childLog, port);
-    const parents = nativeRefHistory(parentLog, port);
-    const birth = children[0];
-    if (
-        birth === undefined ||
-        children.at(-1)?.head !== input.expectedHead ||
-        parents.at(-1)?.head !== parentLocalHead
-    ) {
-        fail('native branch head changed or history incomplete');
-    }
-    const parentCreated = Date.parse(parent.createdAt) / 1000;
-    const childCreated = Date.parse(child.createdAt) / 1000;
-    if (
-        !Number.isFinite(parentCreated) ||
-        !Number.isFinite(childCreated) ||
-        !(parentCreated < birth.time && birth.time < childCreated)
-    ) {
-        fail('parent identity did not precede native child creation');
-    }
-    if (parents.some((entry) => entry.time === birth.time)) {
-        fail('ambiguous native creation timestamp');
-    }
-    const atBirth = parents.findLast((entry) => entry.time < birth.time);
-    if (
-        atBirth?.head !== birth.head ||
-        !port.isAncestor(birth.head, child.headSha) ||
-        !port.isAncestor(birth.head, parent.headSha) ||
-        !port.isAncestor(parentLocalHead, parent.headSha)
-    ) {
-        fail('native original parent did not hold the creation anchor');
-    }
-    return parseLaneStack({
-        version: 1,
-        childBranch: child.branch,
-        parentBranch: parent.branch,
-        forkHead: birth.head,
-        parentHead: parent.headSha,
-        parentPullRequest: parent.number,
-    });
-}
-
-export function admitHistoricalStack(input: HistoricalAdmissionInput, port: HistoricalAdmissionPort): LaneStack {
-    if (!port.clean() || port.head() !== input.expectedHead) {
-        fail('historical child is dirty, foreign or changed');
-    }
-    const observation = port.observe();
-    const childLog = port.childLog();
-    const parentLog = port.parentLog();
-    const parentHead = port.parentLocalHead();
-    let descriptor = historicalDescriptor(input, observation, childLog, parentLog, parentHead, port);
-    const prior = port.readReceipt();
-    const stored = port.readDescriptor();
-    const initialMarkers = port.markers();
     if (prior === undefined && (stored !== undefined || initialMarkers.length > 0)) {
         fail('historical admission refuses unjournaled partial or existing lineage');
     }
@@ -360,8 +171,16 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
         ) {
             fail('historical admission receipt conflicts with original identity');
         }
-        descriptor = receipt.descriptor;
+        return receipt.descriptor;
     }
+    return descriptor;
+}
+
+function assertInitialHistoricalRecords(
+    descriptor: LaneStack,
+    stored: LaneStack | undefined,
+    initialMarkers: string[]
+): void {
     if (
         initialMarkers.length > 1 ||
         (initialMarkers.length === 1 && initialMarkers[0] !== descriptor.forkHead) ||
@@ -369,6 +188,22 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
     ) {
         fail('historical admission has conflicting descriptor or marker');
     }
+}
+
+export function admitHistoricalStack(input: HistoricalAdmissionInput, port: HistoricalAdmissionPort): LaneStack {
+    if (!port.clean() || port.head() !== input.expectedHead) {
+        fail('historical child is dirty, foreign or changed');
+    }
+    const observation = port.observe();
+    const childLog = port.childLog();
+    const parentLog = port.parentLog();
+    const parentHead = port.parentLocalHead();
+    let descriptor = historicalDescriptor(input, observation, childLog, parentLog, parentHead, port);
+    const prior = port.readReceipt();
+    const stored = port.readDescriptor();
+    const initialMarkers = port.markers();
+    descriptor = descriptorForHistoricalReplay(input, descriptor, prior, stored, initialMarkers, port);
+    assertInitialHistoricalRecords(descriptor, stored, initialMarkers);
     assertStackAcyclic(descriptor, port.readStack);
     const revalidate = () => {
         if (

@@ -11,6 +11,7 @@ import {
     AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
 } from '../githubAppIdentity.ts';
+import { laneStackPath, readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 import {
     admitHistoricalStack,
     historicalAdmissionShellPort,
@@ -21,7 +22,6 @@ import {
     type HistoricalAdmissionReceipt,
     type HistoricalStackObservation,
 } from '../syncParentLane.ts';
-import { laneStackPath, readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 
 const sha = (letter: string) => letter.repeat(40);
 const anchor = 'acf91c9e72a98ce6c25f019593df8813c7a3c61d';
