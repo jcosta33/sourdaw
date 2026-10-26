@@ -1,18 +1,21 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
-    existsSync,
+    appendFileSync,
     chmodSync,
+    existsSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
     readdirSync,
+    renameSync,
     realpathSync,
     rmSync,
     symlinkSync,
     statSync,
     writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -55,6 +58,8 @@ const abundantMemoryBytes = 128 * 1024 ** 3;
 const linuxCensusObservationLimit = 32;
 const guardPath = resolve('scripts/resourceGuard.ts');
 const storagePath = resolve('scripts/resourceGuardStorage.ts');
+const atomicJsonMarkerPath = resolve('scripts/__tests__/fixtures/atomicJsonMarker.cjs');
+const { publishJson: publishFixtureJson } = createRequire(import.meta.url)(atomicJsonMarkerPath);
 
 function fixture(): string {
     const fixtures = resolve('.agents/guard-storage-fixtures');
@@ -131,6 +136,39 @@ afterEach(async () => {
         rmSync(root, { recursive: true, force: true });
     }
     roots.length = 0;
+});
+
+describe('atomic JSON fixture markers', () => {
+    it('keeps the readiness marker absent until all JSON bytes are written', () => {
+        const root = fixture();
+        const marker = join(root, 'started.json');
+        const record = { pid: 12345, tmp: join(root, 'tmp') };
+        let observedPartialWrite = false;
+        const filesystem = {
+            writeFileSync(
+                path: string,
+                contents: string,
+                options: { encoding: BufferEncoding; flag: string; mode: number }
+            ) {
+                const splitAt = Math.floor(contents.length / 2);
+                writeFileSync(path, contents.slice(0, splitAt), options);
+                expect(path).not.toBe(marker);
+                expect(existsSync(marker)).toBe(false);
+                expect(() => JSON.parse(readFileSync(path, 'utf8'))).toThrow();
+                expect(existsSync(marker)).toBe(false);
+                observedPartialWrite = true;
+                appendFileSync(path, contents.slice(splitAt), 'utf8');
+                expect(existsSync(marker)).toBe(false);
+            },
+            renameSync,
+        };
+
+        publishFixtureJson(marker, record, filesystem);
+
+        expect(observedPartialWrite).toBe(true);
+        expect(existsSync(marker)).toBe(true);
+        expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual(record);
+    });
 });
 
 function proofDiagnostic(result: Awaited<ReturnType<typeof runGuardedCommand>>): string {
@@ -981,21 +1019,56 @@ setInterval(() => {}, 1000);
             const marker = join(root, 'escaped.json');
             const rootMarker = join(root, 'root.pid');
             const resultPath = join(root, 'result.json');
-            const descendant = [
+            // Every variable part reaches both programs by argv, never by program-text construction:
+            // the descendant runs from its own file, so the spec builds no code from values.
+            const descendantPath = join(root, 'descendant.cjs');
+            writeFileSync(
+                descendantPath,
+                [
+                    "const fs = require('node:fs');",
+                    'const [marker, , markerWriter] = process.argv.slice(2);',
+                    "require(markerWriter).publishJson(marker, { pid: process.pid, tmp: require('node:os').tmpdir() });",
+                    'setInterval(() => {}, 1000);',
+                ].join(program === 'multiline program' ? '\n' : ' ')
+            );
+            // The descendant must be born only after the guard's synchronous startup settles: its
+            // identity publication and first process-table sample each spawn `ps`, and on a loaded
+            // hosted runner those stalls reached ~400 ms, landing a sample inside a shorter delay's
+            // window between the descendant's birth and the parent's exit — the sample then closed
+            // the hidden user into the tracked tree and the guard's normal-exit cleanup killed it.
+            // The two-second birth also clears the 2 000 ms host-publication gate; the
+            // `sampleIntervalMs` override below removes every later sample tick, so no census can
+            // run while the descendant lives under a still-alive parent.
+            const parent = [
                 "const fs = require('node:fs');",
-                `fs.writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() }));`,
-                'setInterval(() => {}, 1000);',
-            ].join(program === 'multiline program' ? '\n' : ' ');
-            const parent = `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)}, String(process.pid)); setTimeout(() => { const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { detached: true, stdio: 'ignore', env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 375); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(marker)}) && ${JSON.stringify(scenario === 'parent exit')}) { clearInterval(timer); process.exit(0); } }, 5);`;
+                'const [descendantPath, marker, rootMarker, programExtra, exitWhenMarker, markerWriter] = process.argv.slice(1);',
+                'fs.writeFileSync(rootMarker, String(process.pid));',
+                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker, programExtra, markerWriter], { detached: true, stdio: "ignore", env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 2_000);',
+                'const timer = setInterval(() => { if (fs.existsSync(marker) && exitWhenMarker === "true") { clearInterval(timer); process.exit(0); } }, 5);',
+            ].join(' ');
+            // The multiline variant rides a newline-containing argument on the descendant's command
+            // line, so the census still samples a multiline command row in that variant.
+            const programExtra =
+                program === 'multiline program' ? 'depth\nrecorded\nunder\nrange' : 'depth recorded under range';
             const options = {
                 command: process.execPath,
-                args: ['-e', parent],
+                args: [
+                    '-e',
+                    parent,
+                    descendantPath,
+                    marker,
+                    rootMarker,
+                    programExtra,
+                    String(scenario === 'parent exit'),
+                    atomicJsonMarkerPath,
+                ],
                 profile: 'focused',
                 availableMemoryBytes: abundantMemoryBytes,
                 maxRssBytes: 512 * 1024 ** 2,
                 admissionRoot: root,
                 storageRoot: join(root, 'storage'),
                 diskReserveBytes: 1,
+                sampleIntervalMs: 60_000,
             };
             const supervisor = spawn(
                 process.execPath,
@@ -1073,11 +1146,51 @@ setInterval(() => {}, 1000);
             const heartbeat = join(root, 'heartbeat');
             const rootMarker = join(root, 'root.pid');
             const resultPath = join(root, 'result.json');
-            const descendant = `const fs=require('node:fs'); const tmp=process.cwd(); const fd=fs.openSync('held','w'); ${consumer === 'open file' ? "process.chdir('/');" : 'fs.closeSync(fd);'} fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,tmp})); let n=0; setInterval(()=>{${consumer === 'open file' ? "fs.writeSync(fd,'x');" : "fs.writeFileSync('held',String(n));"} fs.writeFileSync(${JSON.stringify(heartbeat)},String(++n));},50);`;
-            const parent = `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(rootMarker)},String(process.pid)); setTimeout(()=>{const child=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore',cwd:process.env.TMPDIR,env:{PATH:process.env.PATH}});child.unref();},375); setInterval(()=>{if(fs.existsSync(${JSON.stringify(marker)})&&${scenario === 'parent exit'})process.exit(0)},5);`;
+            const descendantPath = join(root, 'hidden-user.cjs');
+            // Every variable part reaches both programs by argv, never by program-text construction:
+            // the descendant runs from its own file, so the spec builds no code from values.
+            writeFileSync(
+                descendantPath,
+                [
+                    "const fs = require('node:fs');",
+                    'const [marker, heartbeat, holdsFile, markerWriter] = process.argv.slice(2);',
+                    'const tmp = process.cwd();',
+                    "const fd = fs.openSync('held', 'w');",
+                    'if (holdsFile === "open file") process.chdir("/");',
+                    'else fs.closeSync(fd);',
+                    'require(markerWriter).publishJson(marker, { pid: process.pid, tmp });',
+                    'let n = 0;',
+                    'setInterval(() => {',
+                    '  if (holdsFile === "open file") fs.writeSync(fd, "x");',
+                    "  else fs.writeFileSync('held', String(n));",
+                    '  fs.writeFileSync(heartbeat, String(++n));',
+                    '}, 50);',
+                ].join('\n')
+            );
+            // Same reason as the descendant-spawn delay above: the hidden user may only be born
+            // after the guard's synchronous startup and its first process-table sample settle, so
+            // no sample can close it into the tracked tree and have the exit cleanup kill it; the
+            // 60-second `sampleIntervalMs` override below removes every later sample tick outright.
+            const parent = [
+                "const fs = require('node:fs');",
+                'const [descendantPath, marker, heartbeat, rootMarker, holdsFile, exitWhenMarker, markerWriter] = process.argv.slice(1);',
+                'fs.writeFileSync(rootMarker, String(process.pid));',
+                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker, heartbeat, holdsFile, markerWriter], { detached: true, stdio: "ignore", cwd: process.env.TMPDIR, env: { PATH: process.env.PATH } }); child.unref(); }, 2_000);',
+                'setInterval(() => { if (fs.existsSync(marker) && exitWhenMarker === "true") process.exit(0); }, 5);',
+            ].join(' ');
             const options = {
                 command: process.execPath,
-                args: ['-e', parent],
+                args: [
+                    '-e',
+                    parent,
+                    descendantPath,
+                    marker,
+                    heartbeat,
+                    rootMarker,
+                    consumer,
+                    String(scenario === 'parent exit'),
+                    atomicJsonMarkerPath,
+                ],
                 profile: 'focused',
                 // The guard samples the tree at spawn and then per interval; a sample taken while the
                 // descendant is still the parent's child tracks it, and normal exit then kills it.

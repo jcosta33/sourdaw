@@ -133,6 +133,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Preferences/useCases', () => ({
     defaultPreferences: { trackHeight: 'normal' },
     setTrackHeight: vi.fn(),
+    updatePreferences: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/confirmUser', () => ({

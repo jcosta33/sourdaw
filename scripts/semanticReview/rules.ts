@@ -20,6 +20,7 @@
 import { isPersistedProjectStatePath, SAVED_PROJECT_STATE_DIGEST_ENTRIES } from '../savedProjectStatePaths.ts';
 import { isNodeTestCollected, isPlaywrightCollected, isVitestCollected } from '../vitestCollectionPatterns.ts';
 
+import { admissionCaseRule } from './admissionCaseRule.ts';
 import { semanticDigest } from './contracts.ts';
 
 /**
@@ -322,19 +323,7 @@ export const SEMANTIC_RULES: readonly SemanticRule[] = [
             'A production path that was renamed while remaining the path under test',
         ],
     },
-    {
-        ...TEST_RULE,
-        id: 'admission_branch_completes_without_asserting',
-        version: '1',
-        purpose: 'Whether a new branch in the case asserts nothing.',
-        instructions:
-            'Does `after` add a branch whose body contains no assertion and does not fail — an early return, a `catch` that swallows, or an alternative path that simply ends? `state.unit.changedLines.after.addedControlFlow` names the added lines whose text introduces control flow — `if (`, `else`, `catch`, `switch`, `throw`, and a bare `return` — with a count and line numbers. Those are facts about which lines the edit added, never proof about behaviour: the text of an added line cannot show what its branch body does, whether a `catch` rethrows, or whether an assertion outside the regions this request carries covers the path a branch skips. When `state.unit.changedLines.basis` is `unavailable` the edit was not read line by line: answer from the supplied sides alone, and never read a missing fact as absence.',
-        criteria: {
-            true: 'At least one new branch can complete without asserting and without failing the case.',
-            false: 'Every branch asserts, fails, or throws.',
-        },
-        counterexamples: ['A branch that calls a shared assertion helper', 'A catch that rethrows or fails the test'],
-    },
+    admissionCaseRule(TEST_RULE),
     {
         ...TEST_RULE,
         id: 'coverage_moved_to_weaker_tier',

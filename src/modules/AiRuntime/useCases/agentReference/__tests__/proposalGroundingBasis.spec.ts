@@ -1,0 +1,121 @@
+import { describe, expect, it } from 'vitest';
+
+import { type ProposalProtectionFacts } from '../../../models/ProposalGroundingBasis';
+import { proposalGroundingBasis, unionProposalProtectionFacts } from '../proposalGroundingBasis';
+
+const snare = { name: 'setTrackGain', arguments: { trackId: 'track-snare', deltaDb: -3 } };
+const snareRefined = { name: 'setTrackGain', arguments: { trackId: 'track-snare', deltaDb: -2 } };
+const fader = { trackId: 'track-vocals', operations: ['setTrackGain'] };
+const pan = { trackId: 'track-vocals', operations: ['setTrackPan'] };
+
+function createCard(protectedControls: Array<{ trackId: string; operations: string[] }>) {
+    return proposalGroundingBasis.create({
+        prompt: 'turn Snare down 3 dB',
+        calls: [snare],
+        protectedUnchanged: [],
+        protectedControls,
+    });
+}
+
+describe('proposalGroundingBasis protected controls', () => {
+    it('unions independent facts without widening either whole-object exception', () => {
+        const firstExceptOperations: string[] = ['setTrackGain'];
+        const first: ProposalProtectionFacts = {
+            protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
+            protectedControls: [{ trackId: 'track-vocals', operations: [], exceptOperations: firstExceptOperations }],
+        };
+        const second: ProposalProtectionFacts = {
+            protectedUnchanged: [],
+            protectedControls: [
+                structuredClone(fader),
+                { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackPan'] },
+            ],
+        };
+        const facts = unionProposalProtectionFacts(first, second);
+        expect(facts).toEqual({
+            protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
+            protectedControls: [fader, first.protectedControls[0], second.protectedControls[1]],
+        });
+        firstExceptOperations.push('muteTrack');
+        second.protectedControls[0]!.operations.push('setTrackPan');
+        expect(facts.protectedControls).toEqual([
+            { trackId: 'track-vocals', operations: ['setTrackGain'] },
+            { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackGain'] },
+            { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackPan'] },
+        ]);
+    });
+
+    it('records the operations a card keeps as they resolved', () => {
+        expect(createCard([fader]).protectedControls).toEqual([fader]);
+    });
+
+    it('keeps both when two grounded requests protect different controls of one track', () => {
+        const refined = proposalGroundingBasis.extend({
+            previous: createCard([fader]),
+            prompt: 'make Snare 2 dB and keep the Vocals pan as is',
+            calls: [snareRefined],
+            inheritedCommandIndexes: [0],
+            protectedUnchanged: [],
+            protectedControls: [pan],
+        });
+
+        expect(refined.protectedControls).toEqual([
+            { trackId: 'track-vocals', operations: ['setTrackGain', 'setTrackPan'] },
+        ]);
+    });
+
+    it('keeps the control protection a refinement adds on its own', () => {
+        const refined = proposalGroundingBasis.extend({
+            previous: createCard([]),
+            prompt: 'make Snare 2 dB and keep the Vocals pan as is',
+            calls: [snareRefined],
+            inheritedCommandIndexes: [0],
+            protectedUnchanged: [],
+            protectedControls: [pan],
+        });
+
+        expect(refined.protectedControls).toEqual([pan]);
+    });
+
+    it('retains a whole-track exception through repeated refinements', () => {
+        const exception = { trackId: 'track-vocals', operations: [], exceptOperations: ['setTrackGain'] };
+        const card = createCard([exception]);
+        const first = proposalGroundingBasis.extend({
+            previous: card,
+            prompt: 'make Snare 2 dB',
+            calls: [snareRefined],
+            inheritedCommandIndexes: [0],
+            protectedUnchanged: [],
+            protectedControls: [],
+        });
+        const second = proposalGroundingBasis.extend({
+            previous: first,
+            prompt: 'make Snare 3 dB',
+            calls: [snare],
+            inheritedCommandIndexes: [0],
+            protectedUnchanged: [],
+            protectedControls: [fader],
+        });
+
+        expect(card.protectedControls).toContainEqual(exception);
+        expect(first.protectedControls).toContainEqual(exception);
+        expect(second.protectedControls).toContainEqual(exception);
+        expect(second.protectedControls).toContainEqual(fader);
+        expect(second.sources).toEqual(card.sources);
+    });
+
+    it('leaves a basis that predates the record without one', () => {
+        const legacy = createCard([]);
+        delete legacy.protectedControls;
+        const refined = proposalGroundingBasis.extend({
+            previous: legacy,
+            prompt: 'make Snare 2 dB',
+            calls: [snareRefined],
+            inheritedCommandIndexes: [0],
+            protectedUnchanged: [],
+            protectedControls: [pan],
+        });
+
+        expect(refined.protectedControls).toBeUndefined();
+    });
+});

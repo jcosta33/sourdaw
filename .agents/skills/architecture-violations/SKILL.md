@@ -37,7 +37,7 @@ Three failed fix or compile attempts → discard the approach, reread the module
 
 ### 4. Trace the blast radius before and after every move
 
-Trace upstream callers and downstream dependencies. `pnpm typecheck` is the exhaustive blast-radius tool.
+Trace upstream callers and downstream dependencies. CI's TypeScript typechecks provide the exhaustive compiler check; inspect their result on the pull request.
 
 **Why:** moving a symbol across a boundary breaks consumers you did not look at.
 

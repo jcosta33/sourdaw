@@ -37,6 +37,7 @@ import { unitReductionReason } from './fit.ts';
 import { type ScanAssessment } from './interpret.ts';
 import {
     assertAnswersMatchQuestions,
+    bestPassMissingEvidence,
     composeUnitPasses,
     passRequestPayload,
     requestedPasses,
@@ -80,6 +81,8 @@ import {
     type StoredUnitResponse,
 } from './unitAssessment.ts';
 import { orderPlannedUnits, plannedRequest, unitOmission } from './unitPriority.ts';
+
+import type { TestCaseContextProof } from './testCaseContext.ts';
 
 export type { StoredUnitResponse } from './unitAssessment.ts';
 /** Re-exported here because the run's own completion decision reads it and callers import it from the plan. */
@@ -145,6 +148,7 @@ export type SemanticUnitEvidence = {
      * name exactly what the fitter cut.
      */
     readonly fittedDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly testCaseContext?: TestCaseContextProof;
     readonly excluded: readonly SemanticScopeExclusion[];
     readonly truncated: readonly SemanticScopeExclusion[];
     readonly limitations: readonly string[];
@@ -235,6 +239,60 @@ function unitChangeFacts(set: SemanticEvidenceSet, file: SemanticChangedFile): U
     return changedLineFacts(set.changedLines.get(file.path));
 }
 
+/** Select declared context regions in the order the request fitter originally receives them. */
+function contextEvidenceForUnit(
+    set: SemanticEvidenceSet,
+    file: SemanticChangedFile,
+    rules: readonly SemanticRule[],
+    needsContract: boolean
+): { context: EvidenceReference[]; needsImplementation: boolean } {
+    const needsImplementation = unitNeedsImplementationSource(rules);
+    let context: EvidenceReference[] = [];
+    if (needsContract) {
+        context = set.references.filter((reference) => reference.side === 'context');
+    }
+    if (needsImplementation) {
+        context = context.concat(
+            set.references.filter(
+                (reference) =>
+                    reference.side === 'after' &&
+                    !isCollectedSpec(reference.path) &&
+                    !isAttributedTo(set, reference, file.path)
+            )
+        );
+    }
+    return { context, needsImplementation };
+}
+
+/** Disclose a missing case proof before adding the still assessable unit to the plan. */
+function appendPlannedUnit(input: {
+    readonly units: SemanticUnitPlan[];
+    readonly incomplete: SemanticScopeExclusion[];
+    readonly unitId: string;
+    readonly file: SemanticChangedFile;
+    readonly rules: readonly SemanticRule[];
+    readonly changedLineFacts: UnitChangedLineFacts;
+    readonly evidence: SemanticUnitEvidence;
+}): void {
+    const caseRule = input.rules.find((rule) => rule.id === 'admission_branch_completes_without_asserting');
+    if (
+        caseRule !== undefined &&
+        bestPassMissingEvidence({ rule: caseRule, kind: input.file.kind, evidence: input.evidence }).includes(
+            'complete test case context'
+        )
+    ) {
+        input.incomplete.push({ path: input.file.path, reason: 'test-case-context-not-supplied' });
+    }
+    input.units.push({
+        unitId: input.unitId,
+        path: input.file.path,
+        file: input.file,
+        rules: input.rules,
+        changedLineFacts: input.changedLineFacts,
+        evidence: input.evidence,
+    });
+}
+
 /**
  * Plans one unit per eligible changed file. A unit carries the rules whose applicability predicate
  * admits that path, and the context regions those rules require.
@@ -290,21 +348,7 @@ export function planUnits(
         }
         const needsContract = unitNeedsContractContext(rules);
         const unitChangedLineFacts = unitChangeFacts(set, file);
-        const needsImplementation = unitNeedsImplementationSource(rules);
-        let context: EvidenceReference[] = [];
-        if (needsContract) {
-            context = set.references.filter((reference) => reference.side === 'context');
-        }
-        if (needsImplementation) {
-            context = context.concat(
-                set.references.filter(
-                    (reference) =>
-                        reference.side === 'after' &&
-                        !isCollectedSpec(reference.path) &&
-                        !isAttributedTo(set, reference, file.path)
-                )
-            );
-        }
+        const { context, needsImplementation } = contextEvidenceForUnit(set, file, rules, needsContract);
         // The request carries the state plus every question, so the evidence budget is what remains
         // after the questions and the state's own envelope are paid for — measured by the same builder
         // the provider refuses over, with the evidence map still empty because no region is chosen yet.
@@ -333,28 +377,31 @@ export function planUnits(
                 `evidence for ${file.path} did not fit the per-request state budget: ${String(composed.dropped)} region(s) were not sent`
             );
         }
-        units.push({
+        const unitEvidence: SemanticUnitEvidence = {
+            own: composed.passes.flatMap((pass) => pass.own),
+            context: composed.passes.flatMap((pass) => pass.context),
+            references: composed.references,
+            contents: composed.contents,
+            passes: composed.passes,
+            excluded: [],
+            truncated: unitTruncated,
+            limitations: unitLimitations,
+            ownDroppedSides: mergedDroppedSides(composed.ownDroppedSides, set.withheldSides.own.get(file.path)),
+            contextDroppedSides: mergedDroppedSides(
+                composed.contextDroppedSides,
+                withheldContextSides(set, files, file.path, needsImplementation)
+            ),
+            fittedDroppedSides: composed.fittedDroppedSides,
+            testCaseContext: set.testCaseContext?.get(file.path),
+        };
+        appendPlannedUnit({
+            units,
+            incomplete,
             unitId,
-            path: file.path,
             file,
             rules,
             changedLineFacts: unitChangedLineFacts,
-            evidence: {
-                own: composed.passes.flatMap((pass) => pass.own),
-                context: composed.passes.flatMap((pass) => pass.context),
-                references: composed.references,
-                contents: composed.contents,
-                passes: composed.passes,
-                excluded: [],
-                truncated: unitTruncated,
-                limitations: unitLimitations,
-                ownDroppedSides: mergedDroppedSides(composed.ownDroppedSides, set.withheldSides.own.get(file.path)),
-                contextDroppedSides: mergedDroppedSides(
-                    composed.contextDroppedSides,
-                    withheldContextSides(set, files, file.path, needsImplementation)
-                ),
-                fittedDroppedSides: composed.fittedDroppedSides,
-            },
+            evidence: unitEvidence,
         });
     }
     // Admission order is the plan's own decision, not the path order the files arrived in: a binding
@@ -697,7 +744,13 @@ export async function runScan(input: RunScanInput): Promise<RunScanResult> {
             states: buildScopeStates({ excluded, unassessed }),
         }),
         signals,
-        limitations: [...evidenceSet.limitations, ...unitReductionLimitations],
+        limitations: [
+            ...evidenceSet.limitations,
+            ...unitReductionLimitations,
+            ...unitReductions
+                .filter((entry) => entry.reason === 'test-case-context-not-supplied')
+                .map((entry) => `case-level evidence for ${entry.path} was not supplied in a complete test case`),
+        ],
         usage: usageReport(usage),
         publication: { state: 'not_requested' },
         failureCode,

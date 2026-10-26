@@ -811,11 +811,25 @@ describe('lane publish', () => {
             });
             expect(withoutSnapshotFetches(snapshotLogs())).toEqual(withoutSnapshotFetches(beforeAmbiguousIssue));
             expect(fetchCount(snapshotLogs()) - fetchCount(beforeAmbiguousIssue)).toBe(1);
+            const explicitTitle = 'fix(delivery): preserve explicit publisher titles';
             runTrustedLanePublish(
                 primary,
-                ['--lane', authorizedLane, '--summary', DEFAULT_SUMMARY, '--test', TEST_INSTRUCTIONS],
+                [
+                    '--lane',
+                    authorizedLane,
+                    '--title',
+                    explicitTitle,
+                    '--summary',
+                    DEFAULT_SUMMARY,
+                    '--test',
+                    TEST_INSTRUCTIONS,
+                ],
                 launcherEnv
             );
+
+            const createdPullRequest = JSON.parse(logLines(pullRequestLog)[0]!) as string[];
+            expect(createdPullRequest.slice(0, 2)).toEqual(['pr', 'create']);
+            expect(createdPullRequest[createdPullRequest.indexOf('--title') + 1]).toBe(explicitTitle);
 
             expect(JSON.parse(readFileSync(mintLog, 'utf8').trim())).toEqual({
                 permissions: { contents: 'write', pull_requests: 'write', issues: 'write', workflows: 'write' },
@@ -933,90 +947,204 @@ describe('lane publish', () => {
         expect(cli).not.toMatch(/\bauthenticateRole\b/);
     });
 
-    it('does not run a lane-controlled pre-push hook in the token-bearing Git child', () => {
-        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-hooks-'));
-        const primary = join(fixtureRoot, 'primary');
-        const lane = join(fixtureRoot, 'lane');
-        const remote = join(fixtureRoot, 'remote.git');
-        const hookMarker = join(fixtureRoot, 'hook-token');
-        const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
-        let session: GhSession | undefined;
-        try {
+    it.each(['pre-push', 'reference-transaction'])(
+        'does not run a lane-controlled %s hook in the token-bearing Git child',
+        (hookName) => {
+            const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-hooks-'));
+            const primary = join(fixtureRoot, 'primary');
+            const lane = join(fixtureRoot, 'lane');
+            const remote = join(fixtureRoot, 'remote.git');
+            const hookMarker = join(fixtureRoot, 'hook-token');
+            const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+            let session: GhSession | undefined;
+            try {
+                initializeRepository(primary);
+                writeFileSync(join(primary, 'base.txt'), 'base\n');
+                fixtureGit(primary, ['add', 'base.txt']);
+                fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: hook fixture base']);
+                fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/hook-proof', lane]);
+
+                mkdirSync(join(lane, '.githooks'));
+                const hook = join(lane, '.githooks', hookName);
+                writeFileSync(
+                    hook,
+                    `#!/bin/sh\nif [ -n "$GH_TOKEN" ]; then\n  printf '%s\\n' fixture-hook-ran > ${JSON.stringify(hookMarker)}\nfi\n`
+                );
+                chmodSync(hook, 0o700);
+                fixtureGit(lane, ['add', `.githooks/${hookName}`]);
+                fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', `test: add hostile ${hookName} hook`]);
+                const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
+                // Activate the lane hook only after fixture commits and notes are complete.
+                fixtureGit(lane, ['notes', '--ref=ai', 'add', '-m', 'fixture authorship note', headSha]);
+                const notesSha = fixtureGit(lane, ['rev-parse', 'refs/notes/ai']);
+                fixtureGit(primary, ['config', 'core.hooksPath', '.githooks']);
+
+                execFileSync(systemGit, ['init', '--bare', remote], {
+                    cwd: fixtureRoot,
+                    env: fixtureGitEnv(),
+                    encoding: 'utf8',
+                });
+                fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
+                session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
+
+                expect(existsSync(hookMarker)).toBe(false);
+                shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(
+                    lane,
+                    'agent/12/hook-proof',
+                    headSha
+                );
+
+                expect(existsSync(hookMarker)).toBe(false);
+                expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/hook-proof'])).toBe(headSha);
+                expect(fixtureGit(remote, ['rev-parse', 'refs/notes/ai'])).toBe(notesSha);
+                expect(fixtureGit(lane, ['rev-parse', `refs/agents/pending-ai-notes/${notesSha}`])).toBe(notesSha);
+            } finally {
+                session?.dispose();
+                rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            }
+        }
+    );
+
+    describe('AI notes publication', () => {
+        function notesFixture() {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lane-notes-'));
+            const primary = join(root, 'primary');
+            const peer = join(root, 'peer');
+            const remote = join(root, 'remote.git');
+            const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
             initializeRepository(primary);
             writeFileSync(join(primary, 'base.txt'), 'base\n');
             fixtureGit(primary, ['add', 'base.txt']);
-            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: hook fixture base']);
-            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/hook-proof', lane]);
-
-            mkdirSync(join(lane, '.githooks'));
-            const prePushHook = join(lane, '.githooks/pre-push');
-            writeFileSync(prePushHook, `#!/bin/sh\nprintf %s "$GH_TOKEN" > ${JSON.stringify(hookMarker)}\n`);
-            chmodSync(prePushHook, 0o700);
-            fixtureGit(lane, ['add', '.githooks/pre-push']);
-            fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'test: add hostile pre-push hook']);
-            fixtureGit(primary, ['config', 'core.hooksPath', '.githooks']);
-
-            execFileSync(systemGit, ['init', '--bare', remote], {
-                cwd: fixtureRoot,
-                env: fixtureGitEnv(),
-                encoding: 'utf8',
-            });
+            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: notes base']);
+            const baseSha = fixtureGit(primary, ['rev-parse', 'HEAD']);
+            writeFileSync(join(primary, 'lane.txt'), 'lane\n');
+            fixtureGit(primary, ['add', 'lane.txt']);
+            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: notes lane']);
+            const headSha = fixtureGit(primary, ['rev-parse', 'HEAD']);
+            fixtureGit(root, ['init', '--bare', remote]);
+            fixtureGit(primary, ['push', remote, `${headSha}:refs/heads/main`]);
+            fixtureGit(root, ['clone', remote, peer]);
+            fixtureGit(peer, ['config', 'user.name', 'Peer']);
+            fixtureGit(peer, ['config', 'user.email', 'peer@example.com']);
             fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
-            const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
-            session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
-
-            shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(lane, 'agent/12/hook-proof', headSha);
-
-            expect(existsSync(hookMarker)).toBe(false);
-            expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/hook-proof'])).toBe(headSha);
-        } finally {
-            session?.dispose();
-            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            const session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
+            const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            const push = (git = systemGit) =>
+                shellPort(session, primary, primary, { git, gh: 'gh' }).push(primary, 'agent/12/notes-proof', headSha);
+            const note = (repository: string, target: string, message: string) => {
+                fixtureGit(repository, ['notes', '--ref=ai', 'add', '-m', message, target]);
+                return fixtureGit(repository, ['rev-parse', 'refs/notes/ai']);
+            };
+            const seed = () => {
+                const sha = note(primary, baseSha, 'shared note');
+                fixtureGit(primary, ['push', remote, 'refs/notes/ai:refs/notes/ai']);
+                fixtureGit(peer, ['fetch', remote, 'refs/notes/ai:refs/notes/ai']);
+                return sha;
+            };
+            return {
+                root,
+                primary,
+                peer,
+                remote,
+                systemGit,
+                baseSha,
+                headSha,
+                push,
+                note,
+                seed,
+                warnings,
+                cleanup() {
+                    warnings.mockRestore();
+                    session.dispose();
+                    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+                },
+            };
         }
-    });
 
-    it('pushes refs/notes/ai along with branch commits when refs/notes/ai exists', () => {
-        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lane-notes-'));
-        const primary = join(fixtureRoot, 'primary');
-        const lane = join(fixtureRoot, 'lane');
-        const remote = join(fixtureRoot, 'remote.git');
-        const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
-        let session: GhSession | undefined;
+        it('publishes the exact source without creating absent local AI notes', () => {
+            const f = notesFixture();
+            try {
+                f.push();
+                expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(f.headSha);
+                expect(fixtureGit(f.remote, ['for-each-ref', '--format=%(refname)', 'refs/notes/'])).toBe('');
+                expect(f.warnings).not.toHaveBeenCalled();
+            } finally {
+                f.cleanup();
+            }
+        });
 
-        try {
-            mkdirSync(primary, { recursive: true });
-            fixtureGit(primary, ['init', '-b', 'main']);
-            fixtureGit(primary, ['config', 'user.name', 'Fixture']);
-            fixtureGit(primary, ['config', 'user.email', 'fixture@example.com']);
-            writeFileSync(join(primary, 'base.txt'), 'base\n');
-            fixtureGit(primary, ['add', 'base.txt']);
-            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: fixture base']);
-            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/notes-proof', lane]);
+        it.each(['absent remote', 'fast-forward remote'])('publishes AI notes to an %s', (state) => {
+            const f = notesFixture();
+            try {
+                if (state === 'fast-forward remote') {
+                    f.seed();
+                }
+                const notesSha = f.note(f.primary, f.headSha, 'local authorship note');
+                f.push();
+                expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(f.headSha);
+                expect(fixtureGit(f.remote, ['rev-parse', 'refs/notes/ai'])).toBe(notesSha);
+                expect(f.warnings).not.toHaveBeenCalled();
+            } finally {
+                f.cleanup();
+            }
+        });
 
-            writeFileSync(join(lane, 'note.txt'), 'notes\n');
-            fixtureGit(lane, ['add', 'note.txt']);
-            fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'test: commit in lane']);
+        it.each(['divergent', 'remote ahead', 'racing'])(
+            'retains peer AI notes and pending local data with a %s writer',
+            (state) => {
+                const f = notesFixture();
+                try {
+                    const initial = f.seed();
+                    const localSha =
+                        state === 'remote ahead' ? initial : f.note(f.primary, f.headSha, 'local authorship note');
+                    const peerSha = f.note(f.peer, f.headSha, 'peer authorship note');
+                    let git = f.systemGit;
+                    if (state === 'racing') {
+                        git = join(f.root, 'racing-git');
+                        // Move the remote after publication captured its local OID, immediately before
+                        // the notes push. Both writers still use real Git's receive-side admission.
+                        writeFileSync(
+                            git,
+                            `#!/usr/bin/env node\nconst {spawnSync}=require('node:child_process');\nconst args=process.argv.slice(2);\nif(args.includes('push') && args.some(arg=>arg.endsWith(':refs/notes/ai'))) {\n const peer=spawnSync(${JSON.stringify(f.systemGit)},['push',${JSON.stringify(f.remote)},'refs/notes/ai:refs/notes/ai'],{cwd:${JSON.stringify(f.peer)},env:process.env,stdio:'inherit'});\n if(peer.status!==0)process.exit(peer.status??1);\n}\nconst result=spawnSync(${JSON.stringify(f.systemGit)},args,{env:process.env,stdio:'inherit'});\nprocess.exit(result.status??1);\n`
+                        );
+                        chmodSync(git, 0o700);
+                    } else {
+                        fixtureGit(f.peer, ['push', f.remote, 'refs/notes/ai:refs/notes/ai']);
+                    }
+                    f.push(git);
+                    expect(fixtureGit(f.remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(f.headSha);
+                    expect(fixtureGit(f.remote, ['rev-parse', 'refs/notes/ai'])).toBe(peerSha);
+                    expect(fixtureGit(f.remote, ['notes', '--ref=ai', 'show', f.headSha])).toBe('peer authorship note');
+                    const pendingRef = `refs/agents/pending-ai-notes/${localSha}`;
+                    expect(fixtureGit(f.primary, ['rev-parse', pendingRef])).toBe(localSha);
+                    fixtureGit(f.primary, ['fetch', f.remote, '+refs/notes/ai:refs/notes/ai']);
+                    expect(fixtureGit(f.primary, ['rev-parse', pendingRef])).toBe(localSha);
+                    const warning = f.warnings.mock.calls.flat().join('\n');
+                    expect(warning).toContain('warning:');
+                    expect(warning).toContain(pendingRef);
+                    expect(warning).toContain('non-forced');
+                    expect(warning).toContain('source branch was published');
+                } finally {
+                    f.cleanup();
+                }
+            }
+        );
 
-            const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
-            fixtureGit(lane, ['notes', '--ref=ai', 'add', '-m', 'ai authorship note', headSha]);
-            const noteSha = fixtureGit(lane, ['rev-parse', 'refs/notes/ai']);
-
-            execFileSync(systemGit, ['init', '--bare', remote], {
-                cwd: fixtureRoot,
-                env: fixtureGitEnv(),
-                encoding: 'utf8',
-            });
-            fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
-            session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
-
-            shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(lane, 'agent/12/notes-proof', headSha);
-
-            expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/notes-proof'])).toBe(headSha);
-            expect(fixtureGit(remote, ['rev-parse', 'refs/notes/ai'])).toBe(noteSha);
-        } finally {
-            session?.dispose();
-            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
-        }
+        it('fails a rejected source push instead of treating it as an optional AI notes failure', () => {
+            const f = notesFixture();
+            try {
+                const localSha = f.note(f.primary, f.headSha, 'local authorship note');
+                const hook = join(f.remote, 'hooks/pre-receive');
+                writeFileSync(hook, '#!/bin/sh\necho source-rejected >&2\nexit 1\n');
+                chmodSync(hook, 0o700);
+                expect(() => f.push()).toThrow(/source-rejected/);
+                expect(fixtureGit(f.remote, ['for-each-ref', '--format=%(refname)', 'refs/heads/agent/'])).toBe('');
+                expect(fixtureGit(f.primary, ['rev-parse', 'refs/notes/ai'])).toBe(localSha);
+                expect(f.warnings).not.toHaveBeenCalled();
+            } finally {
+                f.cleanup();
+            }
+        });
     });
 
     it('pushes without force, opens one PR, and prints the number', () => {
@@ -1845,6 +1973,98 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
     });
 
+    it('uses an explicit conventional title on creation', () => {
+        const { port, calls } = fakePort({ subject: 'test(foo): add regression coverage' });
+
+        publishLane(
+            12,
+            port,
+            undefined,
+            TEST_INSTRUCTIONS,
+            DEFAULT_SUMMARY,
+            undefined,
+            undefined,
+            'fix(foo): preserve the intended behavior'
+        );
+
+        expect(calls).toContain('create:agent/12/work:fix(foo): preserve the intended behavior:closes');
+    });
+
+    it('explicitly corrects an existing title through the body update port', () => {
+        const { port, calls } = fakePort({ existing: 41 });
+        const update = vi.spyOn(port, 'updatePullRequest');
+
+        publishLane(
+            12,
+            port,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            'fix(foo): preserve the intended behavior'
+        );
+
+        expect(update).toHaveBeenCalledWith(41, {
+            title: 'fix(foo): preserve the intended behavior',
+            body: composePublishBody(
+                12,
+                'fix(foo): preserve the intended behavior',
+                DEFAULT_SUMMARY,
+                TEST_INSTRUCTIONS
+            ),
+        });
+        expect(calls).toContain('editKeys:body,title');
+    });
+
+    it('refuses an invalid explicit title before any publication write', () => {
+        const { port, calls } = fakePort({ existing: 41 });
+
+        expect(() => publishLane(12, port, undefined, undefined, undefined, undefined, undefined, 'WIP')).toThrow(
+            /pull-request title is not conventional/
+        );
+
+        expect(calls.some((call) => /^(push:|edit:|create:|label:|saveModel:|metaEdit:)/.test(call))).toBe(false);
+    });
+
+    it('checks a replacement summary against the explicit title before writing', () => {
+        const { port, calls } = fakePort({ existing: 41 });
+
+        expect(() =>
+            publishLane(
+                12,
+                port,
+                undefined,
+                undefined,
+                'preserve the intended behavior',
+                undefined,
+                undefined,
+                'fix(foo): preserve the intended behavior'
+            )
+        ).toThrow(/What section repeats the title/);
+
+        expect(calls.some((call) => /^(push:|edit:|create:)/.test(call))).toBe(false);
+    });
+
+    it('derives labels, projects and the branch warning from the explicitly corrected title', () => {
+        const { port, calls, logs } = fakePort({
+            trees: [worktree({ path: CLEANUP_LANE, branch: 'docs/cleanup' })],
+            cwd: CLEANUP_LANE,
+            existing: 41,
+            existingTitle: 'feat(foo): add knob',
+            existingBody: composePublishBody(undefined, 'feat(foo): add knob', DEFAULT_SUMMARY, TEST_INSTRUCTIONS),
+            subject: 'docs(foo): explain knob',
+            knownProjects: ['Sourdaw Bugs', 'Sourdaw Roadmap'],
+            currentMetadata: { labels: [], projectTitles: [] },
+        });
+
+        publishLane(undefined, port, undefined, undefined, undefined, undefined, undefined, 'fix(foo): tighten knob');
+
+        expect(calls).toContain('metaEdit:41:glm-5.3,bug:-:Sourdaw Bugs:-');
+        expect(logs.find((line) => line.startsWith('warning:'))).toContain('fix(foo): tighten knob');
+        expect(calls.some((call) => call.includes('enhancement'))).toBe(false);
+    });
+
     it('checks a later --summary against the existing GitHub title, not the newest commit subject', () => {
         const { port, calls, bodies } = fakePort({
             existing: 41,
@@ -2421,15 +2641,87 @@ describe('lane publish', () => {
 
             expect(git(['log', '-1', '--format=%s'])).toBe(mergeSubject);
             expect(
-                shellPort(session, repository).laneSubject(repository, git(['rev-parse', 'origin/main']), 'HEAD')
+                shellPort(session, repository).laneSubject(repository, git(['rev-parse', 'origin/main']), 'HEAD', [])
             ).toBe('feat(issue): add milestone and project support');
 
             git(['checkout', '-b', 'agent/13/merge-only', base]);
             git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', mergeSubject], '2026-01-01T00:11:00');
             expect(git(['rev-list', '--count', 'origin/main..HEAD'])).toBe('1');
             expect(
-                shellPort(session, repository).laneSubject(repository, git(['rev-parse', 'origin/main']), 'HEAD')
+                shellPort(session, repository).laneSubject(repository, git(['rev-parse', 'origin/main']), 'HEAD', [])
             ).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('creates a landed stack child title from its own commit despite a later-dated inherited parent repair', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-stacked-lane-subject-'));
+        const session: GhSession = { configDir: '/tmp/sourdaw-gh', env: {}, dispose: () => undefined };
+        const git = (args: string[], date = '2026-01-01T00:00:00') =>
+            execFileSync('git', args, {
+                cwd: repository,
+                encoding: 'utf8',
+                env: fixtureGitEnv({ GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date }),
+            }).trim();
+        const commit = (file: string, message: string, date: string) => {
+            writeFileSync(join(repository, file), `${message}\n`);
+            git(['add', file], date);
+            git(['commit', '--no-gpg-sign', '-m', message], date);
+        };
+        try {
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            commit('base.txt', 'chore(fixture): base', '2026-01-01T00:00:00');
+            git(['checkout', '-b', 'parent']);
+            commit('parent.txt', 'fix(parent): initial work', '2026-01-01T00:01:00');
+            git(['checkout', '-b', 'child']);
+            commit('child.txt', 'fix(child): serialize review publication', '2026-01-01T00:02:00');
+            git(['checkout', 'parent']);
+            commit('repair.txt', 'fix(parent): later review repair', '2026-01-01T00:05:00');
+            const parentHead = git(['rev-parse', 'HEAD']);
+            git(['checkout', 'main']);
+            git(['merge', '--squash', 'parent']);
+            git(['commit', '--no-gpg-sign', '-m', 'fix(parent): landed parent'], '2026-01-01T00:06:00');
+            const main = git(['rev-parse', 'HEAD']);
+            git(['checkout', 'child']);
+            git(['merge', '--no-ff', '--no-gpg-sign', 'parent', '-m', 'chore: sync parent'], '2026-01-01T00:07:00');
+            git(['merge', '--no-ff', '--no-gpg-sign', 'main', '-m', 'chore: sync landed main'], '2026-01-01T00:08:00');
+            const head = git(['rev-parse', 'HEAD']);
+            expect(git(['log', '-1', '--format=%s', '--no-merges', `${main}..${head}`])).toBe(
+                'fix(parent): later review repair'
+            );
+
+            const { port } = fakePort({ baseSha: main, headSha: head });
+            port.laneSubject = (_lane, base, currentHead, excluded) =>
+                shellPort(session, repository).laneSubject(repository, base, currentHead, excluded);
+            port.stackBase = () => ({
+                branch: 'main',
+                head: main,
+                parentNumber: 11,
+                parentState: 'MERGED',
+                parentHead,
+            });
+            let createdTitle: string | undefined;
+            port.createPullRequest = (input) => {
+                createdTitle = input.title;
+                return 88;
+            };
+            port.existingOpenPullRequest = () =>
+                createdTitle === undefined
+                    ? undefined
+                    : {
+                          number: 88,
+                          title: createdTitle,
+                          body: '',
+                          baseRefName: 'main',
+                          headRefOid: head,
+                      };
+
+            publishLane(12, port, undefined, TEST_INSTRUCTIONS, DEFAULT_SUMMARY);
+
+            expect(createdTitle).toBe('fix(child): serialize review publication');
         } finally {
             rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
@@ -2776,6 +3068,69 @@ describe('lane publish', () => {
         expect(updatePullRequestArgs(41, 'body text')).not.toContain('--title');
     });
 
+    it('sends an explicit title with the native body edit', () => {
+        expect(updatePullRequestArgs(41, 'body text', 'fix(foo): correct title')).toEqual([
+            'pr',
+            'edit',
+            '41',
+            '--repo',
+            'jcosta33/sourdaw',
+            '--body',
+            'body text',
+            '--title',
+            'fix(foo): correct title',
+        ]);
+    });
+
+    it('carries an explicit correction to the title edit under the author session', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-publish-title-edit-'));
+        const app = createGhSession('app-title-edit-marker', { PATH: process.env.PATH });
+        try {
+            const { ghPath, readEntries } = realGhHarness(root);
+            const port = shellPort(app, root, root, { git: 'git', gh: ghPath });
+
+            port.updatePullRequest(41, { body: 'body text', title: 'fix(foo): correct title' });
+            port.updatePullRequest(41, { body: 'preserved title' });
+
+            expect(readEntries()).toEqual([
+                {
+                    token: 'app-title-edit-marker',
+                    args: [
+                        'pr',
+                        'edit',
+                        '41',
+                        '--repo',
+                        'jcosta33/sourdaw',
+                        '--body',
+                        'body text',
+                        '--title',
+                        'fix(foo): correct title',
+                    ],
+                },
+                {
+                    token: 'app-title-edit-marker',
+                    args: ['pr', 'edit', '41', '--repo', 'jcosta33/sourdaw', '--body', 'preserved title'],
+                },
+            ]);
+        } finally {
+            app.dispose();
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('parses one explicit conventional title and refuses missing, duplicate or invalid titles', () => {
+        expect(parsePublishLaneArgs(['12', '--title', 'fix(foo): correct title'])).toEqual({
+            issue: 12,
+            title: 'fix(foo): correct title',
+            help: false,
+        });
+        expect(() => parsePublishLaneArgs(['12', '--title'])).toThrow(/usage/);
+        expect(() => parsePublishLaneArgs(['12', '--title', 'fix(foo): first', '--title', 'fix(foo): second'])).toThrow(
+            /usage/
+        );
+        expect(() => parsePublishLaneArgs(['12', '--title', 'WIP'])).toThrow(/pull-request title is not conventional/);
+    });
+
     it('reads live mergeability from the pull request with only the field it needs', () => {
         expect(pullRequestMergeabilityArgs(88)).toEqual([
             'pr',
@@ -3001,6 +3356,29 @@ describe('lane publish', () => {
                 ...overrides,
             };
         }
+
+        it('refuses explicit title editing on a pre-convention lane even with an explicit model', () => {
+            const { port, calls } = fakePort({
+                trees: [...otherAuthorLanes(), legacyWorktree()],
+                cwd: LEGACY_LANE,
+                existing: 2275,
+            });
+
+            expect(() =>
+                publishLane(
+                    undefined,
+                    port,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    { model: 'kimi-k2.5' },
+                    'fix(foo): correct a title'
+                )
+            ).toThrow(/--title requires a conforming lane/);
+
+            expect(calls.some((call) => /^(push:|edit:|create:|saveModel:|label:|metaEdit:)/.test(call))).toBe(false);
+        });
 
         it('never resolves a legacy candidate by issue argument, even fully qualified', () => {
             // The candidate here is exactly what an unmodified legacy fallback would accept: correct
@@ -4882,11 +5260,8 @@ describe('push delta authorship gate', () => {
         fixtureGit(f.primary, ['push', f.remote, 'main']);
         // The child forked at the parent head — retaining the parent's pre-squash commits exactly
         // as `lane:sync-parent` requires — and then merges the landed squash commit on top.
-        fixtureGit(f.primary, ['worktree', 'unlock', f.lane]);
-        fixtureGit(f.primary, ['worktree', 'remove', f.lane]);
-        fixtureGit(f.primary, ['branch', '-f', BRANCH, parentHead]);
-        fixtureGit(f.primary, ['worktree', 'add', f.lane, BRANCH]);
-        fixtureGit(f.primary, ['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, f.lane]);
+        fixtureGit(f.lane, ['merge', '--ff-only', parentHead]);
+        expect(fixtureGit(f.lane, ['rev-parse', 'HEAD', 'HEAD^{tree}'])).toBe(`${parentHead}\n${parentTree}`);
         execFileSync('git', ['merge', '--no-edit', squashSha], {
             cwd: f.lane,
             env: fixtureGitEnv({

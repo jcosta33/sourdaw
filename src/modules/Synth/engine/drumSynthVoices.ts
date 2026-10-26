@@ -60,7 +60,13 @@ function createNoiseBuffer(ctx: BaseAudioContext, durationSec: number): AudioBuf
     return buffer;
 }
 
-function schedule808Kick(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
+function schedule808Kick(
+    ctx: BaseAudioContext,
+    dest: AudioNode,
+    startTime: number,
+    velocity: number,
+    outputGain: number
+): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -70,8 +76,8 @@ function schedule808Kick(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
     osc.frequency.exponentialRampToValueAtTime(30, startTime + 0.5);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(vel * 1.2, startTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.8);
+    gain.gain.setValueAtTime(vel * 1.2 * outputGain, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.8);
 
     const shaper = ctx.createWaveShaper();
     const curve = new Float32Array(256);
@@ -91,7 +97,13 @@ function schedule808Kick(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
     disconnectOnEnded(osc, [osc, shaper, gain]);
 }
 
-function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
+function schedule808Snare(
+    ctx: BaseAudioContext,
+    dest: AudioNode,
+    startTime: number,
+    velocity: number,
+    outputGain: number
+): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
 
     const bodyOsc = ctx.createOscillator();
@@ -100,8 +112,8 @@ function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: num
     bodyOsc.frequency.exponentialRampToValueAtTime(120, startTime + 0.05);
 
     const bodyGain = ctx.createGain();
-    bodyGain.gain.setValueAtTime(vel * 0.7, startTime);
-    bodyGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.15);
+    bodyGain.gain.setValueAtTime(vel * 0.7 * outputGain, startTime);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.15);
 
     bodyOsc.connect(bodyGain);
     bodyGain.connect(dest);
@@ -118,8 +130,8 @@ function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: num
     noiseFilter.frequency.value = 2000;
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(vel * 0.8, startTime);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
+    noiseGain.gain.setValueAtTime(vel * 0.8 * outputGain, startTime);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.2);
 
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseGain);
@@ -129,7 +141,13 @@ function schedule808Snare(ctx: BaseAudioContext, dest: AudioNode, startTime: num
     disconnectOnEnded(noise, [noise, noiseFilter, noiseGain]);
 }
 
-function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
+function schedule808Clap(
+    ctx: BaseAudioContext,
+    dest: AudioNode,
+    startTime: number,
+    velocity: number,
+    outputGain: number
+): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
     const noiseBuffer = createNoiseBuffer(ctx, 0.4);
 
@@ -144,8 +162,8 @@ function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
         noise.buffer = noiseBuffer;
         const env = ctx.createGain();
         env.gain.setValueAtTime(0, startTime + offset);
-        env.gain.linearRampToValueAtTime(vel * 0.6, startTime + offset + 0.001);
-        env.gain.exponentialRampToValueAtTime(0.001, startTime + offset + 0.02);
+        env.gain.linearRampToValueAtTime(vel * 0.6 * outputGain, startTime + offset + 0.001);
+        env.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + offset + 0.02);
         noise.connect(env);
         env.connect(filter);
         noise.start(startTime + offset);
@@ -156,8 +174,8 @@ function schedule808Clap(ctx: BaseAudioContext, dest: AudioNode, startTime: numb
     const tailNoise = ctx.createBufferSource();
     tailNoise.buffer = noiseBuffer;
     const tailEnv = ctx.createGain();
-    tailEnv.gain.setValueAtTime(vel * 0.5, startTime + 0.04);
-    tailEnv.gain.exponentialRampToValueAtTime(0.001, startTime + 0.3);
+    tailEnv.gain.setValueAtTime(vel * 0.5 * outputGain, startTime + 0.04);
+    tailEnv.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.3);
     tailNoise.connect(tailEnv);
     tailEnv.connect(filter);
     tailNoise.start(startTime + 0.04);
@@ -173,6 +191,7 @@ function schedule808HiHat(
     dest: AudioNode,
     startTime: number,
     velocity: number,
+    outputGain: number,
     isOpen: boolean
 ): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
@@ -180,8 +199,8 @@ function schedule808HiHat(
 
     const fundamentals = [800, 1046.5, 1318.5, 1480, 1661.2, 1864.7];
     const oscGain = ctx.createGain();
-    oscGain.gain.setValueAtTime(vel * 0.25, startTime);
-    oscGain.gain.exponentialRampToValueAtTime(0.001, startTime + decayTime);
+    oscGain.gain.setValueAtTime(vel * 0.25 * outputGain, startTime);
+    oscGain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + decayTime);
 
     const oscillators: OscillatorNode[] = [];
     for (const freq of fundamentals) {
@@ -215,6 +234,7 @@ function schedule808Tom(
     dest: AudioNode,
     startTime: number,
     velocity: number,
+    outputGain: number,
     pitch: 'low' | 'mid' | 'high'
 ): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
@@ -231,8 +251,8 @@ function schedule808Tom(
     osc.frequency.exponentialRampToValueAtTime(endFreq, startTime + 0.06);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(vel * 0.7, startTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.3);
+    gain.gain.setValueAtTime(vel * 0.7 * outputGain, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.3);
 
     osc.connect(gain);
     gain.connect(dest);
@@ -241,7 +261,13 @@ function schedule808Tom(
     disconnectOnEnded(osc, [osc, gain]);
 }
 
-function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
+function schedule808Cowbell(
+    ctx: BaseAudioContext,
+    dest: AudioNode,
+    startTime: number,
+    velocity: number,
+    outputGain: number
+): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
     const freqs = [560, 845];
 
@@ -251,9 +277,9 @@ function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     bpf.Q.value = 5;
 
     const envGain = ctx.createGain();
-    envGain.gain.setValueAtTime(vel * 0.5, startTime);
-    envGain.gain.exponentialRampToValueAtTime(vel * 0.15, startTime + 0.02);
-    envGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
+    envGain.gain.setValueAtTime(vel * 0.5 * outputGain, startTime);
+    envGain.gain.exponentialRampToValueAtTime(vel * 0.15 * outputGain, startTime + 0.02);
+    envGain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.35);
 
     const oscillators: OscillatorNode[] = [];
     for (const freq of freqs) {
@@ -271,7 +297,13 @@ function schedule808Cowbell(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     disconnectOnEnded(oscillators[oscillators.length - 1]!, [...oscillators, bpf, envGain]);
 }
 
-function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
+function schedule808Rimshot(
+    ctx: BaseAudioContext,
+    dest: AudioNode,
+    startTime: number,
+    velocity: number,
+    outputGain: number
+): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
 
     const osc = ctx.createOscillator();
@@ -279,8 +311,8 @@ function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     osc.frequency.value = 1700;
 
     const bodyGain = ctx.createGain();
-    bodyGain.gain.setValueAtTime(vel * 0.6, startTime);
-    bodyGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.03);
+    bodyGain.gain.setValueAtTime(vel * 0.6 * outputGain, startTime);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.03);
 
     osc.connect(bodyGain);
     bodyGain.connect(dest);
@@ -295,8 +327,8 @@ function schedule808Rimshot(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     hpf.type = 'highpass';
     hpf.frequency.value = 6000;
     const nGain = ctx.createGain();
-    nGain.gain.setValueAtTime(vel * 0.4, startTime);
-    nGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.025);
+    nGain.gain.setValueAtTime(vel * 0.4 * outputGain, startTime);
+    nGain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.025);
     noise.connect(hpf);
     hpf.connect(nGain);
     nGain.connect(dest);
@@ -310,6 +342,7 @@ function schedule808Conga(
     dest: AudioNode,
     startTime: number,
     velocity: number,
+    outputGain: number,
     pitch: 'low' | 'mid' | 'high'
 ): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
@@ -322,8 +355,8 @@ function schedule808Conga(
     osc.frequency.exponentialRampToValueAtTime(freq, startTime + 0.01);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(vel * 0.6, startTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
+    gain.gain.setValueAtTime(vel * 0.6 * outputGain, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.2);
 
     osc.connect(gain);
     gain.connect(dest);
@@ -332,7 +365,13 @@ function schedule808Conga(
     disconnectOnEnded(osc, [osc, gain]);
 }
 
-function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
+function schedule808Maracas(
+    ctx: BaseAudioContext,
+    dest: AudioNode,
+    startTime: number,
+    velocity: number,
+    outputGain: number
+): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
     const noiseBuffer = createNoiseBuffer(ctx, 0.1);
     const noise = ctx.createBufferSource();
@@ -343,8 +382,8 @@ function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     hpf.frequency.value = 8000;
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(vel * 0.35, startTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.07);
+    gain.gain.setValueAtTime(vel * 0.35 * outputGain, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.07);
 
     noise.connect(hpf);
     hpf.connect(gain);
@@ -354,7 +393,13 @@ function schedule808Maracas(ctx: BaseAudioContext, dest: AudioNode, startTime: n
     disconnectOnEnded(noise, [noise, hpf, gain]);
 }
 
-function schedule808Clave(ctx: BaseAudioContext, dest: AudioNode, startTime: number, velocity: number): void {
+function schedule808Clave(
+    ctx: BaseAudioContext,
+    dest: AudioNode,
+    startTime: number,
+    velocity: number,
+    outputGain: number
+): void {
     const vel = velocity / MAX_MIDI_DATA_7BIT;
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
@@ -366,8 +411,8 @@ function schedule808Clave(ctx: BaseAudioContext, dest: AudioNode, startTime: num
     bpf.Q.value = 15;
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(vel * 0.5, startTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.04);
+    gain.gain.setValueAtTime(vel * 0.5 * outputGain, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001 * outputGain, startTime + 0.04);
 
     osc.connect(bpf);
     bpf.connect(gain);
@@ -385,53 +430,54 @@ export function scheduleDrumVoice(
     dest: AudioNode,
     voiceType: DrumVoiceType,
     startTime: number,
-    velocity: number
+    velocity: number,
+    outputGain = 1
 ): void {
     switch (voiceType) {
         case 'kick':
-            schedule808Kick(ctx, dest, startTime, velocity);
+            schedule808Kick(ctx, dest, startTime, velocity, outputGain);
             break;
         case 'snare':
-            schedule808Snare(ctx, dest, startTime, velocity);
+            schedule808Snare(ctx, dest, startTime, velocity, outputGain);
             break;
         case 'clap':
-            schedule808Clap(ctx, dest, startTime, velocity);
+            schedule808Clap(ctx, dest, startTime, velocity, outputGain);
             break;
         case 'closed-hh':
-            schedule808HiHat(ctx, dest, startTime, velocity, false);
+            schedule808HiHat(ctx, dest, startTime, velocity, outputGain, false);
             break;
         case 'open-hh':
-            schedule808HiHat(ctx, dest, startTime, velocity, true);
+            schedule808HiHat(ctx, dest, startTime, velocity, outputGain, true);
             break;
         case 'tom-low':
-            schedule808Tom(ctx, dest, startTime, velocity, 'low');
+            schedule808Tom(ctx, dest, startTime, velocity, outputGain, 'low');
             break;
         case 'tom-mid':
-            schedule808Tom(ctx, dest, startTime, velocity, 'mid');
+            schedule808Tom(ctx, dest, startTime, velocity, outputGain, 'mid');
             break;
         case 'tom-high':
-            schedule808Tom(ctx, dest, startTime, velocity, 'high');
+            schedule808Tom(ctx, dest, startTime, velocity, outputGain, 'high');
             break;
         case 'cowbell':
-            schedule808Cowbell(ctx, dest, startTime, velocity);
+            schedule808Cowbell(ctx, dest, startTime, velocity, outputGain);
             break;
         case 'rimshot':
-            schedule808Rimshot(ctx, dest, startTime, velocity);
+            schedule808Rimshot(ctx, dest, startTime, velocity, outputGain);
             break;
         case 'conga-low':
-            schedule808Conga(ctx, dest, startTime, velocity, 'low');
+            schedule808Conga(ctx, dest, startTime, velocity, outputGain, 'low');
             break;
         case 'conga-mid':
-            schedule808Conga(ctx, dest, startTime, velocity, 'mid');
+            schedule808Conga(ctx, dest, startTime, velocity, outputGain, 'mid');
             break;
         case 'conga-high':
-            schedule808Conga(ctx, dest, startTime, velocity, 'high');
+            schedule808Conga(ctx, dest, startTime, velocity, outputGain, 'high');
             break;
         case 'maracas':
-            schedule808Maracas(ctx, dest, startTime, velocity);
+            schedule808Maracas(ctx, dest, startTime, velocity, outputGain);
             break;
         case 'clave':
-            schedule808Clave(ctx, dest, startTime, velocity);
+            schedule808Clave(ctx, dest, startTime, velocity, outputGain);
             break;
     }
 }
