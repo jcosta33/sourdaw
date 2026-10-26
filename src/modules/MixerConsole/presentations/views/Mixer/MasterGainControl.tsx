@@ -25,6 +25,9 @@ type MasterGainControlProps = {
     onChange: (value: number, isTransient?: boolean) => void;
     onEnterValue: (value: number) => void;
     onResetToDefault: () => void;
+    onCopyValue: () => void;
+    onPasteValue: () => void;
+    onInvalidatePendingValue: () => void;
 };
 
 type MasterGainMenuProps = {
@@ -33,6 +36,8 @@ type MasterGainMenuProps = {
     onClose: () => void;
     onReset: () => void;
     onEnterValue: () => void;
+    onCopyValue: () => void;
+    onPasteValue: () => void;
 };
 
 type MasterGainFaderProps = Pick<MasterGainControlProps, 'value' | 'onChange'>;
@@ -89,7 +94,15 @@ const MasterGainFader = ({ value, onChange }: MasterGainFaderProps): ReactElemen
     />
 );
 
-const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: MasterGainMenuProps): ReactElement => {
+const MasterGainMenu = ({
+    position,
+    menuRef,
+    onClose,
+    onReset,
+    onEnterValue,
+    onCopyValue,
+    onPasteValue,
+}: MasterGainMenuProps): ReactElement => {
     useEffect(() => {
         menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
     }, [menuRef]);
@@ -133,6 +146,12 @@ const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: M
             <DawMenuButton role="menuitem" onClick={onEnterValue}>
                 Enter Value
             </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={onCopyValue}>
+                Copy Value
+            </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={onPasteValue}>
+                Paste Value
+            </DawMenuButton>
         </DawContextMenuSurface>
     );
 };
@@ -142,6 +161,9 @@ export const MasterGainControl = ({
     onChange,
     onEnterValue,
     onResetToDefault,
+    onCopyValue,
+    onPasteValue,
+    onInvalidatePendingValue,
 }: MasterGainControlProps): ReactElement => {
     const [masterGainMenu, setMasterGainMenu] = useState<{ x: number; y: number } | null>(null);
     const masterGainControlRef = useRef<HTMLDivElement>(null);
@@ -180,6 +202,7 @@ export const MasterGainControl = ({
 
     const enterValue = async (): Promise<void> => {
         invalidatePrompt();
+        onInvalidatePendingValue();
         const request = latestPrompt.current;
         const authority = captureProjectTransitionAuthority();
         const initialValue = `${formatGainDb(value)} dB`;
@@ -215,7 +238,20 @@ export const MasterGainControl = ({
 
     const resetGain = (): void => {
         invalidatePrompt();
+        onInvalidatePendingValue();
         onResetToDefault();
+        closeMasterGainMenu();
+    };
+
+    const copyValue = (): void => {
+        invalidatePrompt();
+        onCopyValue();
+        closeMasterGainMenu();
+    };
+
+    const pasteValue = (): void => {
+        invalidatePrompt();
+        onPasteValue();
         closeMasterGainMenu();
     };
 
@@ -238,6 +274,8 @@ export const MasterGainControl = ({
                     onClose={closeMasterGainMenu}
                     onReset={resetGain}
                     onEnterValue={() => void enterValue()}
+                    onCopyValue={copyValue}
+                    onPasteValue={pasteValue}
                 />
             ) : null}
         </>

@@ -8,8 +8,9 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
-import { formatGainDb } from '#/utils/audioLevelLaw';
+import { FADER_MAX_GAIN, formatGainDb } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { MasterGainControl } from './MasterGainControl';
@@ -24,6 +25,9 @@ type MasterChannelSurfaceProps = MasterChannelStripProps & {
     onChange: (value: number, isTransient?: boolean) => void;
     onEnterValue: (value: number) => void;
     onResetToDefault: () => void;
+    onCopyValue: () => void;
+    onPasteValue: () => void;
+    onInvalidatePendingValue: () => void;
 };
 
 type ProjectTransitionAuthority = ReturnType<typeof captureProjectTransitionAuthority>;
@@ -44,6 +48,7 @@ function useMasterGainCommitQueue() {
     const pending = useRef<PendingMasterGainCommit[]>([]);
     const queue = useRef<Promise<void>>(Promise.resolve());
     const mounted = useRef(false);
+    const latestIntent = useRef(0);
     useEffect(() => {
         mounted.current = true;
         return () => {
@@ -57,8 +62,12 @@ function useMasterGainCommitQueue() {
             return null;
         }
         const authority = captureProjectTransitionAuthority();
+        const intent = ++latestIntent.current;
         return {
-            authority: { ...authority, isCurrent: () => mounted.current && authority.isCurrent() },
+            authority: {
+                ...authority,
+                isCurrent: () => mounted.current && latestIntent.current === intent && authority.isCurrent(),
+            },
             expectedPercent,
             predecessors: pending.current.filter((commit) => !commit.committed),
         };
@@ -72,7 +81,10 @@ function useMasterGainCommitQueue() {
                 pending.current = pending.current.filter((candidate) => candidate !== record);
             });
     };
-    return { captureEntry, enqueue };
+    const invalidateIntent = (): void => {
+        latestIntent.current += 1;
+    };
+    return { captureEntry, enqueue, invalidateIntent };
 }
 
 function resolveEntryExpectedPercent(entry: MasterGainEntry): number | null {
@@ -166,6 +178,9 @@ const MasterChannelSurface = ({
     onChange,
     onEnterValue,
     onResetToDefault,
+    onCopyValue,
+    onPasteValue,
+    onInvalidatePendingValue,
 }: MasterChannelSurfaceProps): ReactElement => (
     <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel" data-testid="channel-master">
         <div className="h-1 w-full rounded-full bg-border-active" />
@@ -179,6 +194,9 @@ const MasterChannelSurface = ({
                     onChange={onChange}
                     onEnterValue={onEnterValue}
                     onResetToDefault={onResetToDefault}
+                    onCopyValue={onCopyValue}
+                    onPasteValue={onPasteValue}
+                    onInvalidatePendingValue={onInvalidatePendingValue}
                 />
             }
             value={`${formatGainDb(displayGain)} dB`}
@@ -315,6 +333,7 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     };
 
     const handleFaderChange = (value: number, isTransient?: boolean): void => {
+        commitQueue.invalidateIntent();
         if (isTransient === true) {
             if (!gestureOpen.current) {
                 gestureToken.current += 1;
@@ -341,9 +360,80 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     };
 
     const resetMasterGainFromMenu = (): void => {
+        commitQueue.invalidateIntent();
         gestureOpen.current = false;
         lastGrooveSettleTime.current = null;
         settleMasterGain(defaultTransportState.masterGain / 100, false, false);
+    };
+
+    const invalidatePendingMasterGain = (): void => {
+        commitQueue.invalidateIntent();
+    };
+
+    const copyMasterGain = (): void => {
+        const entry = commitQueue.captureEntry();
+        if (!entry) {
+            return;
+        }
+        const encoded = `gain:${String(entry.expectedPercent / 100)}`;
+        void (async () => {
+            try {
+                if (!navigator.clipboard?.writeText) {
+                    throw new Error('Clipboard unavailable');
+                }
+                await navigator.clipboard.writeText(encoded);
+            } catch {
+                if (entry.authority.isCurrent()) {
+                    notifyUser('Could not copy master gain to the clipboard.', 'error');
+                }
+            }
+        })();
+    };
+
+    const pasteMasterGain = (): void => {
+        const entry = commitQueue.captureEntry();
+        if (!entry) {
+            return;
+        }
+        void (async () => {
+            let text: string;
+            try {
+                if (!navigator.clipboard?.readText) {
+                    throw new Error('Clipboard unavailable');
+                }
+                text = await navigator.clipboard.readText();
+            } catch {
+                if (entry.authority.isCurrent()) {
+                    notifyUser('Could not read master gain from the clipboard.', 'error');
+                }
+                return;
+            }
+            if (!entry.authority.isCurrent()) {
+                return;
+            }
+            const encoded = text.startsWith('gain:') ? text.slice(5) : '';
+            const gain = Number(encoded);
+            if (!encoded || String(gain) !== encoded || !Number.isFinite(gain) || gain < 0 || gain > FADER_MAX_GAIN) {
+                notifyUser('Clipboard does not contain a valid master gain value.', 'error');
+                return;
+            }
+
+            gestureOpen.current = false;
+            lastGrooveSettleTime.current = null;
+            gestureToken.current += 1;
+            const token = gestureToken.current;
+            commitQueue.enqueue(gain, async (record) => {
+                try {
+                    await dispatchCurrentMasterGainAction(gain, false, record, entry);
+                } catch (error) {
+                    logger.error(
+                        new Error('Master channel strip commit failed for action: setMasterGain', { cause: error })
+                    );
+                } finally {
+                    settleContinuation(token);
+                }
+            });
+        })();
     };
 
     const displayGain = gestureGain ?? masterGain / 100;
@@ -355,6 +445,9 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
             onChange={handleFaderChange}
             onEnterValue={enterGain}
             onResetToDefault={resetMasterGainFromMenu}
+            onCopyValue={copyMasterGain}
+            onPasteValue={pasteMasterGain}
+            onInvalidatePendingValue={invalidatePendingMasterGain}
         />
     );
 };

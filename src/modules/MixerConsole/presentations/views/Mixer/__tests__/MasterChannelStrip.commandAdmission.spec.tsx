@@ -147,9 +147,12 @@ type RawProject = {
     [key: string]: unknown;
 };
 
-function installProjectPort(waitForSnapshotTransaction: () => Promise<void>): { read: () => RawProject } {
+function installProjectPort(
+    waitForSnapshotTransaction: () => Promise<void>,
+    masterGain = 80
+): { read: () => RawProject } {
     let document: RawProject = {
-        transport: { ...defaultTransportState, masterGain: 80 },
+        transport: { ...defaultTransportState, masterGain },
         actionHistory: { entries: [] },
     };
     configureAutomergeStoragePort({
@@ -363,5 +366,220 @@ describe('MasterChannelStrip queued typed value guard', () => {
         );
         expectCommitted(project, 40, 1);
         expect(errors).not.toHaveBeenCalled();
+    });
+});
+
+describe('MasterChannelStrip gain clipboard admission', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        vi.spyOn(logger, 'error');
+        injectDependencies(notifyUser, { eventBus: { emit: external.notification, on: () => () => undefined } });
+        configureAutomergeStoragePort(null);
+        resetAutomergeStorageProjections('root');
+        clearHandlerRegistry();
+        clearUndoHistory();
+        transportStore.set({ ...defaultTransportState, masterGain: 80 });
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        await activateProject();
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' }),
+            clear: () => undefined,
+        });
+        expect(logger.error).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+    });
+
+    it.each([0, 1e-7, 0.8123456789])('commits exact canonical gain %s through Command and replays it', async (gain) => {
+        const project = installProjectPort(() => Promise.resolve());
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: vi.fn(() => Promise.resolve(`gain:${String(gain)}`)) },
+        });
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        external.setMasterGainValue.mockClear();
+        fireEvent.contextMenu(slider);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+
+        await waitFor(() => expect(project.read().transport.masterGain).toBe(gain * 100));
+        expectCommitted(project, gain * 100, 1);
+        expect(slider).toHaveAttribute('aria-valuenow', String(gain));
+        await act(async () => {
+            await undo();
+        });
+        expect(project.read().transport.masterGain).toBe(80);
+        expect(transportStore.value?.masterGain).toBe(80);
+        expect(external.setMasterGainValue).toHaveBeenLastCalledWith(0.8);
+        await act(async () => {
+            await redo();
+        });
+        expectCommitted(project, gain * 100, 1);
+    });
+
+    it('copies exact stored master percent divided by one hundred, including a sub-floor value', async () => {
+        const masterGainPercent = 0.00001;
+        const project = installProjectPort(() => Promise.resolve(), masterGainPercent);
+        const writeText = vi.fn(() => Promise.resolve());
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText },
+        });
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        external.setMasterGainValue.mockClear();
+        fireEvent.contextMenu(slider);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Value' }));
+
+        await waitFor(() => expect(writeText).toHaveBeenCalledWith(`gain:${String(masterGainPercent / 100)}`));
+        expect(project.read().transport.masterGain).toBe(masterGainPercent);
+        expect(transportStore.value?.masterGain).toBe(masterGainPercent);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(external.setMasterGainValue).not.toHaveBeenCalled();
+    });
+
+    it.each(['pan:0.25', 'gain:01', 'gain:1e0', 'gain:NaN', 'gain:Infinity', 'gain:2'])(
+        'refuses noncanonical clipboard text %s without a write or preview',
+        async (text) => {
+            const project = installProjectPort(() => Promise.resolve());
+            Object.defineProperty(navigator, 'clipboard', {
+                configurable: true,
+                value: { readText: vi.fn(() => Promise.resolve(text)) },
+            });
+            render(<MasterChannelStrip widthClass="w-36" />);
+            const slider = screen.getByRole('slider', { name: 'Master gain' });
+            external.setMasterGainValue.mockClear();
+            fireEvent.contextMenu(slider);
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+
+            await waitFor(() =>
+                expect(external.notification).toHaveBeenCalledWith(
+                    'ui.notify',
+                    expect.objectContaining({
+                        level: 'error',
+                        message: 'Clipboard does not contain a valid master gain value.',
+                    })
+                )
+            );
+            expect(project.read().transport.masterGain).toBe(80);
+            expect(transportStore.value?.masterGain).toBe(80);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(project.read().actionHistory.entries).toHaveLength(0);
+            expect(external.setMasterGainValue).not.toHaveBeenCalled();
+            expect(slider).toHaveAttribute('aria-valuenow', '0.8');
+        }
+    );
+
+    it('does not preview while a held clipboard read is pending', async () => {
+        const project = installProjectPort(() => Promise.resolve());
+        const read = Promise.withResolvers<string>();
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: () => read.promise },
+        });
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        external.setMasterGainValue.mockClear();
+        fireEvent.contextMenu(slider);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        expect(project.read().transport.masterGain).toBe(80);
+        expect(transportStore.value?.masterGain).toBe(80);
+        expect(external.setMasterGainValue).not.toHaveBeenCalled();
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        await act(async () => {
+            read.resolve('gain:0.25');
+            await read.promise;
+        });
+        await waitFor(() => expect(project.read().transport.masterGain).toBe(25));
+        expect(external.setMasterGainValue).toHaveBeenLastCalledWith(0.25);
+    });
+
+    it('advances a paste CAS over its own committed queue predecessor', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let waits = 0;
+        const project = installProjectPort(() => {
+            if (++waits === 1) {
+                entered.resolve();
+                return release.promise;
+            }
+            return Promise.resolve();
+        });
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: () => Promise.resolve('gain:0.25') },
+        });
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        await act(async () => {
+            fireEvent.keyDown(slider, { key: 'ArrowUp' });
+            await entered.promise;
+        });
+        fireEvent.contextMenu(slider);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        await act(async () => {
+            release.resolve();
+            await release.promise;
+        });
+        await waitFor(() => expect(project.read().transport.masterGain).toBe(25));
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        await act(async () => {
+            await undo();
+        });
+        expect(project.read().transport.masterGain).toBeCloseTo(81);
+        await act(async () => {
+            await redo();
+        });
+        expect(project.read().transport.masterGain).toBe(25);
+    });
+
+    it('drops a clipboard read after a newer fader intent', async () => {
+        const project = installProjectPort(() => Promise.resolve());
+        const read = Promise.withResolvers<string>();
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: () => read.promise },
+        });
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        fireEvent.contextMenu(slider);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        fireEvent.keyDown(slider, { key: 'ArrowUp' });
+        await act(async () => {
+            read.resolve('gain:0.25');
+            await read.promise;
+        });
+        await waitFor(() => expect(project.read().transport.masterGain).not.toBe(25));
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(transportStore.value?.masterGain).not.toBe(25);
+    });
+
+    it('drops a clipboard read after equal-value project replacement', async () => {
+        const project = installProjectPort(() => Promise.resolve());
+        const read = Promise.withResolvers<string>();
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { readText: () => read.promise },
+        });
+        render(<MasterChannelStrip widthClass="w-36" />);
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        fireEvent.contextMenu(slider);
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        await act(async () => {
+            await activateProject();
+        });
+        await act(async () => {
+            read.resolve('gain:0.25');
+            await read.promise;
+        });
+        expect(project.read().transport.masterGain).toBe(80);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(external.setMasterGainValue).not.toHaveBeenCalledWith(0.25);
     });
 });
