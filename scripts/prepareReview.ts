@@ -22,10 +22,9 @@ import { reviewBundlePath } from './reviewBundleLocator.ts';
 import { changedReviewPaths, formatReviewDiffSummary, summarizeReviewDiff } from './reviewDiffSummary.ts';
 import { planReviewRisk } from './reviewRiskPolicy.ts';
 import {
-    REVIEW_ROUND_ESCALATION_THRESHOLD,
-    REASSESSMENT_FILE_NAME,
+    REVIEW_ROUND_FREEZE_THRESHOLD,
     countReviewerRequestChangesRounds,
-    logReviewRoundWarning,
+    reviewRoundFreezeFlag,
 } from './reviewRoundEscalation.ts';
 
 export type ReviewPullRequest = {
@@ -110,11 +109,10 @@ export function readReviewBundleContext(destination: string): ReviewBundleContex
 }
 
 /**
- * Whether the caller has already put a document of their own at the bundle root: `stances.json` from
- * stance dispatch, `review.json` and `discarded.json` from the review round, `acceptance.json` from
- * acceptance, or `dossier.json` from the durable head-bound dossier. Any of them means the bundle
- * records a judgement about a specific head and must not be silently replaced by one about a
- * different base or head.
+ * Whether the bundle root already holds a round's documents: `review.json` or `acceptance.json`, the
+ * `dossier.json` publication derived from them, or a `stances.json` or `discarded.json` an older
+ * round left. Any of them means the bundle records a judgement about a specific head and must not be
+ * silently replaced by one about a different base or head.
  */
 function hasCallerReviewDocuments(destination: string): boolean {
     return ['stances.json', 'review.json', 'discarded.json', 'acceptance.json', 'dossier.json'].some((name) =>
@@ -139,6 +137,27 @@ function assertReusableBundleContext(destination: string, expected: ReviewBundle
         current.headSha !== expected.headSha
     ) {
         fail(`review bundle context changed for ${destination}`);
+    }
+}
+
+function readRequestChangesRounds(
+    number: number,
+    pullRequest: ReviewPullRequest,
+    port: PrepareReviewPort
+): number | 'unreadable' {
+    if (port.reviews === undefined || port.reviewComments === undefined) {
+        return 'unreadable';
+    }
+    try {
+        const reconstruction = reconstructReviewRounds(
+            number,
+            { state: pullRequest.state, head: pullRequest.headRefOid },
+            port.reviews(number),
+            port.reviewComments(number)
+        );
+        return countReviewerRequestChangesRounds(reconstruction);
+    } catch {
+        return 'unreadable';
     }
 }
 
@@ -195,36 +214,12 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
         headSha: pullRequest.headRefOid,
     });
     port.installBundle(destination, files);
-    // The escalation flag is advisory at prepare time: the bundle must still be produced so the
-    // caller can write `reassessment.json` beside it, and an unreadable public history is logged,
-    // never a refusal. The gate that actually blocks a fresh publication runs at publish time.
-    try {
-        if (port.reviews === undefined || port.reviewComments === undefined) {
-            port.log(
-                `review-round-escalation:${number}:request-changes=unreadable:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
-            );
-        } else {
-            const reconstruction = reconstructReviewRounds(
-                number,
-                { state: pullRequest.state, head: pullRequest.headRefOid },
-                port.reviews(number),
-                port.reviewComments(number)
-            );
-            const requestChanges = countReviewerRequestChangesRounds(reconstruction);
-            port.log(
-                `review-round-escalation:${number}:request-changes=${requestChanges}:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
-            );
-            logReviewRoundWarning(number, requestChanges, port.log);
-            if (requestChanges >= REVIEW_ROUND_ESCALATION_THRESHOLD) {
-                port.log(
-                    `review-round-escalation:${number}:write ${join(destination, REASSESSMENT_FILE_NAME)} before the next publication`
-                );
-            }
-        }
-    } catch {
-        port.log(
-            `review-round-escalation:${number}:request-changes=unreadable:threshold=${REVIEW_ROUND_ESCALATION_THRESHOLD}`
-        );
+    // The freeze flag is advisory at prepare time and an unreadable public history is logged, never a
+    // refusal. The gate that actually blocks a fresh publication runs at publish time.
+    const requestChanges = readRequestChangesRounds(number, pullRequest, port);
+    port.log(reviewRoundFreezeFlag(number, requestChanges));
+    if (requestChanges !== 'unreadable' && requestChanges >= REVIEW_ROUND_FREEZE_THRESHOLD) {
+        port.log(`review-round-freeze:${number}:frozen; review:publish will refuse, respin the change as a fresh PR`);
     }
     port.log(destination);
     return destination;
@@ -265,8 +260,8 @@ export function readBundleGeneratedSet(destination: string): ReadonlySet<string>
  * `rootOnly` is set whenever that previous record is unknown — no manifest, one predating this
  * field, or one this function cannot parse. Without it, there is no way to tell a caller's file from
  * a stale artifact of a base that has since moved, so classification falls back to position instead
- * of name: the caller writes `review.json`, `discarded.json`, and `dossier.json` beside each other
- * at the bundle root, and every nested path belongs to the script. A nested file is therefore
+ * of name: the round's documents — `review.json` and the `dossier.json` derived beside it — sit at
+ * the bundle root, and every nested path belongs to the script. A nested file is therefore
  * presumed generated and dropped, not carried forward on a guess.
  */
 function preserveCallerFiles(

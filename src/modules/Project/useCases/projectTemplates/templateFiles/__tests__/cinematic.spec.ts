@@ -29,6 +29,7 @@ vi.mock('#/modules/Transport/stores', () => {
 });
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     replaceTempoMap: transportMocks.replaceTempoMap,
     replaceTimeSignatureMap: transportMocks.replaceTimeSignatureMap,
 }));

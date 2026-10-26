@@ -14,7 +14,7 @@ author reviews governed rounds.
 - Put the same malformed marker bytes under author, reviewer, foreign, and unknown identities.
   Only the authorized records may refuse reconstruction. Foreign valid markers must contribute
   no repairs, including when they answer an unknown root; authorized unknown-root records refuse.
-- Exercise fresh `publishReview` below the escalation threshold through its real admission path.
+- Exercise fresh `publishReview` below the freeze threshold through its real admission path.
   A malformed foreign reply must permit the publication POST; the same reply from either App must
   refuse before any POST or bundle write. A reconstruction-only check misses this availability
   boundary. Preserve valid historical repair order, root bindings, and review role classification.
@@ -41,7 +41,7 @@ author reviews governed rounds.
 actors and parsed every reply marker. [PR #4588](https://github.com/jcosta33/sourdaw/pull/4588),
 merged as `93dbaf0ebae4b6b79f8844749148a09ce784dceb`, put that reconstruction ahead of the fresh
 publication threshold comparison. A foreign reply containing `sourdaw-repair-v1 {not json`
-therefore refused a fresh publication even below the escalation threshold (#5007).
+therefore refused a fresh publication even below the round threshold then in force (#5007; the freeze threshold since ADR 0054).
 
 The retained final-head #4588 stance
 `the-guard-change-leaves-plan-carrying-publication-unchanged` admitted below-threshold behavior
@@ -96,3 +96,39 @@ admission and replay. The missing probe compares public comment IDs for compact 
 markers through every route, regardless of array order, and asserts a later invalid thread
 aborts the full batch without mutations. The historical final-head bundle is unavailable, so
 its exact stance and reviewer tier remain unknown.
+
+## Escape: concurrent repair writers duplicate an authoritative record
+
+[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411), merged as
+`ae4793d05ff2fc310a151a55ebe455dd2d816084`, introduced repair and confirmation writers
+without serializing their read-absence/post transactions. GitHub echoes `clientMutationId`
+without deduplicating it. Two cooperating callers could both read an absent marker, post the
+same confirmation, then leave an unresolved thread after resolve failures; later replay refuses
+the duplicate confirmations. Sequential idempotence probes did not establish concurrent safety.
+The historical final-head bundle is unavailable, so its exact stance and reviewer tier remain unknown.
+
+Hold the real production coordinator after its per-PR v4 owner acquisition with an explicit
+barrier. A competing repair or confirmation must refuse before authentication or remote reads,
+while another PR remains independent. Assert one authoritative post after release and replay.
+Use the existing Git owner and recovery runner in a disposable repository; bypassing the
+coordinator's serializer must fail this probe. Core selection functions remain unlocked.
+
+For each actual write port — author reply, reviewer confirmation, and reviewer resolve — make
+the remote apply the write then throw, or fail a resolve after an existing confirmation. Require
+a retained `remote-mutation-attempted` v4 owner and its exact `deliver --recover-lock` command.
+Recover only after controlled dead-fence proof and two stable reads, then replay without a
+second post, including a descendant head. Receipt replay must need no new authentication or
+remote read. Removing any write port's attempt marking must fail its retention probe. Keep
+whole-batch refusal, immutable actor/root binding, ancestry and duplicate refusal intact.
+
+Exercise the real trusted snapshot route as well: both commands need the lock source in their
+pinned closures and trusted process tools with detached POSIX groups. Unit core success cannot
+prove launcher fencing or recoverable ownership. Removing either command's fence classification
+must fail that integration probe.
+
+Pre-merge review lesson from [PR #5701](https://github.com/jcosta33/sourdaw/pull/5701):
+extracting a helper from a trusted writer must preserve both its exact source closure and the
+semantic governance-classification union. Closure-only probes passed while `gitAncestry.ts`
+was missing from `GOVERNANCE_TRANSITION_PATHS`. Run the existing `reviewRiskPolicy.spec.ts`
+union-equality and every-closure-path `native-security` assertions alongside the closure probes
+before publication; preserve their expected sets and classifications.

@@ -8,6 +8,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
@@ -83,6 +84,15 @@ export function pausePlayback(): void {
     );
 
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition: pausedBeat });
+    // The paused roll's punch ended with the roll itself, here and now. The
+    // teardown this pause defers below is the flag's only other retirement,
+    // and a Play landing inside the recorder-flush window skips that teardown
+    // — the stale punch would then outlive its roll into the successor, whose
+    // punch-in branch reads it as a punch already open and refuses its own
+    // (#5272). The recorder stop below owns the take; a scheduler restart that
+    // keeps the roll alive (a seam edit) never passes through here, so a live
+    // punch keeps its flag across that restart exactly as before.
+    schedulerSession.punchRecordingActive = false;
     // The parked epoch above ends the roll whose wraps the count holds. While
     // parked no capture reads it (the parked branch answers the store), and
     // the next play zeroes beside its own epoch write — dropping it here keeps

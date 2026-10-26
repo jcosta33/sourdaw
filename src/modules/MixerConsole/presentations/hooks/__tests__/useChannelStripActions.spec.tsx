@@ -32,7 +32,10 @@ const mocks = vi.hoisted(() => ({
     setTrackPan: vi.fn(),
     setTrackColor: vi.fn(),
     executeAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
-    executeUserAppAction: vi.fn((_action: AppAction) => Promise.resolve()),
+    executeUserAppAction: vi.fn(
+        (_action: AppAction, _options?: { shouldExecute?: () => boolean; onCommitted?: () => void }) =>
+            Promise.resolve()
+    ),
     removeTrack: vi.fn(),
     renameTrack: vi.fn(),
     releaseTouchAutomation: vi.fn(),
@@ -712,6 +715,122 @@ describe('useChannelStripActions', () => {
         });
 
         expect(result.current.displayGain).toBe(0.3);
+    });
+
+    it('refuses a queued menu gain edit when its captured track is replaced before dequeue', async () => {
+        seedProjectTruth({ gain: 0.8 });
+        const capturedTrack = trackStore.value?.tracks[0];
+        let releasePhysical: (() => void) | undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releasePhysical = resolve;
+                })
+        );
+        const { result } = renderHook(() => useChannelStripActions(makeTrack()));
+
+        act(() => result.current.setGain(0.5, false));
+        await waitFor(() => expect(releasePhysical).toBeDefined());
+        act(() => {
+            result.current.setGainFromMenu({
+                trackId: 'track-1',
+                expectedGain: 0.8,
+                gain: 0.3,
+                shouldExecute: () => trackStore.value?.tracks[0] === capturedTrack,
+                onCommitted: vi.fn(),
+            });
+            seedProjectTruth({ gain: 0.8 });
+        });
+        await act(async () => releasePhysical?.());
+
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.setTrackGain).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes frozen menu gain admission through the Command snapshot wait without a transient preview', async () => {
+        seedProjectTruth({ gain: 0.8 });
+        let current = true;
+        const shouldExecute = () => current;
+        const onCommitted = vi.fn();
+        const { result } = renderHook(() => useChannelStripActions(makeTrack()));
+        act(() => {
+            result.current.setGainFromMenu({
+                trackId: 'track-1',
+                expectedGain: 0.8,
+                gain: 0.25,
+                shouldExecute,
+                onCommitted,
+            });
+        });
+
+        await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        const [action, options] = mocks.executeUserAppAction.mock.calls[0] ?? [];
+        expect(action).toEqual({
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.25, expectedGain: 0.8, automationRecordingPolicy: 'suppressed' },
+        });
+        expect(options).toEqual({ shouldExecute, onCommitted: expect.any(Function) });
+        options?.onCommitted?.();
+        expect(onCommitted).toHaveBeenCalledTimes(1);
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+        current = false;
+        expect(options?.shouldExecute?.()).toBe(false);
+    });
+
+    it('commits a scalar pan menu value through the guarded Command action without transient preview', async () => {
+        seedProjectTruth({ pan: -12.25 });
+        let current = true;
+        const shouldExecute = () => current;
+        const onCommitted = vi.fn();
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ pan: -12.25 })));
+
+        act(() => {
+            result.current.setPanFromMenu({
+                trackId: 'track-1',
+                expectedPan: -12.25,
+                pan: 7.125,
+                shouldExecute,
+                onCommitted,
+            });
+        });
+
+        await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        const [action, options] = mocks.executeUserAppAction.mock.calls[0] ?? [];
+        expect(action).toEqual({
+            type: 'setTrackPan',
+            payload: {
+                trackId: 'track-1',
+                pan: 7.125,
+                expectedPan: -12.25,
+                automationRecordingPolicy: 'suppressed',
+            },
+        });
+        expect(options).toEqual({ shouldExecute, onCommitted: expect.any(Function) });
+        expect(mocks.setTrackPan).not.toHaveBeenCalled();
+        options?.onCommitted?.();
+        expect(onCommitted).toHaveBeenCalledTimes(1);
+        current = false;
+        expect(options?.shouldExecute?.()).toBe(false);
+    });
+
+    it('refuses a pan menu Command action when its final admission has gone stale', async () => {
+        let current = true;
+        const shouldExecute = () => current;
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ pan: 3.5 })));
+
+        await act(async () => {
+            result.current.setPanFromMenu({
+                trackId: 'track-1',
+                expectedPan: 3.5,
+                pan: 0,
+                shouldExecute,
+                onCommitted: vi.fn(),
+            });
+            current = false;
+            await Promise.resolve();
+        });
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.setTrackPan).not.toHaveBeenCalled();
     });
 
     it('scopes pan commit continuation to the owning gesture and serialises overlapping settles', async () => {

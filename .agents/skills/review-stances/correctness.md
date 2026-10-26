@@ -11,6 +11,24 @@ have caught it. Keep each lesson short enough to paste into a dispatch. A behavi
 matching no more specific file carries this file; a stance with a more specific match never
 carries it in addition.
 
+### Explicit preservation must retain its whole owner and every forbidden operation
+
+Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports an unresolved protection admitting
+the requested edit. PR [#5277](https://github.com/jcosta33/sourdaw/pull/5277) introduced the coordinated
+level suite, including a Strings restriction expected to refuse; that test introduction does not
+prove the defect's introduction. The earliest introducing revision and historical review stance or
+tier remain unproven. The proven coverage gap is an owner-and-route preservation probe.
+
+Attack a reserved selection phrase colliding with a display name, a missing quoted compound owner
+containing a real name, a title-cased quality beside a real missing-object control, and an unclosed
+VCA quality beside its strict protection. A whole-track fader exception must permit gain while
+refusing pan and rename, including commands touching owned objects through canonical owner checks.
+Retain the exact selected identity through pending-card refinement and compiled replacement after
+selection moves. Independent clauses and later positive protections must restrict exceptions,
+never combine them into wider permission. Inspect the recorded basis and actual proposal scope.
+Any compatibility mask must prove full consumption of the original clause; a known control beside
+an unknown clip or unread suffix must not discharge the residual restriction.
+
 ## Standing probes
 
 - Read the full unit the diff touches at head — the function, its callers, its callee contracts —
@@ -67,6 +85,68 @@ carries it in addition.
   the single unit that actually failed.
 
 ## Lessons from escapes
+
+### 2026-10-25 — a protected clip or control became a whole track (introduced by PR #2811)
+
+PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
+(`beb59d2e74a4d98992b692ff07a40635db22ee39`) inferred whole-track protection from a track name
+contained in raw unchanged text. With a Bass track owning a Bass Verse clip, `leave Bass Verse
+unchanged` could protect the whole track and block a sibling clip edit. `leave Bass fader
+unchanged` requires control-facet authority rather than whole-track authority. The historical
+review stance, prompt and tier are unestablished.
+
+Use canonical whole-owner facts. When a track and a clip or device share the exact name Bass,
+retain actual track candidates conservatively while leaving the mixed original range unconsumed
+for generic non-track admission. Probe the real producer, initial recorded facts, a permitted
+sibling clip edit, and later admission against a frozen whole owner's actual descendants.
+Independent `leave Bass alone` and structural or frozen roots must remain whole restrictions
+beside a separately protected clip.
+
+### 2026-10-24 — a fenced transaction had no native process-tool admission (introduced by PR #5639)
+
+PR #5639 serialized supersession with the shared fenced owner, but its package command still
+called the transaction script directly. The actual command refused before PR I/O because the
+default fence had no launcher-pinned `ps`. Strongest-tier review was present; the missing stance
+was actual native CLI and platform-tool admission, while lock fixtures injected owner fences.
+
+Trace a newly required capability from the package command through the protected launcher to
+its real consumer. Invoke that route with controlled remote ports and the default owner fence;
+observe the acquired process identity before the first PR read. Restoring a direct package route
+or omitting the command from the launcher's fenced set must fail that probe before remote I/O.
+
+### 2026-10-22 — a controller-only take was stored and silent (escaped via PR #5338)
+
+PR #5338 (`866a97def`) recorded channel controllers and pitch bend into the MIDI take, and a
+take of a pedal or mod wheel with no notes committed its rows but never a note list. Every
+playback and export reader admits a MIDI clip by its note list (`scheduleMidiNotes`,
+`resolveStoredControllerClips`, the Yeast route, `scheduleTrackClips`), so the take was stored,
+visible and silent. The blind spot was reading the recording writers and their redo snapshot
+without reading the readers' admission gates; the specs always recorded a note beside the
+controllers. The historical review stance, prompt and tier are unestablished.
+
+A recording change that stores a new kind of row must be checked against every playback
+reader's admission gate, including a take made of only that kind of row. Enumerate the readers
+of the stored kind on the live head and read each one's skip condition, then drive a take of
+that kind alone through commit, undo, redo, live playback and export, and require the take to
+be heard. Restoring any reader's skip must fail a case that drives a controller-only clip with no
+note list through that reader.
+
+Fix a playback reader's admission rather than write a structural placeholder (an empty note
+list) into shared CRDT state: the placeholder races with a peer's concurrent first write to the
+same key, and a clip derived by split, copy, duplicate or paste (#5470) never carries it.
+
+### 2026-10-21 — final cleanup changed storage state after result construction
+
+PR #5274 (`40baa0716b`) set a storage-only leak reason and retained message before its
+existing `finally` cleanup attempt. Complete proof on that final attempt could delete the
+owned payload while the returned result still said it was retained. The historical review
+stance, prompt, and tier are unestablished. A result assembled before finalization was not
+an oracle for the final state.
+
+Probe a real guarded child and owned payload with the first release refused and the final
+direct and claimed release permitted. Assert exact owner and claim removal alongside the
+reported reason and output. Persistent refusal must still report retention, and an earlier
+process or resource failure must remain a failure after storage removal.
 
 ### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
 
@@ -464,6 +544,27 @@ reported a successful write to that follower. Review point mutations against the
 decibel forms must refuse follower, dangling, and cyclic targets without redirecting or detaching them, while a source
 write must still change the follower's sampled value.
 
+### 2026-10-24 — OPEN compensation erased markers another supersession had adopted (PRs #2357 and #4420)
+
+PR #2357 introduced the compensation snapshot; PR #4420 extended rollback to receipt and lineage
+markers. An invocation could read OPEN during compensation, then delete its verified canonical
+markers after another invocation adopted them, closed the pull request, and verified success.
+Historical exact review stance and tier are unestablished. Checking OPEN again before DELETE
+leaves the same gap. Retention alone is also insufficient: if finding 1002 arrives after lineage
+1001 was posted, the retained old lineage prevents a retry with the complete corrected lineage.
+
+Serialize the production operation's reads, replay, writes and compensation under the existing
+per-PR mutation owner. A verified pre-close rollback may release only after OPEN state, the exact
+original comment IDs and absence of its created IDs are proven; the invocation still fails.
+Ambiguous writes, altered markers, attempted closure and incomplete compensation retain the
+journal for native recovery. Preserve prior and foreign comments.
+
+Pause one invocation after its OPEN compensation snapshot. A second real serialized entrypoint
+must refuse before any PR port call; after verified rollback releases, its later invocation must
+close with both canonical proofs intact. Also add a finding before close, then require the
+complete updated lineage to succeed on retry without relaxing marker validation. A lock-release
+failure must never print a supersession success.
+
 ### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
 
 PR #3977 (`975524db5f`) made `--recover` delete whichever guard-failure receipt existed for the lane
@@ -569,3 +670,11 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+### 2026-10-11 — the validated head was not the merged tree (introduced by PR #5243)
+
+PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — its validated head held zero references. Between its last validation and the merge, another PR landed modulator work in the same file on `main`; the squash merge took the three-way merge result against the advanced base, which combined the head-side removals with base-side additions and re-introduced `defaultTempo`/`projectBeat` references whose bindings no longer existed. `main` stopped typechecking (TS18004/TS2304 in `automationScheduling.ts`) although every validated tree was green: the required Gate ran on the earlier merge ref, and GitHub created the squash from the never-validated new one.
+
+Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
+
+Probe: before merging, when the base tip has moved since the head's last Gate, require fresh CI evidence that covers the resulting base-plus-head tree, not just the earlier head. Reverting either contributing hunk should make that combined-tree typecheck fail, which is what no validated run observed here.

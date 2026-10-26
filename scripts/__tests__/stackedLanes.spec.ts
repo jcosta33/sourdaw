@@ -67,6 +67,54 @@ describe('stack lineage admission', () => {
         ).toThrow(/cycle/);
     });
 
+    it.each([
+        ['fix/5573/child', 'feat/parent'],
+        ['docs/child', 'agent/12/parent'],
+        ['agent/child', 'refactor/12/parent'],
+        ['perf/12/child', 'perf/11/parent'],
+    ])(
+        'admits the stack %s on %s whether either branch is typed or a legacy agent/ branch',
+        (childBranch, parentBranch) => {
+            const typed = { ...descriptor, childBranch, parentBranch };
+
+            expect(parseLaneStack(typed)).toEqual(typed);
+        }
+    );
+
+    it.each([
+        'style/child',
+        'hotfix/12/child',
+        'Fix/child',
+        'fix/Child',
+        'fix//child',
+        'fix/12/34',
+        'fix/a/b/c',
+        'fix/child/',
+        'fix/-child',
+        'fix/../child',
+        'fix/child\n',
+        'fix/child --upload-pack=x',
+        'main',
+        'refs/heads/fix/child',
+        '-fix/child',
+    ])('refuses %j as either end of a stack descriptor', (branch) => {
+        expect(() => parseLaneStack({ ...descriptor, childBranch: branch })).toThrow(/invalid/);
+        expect(() => parseLaneStack({ ...descriptor, parentBranch: branch })).toThrow(/invalid/);
+    });
+
+    it('keeps the descriptor of a typed lane apart from the same slug under another type', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-stack-'));
+        roots.push(root);
+        const fixChild = { ...descriptor, childBranch: 'fix/child', parentBranch: 'feat/parent' };
+        const docsChild = { ...descriptor, childBranch: 'docs/child', parentBranch: 'feat/parent', forkHead: child };
+
+        writeLaneStack(root, fixChild);
+        writeLaneStack(root, docsChild);
+
+        expect(readLaneStack(root, 'fix/child')?.forkHead).toBe(fork);
+        expect(readLaneStack(root, 'docs/child')?.forkHead).toBe(child);
+    });
+
     it('preserves pinned identity, detects descriptor loss, and refuses reused branch lineage', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-stack-'));
         roots.push(root);

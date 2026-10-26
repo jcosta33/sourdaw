@@ -108,6 +108,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    takeOwnsRecordingRoot: vi.fn(() => true),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
@@ -134,10 +135,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleClick: vi.fn(),
     getCompensationDelay: () => 0,
     getDefaultBendRangeSemitones: () => 48,
+    getNoteExpressionDimensions: () => [],
     getDrumKitByIndex: () => null,
     ensureTrackStrip: () => trackStripStub,
     getTrackStrip: () => trackStripStub,
     applyNoteExpression: vi.fn(),
+    startNoteExpression: vi.fn(),
+    advanceNoteExpression: vi.fn(),
+    relocateNoteExpression: vi.fn(),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
     audioEngine: { setTransportInfo: vi.fn() },

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+
+import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undo } from '../undo';
 
@@ -158,6 +161,42 @@ describe('undo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
     });
 
+    it('keeps an atomic group whose replay conflicts on past, retryable, with nothing moved to future', async () => {
+        const first = actionEntry({ id: 'group-1', groupId: 'group' });
+        const second = actionEntry({ id: 'group-2', inverseAction: { type: 'stopPlayback' }, groupId: 'group' });
+        mocks.undoStoreValue.value = { past: [first, second], future: [] };
+        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'conflicted',
+            reason: 'The project changed since the group was applied',
+            actions: [],
+        });
+
+        await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+        expect(mocks.undoStoreValue.value).toEqual({ past: [first, second], future: [] });
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+    });
+
+    it('advances the stacks past a group whose batch committed with a warning, then rethrows it as committed', async () => {
+        const previous = actionEntry({ id: 'previous' });
+        const first = actionEntry({ id: 'group-1', groupId: 'group' });
+        const second = actionEntry({ id: 'group-2', inverseAction: { type: 'stopPlayback' }, groupId: 'group' });
+        mocks.undoStoreValue.value = { past: [previous, first, second], future: [] };
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'committed-with-warning',
+            warning: 'Effects are still settling',
+            actions: [],
+        });
+
+        const undone = undo();
+
+        await expect(undone).rejects.toBeInstanceOf(AppActionCommittedError);
+        await expect(undone).rejects.toMatchObject({ cause: new Error('Effects are still settling') });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [previous], future: [first, second] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
+    });
+
     it('de-groups legacy mixed singleton history before undoing only the newest entry', async () => {
         registerHandlerMap({
             setEditingTool: {
@@ -290,5 +329,107 @@ describe('undo', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value).toEqual({ past: [], future: [entry] });
+    });
+
+    it('replays a keyless legacy trim inverse as the explicit anchorless restoration (#5198)', async () => {
+        // New trim entries always carry `loopOriginBeat` at capture time, so a
+        // payload without the field is a legacy entry whose pre-action clip
+        // was anchorless by construction. Dispatching it as-is would run the
+        // fresh-action mint law and mint an anchor the pre-action state never
+        // carried; the seam normalizes it to the explicit `null` form.
+        const entry = actionEntry({
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4 } },
+            inverseAction: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2 } },
+        });
+        mocks.undoStoreValue.value = { past: [entry], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('replays a keyless legacy loop inverse with an anchorless replacement (#5198)', async () => {
+        const entry = actionEntry({
+            action: { type: 'setClipLoop', payload: { clipId: 'c1', enabled: false } },
+            inverseAction: {
+                type: 'restoreClipLoop',
+                payload: {
+                    clipId: 'c1',
+                    expected: { present: true, enabled: false },
+                    replacement: { present: true, enabled: true },
+                },
+            },
+        });
+        mocks.undoStoreValue.value = { past: [entry], future: [] };
+
+        await undo();
+
+        // The replacement — the state put back — normalizes to the explicit
+        // anchorless form; the expected snapshot is untouched, because the
+        // compare-and-swap guard reads only presence and enabled.
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            {
+                type: 'restoreClipLoop',
+                payload: {
+                    clipId: 'c1',
+                    expected: { present: true, enabled: false },
+                    replacement: { present: true, enabled: true, loopOriginBeat: null },
+                },
+            },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('dispatches inverses that already carry the anchor field untouched (#5198)', async () => {
+        // Entries recorded after the field existed always carry it — a value
+        // or `null` — and both replay exactly what was captured. (The `null`
+        // pass-through is also asserted by the grouped batch pin above.)
+        const valued = actionEntry({
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4 } },
+            inverseAction: {
+                type: 'trimClipStart',
+                payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: 0 },
+            },
+        });
+        mocks.undoStoreValue.value = { past: [valued], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: 0 } },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+    });
+
+    it('normalizes grouped legacy inverses in the atomic batch too (#5198)', async () => {
+        const first = actionEntry({
+            id: 'group-1',
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4 } },
+            inverseAction: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2 } },
+            groupId: 'group',
+        });
+        const second = actionEntry({
+            id: 'group-2',
+            action: { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 6 } },
+            inverseAction: {
+                type: 'trimClipStart',
+                payload: { clipId: 'c1', newStartBeat: 4, loopOriginBeat: null },
+            },
+            groupId: 'group',
+        });
+        mocks.undoStoreValue.value = { past: [first, second], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
+            [
+                { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4, loopOriginBeat: null } },
+                { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
+            ],
+            { skipUndo: true, skipMacroRecording: true, source: 'manual' }
+        );
     });
 });

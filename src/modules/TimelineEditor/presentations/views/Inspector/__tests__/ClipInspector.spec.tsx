@@ -425,6 +425,62 @@ describe('ClipInspector', () => {
         });
     });
 
+    it('routes a one-step Trim Start slider commit through the registered trimClipStart action', () => {
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, startBeat: 2 }} />);
+        const slider = screen.getByLabelText('Trim clip start');
+
+        fireEvent.change(slider, { target: { value: '2.25' } });
+        // Mid-gesture ticks never reach the command layer.
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.blur(slider, { target: { value: '2.25' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'trimClipStart',
+            payload: { clipId: 'clip-1', newStartBeat: 2.25 },
+        });
+    });
+
+    it('routes a one-step Trim End slider commit through the registered trimClipEnd action', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end');
+
+        fireEvent.change(slider, { target: { value: '7.75' } });
+        // Mid-gesture ticks never reach the command layer.
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.blur(slider, { target: { value: '7.75' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'trimClipEnd',
+            payload: { clipId: 'clip-1', newEndBeat: 7.75 },
+        });
+    });
+
+    it('dispatches no trimClipStart action when the commit lands on the current start bound', () => {
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, startBeat: 2 }} />);
+        const slider = screen.getByLabelText('Trim clip start') as HTMLInputElement;
+
+        fireEvent.change(slider, { target: { value: '4' } });
+        fireEvent.blur(slider, { target: { value: '2' } });
+
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        // The gesture still ends cleanly: the drag state cleared and the thumb re-anchors on the store bound.
+        expect(slider.value).toBe('2');
+    });
+
+    it('dispatches no trimClipEnd action when the commit lands on the current end bound', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        fireEvent.change(slider, { target: { value: '6' } });
+        fireEvent.blur(slider, { target: { value: '8' } });
+
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        // The gesture still ends cleanly: the drag state cleared and the thumb re-anchors on the store bound.
+        expect(slider.value).toBe('8');
+    });
+
     it('should render time stretch select for audio clips and dispatch setClipStretchMode on change', () => {
         const { container } = render(<ClipInspector {...defaultProps} />);
         const select = container.querySelector<HTMLSelectElement>('#stretch-mode-select');

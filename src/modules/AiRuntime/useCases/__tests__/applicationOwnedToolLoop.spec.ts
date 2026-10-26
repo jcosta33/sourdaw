@@ -11,6 +11,7 @@ import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Pro
 
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { PROPOSAL_REFINES_MAX_LENGTH } from '../../models/ThreadContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
@@ -270,6 +271,109 @@ describe('application-owned tool loop', () => {
                 },
             ],
         });
+    });
+
+    // Red when the proposal key list refuses `refines`, or admits one of a shape no confirmation id has.
+    // Which pending proposal it names is the planner's check against the thread, not the loop's.
+    it.each([
+        { label: 'a confirmation id', refines: 'prompt-confirmation-pending', admitted: true },
+        { label: 'an empty string', refines: '', admitted: false },
+        { label: 'a string past the bound', refines: 'p'.repeat(PROPOSAL_REFINES_MAX_LENGTH + 1), admitted: false },
+        { label: 'a number', refines: 7, admitted: false },
+    ])(
+        'carries a proposal refines that is $label only when it has a confirmation id shape',
+        async ({ refines, admitted }) => {
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'discover-1',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['setTempo'] },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'propose-1',
+                            name: 'command.batch.propose',
+                            arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 120 } }], refines },
+                        },
+                    ],
+                });
+
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'loop-refines',
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn,
+            });
+
+            expect(result).toMatchObject(
+                admitted
+                    ? { status: 'complete', toolCalls: [{ name: 'command.batch.propose', arguments: { refines } }] }
+                    : {
+                          status: 'rejected',
+                          reason: 'Provider command proposal does not match the strict catalog contract.',
+                      }
+            );
+        }
+    );
+
+    // Red when the strict encoding of no refinement, which every strict reply states, is refused, or
+    // reaches the planner as a `refines` naming a card.
+    it.each([
+        { form: 'a primitive command list', arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 120 } }] } },
+        {
+            form: 'a structured list',
+            arguments: {
+                list: { schemaVersion: 1, items: [{ id: 'tempo', name: 'setTempo', arguments: { bpm: 120 } }] },
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Set the tempo.',
+                    constraints: [],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: ['setTempo'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: [],
+                    stoppingConditions: [],
+                },
+            },
+        },
+    ])('admits a strict reply’s null refines on $form as no refinement at all', async ({ arguments: stated }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'discover-1',
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    { id: 'propose-1', name: 'command.batch.propose', arguments: { ...stated, refines: null } },
+                ],
+            });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-null-refines',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(result.status).toBe('complete');
+        const proposal = result.status === 'complete' ? result.toolCalls[0] : undefined;
+        expect(proposal?.name).toBe('command.batch.propose');
+        expect(proposal?.arguments).not.toHaveProperty('refines');
     });
 
     it('executes resolve, history, and capability reads as bounded application-owned receipts in one safe-read turn', async () => {

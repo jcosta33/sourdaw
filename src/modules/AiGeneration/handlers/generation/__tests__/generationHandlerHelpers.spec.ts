@@ -32,6 +32,7 @@ function asInjectable<TMock extends (...args: never[]) => unknown>(mockFn: TMock
 }
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     getTransportState: mocks.getTransportState,
 }));
 

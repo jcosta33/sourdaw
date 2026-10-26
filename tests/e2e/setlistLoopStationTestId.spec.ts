@@ -20,6 +20,7 @@ test.describe('Setlist & loop station — test-id targeted', () => {
         await launch_new_project(page);
     });
 
+    // Owns Add-to-list creation formerly claimed by setlistLoopStation.
     test('clicking add creates a setlist item', async ({ page }) => {
         await openBottomTab(page, 'Setlist');
         const add = page.getByTestId('setlist-add-item');
@@ -38,6 +39,7 @@ test.describe('Setlist & loop station — test-id targeted', () => {
         await expect(station.getByRole('button', { name: 'Arm loop station' })).toBeVisible();
     });
 
+    // Owns required loop entry and Arm to Disarm behavior formerly guarded in sessionLoopStationDeepTestId.
     test('loop station arm button is present when tab is active', async ({ page }) => {
         await openBottomTab(page, 'Loop Station');
         const arm = page.getByRole('button', { name: 'Arm loop station' });

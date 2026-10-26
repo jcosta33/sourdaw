@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import {
     existsSync,
     type linkSync,
@@ -13,7 +12,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -42,6 +41,8 @@ import {
     type WriteGuardFailureReceiptPorts,
 } from '../resourceGuard';
 import { parseArgs as parseLintArgs } from '../runLint';
+
+import { readSignalAcknowledgement, startSignalFixture } from './fixtures/resourceGuardSignalHarness';
 
 function fixtureRoot(label: string): string {
     return mkdtempSync(join(tmpdir(), `sourdaw-resource-${label}-`));
@@ -93,17 +94,9 @@ async function killAndWait(pid: number | undefined): Promise<void> {
     await waitUntil(() => !isAlive(pid));
 }
 
-async function waitForClose(child: ChildProcess, timeoutMs = 2_000): Promise<number | null> {
-    if (child.exitCode !== null) {
-        return child.exitCode;
-    }
-    return Promise.race([
-        new Promise<number | null>((resolve) => child.once('close', resolve)),
-        new Promise<never>((_resolve, reject) =>
-            setTimeout(() => reject(new Error('child close timed out')), timeoutMs)
-        ),
-    ]);
-}
+// Each real guarded command ends in a storage file proof that can spend its whole
+// five-second deadline retaking catalogs on a busy host.
+const GUARDED_CASE_TIMEOUT_MS = 20_000;
 
 describe('resource admission', () => {
     it('serializes admission updates', () => {
@@ -387,7 +380,7 @@ describe('process table sampling', () => {
     });
 });
 
-describe('resource enforcement', () => {
+describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('rechecks capacity before spawning', async () => {
         let samples = 0;
         const result = await runIsolatedGuardedCommand({
@@ -483,64 +476,190 @@ describe('resource enforcement', () => {
         }
     }, 10_000);
 
-    it('escalates a repeated signal and waits for child cleanup', async () => {
-        const root = fixtureRoot('signal');
-        const pidPath = join(root, 'pid');
-        let guard: ChildProcess | undefined;
-        let childPid: number | undefined;
-        try {
-            const childEnv: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
-            delete childEnv[RESOURCE_SESSION_ENV];
-            let guardStderr = '';
-            guard = spawn(
-                process.execPath,
-                [
-                    resolve('scripts/resourceGuard.ts'),
-                    '--profile',
-                    'focused',
-                    '--max-rss-mib',
-                    '512',
-                    '--',
-                    process.execPath,
-                    '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)`,
-                ],
-                { cwd: root, env: childEnv, stdio: ['ignore', 'ignore', 'pipe'] }
-            );
-            guard.stderr?.on('data', (chunk: Buffer) => {
-                guardStderr = `${guardStderr}${chunk.toString()}`.slice(-8_192);
+    for (const acknowledgement of ['ready', 'first-term'] as const) {
+        it(`does not admit a partial ${acknowledgement} acknowledgement`, async () => {
+            const fixture = startSignalFixture({
+                root: fixtureRoot('staged-signal'),
+                stagedAcknowledgement: acknowledgement,
             });
             try {
-                await waitUntil(() => existsSync(pidPath));
-            } catch (error) {
-                const reservationsRoot = join(root, 'sourdaw-validation.reservations');
-                const reservations = existsSync(reservationsRoot)
-                    ? readdirSync(reservationsRoot)
-                          .slice(0, 8)
-                          .map(
-                              (name) => `${name}: ${readFileSync(join(reservationsRoot, name), 'utf8').slice(0, 1_024)}`
-                          )
-                    : [];
-                throw new Error(
-                    `${error instanceof Error ? error.message : String(error)}; guard exit=${guard.exitCode}; stderr=${guardStderr}; admission=${JSON.stringify(reservations)}`,
-                    { cause: error }
+                if (acknowledgement === 'first-term') {
+                    await fixture.barrier(() => existsSync(fixture.readyPath) && fixture.child() !== undefined);
+                    fixture.guard.kill('SIGTERM');
+                }
+                await fixture.barrier(() => existsSync(join(fixture.root, 'publication-staged')));
+                const pending = readdirSync(fixture.root).find(
+                    (name) => name.startsWith(`${acknowledgement}.json.`) && name.endsWith('.pending')
                 );
+                expect(pending).toBeDefined();
+                expect(readFileSync(join(fixture.root, pending!), 'utf8')).toBe('{');
+                const recordPath = join(fixture.root, `${acknowledgement}.json`);
+                expect(readSignalAcknowledgement(recordPath)).toBeUndefined();
+                writeFileSync(join(fixture.root, 'admit-publication'), 'admit');
+                await fixture.barrier(() => existsSync(recordPath) && fixture.child() !== undefined);
+                const child = fixture.child()!;
+                expect(readSignalAcknowledgement(recordPath)).toEqual(
+                    acknowledgement === 'ready'
+                        ? { pid: child.pid, tmp: child.tempDirectory }
+                        : { pid: child.pid, tempExists: true }
+                );
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
             }
-            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
-            childPid = recordedPid;
-            guard.kill('SIGTERM');
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            guard.kill('SIGTERM');
-            const code = await waitForClose(guard);
+        });
+    }
 
-            expect(code).toBe(143);
-            expect(() => process.kill(recordedPid, 0)).toThrow();
+    for (const holdIdentity of [false, true]) {
+        it(`retains failed-ready storage while child exit is unproved with ${holdIdentity ? 'unknown' : 'known'} identity`, async () => {
+            const fixture = startSignalFixture({
+                root: fixtureRoot('failed-ready-signal'),
+                stagedAcknowledgement: 'ready',
+                holdAbort: true,
+                holdIdentity,
+            });
+            try {
+                await fixture.barrier(
+                    () =>
+                        existsSync(join(fixture.root, 'publication-staged')) &&
+                        (holdIdentity || fixture.child() !== undefined)
+                );
+                await expect(
+                    fixture.barrier(() => {
+                        throw new Error('controlled failed-ready admission');
+                    })
+                ).rejects.toThrow('controlled failed-ready admission');
+                expect(readSignalAcknowledgement(fixture.readyPath)).toBeUndefined();
+                expect(fixture.child() === undefined).toBe(holdIdentity);
+                const child = fixture.child();
+                const cleanup = await fixture.cleanup();
+                expect(cleanup).toMatchObject({ removedRoot: false, childExitProved: false });
+                expect(cleanup.diagnostic).toContain(`signal fixture retained at ${fixture.root}`);
+                expect(existsSync(fixture.root)).toBe(true);
+                expect(fixture.hasEvent('storage-released')).toBe(false);
+                expect(isAlive(fixture.unrelated.pid!)).toBe(false);
+                if (child !== undefined) {
+                    expect(isAlive(child.pid)).toBe(true);
+                    expect(existsSync(child.tempDirectory)).toBe(true);
+                } else {
+                    expect(fixture.messages.find((message) => message.event === 'abort-held')).toMatchObject({
+                        childKnown: true,
+                        tempExists: true,
+                    });
+                }
+                fixture.send('publish-identity');
+                await fixture.barrier(() => fixture.child() !== undefined);
+                fixture.send('admit-abort');
+                expect(await fixture.completion).toBe(143);
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            }
+        });
+    }
+
+    it('cleans a resistant child through fallback when repeated-signal handling is suppressed', async () => {
+        const fixture = startSignalFixture({ root: fixtureRoot('suppressed-repeat-signal') });
+        try {
+            await fixture.barrier(() => existsSync(fixture.readyPath) && fixture.child() !== undefined);
+            const child = fixture.child()!;
+            expect(fixture.guard.kill('SIGTERM')).toBe(true);
+            await fixture.barrier(() => existsSync(fixture.termPath) && fixture.hasEvent('fallback-scheduled'));
+            expect(readSignalAcknowledgement(fixture.termPath)).toEqual({ pid: child.pid, tempExists: true });
+            fixture.send('suppress-repeat');
+            await fixture.barrier(() => fixture.hasEvent('repeat-suppression-installed'));
+            expect(fixture.guard.kill('SIGTERM')).toBe(true);
+            await fixture.barrier(() => fixture.hasEvent('repeated-signal-suppressed'));
+            expect(isAlive(child.pid)).toBe(true);
+            expect(fixture.hasEvent('fallback-invoked')).toBe(false);
+            expect(fixture.hasEvent('storage-release-entered')).toBe(false);
+            const cleanup = await fixture.cleanup();
+            expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            expect(fixture.messages.filter((message) => message.event === 'fallback-invoked')).toHaveLength(1);
+            expect(await fixture.completion).toBe(143);
+            expect(() => process.kill(child.pid, 0)).toThrow();
+            expect(isAlive(fixture.unrelated.pid!)).toBe(false);
         } finally {
-            guard?.kill('SIGKILL');
-            await killAndWait(childPid);
-            rmSync(root, { recursive: true, force: true });
+            if (!fixture.isClosed()) {
+                fixture.send('admit-fallback');
+                fixture.send('release-storage');
+                await fixture.completion;
+            }
+            const cleanup = await fixture.cleanup();
+            expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
         }
     });
+
+    for (const repeatedSignal of [true, false]) {
+        const name = repeatedSignal
+            ? 'escalates a repeated signal and waits for child cleanup'
+            : 'keeps a resistant child alive until the held fallback is admitted without a repeated signal';
+        it(name, async () => {
+            const fixture = startSignalFixture({ root: fixtureRoot('signal') });
+            try {
+                await fixture.barrier(
+                    () =>
+                        existsSync(fixture.readyPath) &&
+                        existsSync(fixture.unrelatedPath) &&
+                        fixture.child() !== undefined
+                );
+                const child = fixture.child()!;
+                expect(readSignalAcknowledgement(fixture.readyPath)).toEqual({
+                    pid: child.pid,
+                    tmp: child.tempDirectory,
+                });
+                expect(isAlive(child.pid)).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(true);
+                expect(fixture.guard.kill('SIGTERM')).toBe(true);
+                await fixture.barrier(() => existsSync(fixture.termPath) && fixture.hasEvent('fallback-scheduled'));
+                expect(readSignalAcknowledgement(fixture.termPath)).toEqual({ pid: child.pid, tempExists: true });
+                expect(fixture.messages.filter((message) => message.event === 'fallback-scheduled')).toEqual([
+                    { event: 'fallback-scheduled', capturedTimers: 1 },
+                ]);
+                if (repeatedSignal) {
+                    expect(fixture.guard.kill('SIGTERM')).toBe(true);
+                } else {
+                    fixture.send('inspect');
+                    await fixture.barrier(() => fixture.hasEvent('inspection'));
+                    expect(isAlive(child.pid)).toBe(true);
+                    expect(fixture.hasEvent('storage-release-entered')).toBe(false);
+                    expect(fixture.hasEvent('fallback-invoked')).toBe(false);
+                    fixture.send('admit-fallback');
+                }
+                await fixture.barrier(() => fixture.hasEvent('storage-release-entered'));
+                expect(fixture.messages.find((message) => message.event === 'storage-release-entered')).toEqual({
+                    event: 'storage-release-entered',
+                    pid: child.pid,
+                    startedAt: child.startedAt,
+                    treeStopped: true,
+                    tempExists: true,
+                    fallbackAdmitted: !repeatedSignal,
+                });
+                expect(fixture.hasEvent('fallback-invoked')).toBe(!repeatedSignal);
+                expect(() => process.kill(child.pid, 0)).toThrow();
+                expect(isAlive(fixture.unrelated.pid!)).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(true);
+                expect(fixture.isClosed()).toBe(false);
+                expect(fixture.hasEvent('storage-released')).toBe(false);
+                fixture.send('release-storage');
+                expect(await fixture.completion).toBe(143);
+                expect(fixture.messages).toContainEqual({
+                    event: 'storage-released',
+                    removed: true,
+                    treeStopped: true,
+                    pid: child.pid,
+                    startedAt: child.startedAt,
+                });
+                expect(fixture.hasEvent('fallback-cleared')).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(false);
+                expect(() => process.kill(child.pid, 0)).toThrow();
+                expect(isAlive(fixture.unrelated.pid!)).toBe(true);
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            }
+        });
+    }
 
     it('kills commands that exceed the RSS cap', async () => {
         const result = await runIsolatedGuardedCommand({
@@ -750,7 +869,12 @@ describe('resource enforcement', () => {
                     RUST_TEST_THREADS: rust,
                 },
             });
-            const reported = JSON.parse(result.output) as { options: string; cargo: string; rust: string };
+            // The guard appends its own storage evidence after the child's one-line report.
+            const reported = JSON.parse(result.output.split('\n')[0] ?? '') as {
+                options: string;
+                cargo: string;
+                rust: string;
+            };
 
             expect(reported.options).toContain(`--max-old-space-size=${expectedHeap}`);
             expect(reported.cargo).toBe(expectedCargo);
@@ -876,7 +1000,7 @@ describe('resource CLI', () => {
     });
 });
 
-describe('default budgets', () => {
+describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
         { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
         {
@@ -1176,7 +1300,7 @@ describe('pnpm modules preflight', () => {
     });
 });
 
-describe('guard failure stop enforcement', () => {
+describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     function fakeResult(overrides: Partial<GuardedCommandResult> = {}): GuardedCommandResult {
         return {
             code: 0,
@@ -1432,6 +1556,37 @@ describe('guard failure stop enforcement', () => {
                 );
                 clearGuardFailureReceipt(repoRoot, laneName);
             }
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a pressure result raised before the command started without stopping the lane', async () => {
+        const repoRoot = fixtureRoot('lane-admission-pressure');
+        const laneName = 'agent-103-admission';
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/103/admission',
+            headSha: '5555555555555555555555555555555555555555',
+            worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+        };
+        mkdirSync(lane.worktreePath, { recursive: true });
+        const errors: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () =>
+                    fakeResult({ code: null, reason: 'pressure', refusedBeforeStart: true, durationMs: 0 }),
+                log: () => undefined,
+                error: (msg) => errors.push(msg),
+            });
+
+            expect(code).toBe(1);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+            expect(errors.join('\n')).not.toContain('lane is stopped');
         } finally {
             rmSync(repoRoot, { recursive: true, force: true });
         }
@@ -1863,6 +2018,49 @@ describe('guard failure stop enforcement', () => {
                     'if (!allTargetsExist) process.exitCode = 2;',
                 ].join('\n')
             );
+        }
+
+        function createStoppedLaneFixture(label: string): {
+            repoRoot: string;
+            receiptsDir: string;
+            laneName: string;
+            lane: DetectedLane;
+            receipt: GuardFailureReceipt;
+            receiptPath: string;
+        } {
+            const repoRoot = fixtureRoot(label);
+            const laneName = `agent-${label}`;
+            const lane: DetectedLane = {
+                primaryRoot: repoRoot,
+                laneName,
+                branch: `agent/${label}`,
+                headSha: '9696969696969696969696969696969696969696',
+                worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+            };
+            mkdirSync(lane.worktreePath, { recursive: true });
+            const receipt: GuardFailureReceipt = {
+                version: 1,
+                lane: laneName,
+                branch: lane.branch,
+                headSha: lane.headSha,
+                failedAt: '2026-10-01T12:00:00.000Z',
+                reason: 'memory',
+                command: 'pnpm',
+                args: ['test:run', 'heavy.spec.ts'],
+                cwd: realpathSync(lane.worktreePath),
+                profile: 'focused',
+                peakRssBytes: 5 * 1024 ** 3,
+                maxRssBytes: 4 * 1024 ** 3,
+                durationMs: 1200,
+            };
+            return {
+                repoRoot,
+                receiptsDir: join(repoRoot, GUARD_FAILURES_DIR),
+                laneName,
+                lane,
+                receipt,
+                receiptPath: guardFailureReceiptPath(repoRoot, laneName),
+            };
         }
 
         it('refuses a mapping that leaves the package-root lint target present', async () => {
@@ -2711,6 +2909,288 @@ describe('guard failure stop enforcement', () => {
                 expect(errorLine).toContain(claimPath);
             } finally {
                 rmSync(repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('adopts a receipt orphaned under a claim name by an interrupted clear and honors the stop', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-adopted');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const claimPath = `${fixture.receiptPath}.claim-5e6f7081-9293-4c4d-be5f-6a7b8c9d0e1f`;
+            renameSync(fixture.receiptPath, claimPath);
+            const logs: string[] = [];
+            let replayedArgs: string[] | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayedArgs = input.args;
+                        return fakeResult({ code: 0 });
+                    },
+                    log: (message) => logs.push(message),
+                });
+
+                expect(code).toBe(0);
+                expect(replayedArgs).toEqual(fixture.receipt.args);
+                expect(logs).toContain(
+                    `guard: restored an orphaned guard-failure receipt for lane ${fixture.laneName} from ${claimPath}`
+                );
+                expect(logs).toContain(
+                    `guard: recovery succeeded; guard-failure receipt cleared for lane ${fixture.laneName}`
+                );
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toBeUndefined();
+                expect(readdirSync(fixture.receiptsDir)).toEqual([]);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses to drop or adopt an orphaned claim whose bytes are not a guard-failure receipt', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-not-receipt');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-6f708192-a3b4-4d5e-8f6a-7b8c9d0e1f2a`;
+            writeFileSync(claimPath, '{ not a guard-failure receipt');
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(claimPath);
+                expect(errors[0]).toContain('refusing to drop or adopt it');
+                expect(readFileSync(claimPath, 'utf8')).toBe('{ not a guard-failure receipt');
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses to drop or adopt an orphaned claim recording another lane receipt', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-foreign-lane');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-7f8092a3-b4c5-4e6f-9b7b-8c9d0e1f2a3b`;
+            writeFileSync(
+                claimPath,
+                `${JSON.stringify({ ...fixture.receipt, lane: 'agent-other-lane', branch: 'agent/other-lane' }, null, 2)}\n`
+            );
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(claimPath);
+                expect(errors[0]).toContain('records lane agent-other-lane');
+                expect(readFileSync(claimPath, 'utf8')).toContain('agent-other-lane');
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('still reports no active receipt when the lane holds no canonical receipt and no claims', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-absent');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            // Other lanes' receipts and claims share the receipts directory; neither is this
+            // lane's obligation, so both must be left untouched by this lane's recovery.
+            const otherReceipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                lane: 'agent-other-lane',
+                branch: 'agent/other-lane',
+            };
+            const otherClaimPath = join(
+                fixture.receiptsDir,
+                'agent-other-lane.json.claim-8092a3b4-c5d6-4f70-8c80-9d0e1f2a3b4c'
+            );
+            writeGuardFailureReceipt(fixture.repoRoot, otherReceipt);
+            writeFileSync(otherClaimPath, '{}');
+            const logs: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    log: (message) => logs.push(message),
+                });
+
+                expect(code).toBe(0);
+                expect(logs).toContain(`guard: no active guard-failure receipt for lane ${fixture.laneName}`);
+                expect(readGuardFailureReceipt(fixture.repoRoot, 'agent-other-lane')).toEqual(otherReceipt);
+                expect(readFileSync(otherClaimPath, 'utf8')).toBe('{}');
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('refuses to pick between multiple orphaned claims and names them all', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-ambiguous');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimBytes = `${JSON.stringify(fixture.receipt, null, 2)}\n`;
+            const claimPathA = `${fixture.receiptPath}.claim-9092a3b4-c5d6-4f70-8192-a3b4c5d6e7f8`;
+            const claimPathB = `${fixture.receiptPath}.claim-a0a3b4c5-d6e7-4f80-92a3-b4c5d6e7f8a9`;
+            writeFileSync(claimPathA, claimBytes);
+            writeFileSync(claimPathB, claimBytes);
+            const errors: string[] = [];
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain(claimPathA);
+                expect(errors[0]).toContain(claimPathB);
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+                expect(readFileSync(claimPathA, 'utf8')).toBe(claimBytes);
+                expect(readFileSync(claimPathB, 'utf8')).toBe(claimBytes);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('leaves a receipt installed concurrently at the canonical path in charge over an orphaned claim', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-eexist');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-b1b4c5d6-e7f8-4a90-a3b4-c5d6e7f8a9b0`;
+            writeFileSync(claimPath, `${JSON.stringify(fixture.receipt, null, 2)}\n`);
+            const concurrentReceipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['test:run', 'newer.spec.ts'],
+                failedAt: '2026-10-01T13:00:00.000Z',
+            };
+            const receiptPath = fixture.receiptPath;
+            const concurrentLink: typeof linkSync = () => {
+                writeFileSync(receiptPath, JSON.stringify(concurrentReceipt));
+                throw Object.assign(new Error('EEXIST: file already exists, link'), { code: 'EEXIST' });
+            };
+            const logs: string[] = [];
+            let replayedArgs: string[] | undefined;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async (input) => {
+                        replayedArgs = input.args;
+                        return fakeResult({ code: 0 });
+                    },
+                    recoverReadPorts: { linkSync: concurrentLink },
+                    log: (message) => logs.push(message),
+                });
+
+                expect(code).toBe(0);
+                // The concurrently installed receipt drove the recovery, not the orphan's bytes.
+                expect(replayedArgs).toEqual(concurrentReceipt.args);
+                expect(logs).not.toContain(
+                    `guard: restored an orphaned guard-failure receipt for lane ${fixture.laneName} from ${claimPath}`
+                );
+                // The superseded claim is cleaned up only once the canonical receipt is in charge.
+                expect(existsSync(claimPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves a newer receipt recorded during an adopted recovery replay instead of clearing it', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-adopt-newer');
+            writeGuardFailureReceipt(fixture.repoRoot, fixture.receipt);
+            const claimPath = `${fixture.receiptPath}.claim-c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f`;
+            renameSync(fixture.receiptPath, claimPath);
+            const newerReceipt: GuardFailureReceipt = {
+                ...fixture.receipt,
+                args: ['test:run', 'newer.spec.ts'],
+                failedAt: '2026-10-01T14:00:00.000Z',
+            };
+            const errors: string[] = [];
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        // A concurrent writer records a newer receipt at the canonical path during
+                        // the replay window; the adopted receipt is no longer what is on disk.
+                        writeGuardFailureReceipt(fixture.repoRoot, newerReceipt);
+                        return fakeResult({ code: 0 });
+                    },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(errors).toContain(
+                    `guard: recovery succeeded but the guard-failure receipt changed for lane ${fixture.laneName}; preserving the current receipt`
+                );
+                expect(readGuardFailureReceipt(fixture.repoRoot, fixture.laneName)).toEqual(newerReceipt);
+                // Only the preserved canonical receipt remains; no claim files are left behind.
+                expect(readdirSync(fixture.receiptsDir)).toEqual([`${fixture.laneName}.json`]);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('leaves an orphaned claim recoverable when the adoption restore link fails', async () => {
+            const fixture = createStoppedLaneFixture('recover-orphan-link-fails');
+            mkdirSync(fixture.receiptsDir, { recursive: true });
+            const claimPath = `${fixture.receiptPath}.claim-d3e4f5a6-b7c8-4d9e-8f0a-1b2c3d4e5f6a`;
+            const claimBytes = `${JSON.stringify(fixture.receipt, null, 2)}\n`;
+            writeFileSync(claimPath, claimBytes);
+            const errors: string[] = [];
+            const failingLink: typeof linkSync = () => {
+                throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' });
+            };
+            let commandRan = false;
+
+            try {
+                const code = await runGuardCli(['--recover'], {
+                    cwd: fixture.lane.worktreePath,
+                    detectLane: () => fixture.lane,
+                    runCommand: async () => {
+                        commandRan = true;
+                        return fakeResult({ code: 0 });
+                    },
+                    recoverReadPorts: { linkSync: failingLink },
+                    error: (message) => errors.push(message),
+                });
+
+                expect(code).toBe(1);
+                expect(commandRan).toBe(false);
+                expect(errors[0]).toContain('could not restore the orphaned guard-failure receipt claim');
+                expect(errors[0]).toContain(claimPath);
+                expect(errors[0]).toContain('EPERM: operation not permitted, link');
+                // The claim's bytes survive so a later recovery can adopt the stranded obligation.
+                expect(readFileSync(claimPath, 'utf8')).toBe(claimBytes);
+                expect(existsSync(fixture.receiptPath)).toBe(false);
+            } finally {
+                rmSync(fixture.repoRoot, { recursive: true, force: true });
             }
         });
 

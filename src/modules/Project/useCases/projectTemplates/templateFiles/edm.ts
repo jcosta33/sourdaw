@@ -83,28 +83,28 @@ export async function createEdmTemplate(): Promise<void> {
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Electronic',
-        deviceParams: { kit: 2, gain: 0.95 },
+        deviceParams: { kit: 2, level: -0.4 },
     });
     const edmClap = createInstrumentTrack({
         name: 'Clap',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Electronic',
-        deviceParams: { kit: 2, gain: 0.85 },
+        deviceParams: { kit: 2, level: -1.4 },
     });
     const edmHat = createInstrumentTrack({
         name: 'Hat',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Electronic',
-        deviceParams: { kit: 2, gain: 0.75 },
+        deviceParams: { kit: 2, level: -2.5 },
     });
     const edmRide = createInstrumentTrack({
         name: 'Ride / Cymbal',
         parentId: drumFolder.id,
         deviceType: 'builtin-drum-kit',
         deviceName: 'Electronic',
-        deviceParams: { kit: 2, gain: 0.6 },
+        deviceParams: { kit: 2, level: -4.4 },
     });
     for (const drum of [edmKick, edmClap, edmHat, edmRide]) {
         addSend({ from: drum, to: parallelComp, level: 0.45 });

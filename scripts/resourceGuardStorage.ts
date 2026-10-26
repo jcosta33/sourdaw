@@ -13,17 +13,18 @@ import {
     rmSync,
     rmdirSync,
     unlinkSync,
-    statfsSync,
     writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { resolvePrimaryRoot } from './githubAppIdentity.ts';
 
-export const DEFAULT_DISK_RESERVE_BYTES = 20 * 1024 ** 3;
+export const DEFAULT_DISK_RESERVE_BYTES = 5 * 1024 ** 3;
 export const DISK_RESERVE_ENV = 'SOURDAW_GUARD_DISK_RESERVE_MIB';
 
-export type StorageProcessIdentity = { pid: number; startedAt: string };
+// startTicks is the Linux /proc start time, recorded for the supervisor that creates storage so a
+// later recovery can still prove which processes predate that supervisor after it dies.
+export type StorageProcessIdentity = { pid: number; startedAt: string; startTicks?: number };
 type StorageOwner = {
     version: 1;
     token: string;
@@ -215,11 +216,17 @@ function parseIdentity(value: unknown): StorageProcessIdentity | undefined {
         typeof value.startedAt !== 'string' ||
         value.startedAt.trim() !== value.startedAt ||
         value.startedAt.length === 0 ||
-        value.startedAt.length > 200
+        value.startedAt.length > 200 ||
+        !isOptionalStartTicks(value.startTicks)
     ) {
         return undefined;
     }
-    return { pid: value.pid, startedAt: value.startedAt };
+    // An absent startTicks key and an undefined one serialize alike, as record comparison requires.
+    return { pid: value.pid, startedAt: value.startedAt, startTicks: value.startTicks };
+}
+
+function isOptionalStartTicks(value: unknown): value is number | undefined {
+    return value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
 }
 
 function parseOwner(value: unknown, token: string): StorageOwner | undefined {
@@ -313,7 +320,7 @@ export function resolveGuardStorageRoot(cwd: string): string {
     return join(primary, '.agents', 'guard-storage');
 }
 
-function readStorageOwner(path: string, token: string): StorageOwner | undefined {
+export function readStorageOwner(path: string, token: string): StorageOwner | undefined {
     const identity = directoryIdentity(path);
     directoryIdentity(join(path, 'tmp'));
     const ownerMetadata = lstatSync(join(path, 'owner.json'));
@@ -401,6 +408,8 @@ export function reclaimGuardStorage(input: {
     reclaimer: StorageProcessIdentity;
     canRemove: (payloadPath: string) => boolean;
     sourceClaim?: StorageClaim;
+    // Called once the payload sits under its claim, so a caller whose proof then fails knows where it is.
+    onMoved?: (claim: StorageClaim) => void;
 }): boolean {
     const owner = parseOwner(input.owner, input.owner.token);
     if (!uuidPattern.test(input.owner.token) || owner === undefined || parseIdentity(input.reclaimer) === undefined) {
@@ -452,6 +461,7 @@ export function reclaimGuardStorage(input: {
         }
         throw error;
     }
+    input.onMoved?.(claim);
     if (
         directoryIdentity(payload) !== owner.directoryIdentity ||
         JSON.stringify(readClaim(path, token)) !== JSON.stringify(claim) ||
@@ -537,6 +547,8 @@ export function createGuardStorage(input: {
     markSpawning: () => void;
     recordProcesses: (child: StorageProcessIdentity | undefined, tracked: Map<number, string>) => void;
     release: (treeStopped: boolean) => Promise<boolean>;
+    // Where the payload is now: its own path, or under the claim a partly failed release left it in.
+    payloadPath: () => string;
 } {
     if (!uuidPattern.test(input.token) || parseIdentity(input.owner) === undefined) {
         throw new Error('guard storage requires a valid token and supervisor identity');
@@ -562,8 +574,10 @@ export function createGuardStorage(input: {
         }
         return input.ports.sessionState(owner, tempDirectory, join(payload, 'tmp')) === 'dead';
     };
+    let claimed: StorageClaim | undefined;
     return {
         tempDirectory,
+        payloadPath: () => (claimed === undefined ? path : join(input.root, '.claims', claimed.token, input.token)),
         markSpawning: () => {
             owner = { ...owner, phase: 'spawning' };
             writeStorageOwner(path, owner);
@@ -588,43 +602,15 @@ export function createGuardStorage(input: {
                 root: input.root,
                 owner,
                 reclaimer: input.owner,
+                // A retry resumes from the claim an earlier attempt moved the payload into.
+                sourceClaim: claimed,
+                onMoved: (claim) => {
+                    claimed = claim;
+                },
                 canRemove: (payload) => treeStopped && localReleaseAllowed(payload),
             });
         },
     };
 }
 
-export function availableDiskBytes(path: string): number | undefined {
-    try {
-        const stats = statfsSync(path, { bigint: true });
-        const bytes = Number(stats.bavail * stats.bsize);
-        return Number.isFinite(bytes) && bytes >= 0 ? bytes : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-export function diskStorageFailure(
-    paths: readonly string[],
-    reserveBytes: number,
-    sampler: (path: string) => number | undefined = availableDiskBytes
-): { reason: 'monitor' | 'pressure'; message: string } | undefined {
-    for (const path of new Set(paths)) {
-        let available: number | undefined;
-        try {
-            available = sampler(path);
-        } catch {
-            available = undefined;
-        }
-        if (available === undefined || !Number.isFinite(available) || available < 0) {
-            return { reason: 'monitor', message: `available disk space could not be measured: ${path}` };
-        }
-        if (available < reserveBytes) {
-            return {
-                reason: 'pressure',
-                message: `available disk space below ${Math.ceil(reserveBytes / 1024 ** 2)} MiB reserve: ${path} (${Math.floor(available / 1024 ** 2)} MiB available)`,
-            };
-        }
-    }
-    return undefined;
-}
+export { availableDiskBytes, diskStorageFailure } from './resourceGuardDisk.ts';

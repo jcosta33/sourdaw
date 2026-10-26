@@ -19,8 +19,215 @@ dispatch.
   internal consumer of a broad platform directory does not grant the renderer authority over it.
 - Follow canonical paths through existing symlinks and missing tails before evaluating a root or
   grant. Check component boundaries and platform spelling behavior rather than string prefixes.
+- Trace every authoritative field from its native response parser through the final equality
+  witness. PR #5627's new historical-parent observation cut exposed an inherited omission of the
+  child's live `baseRef`; cached `baseRefOid` did not bind its name, repository, target or presence.
+  The omission is source-established at the base, and the reviewed head has a native-adapter
+  reproduction; no base-head execution or live/main occurrence is claimed. Change each ref field,
+  remove it, or recreate it after an admitted cleanup while returning the final parent marker
+  response. Require the actual final child core to observe and refuse the change before closure or
+  replay success, retaining owner and markers after an attempted close. An inspected null ref is
+  bound absence; an internal core-only projection omitting the field is not an observed absence.
+  Keep stable present-ref and cleanup-replay controls, and reject an explicitly owned undefined
+  expectation. A selected native response field must exist: omitted or undefined `baseRef` is
+  unavailable evidence, never the explicit null that admits cleanup. Probe native parser admission
+  and CLOSED replay with a moved underlying ref but the selected key omitted; require no writes or
+  success. These are finite client observations, not a server snapshot or protection from later
+  external changes.
+- Keep native selected-field requirements separate from optional internal proof projections.
+  PR #5627's cached `baseRefOid` reader accepted an omitted selected nonnull SHA; the resulting
+  undefined skipped cached ancestry and became null in a fresh historical binding. A controlled
+  native-adapter reproduction rejected a present divergent SHA but closed when only that wire key
+  was omitted; no live/main occurrence is claimed. Pair those inputs and require zero writes for
+  both. Reject missing, null or malformed native cached SHAs before comment inspection, while
+  preserving valid cached SHAs and explicit null live-ref cleanup on CLOSED replay. An absent live
+  ref does not erase its cached commit, and deliberate non-native optional projections do not
+  weaken the selected native response contract.
+- Bind registered historical provenance to the source identity its registration actually attests.
+  PR #5627's protected-primary lane fallback attests same-repository children; branch spelling and
+  a shared fork commit cannot authorize a foreign source. Preserve the observed child source in the
+  canonical record and require the same identity on replay after descriptor and ref cleanup. A
+  registered source becoming null or foreign refuses; a record missing that required field is not
+  upgraded. Keep real-DAG and native-adapter controls for native registration and for fork children
+  with actual final-parent containment. The latter must ignore an unrelated same-named local
+  ledger; a recorded null source is eligible only through that independent containment route and
+  only while its observed identity still matches. These are reviewed source-contract reproductions,
+  not claims of live/main occurrences or an established historical reviewer omission.
 
 ## Lessons from escapes
+
+### 2026-10-25 — a current branch ref substituted an unrelated historical parent (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) bound the child's current base
+ref to the named parent's final head but never established that parent belonged to the old child's
+history. Source inspection establishes the older same-replacement gap; base-head execution was
+not performed. PR #5627's new distinct-replacement path reproduced it with real Git commits:
+the old child's original parent work was absent from the merged replacement, while a reused
+parent ref and genuine replacement ancestry still permitted closure. Two unbound child markers
+also permitted deleted-ref replay through the wrong parent. No live occurrence is claimed.
+The public #5615 approval describes changed-target probes; exact historical prompts/tier are
+unavailable. The missed risk was historical association, beyond present ref equality.
+
+Use a real content-bearing Git DAG with unrelated parents sharing a base. Require final-parent
+containment or previously registered native fork provenance, and reject cached/common ancestry
+alone. Keep a genuine late-parent control whose final head is absent from the old child. Preserve
+the exact admitted binding in an authorized canonical marker; delete local metadata and the ref
+before replay, then substitute another parent or malformed/missing binding and require zero writes.
+Never reconstruct missing provenance from reviews, workflow associations or prose.
+
+### 2026-10-25 — dependency authority changed during its final thread response (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) introduced stacked supersession
+whose parent core was read before separate marker and thread requests. Source inspection shows
+the older same-replacement route retained that split; a base-head execution was not performed.
+PR #5627 carried it into distinct replacements. Controlled native-adapter cases at its reviewed
+head reopened the parent during its last thread response while head, branch and child ref stayed
+unchanged; post-close verification and CLOSED replay still reported success. No live occurrence is
+claimed. The published #5615 approval describes changed-target and late-finding probes; exact
+historical reviewer prompts and tier are unavailable. The missed risk was movement inside each
+dependency authority's composed proof, beyond the child-only final witness.
+
+For every proof subject, mutate its core during its last dependent response. Drive actual shell
+adapters and the serialized transaction at pre-write, mid-proof, post-close and replay boundaries.
+Require an independent current core for parent and both replacements after all dependent reads,
+then the existing final child witness. Preserve compensation before close and retained owner and
+markers after uncertain closure. These observations bound client composition, not later remote
+changes or a server-side compare-and-swap.
+
+### 2026-10-24 — split PR metadata could close a head that arrived during comment reads (introduced by PR #2357, retained by #4420)
+
+PR #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) read PR core metadata before a
+separate comment request, then closed by node ID alone. PR #4420 (`789351350ae323da1bac0aa68fc35b80a294c328`)
+extracted the same mechanism into `supersedePullRequestGh.ts`. Primary GitHub source at those named
+commits establishes the path; later Toaster integration #5413 is not its introduction. A controlled
+production-adapter probe moved the head during the final comment response and observed CLOSE before
+the command refused. No live occurrence is established. The missed risk is head movement inside
+metadata composition; unavailable historical reviewer prompts do not establish whether its stance
+was missing, mis-prompted or mis-tiered.
+
+Drive the real inspection and close adapters together, move the head between core and comment
+responses, and require refusal before CLOSE. Observe an independent, bound core response after all
+composite marker/review reads, directly before mutation; malformed or wrongly bound witnesses must
+refuse too. Finish post-close and CLOSED replay proof with the same witness. Preserve a stable
+control and ambiguous-close evidence. `ClosePullRequestInput` carries no expected-head CAS: this
+bounds client composition, not external changes after observation.
+
+### 2026-10-24 — an acknowledged marker vanished from reads and released its owner (introduced by PR #5639)
+
+PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) added the serialized owner and
+`VerifiedSupersessionCompensationError` release path around preexisting visibility-dependent
+cleanup. An acknowledged comment ID omitted from later inspections received no delete, yet an
+apparently original OPEN comment set certified rollback and released ownership. The final review
+record included a strongest-tier ambiguous-write/altered-rollback stance; the acknowledged-write,
+omitted-read input was missed. Exact historical raw prompts are unestablished. This is a controlled
+source/reproduction escape, not evidence of a physical or API-lag production occurrence.
+
+Keep a real marker after a valid creation receipt while every later inspection omits its ID. Drive
+both serialized retirement and supersession; require zero unverified deletes, the real journaled
+owner retained, and its exact native recovery command. Pair that with observed exact deletion and
+verified OPEN rollback release. A missing read cannot discharge a known remote write.
+After shared-owner recovery on stable OPEN or CLOSED state, require guidance to rerun the original
+operation with its original bound inputs. Clearing a shared owner does not select delivery or
+authorize a merge.
+
+### 2026-10-24 — supersession bypassed its trusted process-tool launcher (introduced by PR #5639)
+
+PR #5639 added a process-fenced supersession owner without routing its native package command
+through the trusted write bootstrap. Its injected-fence lock tests passed while the real command
+had no trusted `ps` pin and refused before PR I/O. Strongest-tier review was present; native CLI
+and platform-tool admission was the missed stance.
+
+Require the command registry, static source closure, risk-classification union and fenced-command
+set to cover the actual package route. Drive its default process-fence consumer with a launcher-
+resolved POSIX `ps`; verify Windows PowerShell selection independently. Inherited forged pins
+must not survive snapshot isolation, and a missing platform tool must refuse rather than fall
+back to ambient execution. A direct-script route and removal from the fenced set must each break
+the real admission probe before any remote port call.
+
+### 2026-10-24 — Linux cleanup proof went stale across process arrival, exit settlement, and output attribution (introduced by PR #5274, retained by PR #5443)
+
+PR #5274 introduced two Linux whole-account observations, terminal file release only after an
+ENOENT inspection, and immediate emission of the first unavailable-proof diagnostic. Its final
+review did probe one unrelated newborn under `unrelated-process-churn-prevents-safe-reclamation`,
+but not successive arrivals beyond that replacement. The retained review records contain no
+EACCES-during-exit probe; the exact blind prompt and tier for that gap are unestablished. PR #5443
+retained eager diagnostic output while adding final warning/leak classification. Its review
+measured those outcomes and explicitly noted that a first-attempt diagnostic remained, but did not
+require byte-exact parseable child output after startup recovery or a superseding release proof;
+the exact blind prompt for that output path is unestablished.
+
+Probe: run `bounds complete Linux replacement proof` with one new same-UID PID in each fresh
+catalog; require reclamation when arrivals settle and bounded retention when they do not. Run
+`counts a denied same-UID process as released only once it is gone or a zombie` with an EACCES FD
+list progressing through live, reaped, and multithreaded-to-single-thread-zombie states; persistent
+live and cwd denials stay unknown. Run `never proves Linux release from an observation that waited
+on an exit` and require a new complete process observation after any wait, including retention when
+a previously inspected process becomes a borrower. Run `keeps storage proof evidence out of the
+child output unless it explains retention`; startup, superseded, and successful proofs leave
+byte-exact parseable child output, while a retained run emits only its own final obstruction.
+
+### 2026-10-21 — a capped catalog count could not converge on a busy Mac (introduced by PR #5274, retained by PR #5331)
+
+PR #5274 allowed two Darwin `lsof` observations and PR #5331 three, within one five-second
+deadline. `lsof` intermittently omits live same-UID processes, newborn or already listed, so under
+real load every allowed catalog could miss one: guarded runs whose own work succeeded ended
+`FAILED (leak)` and stopped their lanes (issue #5337). Both reviews accepted a fixed catalog count
+as the conservative bound; no stance measured availability under natural process churn. This
+supersedes the three-observation limit in the 2026-10-12 Darwin lesson below.
+
+Probe: omit a listed live same-UID process from one whole catalog and require reclamation from a
+fresh one; omit it from every catalog and require retention naming it at the deadline; alternate
+the omission of two processes and require retention, never pooled coverage. For a missed holder
+that forks into storage and exits before its liveness check, state sample, or scoped read, require
+a fresh whole observation that finds the heir; one that forks after the closing process list and
+stays an unreaped zombie must still reach the closing parent listing. Require a missed process gone
+before the closing list to cost no fresh observation. Require the closing parent listing to catch a
+heir handed storage by a live missed holder, including one reparented to launchd, and to ignore an
+unrelated newcomer and another account's launchd children. Measure convergence with repeated
+guarded real specs beside the base guard.
+
+### 2026-10-21 — the start-time excuse ended with the live supervisor, so recovery kept the leak (introduced by PR #5345)
+
+PR #5345 excused an uninspectable same-UID process only when it predated the run's live
+supervisor. Every runner-account row that reclaims an exited or crashed run through a later guard
+start, including a moved claim, still met the boot-time process denying `/proc/<pid>/cwd` and
+retained that storage indefinitely, so the "Review tooling unit suite" stayed red on main. The
+review accepted "recovery excuses nothing" as the safe side without running a recovery row beside
+an older denied process; a dead owner's start still bounds what could have inherited from it.
+
+Probe: recover a dead owner's storage, directly and from a moved claim, beside a denied process
+older than that owner, and require reclamation. Bound the excuse by the start ticks the creating
+supervisor recorded in its ownership record, never by the reclaimer's start; require retention for
+a denied process started at or after that owner and for a record that carries no start ticks.
+
+### 2026-10-21 — the storage census attributed foreign same-UID processes to every run (introduced by PR #5274)
+
+PR #5274 proved its Linux file census only in a fresh isolated account. In the runner account a
+long-lived same-UID process with EACCES on `/proc/<pid>/cwd` made every cleanup unknown, so nightly
+unit shards and the runner-account "Review tooling unit suite" reported `leak`. That suite was
+skipped on #5274 because its profile was broad, and the isolated unit shards have no foreign
+processes.
+
+Probe: run a guarded no-op in a populated Linux account beside an uninspectable process that
+predates the supervisor, and require reclamation. Keep the denial retained for a process started
+at or after the supervisor that created the storage, and for every denial whose owner start cannot
+be established; the next escape shows why recovery must still apply the dead owner's recorded start.
+
+### 2026-10-12 — transient Darwin descriptor omission exhausted complete-census admission
+
+PR #5274 (`40baa0716b`) added conservative whole-account file proof but allowed only two
+observations. Live account captures later showed complete/incomplete/complete catalogs;
+the incomplete records had `f,n` without `t`. A vnode can have that shape, so skipping
+nonabsolute unknown records cannot prove safe deletion. The historical review stance,
+prompt and tier are unestablished; the uncovered risk was bounded census availability.
+
+Probe: inject two successive missing-type catalogs, then a wholly usable third catalog
+with fresh before/after PID coverage. Require owned release only from the complete catalog.
+Persistent omissions, a third live borrower, expiry of the original five-second budget,
+and an uncovered live PID in the final catalog must retain storage. Descriptor omissions and
+exclusively new, same-UID live PID gaps may each discard a whole catalog only while another
+of the three observations remains. A previously missing PID still present in the next
+pre-sample is not new. Never merge partial catalogs or extend the deadline.
 
 ### 2026-10-10 — verification temporary storage lacked an owned deletion boundary
 
@@ -47,7 +254,10 @@ Probe Linux terminal file proof with a real unreaped child and a zombie leader w
 Require matching PID/thread-group/four UIDs and one thread; denied, incomplete or expired status
 retains. File release never grants authority to treat a registered PID as gone.
 UID equality does not grant `/proc` readlink access: dumpability and access policy can deny a live
-same-UID cwd or file descriptor. Keep denial unknown and retain storage. For hosted test isolation,
+same-UID cwd or file descriptor. Keep denial unknown and retain storage, except for a process that
+started before the supervisor that created the storage (read live, or from its recorded start ticks
+during recovery) and so inherited no cwd or descriptor from it; that start time does not prove it
+never opens a storage path it is later handed. For hosted test isolation,
 prove the account's UID unused before install, all runtime identity fields unprivileged, groups and
 capabilities cleared, and private storage owned. Attack denied same-test-UID consumers before worker
 concurrency and require actual retention followed by reclamation after reaping. Account isolation

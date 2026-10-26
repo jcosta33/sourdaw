@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+
 vi.mock('../../repositories/sampleLoader/helpers', () => ({
     WEB_LOD: 0,
 }));
@@ -17,9 +21,13 @@ vi.mock('../../repositories/sampleLoader/resolveSampleBasePath', () => ({
     resolveSampleBasePath: vi.fn((instrumentId: string) => Promise.resolve(`/samples/levain/${instrumentId}`)),
 }));
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { loadInstrumentFromManifest } from '../../repositories/sampleLoader/loadInstrumentFromManifest';
+import { SharedBankOwnerEndedError } from '../../repositories/sampleLoader/sharedBankOwnerEnded';
 import { setSampleLoadError, setSampleLoadProgress } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
+import { configureLevainZoneTableBuilder } from '../configureLevainZoneTableBuilder';
 
 describe('autoLoadLevainSamples', () => {
     beforeEach(() => {
@@ -27,6 +35,7 @@ describe('autoLoadLevainSamples', () => {
         vi.mocked(loadInstrumentFromManifest).mockResolvedValue(undefined);
         vi.mocked(setSampleLoadProgress).mockClear();
         vi.mocked(setSampleLoadError).mockClear();
+        vi.mocked(logger.warn).mockClear();
         vi.useFakeTimers();
     });
 
@@ -55,6 +64,26 @@ describe('autoLoadLevainSamples', () => {
         });
         expect(loadCall[0].onProgress).toEqual(expect.any(Function));
         expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
+    });
+
+    it('hands the loader the configured zone table builder, so no route builds tables on the render thread', async () => {
+        const tables = { lut: new Uint32Array([0, 1]), arena: new Uint32Array([0]) };
+        const builder = vi.fn(() => Promise.resolve(tables));
+        const request = { zones: [], numArticulations: 1, numMics: 1 };
+        configureLevainZoneTableBuilder(builder);
+
+        try {
+            await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            const loadCall = vi.mocked(loadInstrumentFromManifest).mock.calls[0];
+            if (!loadCall) {
+                throw new Error('Expected one Levain manifest load');
+            }
+            await expect(loadCall[0].buildZoneTables(request)).resolves.toBe(tables);
+            expect(builder).toHaveBeenCalledExactlyOnceWith(request, undefined);
+        } finally {
+            configureLevainZoneTableBuilder(null);
+        }
     });
 
     describe('the 300ms completion-clear and its abort guard', () => {
@@ -94,6 +123,54 @@ describe('autoLoadLevainSamples', () => {
             expect(setSampleLoadError).toHaveBeenCalledWith('d1', 'boom');
             // The old code set progress to 1.0 in a finally even on error.
             expect(setSampleLoadProgress).not.toHaveBeenCalledWith('d1', 1.0);
+        });
+    });
+
+    describe('a load orphaned by the device it shared a bank with', () => {
+        // Devices of one instrument share a bank: one device uploads, the others
+        // follow it. When the uploader's processor is disposed (a rollback, a
+        // removed track) the worklet fails every follower with the uploader's
+        // reason, though the follower itself was never disposed or aborted.
+        const ownerEnded = (): Error =>
+            new SharedBankOwnerEndedError('Levain sample-bank load failed: Levain processor was disposed');
+
+        it('loads again instead of warning or failing, so the surviving device is not left without samples', async () => {
+            vi.mocked(loadInstrumentFromManifest)
+                .mockRejectedValueOnce(ownerEnded())
+                .mockResolvedValueOnce({
+                    micPositions: ['close'],
+                } as unknown as Awaited<ReturnType<typeof loadInstrumentFromManifest>>);
+
+            const result = await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            expect(result).toEqual(['close']);
+            expect(loadInstrumentFromManifest).toHaveBeenCalledTimes(2);
+            expect(logger.warn).not.toHaveBeenCalled();
+            expect(setSampleLoadError).not.toHaveBeenCalled();
+        });
+
+        it('does not load again once its own load was aborted', async () => {
+            const controller = new AbortController();
+            vi.mocked(loadInstrumentFromManifest).mockImplementationOnce(() => {
+                controller.abort();
+                return Promise.reject(ownerEnded());
+            });
+
+            const result = await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1', controller.signal);
+
+            expect(result).toBeNull();
+            expect(loadInstrumentFromManifest).toHaveBeenCalledTimes(1);
+            expect(logger.warn).not.toHaveBeenCalled();
+        });
+
+        it('still warns and rejects when a load fails for a reason of its own', async () => {
+            vi.mocked(loadInstrumentFromManifest).mockRejectedValueOnce(new Error('network down'));
+
+            await expect(autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1')).rejects.toThrow('network down');
+
+            expect(loadInstrumentFromManifest).toHaveBeenCalledTimes(1);
+            expect(logger.warn).toHaveBeenCalledTimes(1);
+            expect(setSampleLoadError).toHaveBeenCalledWith('d1', 'network down');
         });
     });
 
