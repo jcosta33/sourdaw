@@ -1,0 +1,46 @@
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_59e31a5c6f3e31::t_19ca2c55c0aaf1 720-739,741-749
+  s_59e31a5c6f3e31::t_07da59947d78f9 750-753,755-756,764-772,775-776,778-779
+  s_59e31a5c6f3e31::t_a943caa7da8051 35-38,777
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_59e31a5c6f3e31::t_d7f4a51338f8c8 35-39,41,396,398-413,415-420
+  s_59e31a5c6f3e31::t_b7a96941fd31a1 421
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_59e31a5c6f3e31::t_f78adc424a33e8 1,6-7,16,18-21,34,53-69,72-74,82-84,86-90,92-94,99-103,105-106,108-112,114-127,129-138,148-154,156-179,181-202,204-207,209-226,228-237,239-242,247,493,499-500,509-512,554-561,581-584,588,598-602,615-616
+  s_59e31a5c6f3e31::t_0e8d4e9db5ddd2 70-71,564-580,585-587,603-614
+  s_59e31a5c6f3e31::t_e2396d9aeabf08 563
+  s_59e31a5c6f3e31::t_dc91cdac1e3b20 95-98
+  s_59e31a5c6f3e31::t_3f35cf55471360 562
+  s_59e31a5c6f3e31::t_cfe4cf50e13f60 17,35
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_59e31a5c6f3e31::t_5d98940887cf6a 476,490,497-503,512-516,518-520
+  s_59e31a5c6f3e31::t_d1a1191f69d8e5 31,69-75,163
+  s_59e31a5c6f3e31::t_fe1b18e337f434 371-379,391-394,408-413,460-465,481-488,504-511,521-527,652-658,664
+  s_59e31a5c6f3e31::t_abea15b6229e37 417-441
+  s_59e31a5c6f3e31::t_a94f1dfc9b42ed 1,415-416,457-459,466-475,477-480,489,491-496,517
+  s_59e31a5c6f3e31::t_705de79beda2bf 366-367,388
+  s_59e31a5c6f3e31::t_daf4305bf49cb2 442-456
+  s_59e31a5c6f3e31::t_553167f0f8d2a2 29-30,67-68,76,344-345,347-365,369-370,380-387,389-390,395-407,414
+  s_59e31a5c6f3e31::t_d084284837cc99 346,368
+  s_59e31a5c6f3e31::t_b4a40fc78d46b0 659-663
+tests/e2e/mixerChannelGainTestId.spec.ts
+  s_59e31a5c6f3e31::t_c2cad970136a34 18,32-37,50,52-54,59-64,68-72,74-77,82,84-89,91-92,99-100,102-113,115-119
+  s_59e31a5c6f3e31::t_8e00e9708e5063 65-67
+  s_59e31a5c6f3e31::t_80e0de984bacf2 94-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a3fcff4a794ad654e1988abc102df3a17a8c272",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
