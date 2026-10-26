@@ -61,7 +61,9 @@ function fixture(): Fixture {
     writeFileSync(join(root, 'db/status'), '');
     writeFileSync(join(root, 'audit'), '');
     const fifo = spawnSync('mkfifo', [join(root, 'control')], { encoding: 'utf8' });
-    if (fifo.status !== 0) throw new Error(fifo.stderr);
+    if (fifo.status !== 0) {
+        throw new Error(fifo.stderr);
+    }
     executable(
         join(root, 'bin/apt-config'),
         `#!/usr/bin/env bash
@@ -92,20 +94,23 @@ cat '${root}/audit'
 
 function events(f: Fixture): Event[] {
     const path = join(f.root, 'events.jsonl');
-    return existsSync(path)
-        ? readFileSync(path, 'utf8')
-              .trim()
-              .split('\n')
-              .filter(Boolean)
-              .map((line) => JSON.parse(line) as Event)
-        : [];
+    if (!existsSync(path)) {
+        return [];
+    }
+    return readFileSync(path, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Event);
 }
 
 async function observed(f: Fixture, name: string): Promise<Event> {
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
         const event = events(f).find((entry) => entry.event === name);
-        if (event) return event;
+        if (event) {
+            return event;
+        }
         await poll(10);
     }
     throw new Error(`missing acknowledged event ${name}: ${JSON.stringify(events(f))}`);
@@ -123,13 +128,19 @@ function control(f: Fixture, command: string) {
 function installerStep(workflow: string, step: string): string {
     const source = readFileSync(resolve('.github/workflows', workflow), 'utf8');
     const start = source.indexOf(`- name: ${step}\n`);
-    if (start < 0) throw new Error(`missing ${step} in ${workflow}`);
+    if (start < 0) {
+        throw new Error(`missing ${step} in ${workflow}`);
+    }
     const following = source.slice(start).split('\n');
-    const run = following.findIndex((line) => /^        run: \|$/.test(line));
-    if (run < 0) throw new Error(`missing literal run block for ${step}`);
+    const run = following.findIndex((line) => /^ {8}run: \|$/.test(line));
+    if (run < 0) {
+        throw new Error(`missing literal run block for ${step}`);
+    }
     const body: string[] = [];
     for (const line of following.slice(run + 1)) {
-        if (line !== '' && !line.startsWith('          ')) break;
+        if (line !== '' && !line.startsWith('          ')) {
+            break;
+        }
         body.push(line.slice(10));
     }
     return body.join('\n');
@@ -141,16 +152,16 @@ function startHelper(
     deadline = '1h'
 ): { child: ChildProcess; output: () => string; result: Promise<{ code: number | null; output: string }> } {
     const args = [helper, '--deadline', deadline, '--', '/usr/bin/python3', installer, f.root, mode];
-    const child = spawn(
-        process.platform === 'linux' ? 'sudo' : 'bash',
-        process.platform === 'linux'
-            ? ['-n', 'env', `PATH=${f.env.PATH}`, `TMPDIR=${f.env.TMPDIR}`, 'bash', ...args]
-            : args,
-        {
-            env: f.env,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        }
-    );
+    let command = 'bash';
+    let commandArgs = args;
+    if (process.platform === 'linux') {
+        command = 'sudo';
+        commandArgs = ['-n', 'env', `PATH=${f.env.PATH}`, `TMPDIR=${f.env.TMPDIR}`, 'bash', ...args];
+    }
+    const child = spawn(command, commandArgs, {
+        env: f.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let output = '';
     child.stdout?.on('data', (chunk) => {
         output += String(chunk);
@@ -169,7 +180,9 @@ async function outputValue(run: ReturnType<typeof startHelper>, pattern: RegExp)
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
         const match = run.output().match(pattern);
-        if (match?.[1]) return match[1];
+        if (match?.[1]) {
+            return match[1];
+        }
         await poll(10);
     }
     throw new Error(`missing controller output ${pattern}: ${run.output()}`);
@@ -275,7 +288,17 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
             rmSync(f.root, { recursive: true });
         }
     }, 15_000);
+});
 
+// Ubuntu CI must execute these against its actual systemd 255+ system manager.
+// macOS has no systemd containment oracle: these are explicitly unrun there.
+describe.skipIf(process.env.SOURDAW_SYSTEMD_TESTS !== '1')('real systemd fake package transaction', () => {
+    it('requires the Linux system manager and passwordless sudo', () => {
+        expect(process.platform).toBe('linux');
+        const probe = spawnSync('sudo', ['-n', 'systemctl', 'is-system-running'], { encoding: 'utf8' });
+        expect(probe.error).toBeUndefined();
+        expect(probe.stdout.trim()).toMatch(/^(running|degraded)$/);
+    });
     it('refuses a numeric private journal before launching a payload', async () => {
         const f = fixture();
         try {
@@ -295,22 +318,22 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
         for (const state of ['dirty', 'unknown']) {
             const f = fixture();
             try {
-                if (state === 'dirty') writeFileSync(join(f.root, 'audit'), 'fake-package half-configured\n');
-                else rmSync(join(f.root, 'db/status'));
+                if (state === 'dirty') {
+                    writeFileSync(join(f.root, 'audit'), 'fake-package half-configured\n');
+                } else {
+                    rmSync(join(f.root, 'db/status'));
+                }
                 const result = await startHelper(f, 'wait').result;
                 expect(result.code, result.output).toBe(2);
                 expect(result.output).toContain(`package-state=${state}`);
                 expect(events(f).filter((event) => event.event === 'installer-start')).toEqual([]);
             } finally {
-                if (state !== 'unknown') rmSync(f.root, { recursive: true });
+                if (state !== 'unknown') {
+                    rmSync(f.root, { recursive: true });
+                }
             }
         }
     });
-});
-
-// Ubuntu CI must execute these against its actual systemd 255+ system manager.
-// macOS has no systemd containment oracle: these are explicitly unrun there.
-describe.skipIf(process.platform !== 'linux')('real systemd fake package transaction', () => {
     it('deadline after acknowledged unpack drains a TERM-ignoring separate session and preserves dirty state', async () => {
         const f = fixture();
         const run = startHelper(f, 'wait', '8s');
@@ -322,7 +345,9 @@ describe.skipIf(process.platform !== 'linux')('real systemd fake package transac
             await observed(f, 'parent-ready');
             unit = ready.cgroup?.match(/\/(sourdaw-apt-[a-f0-9-]+\.service)\n?$/)?.[1];
             expect(unit, ready.cgroup).toBeDefined();
-            if (!unit) throw new Error('fake installer did not observe its exact owned unit');
+            if (!unit) {
+                throw new Error('fake installer did not observe its exact owned unit');
+            }
             expect(unitFields(unit)).toContain(`ControlGroup=/system.slice/${unit}`);
             expect(ownedPidRunning(ready.pid!, ready.cgroup!)).toBe(true);
             const result = await run.result;
@@ -337,7 +362,9 @@ describe.skipIf(process.platform !== 'linux')('real systemd fake package transac
             const terminal = unitFields(unit);
             expect(terminal).not.toContain(`ControlGroup=/system.slice/${unit}`);
         } finally {
-            if (unit) spawnSync('sudo', ['-n', 'systemctl', 'stop', unit], { encoding: 'utf8' });
+            if (unit) {
+                spawnSync('sudo', ['-n', 'systemctl', 'stop', unit], { encoding: 'utf8' });
+            }
             sibling.kill('SIGTERM');
             // Retain this failed transaction's private journal for inspection.
         }
@@ -368,7 +395,9 @@ describe.skipIf(process.platform !== 'linux')('real systemd fake package transac
                 }
             }
             // Unknown containment deliberately retains the private evidence.
-            if (run.child.exitCode === 0) rmSync(f.root, { recursive: true });
+            if (run.child.exitCode === 0) {
+                rmSync(f.root, { recursive: true });
+            }
         }
     }, 30_000);
 
@@ -396,16 +425,23 @@ describe.skipIf(process.platform !== 'linux')('real systemd fake package transac
             try {
                 await observed(f, 'unpack-start');
                 await observed(f, 'parent-ready');
-                if (state === 'dirty') writeFileSync(join(f.root, 'audit'), 'fake-package half-configured\n');
-                else executable(join(f.root, 'bin/dpkg'), '#!/usr/bin/env bash\nexit 64\n');
+                if (state === 'dirty') {
+                    writeFileSync(join(f.root, 'audit'), 'fake-package half-configured\n');
+                } else {
+                    executable(join(f.root, 'bin/dpkg'), '#!/usr/bin/env bash\nexit 64\n');
+                }
                 control(f, 'F');
                 const result = await run.result;
                 expect(result.code, result.output).toBe(2);
                 expect(result.output).toContain('containment=drained');
                 expect(result.output).toContain(`package-state=${state}`);
-                if (state === 'unknown') expect(result.output).toContain('retained evidence=');
+                if (state === 'unknown') {
+                    expect(result.output).toContain('retained evidence=');
+                }
             } finally {
-                if (state === 'dirty') rmSync(f.root, { recursive: true });
+                if (state === 'dirty') {
+                    rmSync(f.root, { recursive: true });
+                }
             }
         }
     }, 30_000);
@@ -442,7 +478,9 @@ describe.skipIf(process.platform !== 'linux')('real systemd fake package transac
             await observed(f, 'parent-ready');
             unit = ready.cgroup?.match(/\/(sourdaw-apt-[a-f0-9-]+\.service)\n?$/)?.[1];
             expect(unit, ready.cgroup).toBeDefined();
-            if (!unit) throw new Error('fake installer did not observe its exact owned unit');
+            if (!unit) {
+                throw new Error('fake installer did not observe its exact owned unit');
+            }
             expect(unitFields(unit)).toContain(`Id=${unit}`);
             executable(join(f.root, 'bin/systemctl'), '#!/usr/bin/env bash\nexit 64\n');
             const result = await run.result;

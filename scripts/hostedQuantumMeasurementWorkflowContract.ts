@@ -146,7 +146,9 @@ const MEASUREMENT_JOB_MINUTES = 30;
 
 function assertBoundedChromeInstall(install: UnknownRecord): void {
     const run = install.run;
-    if (typeof run !== 'string') throw new Error('Hosted quantum measurement workflow must run one Chrome transaction');
+    if (typeof run !== 'string') {
+        throw new Error('Hosted quantum measurement workflow must run one Chrome transaction');
+    }
     if (!run.includes('playwright install --force chrome')) {
         throw new Error(
             'Hosted quantum measurement workflow must retain the forced Google Chrome install, since sudo drops CI and the runner image already ships Chrome'
