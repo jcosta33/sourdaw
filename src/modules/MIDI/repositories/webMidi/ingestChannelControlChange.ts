@@ -174,7 +174,8 @@ export function ingestChannelControlChange({
         resolveHeldPedals(channel).set(cc, byte);
     } else if (cc === CC_RESET_ALL_CONTROLLERS) {
         // The message that lifts every pedal; remembering one past it would
-        // press it back onto the next take.
+        // press it back onto the next take. The wheel it recentres is
+        // recorded when the message is admitted (`admitResetAllControllers`).
         heldPedalState.get(channel)?.clear();
     }
 

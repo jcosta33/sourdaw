@@ -6,6 +6,7 @@ import {
     getDrumKitDefByIndex as getDrumKitDefByIndexReal,
     scheduleKitNote as scheduleKitNoteReal,
 } from '#/modules/Synth/useCases';
+import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { getDrumKitByIndex as getDrumKitByIndexReal } from '../audioEngineQueries/getDrumKitByIndex';
 import { playAuditionNote } from '../audition';
@@ -320,7 +321,13 @@ describe('playAuditionNote device dispatch', () => {
         const kitDef = { name: 'kit' };
         getDrumKitDefByIndex.mockReturnValueOnce(kitDef as never);
         setTrack({
-            tracks: [{ id: 'tk', devices: [{ id: 'd', type, parameterValues: { kit: kitIndex } }], parentId: null }],
+            tracks: [
+                {
+                    id: 'tk',
+                    devices: [{ id: 'd', type, parameterValues: { kit: kitIndex, level: -6 } }],
+                    parentId: null,
+                },
+            ],
         });
 
         playAuditionNote('tk', 38, 90);
@@ -332,9 +339,27 @@ describe('playAuditionNote device dispatch', () => {
             kitDef,
             38,
             expect.any(Number),
-            90
+            90,
+            1,
+            dbToGain(-6)
         );
     });
+
+    it.each([{ kit: 0 }, { kit: 0, gain: 0.8 }, { kit: 0, gain: 0.6 }])(
+        'auditions a saved kit with no level ($gain legacy gain) at unity, as it played before the level existed',
+        (parameterValues) => {
+            getDrumKitDefByIndex.mockReturnValueOnce({ name: 'kit' } as never);
+            setTrack({
+                tracks: [
+                    { id: 'tk', devices: [{ id: 'd', type: 'builtin-drum-kit', parameterValues }], parentId: null },
+                ],
+            });
+
+            playAuditionNote('tk', 36, 100);
+
+            expect(scheduleDrumKitNote.mock.calls[0]?.slice(5)).toEqual([100, 1, 1]);
+        }
+    );
 
     it('resolves a missing dedicated kit def through the factory table, deriving the index from kitId', () => {
         // kit absent → uses kitId (5). No dedicated def exists for 5, but the
@@ -753,7 +778,8 @@ describe('playAuditionNote resolves every declared drum kit selection (issue #37
             tracks: [
                 {
                     id: 'tk',
-                    devices: [{ id: 'd', type: 'builtin-drum-kit', parameterValues: { kit: kitIndex } }],
+                    // A legacy gain and no level: every selection plays at unity.
+                    devices: [{ id: 'd', type: 'builtin-drum-kit', parameterValues: { kit: kitIndex, gain: 0.45 } }],
                     parentId: null,
                 },
             ],
@@ -786,19 +812,23 @@ describe('playAuditionNote resolves every declared drum kit selection (issue #37
         if (kitIndex === 0) {
             expect(scheduleDrumKitNote).toHaveBeenCalledTimes(1);
             expect(scheduleKitNote).not.toHaveBeenCalled();
+            expect(scheduleDrumKitNote.mock.calls[0]?.slice(6)).toEqual([1, 1]);
         } else {
             // The dedicated table has no definition for this selection, so the
             // factory-kit fallback must dispatch — the exact hunk whose removal
             // made selections 1-5 silent.
             expect(scheduleKitNote).toHaveBeenCalledTimes(1);
             expect(scheduleDrumKitNote).not.toHaveBeenCalled();
-            const [ctx, destination, kit, pitch, startTime, duration, velocity] = scheduleKitNote.mock.calls[0]!;
+            const [ctx, destination, kit, pitch, startTime, duration, velocity, clipGain, kitGain] =
+                scheduleKitNote.mock.calls[0]!;
             expect(ctx).toBe(mocks.audioContext);
             expect(destination).toBe(strip.gainNode);
             expect(pitch).toBe(36);
             expect(startTime).toBe(0);
             expect(duration).toBe(60);
             expect(velocity).toBe(100);
+            expect(clipGain).toBe(1);
+            expect(kitGain).toBe(1);
             expect(kit).toEqual(getDrumKitByIndex(kitIndex));
         }
         expect(() => stopNote()).not.toThrow();

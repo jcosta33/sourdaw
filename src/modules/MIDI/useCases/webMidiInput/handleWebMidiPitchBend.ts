@@ -102,9 +102,15 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
             });
 
             for (const noteData of activeNotes.values()) {
-                // A channel-wide bend is not MPE, but it reaches the instrument
-                // through the same surface — applied to every sounding note at
-                // the arriving channel's own range rather than the MPE member range.
+                // Outside MPE the bend moves only the notes on its own channel.
+                // With MPE on, a non-member bend is the zone master's and keeps
+                // its zone-wide reach over every member channel's note.
+                if (!mpeEnabled && noteData.channel !== channel) {
+                    continue;
+                }
+                // A channel bend is not MPE per-note data, but it reaches the instrument
+                // through the same surface — applied at the arriving channel's own
+                // range rather than the MPE member range.
                 // It is deliberately *not* written back onto the note record:
                 // only MPE member-channel bend is per-note data worth recording.
                 applyNoteExpression({

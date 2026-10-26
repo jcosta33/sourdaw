@@ -16,6 +16,8 @@ Audio file decoding, format transcoding, and disk streaming primitives for nativ
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-cargo test --package daw-io
+pnpm cargo:test --package daw-io <filter>
 ```

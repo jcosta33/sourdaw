@@ -180,6 +180,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         startRecording: vi.fn(),
         stopRecording: vi.fn(),
         updateClip: vi.fn(),
+        takeOwnsRecordingRoot: vi.fn(() => true),
     };
 });
 // loadSnapshot imports restoreAutomationSnapshot.
@@ -230,6 +231,9 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         commitRecordedControllers: vi.fn(),
         discardRecordedControllers: vi.fn(),
         planRecordedControllers: vi.fn(),
+        isOverdubLanding: () => false,
+        countSettledOverdubPasses: () => 0,
+        waitForOverdubLanding: () => Promise.resolve(),
         duplicateClipNotes: vi.fn(),
         duplicateMidiClipData: vi.fn(),
         getChordAtBeat: vi.fn(),

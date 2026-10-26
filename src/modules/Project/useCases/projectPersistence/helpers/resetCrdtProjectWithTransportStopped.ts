@@ -61,9 +61,13 @@ const takeDiscardedNotice = 'Recording discarded — the take could not be saved
  * `shouldContinue` is asked after every save and stop and again after every
  * teardown, because a newer project load can take over while the take commits
  * or the plugins unload and must not then be replaced by this one: the answer is
- * a refusal, which every caller already treats as an abort before the switch. A
- * stop or teardown that rejects ends the loop with the rejection, which the
- * caller's abort path treats like any failure before the switch.
+ * a refusal, which every caller already treats as an abort before the switch.
+ * The same answer is part of the check the reset runs at the switch, so a
+ * caller that gives up while the reset awaits its durable steps keeps the
+ * outgoing project: the reset withdraws its begun record and the helper answers
+ * superseded without stopping anything. A stop or teardown that rejects ends
+ * the loop with the rejection, which the caller's abort path treats like any
+ * failure before the switch.
  *
  * A failed save does not hold the switch, because the user asked to leave. The
  * user is told a take was discarded only once the reset answers `replaced` and
@@ -88,7 +92,7 @@ export async function resetCrdtProjectWithTransportStopped(
     // Whether the latest save of the outgoing project failed to keep a closed take.
     let takeUnsaved = false;
     const owesClosedTake = (): boolean => unsavedClosedTakes.hasUnsaved() && countSettledTakes() > attemptedThrough;
-    const isQuietAtSwitch = (): boolean => isTransportIdle() && !owesClosedTake();
+    const isQuietAtSwitch = (): boolean => shouldContinue() && isTransportIdle() && !owesClosedTake();
     const replaceAuthority = (): void => {
         unsavedClosedTakes.acknowledgeAll();
         onAuthorityReplaced();
@@ -111,6 +115,11 @@ export async function resetCrdtProjectWithTransportStopped(
     }
     let reset = await resetCrdtProject(name, replaceAuthority, isQuietAtSwitch);
     while (reset.status === 'transport-active') {
+        // The reset also refuses when the caller gave up during its awaits, and
+        // then there is nothing to stop: the user stays in the open project.
+        if (!shouldContinue()) {
+            return { status: 'refused', reason: 'superseded' };
+        }
         await stopPlayback();
         if (!shouldContinue()) {
             return { status: 'refused', reason: 'superseded' };

@@ -12,7 +12,12 @@ import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type ProposalGroundingBasis, type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
+import {
+    type BoundRequestProtections,
+    type ProposalGroundingBasis,
+    type ProposalGroundingCommand,
+    type ProposalProtectionFacts,
+} from '../../models/ProposalGroundingBasis';
 import { type RetainedCommandSet } from '../../models/RetainedCompilation';
 import {
     SEMANTIC_CLIP_MAX_BEATS,
@@ -78,7 +83,6 @@ import {
     SPENT_CREATION_BUDGET_PREFIX,
 } from './creativeAuthorityReasons';
 import { type CoordinatedTrackList, findCoordinatedTrackLists } from './findCoordinatedTrackLists';
-import { findTargetOwnerTrackIds } from './findTargetOwnerTrackIds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
@@ -119,6 +123,7 @@ import {
 import { resolveCommandScopeOverride } from './groundingStrategies/commandScopeOverrideStrategy';
 import { escapeRegExp } from './groundingStrategies/escapeRegExp';
 import { findPromptNumbers } from './groundingStrategies/findPromptNumbers';
+import { REFERENCE_PLACEHOLDER } from './groundingStrategies/findReferencedIntentPhrase';
 import { getAddClipPromptEvidence } from './groundingStrategies/getAddClipPromptEvidence';
 import { getCancellationCues } from './groundingStrategies/getCancellationCues';
 import { getGlueClipPairTargetPattern } from './groundingStrategies/getGlueClipPairTargetPattern';
@@ -145,11 +150,14 @@ import { type ActionPromptScope, type PromptClause } from './groundingStrategies
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
+import { withoutReferencedLevelPhrases } from './groundingStrategies/withoutReferencedLevelPhrases';
 import { resolveWorkflowShortcutScope } from './groundingStrategies/workflowShortcutScopeStrategy';
 import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
+import { proposalProtection } from './proposalProtection';
+import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
@@ -177,6 +185,13 @@ type BridgeGroundedLlmToolCallsInput = {
      * request does; present, a call may inherit a pending command instead of grounding in this text.
      */
     refinementBasis?: ProposalGroundingBasis;
+    /**
+     * Restrictions the pending card resolved when it was admitted, whether or not a command-aligned
+     * grounding basis can be carried by this batch.
+     */
+    protectionFacts?: ProposalProtectionFacts;
+    /** Complete binding for replay of the same already-admitted request, never a new refinement. */
+    requestProtections?: BoundRequestProtections;
 };
 
 type GroundToolCallInput = {
@@ -203,6 +218,7 @@ type GroundToolCallInput = {
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
     prompt: string;
+    requestProtections?: BoundRequestProtections;
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
@@ -1318,9 +1334,13 @@ function hasCompleteListHead(lead: string, intentPhrase: string): boolean {
     const commandLead = lead
         .trim()
         .replace(/^(?:please\s+)?(?:can|could|would)\s+you(?:\s+please)?\s+/iu, '')
-        .replace(/^please\s+/iu, '');
+        .replace(/^please(?:\s+|$)/iu, '');
     const normalizedLead = normalizePromptText(commandLead);
     const normalizedIntent = normalizePromptText(intentPhrase);
+    if (intentPhrase.startsWith(REFERENCE_PLACEHOLDER)) {
+        // "Drums and Bass up 2 dB": the phrase opens with its reference, so the list is the whole head.
+        return normalizedLead.length === 0;
+    }
     return (
         normalizedLead.length > 0 &&
         (normalizedIntent === normalizedLead ||
@@ -1648,7 +1668,13 @@ function resolveActionPromptScope({
                     takesContinuation = decibelLevelForms.length > 0;
                     continue;
                 }
-                matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
+                matchingScopes.push({
+                    ...clause,
+                    directional: false,
+                    matchedIntentPhrase: intent.phrase,
+                    referencedSlot:
+                        intent.referenceSlot && clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end),
+                });
                 takesContinuation = decibelLevelForms.length > 0;
             }
             continue;
@@ -1777,6 +1803,96 @@ function resolveActionPromptScope({
         return null;
     }
     return compiledGroup ? { ...selectedScope, compilerGroupArguments: compiledGroup.arguments } : selectedScope;
+}
+
+/** The whole clauses a request may carry beside a referenced level phrase, and nothing else. */
+const STRICT_COURTESY_CLAUSES: ReadonlySet<string> = new Set(['please', 'thanks', 'thank you', 'ok', 'okay']);
+
+/**
+ * Whether a coordinated list is read: it resolves to a scope (it ends on its one figure and names no member
+ * outside it) and the batch answers every member it grounds. A list that does not may single a member out
+ * or restate the level ("... down 3 dB instead", "... only in the chorus"), which no word list enumerates.
+ */
+function isListAnsweredByEveryMember(
+    list: CoordinatedLevelList,
+    calls: readonly ToolCallResult[],
+    actionName: string,
+    targetArgument: string
+): boolean {
+    const memberIds = list.scope?.coordinatedTargets?.memberIds;
+    return (
+        memberIds !== undefined &&
+        memberIds.every((memberId) =>
+            calls.some((call) => call.name === actionName && call.arguments[targetArgument] === memberId)
+        )
+    );
+}
+
+/**
+ * Whether every clause of the request is one a referenced level phrase ("set Drums to -6 dB", "Drums up
+ * 2 dB") may stand beside: a referenced level clause, a member of a coordinated level list, the
+ * continuation of a referenced level clause onto another track, or strict courtesy. A clause outside
+ * those may restrict, qualify or redirect the level, or ask for a change of its own, and no word list
+ * can enumerate which ("instead", "actually", "on the Reverb send", "turn the Comp off"), so the phrase
+ * then names nothing and the request is read as main reads it.
+ */
+function readsOnlyReferencedLevelClauses(input: {
+    calls: readonly ToolCallResult[];
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    prompt: string;
+}): boolean {
+    const { calls, catalog, context, prompt } = input;
+    const actionName = 'setTrackGain';
+    const groundingRules = getExecutableAppActionGroundingRules(actionName);
+    if (!groundingRules) {
+        return false;
+    }
+    const targetArgument = groundingRules.targetRules[0]?.argument;
+    if (targetArgument === undefined) {
+        return false;
+    }
+    const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
+    const decibelLevelForms = catalog.find((entry) => entry.actionType === actionName)?.decibelLevelForms ?? [];
+    const clauses = splitAttachedSourceClauses(getPromptClauses(prompt, maskedPrompt), catalog);
+    const coordinatedLevelLists = getCoordinatedLevelLists({
+        actionName,
+        catalog,
+        clauses,
+        context,
+        decibelLevelForms,
+        groundingRules,
+        maskedPrompt,
+        prompt,
+    });
+    let continuesReferencedLevel = false;
+    return clauses.every((clause, clauseIndex) => {
+        const continuesScope = continuesReferencedLevel;
+        continuesReferencedLevel = false;
+        if (
+            coordinatedLevelLists.some(
+                (list) =>
+                    clauseIndex >= list.firstClauseIndex &&
+                    clauseIndex <= list.lastClauseIndex &&
+                    isListAnsweredByEveryMember(list, calls, actionName, targetArgument)
+            )
+        ) {
+            return true;
+        }
+        if (STRICT_COURTESY_CLAUSES.has(normalizePromptText(clause.masked))) {
+            return true;
+        }
+        if (namesLevelOutsideActionFader(actionName, clause, context)) {
+            return false;
+        }
+        const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
+        const continuesLevel =
+            intent === null
+                ? continuesScope && isLevelContinuationClause(clause.masked, decibelLevelForms)
+                : intent.actionType === actionName && intent.referenceSlot !== undefined;
+        continuesReferencedLevel = continuesLevel;
+        return continuesLevel;
+    });
 }
 
 function isTrackControlProtectionVerb(normalized: string): boolean {
@@ -4067,6 +4183,9 @@ function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argumen
     if (authority.status === 'admitted') {
         return null;
     }
+    if (authority.reason === 'protected-or-excluded') {
+        return `Compiled target ${argument} is protected or excluded`;
+    }
     return `Compiled target ${argument} is not authorized by the user request`;
 }
 
@@ -4443,6 +4562,7 @@ function groundToolCall({
     declaredBindingsByCallIndex,
     index,
     prompt,
+    requestProtections,
     plannedActionNames,
     resolvedTargetOverrides,
     sameActionAssertedArguments,
@@ -4735,6 +4855,7 @@ function groundToolCall({
                     compilerExcludedIds,
                     context,
                     prompt,
+                    requestProtections,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
                     valueTexts: batchWrittenValueTexts,
@@ -4870,6 +4991,7 @@ function groundToolCall({
                       context,
                       dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
                       prompt,
+                      requestProtections,
                       referenceResolved: false,
                       selectorTerms: compiledSelectorTerms,
                       targetIds: compilerTargetOverride.stableIds,
@@ -5963,10 +6085,7 @@ function getActionTouchedIds(
     payload: Readonly<Record<string, unknown>>,
     context: ProjectContext
 ): string[] {
-    const owners = proposalCommandShape
-        .targetObjects(actionType, payload)
-        .flatMap((target) => findTargetOwnerTrackIds(target.capability, target.id, context));
-    return [...new Set([...proposalCommandShape.objectIds(actionType, payload), ...owners])];
+    return proposalCommandShape.touchedObjectIds(actionType, payload, context);
 }
 
 function getRefinementProtectedObjects(input: {
@@ -5976,11 +6095,100 @@ function getRefinementProtectedObjects(input: {
     removed: ReadonlyArray<{ id: string; name: string }>;
 }): Array<{ id: string; name: string }> {
     const { basis, context, prompt } = input;
+    // A basis that records its protections keeps what each request protected when it was grounded; one
+    // that predates the record reads its sources against the live project, as it always did.
+    const sourceProtections =
+        basis.protectedControls === undefined
+            ? basis.sources.map((source) =>
+                  getApplicationProtectedObjects({ actions: [], context, prompt: source.text })
+              )
+            : [];
     return unionProtectedObjects(
         basis.protectedUnchanged,
-        ...basis.sources.map((source) => getApplicationProtectedObjects({ actions: [], context, prompt: source.text })),
+        ...sourceProtections,
         getApplicationProtectedObjects({ actions: [], context, prompt }),
         input.removed
+    );
+}
+
+/** The first protected whole object an action touches. */
+function findChangedObject(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    protectedObjects: ReadonlyArray<{ id: string; name: string }>,
+    context: ProjectContext
+): { id: string; name: string } | null {
+    for (const action of actions) {
+        const payload: unknown = 'payload' in action ? action.payload : undefined;
+        const payloadRecord =
+            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
+        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
+        const hit = protectedObjects.find((object) => touched.has(object.id));
+        if (hit !== undefined) {
+            return hit;
+        }
+    }
+    return null;
+}
+
+/** The first track whose protected operations an action performs. */
+function findChangedControl(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    controls: ReadonlyArray<{ trackId: string; actionTypes: readonly string[]; exceptActionTypes?: readonly string[] }>,
+    context: ProjectContext
+): { id: string; name: string } | null {
+    return proposalProtection.findChange(
+        actions,
+        {
+            protectedUnchanged: [],
+            protectedControls: controls.map(({ trackId, actionTypes, exceptActionTypes }) => {
+                const control: ProposalProtectionFacts['protectedControls'][number] = {
+                    trackId,
+                    operations: [...actionTypes],
+                };
+                if (exceptActionTypes !== undefined) {
+                    control.exceptOperations = [...exceptActionTypes];
+                }
+                return control;
+            }),
+        },
+        context
+    );
+}
+
+/**
+ * What the chain leaves alone beyond the protected objects: the operations each earlier request kept,
+ * as recorded when it was grounded, and the tracks and operations this refinement's own text keeps, read
+ * against the live project.
+ */
+function getRefinementReadProtections(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext,
+    prompt: string
+): { controls: ReturnType<typeof readRecordedControls>; namedTracks: Array<{ id: string; name: string }> } {
+    const current = readExplicitProtections(prompt, context);
+    const earlier = readRecordedControls(basis, context);
+    return {
+        controls: [...earlier, ...current.protectedControls],
+        namedTracks: context.tracks.filter((track) => current.namedTrackIds.includes(track.id)),
+    };
+}
+
+/** The operations a card's requests protected, as recorded when it was grounded, or read from its sources. */
+function readRecordedControls(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext
+): ReturnType<typeof readExplicitProtections>['protectedControls'] {
+    return (
+        basis.protectedControls?.map(({ trackId, operations, exceptOperations }) => {
+            const control: ReturnType<typeof readExplicitProtections>['protectedControls'][number] = {
+                trackId,
+                actionTypes: operations,
+            };
+            if (exceptOperations !== undefined) {
+                control.exceptActionTypes = exceptOperations;
+            }
+            return control;
+        }) ?? basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls)
     );
 }
 
@@ -5989,17 +6197,8 @@ function findProtectedChange(
     protectedObjects: ReadonlyArray<{ id: string; name: string }>,
     context: ProjectContext
 ): string | null {
-    for (const action of actions) {
-        const payload: unknown = 'payload' in action ? action.payload : undefined;
-        const payloadRecord =
-            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
-        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
-        const hit = protectedObjects.find((object) => touched.has(object.id));
-        if (hit !== undefined) {
-            return `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
-        }
-    }
-    return null;
+    const hit = findChangedObject(actions, protectedObjects, context);
+    return hit === null ? null : `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
 }
 
 /** The pending commands of one type and full target tuple. */
@@ -6465,7 +6664,7 @@ function bridgeRefinedLlmToolCalls(
         prompt,
         removed: [...removals.removedTargets, ...removals.protectedTargets],
     });
-    const direct = bridgeGroundedLlmToolCalls(unrefined);
+    const direct = bridgeWithoutReferencedLevelPhrases(unrefined);
     // "Turn Vocals down 2 dB more" grounds by itself as a plain 2 dB cut, which the comparative beside
     // its figure contradicts; such a batch is read against the pending values it compares with.
     const comparesFigure = refinementClauseReader.figureComparative({
@@ -6520,7 +6719,16 @@ function bridgeRefinedLlmToolCalls(
         return comparativeOutcome;
     }
     const protectedChange = findProtectedChange(routed.actions, protectedObjects, context);
-    return protectedChange === null ? routed : refuseRefinement(protectedChange);
+    if (protectedChange !== null) {
+        return refuseRefinement(protectedChange);
+    }
+    const readProtections = getRefinementReadProtections(basis, context, prompt);
+    const changedRead =
+        findChangedObject(routed.actions, readProtections.namedTracks, context) ??
+        findChangedControl(routed.actions, readProtections.controls, context);
+    return changedRead === null
+        ? routed
+        : refuseRefinement(`Refined proposal changes "${changedRead.name}", which the request chain leaves unchanged`);
 }
 
 type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;
@@ -6572,7 +6780,7 @@ function findRefinementDefect(input: {
         return omission;
     }
     const answering = {
-        catalog: getExecutableAppActionGroundingCatalog(),
+        catalog: withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog()),
         candidates: refinementRequestReading.candidates(context),
         context,
     };
@@ -6620,7 +6828,7 @@ function groundNewRefinedCalls(input: {
         return { actions: new Map(), rejections: [] };
     }
     const answering = {
-        catalog: getExecutableAppActionGroundingCatalog(),
+        catalog: withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog()),
         candidates: refinementRequestReading.candidates(context),
         context,
     };
@@ -6655,7 +6863,7 @@ function groundNewRefinedCalls(input: {
     }
     const actions = new Map<number, BridgeGroundedLlmToolCallsResult['actions'][number]>();
     for (const [text, indexes] of groups) {
-        const grounded = bridgeGroundedLlmToolCalls({
+        const grounded = bridgeWithoutReferencedLevelPhrases({
             ...unrefined,
             prompt: text,
             calls: indexes.map((index) => calls[index]!),
@@ -6782,24 +6990,117 @@ function groundInheritedRefinement(route: {
 }
 
 export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    if (input.requestProtections !== undefined && input.requestProtections.request !== input.prompt) {
+        return refuseProtectedRequest('Stored protections belong to a different request');
+    }
     if (input.refinementBasis !== undefined) {
         return bridgeRefinedLlmToolCalls(input, input.refinementBasis);
     }
-    return bridgeUnrefinedLlmToolCalls(input);
+    return refuseWhenProtectionIsUnresolved(input, bridgeOriginalRequestToolCalls(input));
 }
 
-function bridgeUnrefinedLlmToolCalls({
-    calls,
-    context,
-    markerSignatures = [],
-    sectionSignatures = [],
-    prompt,
-    compilerEvidence,
-    transformProof,
-    projectRevision,
-    workflowCapabilityId,
-    creativeAuthority,
-}: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+/**
+ * An explicit protection holding a concrete reference that binds to no object (a quoted or
+ * capitalized name nothing carries, a position, a selection phrase with nothing selected) cannot be
+ * enforced, so a request holding one grounds nothing: an incomplete protection is a rejection, never
+ * an empty permission set. A protection that names a VCA group keeps its member tracks, and one that
+ * resolves through the selected track keeps that track, or only the control it names. A refinement
+ * reads its protections in its own closed grammar, which asks about any it cannot bind.
+ */
+function refuseWhenProtectionIsUnresolved(
+    input: BridgeGroundedLlmToolCallsInput,
+    grounded: BridgeGroundedLlmToolCallsResult
+): BridgeGroundedLlmToolCallsResult {
+    if (grounded.actions.length === 0) {
+        return grounded;
+    }
+    const { context } = input;
+    if (input.requestProtections !== undefined) {
+        const changed = proposalProtection.findChange(grounded.actions, input.requestProtections.facts, context);
+        if (changed !== null) {
+            return refuseProtectedRequest(`Request changes "${changed.name}", which a protection in it leaves alone`);
+        }
+        return grounded;
+    }
+    const protections = readExplicitProtections(input.prompt, context);
+    if (protections.unresolved.length > 0) {
+        const references = protections.unresolved.map((reference) => `"${reference}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+        );
+    }
+    const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
+    const recordedControls = (input.protectionFacts?.protectedControls ?? []).map(
+        ({ trackId, operations, exceptOperations }) => ({
+            trackId,
+            actionTypes: operations,
+            ...(exceptOperations === undefined ? {} : { exceptActionTypes: exceptOperations }),
+        })
+    );
+    const changedTrack =
+        findChangedObject(
+            grounded.actions,
+            [...wholeTracks, ...(input.protectionFacts?.protectedUnchanged ?? [])],
+            context
+        ) ?? findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
+    return changedTrack === null
+        ? grounded
+        : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
+}
+
+function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {
+    return { actions: [], rejections: [rejection(0, '<batch>', reason)] };
+}
+
+function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    const main = bridgeWithoutReferencedLevelPhrases(input);
+    if (main.rejections.length === 0) {
+        return main;
+    }
+    // A level phrase that names its track ("set Drums to -6 dB") grounds only where main's reading refuses
+    // a call and every clause of the request is accounted for, so it admits nothing main refused beside a
+    // clause that might restrict it, and changes nothing main grounded. A refusal of the batch as a whole
+    // (an oversized or mismatched plan) is not one a level phrase can answer.
+    const catalog = getExecutableAppActionGroundingCatalog();
+    if (
+        main.rejections.some((mainRejection) => mainRejection.name === '<batch>') ||
+        !readsOnlyReferencedLevelClauses({
+            calls: input.calls,
+            catalog,
+            context: input.context,
+            prompt: input.prompt,
+        })
+    ) {
+        return main;
+    }
+    const referenced = bridgeUnrefinedLlmToolCalls(input, catalog);
+    return referenced.rejections.length === 0 ? referenced : main;
+}
+
+/**
+ * Ground a request as it is read before any level phrase naming its track counts. A refinement reads
+ * its text this way too: it answers the pending card, whose commands a phrase on their object means.
+ */
+function bridgeWithoutReferencedLevelPhrases(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    return bridgeUnrefinedLlmToolCalls(input, withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog()));
+}
+
+function bridgeUnrefinedLlmToolCalls(
+    {
+        calls,
+        context,
+        markerSignatures = [],
+        sectionSignatures = [],
+        prompt,
+        compilerEvidence,
+        transformProof,
+        projectRevision,
+        workflowCapabilityId,
+        creativeAuthority,
+        requestProtections,
+    }: BridgeGroundedLlmToolCallsInput,
+    catalog: GroundingCatalog
+): BridgeGroundedLlmToolCallsResult {
     const transformCompilations = transformProof?.compilations ?? [];
     const transformCalls = materializeTransformToolCalls(transformCompilations);
     if (
@@ -6817,12 +7118,37 @@ function bridgeUnrefinedLlmToolCalls({
         };
     }
     if (transformCalls.length > 0 || compilerEvidence !== undefined) {
-        const clipProtection = getExplicitClipProtection(prompt, context);
-        const protectedIds = new Set(
-            getApplicationProtectedObjects({ actions: [], context, prompt }).map((object) => object.id)
-        );
-        const targetIds = getCompiledTransformTargetIds(calls, context);
-        if (!clipProtection.complete || targetIds.some((id) => protectedIds.has(id))) {
+        // A schedule replays the exact admitted source. Its clip completeness and resolved track
+        // clauses were already checked; only command membership and live execution state change.
+        let complete = true;
+        let protectedObjects = requestProtections?.facts.protectedUnchanged;
+        if (requestProtections === undefined) {
+            const trackProtections = readExplicitProtections(prompt, context);
+            if (trackProtections.unresolved.length > 0) {
+                const references = trackProtections.unresolved.map((reference) => `"${reference}"`).join(', ');
+                return refuseProtectedRequest(
+                    `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+                );
+            }
+            let clipProtection = getExplicitClipProtection(prompt, context);
+            if (!clipProtection.complete) {
+                // Removing a following track clause can extend an earlier exclusion, so keep any complete source parse.
+                const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+                    (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
+                    prompt
+                );
+                clipProtection = getExplicitClipProtection(clipPrompt, context);
+            }
+            complete = clipProtection.complete;
+            protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
+        }
+        const protectedIds = new Set(protectedObjects?.map((object) => object.id));
+        let protectionCalls = calls;
+        if (compilerEvidence !== undefined) {
+            protectionCalls = transformCalls;
+        }
+        const targetIds = getCompiledTransformTargetIds(protectionCalls, context);
+        if (!complete || targetIds.some((id) => protectedIds.has(id))) {
             return {
                 actions: [],
                 rejections: [
@@ -7322,7 +7648,6 @@ function bridgeUnrefinedLlmToolCalls({
             effectiveCalls = calls.filter((call) => call.name !== 'glueClips');
         }
     }
-    const catalog = getExecutableAppActionGroundingCatalog();
     const promptActionAnalysis = analyzePromptActionRequests(prompt, catalog);
     const promptActionRequests = promptActionAnalysis.requests;
     const activePromptActionRequests = promptActionRequests.filter((request) => !request.cancelled);
@@ -7626,6 +7951,7 @@ function bridgeUnrefinedLlmToolCalls({
                 catalog,
                 compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
                 compilerExcludedIds,
+                requestProtections,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),

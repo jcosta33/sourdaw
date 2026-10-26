@@ -895,6 +895,12 @@ pub enum GraphCommand {
         value: f64,
         at_frame: u64,
     },
+    /// Compact an already queued parameter tail at this fence. No value lands.
+    HoldDeviceParam {
+        effect_id: usize,
+        param: DeviceParamTarget,
+        at_frame: u64,
+    },
 
     /// Put a registered plugin on the engine's native input bus, so the
     /// render callback hands it every chunk the capture ring serves
@@ -1016,6 +1022,7 @@ impl GraphCommand {
             | Self::AutomateParam { .. }
             | Self::SetMasterGain { .. }
             | Self::AutomateDeviceParam { .. }
+            | Self::HoldDeviceParam { .. }
             // The input bus addresses effects the table already holds; it
             // takes no slot of its own.
             | Self::RegisterCaptureConsumer(..)
@@ -1103,6 +1110,7 @@ impl GraphCommand {
             | Self::AutomateParam { .. }
             | Self::SetMasterGain { .. }
             | Self::AutomateDeviceParam { .. }
+            | Self::HoldDeviceParam { .. }
             | Self::RegisterCaptureConsumer(..)
             | Self::UnregisterCaptureConsumer(..) => false,
         }
@@ -7020,6 +7028,22 @@ impl AudioScheduler {
                 // that govern the automation lane have nothing to reach.
                 GraphCommand::SetMasterGain { value, smoothing } => {
                     self.timeline.set_master_fader_target(value, smoothing);
+                    None
+                }
+                GraphCommand::HoldDeviceParam {
+                    effect_id,
+                    param,
+                    at_frame,
+                } => {
+                    if let Some(slot) = self.effect_index.lookup(effect_id) {
+                        let effect = &mut self.effects[slot];
+                        effect.pending_params.hold(param, at_frame);
+                        if effect.pending_params.is_empty() {
+                            self.parameter_work.remove(slot);
+                        }
+                    } else {
+                        self.timeline.record_unknown_target();
+                    }
                     None
                 }
                 GraphCommand::AutomateDeviceParam {
@@ -14346,6 +14370,73 @@ mod timeline_tests {
         match &harness.scheduler.effects[0].instance {
             PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 5.0),
             _ => panic!("expected the knead effect"),
+        }
+    }
+
+    #[test]
+    fn device_hold_fenced_drain_preserves_b_and_earlier_a_and_replacement() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        let (plugin, log) = parameter_recording_plugin(true);
+        harness.send(GraphCommand::AddPlugin(3, plugin, None));
+        let a = DeviceParamTarget::Hosted { id: 4 };
+        let b = DeviceParamTarget::Hosted { id: 7 };
+        for (param, value, at_frame) in [(a, 0.1, 1), (a, 0.9, 4), (b, 0.25, 7)] {
+            harness.send(GraphCommand::AutomateDeviceParam {
+                effect_id: 3,
+                param,
+                value,
+                at_frame,
+            });
+        }
+        let commands = [
+            GraphCommand::HoldDeviceParam {
+                effect_id: 3,
+                param: a,
+                at_frame: 4,
+            },
+            GraphCommand::AutomateDeviceParam {
+                effect_id: 3,
+                param: a,
+                value: 0.6,
+                at_frame: 5,
+            },
+        ];
+        harness
+            .command_tx
+            .push(GraphCommand::BeginBatch {
+                commands: commands.len(),
+            })
+            .ok()
+            .unwrap();
+        for command in commands {
+            harness.command_tx.push(command).ok().unwrap();
+        }
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        harness.render(4);
+        assert_eq!(*log.lock().unwrap(), vec![(4, 0.1)]);
+        harness.render(4);
+        harness.render(4);
+        assert_eq!(*log.lock().unwrap(), vec![(4, 0.1), (4, 0.6), (7, 0.25)]);
+
+        harness.send(GraphCommand::AddEffect(8, knead_instance(), None));
+        let a = DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones);
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 8,
+            param: a,
+            value: 9.0,
+            at_frame: 20,
+        });
+        harness.send(GraphCommand::HoldDeviceParam {
+            effect_id: 8,
+            param: a,
+            at_frame: 20,
+        });
+        harness.render(16);
+        let slot = harness.scheduler.effect_index.lookup(8).unwrap();
+        match &harness.scheduler.effects[slot].instance {
+            PluginCore::Knead(engine) => assert_eq!(engine.shift_semitones, 0.0),
+            _ => panic!("expected actual Knead body"),
         }
     }
 

@@ -14,7 +14,7 @@ import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { resolveDrumKitBy } from '#/utils/deviceTypeMatching';
+import { resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 // Not `#/modules/Arrangement/useCases`. This file is the single edge that decides whether the
 // 43-module knot (Arrangement, Transport, Collaboration, CrdtDocument, Yeast, MIDI, AudioEngine, …)
@@ -522,6 +522,7 @@ export async function scheduleTrackClips({
     const receivesOnDrumKit = receiver?.kind === 'drum';
     const kitDef = receivesOnDrumKit ? resolveDrumKitBy(track.devices, getDrumKitDefByIndex) : null;
     const drumKit = receivesOnDrumKit && !kitDef ? resolveDrumKit(track.devices) : null;
+    const drumKitGain = resolveDrumKitOutputGain(track.devices);
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
     function projectPitch({
         pitch,
@@ -719,7 +720,8 @@ export async function scheduleTrackClips({
                     note.pitch,
                     startTime,
                     note.velocity,
-                    note.clipGain
+                    note.clipGain,
+                    drumKitGain
                 );
             } else if (drumKit) {
                 scheduleKitNote(
@@ -730,7 +732,8 @@ export async function scheduleTrackClips({
                     startTime,
                     duration,
                     note.velocity,
-                    note.clipGain
+                    note.clipGain,
+                    drumKitGain
                 );
             } else {
                 const mpe = resolveScheduledMpe(note);

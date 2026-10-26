@@ -225,6 +225,49 @@ function planForAll(): (fixture: EvaluationFixture) => EvaluationFixturePlan {
 }
 
 /**
+ * A local scoring double, not the historical revision: it wraps each negative's recorded changed lines
+ * in a complete test case without changing their line numbers or change facts. This exercises the
+ * runner's held branch; the default stand-in above remains incomplete and cannot claim that the real
+ * revision supplied a whole case.
+ */
+function completeCaseStandIn(fixture: EvaluationFixture): SemanticSourcePort {
+    const source = standInSource(fixture);
+    return {
+        ...source,
+        readFile: (sha, path) => {
+            const text = source.readFile(sha, path);
+            if (text === undefined) {
+                return undefined;
+            }
+            const lines = text.split('\n');
+            const last = lines.length - 2;
+            lines[0] = "it('scores the recorded lines', () => {";
+            if (fixture.id === 'descriptor-hash-retarget') {
+                lines[1] = '    const descriptor = {';
+                lines[last - 2] = '    };';
+                lines[last - 1] = '    expect(descriptor.yeast).toBeDefined();';
+            }
+            lines[last] = '});';
+            return lines.join('\n');
+        },
+    };
+}
+
+function planForScoring(): (fixture: EvaluationFixture) => EvaluationFixturePlan {
+    const standard = planForAll();
+    return (fixture) => {
+        if (fixture.fixture !== 'adjudicated-negative') {
+            return standard(fixture);
+        }
+        return {
+            source: completeCaseStandIn(fixture),
+            sourceKind: 'corpus-fixture',
+            revision: fixtureEvaluationRevision(fixture),
+        };
+    };
+}
+
+/**
  * The same plan with one fixture's source replaced, which is how a case drives the state a live run reaches
  * for one fixture without changing what the others are assessed over.
  */
@@ -540,10 +583,22 @@ describe('the synthetic fixture source', () => {
 });
 
 describe('the opt-in runner', () => {
+    it('does not grade an adjudicated negative from a stand-in without its enclosing case', async () => {
+        const result = await evaluateWith(shippedCorpus(), stubProvider(() => 0.02).port);
+        const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'descriptor-hash-retarget');
+        expect(negative?.execution).toBe('partial');
+        expect(negative?.rulesAsked).not.toContain('admission_branch_completes_without_asserting');
+        expect(negative?.rulesNotAsked).toContainEqual({
+            ruleId: 'admission_branch_completes_without_asserting',
+            missingEvidence: ['complete test case context'],
+        });
+        expect(negative?.expectedConcernHeld).toBe(false);
+    });
+
     it('should ask every fixture the rule under test and carry the recorded block', async () => {
         const corpus = shippedCorpus();
         const stub = stubProvider(() => 0.02);
-        const result = await evaluateWith(corpus, stub.port);
+        const result = await evaluateWith(corpus, stub.port, planForScoring());
         expect(result.outcomes).toHaveLength(4);
         for (const outcome of result.outcomes) {
             const fixture = fixtureOf(corpus, outcome.fixtureId);
@@ -557,7 +612,7 @@ describe('the opt-in runner', () => {
             expect(outcome.thresholds[fixture.ruleId]).toBe(semanticRule(fixture.ruleId).thresholds.fire);
             expect(outcome.factsCarried).toEqual(fixture.changedLineFacts);
             expect(outcome.factsMatchCorpus).toBe(true);
-            expect(outcome.execution).toBe('completed');
+            expect(outcome.execution, outcome.fixtureId).toBe('completed');
             expect(outcome.providerRequests).toBe(1);
         }
     });
@@ -668,7 +723,7 @@ describe('the opt-in runner', () => {
         const corpus = shippedCorpus();
         const positives = positiveRules(corpus);
         const stub = stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02));
-        const result = await evaluateWith(corpus, stub.port);
+        const result = await evaluateWith(corpus, stub.port, planForScoring());
         expect(result.expectationsHeld).toBe(4);
         for (const outcome of result.outcomes) {
             const fixture = fixtureOf(corpus, outcome.fixtureId);
@@ -693,7 +748,7 @@ describe('the opt-in runner', () => {
             }
             return path === firedNegativePath && ruleId === 'assertion_deleted' ? 0.72 : 0.02;
         });
-        const result = await evaluateWith(corpus, stub.port);
+        const result = await evaluateWith(corpus, stub.port, planForScoring());
         const negative = result.outcomes.find((outcome) => outcome.fixtureId === 'grid-label-retarget');
         expect(negative?.outcomes.find((entry) => entry.ruleId === 'assertion_deleted')?.outcome).toBe('signal');
         // The held count and the exit are what a softened negative branch would corrupt: every label would
@@ -705,7 +760,7 @@ describe('the opt-in runner', () => {
 
     it('should refuse to call a positive held when the rule it labels never fires', async () => {
         const corpus = shippedCorpus();
-        const result = await evaluateWith(corpus, stubProvider(() => 0.02).port);
+        const result = await evaluateWith(corpus, stubProvider(() => 0.02).port, planForScoring());
         expect(result.expectationsHeld).toBe(2);
         const held = result.outcomes
             .filter((outcome) => outcome.expectedConcernHeld)
@@ -718,7 +773,8 @@ describe('the opt-in runner', () => {
         const positives = positiveRules(corpus);
         const result = await evaluateWith(
             corpus,
-            stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port
+            stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
+            planForScoring()
         );
         const rendered = renderEvaluation(result);
         expect(rendered).toContain('4 fixture(s), 4 provider request(s)');
@@ -738,7 +794,7 @@ describe('the opt-in runner', () => {
     });
 
     it('should render a mismatch when a labelled expectation did not hold', async () => {
-        const result = await evaluateWith(shippedCorpus(), stubProvider(() => 0.02).port);
+        const result = await evaluateWith(shippedCorpus(), stubProvider(() => 0.02).port, planForScoring());
         const rendered = renderEvaluation(result);
         expect(rendered).toContain('2/4 labelled expectations held');
         expect(rendered).toContain('the labelled expectation did NOT hold (an unasked question counts as not held)');
@@ -763,7 +819,7 @@ describe('the outcome file the measurement command reads', () => {
         // command completes as a held run and its exit code is the success path's.
         const exitCode = await runEvaluationCommand({
             argv: ['--out', outcomePath],
-            sourceFor: planForAll(),
+            sourceFor: planForScoring(),
             portsFor: () => ({
                 provider: stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
                 cache: createMemoryCache(),
@@ -809,7 +865,7 @@ describe('the outcome file the measurement command reads', () => {
         try {
             exitCode = await runEvaluationCommand({
                 argv: ['--out', outcomePath],
-                sourceFor: planForAll(),
+                sourceFor: planForScoring(),
                 portsFor: () => ({
                     provider: stubProvider(({ ruleId, path }) => (positives.get(path) === ruleId ? 0.95 : 0.02)).port,
                     cache: createMemoryCache(),
@@ -848,7 +904,7 @@ describe("the evaluation command's own exit code", () => {
         const firedNegativePath = fixtureOf(corpus, 'grid-label-retarget').path;
         const exitCode = await runEvaluationCommand({
             argv: [],
-            sourceFor: planForAll(),
+            sourceFor: planForScoring(),
             portsFor: () => ({
                 provider: stubProvider(({ ruleId, path }) => {
                     if (positives.get(path) === ruleId) {

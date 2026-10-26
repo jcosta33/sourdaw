@@ -147,6 +147,12 @@ impl FallbackToneEngine {
         }
     }
 
+    pub fn has_started_note(&self, note: u8) -> bool {
+        self.voices
+            .iter()
+            .any(|voice| voice.active && voice.note == note && !voice.releasing)
+    }
+
     pub fn release_all(&mut self) {
         for voice in self.voices.iter_mut() {
             if voice.active && !voice.releasing {

@@ -140,9 +140,15 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         (arrangementMocks.discardRecording as (...a: unknown[]) => unknown)(...args),
     updateTransportState: (...args: unknown[]) =>
         (arrangementMocks.updateTransportState as (...a: unknown[]) => unknown)(...args),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     // A held note that survived would still have a change due, so a test that expects none sees it.
@@ -1568,6 +1574,9 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        // A punch take is open and owns the root, so the finalizer registers
+        // its commit on the lifecycle (#5517).
+        activeRecordingRefState.current = ['punch-take'];
         // The finalizer's own promise is pending: the tick must still complete,
         // and the promise must be owned so a user-facing stop can await it.
         let release!: () => void;
@@ -1595,6 +1604,7 @@ describe('startPlayheadScheduler', () => {
         expect(settled).toBe(false);
         release();
         await waiting;
+        activeRecordingRefState.current = [];
     });
 
     it('does not cache or update a punched clip for a failed recording result', async () => {

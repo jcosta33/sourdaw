@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { clampFaderGain, configureDualMonoPannerInput, toStereoPan } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
+import { runAllEffects } from '#/utils/runEffects';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
@@ -1560,51 +1561,80 @@ export class TrackNode {
         }
         this._disposed = true;
         this._rebuildScheduled = false;
+        const pendingLoads = [...this._pendingDeviceLoads.values()];
+        const readinessTokens = [...this._deviceReadinessTokens.values()];
+        const devices = [...this.strip.deviceNodes];
+        const meter = this.strip.meterNode;
+        const fallbackMeter = this._analyserFallbackMeter;
+
+        // Retire ownership before callbacks can throw or re-enter the strip.
+        this._pendingDeviceLoads.clear();
         this._pendingGraphReadinessTokens.clear();
-        for (const deviceId of this._pendingDeviceLoads.keys()) {
-            this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true, clearFailure: true });
-        }
-        for (const readinessToken of this._deviceReadinessTokens.values()) {
-            this.deps.readinessDiagnostics.removeDevice(readinessToken);
-        }
         this._deviceReadinessTokens.clear();
         this._failedDeviceLoads.clear();
         this._runtimeRecoveryAttempts.clear();
-        this.strip.preFaderTap.disconnect();
-        this.strip.gainNode.disconnect();
-        this.strip.faderNode.disconnect();
-        this.strip.postFaderGain.disconnect();
-        this.strip.panNode.disconnect();
-        this.strip.analyserNode.disconnect();
-        this.strip.carrierGate.disconnect();
-        this.strip.preFaderSendGate.disconnect();
+        this.strip.deviceNodes = [];
         this._outputDestination = null;
-        if (this.strip.meterNode) {
-            this.strip.meterNode.port.postMessage({ type: 'shutdown' });
-            this.strip.meterNode.port.close();
-            this.strip.meterNode.disconnect();
-        }
-        const fallbackMeter = this._analyserFallbackMeter;
-        if (fallbackMeter) {
-            // The panNode sweep above already dropped the tap edge; detach the
-            // splitter from its analysers so none of the three stays live.
-            fallbackMeter.splitter.disconnect();
-            for (const analyser of fallbackMeter.analysers) {
-                analyser.disconnect();
+        this._analyserFallbackMeter = null;
+        for (const pendingLoad of pendingLoads) {
+            pendingLoad.parameterWrites.length = 0;
+            if (pendingLoad.loadPromise) {
+                this.deps.pendingDevicePromises.delete(pendingLoad.loadPromise);
             }
         }
-        for (const dn of this.strip.deviceNodes) {
-            this.destroyPublishedDeviceNode(dn);
+
+        // Keep each required attempt at this level so errors retain effect order.
+        const effects = [
+            ...pendingLoads.flatMap((pendingLoad) => [
+                () => {
+                    if (!pendingLoad.resolved) {
+                        this.deps.readinessDiagnostics.cancel(pendingLoad.readinessToken);
+                    }
+                },
+                () => pendingLoad.abortController.abort(),
+            ]),
+            ...readinessTokens.map((token) => () => this.deps.readinessDiagnostics.removeDevice(token)),
+            () => this.strip.preFaderTap.disconnect(),
+            () => this.strip.gainNode.disconnect(),
+            () => this.strip.faderNode.disconnect(),
+            () => this.strip.postFaderGain.disconnect(),
+            () => this.strip.panNode.disconnect(),
+            () => this.strip.analyserNode.disconnect(),
+            () => this.strip.carrierGate.disconnect(),
+            () => this.strip.preFaderSendGate.disconnect(),
+        ];
+        if (meter) {
+            effects.push(
+                () => meter.port.postMessage({ type: 'shutdown' }),
+                () => meter.port.close(),
+                () => meter.disconnect()
+            );
         }
-        this.strip.deviceNodes = [];
+        if (fallbackMeter) {
+            effects.push(
+                () => fallbackMeter.splitter.disconnect(),
+                ...fallbackMeter.analysers.map((analyser) => () => analyser.disconnect())
+            );
+        }
+        effects.push(
+            ...devices.flatMap((device) => [
+                () => {
+                    if (device.controller?.destroy) {
+                        device.controller.destroy();
+                    } else if (device.dispose) {
+                        device.dispose();
+                    }
+                },
+                () => this.disconnectDeviceNode(device),
+            ])
+        );
+        runAllEffects(effects);
     }
 
     /** Disposes the strip of a track that left the project, announcing each device it held as leaving too. */
     public disposeLeavingProject(): void {
         const devices = [...this.strip.deviceNodes];
-        this.dispose();
-        for (const device of devices) {
-            this.announceDeviceLeftProject(device);
-        }
+        // A disposal aggregate remains one failure here; notification failures follow it.
+        runAllEffects([() => this.dispose(), ...devices.map((device) => () => this.announceDeviceLeftProject(device))]);
     }
 }

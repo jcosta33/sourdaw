@@ -27,7 +27,7 @@ describe('handleTrimClipStart', () => {
             payload: { clipId: 'c1', newStartBeat: 2 },
         });
 
-        expect(mocks.trimClipStart).toHaveBeenCalledWith('c1', 2, undefined);
+        expect(mocks.trimClipStart).toHaveBeenCalledWith('c1', 2, undefined, undefined);
     });
 
     it('provides a description', () => {

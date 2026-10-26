@@ -1,15 +1,39 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
-import { stopRecording } from '#/modules/Arrangement/useCases';
+import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
 
+// MIDI owns the overdub landings; Transport reads them through its use cases.
+const overdub = vi.hoisted(() => {
+    const state = { landing: null as Promise<void> | null, settled: 0 };
+    return {
+        state,
+        land(landing: Promise<void>): void {
+            const settle = (): void => {
+                state.landing = null;
+                state.settled += 1;
+            };
+            state.landing = landing.then(settle, settle);
+        },
+    };
+});
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => overdub.state.landing !== null,
+    countSettledOverdubPasses: () => overdub.state.settled,
+    waitForOverdubLanding: async () => {
+        await overdub.state.landing;
+    },
+}));
+
 vi.mock('#/modules/Arrangement/useCases', () => ({
     stopRecording: vi.fn(),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAudioRecording: vi.fn(),
@@ -22,6 +46,9 @@ describe('stopActiveRecording', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.clearAllMocks();
+        // restoreAllMocks wipes the factory default, so the owning-root default
+        // is re-armed for every case; the refusal case overrides it.
+        vi.mocked(takeOwnsRecordingRoot).mockReturnValue(true);
         recordingLifecycle.cancelPendingRecordingStart();
         recordingLifecycle.setCountInTimerId(null);
     });
@@ -31,6 +58,25 @@ describe('stopActiveRecording', () => {
         recordingLifecycle.setCountInTimerId(null);
         vi.useRealTimers();
         vi.restoreAllMocks();
+    });
+
+    it('does not count a settled take for a stop the root guard will refuse', async () => {
+        // A take whose root was replaced mid-recording closes nothing (#5517):
+        // counting it would owe the next project replacement a save for a take
+        // this project never gained.
+        activeRecordingRef.current = ['clip-1'];
+        activeRecordingRef.capturedRootIdentity = 'replaced-root';
+        vi.mocked(takeOwnsRecordingRoot).mockReturnValue(false);
+        vi.mocked(stopRecording).mockResolvedValue('refused');
+        vi.mocked(stopAudioRecording).mockResolvedValue(undefined);
+        const before = recordingLifecycle.settledCommitCount;
+
+        await stopActiveRecording();
+
+        expect(stopRecording).toHaveBeenCalledTimes(1);
+        expect(recordingLifecycle.settledCommitCount).toBe(before);
+        activeRecordingRef.current = [];
+        activeRecordingRef.capturedRootIdentity = null;
     });
 
     it('should clear a pending count-in timer exactly once when stopping recording', () => {
@@ -79,7 +125,7 @@ describe('stopActiveRecording', () => {
 
         it('is registered as closing until the take it closes has committed, and counts that take', async () => {
             activeRecordingRef.current = ['clip-1'];
-            const commit = Promise.withResolvers<void>();
+            const commit = Promise.withResolvers<'refused' | 'closed'>();
             vi.mocked(stopRecording).mockReturnValue(commit.promise);
             const settledBefore = recordingLifecycle.settledCommitCount;
 
@@ -87,7 +133,7 @@ describe('stopActiveRecording', () => {
             expect(recordingLifecycle.isClosingRecording()).toBe(true);
             expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
 
-            commit.resolve();
+            commit.resolve('closed');
             await stopping;
 
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
@@ -145,6 +191,39 @@ describe('stopActiveRecording', () => {
 
             punchOutCommit.resolve();
             await stopping;
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        it('does not resolve before an overdub pass the falling edge started has landed', async () => {
+            const passLanding = Promise.withResolvers<void>();
+            // The falling edge the stop writes is what starts the pass landing.
+            vi.mocked(updateTransportState).mockImplementationOnce(() => {
+                overdub.land(passLanding.promise);
+            });
+            let stopped = false;
+
+            const stopping = stopActiveRecording().then(() => {
+                stopped = true;
+            });
+            await vi.advanceTimersByTimeAsync(10);
+            expect(stopped).toBe(false);
+            expect(recordingLifecycle.isClosingRecording()).toBe(true);
+
+            passLanding.resolve();
+            await stopping;
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        it('resolves when the overdub pass the stop waited on was refused', async () => {
+            const passLanding = Promise.withResolvers<void>();
+            vi.mocked(updateTransportState).mockImplementationOnce(() => {
+                overdub.land(passLanding.promise);
+            });
+
+            const stopping = stopActiveRecording();
+            passLanding.reject(new Error('refused'));
+
+            await expect(stopping).resolves.toBeUndefined();
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
         });
 

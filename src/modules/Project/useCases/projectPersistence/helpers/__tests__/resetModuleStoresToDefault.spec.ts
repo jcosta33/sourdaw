@@ -72,6 +72,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     restoreTrackSnapshot: vi.fn(),
     setMarqueeSelection: vi.fn(),
     setTrackState: vi.fn(),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {

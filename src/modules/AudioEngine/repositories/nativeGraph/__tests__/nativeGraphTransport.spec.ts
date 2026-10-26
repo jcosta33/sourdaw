@@ -197,4 +197,28 @@ describe('createDesktopNativeGraphTransport', () => {
             session,
         });
     });
+
+    it('carries lifecycle actions explicitly and uploads fenced PCM as raw trailing bytes', async () => {
+        const transport = createDesktopNativeGraphTransport();
+        const request = { action: 'retire' as const, owner: 'owner-1' };
+        await transport.timelineSampleLifecycle?.(request);
+        const pcm = new Uint8Array(4);
+        await transport.registerTimelineMaterial?.({
+            lease: 'lease-1',
+            sampleId: 'take',
+            version: 'v1',
+            sampleRate: 48_000,
+            channels: 1,
+            pcm,
+        });
+        expect(desktopInvoke).toHaveBeenCalledWith('timeline_sample_lifecycle', { request });
+        expect(desktopInvoke).toHaveBeenCalledWith('register_timeline_material', {
+            lease: 'lease-1',
+            sampleId: 'take',
+            version: 'v1',
+            sampleRate: 48_000,
+            channels: 1,
+            pcm,
+        });
+    });
 });

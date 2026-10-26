@@ -48,7 +48,7 @@ vi.mock('../helpers', () => ({
         {
             id: 'empty',
             executionBoundary: 'project-replacement',
-            create: () => mocks.newProject('Untitled'),
+            create: (options?: unknown) => mocks.newProject('Untitled', options),
         },
         {
             id: 'pop-song',
@@ -319,6 +319,62 @@ describe('createFromTemplate', () => {
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.runProjectLoadTransaction).not.toHaveBeenCalled();
         expect(mocks.resetModuleStoresToDefault).not.toHaveBeenCalled();
+    });
+
+    it('hands a project-replacement template its caller continuation check', async () => {
+        const shouldProceed = (): boolean => true;
+
+        await expect(createFromTemplate('empty', { shouldProceed })).resolves.toBe(true);
+
+        expect(mocks.newProject).toHaveBeenCalledWith('Untitled', { shouldProceed });
+    });
+
+    // Choosing the open project's Recent entry starts no transaction of its own,
+    // so an activated template stays current: only its caller's check can tell
+    // it the user chose to stay.
+    it('hands the previous project back when its caller withdraws it during native teardown', async () => {
+        const unloading = Promise.withResolvers<void>();
+        let isStillChosen = true;
+        mocks.unloadPlugin.mockReturnValueOnce(unloading.promise);
+
+        const creation = createFromTemplate('pop-song', { shouldProceed: () => isStillChosen });
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        isStillChosen = false;
+        unloading.resolve();
+
+        await expect(creation).resolves.toBe(false);
+        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
+    });
+
+    it('does not activate a template its caller withdrew before it began', async () => {
+        await expect(createFromTemplate('pop-song', { shouldProceed: () => false })).resolves.toBe(false);
+
+        expect(mocks.transactionActivate).not.toHaveBeenCalled();
+        expect(mocks.stopPlayback).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProject).not.toHaveBeenCalled();
+    });
+
+    it('hands the reset a switch check that reads its caller withdrawal', async () => {
+        let isStillChosen = true;
+        mocks.resetCrdtProject.mockImplementationOnce(
+            (_name: string, _onAuthorityReplaced?: () => void, isQuietAtSwitch?: () => boolean) => {
+                isStillChosen = false;
+                if (isQuietAtSwitch?.() === false) {
+                    return Promise.resolve({ status: 'transport-active' });
+                }
+                return Promise.resolve({ status: 'replaced', finalize: mocks.finalize });
+            }
+        );
+
+        await expect(createFromTemplate('pop-song', { shouldProceed: () => isStillChosen })).resolves.toBe(false);
+
+        expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.forgetProjectLatchedPedals).not.toHaveBeenCalled();
     });
 
     it('runs the project-transition machinery before template construction', async () => {

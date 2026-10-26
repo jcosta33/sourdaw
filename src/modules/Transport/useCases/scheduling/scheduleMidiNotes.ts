@@ -33,7 +33,11 @@ import {
     isBeatInClipLoopWindow,
 } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
-import { isBypassedNoteReceiver, type NoteReceivingInstrumentKind } from '#/utils/deviceTypeMatching';
+import {
+    isBypassedNoteReceiver,
+    type NoteReceivingInstrumentKind,
+    resolveDrumKitOutputGain,
+} from '#/utils/deviceTypeMatching';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
@@ -1263,6 +1267,7 @@ export async function scheduleMidiNotes(
         const receivesOnDrumKit = findReceiverOfKind(track.devices, 'drum') !== undefined;
         const drumKitDef = receivesOnDrumKit ? resolveDrumKitDef(track.devices) : null;
         const drumKit = receivesOnDrumKit && !drumKitDef ? resolveDrumKit(track.devices) : null;
+        const drumKitGain = resolveDrumKitOutputGain(track.devices);
         const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
         const yeastDevice = track.devices.find((device) => device.type === 'yeast');
         const liveYeastIterations: LiveYeastIteration[] = [];
@@ -1753,7 +1758,8 @@ export async function scheduleMidiNotes(
                                 pitch,
                                 time,
                                 projectedNote.velocity,
-                                noteGain
+                                noteGain,
+                                drumKitGain
                             );
                         } else if (drumKit) {
                             const kitVoice = scheduleKitNote(
@@ -1764,7 +1770,8 @@ export async function scheduleMidiNotes(
                                 time,
                                 duration,
                                 projectedNote.velocity,
-                                noteGain
+                                noteGain,
+                                drumKitGain
                             );
                             if (kitVoice) {
                                 registerScheduledSource(kitVoice);

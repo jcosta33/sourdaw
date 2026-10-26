@@ -17,6 +17,11 @@ export type PlanningOutcome =
     | { kind: 'denied'; reason: string }
     | { kind: 'clarify'; reason: string; questions: string[] }
     /**
+     * The request undoes the chat thread's last commit. It carries no batch: the caller undoes that
+     * commit's revert group as one group, through the AI history's revert, never by new commands.
+     */
+    | { kind: 'revert'; runId: string; revertGroupId: string }
+    /**
      * `searchedIntents` names what the run looked up before claiming the catalog cannot do this, so
      * a user reading the refusal can see whether it was looked for under the words they would use.
      */
