@@ -1,4 +1,4 @@
-import { change, clone, getConflicts, getHeads, hasHeads, merge, view } from '@automerge/automerge';
+import { change, clone, getConflicts, getHeads, hasHeads, merge, toJS, view } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -9,7 +9,7 @@ function projectTruth(document: Record<string, unknown> | undefined): unknown {
     if (!document) {
         throw new Error('Expected the root document');
     }
-    const { commandBatchIdempotency: _checkpoint, ...truth } = JSON.parse(JSON.stringify(document));
+    const { commandBatchIdempotency: _checkpoint, ...truth } = toJS(document);
     return truth;
 }
 

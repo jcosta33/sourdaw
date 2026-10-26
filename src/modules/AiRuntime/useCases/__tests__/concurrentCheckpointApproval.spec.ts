@@ -1,4 +1,4 @@
-import { change, clone, getConflicts, getHeads, merge } from '@automerge/automerge';
+import { change, clone, getConflicts, getHeads, merge, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -61,7 +61,7 @@ function requireRoot() {
 }
 
 function rootProjectTruth(): unknown {
-    const { commandBatchIdempotency: _checkpoint, ...truth } = JSON.parse(JSON.stringify(requireRoot()));
+    const { commandBatchIdempotency: _checkpoint, ...truth } = toJS(requireRoot());
     return truth;
 }
 
