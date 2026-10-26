@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -25,6 +27,13 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -548,6 +557,9 @@ describe('handleCrossfadeClips', () => {
 });
 
 describe('crossfade recorded leading silence through command history', () => {
+    let notifications: NotifyPayload[];
+    let unsubscribeFromNotifications: () => void;
+
     beforeAll(async () => {
         // Retain the unit-test spies above, but connect every domain seam to its
         // production implementation for the real command, CRDT, and undo route.
@@ -566,6 +578,17 @@ describe('crossfade recorded leading silence through command history', () => {
     });
 
     beforeEach(() => {
+        Container.clear();
+        const notificationBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationBus);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('crossfade recorded leading silence');
         removeCrdtDoc('root');
@@ -584,6 +607,8 @@ describe('crossfade recorded leading silence through command history', () => {
     });
 
     afterEach(() => {
+        unsubscribeFromNotifications();
+        Container.clear();
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -659,13 +684,15 @@ describe('crossfade recorded leading silence through command history', () => {
                 payload: { expected: { clipBAudioOffsetBeats: -1 }, replacement: { clipBAudioOffsetBeats: -1 } },
             });
 
-            await undo();
+            expect.soft((await undo()).headConsumed).toBe(true);
+            expect.soft(notifications).toEqual([]);
             expectSourceOrigin();
             expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
             expect(undoStore.value?.past).toHaveLength(0);
             expect(undoStore.value?.future).toHaveLength(1);
 
             await redo();
+            expect(notifications).toEqual([]);
             expectSourceOrigin();
             expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
             expect(undoStore.value?.past).toHaveLength(1);
