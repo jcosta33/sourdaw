@@ -42,6 +42,7 @@ import {
 
 export type { HistoricalAdmissionReceipt } from './stackedLanes.ts';
 
+// @see ../.agents/skills/delivery-orchestration/historical-stack-admission.md
 export const SYNC_PARENT_USAGE =
     'usage: pnpm lane:sync-parent --lane <absolute-child-lane> [--admit-historical --child-pr <number> --parent-pr <number> --expected-head <sha>]';
 
