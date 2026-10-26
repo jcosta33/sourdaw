@@ -1,0 +1,173 @@
+.agents/decisions/0026-ownership-by-exception.md
+  s_26f70b851e8f7a::t_a092d384f38015 104-105
+.agents/skills/review-stances/ai-notes-publication.md
+  s_26f70b851e8f7a::t_6127f8ca1553b7 1-31
+.agents/skills/review-stances/project-integrity.md
+  s_26f70b851e8f7a::t_3646a8bf123e47 308-327
+.agents/skills/review-stances/session-lifecycle.md
+  s_26f70b851e8f7a::t_99f13189cee991 336-353
+.agents/skills/review-stances/test-validity.md
+  s_26f70b851e8f7a::t_894a64e8a965a7 262-267
+AGENTS.md
+  s_26f70b851e8f7a::t_00a8c61e5f5abb 632
+crates/daw-engine/src/scheduler.rs
+  s_26f70b851e8f7a::t_2c4aa88e23dc80 899-904,1026,1114,7018-7033,14364-14430
+crates/daw-engine/src/timeline.rs
+  s_26f70b851e8f7a::t_99ec66a393c96f 856-870,3882-3928
+crates/sourdaw-native/src/commands/graph.rs
+  s_26f70b851e8f7a::t_6b03ab9e96057d 453-454,462,832,835-836,1802-1803,1806,1922-1933,1946,1956-1957,3747-3766,3820-3845,7116-7122,7155-7648,9650,9679,9744,9842
+evidence/agent-campaign/manifest.json
+  s_26f70b851e8f7a::t_5598aa1562104b 623
+release/open-source-inventory.json
+  s_26f70b851e8f7a::t_e4dc76abba1993 1212
+scripts/__tests__/publishLane.spec.ts
+  s_26f70b851e8f7a::t_724fa61f5215f9 950-965,967-980,982-988,990-995,997-1004,1006,1008-1015,1018-1062,1064-1074,1076-1090,1092-1131,1133-1147
+scripts/publishLane.ts
+  s_26f70b851e8f7a::t_894044cd4572ff 2074-2096,2099-2100,2102-2117
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_26f70b851e8f7a::t_2dcec627df8fd4 42
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_26f70b851e8f7a::t_776bd685d194a0 81-86
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_26f70b851e8f7a::t_1b0aff8967d00e 14
+src/modules/AiRuntime/useCases/__tests__/perceptualGoalAdmission.spec.ts
+  s_26f70b851e8f7a::t_dc444c85b8b39a 1-632
+src/modules/AiRuntime/useCases/admitPerceptualGoalDecline.ts
+  s_26f70b851e8f7a::t_a1c6d7c40ba704 1-429
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_26f70b851e8f7a::t_e2a91c2cfd538e 91-179
+src/modules/AiRuntime/useCases/agentReference/findCoordinatedTrackLists.ts
+  s_26f70b851e8f7a::t_7477aa92800f33 8
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_26f70b851e8f7a::t_629929d51f3d74 168,211,231,326,347,589-594,599,601-605,664
+src/modules/AiRuntime/useCases/agentReference/resolveWholeMember.ts
+  s_26f70b851e8f7a::t_13db81bf58057b 1-43
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_26f70b851e8f7a::t_52906eccff5b77 168-169,198-203,2197-2233
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_26f70b851e8f7a::t_be124513cb2b31 6,171-173,175-178,192
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_26f70b851e8f7a::t_8774f315f73fd6 47,691-697
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  s_26f70b851e8f7a::t_92d51e7f4ee1dd 1-2,4-15
+src/modules/Arrangement/useCases/index.ts
+  s_26f70b851e8f7a::t_1381b4ce70e709 210
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingLoopPass.spec.ts
+  s_26f70b851e8f7a::t_94a242733a0170 195-199
+src/modules/Arrangement/useCases/recording/__tests__/stopRecordingRootWitness.integration.spec.ts
+  s_26f70b851e8f7a::t_3357e95cfd39bc 1-354
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_26f70b851e8f7a::t_79d32563189f6d 62-69,71,83
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_26f70b851e8f7a::t_ad0a3d3158e629 1,110-112
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_26f70b851e8f7a::t_0268c5573b83f2 2,71-87,89,91,94-106,112,169-194,199-217
+src/modules/Arrangement/useCases/recording/takeOwnsRecordingRoot.ts
+  s_26f70b851e8f7a::t_d6441e6757b5d7 1-15
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_26f70b851e8f7a::t_b0aab523822d12 229-231,518-519,524-531,858
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_26f70b851e8f7a::t_c72e4c80e56b5f 30-75
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_26f70b851e8f7a::t_cc704643eef73b 138-143,479-480
+src/modules/AudioEngine/useCases/livePlayback/__tests__/abandonNativeLiveGraphSession.spec.ts
+  s_26f70b851e8f7a::t_439b659fafbc59 15,60-72,114
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_26f70b851e8f7a::t_df1f096d1c6b09 78,97
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_26f70b851e8f7a::t_ee46bc56264576 25,330-333,335,1037-1069,1345-1379
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_26f70b851e8f7a::t_e4e4646341d906 44,640,724
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSessionSplice.spec.ts
+  s_26f70b851e8f7a::t_6e0c44eb84b0f8 20,71-83,119
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  s_26f70b851e8f7a::t_07325da10b8c3d 23,25-28,30-46,48-55,62,65,193-196,209-1375
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  s_26f70b851e8f7a::t_b06f8deedd3e59 41-50,52,55,60,191-266,268-273,289-294,296-315,332
+src/modules/AudioEngine/useCases/livePlayback/carryQueuedStamps.ts
+  s_26f70b851e8f7a::t_a083bc74e6ef33 12,15,17,26-27
+src/modules/AudioEngine/useCases/livePlayback/changedStripControls.ts
+  s_26f70b851e8f7a::t_ac000f048d8664 1-57
+src/modules/AudioEngine/useCases/livePlayback/disarmNativeLiveAutomationWriter.ts
+  s_26f70b851e8f7a::t_b3a16e41e3f8a5 18-20
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  s_26f70b851e8f7a::t_5aa35cd723c6e3 147-155,157-175
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_26f70b851e8f7a::t_e7d4228804b05d 48-53,57,101-102,325,328,330,374-375,410-416,419-423,430,470,503,555-559,565-582,641-799,807,818-819,829-833,836-844,847-862,865-870,885-888,891,896-898
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createWebAudioOfflineBackend.spec.ts
+  s_26f70b851e8f7a::t_b9ba94e18e1413 15-16,82-116
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_26f70b851e8f7a::t_f1a6ebab50ef13 95,103,192,821-903
+src/modules/AudioEngine/useCases/offlineRender/automationWriteCommand.ts
+  s_26f70b851e8f7a::t_83f63ba92b5a13 8,12-15,22,25-29,40
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_26f70b851e8f7a::t_1562013633b0c4 99,115-117,360-362,401
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_26f70b851e8f7a::t_1011682690bad1 82
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_26f70b851e8f7a::t_aafd81aaf4363a 780-835
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_26f70b851e8f7a::t_2e9f84ed04c895 42-48,429-459
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_26f70b851e8f7a::t_d8c35aa7feac50 39,51,57-58,60,69,78-79,81,83,91-96,100,124-150,202-346,720-729,732-735,818-880
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_26f70b851e8f7a::t_d78d7207252720 399-590
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_26f70b851e8f7a::t_a8699f14ea050c 183
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_26f70b851e8f7a::t_a6fd0f7ccbffe0 75
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_26f70b851e8f7a::t_0742c37f43691b 75
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_26f70b851e8f7a::t_78443ade9d493b 59-60,108-110,121,346-348,369
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_26f70b851e8f7a::t_54a6ee6fa66cc3 143,1577-1579,1607
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_26f70b851e8f7a::t_a5c658e4f486b1 97
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_26f70b851e8f7a::t_d8520ba2cb699e 134
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_26f70b851e8f7a::t_104b067bbcc381 110,490
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_26f70b851e8f7a::t_d158fdad54ff4b 113
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_26f70b851e8f7a::t_3c6fff7a5dc384 95
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_26f70b851e8f7a::t_1000afb85cd935 113
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_26f70b851e8f7a::t_38d646636f6dbf 233
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_26f70b851e8f7a::t_9fc9378e70737f 111
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_26f70b851e8f7a::t_9b5389db28c418 96
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecording.spec.ts
+  s_26f70b851e8f7a::t_c1ac15653e3bde 4,36,49-51,63-81,128,136
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_26f70b851e8f7a::t_a6763d7500d87c 1,8-9,20,22,25,30,90-91,101-103,254-256,268-425
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_26f70b851e8f7a::t_eb2f0e4030d7d0 59
+src/modules/Transport/useCases/transportControls/finalizeAutomaticRecording.ts
+  s_26f70b851e8f7a::t_011ba03d8e0444 1-2,14-20,23-27
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_26f70b851e8f7a::t_d2d1c15fae2403 19-25,70-88,162
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_26f70b851e8f7a::t_63e051522b54ee 2,19,23-26
+tests/e2e/mixerChannelGainTestId.spec.ts
+  s_26f70b851e8f7a::t_625ece4081c1c7 121-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88767576ccb1d452fa89a245a8da56952bed0b50",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
