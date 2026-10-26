@@ -396,6 +396,198 @@ describe('ExpandedChannelStrip', () => {
         );
     });
 
+    it('opens the four track pan scalar actions from the pan knob', () => {
+        trackStore.set({ tracks: [createProjectTrack({ pan: 12.25 })], selectedTrackId: null, ghostClips: [] });
+        renderWithTooltip(
+            <ExpandedChannelStrip track={{ ...mockTrack, pan: 12.25 }} isSelected={false} widthClass="w-40" />
+        );
+
+        const knob = screen.getByRole('slider', { name: 'Track 1 pan' });
+        fireEvent.contextMenu(knob, { clientX: 42, clientY: 17 });
+
+        const menu = screen.getByRole('menu', { name: 'Track 1 pan actions' });
+        expect(['Reset to Default', 'Enter Value', 'Copy Value', 'Paste Value']).toEqual(
+            Array.from(menu.querySelectorAll('[role="menuitem"]'), (item) => item.textContent)
+        );
+    });
+
+    it('opens the pan menu from Shift+F10, focuses its first action, and restores knob focus on Escape', () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+        const knob = screen.getByRole('slider', { name: 'Track 1 pan' });
+        knob.focus();
+        fireEvent.keyDown(knob, { key: 'F10', shiftKey: true });
+
+        const menu = screen.getByRole('menu', { name: 'Track 1 pan actions' });
+        expect(screen.getByRole('menuitem', { name: 'Reset to Default' })).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'Escape' });
+        expect(screen.queryByRole('menu', { name: 'Track 1 pan actions' })).not.toBeInTheDocument();
+        expect(knob).toHaveFocus();
+    });
+
+    it('keeps an outside focus choice when the pan menu closes', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 pan' }));
+        const menu = screen.getByRole('menu', { name: 'Track 1 pan actions' });
+        const outside = document.createElement('button');
+        document.body.append(outside);
+        outside.focus();
+        fireEvent.blur(menu, { relatedTarget: outside });
+        await waitFor(() => expect(outside).toHaveFocus());
+        outside.remove();
+    });
+
+    it('resets, enters a fractional raw pan, and copies and pastes the exact canonical value', async () => {
+        trackStore.set({ tracks: [createProjectTrack({ pan: 12.25 })], selectedTrackId: null, ghostClips: [] });
+        const writeText = vi.fn(() => Promise.resolve());
+        const readText = vi.fn(() => Promise.resolve('pan:-3.125'));
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText, readText } });
+        mocks.promptUser.mockResolvedValue('7.125');
+        renderWithTooltip(
+            <ExpandedChannelStrip track={{ ...mockTrack, pan: 12.25 }} isSelected={false} widthClass="w-40" />
+        );
+        const knob = screen.getByRole('slider', { name: 'Track 1 pan' });
+        const open = () => fireEvent.contextMenu(knob, { clientX: 42, clientY: 17 });
+
+        open();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Reset to Default' }));
+        await waitFor(() =>
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
+                {
+                    type: 'setTrackPan',
+                    payload: {
+                        trackId: 'track-1',
+                        pan: 0,
+                        expectedPan: 12.25,
+                        automationRecordingPolicy: 'suppressed',
+                    },
+                },
+                expect.objectContaining({ shouldExecute: expect.any(Function), onCommitted: expect.any(Function) })
+            )
+        );
+
+        open();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+        await waitFor(() =>
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith(
+                {
+                    type: 'setTrackPan',
+                    payload: {
+                        trackId: 'track-1',
+                        pan: 7.125,
+                        expectedPan: 12.25,
+                        automationRecordingPolicy: 'suppressed',
+                    },
+                },
+                expect.anything()
+            )
+        );
+
+        open();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Value' }));
+        await waitFor(() => expect(writeText).toHaveBeenCalledWith('pan:12.25'));
+        open();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        await waitFor(() =>
+            expect(mocks.executeUserAppAction).toHaveBeenLastCalledWith(
+                {
+                    type: 'setTrackPan',
+                    payload: {
+                        trackId: 'track-1',
+                        pan: -3.125,
+                        expectedPan: 12.25,
+                        automationRecordingPolicy: 'suppressed',
+                    },
+                },
+                expect.objectContaining({ shouldExecute: expect.any(Function) })
+            )
+        );
+    });
+
+    it.each(['50.1', '-50.1', '0x10', '12junk', 'Infinity'])(
+        'rejects invalid raw pan input %s without dispatch',
+        async (input) => {
+            trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+            mocks.promptUser.mockResolvedValue(input);
+            renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+            fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 pan' }));
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+
+            await waitFor(() =>
+                expect(mocks.notifyUser).toHaveBeenCalledWith('Enter a finite track pan value from -50 to 50.', 'error')
+            );
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        }
+    );
+
+    it('drops a pending pan clipboard value after the target track is replaced', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        let resolveRead: ((text: string) => void) | undefined;
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: {
+                readText: vi.fn(
+                    () =>
+                        new Promise<string>((resolve) => {
+                            resolveRead = resolve;
+                        })
+                ),
+            },
+        });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 pan' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+
+        trackStore.set({ tracks: [createProjectTrack({ pan: 4 })], selectedTrackId: null, ghostClips: [] });
+        await act(async () => resolveRead?.('pan:12.5'));
+
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it('drops a pending pan prompt after the project changes', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        let resolvePrompt: ((value: string | null) => void) | undefined;
+        mocks.promptUser.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolvePrompt = resolve;
+                })
+        );
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 pan' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
+
+        mocks.projectEpoch += 1;
+        await act(async () => resolvePrompt?.('12.5'));
+
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
+    it.each(['gain:0.5', 'pan:0x10', 'pan:Infinity', 'pan:50.01', 'pan:1junk'])(
+        'rejects noncanonical or invalid pan clipboard payload %s',
+        async (payload) => {
+            trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+            Object.defineProperty(navigator, 'clipboard', {
+                configurable: true,
+                value: { readText: vi.fn(() => Promise.resolve(payload)) },
+            });
+            renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+            fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 pan' }));
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+
+            await waitFor(() =>
+                expect(mocks.notifyUser).toHaveBeenCalledWith(
+                    'Clipboard does not contain a valid track pan value.',
+                    'error'
+                )
+            );
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        }
+    );
+
     it('rejects malformed gain clipboard text without dispatch', async () => {
         trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
         Object.defineProperty(navigator, 'clipboard', {

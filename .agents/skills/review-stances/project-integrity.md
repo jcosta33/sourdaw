@@ -572,3 +572,23 @@ availability in its existing namespace, including unrelated owner buckets. Exerc
 mutable document as well as the immutable root: proxy identity is not an ownership witness, and
 canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
 unrelated programme edit and a valid same-target successor that commits the final owning projection.
+
+## 2026-10-26 — Stop finalization must retain its recording root (issue #5517)
+
+Commit `0249a95cc5292` added Stop's clip and take-lane closure against the current stores without
+a captured root witness; its Git message identifies no pull request. PR #4564 (`40c5218228c5`)
+added MIDI `commitRecording` through `executeAppAction` and catch-time discard without carrying
+recording-root authority across the dispatch's existing snapshot-transaction wait. A root
+replacement could therefore redirect closure, a queued commit or failure cleanup into its
+successor. Historical reviewer prompts, models and tiers are unverified; the missing probe was
+root replacement at both Stop entry and queued dispatch resume.
+
+Stage a real take under A, replace the root with B reusing clip identities, then Stop: no B
+closure, history entry or discard is permitted, and the warning must explain refusal. Separately
+hold the real commit before its ownership check, replace the root, and resume; require refusal
+and zero new history/count. Remove dispatch-option forwarding to prove this case fails. Pair
+same-root real commit/Undo/Redo, null legacy witness, empty MIDI outcomes and genuine retirement
+controls. Land one sibling before replacing the root and refuse another afterward: retain the
+landed entry and exactly one settled gesture through Transport's public count consumed by
+Project's owed-save comparison. All-refused adds zero; downstream count filtering cannot prove
+that either Stop caller rejected registration.

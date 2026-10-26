@@ -118,4 +118,69 @@ test.describe('Mixer channel gain — keyboard response', () => {
         await expect(secondGain).toHaveAttribute('aria-valuenow', copiedValue ?? '');
         await expect(page.getByText('Clipboard does not contain a valid track gain value.')).toBeVisible();
     });
+
+    test('track pan menu resets, enters exact values, copies, pastes, and replays pan changes', async ({ page }) => {
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+        const mixer = page.getByRole('region', { name: 'Mixer panel' });
+        const kick = mixer.getByRole('group', { name: 'Kick channel', exact: true });
+        const clap = mixer.getByRole('group', { name: 'Clap channel', exact: true });
+        await expect(kick).toBeVisible({ timeout: 5000 });
+        await expect(clap).toBeVisible({ timeout: 5000 });
+        const kickPan = kick.getByRole('slider', { name: 'Kick pan', exact: true });
+        const clapPan = clap.getByRole('slider', { name: 'Clap pan', exact: true });
+        await expect(kickPan).toBeAttached();
+        await expect(clapPan).toBeAttached();
+        await expect(kickPan).toBeVisible();
+        await expect(clapPan).toBeVisible();
+
+        await kickPan.click({ button: 'right' });
+        const kickMenu = page.getByRole('menu', { name: 'Kick pan actions' });
+        await expect(kickMenu).toBeVisible();
+        await expect(kickMenu.getByRole('menuitem')).toHaveCount(4);
+        await kickMenu.getByRole('menuitem', { name: 'Enter Value' }).click();
+        const prompt = page.getByRole('dialog', { name: 'Enter Track Pan' });
+        await expect(prompt).toBeVisible();
+        await prompt.getByRole('textbox', { name: 'Enter Track Pan' }).fill('8.125');
+        await prompt.getByRole('button', { name: 'Set Pan' }).click();
+        await expect(kickPan).toHaveAttribute('aria-valuenow', '8.125');
+
+        await kickPan.focus();
+        await page.keyboard.press('Shift+F10');
+        await expect(kickMenu.getByRole('menuitem', { name: 'Reset to Default' })).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(kickPan).toHaveAttribute('aria-valuenow', '0');
+
+        await kickPan.click({ button: 'right' });
+        await kickMenu.getByRole('menuitem', { name: 'Enter Value' }).click();
+        await prompt.getByRole('textbox', { name: 'Enter Track Pan' }).fill('-12.375');
+        await prompt.getByRole('button', { name: 'Set Pan' }).click();
+        await expect(kickPan).toHaveAttribute('aria-valuenow', '-12.375');
+        await kickPan.click({ button: 'right' });
+        await kickMenu.getByRole('menuitem', { name: 'Copy Value' }).click();
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('pan:-12.375');
+
+        await clapPan.click({ button: 'right' });
+        const clapMenu = page.getByRole('menu', { name: 'Clap pan actions' });
+        await clapMenu.getByRole('menuitem', { name: 'Enter Value' }).click();
+        await prompt.getByRole('textbox', { name: 'Enter Track Pan' }).fill('4.5');
+        await prompt.getByRole('button', { name: 'Set Pan' }).click();
+        const beforePaste = await clapPan.getAttribute('aria-valuenow');
+        expect(beforePaste).toBe('4.5');
+        await clapPan.click({ button: 'right' });
+        await clapMenu.getByRole('menuitem', { name: 'Paste Value' }).click();
+        await expect(clapPan).toHaveAttribute('aria-valuenow', '-12.375');
+
+        const undo = page.getByRole('button', { name: 'Undo', exact: true });
+        const redo = page.getByRole('button', { name: 'Redo', exact: true });
+        await undo.click();
+        await expect(clapPan).toHaveAttribute('aria-valuenow', beforePaste ?? '');
+        await redo.click();
+        await expect(clapPan).toHaveAttribute('aria-valuenow', '-12.375');
+
+        await page.evaluate(() => navigator.clipboard.writeText('gain:0.25'));
+        await clapPan.click({ button: 'right' });
+        await clapMenu.getByRole('menuitem', { name: 'Paste Value' }).click();
+        await expect(clapPan).toHaveAttribute('aria-valuenow', '-12.375');
+        await expect(page.getByText('Clipboard does not contain a valid track pan value.')).toBeVisible();
+    });
 });
