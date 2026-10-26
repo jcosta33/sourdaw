@@ -1,0 +1,29 @@
+src/modules/Transport/models/TempoMap.ts
+  s_29d8df116c5b92::t_3f8b1bc39ee1e8 226,232,234,236-246,248-252
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_29d8df116c5b92::t_6c2bcf51a86613 754-756
+src/modules/Transport/handlers/transport/__tests__/tempoSourcePrefix.integration.spec.ts
+  s_29d8df116c5b92::t_6c2bcf51a86613 47,179-218,239
+  s_29d8df116c5b92::t_dac964658a81a4 219-238
+src/modules/Transport/models/__tests__/TempoMap.spec.ts
+  s_29d8df116c5b92::t_3f8b1bc39ee1e8 345-347,368-375
+  s_29d8df116c5b92::t_6c2bcf51a86613 338-344,348-360
+  s_29d8df116c5b92::t_0d1e08968da00d 361-367,376-377
+  s_29d8df116c5b92::t_420445b8b37347 378-384
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae7de0c7dd6aeb424e74c175b4f9445b647ec21c",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

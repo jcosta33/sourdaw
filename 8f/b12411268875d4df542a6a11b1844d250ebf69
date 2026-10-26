@@ -1,0 +1,37 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_56b3fc07d41a5a 73
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_29d8df116c5b92::t_0df510c3d5a974 31-53,77
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_29d8df116c5b92::t_2a40fcfb99b7e1 111-122,193
+  s_29d8df116c5b92::t_4e99bf41cb0180 33,62-78,105-110,201-209
+src/modules/Arrangement/useCases/clipEditing/captureRestoreClipSplitCommitValidation.ts
+  s_29d8df116c5b92::t_d0736e91459ec7 17,230-245,261,263
+  s_29d8df116c5b92::t_eb01927e7056e6 202-204,227-229,267
+  s_29d8df116c5b92::t_2289e24569b514 255
+  s_29d8df116c5b92::t_fbcf96fbb42431 246-254,256-260,262,264-266
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_29d8df116c5b92::t_56b3fc07d41a5a 18
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_29d8df116c5b92::t_6586d3f780b474 16,152-185,224
+src/modules/Arrangement/useCases/clipEditing/captureRestoreClipCommitValidation.ts
+  s_29d8df116c5b92::t_8a76d30b229aa2 17-18
+src/modules/Arrangement/useCases/clipEditing/identityCounts.ts
+  s_29d8df116c5b92::t_782a01efca107b 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8fb12411268875d4df542a6a11b1844d250ebf69",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
