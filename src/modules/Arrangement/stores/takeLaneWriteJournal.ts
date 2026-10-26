@@ -99,6 +99,13 @@ type TakeFieldOperation =
           readonly takeId: string;
           readonly expected: OptionalMidiSourceValue;
           readonly replacement: OptionalMidiSourceValue;
+      }
+    | {
+          readonly kind: 'take-midi-source-phase';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: number;
+          readonly replacement: number;
       };
 
 export type TakeLaneWriteOperation =
@@ -283,13 +290,30 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
     const beforeMidiSource = optionalMidiSource(before);
     const nextMidiSource = optionalMidiSource(next);
     if (!valuesEqual(beforeMidiSource, nextMidiSource)) {
-        operations.push({
-            kind: 'take-midi-source-field',
-            laneId,
-            takeId: before.id,
-            expected: beforeMidiSource,
-            replacement: nextMidiSource,
-        });
+        if (
+            beforeMidiSource.present &&
+            nextMidiSource.present &&
+            valuesEqual(
+                { ...beforeMidiSource.value, phaseHeadBeat: 0 },
+                { ...nextMidiSource.value, phaseHeadBeat: 0 }
+            )
+        ) {
+            operations.push({
+                kind: 'take-midi-source-phase',
+                laneId,
+                takeId: before.id,
+                expected: beforeMidiSource.value.phaseHeadBeat,
+                replacement: nextMidiSource.value.phaseHeadBeat,
+            });
+        } else {
+            operations.push({
+                kind: 'take-midi-source-field',
+                laneId,
+                takeId: before.id,
+                expected: beforeMidiSource,
+                replacement: nextMidiSource,
+            });
+        }
     }
     return operations;
 }
@@ -563,6 +587,14 @@ function applyTakeFieldOperation(
         } else {
             delete replacementTake[operation.field];
         }
+    } else if (operation.kind === 'take-midi-source-phase') {
+        if (!take.midiSource || !Object.is(take.midiSource.phaseHeadBeat, operation.expected)) {
+            return undefined;
+        }
+        replacementTake = {
+            ...take,
+            midiSource: { ...take.midiSource, phaseHeadBeat: operation.replacement },
+        };
     } else if (operation.kind === 'take-midi-source-field') {
         if (!valuesEqual(optionalMidiSource(take), operation.expected)) {
             return undefined;

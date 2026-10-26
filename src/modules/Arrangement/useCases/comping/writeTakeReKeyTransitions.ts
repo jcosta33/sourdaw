@@ -102,7 +102,22 @@ function reconcileTransitionTakes(
             continue;
         }
         if (modifiedIds.has(target.id)) {
-            reconciled.push({ ...target, selected: liveTake.selected });
+            const source = fromById.get(target.id);
+            const peerRows =
+                source?.midiSource &&
+                target.midiSource &&
+                liveTake.midiSource &&
+                source.midiSource.sourceClipId === liveTake.midiSource.sourceClipId &&
+                valuesEqual(source.midiSource.rows, target.midiSource.rows)
+                    ? liveTake.midiSource.rows
+                    : undefined;
+            reconciled.push({
+                ...target,
+                selected: liveTake.selected,
+                ...(peerRows && target.midiSource
+                    ? { midiSource: { ...target.midiSource, rows: structuredClone(peerRows) } }
+                    : {}),
+            });
             continue;
         }
         reconciled.push(liveTake);
