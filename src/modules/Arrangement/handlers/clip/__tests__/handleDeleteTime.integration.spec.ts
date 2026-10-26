@@ -52,6 +52,7 @@ import {
 } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
+import { audioSourceSnapshotAtBeat, type AudioSourceTile } from '#/utils/audioSourceTime';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -62,6 +63,7 @@ import { trackStore, type TrackStoreState } from '../../../stores/trackStore';
 import { setWarpState, warpStateStore } from '../../../stores/warpStates';
 import { deleteTimeRange } from '../../../useCases/clipEditing/deleteTimeRange';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { liveTempoTimeline } from '../../../useCases/liveTempoTimeline';
 import { resolveClipsWithComping } from '../../../useCases/resolveComping';
 import { setTimeOperationDependencies } from '../../../useCases/timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../../../useCases/timeOperations/timeOperationStateCodec';
@@ -156,6 +158,29 @@ function expectAuthority(): void {
 
 function coverage(): number[][] {
     return resolveClipsWithComping('track-1', clips()).map((clip) => [clip.startBeat, clip.endBeat]);
+}
+
+function physicalGapCoverage(tiles: readonly AudioSourceTile[]): (string | number)[][] {
+    return tiles.map((tile) => {
+        const start = audioSourceSnapshotAtBeat(
+            tile.audioSource,
+            tile.startBeat,
+            1,
+            false,
+            liveTempoTimeline.secondsAtBeat
+        );
+        const middle = audioSourceSnapshotAtBeat(
+            tile.audioSource,
+            (tile.startBeat + tile.endBeat) / 2,
+            1,
+            false,
+            liveTempoTimeline.secondsAtBeat
+        );
+        if (!start || !middle) {
+            throw new Error('Expected physical audio source throughout the gap');
+        }
+        return [tile.clipId, tile.startBeat, tile.endBeat, start.audioOffsetSeconds, middle.audioOffsetSeconds];
+    });
 }
 
 function arrangeJoinedOwners(): void {
@@ -732,6 +757,12 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             await peerComp(orphan, right.startBeat + 1, right.endBeat - 1);
             const survivor = { ...createTake('source', 'Peer surviving clip', 0, 2), selected: true };
             await peerComp(survivor, 0.5, 1.5);
+            const survivorRegion = structuredClone(
+                lane().activeCompRegions.find((region) => region.takeId === survivor.id)
+            );
+            if (!survivorRegion) {
+                throw new Error('Expected the physical source of the surviving peer comp');
+            }
             mutateCrdtDoc<Project>({
                 id: 'root',
                 changeFn: (project) => {
@@ -745,7 +776,7 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             expect(undoStore.value?.future).toHaveLength(1);
             expect(clips().map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual([['source', 0, 10]]);
             expect(lane().takes).toEqual([{ ...original, selected: true }, survivor]);
-            expect(lane().activeCompRegions).toContainEqual({ startBeat: 0.5, endBeat: 1.5, takeId: survivor.id });
+            expect(lane().activeCompRegions).toContainEqual(survivorRegion);
             expect(lane().activeCompRegions.every((region) => region.takeId !== orphan.id)).toBe(true);
             expect(coverage()).toEqual([
                 [0, 0.5],
@@ -757,10 +788,16 @@ describe('Delete Time take ownership through Command and CRDT', () => {
 
             const afterUndo = createTake('source', 'Peer after undo', 0, 2);
             await peerComp(afterUndo, 1.6, 1.8);
+            const afterUndoRegion = structuredClone(
+                lane().activeCompRegions.find((region) => region.takeId === afterUndo.id)
+            );
+            if (!afterUndoRegion) {
+                throw new Error('Expected the physical source of the later peer comp');
+            }
             await redo();
             expect(lane().takes).toContainEqual(survivor);
             expect(lane().takes).toContainEqual(afterUndo);
-            expect(lane().activeCompRegions).toContainEqual({ startBeat: 1.6, endBeat: 1.8, takeId: afterUndo.id });
+            expect(lane().activeCompRegions).toContainEqual(afterUndoRegion);
             expect(lane().takes.find((take) => take.id === original.id)?.selected).toBe(true);
             expect(lane().takes.some((take) => take.id === orphan.id)).toBe(false);
             expectAuthority();
@@ -906,25 +943,48 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             if (!right) {
                 throw new Error('Expected the minted right fragment');
             }
+            const deletedRightBaseTiles = structuredClone(
+                lane().baseGapAudioSources?.filter((tile) => tile.clipId === right.id) ?? []
+            );
+            expect(deletedRightBaseTiles).toHaveLength(1);
             const orphan = createTake(right.id, 'Peer fragment', right.startBeat, right.endBeat);
             await peerComp(orphan, right.startBeat + 1, right.endBeat - 1);
             const survivor = { ...createTake('source', 'Peer survivor', 0, 2), selected: true };
             await peerComp(survivor, 0.5, 1.5);
+            const survivorRegion = structuredClone(
+                lane().activeCompRegions.find((region) => region.takeId === survivor.id)
+            );
+            if (!survivorRegion) {
+                throw new Error('Expected the physical source of the surviving peer comp');
+            }
+            const survivingBaseTiles = structuredClone(
+                lane().baseGapAudioSources?.filter((tile) => tile.clipId === 'source') ?? []
+            );
+            expect(survivingBaseTiles).toHaveLength(2);
             const deletedClips = structuredClone(clips());
-            await undo();
+            expect((await undo()).headConsumed).toBe(true);
             expect(clips().map((clip) => [clip.id, clip.startBeat, clip.endBeat])).toEqual([['source', 0, 10]]);
             expect(lane().takes).toEqual([survivor]);
-            expect(lane().activeCompRegions).toEqual([{ startBeat: 0.5, endBeat: 1.5, takeId: survivor.id }]);
+            expect(lane().activeCompRegions).toEqual([survivorRegion]);
+            expect(lane().baseGapAudioSources).toEqual(survivingBaseTiles);
             expect(coverage()).toEqual([
                 [0, 0.5],
                 [0.5, 1.5],
-                [1.5, 10],
+                [1.5, 2],
+                [2, 10],
             ]);
             expectAuthority();
             await redo();
             expect(clips()).toEqual(deletedClips);
             expect(lane().takes).toEqual([survivor]);
-            expect(lane().activeCompRegions).toEqual([{ startBeat: 0.5, endBeat: 1.5, takeId: survivor.id }]);
+            expect(lane().activeCompRegions).toEqual([survivorRegion]);
+            expect(physicalGapCoverage(lane().baseGapAudioSources ?? [])).toEqual(
+                physicalGapCoverage(
+                    [...survivingBaseTiles, ...deletedRightBaseTiles].sort(
+                        (a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat
+                    )
+                )
+            );
             expectAuthority();
         }
     );
@@ -938,6 +998,7 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             flushAutomergeStorageWrites();
             const originalClips = structuredClone(clips());
             await removeTime(route, 2, 6);
+            const deletedLane = structuredClone(lane());
             const right = clips().find((clip) => clip.id !== 'source');
             if (!right) {
                 throw new Error('Expected the minted right fragment');
@@ -964,8 +1025,8 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             expectAuthority();
 
             expect(clips()).toEqual(deletedClips);
-            expect(takeLaneStore.value?.lanes).toEqual([emptyLane]);
-            expect(getCrdtDoc<Project>('root')?.takeLanes.lanes).toEqual([emptyLane]);
+            expect(takeLaneStore.value?.lanes).toEqual([deletedLane]);
+            expect(getCrdtDoc<Project>('root')?.takeLanes.lanes).toEqual([deletedLane]);
             let expectedCoverage = [
                 [0, 2],
                 [6, 10],

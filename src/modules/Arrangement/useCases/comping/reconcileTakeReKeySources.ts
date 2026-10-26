@@ -97,17 +97,11 @@ export function reconcileTransitionBaseGaps(
     const expected: OptionalAudioSourceTiles = from === undefined ? { present: false } : { present: true, value: from };
     const replacement: OptionalAudioSourceTiles = to === undefined ? { present: false } : { present: true, value: to };
     const exact = reconcileBaseGapAudioSourceDelta(current, expected, replacement);
-    if (exact || direction !== 'restore' || !from) {
+    if (exact) {
         return exact;
     }
 
-    // A later comp choice can divide a producer-owned gap into exact source
-    // fragments and source-bearing regions. Admit that division, but never an
-    // uncovered or changed physical source on a clip that is still live.
-    const fromKeys = new Set(from.map(canonicalJson));
-    const toKeys = new Set((to ?? []).map(canonicalJson));
-    const removed = from.filter((tile) => !toKeys.has(canonicalJson(tile)));
-    if (removed.length === 0 || (to ?? []).some((tile) => !fromKeys.has(canonicalJson(tile)))) {
+    if (direction === 'apply' && ((from?.length ?? 0) > 0 || !to?.length)) {
         return null;
     }
     const trackState = getTrackStoreState();
@@ -178,6 +172,43 @@ export function reconcileTransitionBaseGaps(
         }
         return true;
     };
+    if (direction === 'apply') {
+        // An initially empty lane can acquire peer comp subdivisions before
+        // redo. Keep their exact physical source and add only the new clip's
+        // non-overlapping tiles; a changed or uncovered source still refuses.
+        const additions = to ?? [];
+        const result = [...liveTiles];
+        for (const tile of additions) {
+            const overlaps = result.some(
+                (candidate) =>
+                    candidate.clipId === tile.clipId &&
+                    candidate.startBeat < tile.endBeat &&
+                    tile.startBeat < candidate.endBeat
+            );
+            if (overlaps) {
+                if (!sourceIsCovered(tile)) {
+                    return null;
+                }
+                continue;
+            }
+            result.push(structuredClone(tile));
+        }
+        result.sort((a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat);
+        return { present: true, value: result };
+    }
+
+    // A later comp choice can divide a producer-owned gap into exact source
+    // fragments and source-bearing regions. Admit that division, but never an
+    // uncovered or changed physical source on a clip that is still live.
+    if (!from) {
+        return null;
+    }
+    const fromKeys = new Set(from.map(canonicalJson));
+    const toKeys = new Set((to ?? []).map(canonicalJson));
+    const removed = from.filter((tile) => !toKeys.has(canonicalJson(tile)));
+    if (removed.length === 0 || (to ?? []).some((tile) => !fromKeys.has(canonicalJson(tile)))) {
+        return null;
+    }
     if (removed.some((tile) => liveClips.has(tile.clipId) && !sourceIsCovered(tile))) {
         return null;
     }

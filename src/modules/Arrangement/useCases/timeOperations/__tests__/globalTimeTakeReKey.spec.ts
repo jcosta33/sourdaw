@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type AudioSourceSnapshot } from '#/utils/audioSourceTime';
 
 const mocks = vi.hoisted(() => {
     const trackState = { value: null as unknown };
@@ -62,6 +63,9 @@ import { createTake, createTakeLane, type Take, type TakeLane } from '../../../m
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { type Clip } from '../../../stores/trackStore';
 import { resolveClipsWithComping } from '../../resolveComping';
+import { captureResolvedAudioSourceSnapshot } from '../../comping/captureResolvedAudioSourceSnapshot';
+import { resolveCompingProgramme } from '../../comping/resolveCompingProgramme';
+import { liveTempoTimeline } from '../../liveTempoTimeline';
 import { createUndoableGlobalTimeOperation } from '../createUndoableGlobalTimeOperation';
 import { executeGlobalTimeOperation } from '../executeGlobalTimeOperation';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';
@@ -128,6 +132,29 @@ function setCompedClip(input: { clipId: string; startBeat: number; endBeat: numb
     return { take, lane };
 }
 
+function physicalSourceBeforeDelete(clipId: string, startBeat: number, endBeat: number): AudioSourceSnapshot {
+    const fragment = resolveCompingProgramme('track-1', liveTrackClips(), takeLaneStore.value, liveTempoTimeline).find(
+        (clip) => clip.id === clipId && clip.startBeat >= startBeat && clip.endBeat <= endBeat
+    );
+    if (!fragment) {
+        throw new Error(`Expected the physical source of ${clipId} before Delete Time`);
+    }
+    const source = captureResolvedAudioSourceSnapshot(fragment, liveTempoTimeline);
+    if (!source) {
+        throw new Error(`Expected a canonical audio source for ${clipId}`);
+    }
+    return source;
+}
+
+function shiftedSource(source: AudioSourceSnapshot, beats: number): AudioSourceSnapshot {
+    return {
+        ...source,
+        startBeat: source.startBeat + beats,
+        loopOriginBeat: source.loopOriginBeat + beats,
+        audioLoopPassOriginBeat: source.audioLoopPassOriginBeat + beats,
+    };
+}
+
 function liveTrackClips(): readonly Clip[] {
     const state = mocks.trackState.value as { tracks: Array<{ clips: Clip[] }> };
     return state.tracks[0]?.clips ?? [];
@@ -165,6 +192,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
 
     it('re-keys the take and comp region of a clip that starts inside the deleted span and outlives it', () => {
         const { take } = setCompedClip({ clipId: 'tail', startBeat: 4, endBeat: 10 });
+        const source = physicalSourceBeforeDelete('tail', 4, 10);
         registerIdleDependencies();
 
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
@@ -180,7 +208,9 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         // The take follows the material it still covers: re-keyed onto the
         // fragment, its deleted head [4,6] gone, the rest shifted with it.
         expect(liveLane().takes).toEqual([{ ...take, clipId: fragment.id, startBeat: 2, endBeat: 6 }]);
-        expect(liveLane().activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: take.id }]);
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 6, takeId: take.id, audioSource: shiftedSource(source, -4) },
+        ]);
         // Before the fix the take stayed keyed to the deleted id at [4,10] and
         // its region kept advancing the comp cursor: the fragment resolved
         // only [2,4] and played silence over [4,6].
@@ -191,6 +221,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
 
     it('splits the take and comp region of a clip spanning the deleted span', () => {
         const { take } = setCompedClip({ clipId: 'span', startBeat: 0, endBeat: 10 });
+        const source = physicalSourceBeforeDelete('span', 0, 10);
         registerIdleDependencies();
 
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
@@ -214,8 +245,8 @@ describe('delete time re-keys take-lane state (#4841)', () => {
             { ...take, id: rightTakeId, clipId: right.id, startBeat: 2, endBeat: 6 },
         ]);
         expect(liveLane().activeCompRegions).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: take.id },
-            { startBeat: 2, endBeat: 6, takeId: rightTakeId },
+            { startBeat: 0, endBeat: 2, takeId: take.id, audioSource: source },
+            { startBeat: 2, endBeat: 6, takeId: rightTakeId, audioSource: shiftedSource(source, -4) },
         ]);
         // Before the fix the right fragment had no take at all and the stale
         // region still comped its span: it resolved to nothing.
@@ -227,6 +258,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
 
     it('shifts the take and region of a clip the ripple moves left, keeping their ids', () => {
         const { take } = setCompedClip({ clipId: 'keeper', startBeat: 6, endBeat: 10 });
+        const source = physicalSourceBeforeDelete('keeper', 6, 10);
         registerIdleDependencies();
 
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
@@ -236,11 +268,14 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         expect(keeper.id).toBe('keeper');
         expect([keeper.startBeat, keeper.endBeat]).toEqual([2, 6]);
         expect(liveLane().takes).toEqual([{ ...take, startBeat: 2, endBeat: 6 }]);
-        expect(liveLane().activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: take.id }]);
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 6, takeId: take.id, audioSource: shiftedSource(source, -4) },
+        ]);
     });
 
     it('restores the original takes and regions on undo and re-keys them again on redo', () => {
         const { take, lane } = setCompedClip({ clipId: 'span', startBeat: 0, endBeat: 10 });
+        const source = physicalSourceBeforeDelete('span', 0, 10);
         registerIdleDependencies();
 
         const initialResult = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
@@ -272,8 +307,8 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         // included — they ride the plan, so redo cannot drift.
         expect(liveLane().takes.map((candidate) => candidate.id)).toEqual([take.id, rightTakeId]);
         expect(liveLane().activeCompRegions).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: take.id },
-            { startBeat: 2, endBeat: 6, takeId: rightTakeId },
+            { startBeat: 0, endBeat: 2, takeId: take.id, audioSource: source },
+            { startBeat: 2, endBeat: 6, takeId: rightTakeId, audioSource: shiftedSource(source, -4) },
         ]);
         expect(resolveClipsWithComping('track-1', [...clips]).map((clip) => [clip.startBeat, clip.endBeat])).toEqual([
             [0, 2],
@@ -283,6 +318,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
 
     it('carries the re-keyed lane in the inverse plan, alongside an empty retirement', () => {
         const { take, lane } = setCompedClip({ clipId: 'tail', startBeat: 4, endBeat: 10 });
+        const source = physicalSourceBeforeDelete('tail', 4, 10);
         registerIdleDependencies();
 
         const applied = requireApplied(
@@ -303,7 +339,9 @@ describe('delete time re-keys take-lane state (#4841)', () => {
                         takesBefore: [take],
                         takesAfter: [{ ...take, clipId: fragment.id, startBeat: 2, endBeat: 6 }],
                         regionsBefore: [{ startBeat: 4, endBeat: 10, takeId: take.id }],
-                        regionsAfter: [{ startBeat: 2, endBeat: 6, takeId: take.id }],
+                        regionsAfter: [
+                            { startBeat: 2, endBeat: 6, takeId: take.id, audioSource: shiftedSource(source, -4) },
+                        ],
                     },
                 ],
             },
@@ -341,6 +379,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
             ],
         };
         takeLaneStore.set({ lanes: [lane] });
+        const source = physicalSourceBeforeDelete('keeper', 6, 10);
         registerIdleDependencies();
 
         const applied = requireApplied(
@@ -353,7 +392,9 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         // retired region rode the transition's after side verbatim and the
         // survivor's remapped region was dropped: the lane held no region.
         expect(liveLane().takes).toEqual([{ ...keeperTake, startBeat: 2, endBeat: 6 }]);
-        expect(liveLane().activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: keeperTake.id }]);
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 6, takeId: keeperTake.id, audioSource: shiftedSource(source, -4) },
+        ]);
         const keeperClip = liveTrackClips()[0]!;
         expect(resolveClipsWithComping('track-1', [keeperClip]).map((clip) => [clip.startBeat, clip.endBeat])).toEqual([
             [2, 6],
@@ -374,7 +415,9 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         transaction.redo();
 
         expect(liveLane().takes).toEqual([{ ...keeperTake, startBeat: 2, endBeat: 6 }]);
-        expect(liveLane().activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: keeperTake.id }]);
+        expect(liveLane().activeCompRegions).toEqual([
+            { startBeat: 2, endBeat: 6, takeId: keeperTake.id, audioSource: shiftedSource(source, -4) },
+        ]);
     });
 
     it('maps two regions of one take through a split, keeping them sorted and non-overlapping', () => {
@@ -392,6 +435,8 @@ describe('delete time re-keys take-lane state (#4841)', () => {
             ],
         };
         takeLaneStore.set({ lanes: [lane] });
+        const firstSource = physicalSourceBeforeDelete('span', 0, 6);
+        const secondSource = physicalSourceBeforeDelete('span', 6, 10);
         registerIdleDependencies();
 
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } });
@@ -402,8 +447,8 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         // take; its portion right of the span is gone with the deleted
         // material. The second region lands whole on the minted fragment take.
         expect(liveLane().activeCompRegions).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: take.id },
-            { startBeat: 2, endBeat: 6, takeId: rightTakeId },
+            { startBeat: 0, endBeat: 2, takeId: take.id, audioSource: firstSource },
+            { startBeat: 2, endBeat: 6, takeId: rightTakeId, audioSource: shiftedSource(secondSource, -4) },
         ]);
         const clips = liveTrackClips();
         expect(resolveClipsWithComping('track-1', [...clips]).map((clip) => [clip.startBeat, clip.endBeat])).toEqual([
@@ -482,6 +527,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
             ],
         };
         takeLaneStore.set({ lanes: [lane] });
+        const survivorSource = physicalSourceBeforeDelete('survivor', 8, 12);
         registerIdleDependencies();
 
         const applied = requireApplied(
@@ -492,7 +538,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         // survivor's region lands whole on the freed span.
         expect(liveLane().activeCompRegions).toEqual([
             { startBeat: 0, endBeat: 2, takeId: staleTake.id },
-            { startBeat: 4, endBeat: 8, takeId: survivorTake.id },
+            { startBeat: 4, endBeat: 8, takeId: survivorTake.id, audioSource: shiftedSource(survivorSource, -4) },
         ]);
 
         const transaction = createUndoableGlobalTimeOperation({ initialResult: applied });
@@ -509,15 +555,14 @@ describe('delete time re-keys take-lane state (#4841)', () => {
 
         expect(liveLane().activeCompRegions).toEqual([
             { startBeat: 0, endBeat: 2, takeId: staleTake.id },
-            { startBeat: 4, endBeat: 8, takeId: survivorTake.id },
+            { startBeat: 4, endBeat: 8, takeId: survivorTake.id, audioSource: shiftedSource(survivorSource, -4) },
         ]);
     });
 
-    it('records no re-key transition for a lane whose only take and region retire with their clip', () => {
+    it('records the surviving base source when the only take and region retire with their clip', () => {
         // The lane's only take comps a clip the span fully removes, while a
-        // sibling clip ripples left. The retirement leg owns the doomed take
-        // and region wholesale: the re-key capture must not emit a transition
-        // for this lane.
+        // sibling clip ripples left. Retirement owns the doomed take and
+        // region; the transition owns the moved sibling's base source.
         setTracks([
             createClip({ id: 'doomed', startBeat: 2, endBeat: 6 }),
             createClip({ id: 'survivor', startBeat: 8, endBeat: 12 }),
@@ -529,15 +574,33 @@ describe('delete time re-keys take-lane state (#4841)', () => {
             activeCompRegions: [{ startBeat: 2, endBeat: 6, takeId: doomedTake.id }],
         };
         takeLaneStore.set({ lanes: [lane] });
+        const survivorSource = physicalSourceBeforeDelete('survivor', 8, 12);
         registerIdleDependencies();
 
         const applied = requireApplied(
             executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 2, endBeat: 6 } })
         );
 
-        const slot = applied.inversePlan.takeLanes as { reKeyedLanes?: unknown } | null;
-        expect(slot).not.toBeNull();
-        expect(slot?.reKeyedLanes ?? []).toEqual([]);
+        expect(applied.inversePlan).toMatchObject({
+            takeLanes: {
+                reKeyedLanes: [
+                    {
+                        takesBefore: [doomedTake],
+                        takesAfter: [doomedTake],
+                        regionsBefore: [{ startBeat: 2, endBeat: 6, takeId: doomedTake.id }],
+                        regionsAfter: [],
+                        baseGapAudioSourcesAfter: [
+                            {
+                                clipId: 'survivor',
+                                startBeat: 4,
+                                endBeat: 8,
+                                audioSource: shiftedSource(survivorSource, -4),
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
     });
 
     it('clamps a stale-wide region when the clamp is the lane’s only change', () => {
@@ -633,10 +696,10 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         expect(liveLane().activeCompRegions).toEqual([]);
     });
 
-    it('emits no transition for a stale region that ends at the deleted span’s left edge', () => {
+    it('keeps a stale region ending at the deleted span’s left edge and records the moved base source', () => {
         // The overhang ends exactly where the deletion starts: the region is
-        // already correct on the after side, so carrying it through a
-        // transition would record a no-op.
+        // already correct on the after side. The sibling's moved base source
+        // still needs a transition to preserve its physical media position.
         setTracks([
             createClip({ id: 'stale-host', startBeat: 0, endBeat: 1 }),
             createClip({ id: 'mover', startBeat: 8, endBeat: 12 }),
@@ -648,6 +711,7 @@ describe('delete time re-keys take-lane state (#4841)', () => {
             activeCompRegions: [{ startBeat: 0, endBeat: 2, takeId: take.id }],
         };
         takeLaneStore.set({ lanes: [lane] });
+        const moverSource = physicalSourceBeforeDelete('mover', 8, 12);
         registerIdleDependencies();
 
         const applied = requireApplied(
@@ -655,7 +719,26 @@ describe('delete time re-keys take-lane state (#4841)', () => {
         );
 
         expect(liveLane().activeCompRegions).toEqual([{ startBeat: 0, endBeat: 2, takeId: take.id }]);
-        expect(applied.inversePlan).toMatchObject({ takeLanes: null });
+        expect(applied.inversePlan).toMatchObject({
+            takeLanes: {
+                reKeyedLanes: [
+                    {
+                        takesBefore: [take],
+                        takesAfter: [take],
+                        regionsBefore: [{ startBeat: 0, endBeat: 2, takeId: take.id }],
+                        regionsAfter: [{ startBeat: 0, endBeat: 2, takeId: take.id }],
+                        baseGapAudioSourcesAfter: [
+                            {
+                                clipId: 'mover',
+                                startBeat: 4,
+                                endBeat: 8,
+                                audioSource: shiftedSource(moverSource, -4),
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
     });
 
     it('drops a stale region wholly right of the span when a sibling clip ripples left', () => {
