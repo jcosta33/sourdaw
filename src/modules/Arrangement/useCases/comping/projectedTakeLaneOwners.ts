@@ -5,56 +5,35 @@ import {
 } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
+import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { replaceBaseGapAudioSources } from '../../stores/takeLaneWriteJournal';
+import { preparedClipSplits } from '../clipEditing/preparedClipSplit';
 
 import { reconcileLane } from './reconcileLane';
-import { regionsOverlap } from './regionsOverlap';
+import { reconcileTransitionBaseGaps, reconcileTransitionRegions } from './reconcileTakeReKeySources';
 
 type TakeLaneOwners = TakeLane;
 
 function restoreRetiredOwners(lanes: TakeLaneOwners[], captures: readonly RetiredTakeLaneSnapshot[]): void {
-    for (const { lane, retiredTakeIds } of captures) {
-        const restored = lane.takes.filter((take) => retiredTakeIds?.includes(take.id));
-        if (restored.length === 0) {
+    for (const { lane, retiredTakeIds, retiredBaseGapAudioSources } of captures) {
+        const targetIndex = lanes.findIndex((live) => live.id === lane.id || live.trackId === lane.trackId);
+        let target: TakeLaneOwners;
+        if (targetIndex === -1) {
+            target = { id: lane.id, trackId: lane.trackId, takes: [], activeCompRegions: [] };
+        } else {
+            target = lanes[targetIndex]!;
+        }
+        const reconciled = reconcileLane(target, lane, retiredTakeIds ?? [], retiredBaseGapAudioSources ?? []);
+        if (!reconciled) {
             continue;
         }
-        const target = lanes.find((live) => live.id === lane.id || live.trackId === lane.trackId);
-        if (!target) {
-            const inserted = reconcileLane({ ...lane, takes: [], activeCompRegions: [] }, lane, retiredTakeIds ?? []);
-            if (inserted) {
-                lanes.push(inserted);
-            }
-            continue;
-        }
-        const reconciled = reconcileLane(target, lane, retiredTakeIds ?? []);
-        if (reconciled) {
-            target.takes = reconciled.takes;
-            target.activeCompRegions = reconciled.activeCompRegions;
+        if (targetIndex === -1) {
+            lanes.push(reconciled);
+        } else {
+            lanes[targetIndex] = reconciled;
         }
     }
-}
-
-function projectRegions(
-    live: readonly CompRegion[],
-    from: readonly CompRegion[],
-    to: readonly CompRegion[],
-    takes: readonly Take[],
-    removedTakeIds: ReadonlySet<string>
-): CompRegion[] {
-    const kept = live.filter(
-        (region) =>
-            !removedTakeIds.has(region.takeId) &&
-            (!from.some((source) => valuesEqual(region, source)) || to.some((target) => valuesEqual(region, target)))
-    );
-    const additions = to.filter(
-        (region) =>
-            !from.some((source) => valuesEqual(region, source)) &&
-            region.endBeat > region.startBeat &&
-            takes.some((take) => take.id === region.takeId) &&
-            !kept.some((current) => regionsOverlap(current, region))
-    );
-    return [...kept, ...additions].sort((left, right) => left.startBeat - right.startBeat);
 }
 
 function projectReKeyOwners(
@@ -69,8 +48,6 @@ function projectReKeyOwners(
         }
         const from = direction === 'apply' ? transition.takesBefore : transition.takesAfter;
         const to = direction === 'apply' ? transition.takesAfter : transition.takesBefore;
-        const fromRegions = direction === 'apply' ? transition.regionsBefore : transition.regionsAfter;
-        const toRegions = direction === 'apply' ? transition.regionsAfter : transition.regionsBefore;
         const fromById = new Map(from.map((take) => [take.id, take]));
         const toIds = new Set(to.map((take) => take.id));
         const liveById = new Map(lane.takes.map((take) => [take.id, take]));
@@ -82,16 +59,29 @@ function projectReKeyOwners(
             // other facets authorize restoring a missing take from its capture.
             const modified = !source || !valuesEqual({ ...source, selected: false }, { ...target, selected: false });
             if (modified) {
-                takes.push(target);
+                takes.push({ ...target, selected: live?.selected ?? target.selected });
             } else if (live) {
                 takes.push(live);
             }
         }
         takes.push(...lane.takes.filter((take) => !fromById.has(take.id) && !toIds.has(take.id)));
-        const remainingIds = new Set(takes.map((take) => take.id));
-        const removedTakeIds = new Set(lane.takes.filter((take) => !remainingIds.has(take.id)).map((take) => take.id));
-        lane.activeCompRegions = projectRegions(lane.activeCompRegions, fromRegions, toRegions, takes, removedTakeIds);
+        const removedIds = new Set(
+            lane.takes.filter((take) => !takes.some((next) => next.id === take.id)).map((take) => take.id)
+        );
+        const regionsFrom = direction === 'apply' ? transition.regionsBefore : transition.regionsAfter;
+        const regionsTo = direction === 'apply' ? transition.regionsAfter : transition.regionsBefore;
+        const regions = reconcileTransitionRegions(lane.activeCompRegions, regionsFrom, regionsTo, takes, removedIds);
+        const gaps = reconcileTransitionBaseGaps(lane, transition, direction);
         lane.takes = takes;
+        lane.activeCompRegions = [...regions];
+        if (gaps) {
+            const replacement = replaceBaseGapAudioSources(lane, gaps);
+            if (replacement.baseGapAudioSources === undefined) {
+                delete lane.baseGapAudioSources;
+            } else {
+                lane.baseGapAudioSources = replacement.baseGapAudioSources;
+            }
+        }
     }
 }
 
@@ -100,28 +90,37 @@ function retireClipOwners(lanes: TakeLaneOwners[], clipId: string): void {
         const lane = lanes[index]!;
         const removedTakeIds = new Set(lane.takes.filter((take) => take.clipId === clipId).map((take) => take.id));
         const takes = lane.takes.filter((take) => take.clipId !== clipId);
-        if (takes.length === lane.takes.length) {
+        const gaps = lane.baseGapAudioSources?.filter((tile) => tile.clipId !== clipId);
+        if (takes.length === lane.takes.length && gaps?.length === lane.baseGapAudioSources?.length) {
             continue;
         }
-        if (takes.length === 0) {
+        if (takes.length === 0 && !gaps?.length) {
             lanes.splice(index, 1);
         } else {
             lane.activeCompRegions = lane.activeCompRegions.filter((region) => !removedTakeIds.has(region.takeId));
             lane.takes = takes;
+            const ids = new Set(takes.map((take) => take.id));
+            lane.activeCompRegions = lane.activeCompRegions.filter((region) => ids.has(region.takeId));
+            if (gaps !== undefined) {
+                lane.baseGapAudioSources = gaps;
+            }
         }
     }
 }
 
 /** Reserve only owners produced by preceding replay members, without publishing any state. */
-export function projectedTakeLaneOwners(priorActions: readonly AppAction[]): TakeLaneOwners[] {
-    const lanes: TakeLaneOwners[] =
-        takeLaneStore.value?.lanes.map((lane) => ({
-            ...lane,
-            takes: [...lane.takes],
-            activeCompRegions: [...lane.activeCompRegions],
-        })) ?? [];
+export function projectedTakeLaneOwners(
+    priorActions: readonly AppAction[],
+    initial: readonly TakeLaneOwners[] = takeLaneStore.value?.lanes ?? []
+): TakeLaneOwners[] {
+    const lanes = initial.map((lane) => structuredClone(lane));
     for (const action of priorActions) {
-        if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
+        if (action.type === 'splitClip') {
+            const prepared = preparedClipSplits.get(action);
+            if (prepared?.takeReKeyTransitions) {
+                projectReKeyOwners(lanes, prepared.takeReKeyTransitions, 'apply');
+            }
+        } else if (action.type === 'discardDuplicatedClip' || action.type === 'removeClip') {
             retireClipOwners(lanes, action.payload.clipId);
         } else if (action.type === 'restoreClip') {
             restoreRetiredOwners(lanes, action.payload.retiredTakeLanes ?? []);

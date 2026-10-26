@@ -2,6 +2,7 @@ import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { moveClip } from '../clip/moveClip';
+import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
 
@@ -80,6 +81,7 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
                         // its content offset; the loop anchor moves with it so
                         // the shift cannot re-roll which passes sound (#4988).
                         ...shiftLoopOriginEntry(clip, delta),
+                        ...relocateAudioSourceTimeFields(clip, delta),
                     };
                 }),
             };

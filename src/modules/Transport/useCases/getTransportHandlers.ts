@@ -16,6 +16,9 @@ import { handleSetPunchEnabled } from '../handlers/transport/handleSetPunchEnabl
 import { handleSetPunchIn } from '../handlers/transport/handleSetPunchIn';
 import { handleSetPunchOut } from '../handlers/transport/handleSetPunchOut';
 import { handleSetTempo } from '../handlers/transport/handleSetTempo';
+import { handleRestoreTempoEdit } from '../handlers/transport/handleRestoreTempoEdit';
+import { handleEditTempoMap } from '../handlers/transport/handleEditTempoMap';
+import { handleRestoreTempoMapEdit } from '../handlers/transport/handleRestoreTempoMapEdit';
 import { handleSetTimeSignature } from '../handlers/transport/handleSetTimeSignature';
 import { handleStopPlayback } from '../handlers/transport/handleStopPlayback';
 import { handleToggleCountIn } from '../handlers/transport/handleToggleCountIn';
@@ -45,6 +48,9 @@ export type TransportHandlersMap = {
     setPunchEnabled: typeof handleSetPunchEnabled;
     setPunchOut: typeof handleSetPunchOut;
     setTempo: typeof handleSetTempo;
+    restoreTempoEdit: typeof handleRestoreTempoEdit;
+    editTempoMap: typeof handleEditTempoMap;
+    restoreTempoMapEdit: typeof handleRestoreTempoMapEdit;
     setTimeSignature: typeof handleSetTimeSignature;
     stopPlayback: typeof handleStopPlayback;
     toggleCountIn: typeof handleToggleCountIn;
@@ -62,6 +68,9 @@ export type TransportHandlersMap = {
 export function getTransportHandlers(): TransportHandlersMap {
     return {
         setTempo: handleSetTempo,
+        restoreTempoEdit: handleRestoreTempoEdit,
+        editTempoMap: handleEditTempoMap,
+        restoreTempoMapEdit: handleRestoreTempoMapEdit,
         togglePlayback: handleTogglePlayback,
         stopPlayback: handleStopPlayback,
         toggleRecording: handleToggleRecording,

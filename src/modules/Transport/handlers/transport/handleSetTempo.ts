@@ -2,8 +2,17 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
 
 import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
+import { assertTempoWriteBpm } from '../../useCases/assertTempoWriteBpm';
 import { setTempo } from '../../useCases/setTempo';
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
+import {
+    capturedTempoReplay,
+    isTempoEditSessionEntry,
+    materializeTempoAudioSources,
+    tempoAudioSourcesApply,
+    writeTempoEdit,
+    tempoPrefixTarget,
+} from './tempoAudioSourceEdit';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 
@@ -24,23 +33,64 @@ function buildTargetedAction(bpm: number, tempoChangeId: string | null, expected
 
 export const handleSetTempo = createHandler<'setTempo'>({
     previewExecution: 'isolated-project',
+    requiresAbortCompensation: false,
+    canReportConflict: true,
+    materializeCommandArguments: materializeTempoAudioSources,
+    materializeCommandArgumentsAt: 'admission',
+    validateSessionEntry: isTempoEditSessionEntry,
     canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
-    validate: (action) => {
-        const target = getTempoWriteTarget({ tempoChangeId: action.payload.tempoChangeId });
+    validate: (action, context) => {
+        const target = tempoPrefixTarget(action, context);
+        const replay = capturedTempoReplay(action, 'promote');
         return (
             target?.writable === true &&
-            (action.payload.expectedBpm === undefined || target.tempo === action.payload.expectedBpm)
+            (action.payload.expectedBpm === undefined || target.tempo === action.payload.expectedBpm) &&
+            (context.actionIndex === 0 || replay !== null) &&
+            (!action.payload.audioSourcePromotion ||
+                (replay !== null && tempoAudioSourcesApply(replay.payload, context)))
         );
     },
-    execute: (alpha): HandlerExecutionResult | void => {
+    execute: (alpha, context): HandlerExecutionResult | void => {
+        let status: 'written' | 'no-write';
+        let commitValidation: HandlerExecutionResult['commitValidation'];
+        const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
         if (alpha.payload.expectedBpm !== undefined) {
             const target = getTempoWriteTarget({ tempoChangeId: alpha.payload.tempoChangeId });
             if (target?.writable !== true || target.tempo !== alpha.payload.expectedBpm) {
                 return { status: 'conflict' };
             }
         }
-        const result = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId });
-        if (result.status === 'no-write') {
+        if (target?.writable) {
+            assertTempoWriteBpm(alpha.payload.bpm, target.tempoChangeId);
+            const action = structuredClone(alpha);
+            if (!action.payload.audioSourcePromotion) {
+                materializeTempoAudioSources(action);
+            }
+            const replay = capturedTempoReplay(action, 'promote');
+            if (!replay) {
+                return { status: 'conflict' };
+            }
+            // Preview prepares its source capture here. Keep that canonical self
+            // in the ordered context without replacing a different caller entry.
+            const executionContext =
+                context && context.actions[context.actionIndex] === alpha
+                    ? {
+                          ...context,
+                          actions: context.actions.map((entry, index) =>
+                              index === context.actionIndex ? action : entry
+                          ),
+                      }
+                    : context;
+            const result = writeTempoEdit(replay.payload, executionContext);
+            if (result.status === 'conflict') {
+                return { status: 'conflict' };
+            }
+            commitValidation = result.commitValidation;
+            status = 'written';
+        } else {
+            status = setTempo({ bpm: alpha.payload.bpm, tempoChangeId: alpha.payload.tempoChangeId }).status;
+        }
+        if (status === 'no-write') {
             // There was nothing to write to — no transport state, or a named
             // change deleted since. Reporting it aborts the transaction and keeps
             // a nothing-happened entry out of the undo stack. A *refused* write
@@ -50,6 +100,7 @@ export const handleSetTempo = createHandler<'setTempo'>({
         }
         return {
             status: 'written',
+            commitValidation,
             afterCommit: markTempoProjectWrite,
             afterAmbiguousCommit: markTempoProjectWrite,
         };
@@ -82,6 +133,12 @@ export const handleSetTempo = createHandler<'setTempo'>({
             // and keeps scanning, so the next Ctrl+Z would undo an unrelated
             // earlier action while the destroyed tempo stayed destroyed.
             return { label, inverseAction: null };
+        }
+
+        const inverseAction = capturedTempoReplay(alpha, 'restore');
+        const redoAction = capturedTempoReplay(alpha, 'promote');
+        if (inverseAction && redoAction) {
+            return { label, inverseAction, redoAction };
         }
 
         return {

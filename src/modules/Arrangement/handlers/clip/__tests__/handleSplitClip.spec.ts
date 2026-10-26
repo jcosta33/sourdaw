@@ -186,7 +186,11 @@ describe('handleSplitClip', () => {
         await handleSplitClip.execute(action);
         const reKeyedTakeLanes = (description.redoAction as Extract<AppAction, { type: 'restoreClipSplitState' }>)
             .payload.reKeyedTakeLanes;
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-clip', [], 4.125, { reKeyedTakeLanes });
+        expect(mocks.prepareClipSplit).toHaveBeenCalledTimes(1);
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-clip', [], 4.125, {
+            reKeyedTakeLanes,
+            prepared: mocks.prepareClipSplit.mock.results[0]?.value,
+        });
     });
 
     it('is undoable', () => {

@@ -7,6 +7,7 @@ import {
 import { commandBatchPreflightPort } from './commandBatchPreflightPort';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
+import { isDerivedSourceSupportPath } from './commandArgumentMetadata';
 
 type CommandBatchAssetReference = {
     assetHash?: string;
@@ -22,10 +23,24 @@ function rangesOverlap(left: CommandBatchRange, right: CommandBatchRange): boole
     return left.startBeat < right.endBeat && right.startBeat < left.endBeat;
 }
 
-function collectAssetReferences(value: unknown, references: CommandBatchAssetReference[]): void {
+function collectAssetReferences(
+    value: unknown,
+    references: CommandBatchAssetReference[],
+    operation: string,
+    path: string
+): void {
+    // A persisted identity guard is checked against its actual source owner;
+    // it neither imports an asset nor asserts runtime cache availability.
+    if (
+        isDerivedSourceSupportPath(operation, path) &&
+        (/^audioSourcePromotions\[\d+\]\.sourceInputs\.media$/.test(path) ||
+            /^audioSourcePromotion\.clips\[\d+\]\.inputs$/.test(path))
+    ) {
+        return;
+    }
     if (Array.isArray(value)) {
-        for (const item of value) {
-            collectAssetReferences(item, references);
+        for (const [index, item] of value.entries()) {
+            collectAssetReferences(item, references, operation, `${path}[${index}]`);
         }
         return;
     }
@@ -41,15 +56,15 @@ function collectAssetReferences(value: unknown, references: CommandBatchAssetRef
             ...(assetHash ? { assetHash } : {}),
         });
     }
-    for (const child of Object.values(record)) {
-        collectAssetReferences(child, references);
+    for (const [key, child] of Object.entries(record)) {
+        collectAssetReferences(child, references, operation, path === '' ? key : `${path}.${key}`);
     }
 }
 
 function getAssetReferences(envelope: VersionedCommandBatchEnvelope): CommandBatchAssetReference[] {
     const references: CommandBatchAssetReference[] = [];
     for (const command of envelope.commands) {
-        collectAssetReferences(command.arguments, references);
+        collectAssetReferences(command.arguments, references, command.operation, '');
     }
     return references;
 }

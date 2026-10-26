@@ -16,7 +16,10 @@ function createInternalReplayContract(
         | 'restoreDrawnClip'
         | 'restoreMidiClipNotes'
         | 'restoreAutomationPointPresence'
-        | 'restoreTimeOperationState',
+        | 'restoreTimeOperationState'
+        | 'restoreCompRegionInterval'
+        | 'restoreTempoEdit'
+        | 'restoreTempoMapEdit',
     operationVersion: number,
     ownerValidation: 'optional' | 'required'
 ): SessionActionContract {
@@ -50,6 +53,13 @@ function createInternalReplayContract(
 export function getInternalUndoSessionReplayContracts(): readonly SessionActionContract[] {
     return [
         {
+            actionType: 'editTempoMap',
+            operationVersion: 1,
+            role: 'forward',
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments('editTempoMap', payload),
+            validateEntry: (entry) => getHandlerByType('editTempoMap')?.validateSessionEntry?.(entry) === true,
+        },
+        {
             actionType: 'deleteTime',
             operationVersion: 1,
             role: 'forward',
@@ -67,5 +77,8 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
         createInternalReplayContract('restoreAutomationPointPresence', 1, 'required'),
         createInternalReplayContract('restoreTimeOperationState', 1, 'required'),
+        createInternalReplayContract('restoreCompRegionInterval', 1, 'required'),
+        createInternalReplayContract('restoreTempoEdit', 1, 'required'),
+        createInternalReplayContract('restoreTempoMapEdit', 1, 'required'),
     ];
 }

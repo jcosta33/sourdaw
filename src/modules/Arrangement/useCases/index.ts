@@ -140,6 +140,9 @@ export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';
 export { removeCompRegion } from './comping/removeCompRegion';
 export { resolveClipsWithComping } from './resolveComping';
+export { prepareTempoAudioSources } from './prepareTempoAudioSources';
+export { applyTempoAudioSources } from './applyTempoAudioSources';
+export { canApplyTempoAudioSources } from './canApplyTempoAudioSources';
 
 export { createCompGroup } from './groupComping/compGroupOperations/createCompGroup';
 

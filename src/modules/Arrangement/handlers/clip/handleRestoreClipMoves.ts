@@ -2,6 +2,7 @@ import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { createHandler } from '#/utils/createHandler';
 
 import { moveClip } from '../../useCases/clip/moveClip';
+import { relocateAudioSourceTimeFields } from '../../useCases/clip/relocateAudioSourceTimeFields';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackState } from '../../useCases/setTrackState';
 
@@ -46,6 +47,7 @@ export const handleRestoreClipMoves = createHandler<'restoreClipMoves'>({
                         // gesture's ripple; the undo reverses that relocation,
                         // so the loop anchor rides the same delta back (#4988).
                         ...shiftLoopOriginEntry(clip, origin.origStartBeat - clip.startBeat),
+                        ...relocateAudioSourceTimeFields(clip, origin.origStartBeat - clip.startBeat),
                     };
                 }),
             })),

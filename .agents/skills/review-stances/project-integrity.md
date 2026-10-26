@@ -1,5 +1,20 @@
 # Lesson library: project integrity
 
+## Lesson from nullable write-metadata admission
+
+PR #4071 (`436bfbd49e40f63080c7638f42f822bd005066a8`) introduced nullable metadata capture but
+exempted every hook-equipped adapter from ordinary unscoped-write supersession. Optional source-time
+and tempo intents exposed that inherited contract gap in an author-lane reproduction; this does not
+establish a previous user incident on main. The missing integrity case was an installed hook whose
+current write carries no journal.
+
+Review actual captured intent rather than hook presence: `null` keeps ordinary supersession, while
+every nonnull journal, including `[]`, retains its owner's replay semantics. Hold a scoped write,
+queue an ordinary unscoped value, advance the same scoped owner again, commit, then flush the older
+unscoped value. Raw truth and projection must keep the newer commit. Repeat with a null-capturing
+hook, an empty journal whose owner applies no operation, and a real journal rebased over peer truth;
+neither array length nor truthiness may substitute for the nullable contract.
+
 ## 2026-10-25 — restored heads can revive stale confirmation authority (caught in PR #5677 review)
 
 An approval may tolerate a mutation-epoch advance when the active project heads are unchanged,
