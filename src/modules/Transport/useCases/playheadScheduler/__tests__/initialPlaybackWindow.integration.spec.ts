@@ -7,6 +7,8 @@ import { schedulerSession } from '../schedulerSession';
 import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { captureGestureBeat } from '../../../stores/captureGestureBeat';
+import { setGestureClockSource } from '../../../stores/gestureClockSource';
 import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
 import { startRecording } from '#/modules/Arrangement/useCases';
 import { startAudioRecording } from '#/modules/AudioEngine/useCases';
@@ -359,6 +361,7 @@ describe('initial browser playback window', () => {
         tempoMapStoreState.value = { changes: [] };
         takeStoreState.value = { lanes: [] };
         seedProject();
+        setGestureClockSource({ getAudioTimeSeconds: () => ctxTime.now, readNativeCursorBeats: () => null });
         scheduleNoteSpy.mockImplementation((_context, _destination, pitch, time) => {
             notes.push({ pitch, time });
             return {};
@@ -410,6 +413,7 @@ describe('initial browser playback window', () => {
             expect(sources).toHaveLength(0);
             expect(transportPublications).toEqual([]);
             expect(playheadClockRef.audioTimeSeconds).toBe(0);
+            expect(captureGestureBeat()).toBe(1.5);
             expect(onRoll).not.toHaveBeenCalled();
             ctxTime.now = 10;
             ready.resolve();
@@ -424,11 +428,12 @@ describe('initial browser playback window', () => {
                 { pitch: 62, frame: 488_400 },
                 { pitch: 67, frame: 484_800 },
             ]);
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor });
+            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor, hold: null });
             ctxTime.now = 10.05;
             deliverWorkerTick();
             await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor });
+            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor, hold: null });
+            expect(captureGestureBeat()).toBe(1.5);
             ctxTime.now = 10.15;
             deliverWorkerTick();
             await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
@@ -538,7 +543,7 @@ describe('initial browser playback window', () => {
             expect(sources[1]!.start.mock.calls[0]?.[0]).toBeCloseTo(10.175, 12);
             expect(scheduleClickSpy).toHaveBeenCalledTimes(1);
             expect(scheduleClickSpy.mock.calls[0]?.[0]).toBeCloseTo(10.175, 12);
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1 });
+            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1, hold: null });
             expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.1, 1.5);
         } finally {
             ready.resolve();
@@ -627,7 +632,7 @@ describe('initial browser playback window', () => {
                 expect(notes).toHaveLength(change === 'unchanged' ? 3 : 0);
                 expect(sources).toHaveLength(change === 'unchanged' ? 1 : 0);
                 if (change === 'unchanged') {
-                    expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1 });
+                    expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1, hold: null });
                 }
             } finally {
                 ready.resolve();
@@ -734,4 +739,80 @@ describe('initial browser playback window', () => {
             }
         }
     );
+
+    it('holds registered gesture capture at the requested beat across a tempo switch while Yeast waits', async () => {
+        tempoMapStoreState.value = {
+            changes: [
+                { id: 'old-tempo', beat: 0, tempo: 300, curve: 'instant' },
+                { id: 'held-tempo', beat: 1, tempo: 60, curve: 'instant' },
+            ],
+        };
+        playheadClockRef.beat = 0;
+        const ready = Promise.withResolvers<void>();
+        vi.mocked(processYeastMidi).mockImplementation(async (input) => {
+            await ready.promise;
+            return [...input.events];
+        });
+        const playback = startPlayback();
+        try {
+            await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
+            ctxTime.now = 9;
+            expect(captureGestureBeat()).toBe(1.5);
+            expect(playheadClockRef.beat).toBe(0);
+            ctxTime.now = 10;
+            ready.resolve();
+            await playback;
+            expect(playheadClockRef.hold).toBeNull();
+            expect(captureGestureBeat()).toBe(1.5);
+        } finally {
+            ready.resolve();
+            await playback;
+        }
+    });
+
+    it('keeps a newer Play hold when an older preparation settles after Stop', async () => {
+        const oldReady = Promise.withResolvers<void>();
+        const newReady = Promise.withResolvers<void>();
+        vi.mocked(processYeastMidi)
+            .mockImplementationOnce(async (input) => {
+                await oldReady.promise;
+                return [...input.events];
+            })
+            .mockImplementationOnce(async (input) => {
+                await newReady.promise;
+                return [...input.events];
+            });
+        const outgoing = startPlayback();
+        let incoming: Promise<void> | undefined;
+        try {
+            await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledTimes(1));
+            await stopPlayback();
+            expect(playheadClockRef.hold).toBeNull();
+            seedProject();
+            transportStoreState.value = {
+                ...defaultTransportState,
+                tempo: 120,
+                playheadPosition: 1.75,
+                preRollEnabled: false,
+            };
+            incoming = startPlayback();
+            await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalledTimes(2));
+            const incomingGeneration = schedulerSession.generation;
+            oldReady.resolve();
+            await outgoing;
+            expect(playheadClockRef.hold).toEqual({ generation: incomingGeneration, beat: 1.75 });
+            expect(captureGestureBeat()).toBe(1.75);
+            expect(notes).toEqual([]);
+            ctxTime.now = 10;
+            newReady.resolve();
+            await incoming;
+            expect(playheadClockRef.hold).toBeNull();
+            expect(captureGestureBeat()).toBe(1.75);
+        } finally {
+            oldReady.resolve();
+            newReady.resolve();
+            await outgoing;
+            await incoming;
+        }
+    });
 });
