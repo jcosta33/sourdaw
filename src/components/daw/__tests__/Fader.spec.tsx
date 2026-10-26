@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
-import { Fader } from '../Fader';
 import { FADER_MAX_GAIN, faderValueToPosition } from '#/utils/audioLevelLaw';
+
+import { Fader } from '../Fader';
 
 describe('Fader', () => {
     let getBoundingClientRectSpy: MockInstance;

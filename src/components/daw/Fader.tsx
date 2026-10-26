@@ -8,7 +8,6 @@ import {
     useLayoutEffect,
 } from 'react';
 
-import { cn } from '#/utils/Styles/cn';
 import {
     dbToGain,
     faderPositionToValue,
@@ -17,6 +16,7 @@ import {
     formatGainDb,
     type FaderValueScale,
 } from '#/utils/audioLevelLaw';
+import { cn } from '#/utils/Styles/cn';
 
 type Tone =
     | 'neutral'
