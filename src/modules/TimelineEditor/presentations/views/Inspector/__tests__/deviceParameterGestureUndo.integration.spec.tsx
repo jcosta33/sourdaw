@@ -8,6 +8,7 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getPluginById } from '#/modules/Arrangement/useCases';
+import { audioEngine, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
@@ -55,16 +56,11 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     projectsToDifferentNativeBank: vi.fn(() => false),
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
-    updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
-        engineWrites.push({ trackId, deviceId, paramId, value });
-        afterEngineWrite?.();
-    },
     updateDevicePatch: vi.fn(),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),
     applyRuntimeGraphDelta: vi.fn(),
-    audioEngine: {},
     cacheAudioBuffer: vi.fn(),
     clearReportedLatency: vi.fn(),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
@@ -273,6 +269,12 @@ describe('Inspector continuous parameter gestures through real history', () => {
         engineWrites.length = 0;
         afterEngineWrite = null;
         vi.clearAllMocks();
+        vi.spyOn(audioEngine, 'updateDeviceParam').mockImplementation(
+            (trackId: string, deviceId: string, paramId: string, value: number) => {
+                engineWrites.push({ trackId, deviceId, paramId, value });
+                afterEngineWrite?.();
+            }
+        );
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Inspector gestures');
         removeCrdtDoc('root');
@@ -658,7 +660,23 @@ describe('Inspector continuous parameter gestures through real history', () => {
         });
         expect(rawValues()?.detune).toBe(5);
         expect(depth()).toBe(0);
-        expect(writes().at(-1)).toBe(5);
+        expect(writes()).toEqual([25, 5]);
+    });
+
+    it.each([65, 25])('does not restore over a later runtime producer when its value is %s', (laterRuntimeValue) => {
+        const view = render(<Control />);
+        beginKnob();
+        afterEngineWrite = () => {
+            afterEngineWrite = null;
+            updateDeviceParam('track-1', synth.id, 'detune', laterRuntimeValue);
+        };
+
+        moveKnob(85);
+        view.unmount();
+
+        expect(rawValues()?.detune).toBe(5);
+        expect(writes()).toEqual([25, laterRuntimeValue]);
+        expect(depth()).toBe(0);
     });
 
     it.each(['changed-value', 'changed-type', 'removed-device', 'duplicate-owner', 'frozen-change'])(
@@ -782,16 +800,83 @@ describe('Inspector continuous parameter gestures through real history', () => {
     });
 
     it('restores authoritative runtime and UI after a refused final commit', async () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
         render(<Control />);
         beginKnob();
         moveKnob(85);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
         setRepairRequired();
         endKnob();
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
         await waitFor(() => expect(notifyUser).toHaveBeenCalledWith(expect.any(String), 'warning'));
         await waitFor(() => expect(knob()).toHaveAttribute('aria-valuenow', '5'));
         expect(rawValues()?.detune).toBe(5);
         expect(depth()).toBe(0);
         expect(writes().at(-1)).toBe(5);
+    });
+
+    it('releases Touch before a queued physical commit settles without recording a delayed duplicate', async () => {
+        const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await release.promise;
+        });
+        try {
+            await entered.promise;
+            endKnob();
+            const physicalSamples = recording.mock.calls;
+            expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
+            expect(depth()).toBe(0);
+
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+            await expectCommitted('detune', 25, 1);
+            expect(recording.mock.calls).toEqual(physicalSamples);
+        } finally {
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+        }
+    });
+
+    it('releases only the cancelled gesture Touch owner on unmount', () => {
+        const secondDevice = { ...structuredClone(compressor), id: 'compressor-2' };
+        const secondTrack = { ...testTrack([secondDevice]), id: 'track-2', automationMode: 'touch' as const };
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }, secondTrack],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        automationUseCases.recordAutomationValue('track-1', 'synth-1:gain', 0.3, 1);
+        automationUseCases.recordAutomationValue('track-2', 'compressor-2:comp-threshold', -20, 1);
+        const view = render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+
+        view.unmount();
+
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:gain')).toBe(true);
+        expect(automationUseCases.isRecordingAutomation('track-2', 'compressor-2:comp-threshold')).toBe(true);
     });
 
     it('reports an unexpected engine failure and does not leave a truth edit or preview', async () => {
