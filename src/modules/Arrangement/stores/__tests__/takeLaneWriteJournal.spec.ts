@@ -70,6 +70,42 @@ const intervalPatch: TakeLaneCompRegionPatch = {
 };
 
 describe('takeLaneWriteJournal', () => {
+    it('moves a frozen MIDI source phase without replacing a peer-edited sibling row', () => {
+        const source = {
+            sourceClipId: 'clip-a',
+            rows: {
+                notes: {
+                    present: true as const,
+                    value: [
+                        { id: 'note-a', pitch: 60, startBeat: 1, duration: 1, velocity: 90 },
+                        { id: 'note-b', pitch: 64, startBeat: 2, duration: 1, velocity: 90 },
+                    ],
+                },
+                controlChanges: { present: true as const, value: [] },
+                pitchBends: { present: true as const, value: [] },
+            },
+            sourceEntryBeat: 0,
+            sourceEndBeat: 4,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
+        const before = { lanes: [{ ...structuredClone(firstLane), takes: [{ ...firstLane.takes[0]!, midiSource: source }] }] };
+        const next = structuredClone(before);
+        next.lanes[0]!.takes[0]!.midiSource.phaseHeadBeat = -2;
+        const peer = structuredClone(before);
+        peer.lanes[0]!.takes[0]!.midiSource.rows.notes.value[1]!.velocity = 111;
+
+        const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: next });
+        const replay = replayTakeLaneWriteJournal(peer, journal);
+
+        expect(replay.status).toBe('applied');
+        if (replay.status !== 'applied') {
+            return;
+        }
+        expect(replay.value?.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat).toBe(-2);
+        expect(replay.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value[1]?.velocity).toBe(111);
+    });
+
     it('replays only actual field and membership deltas over unrelated authoritative edits', () => {
         const before = { lanes: [structuredClone(firstLane), structuredClone(secondLane)] };
         const next = {
