@@ -569,3 +569,60 @@ export function historicalDescriptor(
         parentPullRequest: parent.number,
     });
 }
+
+export function descriptorForHistoricalReplay(
+    input: HistoricalAdmissionInput,
+    descriptor: LaneStack,
+    prior: HistoricalAdmissionReceipt | undefined,
+    stored: LaneStack | undefined,
+    initialMarkers: string[],
+    port: HistoricalAdmissionPort
+): LaneStack {
+    if (prior === undefined && (stored !== undefined || initialMarkers.length > 0)) {
+        fail('historical admission refuses unjournaled partial or existing lineage');
+    }
+    if (prior !== undefined) {
+        const receipt = parseHistoricalAdmissionReceipt(prior);
+        if (
+            receipt.childPullRequest !== input.childPullRequest ||
+            receipt.expectedChildHead !== input.expectedHead ||
+            JSON.stringify({ ...receipt.descriptor, parentHead: descriptor.parentHead }) !==
+                JSON.stringify(descriptor) ||
+            !port.isAncestor(receipt.descriptor.parentHead, descriptor.parentHead)
+        ) {
+            fail('historical admission receipt conflicts with original identity');
+        }
+        return receipt.descriptor;
+    }
+    return descriptor;
+}
+
+export function historicalRegisteredDescriptor(
+    admitted: LaneStack,
+    stored: LaneStack | undefined,
+    markers: string[],
+    currentParentHead: string,
+    childHead: string,
+    port: HistoricalAdmissionPort
+): LaneStack {
+    if (
+        markers.length > 1 ||
+        (markers.length === 1 && markers[0] !== admitted.forkHead) ||
+        (stored !== undefined &&
+            (markers.length !== 1 ||
+                JSON.stringify({ ...stored, parentHead: admitted.parentHead }) !== JSON.stringify(admitted)))
+    ) {
+        fail('historical admission has conflicting descriptor or marker');
+    }
+    if (stored === undefined) {
+        return admitted;
+    }
+    if (
+        !port.isAncestor(admitted.parentHead, stored.parentHead) ||
+        !port.isAncestor(stored.parentHead, currentParentHead) ||
+        (stored.parentHead !== admitted.parentHead && !port.isAncestor(stored.parentHead, childHead))
+    ) {
+        fail('historical admission descriptor progress conflicts with verified histories');
+    }
+    return stored;
+}

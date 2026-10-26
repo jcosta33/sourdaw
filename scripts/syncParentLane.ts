@@ -21,9 +21,10 @@ import { isAncestorCommit, parsePublishWorktrees, resolveAuthorLane, trustedPubl
 import {
     assertHistoricalPullRequestCandidates,
     assertStackAcyclic,
+    descriptorForHistoricalReplay,
     historicalDescriptor,
+    historicalRegisteredDescriptor,
     laneStackPath,
-    parseHistoricalAdmissionReceipt,
     parseStackParents,
     readLaneStack,
     readHistoricalAdmissionReceipt,
@@ -149,47 +150,6 @@ function historicalStackQuery(child: number, parent: number): string[] {
     ];
 }
 
-function descriptorForHistoricalReplay(
-    input: HistoricalAdmissionInput,
-    descriptor: LaneStack,
-    prior: HistoricalAdmissionReceipt | undefined,
-    stored: LaneStack | undefined,
-    initialMarkers: string[],
-    port: HistoricalAdmissionPort
-): LaneStack {
-    if (prior === undefined && (stored !== undefined || initialMarkers.length > 0)) {
-        fail('historical admission refuses unjournaled partial or existing lineage');
-    }
-    if (prior !== undefined) {
-        const receipt = parseHistoricalAdmissionReceipt(prior);
-        if (
-            receipt.childPullRequest !== input.childPullRequest ||
-            receipt.expectedChildHead !== input.expectedHead ||
-            JSON.stringify({ ...receipt.descriptor, parentHead: descriptor.parentHead }) !==
-                JSON.stringify(descriptor) ||
-            !port.isAncestor(receipt.descriptor.parentHead, descriptor.parentHead)
-        ) {
-            fail('historical admission receipt conflicts with original identity');
-        }
-        return receipt.descriptor;
-    }
-    return descriptor;
-}
-
-function assertInitialHistoricalRecords(
-    descriptor: LaneStack,
-    stored: LaneStack | undefined,
-    initialMarkers: string[]
-): void {
-    if (
-        initialMarkers.length > 1 ||
-        (initialMarkers.length === 1 && initialMarkers[0] !== descriptor.forkHead) ||
-        (stored !== undefined && (initialMarkers.length !== 1 || JSON.stringify(stored) !== JSON.stringify(descriptor)))
-    ) {
-        fail('historical admission has conflicting descriptor or marker');
-    }
-}
-
 export function admitHistoricalStack(input: HistoricalAdmissionInput, port: HistoricalAdmissionPort): LaneStack {
     if (!port.clean() || port.head() !== input.expectedHead) {
         fail('historical child is dirty, foreign or changed');
@@ -199,11 +159,22 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
     const parentLog = port.parentLog();
     const parentHead = port.parentLocalHead();
     let descriptor = historicalDescriptor(input, observation, childLog, parentLog, parentHead, port);
+    const currentParentHead = descriptor.parentHead;
     const prior = port.readReceipt();
     const stored = port.readDescriptor();
     const initialMarkers = port.markers();
+    let receiptSnapshot = JSON.stringify(prior);
+    let markerSnapshot = JSON.stringify(initialMarkers);
+    const descriptorSnapshot = JSON.stringify(stored);
     descriptor = descriptorForHistoricalReplay(input, descriptor, prior, stored, initialMarkers, port);
-    assertInitialHistoricalRecords(descriptor, stored, initialMarkers);
+    const registered = historicalRegisteredDescriptor(
+        descriptor,
+        stored,
+        initialMarkers,
+        currentParentHead,
+        input.expectedHead,
+        port
+    );
     assertStackAcyclic(descriptor, port.readStack);
     const revalidate = () => {
         if (
@@ -212,7 +183,10 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
             JSON.stringify(port.observe()) !== JSON.stringify(observation) ||
             port.childLog() !== childLog ||
             port.parentLog() !== parentLog ||
-            port.parentLocalHead() !== parentHead
+            port.parentLocalHead() !== parentHead ||
+            JSON.stringify(port.readReceipt()) !== receiptSnapshot ||
+            JSON.stringify(port.markers()) !== markerSnapshot ||
+            JSON.stringify(port.readDescriptor()) !== descriptorSnapshot
         ) {
             fail('historical stack proof changed during admission');
         }
@@ -228,6 +202,7 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
     if (prior === undefined) {
         port.saveReceipt(receipt);
     }
+    receiptSnapshot = JSON.stringify(receipt);
     if (JSON.stringify(port.readReceipt()) !== JSON.stringify(receipt)) {
         fail('historical admission receipt changed');
     }
@@ -235,6 +210,7 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
     if (port.markers().length === 0) {
         port.addMarker(descriptor.forkHead);
     }
+    markerSnapshot = JSON.stringify([descriptor.forkHead]);
     if (JSON.stringify(port.markers()) !== JSON.stringify([descriptor.forkHead])) {
         fail('historical admission marker changed');
     }
@@ -246,20 +222,21 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
         fail('historical admission records changed');
     }
     const current = port.readDescriptor();
-    if (current !== undefined && JSON.stringify(current) !== JSON.stringify(descriptor)) {
+    if (current !== undefined && JSON.stringify(current) !== JSON.stringify(registered)) {
         fail('historical admission descriptor changed');
     }
     // The descriptor is the commit point: marker-only crashes are refused by every ordinary reader.
     if (current === undefined) {
-        port.installDescriptor(descriptor);
+        port.installDescriptor(registered);
     }
     if (
-        JSON.stringify(port.readDescriptor()) !== JSON.stringify(descriptor) ||
+        JSON.stringify(port.readDescriptor()) !== JSON.stringify(registered) ||
         JSON.stringify(port.readReceipt()) !== JSON.stringify(receipt) ||
         JSON.stringify(port.markers()) !== JSON.stringify([descriptor.forkHead])
     ) {
         fail('historical descriptor installation failed');
     }
+    // Return the immutable admission; synchronization owns later registered parent-head progress.
     return descriptor;
 }
 

@@ -145,10 +145,193 @@ function fixture() {
         setDescriptor: (value: LaneStack | undefined) => {
             stored = value;
         },
+        setReceipt: (value: HistoricalAdmissionReceipt | undefined) => {
+            receipt = value;
+        },
     };
 }
 
+function synchronizedProgressFixture() {
+    const f = fixture();
+    const original = admitHistoricalStack(f.input, f.port);
+    const receipt = structuredClone(f.receipt());
+    const progressed = sha('f');
+    const ancestry = (a: string, b: string) =>
+        f.port.isAncestor(a, b) ||
+        (b === progressed && [anchor, sha('e'), next, parent].includes(a)) ||
+        (a === progressed && b === child);
+    const merges: string[] = [];
+    const result = syncParentLane(original, {
+        head: () => child,
+        clean: () => true,
+        main: () => sha('c'),
+        parents: () => [
+            {
+                number: 5425,
+                branch: parentBranch,
+                headSha: progressed,
+                state: 'OPEN',
+                authorId: AUTHOR_BOT_NODE_ID,
+                repository: REQUIRED_REPOSITORY,
+            },
+        ],
+        isAncestor: ancestry,
+        fetchParent: () => undefined,
+        conflicts: () => [],
+        save: (value) => f.setDescriptor(value),
+        merge: (target) => {
+            merges.push(target);
+        },
+    });
+    f.setObservation({ ...f.observation(), parent: { ...f.observation().parent, headSha: progressed } });
+    return { f, original, progressed, ancestry, merges, result, receipt };
+}
+
 describe('historical stack native admission', () => {
+    it('replays admission after a no-op native sync advances only the stored parent head', () => {
+        const { f, original, progressed, ancestry, merges, result, receipt } = synchronizedProgressFixture();
+        expect(result).toBe(child);
+        expect(merges).toEqual([]);
+        expect(f.stored()).toEqual({ ...original, parentHead: progressed });
+        const writes = [...f.writes];
+        expect(admitHistoricalStack(f.input, { ...f.port, isAncestor: ancestry })).toEqual(original);
+        expect(f.port.head()).toBe(child);
+        expect(f.stored()).toEqual({ ...original, parentHead: progressed });
+        expect(f.receipt()).toEqual(receipt);
+        expect(f.writes).toEqual(writes);
+    });
+
+    it.each([
+        'backwards head',
+        'unrelated head',
+        'head beyond verified parent',
+        'progress absent from child',
+        'wrong fork',
+        'wrong parent',
+        'wrong parent PR',
+        'wrong marker',
+        'cycle',
+    ])('refuses %s after native descriptor progress', (change) => {
+        const { f, original, progressed, ancestry } = synchronizedProgressFixture();
+        const stored = f.stored();
+        if (stored === undefined) {
+            throw new Error('native sync did not save progress');
+        }
+        let port = { ...f.port, isAncestor: ancestry };
+        if (change === 'backwards head') {
+            f.setDescriptor({ ...stored, parentHead: anchor });
+        }
+        if (change === 'unrelated head') {
+            f.setDescriptor({ ...stored, parentHead: sha('d') });
+        }
+        if (change === 'head beyond verified parent') {
+            f.setDescriptor({ ...stored, parentHead: sha('d') });
+            port = {
+                ...port,
+                isAncestor: (a, b) =>
+                    ancestry(a, b) || (a === parent && b === sha('d')) || (a === sha('d') && b === child),
+            };
+        }
+        if (change === 'progress absent from child') {
+            port = { ...port, isAncestor: (a, b) => !(a === progressed && b === child) && ancestry(a, b) };
+        }
+        if (change === 'wrong fork') {
+            f.setDescriptor({ ...stored, forkHead: sha('d') });
+        }
+        if (change === 'wrong parent') {
+            f.setDescriptor({ ...stored, parentBranch: 'agent/other' });
+        }
+        if (change === 'wrong parent PR') {
+            f.setDescriptor({ ...stored, parentPullRequest: 9999 });
+        }
+        if (change === 'wrong marker') {
+            f.setMarkers([sha('d')]);
+        }
+        if (change === 'cycle') {
+            port = {
+                ...port,
+                readStack: () => ({ ...original, childBranch: parentBranch, parentBranch: childBranch }),
+            };
+        }
+        const writes = [...f.writes];
+        expect(() => admitHistoricalStack(f.input, port)).toThrow();
+        expect(f.writes).toEqual(writes);
+    });
+
+    it.each([
+        { record: 'receipt', phase: 2 },
+        { record: 'receipt', phase: 3 },
+        { record: 'receipt', phase: 4 },
+        { record: 'marker', phase: 2 },
+        { record: 'marker', phase: 3 },
+        { record: 'marker', phase: 4 },
+        { record: 'descriptor', phase: 2 },
+        { record: 'descriptor', phase: 3 },
+        { record: 'descriptor', phase: 4 },
+    ])('refuses $record movement before mutation boundary $phase', ({ record, phase }) => {
+        const f = fixture();
+        let observations = 0;
+        const descriptor: LaneStack = {
+            version: 1,
+            childBranch,
+            parentBranch,
+            forkHead: anchor,
+            parentHead: parent,
+            parentPullRequest: 5425,
+        };
+        const port = {
+            ...f.port,
+            observe: () => {
+                observations += 1;
+                if (observations === phase) {
+                    if (record === 'receipt') {
+                        f.setReceipt({ version: 1, childPullRequest: 5438, expectedChildHead: sha('d'), descriptor });
+                    }
+                    if (record === 'marker') {
+                        let marker = anchor;
+                        if (phase === 4) {
+                            marker = sha('d');
+                        }
+                        f.setMarkers([marker]);
+                    }
+                    if (record === 'descriptor') {
+                        f.setDescriptor(descriptor);
+                    }
+                }
+                return f.port.observe();
+            },
+        };
+        expect(() => admitHistoricalStack(f.input, port)).toThrow(/changed/);
+        const writes: string[] = [];
+        if (phase > 2) {
+            writes.push('receipt');
+        }
+        if (phase > 3) {
+            writes.push('marker');
+        }
+        expect(f.writes).toEqual(writes);
+    });
+
+    it('refuses a descriptor changed after the advanced replay snapshot without overwriting it', () => {
+        const { f, original, ancestry } = synchronizedProgressFixture();
+        let observations = 0;
+        const writes = [...f.writes];
+        const port = {
+            ...f.port,
+            isAncestor: ancestry,
+            observe: () => {
+                observations += 1;
+                if (observations === 2) {
+                    f.setDescriptor(original);
+                }
+                return f.port.observe();
+            },
+        };
+        expect(() => admitHistoricalStack(f.input, port)).toThrow(/changed/);
+        expect(f.stored()).toEqual(original);
+        expect(f.writes).toEqual(writes);
+    });
+
     it('installs records exclusively and reads every real Git marker value without sharing another checkout', () => {
         const f = fixture();
         const stack = admitHistoricalStack(f.input, f.port);
