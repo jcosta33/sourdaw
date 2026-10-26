@@ -5,7 +5,7 @@ import { ControlGallery } from '#/components/daw/ControlGallery';
 export const Route = createFileRoute('/dev/control-gallery')({
     beforeLoad: () => {
         if (!import.meta.env.DEV) {
-            throw notFound();
+            throw Object.assign(new Error('Not found'), notFound());
         }
     },
     component: ControlGallery,

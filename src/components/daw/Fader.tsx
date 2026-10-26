@@ -396,7 +396,12 @@ export const Fader = ({
     };
 
     const capBottomPct = normalized * 100;
-    const unityTarget = unityValue ?? (valueScale === 'gain' ? 1 : valueScale === 'decibels' ? 0 : defaultValue);
+    let unityTarget = unityValue ?? defaultValue;
+    if (unityValue === undefined && valueScale === 'gain') {
+        unityTarget = 1;
+    } else if (unityValue === undefined && valueScale === 'decibels') {
+        unityTarget = 0;
+    }
     const unityPct = faderValueToPosition(unityTarget, min, max, valueScale) * 100;
 
     // audit M-083: the value the accessibility tree reports, kept inside the declared bounds.

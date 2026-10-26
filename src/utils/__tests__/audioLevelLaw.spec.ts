@@ -102,9 +102,10 @@ describe('audio fader travel', () => {
                 scale === 'gain' ? [0, 0.02, 0.2, 0.8, 1, 1.5, FADER_MAX_GAIN] : [-70, -48, -24, -6, 0, 3, 6];
             const positions = values.map((value) => faderValueToPosition(value, min, max, scale));
             expect(positions).toEqual([...positions].sort((a, b) => a - b));
-            values.forEach((value, index) => {
-                expect(faderPositionToValue(positions[index], min, max, scale)).toBeCloseTo(value, 9);
-            });
+            for (const value of values) {
+                const position = faderValueToPosition(value, min, max, scale);
+                expect(faderPositionToValue(position, min, max, scale)).toBeCloseTo(value, 9);
+            }
         }
     });
 
