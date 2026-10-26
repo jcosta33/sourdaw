@@ -6,6 +6,15 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
+
+PR #5388 changed a declared campaign fixture while the web-gated unit matrix skipped its
+freshness assertion. The cross-language validation obligation was missed; historical private
+review prompts and models are unavailable. Require the existing freshness case in required
+static validation without broadening web or browser selection. Change a real declared fixture
+without restamping its digest and require the case to fail on that path and digest; separately
+remove the static step and require the workflow contract to fail.
+
 ### 2026-10-25 — current-ref fixtures omitted the old child's historical dependency (introduced by PR #5615)
 
 PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) tested branch/ref identity while
