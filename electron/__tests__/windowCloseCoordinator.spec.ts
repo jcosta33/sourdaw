@@ -1,8 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { APP_TITLE } from '../protocol.js';
 import { createWindowCloseCoordinator } from '../windowCloseCoordinator.js';
 
+// Keep the production protocol module and title while isolating Electron's
+// optional native runtime at the test boundary.
+vi.mock('electron', () => ({
+    app: { isPackaged: false, getAppPath: () => '/app' },
+    net: { fetch: vi.fn() },
+    protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
+}));
+
 describe('window close coordinator', () => {
+    it('keeps the production application title as the shell identity', () => {
+        expect(APP_TITLE).toBe('Sourdaw');
+    });
+
     it('fails closed for every new renderer generation until hydrated project truth is ready', async () => {
         const ask = vi.fn(async () => 'cancel' as const);
         const coordinator = createWindowCloseCoordinator({ ask, send: vi.fn() });
@@ -58,7 +71,7 @@ describe('window close coordinator', () => {
         coordinator.updateProject({ title: 'Dirty song', dirty: true });
 
         const approval = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         expect(send).toHaveBeenCalledWith('save', 1, expect.objectContaining({ title: 'Dirty song', dirty: true }));
         coordinator.resolveSave({ requestId: 1, saved: true, dirty: false });
 
@@ -67,10 +80,11 @@ describe('window close coordinator', () => {
     });
 
     it('keeps the window open when saving fails or a later edit keeps the project dirty', async () => {
-        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
         coordinator.updateProject({ title: 'Dirty song', dirty: true });
         const approval = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         coordinator.resolveSave({ requestId: 1, saved: false, dirty: true });
 
         await expect(approval).resolves.toBe(false);
@@ -78,10 +92,11 @@ describe('window close coordinator', () => {
     });
 
     it('rejects a successful save that reports the project still dirty and ignores a mismatched late result', async () => {
-        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
         coordinator.updateProject({ title: 'Dirty song', dirty: true });
         const approval = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         coordinator.resolveSave({ requestId: 99, saved: true, dirty: false });
         coordinator.resolveSave({ requestId: 1, saved: true, dirty: true });
 
@@ -201,11 +216,12 @@ describe('window close coordinator', () => {
     });
 
     it('rejects an unprojected same-key result revision that was not produced by the close save', async () => {
-        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
         coordinator.updateProject({ title: 'Song', dirty: true, projectKey: 'project-a', revision: 'revision-1' });
 
         const close = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         coordinator.resolveSave({
             requestId: 1,
             saved: true,
@@ -218,10 +234,11 @@ describe('window close coordinator', () => {
     });
 
     it('settles an in-flight request when its renderer window is reset', async () => {
-        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send });
         coordinator.updateProject({ title: 'Dirty song', dirty: true });
         const approval = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         coordinator.resetForWindow();
 
         await expect(approval).resolves.toBe(false);
@@ -233,7 +250,7 @@ describe('window close coordinator', () => {
         coordinator.updateProject({ title: 'Dirty song', dirty: true });
 
         const approval = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         expect(send).toHaveBeenCalledWith('discard', 1, expect.objectContaining({ title: 'Dirty song', dirty: true }));
         coordinator.resolveSave({ requestId: 1, saved: true, dirty: true });
 
@@ -242,7 +259,8 @@ describe('window close coordinator', () => {
     });
 
     it('accepts the clean replacement key produced by its correlated never-saved discard', async () => {
-        const coordinator = createWindowCloseCoordinator({ ask: async () => 'discard', send: vi.fn() });
+        const send = vi.fn();
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'discard', send });
         coordinator.updateProject({
             title: 'Untitled',
             dirty: true,
@@ -251,7 +269,7 @@ describe('window close coordinator', () => {
         });
 
         const close = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         coordinator.updateProject({
             title: 'Untitled Project',
             dirty: false,
@@ -276,7 +294,7 @@ describe('window close coordinator', () => {
         coordinator.updateProject({ title: 'Dirty song', dirty: true });
 
         const first = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         coordinator.resolveSave({ requestId: 1, saved: false, dirty: true });
         await expect(first).resolves.toBe(false);
 
@@ -284,7 +302,7 @@ describe('window close coordinator', () => {
         // snapshot failed. It remains close-blocking until made durable.
         coordinator.updateProject({ title: 'Untitled Project', dirty: false, durabilityPending: true });
         const second = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
 
         expect(ask).toHaveBeenCalledTimes(2);
         expect(send).toHaveBeenLastCalledWith(
@@ -565,9 +583,10 @@ describe('window close coordinator', () => {
             callbacks: [],
             cancels: [],
         };
+        const send = vi.fn();
         const coordinator = createWindowCloseCoordinator({
             ask: async () => 'save',
-            send: vi.fn(),
+            send,
             timers: {
                 setTimer: (callback) => {
                     const cancel = vi.fn();
@@ -580,7 +599,7 @@ describe('window close coordinator', () => {
         coordinator.updateProject({ title: 'Song', dirty: true, projectKey: 'project-a', revision: 'revision-1' });
 
         const resolved = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
         coordinator.resolveSave({
             requestId: 1,
             saved: true,
@@ -593,7 +612,7 @@ describe('window close coordinator', () => {
 
         coordinator.updateProject({ title: 'Song', dirty: true, projectKey: 'project-a', revision: 'revision-2' });
         const reset = coordinator.requestClose();
-        await Promise.resolve();
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
         coordinator.resetForWindow();
         await expect(reset).resolves.toBe(false);
         expect(timers.cancels[1]).toHaveBeenCalledTimes(1);

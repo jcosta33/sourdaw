@@ -82,6 +82,7 @@ const OPERATION_WORDS: Readonly<Record<string, readonly string[]>> = {
     mute: ['muteTrack'],
     solo: ['soloTrack'],
     arm: ['armTrack'],
+    output: ['setTrackOutput'],
 };
 /**
  * Every spelling an operation word is read in where a clause states the operation rather than naming its
@@ -299,6 +300,8 @@ export const refinementRequestReading = {
     articles: REFERENCE_ARTICLE_WORDS,
     /** The operation words a removal may state after its object, narrowing it to that operation. */
     operationWords: Object.keys(OPERATION_WORDS),
+    /** The action types each operation word names. */
+    operationActions: OPERATION_WORDS,
     removalObject: readRemovalObject,
     opensRemoval,
     stripTrailers: stripReferenceTrailers,
