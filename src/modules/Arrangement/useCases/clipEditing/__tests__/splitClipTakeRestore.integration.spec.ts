@@ -20,6 +20,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -89,6 +90,7 @@ describe('splitClipWithUndo take restore', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
+        midiStore.set(structuredClone(defaultMidiStoreState));
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -184,5 +186,44 @@ describe('splitClipWithUndo take restore', () => {
             [splitRightClipId, 'clip-1'].sort()
         );
         expect(takeLaneStore.value?.lanes[0]?.takes.map((candidate) => candidate.id)).toEqual([take.id]);
+    });
+
+    it('keeps selected and unselected MIDI pass sources through registered split, undo and redo', async () => {
+        const clip = ClipDummy.create({ id: 'clip-1', type: 'midi', startBeat: 0, endBeat: 8 });
+        const track = TrackDummy.create({ id: 'track-1', kind: 'midi', clips: [clip] });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        midiStore.set({
+            ...defaultMidiStoreState,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'pass-1-note', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                    { id: 'pass-2-note', pitch: 72, startBeat: 5, duration: 1, velocity: 100 },
+                ],
+            },
+        });
+        const selected = { ...createTake(clip.id, 'Selected', 0, 4, 0), selected: true };
+        const unselected = createTake(clip.id, 'Unselected', 0, 4, 4);
+        takeLaneStore.set({
+            lanes: [{
+                ...createTakeLane(track.id),
+                takes: [selected, unselected],
+                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: selected.id }],
+            }],
+        });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'splitClip', payload: { clipId: clip.id, beat: 2 } }, { source: 'manual' });
+        const afterSplit = structuredClone(lane());
+        expect(afterSplit.takes.filter((take) => take.clipId !== clip.id)).toHaveLength(2);
+        for (const take of afterSplit.takes) {
+            expect(take.midiSource?.sourceClipId).toBe(clip.id);
+            expect(take.midiSource?.rows.notes.value.map((note) => note.id)).toEqual(['pass-1-note', 'pass-2-note']);
+        }
+
+        await undo();
+        expect(lane().takes.map((take) => take.midiSource)).toEqual([undefined, undefined]);
+
+        await redo();
+        expect(lane()).toEqual(afterSplit);
     });
 });
