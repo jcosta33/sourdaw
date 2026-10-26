@@ -8,13 +8,13 @@ function deferred<T>(): {
     reject: (reason: unknown) => void;
     resolve: (value: T) => void;
 } {
-    let resolve!: (value: T) => void;
-    let reject!: (reason: unknown) => void;
-    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
+    let resolveDeferred!: (value: T) => void;
+    let rejectDeferred!: (reason: unknown) => void;
+    const promise = new Promise<T>((resolve, reject) => {
+        resolveDeferred = resolve;
+        rejectDeferred = reject;
     });
-    return { promise, reject, resolve };
+    return { promise, reject: rejectDeferred, resolve: resolveDeferred };
 }
 
 function browserAccess(inputId: string): {

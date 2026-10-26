@@ -112,6 +112,7 @@ vi.mock('../selectMidiInputNative', () => ({
 describe('initWebMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(desktopInvoke).mockReset();
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
         getPlatformCapabilitiesMock.mockImplementation(() => {
             const webMidiApiPresent = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
@@ -690,6 +691,9 @@ describe('initWebMidi', () => {
             .mockResolvedValueOnce([{ index: 0, id: 'native-1', name: 'Native MIDI' }]);
 
         const firstInit = initWebMidi({ onMidiMessage });
+        await vi.waitFor(() => {
+            expect(desktopInvoke).toHaveBeenCalledWith('list_midi_inputs');
+        });
         const secondResult = await initWebMidi({ onMidiMessage });
 
         expect(secondResult).toBe(true);
