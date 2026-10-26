@@ -253,7 +253,10 @@ describe('DeviceParameterControl', () => {
         await act(async () => {
             fireEvent.click(screen.getByTestId('rotary-knob'));
         });
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1.5, { transient: true });
+        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1.5, {
+            transient: true,
+            runtimeOwner: expect.any(Symbol),
+        });
         expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
             {
                 type: 'setDeviceParameter',
@@ -278,10 +281,19 @@ describe('DeviceParameterControl', () => {
             props.onChange(0.7, true);
             props.onChange(0.9, true);
         });
-        expect(mockSetDeviceParameter).toHaveBeenLastCalledWith('device-1', 'gain', 0.9, { transient: true });
+        const runtimeOwner = mockSetDeviceParameter.mock.calls[0]![3].runtimeOwner;
+        expect(runtimeOwner).toEqual(expect.any(Symbol));
+        expect(mockSetDeviceParameter.mock.calls).toEqual([
+            ['device-1', 'gain', 0.7, { transient: true, runtimeOwner }],
+            ['device-1', 'gain', 0.9, { transient: true, runtimeOwner }],
+        ]);
         expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
         await act(async () => {
             props.onChange(0.9, false);
+        });
+        expect(mockSetDeviceParameter).toHaveBeenLastCalledWith('device-1', 'gain', 0.9, {
+            transient: true,
+            runtimeOwner,
         });
         expect(mockExecuteUserAppAction).toHaveBeenCalledOnce();
         expect(mockExecuteUserAppAction).toHaveBeenCalledWith(

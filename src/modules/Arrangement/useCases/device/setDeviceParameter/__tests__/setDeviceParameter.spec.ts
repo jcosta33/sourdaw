@@ -122,6 +122,27 @@ describe('setDeviceParameter', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
+    it.each([true, false])('forwards an explicit runtime owner for a transient %s write', (transient) => {
+        const track = makeTrack('t1');
+        track.devices[0] = { ...track.devices[0]!, type: 'builtin-synth', parameterValues: { detune: 5 } };
+        setTrackState([track]);
+        const runtimeOwner = Symbol('parameter gesture');
+
+        expect(setDeviceParameter('d1', 'detune', 500, { transient, runtimeOwner })).toBe(true);
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([['t1', 'd1', 'detune', 100, runtimeOwner]]);
+        expect(mocks.updateTrack).toHaveBeenCalledTimes(transient ? 0 : 1);
+    });
+
+    it.each([true, false])('keeps an undefined runtime owner off a transient %s engine call', (transient) => {
+        setTrackState([makeTrack('t1')]);
+
+        expect(setDeviceParameter('d1', 'gain', 0.5, { transient, runtimeOwner: undefined })).toBe(true);
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([['t1', 'd1', 'gain', 0.5]]);
+        expect(mocks.updateTrack).toHaveBeenCalledTimes(transient ? 0 : 1);
+    });
+
     it.each(['missing', 'duplicate', 'vca'])('refuses an invalid transient target: %s', (kind) => {
         const track = makeTrack('t1');
         if (kind === 'missing') {

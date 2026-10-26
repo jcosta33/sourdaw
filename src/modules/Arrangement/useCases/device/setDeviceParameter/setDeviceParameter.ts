@@ -73,7 +73,11 @@ export function setDeviceParameter(
 
     if (!options.projectOnly) {
         // Update audio engine (non-blocking)
-        updateDeviceParam(target.trackId, target.deviceId, paramId, clamped, options.runtimeOwner);
+        if (options.runtimeOwner === undefined) {
+            updateDeviceParam(target.trackId, target.deviceId, paramId, clamped);
+        } else {
+            updateDeviceParam(target.trackId, target.deviceId, paramId, clamped, options.runtimeOwner);
+        }
     }
 
     if (!options.transient) {
