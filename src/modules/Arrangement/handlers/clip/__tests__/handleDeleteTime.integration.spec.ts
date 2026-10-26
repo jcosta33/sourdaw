@@ -398,6 +398,64 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         expect(undoStore.value?.future).toHaveLength(0);
     });
 
+    it.each(['gain', 'warp', 'unchanged'] as const)(
+        'binds saved Delete Time satellite writes to its affected clips: %s',
+        async (change) => {
+            hydrateProductionContracts();
+            arrangeComp(2, 4);
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [
+                    ClipDummy.create({ id: 'peer', trackId: 'track-1', type: 'audio', startBeat: 0, endBeat: 1 }),
+                    ClipDummy.create({ id: 'erased', trackId: 'track-1', type: 'audio', startBeat: 2, endBeat: 4 }),
+                ] })],
+                selectedTrackId: 'track-1', ghostClips: [],
+            });
+            takeLaneStore.set({ lanes: [] });
+            gainEnvelopeStore.set({ envelopes: {} });
+            midiStore.set(defaultMidiStoreState);
+            automationStore.set({ lanes: [] });
+            warpStateStore.set({ states: {} });
+            flushAutomergeStorageWrites();
+            const original = durableOwners();
+            await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 4 } });
+            await vi.waitFor(() => expect(
+                (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past
+            ).toHaveLength(1));
+            const saved = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: SavedDeleteEntry[] };
+            const entry = saved.past[0]!;
+            const before = { version: 1, entries: [{ clipId: 'peer', gainEnvelope: null, warpState: null }] };
+            const after = { version: 1, entries: [{
+                clipId: 'peer',
+                gainEnvelope: change === 'gain' ? { clipId: 'peer', points: [], enabled: true } : null,
+                warpState: change === 'warp' ? { enabled: true, markers: [], stretchMode: 'pro', originalTempo: null } : null,
+            }] };
+            entry.inverseAction.payload.plan.clipSatellites = { version: 1, expected: before, replacement: after };
+            entry.redoAction.payload.plan.clipSatellites = { version: 1, expected: after, replacement: before };
+            sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(saved));
+            const deleted = durableOwners();
+            const document = getCrdtDoc<Project>('root')!;
+            const heads = Automerge.getHeads(document);
+            replaceCrdtDocInLineage({ id: 'root', doc: Automerge.load<Project>(Automerge.save(document)) });
+            projectCrdtToStores({ resetProjections: true });
+            hydrateProductionContracts();
+            expectDurableOwners(deleted);
+            expect(Automerge.getHeads(getCrdtDoc<Project>('root')!)).toEqual(heads);
+            expect(undoStore.value?.past).toHaveLength(change === 'unchanged' ? 1 : 0);
+            const history = structuredClone(undoStore.value);
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                const result = await undo();
+                expect(result.headConsumed).toBe(change === 'unchanged');
+                expectDurableOwners(change === 'unchanged' ? original : deleted);
+                await redo();
+                expectDurableOwners(deleted);
+            }
+            if (change !== 'unchanged') {
+                expect(undoStore.value).toEqual(history);
+                expect(Automerge.getHeads(getCrdtDoc<Project>('root')!)).toEqual(heads);
+            }
+        }
+    );
+
     it.each([false, true])('binds saved time retirement to erased clips: forged=%s', async (forged) => {
         hydrateProductionContracts();
         arrangeJoinedOwners();
