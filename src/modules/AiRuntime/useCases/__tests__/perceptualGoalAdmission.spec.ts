@@ -211,6 +211,9 @@ describe('perceptual goal admission', () => {
             expect(planningContext).toEqual(snapshotBefore);
             expect(trackStore.value).toBe(liveBefore);
             expect(captureProjectRevision()).toBe(revisionBefore);
+            for (const call of vi.mocked(generateToolPlanningOutcome).mock.calls) {
+                expect(call[4]).toBe(prompt);
+            }
             if (outcome === 'clarify') {
                 expect(result.planningOutcome?.kind).toBe('clarify');
                 expect(result.actions).toEqual([]);

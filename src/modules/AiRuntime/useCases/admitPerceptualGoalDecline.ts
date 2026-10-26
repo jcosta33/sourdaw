@@ -13,6 +13,7 @@ import { maskProjectReferences } from './agentReference/groundingStrategies/mask
 import { hasExplicitTrackSelection } from './agentReference/hasExplicitTrackSelection';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { normalizeAgentReferenceText } from './agentReference/normalizeAgentReferenceText';
+import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { refinementCourtesy } from './agentReference/refinementCourtesy';
 import { resolveAgentReference } from './agentReference/resolveAgentReference';
 import { resolveWorkflowTrackIds } from './agentReference/resolveWorkflowTrackIds';
@@ -265,10 +266,7 @@ function readDelegatedGoalBody(text: string): string | null {
     return verb === null ? null : text.slice(verb.index + verb[0].length);
 }
 
-/**
- * Reads only complete target-and-goal units. Preservation text remains unread until its canonical
- * reader can supply fully resolved source spans, so it cannot force planning before its owners bind.
- */
+/** Reads only complete target-and-goal units after canonical protection consumption. */
 function readPerceptualGoals(
     prompt: string,
     context: ProjectContext,
@@ -329,6 +327,21 @@ function readPerceptualGoals(
         start = null;
     }
     return start === null && goals.length > 0 ? goals : null;
+}
+
+/** Eligibility omits only proven protection spans; the planner keeps the untouched request. */
+function maskResolvedProtectionClauses(prompt: string, context: ProjectContext): string | null {
+    const protections = readExplicitProtections(prompt, context, { requireUniqueTrackOwners: true });
+    if (protections.unresolved.length > 0) {
+        return null;
+    }
+    const masked = prompt.split('');
+    for (const { start, end } of protections.resolvedTrackClauses) {
+        for (let index = start; index < end; index += 1) {
+            masked[index] = ' ';
+        }
+    }
+    return masked.join('');
 }
 
 function describeTarget(
@@ -397,8 +410,12 @@ export function admitPerceptualGoalDecline(input: {
     ) {
         return ADMITTED;
     }
+    const eligibilityPrompt = maskResolvedProtectionClauses(input.prompt, input.context);
+    if (eligibilityPrompt === null) {
+        return ADMITTED;
+    }
     const catalog = getMixRecipeCatalog();
-    const goals = readPerceptualGoals(input.prompt, input.context, catalog);
+    const goals = readPerceptualGoals(eligibilityPrompt, input.context, catalog);
     if (goals === null || goals.some((goal) => !answersGoal(goal.target, goal.terms, input.context))) {
         return ADMITTED;
     }

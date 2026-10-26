@@ -165,6 +165,7 @@ type SelectionMember = {
 type BoundMember = { trackIds: string[]; controls: string[] };
 type SlotReading = {
     complete: boolean;
+    uniqueTrackOwners: boolean;
     unreadContinuations: Range[];
     unresolved: string[];
     selection: SelectionMember[];
@@ -207,7 +208,7 @@ function readBoundTrackMember(
     references: readonly NamedRange[],
     range: Range,
     trackIds: ReadonlySet<string>
-): { member: BoundMember; complete: boolean } | null {
+): { member: BoundMember; complete: boolean; uniqueOwner: boolean } | null {
     if (member.kind !== 'bound' || !member.onlyNames) {
         return null;
     }
@@ -227,6 +228,7 @@ function readBoundTrackMember(
     return {
         member: { trackIds: owners, controls: [...member.controls] },
         complete: owners.length === only.denotes.size,
+        uniqueOwner: only.denotes.size === 1,
     };
 }
 
@@ -321,6 +323,7 @@ function applySlotMember(
             const owner = readBoundTrackMember(member, references, range, trackIds);
             state.reading.complete &&= owner !== null && owner.complete;
             if (owner !== null) {
+                state.reading.uniqueTrackOwners &&= owner.uniqueOwner;
                 state.reading.bound.push(owner.member);
                 state.lastOwner = adoptControls(owner.member, pending);
             }
@@ -341,6 +344,7 @@ function readSlotMembers(input: {
     const { prompt, blanked, masked, slot, references, context, objects } = input;
     const reading: SlotReading = {
         complete: true,
+        uniqueTrackOwners: true,
         unreadContinuations: [],
         unresolved: [],
         selection: [],
@@ -586,8 +590,13 @@ function exemptControls(found: Accumulator, trackIds: readonly string[], carvedO
  * Reads every explicit protection clause of the request. A protection that names a project object by
  * an object form and binds to none is reported unresolved; one that binds reports what it keeps: a
  * track by name, the selected track, the request's one named target or a VCA group's members.
+ * Requiring unique owners withholds only consumed spans; conservative protection facts stay intact.
  */
-export function readExplicitProtections(prompt: string, context: ProjectContext): ProtectionReading {
+export function readExplicitProtections(
+    prompt: string,
+    context: ProjectContext,
+    options: { requireUniqueTrackOwners?: boolean } = {}
+): ProtectionReading {
     const candidates = [...refinementRequestReading.candidates(context), ...getExtraCandidates(context)];
     const scanned = scanPromptQuotedText(prompt).maskedText;
     const reservedSelections = Array.from(scanned.matchAll(RESERVED_SELECTION), (match) => ({
@@ -647,6 +656,7 @@ export function readExplicitProtections(prompt: string, context: ProjectContext)
         if (
             slot.completeRange !== null &&
             reading.complete &&
+            (!options.requireUniqueTrackOwners || reading.uniqueTrackOwners) &&
             reading.unresolved.length === 0 &&
             resolvesOwner &&
             (reading.controls.length === 0 || carvesOutTrack)
