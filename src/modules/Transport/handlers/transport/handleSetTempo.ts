@@ -70,7 +70,18 @@ export const handleSetTempo = createHandler<'setTempo'>({
             if (!replay) {
                 return { status: 'conflict' };
             }
-            const result = writeTempoEdit(replay.payload, context);
+            // Preview prepares its source capture here. Keep that canonical self
+            // in the ordered context without replacing a different caller entry.
+            const executionContext =
+                context && context.actions[context.actionIndex] === alpha
+                    ? {
+                          ...context,
+                          actions: context.actions.map((entry, index) =>
+                              index === context.actionIndex ? action : entry
+                          ),
+                      }
+                    : context;
+            const result = writeTempoEdit(replay.payload, executionContext);
             if (result.status === 'conflict') {
                 return { status: 'conflict' };
             }

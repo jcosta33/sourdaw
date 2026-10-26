@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { tempoProjectRevisionStore } from '../../../stores/tempoProjectRevisionStore';
@@ -82,6 +83,32 @@ describe('transport handlers', () => {
         void handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 120 } });
 
         expect(transportRef.value!.tempo).toBe(120);
+    });
+
+    it('keeps a mismatched current context entry refused while preparing a bare tempo action', () => {
+        const action: AppAction = { type: 'setTempo', payload: { bpm: 120 } };
+        const different: AppAction = { type: 'setTempo', payload: { bpm: 125 } };
+
+        expect(
+            handleSetTempo.execute(action, { actions: [different], actionIndex: 0, executionMode: 'isolated-preview' })
+        ).toEqual({ status: 'conflict' });
+        expect(transportRef.value!.tempo).toBe(110);
+        expect(action).toEqual({ type: 'setTempo', payload: { bpm: 120 } });
+    });
+
+    it('keeps an unprepared later tempo context entry refused while preparing its current action', () => {
+        const action: AppAction = { type: 'setTempo', payload: { bpm: 120 } };
+        const later: AppAction = { type: 'setTempo', payload: { bpm: 125 } };
+        const actions = [action, later];
+
+        expect(handleSetTempo.execute(action, { actions, actionIndex: 0, executionMode: 'isolated-preview' })).toEqual({
+            status: 'conflict',
+        });
+        expect(transportRef.value!.tempo).toBe(110);
+        expect(actions).toEqual([
+            { type: 'setTempo', payload: { bpm: 120 } },
+            { type: 'setTempo', payload: { bpm: 125 } },
+        ]);
     });
 
     it('publishes a tempo revision only when a commit effect is invoked', async () => {
