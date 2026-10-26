@@ -21,6 +21,8 @@ type SetDeviceParameterOptions = {
      * engine, it just is not a gesture and so opens no recording pass.
      */
     automationRecordingPolicy?: AutomationRecordingPolicy;
+    /** Identifies the transient producer that may later restore this runtime write. */
+    runtimeOwner?: symbol;
 };
 
 export function setDeviceParameter(
@@ -71,7 +73,7 @@ export function setDeviceParameter(
 
     if (!options.projectOnly) {
         // Update audio engine (non-blocking)
-        updateDeviceParam(target.trackId, target.deviceId, paramId, clamped);
+        updateDeviceParam(target.trackId, target.deviceId, paramId, clamped, options.runtimeOwner);
     }
 
     if (!options.transient) {

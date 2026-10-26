@@ -9,13 +9,14 @@ import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { quantiseDeviceParameterValue, setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
 import {
     automationStore,
     modulationStore,
     modulationRuntimeStore,
     type ModulationStoreState,
 } from '#/modules/Automation/stores';
-import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
+import { addAutomationLane, releaseTouchAutomation, removeAutomationLane } from '#/modules/Automation/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -45,6 +46,8 @@ type ParameterGesture = {
     value: number | undefined;
     defaultValue: number;
     authority: ReturnType<typeof captureProjectTransitionAuthority>;
+    runtimeAuthority: ReturnType<typeof captureDeviceParameterRuntimeWriteAuthority>;
+    startedInTouchAutomation: boolean;
     previewValue?: number;
     invalidated: boolean;
     settling: boolean;
@@ -84,6 +87,9 @@ function readGestureDevice(gesture: ParameterGesture, requireStartingValue: bool
 }
 
 function restoreGesturePreview(gesture: ParameterGesture): void {
+    if (!gesture.runtimeAuthority.isCurrent()) {
+        return;
+    }
     const device = readGestureDevice(gesture, false);
     const value = device?.parameterValues[gesture.paramId] ?? gesture.defaultValue;
     if (device && gesture.previewValue !== undefined && gesture.previewValue !== value) {
@@ -91,6 +97,13 @@ function restoreGesturePreview(gesture: ParameterGesture): void {
             transient: true,
             automationRecordingPolicy: 'suppressed',
         });
+    }
+}
+
+function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
+    const currentMode = trackStore.value?.tracks.find((track) => track.id === gesture.trackId)?.automationMode;
+    if (currentMode === 'touch' || (currentMode === undefined && gesture.startedInTouchAutomation)) {
+        releaseTouchAutomation(gesture.trackId, createDeviceAutomationTargetId(gesture.deviceId, gesture.paramId));
     }
 }
 
@@ -293,11 +306,13 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             return;
         }
         gesture.invalidated = true;
+        releaseGestureTouchAutomation(gesture);
         try {
             restoreGesturePreview(gesture);
         } catch (error) {
             notifyUser(error instanceof Error ? error.message : 'Device parameter preview restoration failed', 'error');
         }
+        gesture.runtimeAuthority.release();
         if (mounted.current) {
             if (gestureRef.current === gesture) {
                 setGestureOwner(undefined);
@@ -359,6 +374,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             value: device.parameterValues[param.id],
             defaultValue: param.defaultValue ?? param.value,
             authority: captureProjectTransitionAuthority(),
+            runtimeAuthority: captureDeviceParameterRuntimeWriteAuthority(trackId, device.id, param.id),
+            startedInTouchAutomation: liveOwner?.automationMode === 'touch',
             invalidated: false,
             settling: false,
             committed: false,
@@ -383,6 +400,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 );
             }
         }
+        gesture.runtimeAuthority.release();
         if (gestureRef.current === gesture) {
             gestureRef.current = null;
             if (mounted.current) {
@@ -417,7 +435,10 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         }
         // Knob release is a physical recording sample; slider settlement is not.
         // Capture event time before the canonical action can wait on a snapshot.
-        const previewOptions: NonNullable<Parameters<typeof setDeviceParameter>[3]> = { transient: true };
+        const previewOptions: NonNullable<Parameters<typeof setDeviceParameter>[3]> = {
+            transient: true,
+            runtimeOwner: gesture.runtimeAuthority.owner,
+        };
         if (!recordingSample) {
             previewOptions.automationRecordingPolicy = 'suppressed';
         }
@@ -444,6 +465,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         if (isTransient) {
             return;
         }
+        releaseGestureTouchAutomation(gesture);
         gesture.settling = true;
         void executeUserAppAction(
             {

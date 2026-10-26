@@ -945,10 +945,19 @@ describe('Inspector continuous parameter gestures through real history', () => {
                     ['track-1', 'synth-1:detune', 65, 3],
                     ['track-1', 'synth-1:detune', 65, 4],
                 ];
-                // This spy calls the actual owner; its real buffered curve is flushed below.
+                const expectedPoints = [
+                    [1, 25],
+                    [2, -15],
+                    [3, 65],
+                    [4, 65],
+                ];
+                // This spy calls the actual owner; Touch flushes at physical release,
+                // while Write and Latch retain their buffered pass until Stop.
                 expect(recording.mock.calls).toEqual(expectedSamples);
                 expect(rawValues()?.detune).toBe(5);
-                expect(automationStore.value?.lanes[0]?.points).toEqual([]);
+                expect(
+                    automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])
+                ).toEqual(automationMode === 'touch' ? expectedPoints : []);
                 expect(depth()).toBe(0);
                 beat = 19;
                 await act(async () => {
@@ -964,12 +973,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 expect(recording.mock.calls).toEqual(expectedSamples);
                 stopAutomationRecording(4);
                 const points = automationStore.value?.lanes[0]?.points ?? [];
-                expect(points.map(({ beat: pointBeat, value }) => [pointBeat, value])).toEqual([
-                    [1, 25],
-                    [2, -15],
-                    [3, 65],
-                    [4, 65],
-                ]);
+                expect(points.map(({ beat: pointBeat, value }) => [pointBeat, value])).toEqual(expectedPoints);
             } finally {
                 await act(async () => {
                     release.resolve();
@@ -1029,9 +1033,16 @@ describe('Inspector continuous parameter gestures through real history', () => {
                     ['track-1', 'compressor-1:comp-threshold', expect.closeTo(-12, 12), 2],
                     ['track-1', 'compressor-1:comp-threshold', -48, 3],
                 ];
+                const expectedPoints = [
+                    [1, -36],
+                    [2, expect.closeTo(-12, 12)],
+                    [3, -48],
+                ];
                 expect(recording.mock.calls).toEqual(expectedSamples);
                 expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
-                expect(automationStore.value?.lanes[0]?.points).toEqual([]);
+                expect(
+                    automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])
+                ).toEqual(automationMode === 'touch' ? expectedPoints : []);
                 expect(depth()).toBe(0);
                 beat = 19;
                 await act(async () => {
@@ -1047,11 +1058,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 stopAutomationRecording(3);
                 expect(
                     automationStore.value?.lanes[0]?.points.map(({ beat: pointBeat, value }) => [pointBeat, value])
-                ).toEqual([
-                    [1, -36],
-                    [2, expect.closeTo(-12, 12)],
-                    [3, -48],
-                ]);
+                ).toEqual(expectedPoints);
             } finally {
                 await act(async () => {
                     release.resolve();
