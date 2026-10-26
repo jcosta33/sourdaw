@@ -22,8 +22,9 @@ export type HistoricalAdmissionReceipt = {
 };
 
 export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmissionReceipt {
-    if (value === null || typeof value !== 'object' || Array.isArray(value))
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         fail('invalid historical admission receipt');
+    }
     const row = value as Record<string, unknown>;
     if (
         Object.keys(row).sort().join(',') !== 'childPullRequest,descriptor,expectedChildHead,version' ||
@@ -33,8 +34,9 @@ export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmis
         row.childPullRequest <= 0 ||
         typeof row.expectedChildHead !== 'string' ||
         !/^[0-9a-f]{40}$/.test(row.expectedChildHead)
-    )
+    ) {
         fail('invalid historical admission receipt');
+    }
     const descriptor = parseLaneStack(row.descriptor);
     if (descriptor.parentPullRequest === undefined || descriptor.parentPullRequest === row.childPullRequest) {
         fail('historical admission receipt requires a distinct pinned parent');
@@ -52,9 +54,13 @@ export function readHistoricalAdmissionReceipt(
     branch: string
 ): HistoricalAdmissionReceipt | undefined {
     const path = `${laneStackPath(primaryRoot, branch)}.admission.json`;
-    if (!existsSync(path)) return undefined;
+    if (!existsSync(path)) {
+        return undefined;
+    }
     const raw = readFileSync(path, 'utf8');
-    if (raw.length > 65536) fail('invalid historical admission receipt');
+    if (raw.length > 65536) {
+        fail('invalid historical admission receipt');
+    }
     return parseHistoricalAdmissionReceipt(JSON.parse(raw));
 }
 

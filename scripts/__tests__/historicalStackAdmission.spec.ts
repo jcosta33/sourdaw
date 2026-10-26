@@ -154,7 +154,9 @@ describe('historical stack native admission', () => {
         const stack = admitHistoricalStack(f.input, f.port);
         const receipt = f.receipt();
         expect(receipt).toBeDefined();
-        if (receipt === undefined) throw new Error('fixture did not admit');
+        if (receipt === undefined) {
+            throw new Error('fixture did not admit');
+        }
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-native-admission-adapter-'));
         execFileSync('git', ['init', root], { stdio: 'pipe' });
         const port = historicalAdmissionShellPort(
@@ -392,16 +394,36 @@ describe('historical stack native admission', () => {
     ])('refuses %s before any record write', (change) => {
         const f = fixture();
         const remote = f.observation();
-        if (change === 'moved child') f.setHead(sha('b'));
-        if (change === 'foreign child') remote.child.authorId = 'foreign';
-        if (change === 'wrong repository') remote.parent.headRepositoryId = 'other-repository';
-        if (change === 'retargeted child') remote.child.events.push('BaseRefChangedEvent');
-        if (change === 'reused parent') remote.parentPullRequests.push(9999);
-        if (change === 'replacement parent') remote.parent.number = 9999;
-        if (change === 'deleted parent') remote.parent.events.push('HeadRefDeletedEvent');
-        if (change === 'force pushed parent') remote.parent.events.push('HeadRefForcePushedEvent');
-        if (change === 'late parent') remote.parent.createdAt = '2026-10-21T22:20:00Z';
-        if (change === 'dirty child') f.setClean(false);
+        if (change === 'moved child') {
+            f.setHead(sha('b'));
+        }
+        if (change === 'foreign child') {
+            remote.child.authorId = 'foreign';
+        }
+        if (change === 'wrong repository') {
+            remote.parent.headRepositoryId = 'other-repository';
+        }
+        if (change === 'retargeted child') {
+            remote.child.events.push('BaseRefChangedEvent');
+        }
+        if (change === 'reused parent') {
+            remote.parentPullRequests.push(9999);
+        }
+        if (change === 'replacement parent') {
+            remote.parent.number = 9999;
+        }
+        if (change === 'deleted parent') {
+            remote.parent.events.push('HeadRefDeletedEvent');
+        }
+        if (change === 'force pushed parent') {
+            remote.parent.events.push('HeadRefForcePushedEvent');
+        }
+        if (change === 'late parent') {
+            remote.parent.createdAt = '2026-10-21T22:20:00Z';
+        }
+        if (change === 'dirty child') {
+            f.setClean(false);
+        }
         f.setObservation(remote);
         expect(() => admitHistoricalStack(f.input, f.port)).toThrow();
         expect(f.writes).toEqual([]);
@@ -417,7 +439,7 @@ describe('historical stack native admission', () => {
         'unrelated history',
     ])('refuses %s as a historical creation witness', (change) => {
         const f = fixture();
-        if (change === 'missing birth')
+        if (change === 'missing birth') {
             f.setChildLog(
                 reflog([
                     [anchor, 1792620751],
@@ -427,14 +449,16 @@ describe('historical stack native admission', () => {
                     .slice(1)
                     .join('\n')
             );
-        if (change === 'wrong actor')
+        }
+        if (change === 'wrong actor') {
             f.setChildLog(
                 reflog([
                     [anchor, 1792620751],
                     [child, 1792723381],
                 ]).replace(AUTHOR_BOT_COMMIT_EMAIL, 'foreign@example.test')
             );
-        if (change === 'ambiguous time')
+        }
+        if (change === 'ambiguous time') {
             f.setParentLog(
                 reflog([
                     [sha('e'), 1792614584],
@@ -442,7 +466,8 @@ describe('historical stack native admission', () => {
                     [next, 1792621386],
                 ])
             );
-        if (change === 'parent at another commit')
+        }
+        if (change === 'parent at another commit') {
             f.setParentLog(
                 reflog([
                     [sha('e'), 1792614584],
@@ -450,20 +475,23 @@ describe('historical stack native admission', () => {
                     [next, 1792621386],
                 ])
             );
-        if (change === 'discontinuous log')
+        }
+        if (change === 'discontinuous log') {
             f.setChildLog(
                 reflog([
                     [anchor, 1792620751],
                     [child, 1792723381],
                 ]).replace(`${anchor} ${child}`, `${sha('d')} ${child}`)
             );
-        if (change === 'rewritten log')
+        }
+        if (change === 'rewritten log') {
             f.setChildLog(
                 reflog([
                     [anchor, 1792620751],
                     [child, 1792723381],
                 ]).replace('commit: retained native history', 'reset: moving to another branch')
             );
+        }
         const port = change === 'unrelated history' ? { ...f.port, isAncestor: () => false } : f.port;
         expect(() => admitHistoricalStack(f.input, port)).toThrow();
         expect(f.writes).toEqual([]);
@@ -472,8 +500,14 @@ describe('historical stack native admission', () => {
     it('refuses cycles and partial/conflicting records instead of adopting them', () => {
         for (const kind of ['cycle', 'marker only', 'descriptor only', 'duplicate marker', 'foreign descriptor']) {
             const f = fixture();
-            if (kind.includes('marker')) f.setMarkers(kind === 'duplicate marker' ? [anchor, anchor] : [anchor]);
-            if (kind.includes('descriptor'))
+            if (kind.includes('marker')) {
+                if (kind === 'duplicate marker') {
+                    f.setMarkers([anchor, anchor]);
+                } else {
+                    f.setMarkers([anchor]);
+                }
+            }
+            if (kind.includes('descriptor')) {
                 f.setDescriptor({
                     version: 1,
                     childBranch,
@@ -481,6 +515,7 @@ describe('historical stack native admission', () => {
                     forkHead: anchor,
                     parentHead: parent,
                 });
+            }
             const port =
                 kind === 'cycle'
                     ? {
@@ -542,15 +577,18 @@ describe('historical stack native admission', () => {
                 ...f.port,
                 saveReceipt: (r: HistoricalAdmissionReceipt) => {
                     f.port.saveReceipt(r);
-                    if (at === 'receipt')
+                    if (at === 'receipt') {
                         f.setObservation({
                             ...f.observation(),
                             parent: { ...f.observation().parent, headSha: sha('f') },
                         });
+                    }
                 },
                 addMarker: (value: string) => {
                     f.port.addMarker(value);
-                    if (at === 'marker') f.setHead(sha('b'));
+                    if (at === 'marker') {
+                        f.setHead(sha('b'));
+                    }
                 },
             };
             expect(() => admitHistoricalStack(f.input, port)).toThrow(/changed/);
