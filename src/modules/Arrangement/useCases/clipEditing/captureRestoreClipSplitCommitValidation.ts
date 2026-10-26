@@ -14,7 +14,7 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
 import { discard_warp_states_raw_keys, warpStateStore } from '../../stores/warpStates';
 
-import { identityCounts } from './captureRestoreClipCommitValidation';
+import { identityCounts } from './identityCounts';
 
 type SplitAction = Extract<AppAction, { type: 'restoreClipSplitState' }>;
 type Document = Readonly<Record<string, unknown>>;
@@ -199,40 +199,9 @@ function projectedDocument(root: Document): Document {
     };
 }
 
-/** Authenticate the raw owners admitted by split replay and the exact owners its staged write intends to commit. */
-export function captureRestoreClipSplitCommitValidation(
-    action: SplitAction
-): { validation: HandlerCommitValidation; captureWrittenState: () => boolean } | undefined {
-    const owner = getCurrentAutomergeStorageMutationOwner();
-    const root = getCrdtDoc<Document>('root');
-    if (!owner || !root) {
-        return undefined;
-    }
-    const { clipId, rightClipId, expected, replacement, reKeyedTakeLanes, retiredTakeLanes } = action.payload;
-    const clipIds = [clipId, rightClipId];
-    const expectedSatellites = expected.clipSatellites ?? [];
-    const replacementSatellites = replacement.clipSatellites ?? [];
-    const satelliteIds = new Set(
-        [...expectedSatellites, ...replacementSatellites].map((satellite) => satellite.clipId)
-    );
-    const writesAutomation = expected.clipAutomationLanes !== undefined;
-    const childIds = new Set(
-        collectClipSplitIdentityIds([
-            expected.sourceMidi,
-            expected.rightMidi,
-            replacement.sourceMidi,
-            replacement.rightMidi,
-            expected.clipAutomationLanes,
-            replacement.clipAutomationLanes,
-            reKeyedTakeLanes,
-            retiredTakeLanes,
-        ])
-    );
-    const expectedAutomationLanes = expected.clipAutomationLanes ?? [];
-    const replacementAutomationLanes = replacement.clipAutomationLanes ?? [];
-    const laneIds = new Set([...expectedAutomationLanes, ...replacementAutomationLanes].map((lane) => lane.id));
-    const takeIds = new Set((retiredTakeLanes ?? []).flatMap((lane) => lane.retiredTakeIds ?? []));
-    for (const lane of reKeyedTakeLanes ?? []) {
+function changedTakeIds(payload: SplitAction['payload']): Set<string> {
+    const takeIds = new Set((payload.retiredTakeLanes ?? []).flatMap((lane) => lane.retiredTakeIds ?? []));
+    for (const lane of payload.reKeyedTakeLanes ?? []) {
         const beforeTakes = new Map(lane.takesBefore.map((take) => [take.id, take]));
         const afterTakes = new Map(lane.takesAfter.map((take) => [take.id, take]));
         for (const id of new Set([...beforeTakes.keys(), ...afterTakes.keys()])) {
@@ -255,6 +224,47 @@ export function captureRestoreClipSplitCommitValidation(
             }
         }
     }
+    return takeIds;
+}
+
+function capturedChildIds(payload: SplitAction['payload']): Set<string> {
+    const { expected, replacement, reKeyedTakeLanes, retiredTakeLanes } = payload;
+    return new Set(
+        collectClipSplitIdentityIds([
+            expected.sourceMidi,
+            expected.rightMidi,
+            replacement.sourceMidi,
+            replacement.rightMidi,
+            expected.clipAutomationLanes,
+            replacement.clipAutomationLanes,
+            reKeyedTakeLanes,
+            retiredTakeLanes,
+        ])
+    );
+}
+
+/** Authenticate the raw owners admitted by split replay and the exact owners its staged write intends to commit. */
+export function captureRestoreClipSplitCommitValidation(
+    action: SplitAction
+): { validation: HandlerCommitValidation; captureWrittenState: () => boolean } | undefined {
+    const owner = getCurrentAutomergeStorageMutationOwner();
+    const root = getCrdtDoc<Document>('root');
+    if (!owner || !root) {
+        return undefined;
+    }
+    const { clipId, rightClipId, expected, replacement } = action.payload;
+    const clipIds = [clipId, rightClipId];
+    const expectedSatellites = expected.clipSatellites ?? [];
+    const replacementSatellites = replacement.clipSatellites ?? [];
+    const satelliteIds = new Set(
+        [...expectedSatellites, ...replacementSatellites].map((satellite) => satellite.clipId)
+    );
+    const writesAutomation = expected.clipAutomationLanes !== undefined;
+    const childIds = capturedChildIds(action.payload);
+    const expectedAutomationLanes = expected.clipAutomationLanes ?? [];
+    const replacementAutomationLanes = replacement.clipAutomationLanes ?? [];
+    const laneIds = new Set([...expectedAutomationLanes, ...replacementAutomationLanes].map((lane) => lane.id));
+    const takeIds = changedTakeIds(action.payload);
     const read = (document: Document) =>
         readSnapshot(document, clipIds, satelliteIds, rightClipId, writesAutomation, childIds, laneIds, takeIds);
     const before = capture(read(root));

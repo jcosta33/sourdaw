@@ -12,8 +12,8 @@ import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIden
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { applyClipAutomationLaneTransition } from '../../useCases/clip/applyClipAutomationLaneTransition';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
-import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitStateRestorable';
 import { captureRestoreClipSplitCommitValidation } from '../../useCases/clipEditing/captureRestoreClipSplitCommitValidation';
+import { clipSplitStateRestorable } from '../../useCases/clipEditing/clipSplitStateRestorable';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
@@ -149,6 +149,40 @@ function prepareCreatedMidi(action: RestoreClipSplitStateAction) {
     return createdClipMidiCapture({ phase: 'prepare', action, clipId: action.payload.rightClipId });
 }
 
+function restoreSplitOwners(payload: RestoreClipSplitStateAction['payload']): boolean {
+    if (!replaceClipSplitTrackState(payload)) {
+        return false;
+    }
+    if (
+        !restoreMidiClipSplitState({
+            sourceClipId: payload.clipId,
+            rightClipId: payload.rightClipId,
+            expectedSource: payload.expected.sourceMidi,
+            expectedRight: payload.expected.rightMidi,
+            replacementSource: payload.replacement.sourceMidi,
+            replacementRight: payload.replacement.rightMidi,
+        })
+    ) {
+        return false;
+    }
+    if (payload.expected.clipAutomationLanes !== undefined) {
+        const lanesRestored = applyClipAutomationLaneTransition(
+            [payload.rightClipId],
+            payload.expected.clipAutomationLanes,
+            payload.replacement.clipAutomationLanes ?? []
+        );
+        if (!lanesRestored) {
+            return false;
+        }
+    }
+    if (payload.replacement.clipSatellites) {
+        for (const entry of payload.replacement.clipSatellites) {
+            writeClipSatelliteEntry(entry);
+        }
+    }
+    return true;
+}
+
 export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'>({
     validateSessionActionArguments: isRestoreClipSplitSessionPayload,
     // `expected`/`replacement` are mandatory on this payload, so every instance carries a real
@@ -187,35 +221,8 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
                     capture.splice(0, capture.length, ...stagedRetired);
                 }
             };
-            if (!replaceClipSplitTrackState(action.payload)) {
+            if (!restoreSplitOwners(action.payload)) {
                 return conflict();
-            }
-            if (
-                !restoreMidiClipSplitState({
-                    sourceClipId: action.payload.clipId,
-                    rightClipId: action.payload.rightClipId,
-                    expectedSource: action.payload.expected.sourceMidi,
-                    expectedRight: action.payload.expected.rightMidi,
-                    replacementSource: action.payload.replacement.sourceMidi,
-                    replacementRight: action.payload.replacement.rightMidi,
-                })
-            ) {
-                return conflict();
-            }
-            if (action.payload.expected.clipAutomationLanes !== undefined) {
-                const lanesRestored = applyClipAutomationLaneTransition(
-                    [action.payload.rightClipId],
-                    action.payload.expected.clipAutomationLanes,
-                    action.payload.replacement.clipAutomationLanes ?? []
-                );
-                if (!lanesRestored) {
-                    return conflict();
-                }
-            }
-            if (action.payload.replacement.clipSatellites) {
-                for (const entry of action.payload.replacement.clipSatellites) {
-                    writeClipSatelliteEntry(entry);
-                }
             }
             stagedRetired = applySplitTakeTransition(action.payload);
             createdMidi?.complete();

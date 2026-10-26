@@ -28,6 +28,29 @@ function trackSnapshotMatches(
     );
 }
 
+function clipOwnershipMatches(
+    tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[],
+    trackId: string,
+    clipId: string,
+    rightClipId: string,
+    rightClipPresent: boolean
+): boolean {
+    if (
+        tracks.some(
+            (candidate) =>
+                candidate.id !== trackId &&
+                candidate.clips.some((clip) => clip.id === clipId || clip.id === rightClipId)
+        )
+    ) {
+        return false;
+    }
+    const clips = tracks.flatMap((candidate) => candidate.clips);
+    return (
+        clips.filter((clip) => clip.id === clipId).length === 1 &&
+        clips.filter((clip) => clip.id === rightClipId).length === (rightClipPresent ? 1 : 0)
+    );
+}
+
 /** Same precondition `replaceClipSplitTrackState` writes against, kept as the sole export of its
  *  own file (rather than a second export alongside the write) so a handler's `validate` can
  *  preflight a batch without performing the write that `replaceClipSplitTrackState` performs once
@@ -51,16 +74,7 @@ export function clipSplitStateRestorable(
     if (!state || !track || !trackSnapshotMatches(track.clips, clipId, rightClipId, expected)) {
         return false;
     }
-    if (
-        state.tracks.some(
-            (candidate) =>
-                candidate.id !== expected.trackId &&
-                candidate.clips.some((clip) => clip.id === clipId || clip.id === rightClipId)
-        ) ||
-        state.tracks.flatMap((candidate) => candidate.clips).filter((clip) => clip.id === clipId).length !== 1 ||
-        state.tracks.flatMap((candidate) => candidate.clips).filter((clip) => clip.id === rightClipId).length !==
-            (expected.rightClip === null ? 0 : 1)
-    ) {
+    if (!clipOwnershipMatches(state.tracks, expected.trackId, clipId, rightClipId, expected.rightClip !== null)) {
         return false;
     }
     if (replacement.rightClip) {

@@ -7,7 +7,6 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
-import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import {
     gainEnvelopeStore,
     setWarpState,
@@ -16,6 +15,7 @@ import {
     warpStateStore,
 } from '#/modules/Arrangement/stores';
 import { addClip, addGainEnvelopePoint, addTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane, getAutomationHandlers, restoreAutomationLanes } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';

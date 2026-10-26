@@ -30,16 +30,7 @@ function historicalInsertionIndex(
     slot: NonNullable<MoveClipOptions['historicalSlot']>
 ): number | null {
     const { clipIndex, beforeClipId, afterClipId } = slot;
-    if (
-        !Number.isSafeInteger(clipIndex) ||
-        clipIndex < 0 ||
-        clipIndex > 0 !== (beforeClipId !== undefined) ||
-        (beforeClipId !== undefined &&
-            (typeof beforeClipId !== 'string' || beforeClipId.length === 0 || beforeClipId === clipId)) ||
-        (afterClipId !== undefined &&
-            (typeof afterClipId !== 'string' || afterClipId.length === 0 || afterClipId === clipId)) ||
-        (beforeClipId !== undefined && beforeClipId === afterClipId)
-    ) {
+    if (!validHistoricalSlot(slot, clipId)) {
         return null;
     }
     const before: number[] = [];
@@ -68,6 +59,23 @@ function historicalInsertionIndex(
     return Math.min(clipIndex, clips.length);
 }
 
+function validHistoricalSlot(slot: NonNullable<MoveClipOptions['historicalSlot']>, clipId: string): boolean {
+    const { clipIndex, beforeClipId, afterClipId } = slot;
+    if (
+        !Number.isSafeInteger(clipIndex) ||
+        clipIndex < 0 ||
+        clipIndex > 0 !== (beforeClipId !== undefined) ||
+        (beforeClipId !== undefined &&
+            (typeof beforeClipId !== 'string' || beforeClipId.length === 0 || beforeClipId === clipId)) ||
+        (afterClipId !== undefined &&
+            (typeof afterClipId !== 'string' || afterClipId.length === 0 || afterClipId === clipId)) ||
+        (beforeClipId !== undefined && beforeClipId === afterClipId)
+    ) {
+        return false;
+    }
+    return true;
+}
+
 function hasValidMoveCoordinates(startBeat: number, options?: MoveClipOptions): boolean {
     if (!Number.isFinite(startBeat) || startBeat < 0) {
         return false;
@@ -92,6 +100,24 @@ function isUnchangedPlacement(
         Object.is(oldStartBeat, startBeat) &&
         (options?.historicalEndBeat === undefined || Object.is(oldEndBeat, options.historicalEndBeat))
     );
+}
+
+function insertedCrossTrackClips(clips: readonly Clip[], clip: Clip, index: number): Clip[] {
+    const result = [...clips];
+    result.splice(index, 0, clip);
+    return result;
+}
+
+function moveInsertionIndex(
+    targetClips: readonly Clip[],
+    clipId: string,
+    sameHost: boolean,
+    slot?: MoveClipOptions['historicalSlot']
+): number | null {
+    if (!sameHost && slot !== undefined) {
+        return historicalInsertionIndex(targetClips, clipId, slot);
+    }
+    return targetClips.length;
 }
 
 export function moveClip(
@@ -164,10 +190,7 @@ export function moveClip(
         return false;
     }
 
-    let insertionIndex: number | null = targetTrack.clips.length;
-    if (!sameHost && options?.historicalSlot !== undefined) {
-        insertionIndex = historicalInsertionIndex(targetTrack.clips, clipId, options.historicalSlot);
-    }
+    const insertionIndex = moveInsertionIndex(targetTrack.clips, clipId, sameHost, options?.historicalSlot);
     if (insertionIndex === null) {
         return false;
     }
@@ -175,24 +198,15 @@ export function moveClip(
     const clipToMove = movedClip;
     // Array order controls overlap drawing and edge hit testing. A retime
     // keeps its slot so the forward move and historical restore preserve it.
-    let tracks;
-    if (sameHost) {
-        tracks = state.tracks.map((time) => {
-            if (time.id !== targetTrackId) {
-                return time;
-            }
-            return { ...time, clips: time.clips.map((clip) => (clip.id === clipId ? clipToMove : clip)) };
-        });
-    } else {
-        tracks = tracksWithoutClip.map((time) => {
-            if (time.id !== targetTrackId) {
-                return time;
-            }
-            const clips = [...time.clips];
-            clips.splice(insertionIndex, 0, clipToMove);
-            return { ...time, clips };
-        });
-    }
+    const tracks = (sameHost ? state.tracks : tracksWithoutClip).map((time) => {
+        if (time.id !== targetTrackId) {
+            return time;
+        }
+        const clips = sameHost
+            ? time.clips.map((clip) => (clip.id === clipId ? clipToMove : clip))
+            : insertedCrossTrackClips(time.clips, clipToMove, insertionIndex);
+        return { ...time, clips };
+    });
     setTrackState({ ...state, tracks });
 
     // Automation: shift from the original drag start (preview doesn't shift automation)
