@@ -1,0 +1,23 @@
+.agents/skills/review-stances/ai-notes-publication.md
+  s_d99a62fe2de3a3::t_01c13e9fa51b09 1-23
+scripts/__tests__/publishLane.spec.ts
+  s_d99a62fe2de3a3::t_98efff8be0653a 992-999,1002-1046,1048-1058,1060-1072,1074-1113,1115-1129
+scripts/publishLane.ts
+  s_d99a62fe2de3a3::t_f2f5cb6ab303f4 2074-2092,2095-2096,2098-2113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e85d25826c7a41ed2893c1066fd86bdec5359d8a",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

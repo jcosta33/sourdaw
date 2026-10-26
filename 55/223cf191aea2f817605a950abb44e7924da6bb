@@ -1,0 +1,21 @@
+.agents/skills/review-stances/public-repair-records.md
+  s_567a084d0540c4::t_6fc4763509173d 128-134
+scripts/reviewRiskPolicy.ts
+  s_567a084d0540c4::t_b5a54a54c3758c 151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55223cf191aea2f817605a950abb44e7924da6bb",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
