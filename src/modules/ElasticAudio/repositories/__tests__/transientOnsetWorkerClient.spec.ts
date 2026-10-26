@@ -58,19 +58,34 @@ describe('transient worker lifetime', () => {
                 signal: controller.signal,
             });
             const worker = ControlledWorker.instances[0]!;
-            if (kind === 'abort') controller.abort();
-            if (kind === 'error') worker.onerror?.();
-            if (kind === 'messageerror') worker.onmessageerror?.();
-            if (kind === 'timeout') await vi.advanceTimersByTimeAsync(100);
-            if (kind === 'invalid')
+            if (kind === 'abort') {
+                controller.abort();
+            }
+            if (kind === 'error') {
+                worker.onerror?.();
+            }
+            if (kind === 'messageerror') {
+                worker.onmessageerror?.();
+            }
+            if (kind === 'timeout') {
+                await vi.advanceTimersByTimeAsync(100);
+            }
+            if (kind === 'invalid') {
                 worker.onmessage?.(
                     new MessageEvent('message', {
                         data: { status: 'complete', hits: [{ sampleOffset: -1, confidence: NaN }] },
                     })
                 );
+            }
+            let expectedCode = 'analysis-failed';
+            if (kind === 'abort') {
+                expectedCode = 'cancelled';
+            } else if (kind === 'timeout') {
+                expectedCode = 'analysis-timed-out';
+            }
             expect(await result).toEqual({
                 status: 'failed',
-                code: kind === 'abort' ? 'cancelled' : kind === 'timeout' ? 'analysis-timed-out' : 'analysis-failed',
+                code: expectedCode,
             });
             expect(worker.terminate).toHaveBeenCalledTimes(1);
             expect(worker.onmessage).toBeNull();

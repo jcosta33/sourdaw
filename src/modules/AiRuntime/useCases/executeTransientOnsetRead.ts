@@ -41,11 +41,14 @@ function parseArguments(value: unknown): ParsedArguments | null {
     ) {
         return null;
     }
-    return {
+    const parsed: ParsedArguments = {
         clipId: argumentsValue.clipId,
         sensitivity: typeof argumentsValue.sensitivity === 'number' ? argumentsValue.sensitivity : 0.5,
-        ...(typeof argumentsValue.cursor === 'string' ? { cursor: argumentsValue.cursor } : {}),
     };
+    if (typeof argumentsValue.cursor === 'string') {
+        parsed.cursor = argumentsValue.cursor;
+    }
+    return parsed;
 }
 
 function failure(call: Call, code: string): ApplicationToolReceipt {

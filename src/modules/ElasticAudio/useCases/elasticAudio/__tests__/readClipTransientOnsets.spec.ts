@@ -78,14 +78,18 @@ describe('whole cached source transient read', () => {
         'copies %i channels, detects the whole source once and exposes only source identity and numerical hits',
         async (count) => {
             const samples = new Float32Array(32_000);
-            for (let frame = 4_096; frame < samples.length; frame += 4_096) samples[frame] = 1;
+            for (let frame = 4_096; frame < samples.length; frame += 4_096) {
+                samples[frame] = 1;
+            }
             const channels = Array.from({ length: count }, () => new Float32Array(samples));
             const cached = buffer(channels);
             mocks.cache.mockReturnValue(cached);
             const before = structuredClone(mocks.tracks);
             const result = await readClipTransientOnsets(request);
             expect(result.status).toBe('complete');
-            if (result.status !== 'complete') throw new Error(result.code);
+            if (result.status !== 'complete') {
+                throw new Error(result.code);
+            }
             expect(result.hits).toEqual(detectTransients(samples, 16_000, 0.5));
             expect(result.hits.length).toBeGreaterThan(0);
             expect(result.identity).toMatchObject({
@@ -207,12 +211,21 @@ describe('whole cached source transient read', () => {
     it.each(['missing', 'duplicate', 'midi', 'stale', 'project'] as const)(
         'refuses %s before the audio cache is touched',
         async (reason) => {
-            if (reason === 'missing') mocks.tracks = [];
-            if (reason === 'duplicate')
+            if (reason === 'missing') {
+                mocks.tracks = [];
+            }
+            if (reason === 'duplicate') {
                 mocks.tracks[0]!.alternatives = [{ id: 'duplicate', clips: mocks.tracks[0]!.clips }];
-            if (reason === 'midi') mocks.tracks[0]!.clips[0]!.type = 'midi';
-            if (reason === 'stale') mocks.current = false;
-            if (reason === 'project') mocks.projectId = 'other';
+            }
+            if (reason === 'midi') {
+                mocks.tracks[0]!.clips[0]!.type = 'midi';
+            }
+            if (reason === 'stale') {
+                mocks.current = false;
+            }
+            if (reason === 'project') {
+                mocks.projectId = 'other';
+            }
             expect(await readClipTransientOnsets(request)).toMatchObject({ status: 'failed' });
             expect(mocks.cache).not.toHaveBeenCalled();
             expect(mocks.worker).not.toHaveBeenCalled();
@@ -245,11 +258,21 @@ describe('whole cached source transient read', () => {
             mocks.cache.mockReturnValue(cached);
             const controller = new AbortController();
             mocks.worker.mockImplementation(async () => {
-                if (change === 'revision') mocks.current = false;
-                if (change === 'clip') mocks.tracks[0]!.clips = [];
-                if (change === 'buffer') mocks.cache.mockReturnValue(buffer([new Float32Array(4_096)]));
-                if (change === 'geometry') cached.length = 2_048;
-                if (change === 'abort') controller.abort();
+                if (change === 'revision') {
+                    mocks.current = false;
+                }
+                if (change === 'clip') {
+                    mocks.tracks[0]!.clips = [];
+                }
+                if (change === 'buffer') {
+                    mocks.cache.mockReturnValue(buffer([new Float32Array(4_096)]));
+                }
+                if (change === 'geometry') {
+                    cached.length = 2_048;
+                }
+                if (change === 'abort') {
+                    controller.abort();
+                }
                 return { status: 'complete', hits: [] };
             });
             expect(await readClipTransientOnsets({ ...request, signal: controller.signal })).toMatchObject({

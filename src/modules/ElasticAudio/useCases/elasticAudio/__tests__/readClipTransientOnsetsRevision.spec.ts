@@ -53,7 +53,9 @@ describe('transient source revision authority', () => {
         'accepts captured two-head checkpoint-only advances and rejects hidden project edits: edit=%s',
         async (edit) => {
             const base = getCrdtDoc<Record<string, unknown>>('root');
-            if (base === undefined) throw new Error('Root must exist.');
+            if (base === undefined) {
+                throw new Error('Root must exist.');
+            }
             const local = change(clone(base, { actor: '3333333333333333' }), (doc) => {
                 doc.tempo = 120;
             });
@@ -69,7 +71,9 @@ describe('transient source revision authority', () => {
             const truth = toJS(getCrdtDoc('root')!);
             mocks.worker.mockImplementation(async () => {
                 const left = change(localBranch, (doc) => {
-                    if (edit) doc.tempo = 128;
+                    if (edit) {
+                        doc.tempo = 128;
+                    }
                     doc.commandBatchIdempotency = { records: [{ batchId: 'left' }] };
                 });
                 const right = change(remoteBranch, (doc) => {

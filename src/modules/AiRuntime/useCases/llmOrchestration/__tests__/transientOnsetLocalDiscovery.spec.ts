@@ -38,22 +38,23 @@ vi.mock('../../getAgentToolCatalogEntries', async (importOriginal) => {
     return {
         getAgentToolCatalogEntries: (input: Parameters<typeof original.getAgentToolCatalogEntries>[0]) => {
             const result = original.getAgentToolCatalogEntries(input);
-            if (mocks.catalogMode === 'canonical') return result;
+            if (mocks.catalogMode === 'canonical') {
+                return result;
+            }
             return {
                 ...result,
-                items: result.items.map((item) =>
-                    'function' in item
-                        ? {
-                              ...item,
-                              function: {
-                                  ...item.function,
-                                  ...(mocks.catalogMode === 'wrong-name'
-                                      ? { name: 'analysis.measure' }
-                                      : { description: 'Provider-supplied replacement schema' }),
-                              },
-                          }
-                        : item
-                ),
+                items: result.items.map((item) => {
+                    if (!('function' in item)) {
+                        return item;
+                    }
+                    if (mocks.catalogMode === 'wrong-name') {
+                        return { ...item, function: { ...item.function, name: 'analysis.measure' } };
+                    }
+                    return {
+                        ...item,
+                        function: { ...item.function, description: 'Provider-supplied replacement schema' },
+                    };
+                }),
             };
         },
     };
@@ -74,7 +75,9 @@ function tools(prompt: string) {
     return [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)];
 }
 function names(index = 0): string[] {
-    return (mocks.tools.mock.calls[index]?.[0] as ToolSchema[]).map((tool) => tool.function.name);
+    const call = mocks.tools.mock.calls[index];
+    expect(call).toBeDefined();
+    return (call![0] as ToolSchema[]).map((tool) => tool.function.name);
 }
 
 beforeEach(() => {

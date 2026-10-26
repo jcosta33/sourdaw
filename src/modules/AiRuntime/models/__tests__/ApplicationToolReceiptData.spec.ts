@@ -4,6 +4,10 @@ import { type ApplicationToolReceipt } from '../ApplicationOwnedTool';
 import { classifyApplicationToolReceiptData } from '../ApplicationToolReceiptData';
 
 function receipt(status: ApplicationToolReceipt['status'], data: unknown): ApplicationToolReceipt {
+    let error: ApplicationToolReceipt['error'] = null;
+    if (status !== 'success') {
+        error = { code: 'cancelled', safeMessage: 'Cancelled.', retryable: false };
+    }
     return {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -15,14 +19,7 @@ function receipt(status: ApplicationToolReceipt['status'], data: unknown): Appli
         data,
         summary: 'Read source onsets.',
         warnings: [],
-        error:
-            status === 'success'
-                ? null
-                : {
-                      code: 'cancelled',
-                      safeMessage: 'Cancelled.',
-                      retryable: false,
-                  },
+        error,
     };
 }
 

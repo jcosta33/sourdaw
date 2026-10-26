@@ -434,6 +434,15 @@ describe('mandatory planning tools', () => {
                 mocks.backendChain.value = ['webllm'];
                 mocks.generateWebLlmToolCalls.mockImplementation(generateWebLlmToolCalls);
                 const providerResults: ModelProviderResult[] = [];
+                let discoveryContext: Parameters<typeof generateToolPlanningOutcome>[9];
+                if (transientOnsetsDiscovered) {
+                    discoveryContext = {
+                        firstUserMessage: built.message,
+                        history: [],
+                        budgetNote: '',
+                        transientOnsetsDiscovered,
+                    };
+                }
                 const outcome = await generateToolPlanningOutcome(
                     systemPrompt,
                     built.message,
@@ -444,9 +453,7 @@ describe('mandatory planning tools', () => {
                     undefined,
                     undefined,
                     AUTO_TOOL_CHOICE,
-                    transientOnsetsDiscovered
-                        ? { firstUserMessage: built.message, history: [], budgetNote: '', transientOnsetsDiscovered }
-                        : undefined,
+                    discoveryContext,
                     built.localMessage
                 );
                 return { built, outcome, providerResults, sent: mocks.generateWebLlmCompletion.mock.calls[0] };
@@ -586,7 +593,7 @@ describe('mandatory planning tools', () => {
                         }),
                     },
                     requestTurn: async (input) => {
-                        if (input.turn === 1)
+                        if (input.turn === 1) {
                             return {
                                 status: 'complete',
                                 toolCalls: [
@@ -597,7 +604,8 @@ describe('mandatory planning tools', () => {
                                     },
                                 ],
                             };
-                        if (input.turn === 2)
+                        }
+                        if (input.turn === 2) {
                             return {
                                 status: 'complete',
                                 toolCalls: [
@@ -608,6 +616,7 @@ describe('mandatory planning tools', () => {
                                     },
                                 ],
                             };
+                        }
                         evidence = input.receiptContext ?? '';
                         transientOnsetsDiscovered = input.transientOnsetsDiscovered;
                         return { status: 'complete', toolCalls: [] };
@@ -622,8 +631,9 @@ describe('mandatory planning tools', () => {
                 );
                 expect(outcome).toMatchObject({ status: 'complete' });
                 const [systemText, userText] = sent ?? [];
-                if (typeof systemText !== 'string' || typeof userText !== 'string')
+                if (typeof systemText !== 'string' || typeof userText !== 'string') {
                     throw new TypeError('The discovered receipt request must reach the local engine.');
+                }
                 const selected = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
                 expect(selected).toHaveLength(WEBLLM_TOOL_BUDGET);
                 expect(selected).toContain('analysis.detectTransients');

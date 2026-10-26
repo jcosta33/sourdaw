@@ -14,7 +14,7 @@ vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: mocks.projectI
 vi.mock('../../stores/agentResourceLimitsStore', () => ({ readAgentResourceLimits: mocks.limits }));
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
-const PROJECT_REVISION = 'revision:' + 'r'.repeat(20_000);
+const PROJECT_REVISION = `revision:${'r'.repeat(20_000)}`;
 const IDENTITY = {
     projectId: PROJECT_ID,
     clipId: 'clip-1',
@@ -28,14 +28,17 @@ const IDENTITY = {
 };
 
 function call(clipId = 'clip-1', cursor?: string, sensitivity?: number) {
+    const argumentsValue: { clipId: string; cursor?: string; sensitivity?: number } = { clipId };
+    if (cursor !== undefined) {
+        argumentsValue.cursor = cursor;
+    }
+    if (sensitivity !== undefined) {
+        argumentsValue.sensitivity = sensitivity;
+    }
     return {
         call: {
             name: 'analysis.detectTransients',
-            arguments: {
-                clipId,
-                ...(cursor === undefined ? {} : { cursor }),
-                ...(sensitivity === undefined ? {} : { sensitivity }),
-            },
+            arguments: argumentsValue,
         },
         callId: 'call-1',
         turn: 1,
@@ -48,11 +51,12 @@ function source(hits = [{ sampleOffset: 512, confidence: 0.75 }], isCurrent = ()
 
 function session(input: { signal?: AbortSignal; admitted?: boolean } = {}) {
     const settle = vi.fn();
-    const admit = vi.fn(() =>
-        input.admitted === false
-            ? { status: 'refused' as const, category: 'localAnalysis' }
-            : { status: 'admitted' as const, settle }
-    );
+    const admit = vi.fn(() => {
+        if (input.admitted === false) {
+            return { status: 'refused' as const, category: 'localAnalysis' };
+        }
+        return { status: 'admitted' as const, settle };
+    });
     return {
         ...executeTransientOnsetRead({ projectRevision: PROJECT_REVISION, signal: input.signal, admit }),
         admit,

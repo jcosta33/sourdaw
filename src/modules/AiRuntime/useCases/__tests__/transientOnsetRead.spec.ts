@@ -94,12 +94,17 @@ describe('planner transient read contract', () => {
     it.each([false, true])(
         'admits full cumulative receipts only when their carrier can hold them; native=%s',
         async (native) => {
-            const requestTurn = vi.fn(async ({ turn }: { turn: number }) => ({
-                status: 'complete' as const,
-                toolCalls:
-                    turn < 3 ? [{ id: `page-${String(turn)}`, name: READ, arguments: { clipId: 'clip-1' } }] : [],
-                ...(native ? { providerTurn: { provider: 'openai' as const, assistantItems: null } } : {}),
-            }));
+            const requestTurn = vi.fn(async ({ turn }: { turn: number }) => {
+                const result = {
+                    status: 'complete' as const,
+                    toolCalls:
+                        turn < 3 ? [{ id: `page-${String(turn)}`, name: READ, arguments: { clipId: 'clip-1' } }] : [],
+                };
+                if (native) {
+                    return { ...result, providerTurn: { provider: 'openai' as const, assistantItems: null } };
+                }
+                return result;
+            });
             const result = await runApplicationOwnedToolLoop({
                 loopId: 'text-receipt-cap',
                 terminalToolNames: new Set(['answer.respond']),
@@ -266,8 +271,12 @@ class SourceWorker {
         expect(request.channels[0]).not.toBe(sourceChannels[0]);
         expect(request.channels[0]).toEqual(sourceChannels[0]);
         onWorkerStarted?.();
-        if (workerMode === 'error') this.onerror?.();
-        if (workerMode === 'complete') this.onmessage?.({ data: { status: 'complete', hits: detectedHits } });
+        if (workerMode === 'error') {
+            this.onerror?.();
+        }
+        if (workerMode === 'complete') {
+            this.onmessage?.({ data: { status: 'complete', hits: detectedHits } });
+        }
     });
     constructor() {
         workers.push(this);
@@ -275,6 +284,15 @@ class SourceWorker {
 }
 let sourceChannels: Float32Array[];
 let cached: AudioBuffer;
+function sourceBuffer(): AudioBuffer {
+    return {
+        length: 96_000,
+        numberOfChannels: 2,
+        sampleRate: 48_000,
+        duration: 2,
+        getChannelData: (channel: number) => sourceChannels[channel]!,
+    } as AudioBuffer;
+}
 let revision: string;
 let bodies: Array<{
     tools: { function: { name: string; parameters: unknown } }[];
@@ -285,11 +303,17 @@ let cacheRead: MockInstance<typeof audioBufferCache.get>;
 
 function readReceipt(callId: string): ApplicationToolReceipt {
     const message = bodies.at(-1)?.messages.find((entry) => entry.role === 'tool' && entry.tool_call_id === callId);
-    if (typeof message?.content !== 'string') throw new Error(`Missing correlated provider receipt ${callId}`);
+    if (typeof message?.content !== 'string') {
+        throw new Error(`Missing correlated provider receipt ${callId}`);
+    }
     return JSON.parse(message.content) as ApplicationToolReceipt;
 }
 function onsetCall(id = 'onsets-1', cursor?: string) {
-    return { id, name: READ, arguments: { clipId: requestedClipId, ...(cursor === undefined ? {} : { cursor }) } };
+    const argumentsValue: { clipId: string; cursor?: string } = { clipId: requestedClipId };
+    if (cursor !== undefined) {
+        argumentsValue.cursor = cursor;
+    }
+    return { id, name: READ, arguments: argumentsValue };
 }
 function answer(evidenceCallIds: string[] = []) {
     return [
@@ -329,7 +353,9 @@ beforeEach(() => {
     provider.fallback = false;
     provider.sessions.length = 0;
     vi.stubGlobal('Worker', SourceWorker);
-    if (!hasCrdtDoc('root')) createCrdtDoc('root');
+    if (!hasCrdtDoc('root')) {
+        createCrdtDoc('root');
+    }
     registerCrdtStorageRuntime();
     projectStore.set({
         ...projectStore.value!,
@@ -360,13 +386,7 @@ beforeEach(() => {
     trackStore.set({ tracks: [track], ghostClips: [], selectedTrackId: track.id });
     sourceChannels = [new Float32Array(96_000), new Float32Array(96_000)];
     sourceChannels[0]![512] = 1;
-    cached = {
-        length: 96_000,
-        numberOfChannels: 2,
-        sampleRate: 48_000,
-        duration: 2,
-        getChannelData: (channel: number) => sourceChannels[channel]!,
-    } as AudioBuffer;
+    cached = sourceBuffer();
     cacheRead = vi
         .spyOn(audioBufferCache, 'get')
         .mockImplementation((id) => (id === RAW_BUFFER_ID ? cached : undefined));
@@ -375,7 +395,9 @@ beforeEach(() => {
     respond = (turn) => (turn === 0 ? [onsetCall()] : answer(['onsets-1']));
     provider.request.mockImplementation(async (request: { body: string; onBodyChunk: (chunk: Uint8Array) => void }) => {
         bodies.push(JSON.parse(request.body));
-        if (bodies.length === 1) expect(getSettledProjectId()).toBe('aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa');
+        if (bodies.length === 1) {
+            expect(getSettledProjectId()).toBe('aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa');
+        }
         const calls = respond(bodies.length - 1);
         request.onBodyChunk(
             new TextEncoder().encode(
@@ -412,7 +434,9 @@ afterEach(() => {
 describe('actual hosted planner, source owner and disposable read session', () => {
     it('returns two numeric pages on the provider wire, spends one analysis and changes no project, history, markers or PCM', async () => {
         respond = (turn) => {
-            if (turn === 0) return [onsetCall()];
+            if (turn === 0) {
+                return [onsetCall()];
+            }
             if (turn === 1) {
                 const receipt = readReceipt('onsets-1');
                 expect(receipt).toMatchObject({
@@ -452,8 +476,10 @@ describe('actual hosted planner, source owner and disposable read session', () =
             status: 'success',
             data: { timeAxis: 'source-buffer', frameCount: 96_000, hits: expect.any(Array), totalHitCount: 65 },
         });
-        expect((first?.data as { hits: unknown[] }).hits).toHaveLength(64);
-        expect((first?.data as { hits: unknown[] }).hits[0]).toEqual({
+        expect(first).toBeDefined();
+        const firstData = first!.data as { hits: unknown[] };
+        expect(firstData.hits).toHaveLength(64);
+        expect(firstData.hits[0]).toEqual({
             sourceSeconds: 512 / 48_000,
             confidence: 0.75,
         });
@@ -503,8 +529,11 @@ describe('actual hosted planner, source owner and disposable read session', () =
                     })),
                 });
                 revision = settlePendingProjectWritesAndCaptureRevision();
-            } else if (kind === 'missing-buffer') cacheRead.mockReturnValue(undefined);
-            else editRoot('onsetIntegrationMutation', true);
+            } else if (kind === 'missing-buffer') {
+                cacheRead.mockReturnValue(undefined);
+            } else {
+                editRoot('onsetIntegrationMutation', true);
+            }
             respond = (turn) => (turn === 0 ? [onsetCall()] : answer());
             const result = await run();
             expect(result.applicationToolReceipts?.[0]).toMatchObject({
@@ -519,12 +548,16 @@ describe('actual hosted planner, source owner and disposable read session', () =
         'rechecks source identity between pages: %s',
         async (change) => {
             respond = (turn) => {
-                if (turn === 0) return [onsetCall()];
+                if (turn === 0) {
+                    return [onsetCall()];
+                }
                 if (turn === 1) {
                     const cursor = (readReceipt('onsets-1').data as { nextCursor: string }).nextCursor;
-                    if (change === 'buffer-replaced') cached = { ...cached };
-                    else if (change === 'checkpoint-only') editRoot('commandBatchIdempotency', { onsetProof: true });
-                    else {
+                    if (change === 'buffer-replaced') {
+                        cached = sourceBuffer();
+                    } else if (change === 'checkpoint-only') {
+                        editRoot('commandBatchIdempotency', { onsetProof: true });
+                    } else {
                         editRoot('onsetHiddenEdit', true);
                         mutateCrdtDoc<Record<string, unknown>>({
                             id: 'root',
@@ -538,18 +571,26 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 return answer(change === 'checkpoint-only' ? ['onsets-2'] : []);
             };
             const result = await run();
-            expect(result.applicationToolReceipts?.[1]).toMatchObject(
-                change === 'checkpoint-only'
-                    ? { status: 'success', data: { complete: true } }
-                    : { status: 'failure', error: { code: 'stale-source' } }
-            );
+            if (change === 'checkpoint-only') {
+                expect(result.applicationToolReceipts?.[1]).toMatchObject({
+                    status: 'success',
+                    data: { complete: true },
+                });
+            } else {
+                expect(result.applicationToolReceipts?.[1]).toMatchObject({
+                    status: 'failure',
+                    error: { code: 'stale-source' },
+                });
+            }
             expect(workers).toHaveLength(1);
         }
     );
 
     it('disposes its source session when provider planning throws after a successful page', async () => {
         respond = (turn) => {
-            if (turn === 0) return [onsetCall()];
+            if (turn === 0) {
+                return [onsetCall()];
+            }
             throw new Error('Transport ended after the first page');
         };
         await run().catch(() => undefined);
@@ -577,7 +618,9 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 ]);
             }
             expect(system).toContain(`- ${READ}:`);
-            if (turn === 2) return JSON.stringify([onsetCall()]);
+            if (turn === 2) {
+                return JSON.stringify([onsetCall()]);
+            }
             expect(message).toContain('transient-onset-read');
             expect(message).toContain('source-buffer');
             expect(message).not.toContain(RAW_BUFFER_ID);
@@ -591,7 +634,9 @@ describe('actual hosted planner, source owner and disposable read session', () =
             const first = prior.receipts[1]!.data as { hits: unknown[]; nextCursor: string };
             expect(first.hits).toHaveLength(64);
             expect(first.hits[63]).toEqual({ sourceSeconds: (64 * 512) / 48_000, confidence: 0.75 });
-            if (turn === 3) return JSON.stringify([onsetCall('onsets-2', first.nextCursor)]);
+            if (turn === 3) {
+                return JSON.stringify([onsetCall('onsets-2', first.nextCursor)]);
+            }
             expect(prior.receipts[2]).toMatchObject({
                 status: 'success',
                 data: { complete: true, hits: [{ sourceSeconds: (65 * 512) / 48_000, confidence: 0.75 }] },
@@ -704,7 +749,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
                     return JSON.stringify(answer(['r'.repeat(256), 's'.repeat(256)]));
                 }
                 const turn = provider.completion.mock.calls.length;
-                if (turn === 1)
+                if (turn === 1) {
                     return JSON.stringify([
                         {
                             id: 'discovery',
@@ -712,7 +757,10 @@ describe('actual hosted planner, source owner and disposable read session', () =
                             arguments: { category: 'analysis', names: [READ] },
                         },
                     ]);
-                if (turn === 2) return JSON.stringify([onsetCall('r'.repeat(256))]);
+                }
+                if (turn === 2) {
+                    return JSON.stringify([onsetCall('r'.repeat(256))]);
+                }
                 const relevant = JSON.parse(message.split('relevant_evidence:\n')[1]?.split('\n\n')[0] ?? 'null') as {
                     receipts: { summary: { value: string; truncated: boolean } }[];
                 };
@@ -730,7 +778,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 return JSON.stringify([onsetCall('s'.repeat(256), firstCursor)]);
             });
             respond = (turn) => {
-                if (turn === 0)
+                if (turn === 0) {
                     return [
                         {
                             id: 'discovery',
@@ -738,13 +786,18 @@ describe('actual hosted planner, source owner and disposable read session', () =
                             arguments: { category: 'analysis', names: [READ] },
                         },
                     ];
-                if (turn === 1) return [onsetCall('r'.repeat(256))];
+                }
+                if (turn === 1) {
+                    return [onsetCall('r'.repeat(256))];
+                }
                 if (turn === 2) {
                     firstCursor = (readReceipt('r'.repeat(256)).data as { nextCursor: string }).nextCursor;
                     return [onsetCall('s'.repeat(256), firstCursor)];
                 }
                 expect((readReceipt('s'.repeat(256)).data as { hits: unknown[] }).hits).toHaveLength(total - 64);
-                if (fallback) throw new Error('Synthetic hosted transport failure before fallback');
+                if (fallback) {
+                    throw new Error('Synthetic hosted transport failure before fallback');
+                }
                 return answer(['r'.repeat(256), 's'.repeat(256)]);
             };
             const before = {

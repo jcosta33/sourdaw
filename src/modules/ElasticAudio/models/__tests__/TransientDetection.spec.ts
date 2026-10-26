@@ -31,7 +31,9 @@ describe('pure spectral-flux source detector', () => {
     it('keeps one global threshold rather than treating quiet segments as independent sources', () => {
         const samples = impulses();
         const split = samples.length / 2;
-        for (let frame = split; frame < samples.length; frame++) samples[frame] = samples[frame]! * 0.001;
+        for (let frame = split; frame < samples.length; frame++) {
+            samples[frame] = samples[frame]! * 0.001;
+        }
         expect(detectTransients(samples, 16_000, 0.5)).toHaveLength(2);
         expect(detectTransients(samples.slice(split), 16_000, 0.5)).toHaveLength(2);
     });
