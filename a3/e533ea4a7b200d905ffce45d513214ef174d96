@@ -1,0 +1,33 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_89fb0f579c7b06 792
+  s_29d8df116c5b92::t_bd47d32d3b49e0 9,16,24,33,46-47,54,56,75-95,197-206,211-213,263,265-267,311-321,349-353,364,417-432,461-463,471-472,478-505,557-570,572-579,586,608-609,628-630,647-649,722,793,829,831-848,857-859,936-960,966,1055-1068,1071-1079,1107-1127,1132-1139,1154-1169,1180-1198,1206-1217,1221-1232,1237-1238,1240-1249,1308-1309,1331-1340,1344,1354,1492-1500
+  s_29d8df116c5b92::t_437902174064a4 473,580-585,1341-1343
+  s_29d8df116c5b92::t_a87c47b969e3b5 711-717,1486-1491
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_29d8df116c5b92::t_91edf5d610e7e1 617,3426,3471,3520,3527,3705
+  s_29d8df116c5b92::t_088ca4907d0058 3310
+  s_29d8df116c5b92::t_5073b8d08a9ff0 3252,3288
+  s_29d8df116c5b92::t_8ceaca87ec9f23 3209,3243,3269
+  s_29d8df116c5b92::t_89da11fcd5e3ee 3093-3096,3098
+  s_29d8df116c5b92::t_b1a837357bacb9 3097
+  s_29d8df116c5b92::t_fd2642198aaca2 381-384
+  s_29d8df116c5b92::t_8be24a09dca03f 3074-3078,3090,3231-3233,3311
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_5435df91b74ac9 739-740,742
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a3e533ea4a7b200d905ffce45d513214ef174d96",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
