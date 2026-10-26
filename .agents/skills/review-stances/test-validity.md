@@ -429,6 +429,24 @@ signals readiness, ignores TERM, and remains blocked; apply short TERM/KILL boun
 attempts reach the final nonzero exit. Separately pin each real attempt and the maximum aggregate
 attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
+### Explicit protection tests must observe final caller admission
+
+Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports protection text that a grounding
+route did not enforce. PR [#5277](https://github.com/jcosta33/sourdaw/pull/5277) added coordinated-list
+restriction cases, including a Strings case expected to refuse. The earliest defect introduction
+and exact historical missed stance or tier remain unproven; that suite boundary alone proves no
+single-target or compiled-route protection.
+
+Require canonical actions or refusal through direct and atomic callers and through compiler-backed
+callers where the selector path applies. Remove the final protection enforcement in an isolated
+probe and require the named regression to fail; a helper-only parse assertion cannot establish
+admission. For retained protections, move selection after creating the real grounding basis,
+retain the original source call, refine twice, then compile a replacement targeting the formerly
+selected object. Assert the recorded identity, exception, proposal scope and final refusal together.
+Pair allowed gain with forbidden pan and rename after a whole-track fader exception, and add a
+later whole-object protection to prove that refinement narrows the earlier permission. Separately
+combine a positive fader protection and an exception through the basis producer and direct caller.
+
 ## Standing probes
 
 - PR #5091's head `71221839` replaced the registered event bus after earlier deletion
@@ -530,6 +548,23 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-25 — fixed protected IDs proved forwarding without source resolution (introduced by PR #2811)
+
+PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
+(`beb59d2e74a4d98992b692ff07a40635db22ee39`) introduced raw substring inference in
+`getApplicationProtectedObjects`. Its `getApplicationWorkflowScope` spec mocked that producer
+with fixed protected IDs, proving forwarding without proving which whole object the text
+protected. The historical review stance, prompt and tier are unestablished.
+
+Call the real producer for `leave Bass Verse unchanged`, `leave Bass fader unchanged`, and
+`leave Bass unchanged` with an exact track/clip or track/device name collision. Assert clip-only
+and facet-only independence, conservative track candidates, and an unconsumed mixed source
+range. Read the initial caller's recorded facts and require a sibling clip edit to survive;
+separately require frozen whole-owner descendants to remain refused. A structural preservation
+control must first assert its actual scope producer's `targetIds` and `excludedFrozenTrackIds`.
+An all-frozen fixture can produce no bulk scope, so an incidental named restriction cannot stand
+in for proof that the structural branch ran.
 
 ### 2026-10-21 — census specs pinned an observation count instead of the deadline (issue #5337)
 

@@ -148,6 +148,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/deliveryRemoteInspection.ts',
     'scripts/evidenceSafety.ts',
     'scripts/findingLineage.ts',
+    'scripts/gitAncestry.ts',
     'scripts/githubAppIdentity.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',

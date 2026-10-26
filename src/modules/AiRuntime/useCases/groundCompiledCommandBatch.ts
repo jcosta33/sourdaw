@@ -7,7 +7,11 @@ import { type CreativeRequestAuthority } from '../models/CreativeInterpretation'
 import { type IntentResult } from '../models/IntentResult';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
-import { type ProposalGroundingBasis } from '../models/ProposalGroundingBasis';
+import {
+    type BoundRequestProtections,
+    type ProposalGroundingBasis,
+    type ProposalProtectionFacts,
+} from '../models/ProposalGroundingBasis';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
@@ -19,7 +23,8 @@ import { composeVerifiedProviderProposalScope } from './agentReference/composeVe
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
-import { proposalGroundingBasis } from './agentReference/proposalGroundingBasis';
+import { proposalGroundingBasis, unionProposalProtectionFacts } from './agentReference/proposalGroundingBasis';
+import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
@@ -44,6 +49,10 @@ type GroundCompiledCommandBatchInput = {
      * any request; it is applied only to an ordinary batch, because only an ordinary card carries one.
      */
     refinementBasis?: ProposalGroundingBasis;
+    /** Immutable restrictions on the pending card, including cards without an ordinary grounding witness. */
+    refinementProtections?: ProposalProtectionFacts;
+    /** Resolved protections of this exact request when replaying a later scheduled slice. */
+    requestProtections?: BoundRequestProtections;
 };
 
 /** What grounding a refinement against its pending card's basis established. */
@@ -61,6 +70,7 @@ type GroundedFields = {
     providerProposal: AgentRunProviderProposal | null;
     /** What a later refinement of this batch's card inherits; only an ordinary batch carries one. */
     groundingBasis: ProposalGroundingBasis | undefined;
+    protectionFacts: ProposalProtectionFacts;
     refinement: GroundedRefinement | undefined;
 };
 
@@ -119,7 +129,7 @@ function bridgeCompiledCalls(
 ): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
     const transformProof = buildTransformProof(input);
-    const bridged = bridgeGroundedLlmToolCalls({
+    const bridgeInput: Parameters<typeof bridgeGroundedLlmToolCalls>[0] = {
         calls: input.toolCalls,
         context: input.context,
         markerSignatures,
@@ -131,7 +141,12 @@ function bridgeCompiledCalls(
         workflowCapabilityId: input.workflowCapabilityId,
         creativeAuthority: input.creativeAuthority,
         refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
-    });
+        protectionFacts: readPriorProtectionFacts(input),
+    };
+    if (input.requestProtections !== undefined) {
+        bridgeInput.requestProtections = input.requestProtections;
+    }
+    const bridged = bridgeGroundedLlmToolCalls(bridgeInput);
     if (bridged.clarification !== undefined) {
         return {
             status: 'clarify',
@@ -217,6 +232,7 @@ function composeGroundedFields(
     bridged: Bridged,
     guarded: Guarded
 ): GroundedFields {
+    const protectionFacts = composeProtectionFacts(input, bridged, guarded);
     const verifiedProviderProposalScope = composeVerifiedProviderProposalScope({
         actions: guarded.actions,
         compilerEvidence: input.compilerEvidence,
@@ -224,6 +240,7 @@ function composeGroundedFields(
         context: input.context,
         prompt: input.prompt,
         workflowCapabilityId: input.workflowCapabilityId,
+        requestProtectionFacts: input.requestProtections?.facts,
     });
     let effectiveProviderProposal = input.providerProposal;
     if (effectiveProviderProposal !== null && verifiedProviderProposalScope !== undefined) {
@@ -253,14 +270,14 @@ function composeGroundedFields(
         };
     }
 
-    const refinementProtectedIds = bridged.refinement?.protectedObjects.map((object) => object.id) ?? [];
-    if (effectiveProviderProposal !== null && refinementProtectedIds.length > 0) {
+    const protectedObjectIds = protectionFacts.protectedUnchanged.map((object) => object.id);
+    if (effectiveProviderProposal !== null && protectedObjectIds.length > 0) {
         effectiveProviderProposal = {
             ...effectiveProviderProposal,
             scope: {
                 ...effectiveProviderProposal.scope,
                 protectedTargetIds: [
-                    ...new Set([...effectiveProviderProposal.scope.protectedTargetIds, ...refinementProtectedIds]),
+                    ...new Set([...effectiveProviderProposal.scope.protectedTargetIds, ...protectedObjectIds]),
                 ],
             },
         };
@@ -278,7 +295,8 @@ function composeGroundedFields(
         providerKnownTargetIds: getProviderKnownTargetIds(input),
         matchSelectorPredicates,
         providerProposal: effectiveProviderProposal,
-        groundingBasis: composeGroundingBasis(input, bridged, guarded),
+        groundingBasis: composeGroundingBasis(input, bridged, guarded, protectionFacts),
+        protectionFacts,
         refinement: toGroundedRefinement(bridged),
     };
 }
@@ -303,7 +321,8 @@ function toGroundedRefinement(bridged: Bridged): GroundedRefinement | undefined 
 function composeGroundingBasis(
     input: GroundCompiledCommandBatchInput,
     bridged: Bridged,
-    guarded: Guarded
+    guarded: Guarded,
+    protectionFacts: ProposalProtectionFacts
 ): ProposalGroundingBasis | undefined {
     const alignsWithCalls =
         guarded.actions.length === input.toolCalls.length &&
@@ -320,24 +339,82 @@ function composeGroundingBasis(
     ) {
         return undefined;
     }
-    const promptProtections = getApplicationProtectedObjects({
-        actions: guarded.actions,
-        context: input.context,
-        prompt: input.prompt,
-    });
+    let basis: ProposalGroundingBasis;
     if (input.refinementBasis !== undefined && bridged.refinement !== undefined) {
-        return proposalGroundingBasis.extend({
+        basis = proposalGroundingBasis.extend({
             previous: input.refinementBasis,
             prompt: input.prompt,
             calls: input.toolCalls,
             inheritedCommandIndexes: bridged.refinement.inheritedCommandIndexes,
-            protectedUnchanged: unionProtectedObjects(promptProtections, bridged.refinement.protectedObjects),
+            protectedUnchanged: [],
+            protectedControls: [],
+        });
+    } else {
+        basis = proposalGroundingBasis.create({
+            prompt: input.prompt,
+            calls: input.toolCalls,
+            ...protectionFacts,
         });
     }
-    return proposalGroundingBasis.create({
-        prompt: input.prompt,
-        calls: input.toolCalls,
-        protectedUnchanged: promptProtections,
+    return { ...basis, ...protectionFacts };
+}
+
+function readControlFacts(
+    reading: ReturnType<typeof readExplicitProtections>
+): ProposalProtectionFacts['protectedControls'] {
+    return reading.protectedControls.map(({ trackId, actionTypes, exceptActionTypes }) => {
+        const control: ProposalProtectionFacts['protectedControls'][number] = { trackId, operations: actionTypes };
+        if (exceptActionTypes !== undefined) {
+            control.exceptOperations = exceptActionTypes;
+        }
+        return control;
+    });
+}
+
+/** Old cards may carry only a basis; its absent controls retain the established source replay fallback. */
+function readPriorProtectionFacts(input: GroundCompiledCommandBatchInput): ProposalProtectionFacts {
+    if (input.refinementProtections !== undefined) {
+        return unionProposalProtectionFacts(input.refinementProtections);
+    }
+    const basis = input.refinementBasis;
+    if (basis === undefined) {
+        return { protectedUnchanged: [], protectedControls: [] };
+    }
+    return unionProposalProtectionFacts({
+        protectedUnchanged: basis.protectedUnchanged,
+        protectedControls:
+            basis.protectedControls ??
+            basis.sources.flatMap((source) => readControlFacts(readExplicitProtections(source.text, input.context))),
+    });
+}
+
+/** Every route captures restrictions now, independently of whether its commands align to provider calls. */
+function composeProtectionFacts(
+    input: GroundCompiledCommandBatchInput,
+    bridged: Bridged,
+    guarded: Guarded
+): ProposalProtectionFacts {
+    if (input.requestProtections !== undefined) {
+        return unionProposalProtectionFacts(input.requestProtections.facts);
+    }
+    const readProtections = readExplicitProtections(input.prompt, input.context);
+    // The tracks and operations the request protects are recorded as they resolve now, so a later
+    // refinement never reads this request's selection phrases against a selection that has since moved.
+    // The application's protected objects already carry the selection and VCA tracks the reading keeps;
+    // the tracks it names are added here.
+    const promptProtections = unionProtectedObjects(
+        getApplicationProtectedObjects({
+            actions: guarded.actions,
+            context: input.context,
+            prompt: input.prompt,
+        }),
+        input.context.tracks
+            .filter((track) => readProtections.namedTrackIds.includes(track.id))
+            .map(({ id, name }) => ({ id, name }))
+    );
+    return unionProposalProtectionFacts(readPriorProtectionFacts(input), {
+        protectedUnchanged: unionProtectedObjects(promptProtections, bridged.refinement?.protectedObjects ?? []),
+        protectedControls: readControlFacts(readProtections),
     });
 }
 

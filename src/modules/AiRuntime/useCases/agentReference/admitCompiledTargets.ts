@@ -1,6 +1,7 @@
 import { type getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type BoundRequestProtections } from '../../models/ProposalGroundingBasis';
 import { type SemanticCommandListMatch, type SemanticCommandListSelector } from '../../models/SemanticCommandList';
 
 import {
@@ -17,6 +18,7 @@ import { maskQuotedLabels } from './groundingStrategies/maskQuotedLabels';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { hasExplicitTrackSelection } from './hasExplicitTrackSelection';
 import { normalizeAgentReferenceText } from './normalizeAgentReferenceText';
+import { readExplicitProtections } from './readExplicitProtections';
 import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolveAgentReference';
 
 /*
@@ -59,8 +61,9 @@ import { resolveAgentReference, type ResolveAgentReferenceInput } from './resolv
  *
  * Literal targets, owner-track picks in a request that names and selects no track, and selections
  * by role, role family, kind, device type, tag, condition or no filter at all, are taken as the
- * compiler resolved them, as before this check; so are names the request states beside a negation
- * ("don't touch Keys"). What the request must state for those is left to #5351 and #5353.
+ * compiler resolved them, subject to the protections above. Supported named prohibitions protect
+ * their objects rather than state picks. Remaining named-negation and positional-reference gaps
+ * belong to #5385; stricter selector-scope authority remains with #5351 and #5353.
  */
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -85,6 +88,7 @@ export type CompiledTargetAuthorityInput = {
     dependencyId?: string;
     /** The whole original request, where protections, exclusions and naming evidence are read. */
     prompt: string;
+    requestProtections?: BoundRequestProtections;
     /**
      * Set when each target already resolved against the request the way a direct call does; that
      * resolution is the naming evidence, so only the request's protections remain to apply.
@@ -97,7 +101,8 @@ export type CompiledTargetAuthorityInput = {
     valueTexts: readonly string[];
 };
 
-export type CompiledTargetAuthority = { status: 'admitted' } | { status: 'refused' };
+export type CompiledTargetAuthority =
+    { status: 'admitted' } | { status: 'refused'; reason: 'protected-or-excluded' | 'unauthorized' };
 
 /**
  * Owned capabilities whose candidates the resolver narrows to a track dependency's objects; it reads
@@ -113,7 +118,8 @@ const TRACK_DEPENDENT_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability
 const NAME_FORMS: AgentReferenceNameForms = 'with-number-forms';
 
 const ADMITTED: CompiledTargetAuthority = { status: 'admitted' };
-const UNAUTHORIZED: CompiledTargetAuthority = { status: 'refused' };
+const UNAUTHORIZED: CompiledTargetAuthority = { status: 'refused', reason: 'unauthorized' };
+const PROTECTED: CompiledTargetAuthority = { status: 'refused', reason: 'protected-or-excluded' };
 
 /**
  * The shared resolver's reading of what the text names by literal id or whole name, and the ranges
@@ -375,25 +381,43 @@ function maskWrittenValues(text: string, values: readonly string[], context: Pro
     }, text);
 }
 
-/** Everything the request protects or excludes, with every object on a protected track. */
+/** Keeps proven whole protections separate from conservative generic restriction matches. */
 function getProtectedIds(
     input: CompiledTargetAuthorityInput,
     request: MaskedRequest,
     restrictionRanges: readonly AgentReferenceTextRange[]
-): Set<string> {
+): { protectedIds: ReadonlySet<string>; genericRestrictionIds: ReadonlySet<string> } {
     const protectedIds = new Set(input.compilerExcludedIds);
-    for (const object of getApplicationProtectedObjects({
-        actions: [],
-        context: input.context,
-        prompt: input.prompt,
-    })) {
-        protectedIds.add(object.id);
+    let wholeObjects: ReturnType<typeof getApplicationProtectedObjects>;
+    let consumed: AgentReferenceTextRange[];
+    if (input.requestProtections !== undefined) {
+        wholeObjects = input.requestProtections.facts.protectedUnchanged;
+        consumed = input.requestProtections.resolvedTrackClauses;
+    } else {
+        const reading = readExplicitProtections(input.prompt, input.context);
+        wholeObjects = [
+            ...getApplicationProtectedObjects({ actions: [], context: input.context, prompt: input.prompt }),
+            ...input.context.tracks
+                .filter((track) => reading.protectedTrackIds.includes(track.id))
+                .map(({ id, name }) => ({ id, name })),
+        ];
+        consumed = reading.resolvedTrackClauses;
     }
+    for (const object of wholeObjects) {
+        protectedIds.add(object.id);
+        for (const ownedId of getTrackOwnedObjectIds(object.id, input.context)) {
+            protectedIds.add(ownedId);
+        }
+    }
+    // Whole owners are transferred before their source clauses are masked. Control facets remain
+    // enforced after grounding against the actual mutation owners, never as blanket exclusions.
+    const genericRestrictionIds = new Set<string>();
+    const genericRestrictions = consumed.reduce(blankRange, request.prompt);
     for (const range of restrictionRanges) {
-        const restriction = request.prompt.slice(range.start, range.end);
+        const restriction = genericRestrictions.slice(range.start, range.end);
         const { capability, context, dependencyId } = input;
         for (const id of readWithNamedOwners(readReferencedIds, restriction, capability, context, dependencyId)) {
-            protectedIds.add(id);
+            genericRestrictionIds.add(id);
         }
         // "leave Bass Verse unchanged" protects the clip, not every object on a track named Bass.
         const trackRestriction = readNaming(restriction, capability, context, dependencyId).nameRanges.reduce(
@@ -401,13 +425,13 @@ function getProtectedIds(
             restriction
         );
         for (const trackId of readReferencedIds(trackRestriction, 'track', context)) {
-            protectedIds.add(trackId);
+            genericRestrictionIds.add(trackId);
             for (const ownedId of getTrackOwnedObjectIds(trackId, context)) {
-                protectedIds.add(ownedId);
+                genericRestrictionIds.add(ownedId);
             }
         }
     }
-    return protectedIds;
+    return { protectedIds, genericRestrictionIds };
 }
 
 /**
@@ -572,8 +596,11 @@ function statesTrack(text: string, trackId: string, context: ProjectContext): bo
 export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): CompiledTargetAuthority {
     const request = maskRequest(input.prompt, input.context);
     const restrictionRanges = getRestrictionRanges(request, input.catalog);
-    const protectedIds = getProtectedIds(input, request, restrictionRanges);
+    const { protectedIds, genericRestrictionIds } = getProtectedIds(input, request, restrictionRanges);
     if (input.targetIds.some((targetId) => protectedIds.has(targetId))) {
+        return PROTECTED;
+    }
+    if (input.targetIds.some((targetId) => genericRestrictionIds.has(targetId))) {
         return UNAUTHORIZED;
     }
     if (input.referenceResolved) {
