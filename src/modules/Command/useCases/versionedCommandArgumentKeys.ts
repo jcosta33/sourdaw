@@ -1625,6 +1625,7 @@ const schemaDefinitions = [
             clipId: 0,
             newStartBeat: 1,
             loopOriginBeat: 67,
+            midiOffsetBeats: 1,
         },
         required: ['clipId', 'newStartBeat'],
         additionalProperties: false,
