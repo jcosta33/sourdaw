@@ -20,6 +20,13 @@ const handle_channel_pressure = vi.hoisted(() => vi.fn());
 const handle_pitch_bend = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000 }));
 
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingMidiNoteOn: () => null,
+    admitRecordingMidiNoteOff: () => undefined,
+    findOpenRecordingMidiAdmission: () => undefined,
+    takeOwnsRecordingRoot: () => true,
+}));
+
 vi.mock('../handleWebMidiNoteOn', () => ({
     handleWebMidiNoteOn: handle_note_on,
 }));

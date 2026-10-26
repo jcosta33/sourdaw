@@ -12,8 +12,12 @@ import { handleWebMidiNoteOff } from './webMidiInput/handleWebMidiNoteOff';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { admitRecordingMidiNoteOff, findOpenRecordingMidiAdmission } from '#/modules/Arrangement/useCases';
 import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompensatedRecordingPosition';
+import { transportStore } from '#/modules/Transport/stores';
 
 export function triggerLiveNoteOff(channel: number, note: number, releaseVelocity = 0): Promise<void> {
+    if (transportStore.value?.isRecording !== true) {
+        return handleWebMidiNoteOff(channel, note, releaseVelocity);
+    }
     const audioTime = audioEngine.context.currentTime;
     const opened = findOpenRecordingMidiAdmission(channel, note);
     if (opened) {

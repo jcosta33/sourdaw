@@ -13,8 +13,12 @@ import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompe
 import { getTargetTrackId } from '../repositories/webMidi/getTargetTrackId';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { admitRecordingMidiNoteOn } from '#/modules/Arrangement/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 export function triggerLiveNoteOn(channel: number, note: number, velocity: number): Promise<void> {
+    if (transportStore.value?.isRecording !== true) {
+        return handleWebMidiNoteOn(channel, note, velocity);
+    }
     const audioTime = audioEngine.context.currentTime;
     const position = captureEventPositionAt({ audioTime });
     const trackId = getTargetTrackId();
