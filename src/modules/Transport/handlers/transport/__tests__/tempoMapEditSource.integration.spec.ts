@@ -9,7 +9,7 @@ import {
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { sanitizeTrackSnapshot, type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, normalizeTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore, undoStore } from '#/modules/Command/stores';
 import {
@@ -47,7 +47,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { hasValidAudioSourceState, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { type AppAction, type HandlerCommitValidation } from '#/utils/handlerContract';
 import {
     setNotificationEventBus,
@@ -1011,6 +1011,10 @@ describe('tempo edits preserve the physical audio programme', () => {
             },
         });
         const before = getCrdtDoc('root');
+        if (!before) {
+            throw new Error('Expected the raw peer document');
+        }
+        const beforeHeads = Automerge.getHeads(before);
         const history = structuredClone(undoHistoryStore.value);
         let refused = false;
         try {
@@ -1061,10 +1065,35 @@ describe('tempo edits preserve the physical audio programme', () => {
             }
             expect(refused).toBe(true);
             expect(getCrdtDoc('root')).toBe(before);
+            expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(beforeHeads);
             expect(transportStore.value?.tempo).toBe(120);
         }
         expect(undoHistoryStore.value).toEqual(history);
-        authority();
+        if (kind === 'malformed-peer') {
+            // The raw orphan loop anchor is intentionally invalid; the owning
+            // Track projection drops it, so these two views cannot be identical.
+            flushAutomergeStorageWrites();
+            const rawTracks = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks;
+            if (!rawTracks) {
+                throw new Error('Expected raw peer tracks');
+            }
+            const rawPeer = rawTracks.tracks[0]?.clips.find((candidate) => candidate.id === 'peer');
+            expect(rawPeer?.audioLoopStartSeconds).toBe(0);
+            expect(Object.hasOwn(rawPeer ?? {}, 'audioOffsetSeconds')).toBe(false);
+            expect(hasValidAudioSourceState(rawPeer)).toBe(false);
+            const projected = sanitizeTrackSnapshot(rawTracks).tracks;
+            expect(trackStore.value?.tracks).toEqual(projected);
+            const projectedPeer = projected[0]?.clips.find((candidate) => candidate.id === 'peer');
+            expect(projectedPeer?.audioOffsetBeats).toBe(8);
+            expect(projectedPeer).not.toHaveProperty('audioLoopStartSeconds');
+            expect(Automerge.toJS(before)).toMatchObject({
+                takeLanes: takeLaneStore.value,
+                transport: { tempo: transportStore.value!.tempo },
+                tempoMap: tempoMapStore.value,
+            });
+        } else {
+            authority();
+        }
     });
 
     it('rejects individually valid saved replay legs that disagree with the forward source capture', async () => {
