@@ -287,6 +287,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        Reflect.deleteProperty(audioEngine.context, 'currentTime');
         commitGate.beforeClipId = null;
         commitGate.beforePending = null;
         liveMidiGate.pending = null;
@@ -566,7 +567,10 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         }
         flushAutomergeStorageWrites();
         mocks.audioClock.currentTime = 0.5;
-        vi.spyOn(audioEngine.context, 'currentTime', 'get').mockImplementation(() => mocks.audioClock.currentTime);
+        Object.defineProperty(audioEngine.context, 'currentTime', {
+            configurable: true,
+            get: () => mocks.audioClock.currentTime,
+        });
         expect(audioEngine.context.currentTime).toBe(0.5);
         expect(activeRecordingRef.current).toEqual([provisional.id]);
         expect(getTargetTrackId()).toBe(TRACK_ID);
