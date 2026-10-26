@@ -1,0 +1,25 @@
+.github/workflows/validation.yml
+  s_b3201877f50e8a::t_f2c16e7695e9d8 338-343
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_b3201877f50e8a::t_dadaaf14681bc5 714-720
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_b3201877f50e8a::t_a102ca621768e9 2,3737,4021-4050
+scripts/healthGateWorkflowContract.ts
+  s_b3201877f50e8a::t_e8a2a113c25064 109-113,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43b61a2cf7a10bcda2e1ce35017b70d92f841394",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
