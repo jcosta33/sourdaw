@@ -10,7 +10,7 @@ import { memberExpressionGeneration } from '../../repositories/webMidi/memberExp
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
 
-import { captureEventBeatAt } from './captureEventBeat';
+import { captureEventBeatAt, captureEventPositionAt } from './captureEventBeat';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
@@ -170,7 +170,12 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
         case 'noteOn': {
             // The recorded onset is the beat of the EVENT's own instant, not of
             // this callback's turn on the main thread (#4875).
-            const admittedTime = { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
+            const position = captureEventPositionAt(timeStamp);
+            const admittedTime = {
+                ...timeStamp,
+                recordingBeat: position.beat,
+                recordingPassIndex: position.passIndex,
+            };
             // The wheels it is struck under are those at arrival: bends admitted
             // while it waits in the queue move the note at their own frame.
             const admittedWheels = captureAdmittedWheels(channel);

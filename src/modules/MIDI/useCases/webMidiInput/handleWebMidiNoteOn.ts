@@ -20,7 +20,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
-import { resolveAdmittedEventBeat } from './resolveAdmittedEventBeat';
+import { resolveAdmittedEventPosition } from './resolveAdmittedEventBeat';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveChannelBendAtNoteStart } from './resolveChannelBendAtNoteStart';
 import { resolveDeviceNode } from './resolveDeviceNode';
@@ -60,7 +60,7 @@ export const handleWebMidiNoteOn = inject({
 
             const generation = memberExpressionGeneration.current;
             const eventTime = resolveInputEventTime({ timeStamp });
-            const admittedBeat = resolveAdmittedEventBeat({ timeStamp, eventTime });
+            const admittedPosition = resolveAdmittedEventPosition({ timeStamp, eventTime });
 
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
@@ -115,7 +115,8 @@ export const handleWebMidiNoteOn = inject({
 
             const noteData: ActiveNoteData = {
                 startTime: eventTime,
-                startBeat: transport ? admittedBeat : 0,
+                startBeat: transport ? admittedPosition.beat : 0,
+                recordingPassIndex: transport ? admittedPosition.passIndex : undefined,
                 channel,
                 note,
                 velocity,
