@@ -5,6 +5,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import * as audioAnalysisUseCases from '#/modules/AudioAnalysis/useCases';
 import {
     createTrack,
     getArrangementHandlers,
@@ -536,6 +537,48 @@ describe('analysis.measure of a proposal preview', () => {
         expect(undoHistoryStore.value).toEqual(historyBefore);
         expect(drumsLevel()).toBe(0);
         expect(engine.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('keeps requested metrics successful when auxiliary loudness is absent from objective analysis', async () => {
+        const revision = captureProjectRevision();
+        const measureObjective = audioAnalysisUseCases.measureAgentScopeRender;
+        const measurementSpy = vi
+            .spyOn(audioAnalysisUseCases, 'measureAgentScopeRender')
+            .mockImplementation((buffer, metrics) => {
+                const measurements = measureObjective(buffer, metrics);
+                delete measurements.integratedLoudness;
+                return measurements;
+            });
+
+        const read = await measure(
+            {
+                scope: DRUMS_SCOPE,
+                range: RANGE,
+                metrics: ['rms'],
+                subject: 'preview',
+                proposal: proposalOf(lowerGain(DRUMS_GAIN_ID, -6)),
+            },
+            revision
+        );
+
+        measurementSpy.mockRestore();
+        expect(read.receipt).toMatchObject({ status: 'success', data: { metrics: ['rms'] } });
+        expect(read.measuredPreview?.targets[0]).toMatchObject({
+            baseline: { rms: { status: 'measured' } },
+            preview: { rms: { status: 'measured' } },
+            deltas: { rms: { status: 'compared' } },
+            audition: {
+                baselineIntegratedLoudness: {
+                    status: 'unavailable',
+                    reason: 'Objective analysis did not return integrated loudness for this render.',
+                },
+                previewIntegratedLoudness: {
+                    status: 'unavailable',
+                    reason: 'Objective analysis did not return integrated loudness for this render.',
+                },
+            },
+        });
+        expect(read.receipt.error).toBeNull();
     });
 
     // Red when the loop stops comparing a retained preview's revision with the measurement's own.
