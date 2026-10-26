@@ -1,0 +1,46 @@
+src/components/daw/RotaryKnob.tsx
+  s_59e31a5c6f3e31::t_a92db7358a2f09 496-500
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  s_59e31a5c6f3e31::t_98287a206460a4 697-712
+  s_59e31a5c6f3e31::t_b50d9d4733e556 713-724
+src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx
+  s_59e31a5c6f3e31::t_98287a206460a4 82,86-89,204
+  s_59e31a5c6f3e31::t_f0e8952527e574 206
+  s_59e31a5c6f3e31::t_f51ca69cdd1ede 147
+  s_59e31a5c6f3e31::t_b0a63fe1e216e8 207-208
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.modulationSubscription.spec.tsx
+  s_59e31a5c6f3e31::t_98287a206460a4 11,15-18,110,375-380,383-390
+  s_59e31a5c6f3e31::t_f0e8952527e574 381
+  s_59e31a5c6f3e31::t_f51ca69cdd1ede 8,30-36,111,248,321,358,382,391,399,433,442,445,468
+  s_b3201877f50e8a::t_fe30ce424f52ba 392
+src/modules/Automation/stores/modulationDragPreviewStore.ts
+  s_59e31a5c6f3e31::t_a92db7358a2f09 4-8
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_59e31a5c6f3e31::t_be2923206480b0 80,266-269,289,366-367,379-381,403-406,417,441,443,473,478-479
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  s_59e31a5c6f3e31::t_a92db7358a2f09 25,573,591,594,599
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3cd30bdf1deba3d6eab1269ec2ea37bb5290b0c4",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
