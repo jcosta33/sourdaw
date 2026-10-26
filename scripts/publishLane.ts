@@ -2071,27 +2071,46 @@ export function shellPort(
         push: (lane, branch, headSha) => {
             const disabledHooksPath = join(session.configDir, 'disabled-hooks');
             mkdirSync(disabledHooksPath, { recursive: true, mode: 0o700 });
-            const hasAiNotes =
-                spawnSync(executables.git, ['rev-parse', '--verify', 'refs/notes/ai'], {
-                    cwd: lane,
-                    env: session.env,
-                }).status === 0;
+            const notes = spawnSync(executables.git, ['rev-parse', '--verify', '--quiet', 'refs/notes/ai'], {
+                cwd: lane,
+                env: session.env,
+                encoding: 'utf8',
+            });
+            if (notes.error !== undefined) {
+                throw notes.error;
+            }
+            if (notes.status !== 0 && notes.status !== 1) {
+                fail('cannot capture local git-ai authorship notes before publication');
+            }
+            const notesSha = notes.status === 0 ? notes.stdout.trim() : undefined;
+            const pendingRef = notesSha === undefined ? undefined : `refs/agents/pending-ai-notes/${notesSha}`;
+            if (pendingRef !== undefined && notesSha !== undefined) {
+                // Delivery refreshes refs/notes/ai from the remote. Pin this exact local history
+                // before either push so a refused optional upload remains recoverable afterwards.
+                spawnRun(executables.git, ['update-ref', pendingRef, notesSha], { cwd: lane, env: session.env });
+            }
+            const pushArgs = ['-c', `core.hooksPath=${disabledHooksPath}`, 'push', '--no-verify', GITHUB_HTTPS_REMOTE];
             spawnRun(
                 executables.git,
-                gitAuthenticatedArgs(token, session.configDir, [
-                    '-c',
-                    `core.hooksPath=${disabledHooksPath}`,
-                    'push',
-                    '--no-verify',
-                    GITHUB_HTTPS_REMOTE,
-                    `${headSha}:refs/heads/${branch}`,
-                    ...(hasAiNotes ? ['+refs/notes/ai:refs/notes/ai'] : []),
-                ]),
-                {
-                    cwd: lane,
-                    env: session.env,
-                }
+                gitAuthenticatedArgs(token, session.configDir, [...pushArgs, `${headSha}:refs/heads/${branch}`]),
+                { cwd: lane, env: session.env }
             );
+            if (notesSha === undefined || pendingRef === undefined) {
+                return;
+            }
+            try {
+                spawnRun(
+                    executables.git,
+                    gitAuthenticatedArgs(token, session.configDir, [...pushArgs, `${notesSha}:refs/notes/ai`]),
+                    { cwd: lane, env: session.env }
+                );
+            } catch (error) {
+                console.warn(
+                    `warning: git-ai authorship notes were not published; source branch was published. ` +
+                        `Local notes are retained at ${pendingRef}. Reconcile this ref with remote refs/notes/ai ` +
+                        `before a non-forced notes push: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
         },
         existingOpenPullRequest: (branch) => {
             const rows = parseJson<OpenPullRequestRow[]>(
