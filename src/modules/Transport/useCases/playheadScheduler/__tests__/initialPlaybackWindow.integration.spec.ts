@@ -112,6 +112,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: vi.fn(() => true),
+    admitRecordingCaptureClock: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
@@ -139,6 +140,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
     getAudioContext: () => audioContextStub,
+    createNativeRecordingCaptureClock: () => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    }),
     getCurrentTime: () => ctxTime.now,
     scheduleClick: scheduleClickSpy,
     getCompensationDelay: () => 0,

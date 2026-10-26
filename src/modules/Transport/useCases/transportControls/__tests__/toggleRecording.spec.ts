@@ -790,7 +790,7 @@ describe('toggleRecording', () => {
         mocks.startPlayback.mockImplementation((onRoll) =>
             Promise.resolve().then(() => {
                 audioClock.currentTime = 10.08;
-                onRoll?.(10.08, 0);
+                onRoll?.(10.08, 4);
             })
         );
 

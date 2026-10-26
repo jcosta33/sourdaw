@@ -22,7 +22,6 @@ import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSes
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
-import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { startPlayback } from '../startPlayback';
 
 const { timeSignatureMapStore } = vi.hoisted(
