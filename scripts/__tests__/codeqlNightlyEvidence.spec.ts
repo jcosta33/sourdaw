@@ -15,7 +15,7 @@ const SARIF_ID = '6c81cd8e-b078-4ac3-a3be-1dad7dbd0b53';
 const OTHER_SARIF_ID = '47177e22-5596-11eb-80a1-c1e54ef945c6';
 // #5308 introduced this unpinned writer; see .agents/skills/review-stances/test-validity.md for the paired-ZIP clock probe.
 const fixedZipFixtureMtime = new Date(Date.UTC(2026, 0, 1, 12));
-const zipDosBoundaryTimes = [1767268801999, 1767268802000];
+const zipDosBoundaryTimes: readonly [number, number] = [1767268801999, 1767268802000];
 const zip = (body: unknown) =>
     Buffer.from(
         zipSync({ 'evidence.json': new TextEncoder().encode(JSON.stringify(body)) }, { mtime: fixedZipFixtureMtime })
