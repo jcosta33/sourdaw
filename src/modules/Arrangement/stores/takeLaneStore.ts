@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/useCases';
 import {
     hasValidAudioPassOrigin,
     hasValidAudioSourceTiles,
@@ -33,7 +34,7 @@ const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId', 'baseGapAudioSources'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
-const TAKE_OPTIONAL_KEYS = [
+const TAKE_OPTIONAL_NUMBER_KEYS = [
     'sourceOffsetBeats',
     'sourceOffsetSeconds',
     'passAnchorSeconds',
@@ -42,6 +43,7 @@ const TAKE_OPTIONAL_KEYS = [
     'passOriginBeat',
     'passOriginSourceSeconds',
 ] as const;
+const TAKE_OPTIONAL_KEYS = [...TAKE_OPTIONAL_NUMBER_KEYS, 'midiSource'] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 const COMP_REGION_OPTIONAL_KEYS = ['audioSource'] as const;
 
@@ -108,7 +110,8 @@ function is_valid_take(value: unknown): value is Take {
         (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
         (!('sourceOffsetSeconds' in value) || is_finite_non_negative_number(value.sourceOffsetSeconds)) &&
         is_valid_pass_placement(value) &&
-        hasValidAudioPassOrigin(value)
+        hasValidAudioPassOrigin(value) &&
+        (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
     );
 }
 
@@ -168,6 +171,9 @@ function normalize_take(take: Take): Take {
             sanitized.passOriginBeat = take.passOriginBeat;
             sanitized.passOriginSourceSeconds = take.passOriginSourceSeconds;
         }
+    }
+    if (take.midiSource !== undefined) {
+        sanitized.midiSource = structuredClone(take.midiSource);
     }
     return sanitized;
 }
@@ -366,11 +372,14 @@ function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take
         endBeat: snapshot_number(value.endBeat, numbers),
         selected: value.selected,
     };
-    for (const field of TAKE_OPTIONAL_KEYS) {
+    for (const field of TAKE_OPTIONAL_NUMBER_KEYS) {
         const number = value[field];
         if (Object.hasOwn(value, field) && number !== undefined) {
             take[field] = snapshot_number(number, numbers);
         }
+    }
+    if (Object.hasOwn(value, 'midiSource') && value.midiSource !== undefined) {
+        take.midiSource = structuredClone(value.midiSource);
     }
     return take;
 }
