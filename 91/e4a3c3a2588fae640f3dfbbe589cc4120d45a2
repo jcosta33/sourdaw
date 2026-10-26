@@ -1,0 +1,28 @@
+src/modules/MIDI/useCases/index.ts
+  s_29d8df116c5b92::t_5a2994a696b0c4 197
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_29d8df116c5b92::t_5a2994a696b0c4 4,17,98-101,186
+src/modules/Arrangement/useCases/index.ts
+  s_29d8df116c5b92::t_5a2994a696b0c4 223
+src/modules/MIDI/useCases/webMidiInput/sealHeldRecordedMidiNotes.ts
+  s_29d8df116c5b92::t_5a2994a696b0c4 19,28,42-44
+src/modules/Arrangement/useCases/recording/recordingMidiAdmission.ts
+  s_29d8df116c5b92::t_5a2994a696b0c4 30-38,60
+  s_29d8df116c5b92::t_c9ff05ccba2b0a 39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "91e4a3c3a2588fae640f3dfbbe589cc4120d45a2",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
