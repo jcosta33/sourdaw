@@ -117,6 +117,8 @@ export const handleWebMidiNoteOn = inject({
                 startTime: eventTime,
                 startBeat: transport ? admittedPosition.beat : 0,
                 recordingPassIndex: transport ? admittedPosition.passIndex : undefined,
+                recordingAdmissionId:
+                    typeof timeStamp === 'object' && timeStamp !== null ? timeStamp.recordingAdmissionId : undefined,
                 channel,
                 note,
                 velocity,

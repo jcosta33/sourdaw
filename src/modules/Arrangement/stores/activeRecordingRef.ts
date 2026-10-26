@@ -26,10 +26,18 @@ export const activeRecordingRef: {
     current: string[];
     capturedRootIdentity: string | null;
     startWrapCount: number;
+    startBeat: number;
+    loopStart: number;
+    loopEnd: number;
+    startedLooping: boolean;
     midiAdmissions: RecordingMidiAdmission[];
 } = {
     current: [],
     capturedRootIdentity: null,
     startWrapCount: 0,
+    startBeat: 0,
+    loopStart: 0,
+    loopEnd: 0,
+    startedLooping: false,
     midiAdmissions: [],
 };

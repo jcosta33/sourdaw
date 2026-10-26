@@ -214,6 +214,13 @@ export { prepareRecoveredRecording } from './recording/prepareRecoveredRecording
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
 export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
+export {
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiNoteOff,
+    retireRecordingMidiAdmission,
+    getRecordingMidiAdmission,
+    findOpenRecordingMidiAdmission,
+} from './recording/recordingMidiAdmission';
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';

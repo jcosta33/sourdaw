@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { getRecordingMidiAdmission, retireRecordingMidiAdmission } from '#/modules/Arrangement/useCases';
 import { readBeatAtSamples } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
@@ -396,6 +397,12 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             defaultTempo,
             flatTimeline,
         } = placement;
+        const admission = noteData.recordingAdmissionId
+            ? getRecordingMidiAdmission(noteData.recordingAdmissionId)
+            : undefined;
+        if (noteData.recordingAdmissionId && !admission) {
+            return;
+        }
 
         // The end is read at the heard seconds from the SAME rewound
         // origin the start was placed with — the take conversion's
@@ -410,6 +417,9 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 readBeatAtSamples({ samples: originSeconds + durationSeconds, sampleRate: 1 }) -
                 latencyAdjustedOnsetBeat;
         }
+        if (admission?.releaseSourceBeat !== undefined) {
+            durationBeats = admission.releaseSourceBeat - admission.onsetSourceBeat;
+        }
 
         // Expression offsets share the compensated origin, so a curve
         // point lands on the beat its own heard instant maps to.
@@ -423,16 +433,22 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         // Preserve the played velocity (was hardcoded 100, M-143).
         const midiNote = deps.createMidiNote(
             note,
-            compensatedStartBeat,
+            admission?.onsetSourceBeat ?? compensatedStartBeat,
             Math.max(durationBeats, 0.0625),
             noteData.velocity ?? DEFAULT_NOTE_VELOCITY
         );
 
         if (!getMpeEnabled()) {
             deps.appendRecordedMidiNote({ clipId, note: midiNote });
+            if (admission) {
+                retireRecordingMidiAdmission(admission.id);
+            }
             return;
         }
         const recordedNote = withRecordedNoteExpression(midiNote, noteData, secondsToBeats);
         deps.appendRecordedMidiNote({ clipId, note: recordedNote });
+        if (admission) {
+            retireRecordingMidiAdmission(admission.id);
+        }
     };
 });

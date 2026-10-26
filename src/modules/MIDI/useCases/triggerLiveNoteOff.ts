@@ -9,7 +9,20 @@
  *                          (no release dynamic) for callers without one.
  */
 import { handleWebMidiNoteOff } from './webMidiInput/handleWebMidiNoteOff';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { admitRecordingMidiNoteOff, findOpenRecordingMidiAdmission } from '#/modules/Arrangement/useCases';
+import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompensatedRecordingPosition';
 
 export function triggerLiveNoteOff(channel: number, note: number, releaseVelocity = 0): Promise<void> {
-    return handleWebMidiNoteOff(channel, note, releaseVelocity);
+    const audioTime = audioEngine.context.currentTime;
+    const opened = findOpenRecordingMidiAdmission(channel, note);
+    if (opened) {
+        admitRecordingMidiNoteOff({
+            channel,
+            note,
+            audioTime,
+            position: captureCompensatedRecordingPosition(opened.trackId, audioTime),
+        });
+    }
+    return handleWebMidiNoteOff(channel, note, releaseVelocity, { audioTime });
 }

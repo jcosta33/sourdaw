@@ -1,4 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
+import {
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiNoteOn,
+    findOpenRecordingMidiAdmission,
+} from '#/modules/Arrangement/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
@@ -9,8 +14,10 @@ import { captureAdmittedWheels } from '../../repositories/webMidi/captureAdmitte
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
+import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 
 import { captureEventBeatAt, captureEventPositionAt } from './captureEventBeat';
+import { captureCompensatedRecordingPosition } from './captureCompensatedRecordingPosition';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
@@ -171,10 +178,34 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
             // The recorded onset is the beat of the EVENT's own instant, not of
             // this callback's turn on the main thread (#4875).
             const position = captureEventPositionAt(timeStamp);
+            const trackId = getTargetTrackId();
+            if (message.velocity === 0) {
+                const opened = findOpenRecordingMidiAdmission(channel, message.note);
+                if (opened) {
+                    admitRecordingMidiNoteOff({
+                        channel,
+                        note: message.note,
+                        audioTime: timeStamp.audioTime,
+                        position: captureCompensatedRecordingPosition(opened.trackId, timeStamp.audioTime),
+                    });
+                }
+            }
+            const admission =
+                message.velocity > 0 && trackId
+                    ? admitRecordingMidiNoteOn({
+                          trackId,
+                          channel,
+                          note: message.note,
+                          velocity: message.velocity,
+                          audioTime: timeStamp.audioTime,
+                          position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
+                      })
+                    : null;
             const admittedTime = {
                 ...timeStamp,
                 recordingBeat: position.beat,
                 recordingPassIndex: position.passIndex,
+                ...(admission ? { recordingAdmissionId: admission.id } : {}),
             };
             // The wheels it is struck under are those at arrival: bends admitted
             // while it waits in the queue move the note at their own frame.
@@ -185,7 +216,16 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
             );
         }
-        case 'noteOff':
+        case 'noteOff': {
+            const opened = findOpenRecordingMidiAdmission(channel, message.note);
+            if (opened) {
+                admitRecordingMidiNoteOff({
+                    channel,
+                    note: message.note,
+                    audioTime: timeStamp.audioTime,
+                    position: captureCompensatedRecordingPosition(opened.trackId, timeStamp.audioTime),
+                });
+            }
             return dispatchNoteHandler(
                 channel,
                 async () => {
@@ -193,6 +233,7 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 },
                 admittedRelease(channel, message.note)
             );
+        }
         case 'cc': {
             if (message.cc === CC_RESET_ALL_CONTROLLERS) {
                 admitResetAllControllers(channel);
