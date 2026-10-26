@@ -410,7 +410,10 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
                 ).catch((error: unknown) => {
                     logger.error(new Error('Recording commit failed', { cause: error }));
                     if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
-                        notifyUser('Recording stopped — the project switched branches while the take was landing, so it was not kept.', 'warning');
+                        notifyUser(
+                            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+                            'warning'
+                        );
                         return 'refused';
                     }
                     // A commit can reject after the root was replaced. Its

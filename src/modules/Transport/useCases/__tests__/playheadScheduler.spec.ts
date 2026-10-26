@@ -736,8 +736,10 @@ describe('playhead scheduler tick', () => {
                     sourceContextOriginSeconds: 0.05,
                     mediaOriginSeconds: 0.05,
                     sourceDurationSeconds: 1,
-                }
+                },
+                { shouldExecute: expect.any(Function) }
             );
+            expect(harness.commit_recording.mock.calls[0]?.[2]?.shouldExecute?.()).toBe(true);
         } finally {
             random_uuid.mockRestore();
         }

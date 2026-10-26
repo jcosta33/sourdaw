@@ -1,27 +1,31 @@
 import { logger } from '#/infra/logger/appLogger';
 import { nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
-import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { holdPlayheadClock, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
+import { prepareInitialBrowserPlayback } from '../playheadScheduler/prepareInitialBrowserPlayback';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
 import { startSchedulerWhenNativeSessionSettles, type HoldRelease } from './startSchedulerWhenNativeSessionSettles';
+import { stopPlayback } from './stopPlayback';
 
 /**
  * Resolves once the scheduler start has been decided, so a caller that has to
  * know when the transport actually rolled — a take opened from a stopped
  * transport, whose buffer is placed against that instant — can wait for it. A
- * browser build decides synchronously; a desktop build decides when the native
- * session settles or the hold cap expires.
+ * browser build prepares its first window before admitting the roll; a desktop
+ * build decides when the native session settles or the hold cap expires.
  */
 export async function startPlayback(onRoll?: (contextSeconds: number, beat: number) => void): Promise<void> {
     const state = getTransportState();
@@ -50,6 +54,11 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
     ensureTrackStrips();
 
     const startPosition = resolveRollStartBeat(state, timeSignatureMapStore.value?.changes ?? []);
+    const browserGeneration = nativeLiveGraphSessionOffered() ? null : claimSchedulerSession();
+    const browserRoot = browserGeneration === null ? null : captureProjectRootIdentity();
+    if (browserGeneration !== null) {
+        holdPlayheadClock(browserGeneration, startPosition);
+    }
 
     updateTransportState({ isPlaying: true, playheadPosition: startPosition });
     playheadPositionRef.current = startPosition;
@@ -60,9 +69,39 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
     // dead roll's wraps instead of the fresh epoch.
     playheadWrapCountRef.current = 0;
 
-    if (!nativeLiveGraphSessionOffered()) {
-        startPlayheadScheduler();
-        onRoll?.(playheadClockRef.audioTimeSeconds, playheadClockRef.beat);
+    if (browserGeneration !== null) {
+        const generation = browserGeneration;
+        const stillOwnsRequest = () =>
+            schedulerSession.generation === generation &&
+            captureProjectRootIdentity() === browserRoot &&
+            getTransportState()?.isPlaying === true;
+        const refuseCurrentRequest = async () => {
+            if (stillOwnsRequest()) {
+                await stopPlayback();
+                notifyUser('Playback changed while preparing. Press Play again.', 'warning');
+            }
+        };
+        try {
+            if (!stillOwnsRequest()) {
+                return;
+            }
+            const prepared = prepareInitialBrowserPlayback(generation);
+            if (!prepared) {
+                await refuseCurrentRequest();
+                return;
+            }
+            // The scheduler settles recording and programme readiness before
+            // admitting its one future roll anchor.
+            const started = await startPlayheadScheduler(prepared, onRoll);
+            if (started !== true) {
+                await refuseCurrentRequest();
+            }
+        } catch (error) {
+            logger.error(new Error('Playback preparation failed', { cause: error }));
+            await refuseCurrentRequest();
+        } finally {
+            releasePlayheadClockHold(generation);
+        }
         return;
     }
 
@@ -71,6 +110,7 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
     // replaced, and so any session still ticking — one a pause left running
     // because its teardown is deferred behind a recording flush — is retired
     // now instead of advancing the playhead through the wait.
+    releasePlayheadClockHold(schedulerSession.generation);
     const generation = claimSchedulerSession();
     // Held: the scheduler below waits for this session, so nothing has sounded
     // between the gesture and the roll and the engine opens where play asked.
