@@ -202,9 +202,12 @@ export function moveClip(
         if (time.id !== targetTrackId) {
             return time;
         }
-        const clips = sameHost
-            ? time.clips.map((clip) => (clip.id === clipId ? clipToMove : clip))
-            : insertedCrossTrackClips(time.clips, clipToMove, insertionIndex);
+        let clips: Clip[];
+        if (sameHost) {
+            clips = time.clips.map((clip) => (clip.id === clipId ? clipToMove : clip));
+        } else {
+            clips = insertedCrossTrackClips(time.clips, clipToMove, insertionIndex);
+        }
         return { ...time, clips };
     });
     setTrackState({ ...state, tracks });
