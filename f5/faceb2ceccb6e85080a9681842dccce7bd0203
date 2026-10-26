@@ -1,0 +1,42 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_59e31a5c6f3e31::t_66fe7d832e1d12 412-428,442-517,554-555,557,560,566,572,576,582-583,585,588
+  s_59e31a5c6f3e31::t_8277a7d35d9a5a 518-551,553,558,564,567-568,578,581,586
+  s_59e31a5c6f3e31::t_6693ddb0808600 399-411
+  s_59e31a5c6f3e31::t_6db8d10799f506 552,556,559,561-563,565,569-571,573-575,577,579-580,584,587,589-590
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  s_59e31a5c6f3e31::t_7de62863d98e8b 39,51,57-58,60,69,78-79,81,83,91-96,124-126,128-150,202-345
+  s_59e31a5c6f3e31::t_1be53e31d36454 100,127,720-729,732-735,818-876,878
+  s_59e31a5c6f3e31::t_60f31936cd9c65 346,877,879-880
+src/modules/MixerConsole/presentations/hooks/useChannelStripActions.ts
+  s_59e31a5c6f3e31::t_62b3e463118076 42-48,429-458
+  s_b3201877f50e8a::t_11e239abf52178 459
+tests/e2e/mixerChannelGainTestId.spec.ts
+  s_59e31a5c6f3e31::t_2fad9829489362 121-185
+src/modules/MixerConsole/presentations/hooks/__tests__/useChannelStripActions.spec.tsx
+  s_59e31a5c6f3e31::t_6693ddb0808600 780-815
+  s_59e31a5c6f3e31::t_49781b6ce8a21f 816-820,822-829,831,833-835
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5faceb2ceccb6e85080a9681842dccce7bd0203",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
