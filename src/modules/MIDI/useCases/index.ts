@@ -193,6 +193,7 @@ export { resetMidiState } from './webMidiInput/resetMidiState';
 export { resolveLiveInputNoteReceiver } from './webMidiInput/resolveLiveInputNoteReceiver';
 export { panicLiveNotes } from './webMidiInput/panicLiveNotes';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
+export { sealHeldRecordedMidiNotes } from './webMidiInput/sealHeldRecordedMidiNotes';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';
 

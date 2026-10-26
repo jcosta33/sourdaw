@@ -1,4 +1,5 @@
 import { inject } from '#/infra/di/inject';
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { logger } from '#/infra/logger/appLogger';
 import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
@@ -96,6 +97,12 @@ export const handleWebMidiNoteOn = inject({
             }
 
             const transport = deps.getTransportStoreValue();
+            const recordingClipId = transport?.isRecording
+                ? deps
+                      .getTrackStoreState()
+                      ?.tracks.find((track) => track.id === targetTrackId)
+                      ?.clips.find((clip) => clip.type === 'midi' && activeRecordingRef.current.includes(clip.id))?.id
+                : undefined;
             const engine = audioEngine;
             // When the key was struck, not when this handler got its turn on
             // the main thread (audit MD-1). Everything downstream — the voice
@@ -113,6 +120,7 @@ export const handleWebMidiNoteOn = inject({
                 note,
                 velocity,
                 trackId: targetTrackId,
+                recordingClipId,
                 instrumentTrackId: targetTrackId,
                 noteInstanceId,
                 pressure: memberExpression?.pressure,

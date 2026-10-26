@@ -490,6 +490,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             note: 60,
             velocity: 100,
             trackId: TRACK_ID,
+            recordingClipId: provisional.id,
             instrumentTrackId: TRACK_ID,
         });
         mocks.audioClock.currentTime = 1;

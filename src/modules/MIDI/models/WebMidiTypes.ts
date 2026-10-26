@@ -89,6 +89,8 @@ export type ActiveNoteData = {
     velocity?: number;
     /** Track that originated the note; selection changes must not retarget release. */
     trackId: string;
+    /** Provisional recording owner at onset; a later recording must not seal this held key. */
+    recordingClipId?: string;
     /** Instrument owner resolved at note-on; source-track changes must not retarget release. */
     instrumentTrackId: string;
     /** Stable runtime identity carried through the Yeast note-on/note-off pair. */

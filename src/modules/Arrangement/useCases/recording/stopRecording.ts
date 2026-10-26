@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { sealHeldRecordedMidiNotes } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { startFirstPassAtRecordPoint, type Take, type TakeLane } from '../../models/TakeLane';
@@ -168,6 +169,10 @@ export async function stopRecording(
             }),
         })),
     });
+
+    for (const clip of finalizedMidiClips) {
+        sealHeldRecordedMidiNotes({ clipId: clip.id, trackId: clip.trackId, endAudioTime: ending?.contextSeconds });
+    }
 
     // A MIDI clip stays on its record point, and so do the notes stored against
     // it; its passes sound from the clip's start, bounded by it, so only the

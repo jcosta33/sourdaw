@@ -1,5 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
-import { isFrozenMidiTakeSource } from '#/modules/MIDI/useCases';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import {
     hasValidAudioPassOrigin,
     hasValidAudioSourceTiles,
