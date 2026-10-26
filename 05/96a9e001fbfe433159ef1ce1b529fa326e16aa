@@ -1,0 +1,23 @@
+scripts/__tests__/fixtures/aptConfigStub/apt-config
+  s_b3201877f50e8a::t_12a949d1a1cda4 19
+scripts/__tests__/fixtures/hostedAptInstall/installer.py
+  s_b3201877f50e8a::t_770ffdc8c772b9 1-50
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_b3201877f50e8a::t_b6555e0620f0fc 1-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0596a9e001fbfe433159ef1ce1b529fa326e16aa",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
