@@ -2334,6 +2334,22 @@ fn proof_parameter_writes(
         }
         match proof_parameters::admit_native(key, value as f32, record) {
             Some(NativeAdmission::Apply { parameter, value }) => {
+                // Saved records and live writes share product bounds; auxiliary
+                // controls retain the bare DSP range.
+                let value = if parameter.live
+                    && (parameter.kind == ParameterKind::Continuous || parameter.clamp)
+                {
+                    value.clamp(parameter.live_minimum, parameter.live_maximum)
+                } else {
+                    value
+                };
+                if parameter.live
+                    && (value < parameter.live_minimum || value > parameter.live_maximum)
+                {
+                    return Err(format!(
+                        "device '{device_id}' refuses Proof parameter '{key}' or its value"
+                    ));
+                }
                 if parameter.route == ParameterRoute::Order {
                     let slot = key
                         .strip_prefix("chain_order_")
