@@ -46,6 +46,7 @@ export function admitRecordingMidiNoteOn(input: {
     velocity: number;
     audioTime: number;
     position: EventPosition;
+    initialExpression?: RecordingMidiAdmission['initialExpression'];
 }): RecordingMidiAdmission | null {
     if (transportStore.value?.isRecording !== true || !takeOwnsRecordingRoot()) {
         return null;
@@ -70,9 +71,43 @@ export function admitRecordingMidiNoteOn(input: {
         velocity: input.velocity,
         onsetAudioTime: input.audioTime,
         onsetSourceBeat,
+        ...(input.initialExpression ? { initialExpression: { ...input.initialExpression } } : {}),
     };
     activeRecordingRef.midiAdmissions.push(admitted);
     return admitted;
+}
+
+/** Keep a member-channel gesture on the admitted onset even while its live route waits. */
+export function admitRecordingMidiExpression(input: {
+    channel: number;
+    dimension: 'pressure' | 'slide' | 'pitchBend';
+    value: number;
+    audioTime: number;
+    bendRangeSemitones?: number;
+    position: EventPosition;
+}): void {
+    const admitted = activeRecordingRef.midiAdmissions.findLast(
+        (candidate) => candidate.channel === input.channel && candidate.releaseAudioTime === undefined
+    );
+    if (!admitted || !takeOwnsRecordingRoot() || input.audioTime < admitted.onsetAudioTime) {
+        return;
+    }
+    const sourcePosition = recordingMidiSourceBeatAt(admitted.clipId, input.position);
+    if (sourcePosition === null) {
+        return;
+    }
+    const changes = admitted.expressionChanges ?? [];
+    changes.push({
+        dimension: input.dimension,
+        value: input.value,
+        audioTime: input.audioTime,
+        sourceBeat: sourcePosition,
+        ...(input.bendRangeSemitones === undefined ? {} : { bendRangeSemitones: input.bendRangeSemitones }),
+    });
+    if (changes.length > 4096) {
+        changes.splice(1, 1);
+    }
+    admitted.expressionChanges = changes;
 }
 
 /** Accept key-up at arrival; a queued key-up still closes its own onset. */
@@ -110,6 +145,15 @@ export function findOpenRecordingMidiAdmission(channel: number, note: number): R
     return activeRecordingRef.midiAdmissions.findLast(
         (candidate) =>
             candidate.channel === channel && candidate.note === note && candidate.releaseAudioTime === undefined
+    );
+}
+
+export function findOpenRecordingMidiMemberAdmission(channel: number): RecordingMidiAdmission | undefined {
+    if (!takeOwnsRecordingRoot()) {
+        return undefined;
+    }
+    return activeRecordingRef.midiAdmissions.findLast(
+        (candidate) => candidate.channel === channel && candidate.releaseAudioTime === undefined
     );
 }
 

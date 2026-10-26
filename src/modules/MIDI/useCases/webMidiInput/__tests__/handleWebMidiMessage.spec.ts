@@ -23,7 +23,9 @@ const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     admitRecordingMidiNoteOn: () => null,
     admitRecordingMidiNoteOff: () => undefined,
+    admitRecordingMidiExpression: () => undefined,
     findOpenRecordingMidiAdmission: () => undefined,
+    findOpenRecordingMidiMemberAdmission: () => undefined,
     takeOwnsRecordingRoot: () => true,
 }));
 

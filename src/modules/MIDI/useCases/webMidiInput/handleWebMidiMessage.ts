@@ -2,22 +2,28 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     admitRecordingMidiNoteOff,
     admitRecordingMidiNoteOn,
+    admitRecordingMidiExpression,
     findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
 } from '#/modules/Arrangement/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
-import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { createWebMidiNoteKey, MPE_SLIDE_CC, type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { PITCH_BEND_CENTER } from '#/utils/midiData';
 import { admitPitchBend } from '../../repositories/webMidi/admitPitchBend';
 import { admitResetAllControllers } from '../../repositories/webMidi/admitResetAllControllers';
 import { captureAdmittedWheels } from '../../repositories/webMidi/captureAdmittedWheels';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
+import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 
 import { captureEventBeatAt, captureEventPositionAt } from './captureEventBeat';
 import { captureCompensatedRecordingPosition } from './captureCompensatedRecordingPosition';
+import { captureRecordingMemberExpression } from './captureRecordingMemberExpression';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
@@ -162,6 +168,31 @@ function admitControllerTime(timeStamp: CapturedInputEventTime): CapturedInputEv
     return { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
 }
 
+function admitMemberExpression(
+    channel: number,
+    dimension: 'pressure' | 'slide' | 'pitchBend',
+    value: number,
+    timeStamp: CapturedInputEventTime
+): void {
+    if (transportStore.value?.isRecording !== true || channel < 1 || !getMpeEnabled()) {
+        return;
+    }
+    const admitted = findOpenRecordingMidiMemberAdmission(channel);
+    if (!admitted) {
+        return;
+    }
+    admitRecordingMidiExpression({
+        channel,
+        dimension,
+        value,
+        audioTime: timeStamp.audioTime,
+        position: captureCompensatedRecordingPosition(admitted.trackId, timeStamp.audioTime),
+        ...(dimension === 'pitchBend'
+            ? { bendRangeSemitones: resolveBendRangeSemitones({ channel, mpeEnabled: true }) }
+            : {}),
+    });
+}
+
 /** Completion of accepted work, when that message had to wait in a queue. */
 export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> | void {
     const message = parseWebMidiMessage(event);
@@ -199,6 +230,7 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                           velocity: message.velocity,
                           audioTime: timeStamp.audioTime,
                           position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
+                          initialExpression: captureRecordingMemberExpression(channel),
                       })
                     : null;
             const admittedTime = {
@@ -235,6 +267,9 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
             );
         }
         case 'cc': {
+            if (message.cc === MPE_SLIDE_CC) {
+                admitMemberExpression(channel, 'slide', message.value, timeStamp);
+            }
             if (message.cc === CC_RESET_ALL_CONTROLLERS) {
                 admitResetAllControllers(channel);
             }
@@ -244,10 +279,17 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
             });
         }
         case 'channelPressure':
+            admitMemberExpression(channel, 'pressure', message.pressure, timeStamp);
             return dispatchExpressionHandler(channel, () =>
                 handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
             );
         case 'pitchBend': {
+            admitMemberExpression(
+                channel,
+                'pitchBend',
+                ((message.msb << 7) | message.lsb) - PITCH_BEND_CENTER,
+                timeStamp
+            );
             admitPitchBend(channel, message.lsb, message.msb);
             const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {

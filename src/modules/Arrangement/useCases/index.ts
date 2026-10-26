@@ -217,9 +217,11 @@ export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
 export {
     admitRecordingMidiNoteOn,
     admitRecordingMidiNoteOff,
+    admitRecordingMidiExpression,
     retireRecordingMidiAdmission,
     getRecordingMidiAdmission,
     findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
     recordingMidiSourceBeatAt,
 } from './recording/recordingMidiAdmission';
 

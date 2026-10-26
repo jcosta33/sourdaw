@@ -38,6 +38,7 @@ import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
 import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
 import { setTargetTrackId } from '#/modules/MIDI/repositories/webMidi/setTargetTrackId';
 import { getTargetTrackId } from '#/modules/MIDI/repositories/webMidi/getTargetTrackId';
+import { setMpeEnabledInternal } from '#/modules/MIDI/repositories/webMidi/setMpeEnabledInternal';
 import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
 import { triggerLiveNoteOn } from '#/modules/MIDI/useCases/triggerLiveNoteOn';
 
@@ -300,6 +301,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
         setTargetTrackId(null);
+        setMpeEnabledInternal(false);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -597,12 +599,16 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         retireRecordingMidiAdmission(probe!.id);
         const worker = Promise.withResolvers<void>();
         liveMidiGate.pending = worker.promise;
+        setMpeEnabledInternal(true);
 
         const physical = handleWebMidiMessage({ data: new Uint8Array([0x90, 62, 111]), timeStamp: undefined });
         playheadWrapCountRef.current = 1;
         playheadClockRef.beat = 4.75;
         playheadClockRef.audioTimeSeconds = 3;
         mocks.audioClock.currentTime = 3;
+        const slide = handleWebMidiMessage({ data: new Uint8Array([0xb1, 74, 90]), timeStamp: undefined });
+        const pressure = handleWebMidiMessage({ data: new Uint8Array([0xd1, 70]), timeStamp: undefined });
+        const bend = handleWebMidiMessage({ data: new Uint8Array([0xe1, 0, 96]), timeStamp: undefined });
         const virtual = triggerLiveNoteOn(2, 64, 99);
         playheadWrapCountRef.current = 2;
         playheadClockRef.beat = 5;
@@ -623,7 +629,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
 
         await stopActiveRecording();
         worker.resolve();
-        await Promise.all([physical, virtual, physicalThird]);
+        await Promise.all([physical, virtual, physicalThird, slide, pressure, bend]);
 
         const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
         expect(notes.map((note) => [note.pitch, note.startBeat, note.duration])).toEqual([
@@ -631,6 +637,11 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             [64, 4.75, 4.75],
             [67, 9, 0.5],
         ]);
+        expect(notes[0]?.expression).toMatchObject({
+            slide: [{ offsetBeats: 4.25, value: 90 }],
+            pressure: [{ offsetBeats: 4.25, value: 70 }],
+            pitchBend: [{ offsetBeats: 4.25, value: 4096 }],
+        });
         expect(committedEntryCount()).toBe(1);
         await undo();
         expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);

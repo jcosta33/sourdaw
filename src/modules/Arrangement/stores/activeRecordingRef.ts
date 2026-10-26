@@ -20,6 +20,19 @@ export type RecordingMidiAdmission = {
     onsetSourceBeat: number;
     releaseAudioTime?: number;
     releaseSourceBeat?: number;
+    initialExpression?: {
+        pressure?: number;
+        slide?: number;
+        pitchBend?: number;
+        pitchBendRangeSemitones?: number;
+    };
+    expressionChanges?: Array<{
+        dimension: 'pressure' | 'slide' | 'pitchBend';
+        value: number;
+        audioTime: number;
+        sourceBeat: number;
+        bendRangeSemitones?: number;
+    }>;
 };
 
 export const activeRecordingRef: {

@@ -10,6 +10,7 @@
 import { handleWebMidiNoteOn } from './webMidiInput/handleWebMidiNoteOn';
 import { captureEventPositionAt } from './webMidiInput/captureEventBeat';
 import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompensatedRecordingPosition';
+import { captureRecordingMemberExpression } from './webMidiInput/captureRecordingMemberExpression';
 import { getTargetTrackId } from '../repositories/webMidi/getTargetTrackId';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { admitRecordingMidiNoteOn } from '#/modules/Arrangement/useCases';
@@ -31,6 +32,7 @@ export function triggerLiveNoteOn(channel: number, note: number, velocity: numbe
                   velocity,
                   audioTime,
                   position: captureCompensatedRecordingPosition(trackId, audioTime),
+                  initialExpression: captureRecordingMemberExpression(channel),
               })
             : null;
     return handleWebMidiNoteOn(channel, note, velocity, {
