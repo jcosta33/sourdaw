@@ -1,0 +1,21 @@
+tests/e2e/modulationHaloInteraction.spec.ts
+  s_59e31a5c6f3e31::t_1727dffd65c0d9 25-26
+  s_59e31a5c6f3e31::t_35e15c299df418 1-24,27-64,69-110,118-121,123-131,133-141,143-157,159-180
+  s_59e31a5c6f3e31::t_8e80d06e0373c3 65-68,111-117,122,132,142,158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a15e51dbd56b907411b2bef3f55ee9f42decf1d",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
