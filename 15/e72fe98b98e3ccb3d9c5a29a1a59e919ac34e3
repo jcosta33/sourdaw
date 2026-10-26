@@ -1,0 +1,35 @@
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 40-42
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 42
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 80-82
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 77-79
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 30-32
+src/modules/Tuner/presentations/views/__tests__/TunerPanelPoly.spec.tsx
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 24-26
+src/modules/Crumbs/useCases/__tests__/voiceStacking.spec.ts
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 23-26
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 100-102
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_d99a62fe2de3a3::t_27a11a9e2baa79 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15e72fe98b98e3ccb3d9c5a29a1a59e919ac34e3",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
