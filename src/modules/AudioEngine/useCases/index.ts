@@ -149,6 +149,7 @@ export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSess
 export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
+export { createNativeRecordingCaptureClock } from './livePlayback/nativeRecordingCaptureClock';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
 export { sendNativeLiveMidiControl } from './livePlayback/sendNativeLiveMidiControl';
 export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';

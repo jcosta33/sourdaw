@@ -5,19 +5,25 @@ import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
-import { playheadPositionRef } from '../../stores/playheadPositionRef';
 
+import { captureRecordingEnd } from './captureRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
 async function closeActiveRecording(): Promise<void> {
     recordingLifecycle.cancelPendingRecordingStart();
+    const ending = captureRecordingEnd();
+    recordingLifecycle.endRecording();
     const recordingFlush = stopAudioRecording();
-    // Close the clips where the playhead actually is. Mid-playback the transport
-    // store still holds the beat playback started at (it is written on discrete
-    // events only), which would truncate the take back to its own start beat.
+    // A manual ending belongs to its synchronous receipt, between ticks too.
+    // The last published playhead can precede captured PCM; passing it as an
+    // intended cap would discard the tail before a pending seam sounds.
     const rolling = getTransportState()?.isPlaying === true;
     const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
-    const recordingCommit = stopRecording(rolling ? playheadPositionRef.current : undefined);
+    const recordingCommit = stopRecording(
+        rolling ? ending?.beatAtContextSeconds(ending.contextSeconds) : undefined,
+        ending,
+        true
+    );
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to
         // know that the project it is leaving gained a take. A stop the root
@@ -66,9 +72,6 @@ export async function stopActiveRecording(): Promise<void> {
         await closing;
     } finally {
         await recordingLifecycle.waitForClosing();
-        // The falling edge this stop wrote started an overdub pass landing, behind the snapshot
-        // transaction queue; the stop is not done until it has landed or been refused, or the next
-        // Undo would act on the entry before it and the pass would arrive as an orphan.
         await waitForOverdubLanding();
     }
 }

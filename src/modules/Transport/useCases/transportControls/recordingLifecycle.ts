@@ -1,5 +1,21 @@
 import { countSettledOverdubPasses, isOverdubLanding } from '#/modules/MIDI/useCases';
 
+import type { createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
+import type { NativeCaptureSnapshot, NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
+
+type NativeCaptureReader = () => ReturnType<ReturnType<typeof createNativeRecordingCaptureClock>['read']>;
+
+type CaptureClockObserver = (
+    beat: number,
+    contextSeconds: number,
+    relocated: boolean,
+    effectiveFromContextSeconds?: number,
+    songSeconds?: number,
+    nativeOutput?: boolean,
+    nativeBoundary?: NativeCaptureBoundary,
+    nativeSnapshot?: NativeCaptureSnapshot
+) => void;
+
 type RecordingLifecycle = {
     readonly countInTimerId: ReturnType<typeof setTimeout> | null;
     /** How many take commits and overdub passes have settled, whether they landed or were retired. */
@@ -12,10 +28,18 @@ type RecordingLifecycle = {
     isClosingRecording: () => boolean;
     ownsPendingRecordingStart: (token: number) => boolean;
     setCountInTimerId: (id: ReturnType<typeof setTimeout> | null) => void;
+    /** Own the synchronous ending snapshot until this capture settles. */
+    registerEnding: (end: () => void) => () => void;
+    endRecording: () => void;
+    registerCaptureClock: (observe: CaptureClockObserver) => () => void;
+    registerNativeCaptureClock: (read: NativeCaptureReader, readSourceStart?: () => number | null) => () => void;
+    readNativeCaptureClock: () => ReturnType<NativeCaptureReader> | undefined;
+    readNativeCaptureSourceStart: () => number | null;
+    observeCaptureClock: CaptureClockObserver;
     /** Own the stop that is closing a recording, so every later stop and the idle check can see it. */
     trackClosing: (closing: Promise<void>) => void;
     /** Own the commit a capture terminal started, so a stop can await it. */
-    trackCommit: (commit: Promise<void>) => void;
+    trackCommit: (commit: Promise<void | 'refused'>) => void;
     /**
      * Track a stop's promise for the settled-TAKE count: a stop that resolved `refused`
      * (#5517) closed nothing, so it must not read as a take this
@@ -45,7 +69,12 @@ let settledCommitCount = 0;
  * for the entry — the scheduler never does, because it must not block on it.
  * `waitForCommits` empties it, so it belongs to the stops alone.
  */
-const pendingCommits = new Set<Promise<void>>();
+const recordingEndings = new Set<() => void>();
+const recordingClocks = new Set<CaptureClockObserver>();
+const nativeCaptureReaders = new Set<NativeCaptureReader>();
+const nativeSourceStarts = new Map<NativeCaptureReader, () => number | null>();
+
+const pendingCommits = new Set<Promise<void | 'refused'>>();
 
 /** Every tracked commit that has not settled yet; each one removes itself as it settles. */
 const commitsInFlight = new Set<Promise<void>>();
@@ -57,12 +86,6 @@ const commitsInFlight = new Set<Promise<void>>();
  */
 const closingStops = new Set<Promise<void>>();
 
-/**
- * An overdub pass writes its rows after the falling edge, behind the snapshot transaction queue
- * (MIDI's `isOverdubLanding`), so a stop that has resolved its own commit is not
- * done while one is still landing: the pass counts as a take in flight, and as a settled one
- * once it has landed or been refused.
- */
 function isClosingRecording(): boolean {
     return closingStops.size > 0 || commitsInFlight.size > 0 || isOverdubLanding();
 }
@@ -86,14 +109,16 @@ function trackTakeCommit(commit: Promise<'refused' | 'closed'>): void {
     );
 }
 
-function trackCommit(commit: Promise<void>): void {
-    const onSettled = (): void => {
+function trackCommit(commit: Promise<void | 'refused'>): void {
+    const onSettled = (outcome?: void | 'refused'): void => {
         commitsInFlight.delete(settled);
-        settledCommitCount++;
+        if (outcome !== 'refused') {
+            settledCommitCount++;
+        }
     };
     // Registered before any waiter can be, and reactions run in registration
     // order, so a waiter resumes only once the commit counts as settled.
-    const settled = commit.then(onSettled, onSettled);
+    const settled = commit.then(onSettled, () => onSettled());
     commitsInFlight.add(settled);
     pendingCommits.add(commit);
 }
@@ -156,6 +181,63 @@ export const recordingLifecycle: RecordingLifecycle = {
     ownsPendingRecordingStart: (token) => pendingRecordingStartToken === token,
     setCountInTimerId: (id) => {
         countInTimerId = id;
+    },
+    registerEnding: (end) => {
+        recordingEndings.add(end);
+        return () => {
+            recordingEndings.delete(end);
+        };
+    },
+    endRecording: () => {
+        const endings = [...recordingEndings];
+        recordingEndings.clear();
+        for (const end of endings) {
+            end();
+        }
+    },
+    registerCaptureClock: (observe) => {
+        recordingClocks.add(observe);
+        return () => {
+            recordingClocks.delete(observe);
+        };
+    },
+    registerNativeCaptureClock: (read, readSourceStart) => {
+        nativeCaptureReaders.add(read);
+        if (readSourceStart) {
+            nativeSourceStarts.set(read, readSourceStart);
+        }
+        return () => {
+            nativeCaptureReaders.delete(read);
+            nativeSourceStarts.delete(read);
+        };
+    },
+    readNativeCaptureClock: () => nativeCaptureReaders.values().next().value?.(),
+    readNativeCaptureSourceStart: () => {
+        const reader = nativeCaptureReaders.values().next().value;
+        return reader ? (nativeSourceStarts.get(reader)?.() ?? null) : null;
+    },
+    observeCaptureClock: (
+        beat,
+        contextSeconds,
+        relocated,
+        effectiveFromContextSeconds,
+        songSeconds,
+        nativeOutput,
+        nativeBoundary,
+        nativeSnapshot
+    ) => {
+        for (const observe of recordingClocks) {
+            observe(
+                beat,
+                contextSeconds,
+                relocated,
+                effectiveFromContextSeconds,
+                songSeconds,
+                nativeOutput,
+                nativeBoundary,
+                nativeSnapshot
+            );
+        }
     },
     trackClosing,
     trackCommit,
