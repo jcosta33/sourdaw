@@ -1,0 +1,24 @@
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_b3201877f50e8a::t_fb155b4077991b 150
+scripts/__tests__/fixtures/hostedAptInstall/observation.py
+  s_b3201877f50e8a::t_b851966c9a9f4f 66-72
+  s_b3201877f50e8a::t_df36c0a96e0063 1-65,73-96
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_b3201877f50e8a::t_eb92614977fbc6 254-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a55572927fd519bc26eee843e217223400230e6",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
