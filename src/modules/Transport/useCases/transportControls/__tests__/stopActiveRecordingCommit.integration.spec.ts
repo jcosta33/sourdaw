@@ -507,6 +507,38 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
     });
 
+    it('seals an admitted note still queued behind a held worker in its onset pass', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional MIDI clip');
+        }
+        flushAutomergeStorageWrites();
+        // The physical callback accepted this key before its note handler could
+        // run. The playhead has since crossed the loop seam and Stop arrives.
+        activeRecordingRef.midiAdmissions.push({
+            id: 'admitted-key',
+            clipId: provisional.id,
+            trackId: TRACK_ID,
+            channel: 1,
+            note: 62,
+            velocity: 111,
+            onsetAudioTime: 0.5,
+            onsetSourceBeat: 1,
+        });
+        mocks.audioClock.currentTime = 1;
+
+        await stopActiveRecording();
+
+        const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
+        expect(notes).toHaveLength(1);
+        expect(notes[0]).toMatchObject({ pitch: 62, velocity: 111, startBeat: 1 });
+        expect(committedEntryCount()).toBe(1);
+        await undo();
+        expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
+        await redo();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+    });
+
     it('records the audio gesture entry before Stop resolves, so one undo removes the recorded result', async () => {
         await startAudioRecordingGesture();
         const provisionalId = clipIds()[0];

@@ -9,7 +9,27 @@
  * the capture terminal uses (#5289). `null` means no witness was recorded
  * (a legacy in-flight take), which reads as always-owning.
  */
-export const activeRecordingRef: { current: string[]; capturedRootIdentity: string | null } = {
+export type RecordingMidiAdmission = {
+    id: string;
+    clipId: string;
+    trackId: string;
+    channel: number;
+    note: number;
+    velocity: number;
+    onsetAudioTime: number;
+    onsetSourceBeat: number;
+    releaseAudioTime?: number;
+    releaseSourceBeat?: number;
+};
+
+export const activeRecordingRef: {
+    current: string[];
+    capturedRootIdentity: string | null;
+    startWrapCount: number;
+    midiAdmissions: RecordingMidiAdmission[];
+} = {
     current: [],
     capturedRootIdentity: null,
+    startWrapCount: 0,
+    midiAdmissions: [],
 };
