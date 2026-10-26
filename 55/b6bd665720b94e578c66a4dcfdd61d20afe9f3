@@ -1,0 +1,22 @@
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_3168504f6ce387::t_d2c5ee6056b2ce 14
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_3168504f6ce387::t_51f612b5493673 81-82,84-86
+  s_3168504f6ce387::t_a4408ecd5da239 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55b6bd665720b94e578c66a4dcfdd61d20afe9f3",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
