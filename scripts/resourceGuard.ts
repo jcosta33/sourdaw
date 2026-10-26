@@ -1646,8 +1646,10 @@ export function storageFileState(
     supervisorPid?: number,
     ownerStartTicks?: number
 ): 'alive' | 'dead' | 'unknown' {
+    // Every inconclusive exit must retain an inspection failure until fresh proof resolves it.
+    let inspectionDiagnostic: string | undefined;
     const unknown = (reason: string): 'unknown' => {
-        report(reason);
+        report(inspectionDiagnostic ?? reason);
         return 'unknown';
     };
     const uid = process.getuid?.();
@@ -1698,10 +1700,7 @@ export function storageFileState(
         if (platform() === 'darwin') {
             // Expiry reports the last omission unless an inspection diagnostic stayed unproved.
             let uncovered = 'file-census-time-bound';
-            // An inspection denial stays stable until a complete observation proves release.
-            // Later omissions must not turn it into a warning-success reason at the deadline.
-            let inspectionDiagnostic: string | undefined;
-            const expired = (): 'unknown' => unknown(inspectionDiagnostic ?? uncovered);
+            const expired = (): 'unknown' => unknown(uncovered);
             for (let observation = 0; Date.now() < deadline; observation += 1) {
                 if (observation > 0) {
                     pids = readProcessUsers();
@@ -1728,7 +1727,7 @@ export function storageFileState(
                     // A descriptor can close or become uninspectable between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
                     if (parseReason === 'file-inspection-diagnostic') {
-                        inspectionDiagnostic = `lsof-fields-unusable:${parseReason}`;
+                        inspectionDiagnostic ??= `lsof-fields-unusable:${parseReason}`;
                         continue;
                     }
                     if (parseReason === 'descriptor-type-missing') {
@@ -1817,7 +1816,7 @@ export function storageFileState(
                         return 'alive';
                     }
                     if (scoped.kind === 'uncovered' && scoped.reason !== undefined) {
-                        inspectionDiagnostic = scoped.reason;
+                        inspectionDiagnostic ??= scoped.reason;
                     }
                     if (scoped.kind === 'expired' || Date.now() >= deadline) {
                         return expired();

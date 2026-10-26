@@ -2863,6 +2863,110 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         }
     );
 
+    it
+        .skipIf(process.getuid === undefined)
+        .each(
+            ['whole', 'scoped'].flatMap((route) =>
+                [
+                    'opening ps command',
+                    'opening ps fields',
+                    'closing ps command',
+                    'closing ps fields',
+                    'missing identity',
+                    'changed UID',
+                    'whole command',
+                    'whole fields',
+                    'scoped command',
+                    'scoped fields',
+                    'parent command',
+                    'parent fields',
+                    'thrown command',
+                ].map((failure) => ({ route, failure }))
+            )
+        )('keeps a Darwin $route diagnostic stable after $failure fails', ({ route, failure }) => {
+        const root = fixture();
+        chmodSync(root, 0o700);
+        const program = `
+            import childProcess from 'node:child_process';
+            import os from 'node:os';
+            import {syncBuiltinESMExports} from 'node:module';
+            import {existsSync} from 'node:fs';
+            const route=${JSON.stringify(route)},failure=${JSON.stringify(failure)};
+            const uid=process.getuid(),pid=process.pid,missed=pid+100000;
+            let diagnosed=false,userLists=0,failureReached=false;
+            os.platform=()=> 'darwin';
+            process.kill=()=>true;
+            const entry=(pid)=>'p'+pid+'\\0\\nfcwd\\0tDIR\\0n/outside\\0\\n';
+            const diagnostic=()=>{diagnosed=true;return 'p'+missed+'\\0\\nf3\\0tREG\\0nPermission denied\\0\\n'};
+            const failed=(command)=>{failureReached=true;return {status:command?2:0,stdout:command?'':'malformed\\n',stderr:''}};
+            childProcess.spawnSync=(command,args)=>{
+                let stdout;
+                if(command==='ps'){
+                    if(args[0]==='-p'){
+                        if(diagnosed&&failure==='missing identity')return failed(true);
+                        if(diagnosed&&failure==='changed UID'){failureReached=true;stdout=(uid+1)+' S\\n'}
+                        else stdout=uid+' S\\n';
+                    }else if(args[1]==='pid=,ppid=,uid='){
+                        if(failure==='parent command')return failed(true);
+                        if(failure==='parent fields')return failed(false);
+                        throw Error('unexpected successful parent list');
+                    }else{
+                        if(diagnosed){
+                            userLists++;
+                            const stage=userLists===1?'opening':'closing';
+                            if(failure===stage+' ps command')return failed(true);
+                            if(failure===stage+' ps fields')return failed(false);
+                        }
+                        stdout=pid+' '+uid+'\\n'+missed+' '+uid+'\\n';
+                    }
+                }else if(command==='lsof'){
+                    const scoped=args.includes('-p');
+                    if(!diagnosed){
+                        stdout=route==='whole'?entry(pid)+diagnostic():scoped?diagnostic():entry(pid);
+                    }else if(scoped){
+                        if(failure==='scoped command')return failed(true);
+                        if(failure==='scoped fields')return failed(false);
+                        stdout=entry(missed);
+                    }else{
+                        if(failure==='whole command')return failed(true);
+                        if(failure==='whole fields')return failed(false);
+                        if(failure==='thrown command'){failureReached=true;throw Error('inspection unavailable')}
+                        const missing=['missing identity','changed UID','scoped command','scoped fields','parent command','parent fields'].includes(failure);
+                        stdout=entry(pid)+(missing?'':entry(missed));
+                    }
+                }else throw Error('unexpected command '+command);
+                return {status:0,stdout,stderr:''};
+            };
+            syncBuiltinESMExports();
+            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+            const {areTransientProofReasons}=await import(${JSON.stringify(resolve('scripts/resourceGuardProofReasons.ts'))});
+            const reasons=[];
+            const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
+            const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+            const state=storageFileState([storage.tempDirectory],[],reason=>reasons.push(reason));
+            const initial={state,reasons:[...reasons],failureReached,transient:areTransientProofReasons(reasons)};
+            diagnosed=false;userLists=0;failureReached=false;
+            const released=await storage.release(true);
+            console.log(JSON.stringify({initial,released,retained:existsSync(storage.tempDirectory)}));
+        `;
+        const observed = JSON.parse(
+            execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 10_000,
+            })
+        );
+        expect(observed.initial).toEqual({
+            state: 'unknown',
+            reasons: [`lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`],
+            failureReached: true,
+            transient: false,
+        });
+        expect(observed.released).toBe(false);
+        expect(observed.retained).toBe(true);
+    });
+
     // Each newborn is first missed by a whole catalog and by its PID-scoped read, so only a later
     // whole catalog covers it. Every simulated lsof call costs 100 ms of the five-second deadline.
     it.skipIf(process.getuid === undefined).each([
