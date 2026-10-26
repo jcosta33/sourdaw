@@ -6,7 +6,13 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { activeRecordingRef, takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, startRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
+import {
+    admitRecordingMidiNoteOn,
+    getArrangementHandlers,
+    retireRecordingMidiAdmission,
+    startRecording,
+    takeOwnsRecordingRoot,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -561,6 +567,17 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         mocks.audioClock.currentTime = 0.5;
         expect(activeRecordingRef.current).toEqual([provisional.id]);
         expect(getTargetTrackId()).toBe(TRACK_ID);
+        expect(takeOwnsRecordingRoot()).toBe(true);
+        const probe = admitRecordingMidiNoteOn({
+            trackId: TRACK_ID,
+            channel: 15,
+            note: 1,
+            velocity: 1,
+            audioTime: 0.5,
+            position: { beat: 8, passIndex: 0 },
+        });
+        expect(probe).not.toBeNull();
+        retireRecordingMidiAdmission(probe!.id);
         const worker = Promise.withResolvers<void>();
         liveMidiGate.pending = worker.promise;
 
