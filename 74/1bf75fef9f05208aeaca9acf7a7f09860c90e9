@@ -1,0 +1,35 @@
+scripts/reviewApprovalContext.ts
+  s_b3201877f50e8a::t_a66dc88b897124 124
+scripts/stackedLanes.ts
+  s_b3201877f50e8a::t_2e3ee80e023c2c 156-167,171,173-177
+scripts/syncParentLane.ts
+  s_b3201877f50e8a::t_9f7ebfdf679a46 29,361,366,536
+scripts/supersedePullRequestGh.ts
+  s_b3201877f50e8a::t_a66dc88b897124 89-92
+scripts/__tests__/stackedLanes.spec.ts
+  s_b3201877f50e8a::t_f262b495643deb 35-44,131-136
+  s_b3201877f50e8a::t_f3a6fd1f7822a7 142-144
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_b3201877f50e8a::t_85c7148bce93f6 34-43,483,488,671-673,675
+  s_b3201877f50e8a::t_ab5e3cdbe35eb8 677-679,681-683
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_b3201877f50e8a::t_a66dc88b897124 714-716
+scripts/publishLane.ts
+  s_b3201877f50e8a::t_6efe5827b89544 2127-2128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "741bf75fef9f05208aeaca9acf7a7f09860c90e9",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
