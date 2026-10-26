@@ -29,6 +29,9 @@ import { playheadClockRef, transportStore } from '#/modules/Transport/stores';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
 import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
+import { setTargetTrackId } from '#/modules/MIDI/repositories/webMidi/setTargetTrackId';
+import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
+import { triggerLiveNoteOn } from '#/modules/MIDI/useCases/triggerLiveNoteOn';
 
 import { countSettledTakes } from '../countSettledTakes';
 import { finalizeAutomaticRecording } from '../finalizeAutomaticRecording';
@@ -261,6 +264,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
+        setTargetTrackId(TRACK_ID);
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
         mocks.startPlayback.mockClear();
         mocks.notifyUser.mockClear();
@@ -279,6 +283,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
+        setTargetTrackId(null);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -532,6 +537,31 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
         expect(notes).toHaveLength(1);
         expect(notes[0]).toMatchObject({ pitch: 62, velocity: 111, startBeat: 1 });
+        expect(committedEntryCount()).toBe(1);
+        await undo();
+        expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
+        await redo();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+    });
+
+    it('admits physical and virtual notes before Stop while live input remains pending', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional MIDI clip');
+        }
+        flushAutomergeStorageWrites();
+        mocks.audioClock.currentTime = 0.5;
+
+        const physical = handleWebMidiMessage({ data: new Uint8Array([0x90, 62, 111]), timeStamp: undefined });
+        const virtual = triggerLiveNoteOn(2, 64, 99);
+        expect(activeRecordingRef.midiAdmissions.map((admitted) => admitted.note)).toEqual([62, 64]);
+        mocks.audioClock.currentTime = 1;
+
+        await stopActiveRecording();
+        await Promise.all([physical, virtual]);
+
+        const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
+        expect(notes.map((note) => note.pitch)).toEqual([62, 64]);
         expect(committedEntryCount()).toBe(1);
         await undo();
         expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
