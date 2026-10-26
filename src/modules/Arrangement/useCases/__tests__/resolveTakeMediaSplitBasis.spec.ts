@@ -70,8 +70,9 @@ function splitWithUnselectedTakes() {
     const rightPlaced = takeLaneStore.value!.lanes[0]!.takes.find(
         (take) => take.clipId === 'right' && take.name === placed.name
     );
-    if (!right || !rightUnplaced || !rightPlaced)
+    if (!right || !rightUnplaced || !rightPlaced) {
         throw new Error('Expected the real split to retain both unselected takes');
+    }
     expect(rightUnplaced.selected).toBe(false);
     expect(rightPlaced.selected).toBe(false);
     return { clip, unplaced, placed, right, rightUnplaced, rightPlaced };
@@ -82,7 +83,7 @@ describe('placed and unplaced take origins through a stretched split', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
     });
 
     it('keeps the future unplaced entry at 11 seconds on the right clip head', () => {

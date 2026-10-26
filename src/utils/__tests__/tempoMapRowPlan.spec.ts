@@ -13,7 +13,11 @@ const plan: TempoMapRowPlan = {
 
 describe('tempo-map row plan structural codec', () => {
     it('round-trips a JSON plan without aliasing caller-owned rows or order arrays', () => {
-        const value = JSON.parse(JSON.stringify(plan));
+        const wire = JSON.stringify(plan);
+        expect(wire).toBe(
+            '{"operation":"add","before":[],"after":[{"id":"new","beat":4,"tempo":120,"curve":"instant"}],"order":[{"beat":4,"before":[],"after":["new"]}],"collision":{"beat":4,"targetId":null}}'
+        );
+        const value = JSON.parse(wire);
         const decoded = decodeTempoMapRowPlan(value);
         expect(decoded).toEqual(plan);
         value.after[0].tempo = 90;
@@ -46,7 +50,7 @@ describe('tempo-map row plan structural codec', () => {
         sparse.length = 1;
         expect(decodeTempoMapRowPlan({ ...plan, after: sparse })).toBeNull();
         const getter = vi.fn(() => 'add');
-        const accessor = { ...plan };
+        const accessor = structuredClone(plan);
         Object.defineProperty(accessor, 'operation', { enumerable: true, get: getter });
         expect(decodeTempoMapRowPlan(accessor)).toBeNull();
         expect(getter).not.toHaveBeenCalled();

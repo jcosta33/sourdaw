@@ -124,9 +124,14 @@ function sourceEntries(clips = trackStore.value!.tracks[0]!.clips): number[] {
 
 function authority(): void {
     flushAutomergeStorageWrites();
-    expect(getCrdtDoc('root')).toMatchObject({
-        // The document omits undefined optional fields from the store's serializable projection.
-        tracks: JSON.parse(JSON.stringify({ tracks: trackStore.value!.tracks })),
+    const document = getCrdtDoc('root');
+    if (!document) {
+        throw new Error('Expected the authoritative project');
+    }
+    const project = Automerge.toJS(document);
+    // The owning track adapter writes `{ tracks }` through createAutomergeStorage's JSON-safe projection.
+    expect(project.tracks).toEqual({ tracks: trackStore.value!.tracks });
+    expect(project).toMatchObject({
         takeLanes: takeLaneStore.value,
         transport: { tempo: transportStore.value!.tempo },
         tempoMap: tempoMapStore.value,
@@ -183,7 +188,7 @@ describe('tempo edits preserve the physical audio programme', () => {
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
@@ -325,15 +330,16 @@ describe('tempo edits preserve the physical audio programme', () => {
         }
         const promotion = structuredClone(entry.action.payload.audioSourcePromotion);
         expect((await undo()).headConsumed).toBe(true);
-        const forged = JSON.parse(
-            JSON.stringify({
-                ...promotion,
-                clips: promotion.clips.map((source) => ({
-                    ...source,
-                    after: { ...source.after, audioOffsetSeconds: 19, audioUnwrappedOffsetSeconds: 19 },
-                })),
-            })
-        );
+        const forgedWire = JSON.stringify({
+            ...promotion,
+            clips: promotion.clips.map((source) => ({
+                ...source,
+                after: { ...source.after, audioOffsetSeconds: 19, audioUnwrappedOffsetSeconds: 19 },
+            })),
+        });
+        expect(forgedWire).toContain('"audioOffsetSeconds":19');
+        expect(forgedWire).toContain('"audioUnwrappedOffsetSeconds":19');
+        const forged = JSON.parse(forgedWire);
         await executeAppAction({ type: 'setTempo', payload: { bpm: 240, audioSourcePromotion: forged } });
         expect(sourceEntries()).toEqual([4]);
         expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBe(4);
@@ -426,12 +432,12 @@ describe('tempo edits preserve the physical audio programme', () => {
             authority();
             sessionStorage.removeItem('sourdaw-undo-session');
             registerProductionTempoHandlers();
-            const before = JSON.parse(JSON.stringify(trackStore.value!.tracks));
+            const before = structuredClone(trackStore.value!.tracks);
             const beforeLanes = structuredClone(takeLaneStore.value);
             const beforeEntries = sourceEntries();
             await executeAppAction({ type: 'setTempo', payload: { bpm: 240 } });
             authority();
-            const after = JSON.parse(JSON.stringify(trackStore.value!.tracks));
+            const after = structuredClone(trackStore.value!.tracks);
             const afterLanes = structuredClone(takeLaneStore.value);
             expect(sourceEntries()).toEqual(beforeEntries);
             await vi.waitFor(() => {
@@ -447,16 +453,16 @@ describe('tempo edits preserve the physical audio programme', () => {
             projectCrdtToStores({ resetProjections: true });
             registerProductionTempoHandlers();
             expect(undoStore.value?.past).toHaveLength(1);
-            expect(JSON.parse(JSON.stringify(trackStore.value!.tracks))).toEqual(after);
+            expect(trackStore.value!.tracks).toEqual(after);
             expect(takeLaneStore.value).toEqual(afterLanes);
             expect((await undo()).headConsumed).toBe(true);
-            expect(JSON.parse(JSON.stringify(trackStore.value!.tracks))).toEqual(before);
+            expect(trackStore.value!.tracks).toEqual(before);
             expect(takeLaneStore.value).toEqual(beforeLanes);
             expect(trackStore.value!.tracks[0]!.clips[0]).not.toHaveProperty('audioOffsetSeconds');
             expect(sourceEntries()).toEqual(beforeEntries);
             authority();
             await redo();
-            expect(JSON.parse(JSON.stringify(trackStore.value!.tracks))).toEqual(after);
+            expect(trackStore.value!.tracks).toEqual(after);
             expect(takeLaneStore.value).toEqual(afterLanes);
             expect(sourceEntries()).toEqual(beforeEntries);
             authority();
@@ -844,7 +850,13 @@ describe('tempo edits preserve the physical audio programme', () => {
             const history = structuredClone(undoHistoryStore.value);
             let refused = false;
             try {
-                await executeAppAction(JSON.parse(JSON.stringify(action)));
+                const actionWire = JSON.stringify(action);
+                if (field === 'owner') {
+                    expect(actionWire).toContain('"clipId":"missing-owner"');
+                } else {
+                    expect(actionWire).toContain('"audioBufferId":"different-media"');
+                }
+                await executeAppAction(JSON.parse(actionWire));
             } catch (error) {
                 if (!isAppActionConflictError(error)) {
                     throw error;

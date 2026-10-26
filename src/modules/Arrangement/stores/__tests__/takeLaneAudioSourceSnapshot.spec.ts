@@ -55,9 +55,11 @@ describe('audio comp source value snapshots', () => {
                 },
             ],
         };
-        const journal = JSON.parse(
-            JSON.stringify(captureTakeLaneWriteJournal({ beforeValue: before, nextValue: after }))
-        );
+        const journalWire = JSON.stringify(captureTakeLaneWriteJournal({ beforeValue: before, nextValue: after }));
+        expect(journalWire).toContain('"kind":"replace-base-gap-audio-sources"');
+        expect(journalWire).toContain('"replacement":');
+        expect(journalWire).toContain('"audioOffsetSeconds":2.5');
+        const journal = JSON.parse(journalWire);
         expect(replayTakeLaneWriteJournal(before, journal)).toEqual({ status: 'applied', value: after });
         const inverse = captureTakeLaneWriteJournal({ beforeValue: after, nextValue: before });
         expect(replayTakeLaneWriteJournal(after, inverse)).toEqual({ status: 'applied', value: before });
@@ -130,10 +132,14 @@ describe('audio comp source value snapshots', () => {
                 )
             );
             expect(outer.status).toBe('returned');
-            if (outer.status !== 'returned') throw new Error('Expected the outer owner to remain valid');
+            if (outer.status !== 'returned') {
+                throw new Error('Expected the outer owner to remain valid');
+            }
             const sibling = outer.value;
             expect(sibling.status).toBe('threw');
-            if (sibling.status !== 'threw') throw new Error('Expected the borrowed capture to refuse synchronously');
+            if (sibling.status !== 'threw') {
+                throw new Error('Expected the borrowed capture to refuse synchronously');
+            }
             expect(sibling.error).toBeInstanceOf(AutomergeStorageWriteConflictError);
             sibling.abort();
             outer.commit();

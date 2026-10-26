@@ -19,7 +19,9 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     const secondsAtBeat = (beat: number) => {
         const boundary = changeBeat();
         const after = changedTempo();
-        if (boundary === null || after === null || beat <= boundary) return (beat * 60) / baseTempo();
+        if (boundary === null || after === null || beat <= boundary) {
+            return (beat * 60) / baseTempo();
+        }
         return (boundary * 60) / baseTempo() + ((beat - boundary) * 60) / after;
     };
     return {
@@ -238,7 +240,9 @@ describe('audioToMidi follows the physical source and tempo map', () => {
     it('uses original pass seams and distinct first, wrap, and later-head sources', () => {
         const regionTone = (index: number, sourceStart: number, sourceEnd: number, frequency: number) => {
             const seconds = index / SAMPLE_RATE;
-            if (seconds < sourceStart || seconds >= sourceEnd) return 0;
+            if (seconds < sourceStart || seconds >= sourceEnd) {
+                return 0;
+            }
             const amplitude = seconds - sourceStart >= 0.14 ? 0.9 : 0.06;
             return amplitude * Math.sin((2 * Math.PI * frequency * index) / SAMPLE_RATE);
         };

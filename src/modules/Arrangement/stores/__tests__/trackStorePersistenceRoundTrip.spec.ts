@@ -70,13 +70,16 @@ describe('sanitizeTrackSnapshot — clip optional field round-trip', () => {
     );
 
     it.each(['legacy', 'midi', 'non-finite'])('leaves canonical source fields absent for %s input', (kind) => {
-        const clip = {
-            ...validClipBase,
-            ...(kind === 'midi' ? { type: 'midi', audioOffsetSeconds: 0, audioLoopStartSeconds: 1 } : {}),
-            ...(kind === 'non-finite'
-                ? { audioOffsetSeconds: Number.NaN, audioLoopStartSeconds: Number.POSITIVE_INFINITY }
-                : {}),
-        };
+        const clip: Record<string, unknown> = { ...validClipBase };
+        if (kind === 'midi') {
+            clip.type = 'midi';
+            clip.audioOffsetSeconds = 0;
+            clip.audioLoopStartSeconds = 1;
+        }
+        if (kind === 'non-finite') {
+            clip.audioOffsetSeconds = Number.NaN;
+            clip.audioLoopStartSeconds = Number.POSITIVE_INFINITY;
+        }
         const result = sanitizeTrackSnapshot(snapshotWithTrack({ ...validTrackBase, clips: [clip] }));
         const restored = result.tracks[0]?.clips[0];
 

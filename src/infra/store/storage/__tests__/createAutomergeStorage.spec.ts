@@ -447,7 +447,17 @@ describe('createAutomergeStorage', () => {
         configureAutomergeStoragePort(port);
         const replayed: unknown[] = [];
         const storage = createAutomergeStorage<{ count: number }, readonly number[]>('root', 'state', {
-            writeMetadata: { capture: () => [], reduce: ({ current, captured }) => [...(current ?? []), ...captured] },
+            writeMetadata: {
+                capture: () => [],
+                reduce: ({ current, captured }) => {
+                    const next: number[] = [];
+                    if (current) {
+                        current.forEach((value) => next.push(value));
+                    }
+                    next.push(...captured);
+                    return next;
+                },
+            },
             mutateCrdtWithMetadata: ({ authorityValue, metadata, reconcile }) => {
                 // This owner's empty journal means no durable operation, even
                 // if its optimistic projection differs from current authority.

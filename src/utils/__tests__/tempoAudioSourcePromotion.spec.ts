@@ -92,7 +92,11 @@ function plan(): TempoAudioSourcePromotionSnapshot {
 
 describe('tempo source-promotion value decoder', () => {
     it('decodes a complete bounded source programme without consulting live project state', () => {
-        expect(isTempoAudioSourcePromotion(JSON.parse(JSON.stringify(plan())))).toBe(true);
+        const wire = JSON.stringify(plan());
+        expect(wire).toContain('"audioOffsetSeconds":4');
+        expect(wire).toContain('"audioLoopPassOriginBeat":0');
+        expect(wire).toContain('"before":{}');
+        expect(isTempoAudioSourcePromotion(JSON.parse(wire))).toBe(true);
     });
 
     it('keeps canonical zero and fresh defaults independent of stale legacy beats', () => {
@@ -148,7 +152,7 @@ describe('tempo source-promotion value decoder', () => {
 
     it('rejects an incomplete newly written loop tuple', () => {
         const value = plan();
-        const after = { ...value.clips[0]!.after };
+        const after = structuredClone(value.clips[0]!.after);
         delete after.audioLoopPassOriginBeat;
         expect(isTempoAudioSourcePromotion({ ...value, clips: [{ ...value.clips[0], after }] })).toBe(false);
     });

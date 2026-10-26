@@ -58,7 +58,7 @@ const noActionHistoryMetadataPort = {
 };
 
 function seedClip(canonical: boolean, period: number | undefined): Clip {
-    const clip = ClipDummy.create({
+    const clipInput: Partial<Clip> = {
         id: 'source',
         trackId: 'audio',
         name: 'Phrase',
@@ -69,16 +69,17 @@ function seedClip(canonical: boolean, period: number | undefined): Clip {
         loopOriginBeat: 0,
         stretchMode: 'timestretch',
         stretchRatio: 2,
-        ...(period === undefined ? {} : { loopLength: period }),
-        ...(canonical
-            ? {
-                  audioOffsetSeconds: 0,
-                  audioLoopStartSeconds: -0.25,
-                  audioLoopPassEntrySeconds: 0.5,
-                  audioLoopPassOriginBeat: 0.5,
-              }
-            : {}),
-    });
+    };
+    if (period !== undefined) {
+        clipInput.loopLength = period;
+    }
+    if (canonical) {
+        clipInput.audioOffsetSeconds = 0;
+        clipInput.audioLoopStartSeconds = -0.25;
+        clipInput.audioLoopPassEntrySeconds = 0.5;
+        clipInput.audioLoopPassOriginBeat = 0.5;
+    }
+    const clip = ClipDummy.create(clipInput);
     const track = TrackDummy.create({ id: 'audio', kind: 'audio', clips: [clip] });
     trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
     flushAutomergeStorageWrites();
@@ -101,7 +102,9 @@ function hydrateProductionContracts(): void {
 function reopenSavedProject(): void {
     flushAutomergeStorageWrites();
     const doc = getCrdtDoc('root');
-    if (!doc) throw new Error('Expected a project document to save');
+    if (!doc) {
+        throw new Error('Expected a project document to save');
+    }
     const loaded = Automerge.load(Automerge.save(doc));
     expect(loaded).toEqual(doc);
     replaceCrdtDocInLineage({ id: 'root', doc: loaded });
@@ -182,7 +185,7 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
@@ -210,7 +213,9 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
         expect(trackStore.value!.tracks[0]!.clips).toEqual(split);
         expectDocumentClipParity();
         expect(entry.kind).toBe('action');
-        if (entry.kind !== 'action') throw new Error('The audio UI split must retain a serializable typed inverse');
+        if (entry.kind !== 'action') {
+            throw new Error('The audio UI split must retain a serializable typed inverse');
+        }
         expect(entry.inverseAction?.type).toBe('restoreClipSplitState');
     });
 
@@ -222,7 +227,9 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
         await vi.waitFor(() => {
             const raw = sessionStorage.getItem('sourdaw-undo-session');
             expect(raw).not.toBeNull();
-            if (!raw) throw new Error('Expected saved Undo');
+            if (!raw) {
+                throw new Error('Expected saved Undo');
+            }
             expect(JSON.parse(raw).past).toHaveLength(1);
         });
         const after = structuredClone({ tracks: trackStore.value!.tracks, lanes: takeLaneStore.value!.lanes });
@@ -253,8 +260,12 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
             lanes: state.lanes.map((lane) => ({
                 ...lane,
                 activeCompRegions: lane.activeCompRegions.map((region, index) => {
-                    if (index !== 1) return region;
-                    if (!region.audioSource) throw new Error('Expected a captured right region source');
+                    if (index !== 1) {
+                        return region;
+                    }
+                    if (!region.audioSource) {
+                        throw new Error('Expected a captured right region source');
+                    }
                     return { ...region, audioSource: { ...region.audioSource, audioOffsetSeconds: 19 } };
                 }),
             })),
@@ -280,15 +291,21 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
             endBeat: 24,
             audioBufferId: 'outside-buffer',
         });
-        if (!outside) throw new Error('Expected the owning clip writer to add a disjoint source');
+        if (!outside) {
+            throw new Error('Expected the owning clip writer to add a disjoint source');
+        }
         expectDocumentClipParity();
         const before = structuredClone({ tracks: trackStore.value!.tracks, lanes: takeLaneStore.value!.lanes });
         splitClipWithUndo('source', 2);
         await vi.waitFor(() => expect(undoStore.value?.past).toHaveLength(1));
         const right = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id !== 'source' && clip.id !== outside.id);
-        if (!right) throw new Error('Expected the actual split right clip');
+        if (!right) {
+            throw new Error('Expected the actual split right clip');
+        }
         const outsideSource = captureAudioSourceSnapshot(outside, outside.endBeat - outside.startBeat, 120);
-        if (!outsideSource) throw new Error('Expected the actual outside source law');
+        if (!outsideSource) {
+            throw new Error('Expected the actual outside source law');
+        }
         const tile = { clipId: outside.id, startBeat: 20, endBeat: 24, audioSource: outsideSource };
         const late = {
             id: 'late-right',
@@ -302,13 +319,16 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
         };
         const current = takeLaneStore.value!;
         takeLaneStore.set({
-            lanes: current.lanes.map((lane) => ({
-                ...lane,
-                takes: [...lane.takes, late],
-                baseGapAudioSources: [...(lane.baseGapAudioSources ?? []), tile].sort(
-                    (a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat
-                ),
-            })),
+            lanes: current.lanes.map((lane) => {
+                const baseGapAudioSources = lane.baseGapAudioSources ?? [];
+                return {
+                    ...lane,
+                    takes: [...lane.takes, late],
+                    baseGapAudioSources: [...baseGapAudioSources, tile].sort(
+                        (a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat
+                    ),
+                };
+            }),
         });
         expectDocumentClipParity();
         const after = structuredClone({ tracks: trackStore.value!.tracks, lanes: takeLaneStore.value!.lanes });
@@ -334,11 +354,12 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
         takeLaneStore.set({
             lanes: state.lanes.map((lane) => ({
                 ...lane,
-                baseGapAudioSources: lane.baseGapAudioSources?.map((tile) =>
-                    tile.clipId === 'source'
-                        ? tile
-                        : { ...tile, audioSource: { ...tile.audioSource, audioOffsetSeconds: 19 } }
-                ),
+                baseGapAudioSources: lane.baseGapAudioSources?.map((tile) => {
+                    if (tile.clipId === 'source') {
+                        return tile;
+                    }
+                    return { ...tile, audioSource: { ...tile.audioSource, audioOffsetSeconds: 19 } };
+                }),
             })),
         });
         expectDocumentClipParity();

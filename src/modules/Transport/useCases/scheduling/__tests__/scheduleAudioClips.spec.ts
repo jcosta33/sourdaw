@@ -1031,13 +1031,19 @@ describe('scheduleAudioClips', () => {
         scheduleAudioClips(0, 8, 0, scheduled, new Set(), active, defaultTransportState);
         expect(mockCreateBufferSource).toHaveBeenCalledTimes(3);
         const context = getAudioContext();
-        if (!context) throw new Error('Expected the scheduler audio context');
+        if (!context) {
+            throw new Error('Expected the scheduler audio context');
+        }
         stopActiveSources(active, context);
-        for (const source of sources) expect(source.stop).toHaveBeenCalledExactlyOnceWith(0.005);
+        for (const source of sources) {
+            expect(source.stop).toHaveBeenCalledExactlyOnceWith(0.005);
+        }
         expect(active).toEqual([]);
         for (const source of sources) {
             expect(typeof source.onended).toBe('function');
-            if (typeof source.onended === 'function') source.onended();
+            if (typeof source.onended === 'function') {
+                source.onended();
+            }
         }
         expect(active).toEqual([]);
     });

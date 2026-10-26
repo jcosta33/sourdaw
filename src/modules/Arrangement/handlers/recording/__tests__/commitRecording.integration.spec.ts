@@ -211,17 +211,18 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(provisional.audioUnwrappedOffsetSeconds).toBeUndefined();
         updateTrack(TRACK_ID, (track) => ({
             ...track,
-            clips: track.clips.map((clip) =>
-                clip.id === provisional.id
-                    ? {
-                          ...clip,
-                          audioBufferId: 'stale-buffer',
-                          audioOffsetBeats: 1,
-                          audioOffsetSeconds: 0,
-                          audioUnwrappedOffsetSeconds: 0,
-                      }
-                    : clip
-            ),
+            clips: track.clips.map((clip) => {
+                if (clip.id !== provisional.id) {
+                    return clip;
+                }
+                return {
+                    ...clip,
+                    audioBufferId: 'stale-buffer',
+                    audioOffsetBeats: 1,
+                    audioOffsetSeconds: 0,
+                    audioUnwrappedOffsetSeconds: 0,
+                };
+            }),
         }));
         flushAutomergeStorageWrites();
         await stopRecording(4.25);

@@ -870,7 +870,9 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         const handles = install_webgpu_mocks(canvas);
         const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
         const renderer = await createWebGpuRenderer(canvas);
-        if (!renderer) throw new Error('expected WebGPU renderer');
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
         mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
         const model = create_test_model();
@@ -882,9 +884,24 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
             clipStartTempo: 60,
         });
         model.sourceTimeline = {
-            secondsAtBeat: (beat) => (beat <= 4 ? beat / 2 : beat <= 6 ? 2 + beat - 4 : 4 + (beat - 6) / 2),
-            beatAtSeconds: (seconds) =>
-                seconds <= 2 ? seconds * 2 : seconds <= 4 ? 4 + seconds - 2 : 6 + (seconds - 4) * 2,
+            secondsAtBeat: (beat) => {
+                if (beat <= 4) {
+                    return beat / 2;
+                }
+                if (beat <= 6) {
+                    return 2 + beat - 4;
+                }
+                return 4 + (beat - 6) / 2;
+            },
+            beatAtSeconds: (seconds) => {
+                if (seconds <= 2) {
+                    return seconds * 2;
+                }
+                if (seconds <= 4) {
+                    return 4 + seconds - 2;
+                }
+                return 6 + (seconds - 4) * 2;
+            },
         };
 
         renderer.render(model);

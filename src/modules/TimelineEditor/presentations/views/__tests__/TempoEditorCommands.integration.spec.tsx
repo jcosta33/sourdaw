@@ -128,7 +128,7 @@ describe('visible tempo-map command entry', () => {
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();

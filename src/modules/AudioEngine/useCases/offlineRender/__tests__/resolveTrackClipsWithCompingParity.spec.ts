@@ -156,7 +156,9 @@ function audioSourceIntervals(clips: readonly Clip[]) {
         ) {
             previous.timelineEnd = interval.timelineEnd;
             previous.sourceEnd = interval.sourceEnd;
-        } else joined.push({ ...interval });
+        } else {
+            joined.push(interval);
+        }
     }
     return joined;
 }
@@ -210,12 +212,13 @@ describe('split looped comp source preservation', () => {
                 ]);
             }
             expect(offline).toEqual(live);
-            if (withSnapshot)
+            if (withSnapshot) {
                 expect(current.lanes[0]!.activeCompRegions.every((region) => region.audioSource)).toBe(true);
-            else
+            } else {
                 expect(current.lanes[0]!.activeCompRegions.every((region) => region.audioSource === undefined)).toBe(
                     true
                 );
+            }
         }
     );
 
@@ -281,11 +284,13 @@ describe('split looped comp source preservation', () => {
             const clip: Clip = {
                 ...recording(0, 12),
                 loopEnabled: true,
-                ...(period === undefined ? {} : { loopLength: period }),
-                loopOriginBeat: 0,
-                stretchMode: 'timestretch',
-                stretchRatio: 2,
             };
+            if (period !== undefined) {
+                clip.loopLength = period;
+            }
+            clip.loopOriginBeat = 0;
+            clip.stretchMode = 'timestretch';
+            clip.stretchRatio = 2;
             const track = normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio', clips: [clip] });
             trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
             const selected = pass('selected', [0, 12], 4);
@@ -367,8 +372,10 @@ describe('split looped comp source preservation', () => {
             endBeat: 4,
             selected: false,
             sourceOffsetSeconds: depth,
-            ...(legacy === undefined ? {} : { sourceOffsetBeats: legacy }),
         };
+        if (legacy !== undefined) {
+            selected.sourceOffsetBeats = legacy;
+        }
         takeLaneStore.set(lane([selected], selected.id, 0, 4));
         const expected = [
             {
@@ -427,8 +434,11 @@ describe('split audio loop source compatibility', () => {
             loopOriginBeat: 0,
             stretchMode: 'timestretch',
             stretchRatio: 2,
-            ...(canonical ? { audioOffsetSeconds: 0.5, audioLoopStartSeconds: 0 } : {}),
         };
+        if (canonical) {
+            clip.audioOffsetSeconds = 0.5;
+            clip.audioLoopStartSeconds = 0;
+        }
         const track = normalizeTrack({ id: 't1', name: 'Audio', kind: 'audio', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });

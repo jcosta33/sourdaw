@@ -302,9 +302,24 @@ describe('drawClip (Coordinate Conventions)', () => {
         });
         const model = create_test_model({
             sourceTimeline: {
-                secondsAtBeat: (beat) => (beat <= 4 ? beat / 2 : beat <= 6 ? 2 + beat - 4 : 4 + (beat - 6) / 2),
-                beatAtSeconds: (seconds) =>
-                    seconds <= 2 ? seconds * 2 : seconds <= 4 ? 4 + seconds - 2 : 6 + (seconds - 4) * 2,
+                secondsAtBeat: (beat) => {
+                    if (beat <= 4) {
+                        return beat / 2;
+                    }
+                    if (beat <= 6) {
+                        return 2 + beat - 4;
+                    }
+                    return 4 + (beat - 6) / 2;
+                },
+                beatAtSeconds: (seconds) => {
+                    if (seconds <= 2) {
+                        return seconds * 2;
+                    }
+                    if (seconds <= 4) {
+                        return 4 + seconds - 2;
+                    }
+                    return 6 + (seconds - 4) * 2;
+                },
             },
         });
 

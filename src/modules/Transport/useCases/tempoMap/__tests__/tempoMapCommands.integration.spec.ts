@@ -144,7 +144,7 @@ describe('public tempo-map musical commands', () => {
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
@@ -163,7 +163,7 @@ describe('public tempo-map musical commands', () => {
             }
             flushAutomergeStorageWrites();
             const beforeRows = structuredClone(tempoMapStore.value!.changes);
-            const beforeTracks = JSON.parse(JSON.stringify(trackStore.value!.tracks));
+            const beforeTracks = structuredClone(trackStore.value!.tracks);
             const beforeSource = sourceEntry();
             expect(beforeSource).toBe(4);
             if (operation === 'add') {
@@ -194,7 +194,7 @@ describe('public tempo-map musical commands', () => {
                 expect(tempoMapStore.value!.changes.map((row) => row.beat)).toEqual([16, 0]);
             }
             const afterRows = structuredClone(tempoMapStore.value!.changes);
-            const afterTracks = JSON.parse(JSON.stringify(trackStore.value!.tracks));
+            const afterTracks = structuredClone(trackStore.value!.tracks);
             await vi.waitFor(() =>
                 expect(JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}').past).toHaveLength(1)
             );
@@ -220,11 +220,11 @@ describe('public tempo-map musical commands', () => {
             expect([...tempoMapStore.value!.changes].sort((a, b) => a.beat - b.beat)).toEqual(
                 [...beforeRows].sort((a, b) => a.beat - b.beat)
             );
-            expect(JSON.parse(JSON.stringify(trackStore.value!.tracks))).toEqual(beforeTracks);
+            expect(trackStore.value!.tracks).toEqual(beforeTracks);
             expect(sourceEntry()).toBe(beforeSource);
             await redo();
             expect(tempoMapStore.value!.changes).toEqual(afterRows);
-            expect(JSON.parse(JSON.stringify(trackStore.value!.tracks))).toEqual(afterTracks);
+            expect(trackStore.value!.tracks).toEqual(afterTracks);
             expect(sourceEntry()).toBe(beforeSource);
             expect(getCrdtDoc('root')).toMatchObject({ tempoMap: tempoMapStore.value });
         }
@@ -313,7 +313,7 @@ describe('public tempo-map musical commands', () => {
                     } else if (kind === 'owned-input') {
                         doc.tracks.tracks[0]!.clips[0]!.audioOffsetBeats = 10;
                     } else if (kind === 'late-legacy' || kind === 'empty-late-legacy') {
-                        doc.tracks.tracks[0]!.clips.push({ ...JSON.parse(JSON.stringify(legacy)), id: 'late' });
+                        doc.tracks.tracks[0]!.clips.push({ ...structuredClone(legacy), id: 'late' });
                     } else {
                         doc.tempoMap.changes.push({ id: 'peer', beat: 20, tempo: 90, curve: 'linear' });
                         doc.tracks.tracks[0]!.name = 'Peer title';
@@ -383,7 +383,7 @@ describe('public tempo-map musical commands', () => {
         const tail = { id: 'tail', beat: 20, tempo: 140, curve: 'linear' as const };
         tempoMapStore.set({ changes: [{ id: 'head', beat: 0, tempo: 120, curve: 'instant' }, tail] });
         flushAutomergeStorageWrites();
-        await updateTempoChange('head', requested!);
+        await updateTempoChange('head', requested);
         expect(tempoMapStore.value!.changes).toEqual([
             { id: 'head', beat: 0, tempo: expected, curve: 'instant' },
             tail,

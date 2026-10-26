@@ -71,7 +71,9 @@ const originalSource = {
 const points = [0, 0.5, 2, 3.5, 4, 5.5, 7.5];
 function lane(): TakeLane {
     const value = takeLaneStore.value?.lanes[0];
-    if (!value) throw new Error('Expected the audio comp lane');
+    if (!value) {
+        throw new Error('Expected the audio comp lane');
+    }
     return value;
 }
 function authority(): void {
@@ -83,7 +85,9 @@ function sourcePoints(): number[] {
     const programme = resolveClipsWithComping('audio', clips);
     return points.map((beat) => {
         const clip = programme.find((part) => part.id === 'source' && part.startBeat <= beat && beat < part.endBeat);
-        if (!clip) throw new Error(`No source fragment at beat ${beat}`);
+        if (!clip) {
+            throw new Error(`No source fragment at beat ${beat}`);
+        }
         const part = projectAudioLoopPassSegments({
             clip,
             loopLengthBeats: clip.loopLength ?? clip.endBeat - clip.startBeat,
@@ -93,7 +97,9 @@ function sourcePoints(): number[] {
             tempoAtClipStart: 120,
             secondsAtBeat: (at) => at / 2,
         })[0];
-        if (!part) throw new Error(`No source projection at beat ${beat}`);
+        if (!part) {
+            throw new Error(`No source projection at beat ${beat}`);
+        }
         return Math.round(part.sourceStartSeconds * 48000);
     });
 }
@@ -107,7 +113,9 @@ async function selectMiddle(): Promise<void> {
 }
 function peerSelection(startBeat: number, endBeat: number, takeId: string): void {
     const patch = compRegionInterval.capturePatch({ trackId: 'audio', startBeat, endBeat, takeId });
-    if (!patch) throw new Error('Expected a real peer interval patch');
+    if (!patch) {
+        throw new Error('Expected a real peer interval patch');
+    }
     expect(compRegionInterval.applyPatch(patch)).toBe('written');
     authority();
 }
@@ -201,7 +209,7 @@ describe('bounded audio comp source promotion', () => {
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         sessionStorage.removeItem('sourdaw-undo-session');
         removeCrdtDoc('root');
         Container.clear();
@@ -278,8 +286,9 @@ describe('bounded audio comp source promotion', () => {
             const fragment = resolveClipsWithComping('audio', trackStore.value!.tracks[0]!.clips).find(
                 (part) => part.id === 'source' && part.startBeat === 6
             );
-            if (!fragment || fragment.audioOffsetSeconds === undefined)
+            if (!fragment || fragment.audioOffsetSeconds === undefined) {
                 throw new Error('Expected a real selected audio entry');
+            }
             return Math.round(fragment.audioOffsetSeconds * 48000);
         };
         const beforeFrame = entryFrame();
@@ -298,7 +307,9 @@ describe('bounded audio comp source promotion', () => {
                     part.loopLength ?? part.endBeat - part.startBeat,
                     120
                 );
-                if (!audioSource) throw new Error('Expected the committed old-map base source');
+                if (!audioSource) {
+                    throw new Error('Expected the committed old-map base source');
+                }
                 return { clipId: part.id, startBeat: part.startBeat, endBeat: part.endBeat, audioSource };
             });
         const tracks = trackStore.value!;
@@ -308,7 +319,9 @@ describe('bounded audio comp source promotion', () => {
                 ...track,
                 clips: track.clips.map((clip) => {
                     const source = captureAudioSourceState(clip, clip.loopLength ?? clip.endBeat - clip.startBeat, 120);
-                    if (!source) throw new Error('Expected old-map clip source inputs');
+                    if (!source) {
+                        throw new Error('Expected old-map clip source inputs');
+                    }
                     return { ...clip, ...source };
                 }),
             })),
@@ -317,11 +330,12 @@ describe('bounded audio comp source promotion', () => {
             lanes: [
                 {
                     ...current,
-                    takes: current.takes.map((take) =>
-                        take.sourceOffsetBeats === undefined
-                            ? take
-                            : { ...take, sourceOffsetSeconds: take.sourceOffsetBeats / 2 }
-                    ),
+                    takes: current.takes.map((take) => {
+                        if (take.sourceOffsetBeats === undefined) {
+                            return take;
+                        }
+                        return { ...take, sourceOffsetSeconds: take.sourceOffsetBeats / 2 };
+                    }),
                     baseGapAudioSources: baseTiles,
                 },
             ],
@@ -358,10 +372,14 @@ describe('bounded audio comp source promotion', () => {
         });
         const historyEntry = undoHistoryStore.value?.past.at(-1);
         const inverse = historyEntry?.kind === 'action' ? historyEntry.inverseAction : undefined;
-        if (inverse?.type !== 'restoreCompRegionInterval') throw new Error('Expected the real saved interval inverse');
+        if (inverse?.type !== 'restoreCompRegionInterval') {
+            throw new Error('Expected the real saved interval inverse');
+        }
         const original = getCrdtDoc('root');
-        if (!original) throw new Error('Expected authoritative project inputs');
-        const doc = JSON.parse(JSON.stringify(original));
+        if (!original) {
+            throw new Error('Expected authoritative project inputs');
+        }
+        const doc = Automerge.toJS(original);
         configureAutomergeStoragePort({
             getDoc: () => doc,
             getSemanticMessage: () => undefined,
@@ -445,7 +463,7 @@ describe('bounded audio comp source promotion', () => {
         'refuses removal Undo for a %s source owner without consuming history',
         async (kind) => {
             await executeAppAction({ type: 'removeCompRegion', payload: { trackId: 'audio', startBeat: 0 } });
-            if (kind === 'removed')
+            if (kind === 'removed') {
                 trackStore.set({
                     ...trackStore.value!,
                     tracks: trackStore.value!.tracks.map((track) => ({
@@ -453,7 +471,7 @@ describe('bounded audio comp source promotion', () => {
                         clips: track.clips.filter((clip) => clip.id !== 'source'),
                     })),
                 });
-            else
+            } else {
                 takeLaneStore.set({
                     lanes: [
                         {
@@ -464,6 +482,7 @@ describe('bounded audio comp source promotion', () => {
                         },
                     ],
                 });
+            }
             authority();
             const before = structuredClone(lane());
             expect((await undo()).headConsumed).toBe(false);
@@ -498,7 +517,9 @@ describe('bounded audio comp source promotion', () => {
             expect(JSON.parse(mirror!).past).toHaveLength(1);
         });
         const doc = getCrdtDoc('root');
-        if (!doc) throw new Error('Expected the committed project');
+        if (!doc) {
+            throw new Error('Expected the committed project');
+        }
         replaceCrdtDocInLineage({ id: 'root', doc: Automerge.load(Automerge.save(doc)) });
         projectCrdtToStores({ resetProjections: true });
         clearHandlerRegistry();
@@ -547,8 +568,11 @@ describe('bounded audio comp source promotion', () => {
     it.each(['selected region', 'base tile'] as const)(
         'refuses Undo after a peer replaces the actual %s asset',
         async (kind) => {
-            if (kind === 'selected region') await selectMiddle();
-            else await executeAppAction({ type: 'removeCompRegion', payload: { trackId: 'audio', startBeat: 0 } });
+            if (kind === 'selected region') {
+                await selectMiddle();
+            } else {
+                await executeAppAction({ type: 'removeCompRegion', payload: { trackId: 'audio', startBeat: 0 } });
+            }
             const tracks = trackStore.value!;
             trackStore.set({
                 ...tracks,
@@ -606,28 +630,35 @@ describe('bounded audio comp source promotion', () => {
                 entry?.kind !== 'action' ||
                 entry.action.type !== 'setCompRegion' ||
                 !compRegionInterval.isCompleteSetPayload(entry.action.payload)
-            )
+            ) {
                 throw new Error('Expected a complete owner-prepared comp entry');
+            }
             const { takeId, ...patch } = entry.action.payload;
             const audioSourcePromotions = patch.audioSourcePromotions?.map((delta) => {
-                if (delta.expected.kind !== 'take' || delta.replacement.kind !== 'take') return delta;
-                if (kind === 'cross-owner')
+                if (delta.expected.kind !== 'take' || delta.replacement.kind !== 'take') {
+                    return delta;
+                }
+                if (kind === 'cross-owner') {
                     return {
                         ...delta,
                         expected: { ...delta.expected, takeId: 'c' },
                         replacement: { ...delta.replacement, takeId: 'c' },
                     };
-                if (kind === 'outside interval')
+                }
+                if (kind === 'outside interval') {
                     return {
                         ...delta,
                         expected: { ...delta.expected, startBeat: 20, endBeat: 24 },
                         replacement: { ...delta.replacement, startBeat: 20, endBeat: 24 },
                         sourceInputs: { ...delta.sourceInputs, startBeat: 20, endBeat: 24 },
                     };
-                const alter = (owner: typeof delta.expected) =>
-                    owner.audioSource
-                        ? { ...owner, audioSource: { ...owner.audioSource, audioOffsetSeconds: 19 } }
-                        : owner;
+                }
+                const alter = (owner: typeof delta.expected) => {
+                    if (!owner.audioSource) {
+                        return owner;
+                    }
+                    return { ...owner, audioSource: { ...owner.audioSource, audioOffsetSeconds: 19 } };
+                };
                 return { ...delta, expected: alter(delta.expected), replacement: alter(delta.replacement) };
             });
             const recomputedPromotions = audioSourcePromotions?.map((delta) => {
@@ -636,7 +667,9 @@ describe('bounded audio comp source promotion', () => {
                     delta.expected,
                     liveCompAudioSourceInputs()
                 );
-                if (!sourceInputs) throw new Error('Expected caller-recomputable current input fingerprint');
+                if (!sourceInputs) {
+                    throw new Error('Expected caller-recomputable current input fingerprint');
+                }
                 return { ...delta, sourceInputs };
             });
             const forged = { ...patch, audioSourcePromotions: recomputedPromotions };
@@ -652,7 +685,9 @@ describe('bounded audio comp source promotion', () => {
             try {
                 await executeAppAction(forgedEntry.inverseAction);
             } catch (error) {
-                if (!isAppActionConflictError(error)) throw error;
+                if (!isAppActionConflictError(error)) {
+                    throw error;
+                }
                 refused = true;
             }
             expect(refused).toBe(true);
@@ -671,11 +706,12 @@ describe('bounded audio comp source promotion', () => {
             lanes: [
                 {
                     ...lane(),
-                    activeCompRegions: lane().activeCompRegions.map((region, index) =>
-                        index === 0 && region.audioSource
-                            ? { ...region, audioSource: { ...region.audioSource, audioOffsetSeconds: 19 } }
-                            : region
-                    ),
+                    activeCompRegions: lane().activeCompRegions.map((region, index) => {
+                        if (index !== 0 || !region.audioSource) {
+                            return region;
+                        }
+                        return { ...region, audioSource: { ...region.audioSource, audioOffsetSeconds: 19 } };
+                    }),
                 },
             ],
         });
@@ -694,18 +730,16 @@ describe('bounded audio comp source promotion', () => {
         await selectMiddle();
         expect((await undo()).headConsumed).toBe(true);
         const entry = undoHistoryStore.value?.future.at(-1);
-        if (entry?.kind !== 'action' || entry.redoAction?.type !== 'restoreCompRegionInterval')
+        if (entry?.kind !== 'action' || entry.redoAction?.type !== 'restoreCompRegionInterval') {
             throw new Error('Expected a saved comp Redo');
+        }
         const patch = entry.redoAction.payload;
-        const audioSourcePromotions = patch.audioSourcePromotions?.map((delta) => ({
-            ...delta,
-            replacement: {
-                ...delta.replacement,
-                ...(delta.replacement.audioSource
-                    ? { audioSource: { ...delta.replacement.audioSource, audioOffsetSeconds: 19 } }
-                    : {}),
-            },
-        }));
+        const audioSourcePromotions = patch.audioSourcePromotions?.map((delta) => {
+            const replacement = delta.replacement.audioSource
+                ? { ...delta.replacement, audioSource: { ...delta.replacement.audioSource, audioOffsetSeconds: 19 } }
+                : delta.replacement;
+            return { ...delta, replacement };
+        });
         const forged = { ...patch, audioSourcePromotions };
         const before = structuredClone(lane());
         const document = getCrdtDoc('root');
@@ -725,7 +759,9 @@ describe('bounded audio comp source promotion', () => {
             try {
                 await executeAppAction({ type: 'restoreCompRegionInterval', payload });
             } catch (error) {
-                if (!isAppActionConflictError(error)) throw error;
+                if (!isAppActionConflictError(error)) {
+                    throw error;
+                }
                 refused = true;
             }
             expect(refused).toBe(true);
@@ -745,18 +781,16 @@ describe('bounded audio comp source promotion', () => {
             payload: { trackId: 'audio', startBeat: 0, endBeat: 8, takeId: 'b' },
         });
         const entry = undoHistoryStore.value?.past.at(-1);
-        if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'restoreCompRegionInterval')
+        if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'restoreCompRegionInterval') {
             throw new Error('Expected whole-owner comp inverse');
+        }
         const payload = entry.inverseAction.payload;
-        const audioSourcePromotions = payload.audioSourcePromotions?.map((delta) => ({
-            ...delta,
-            expected: {
-                ...delta.expected,
-                ...(delta.expected.audioSource
-                    ? { audioSource: { ...delta.expected.audioSource, audioOffsetSeconds: 19 } }
-                    : {}),
-            },
-        }));
+        const audioSourcePromotions = payload.audioSourcePromotions?.map((delta) => {
+            const expected = delta.expected.audioSource
+                ? { ...delta.expected, audioSource: { ...delta.expected.audioSource, audioOffsetSeconds: 19 } }
+                : delta.expected;
+            return { ...delta, expected };
+        });
         await executeAppAction({ type: 'restoreCompRegionInterval', payload: { ...payload, audioSourcePromotions } });
         expect(lane().activeCompRegions).toHaveLength(1);
         expect(lane().activeCompRegions[0]?.audioSource?.audioOffsetSeconds).toBe(19);
@@ -769,11 +803,12 @@ describe('bounded audio comp source promotion', () => {
             lanes: [
                 {
                     ...lane(),
-                    activeCompRegions: lane().activeCompRegions.map((region) =>
-                        region.takeId === 'b'
-                            ? { ...region, audioSource: { ...originalSource, startBeat: 1, audioOffsetSeconds: 19 } }
-                            : region
-                    ),
+                    activeCompRegions: lane().activeCompRegions.map((region) => {
+                        if (region.takeId !== 'b') {
+                            return region;
+                        }
+                        return { ...region, audioSource: { ...originalSource, startBeat: 1, audioOffsetSeconds: 19 } };
+                    }),
                 },
             ],
         });
@@ -791,7 +826,9 @@ describe('bounded audio comp source promotion', () => {
         peerSelection(6, 7, 'c');
         expect((await undo()).headConsumed).toBe(true);
         const regions = lane().activeCompRegions.flatMap((region) => {
-            if (region.takeId !== 'a' || region.startBeat > 1 || region.endBeat < 2) return [region];
+            if (region.takeId !== 'a' || region.startBeat > 1 || region.endBeat < 2) {
+                return [region];
+            }
             return [
                 { ...region, endBeat: 1 },
                 { startBeat: 1, endBeat: 2, takeId: 'a' },

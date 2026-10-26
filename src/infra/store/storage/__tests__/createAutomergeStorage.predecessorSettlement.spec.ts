@@ -218,7 +218,9 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
             writeMetadata: { capture: ({ nextValue }) => nextValue, reduce: ({ captured }) => captured },
             rebasePending,
             mutateCrdtWithMetadata: ({ value, authorityValue, metadata, reconcile }) => {
-                if (metadata?.items.includes('refused')) throw new AutomergeStorageWriteConflictError('owned conflict');
+                if (metadata?.items.includes('refused')) {
+                    throw new AutomergeStorageWriteConflictError('owned conflict');
+                }
                 reconcile(value, authorityValue);
             },
         });

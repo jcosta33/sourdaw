@@ -9,12 +9,14 @@ import {
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
+import { createCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { getCommandHandler } from '../getCommandHandler';
+import { materializeCommandHandlerArguments } from '../materializeCommandHandlerArguments';
 
 // #2881 — undo step-over advances onto a unit only when every member's inverse
 // resolves to a handler flagged `canReportConflict`. The flag is a declared
@@ -39,9 +41,75 @@ import { getCommandHandler } from '../getCommandHandler';
 type DivergedFixture = {
     readonly title: string;
     readonly actionType: string;
-    readonly divergedAction: AppAction;
+    readonly divergedAction?: AppAction;
+    readonly createDivergedAction?: () => AppAction;
     readonly reason?: string;
 };
+
+type TempoMapRoot = {
+    tempoMap: {
+        changes: Array<{ id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }>;
+    };
+};
+
+type TempoMapConflictActionType = 'editTempoMap' | 'restoreTempoMapEdit';
+
+function createDivergedTempoMapAction(actionType: TempoMapConflictActionType): AppAction {
+    // Drain the Yeast fixture before disabling its test storage port; the tempo-map
+    // conflict below owns a real root CRDT document and the production handler.
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    setTrackStoreState({ ...defaultTrackState, tracks: [] });
+    takeLaneStore.set({ lanes: [] });
+
+    const original = { id: 'tempo-live', beat: 0, tempo: 120, curve: 'instant' as const };
+    transportStore.set({ ...defaultTransportState, tempo: 120 });
+    tempoMapStore.set({ changes: [original] });
+    const writeDocumentTempo = (tempo: number): void => {
+        mutateCrdtDoc<TempoMapRoot>({
+            id: 'root',
+            changeFn: (document) => {
+                document.tempoMap = { changes: [{ ...original, tempo }] };
+            },
+        });
+    };
+    writeDocumentTempo(original.tempo);
+
+    const editAction = {
+        type: 'editTempoMap',
+        payload: { edit: { type: 'update', id: original.id, tempo: 140 } },
+    } satisfies AppAction;
+    const editHandler = getCommandHandler(editAction);
+    if (!editHandler?.materializeCommandArguments) {
+        throw new Error('Expected the production tempo-map admission materializer');
+    }
+    const admittedEdit = materializeCommandHandlerArguments(editAction, editHandler);
+    if (admittedEdit.type !== 'editTempoMap') {
+        throw new Error('Expected the admitted tempo-map edit');
+    }
+
+    let action: AppAction = admittedEdit;
+    if (actionType === 'restoreTempoMapEdit') {
+        const inverseAction = editHandler.describe(admittedEdit).inverseAction;
+        if (!inverseAction || inverseAction.type !== 'restoreTempoMapEdit') {
+            throw new Error('Expected the captured tempo-map restore action');
+        }
+        action = inverseAction;
+        tempoMapStore.set({ changes: [{ ...original, tempo: 140 }] });
+    }
+
+    const handler = getCommandHandler(action);
+    if (!handler?.validate?.(action)) {
+        throw new Error(`Expected ${actionType} to validate before the peer row changes`);
+    }
+
+    // The admitted edit expects the original row for apply; its generated inverse
+    // expects the edited row for restore. Both now meet the same actual peer row.
+    writeDocumentTempo(130);
+    return action;
+}
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
     {
@@ -328,6 +396,16 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
             payload: { processorId: 'yeast-live', toIndex: 1, expectedOrder: ['yeast-arp', 'yeast-live'] },
         },
     },
+    {
+        title: 'editTempoMap refuses an admitted edit after its captured row diverges',
+        actionType: 'editTempoMap',
+        createDivergedAction: () => createDivergedTempoMapAction('editTempoMap'),
+    },
+    {
+        title: 'restoreTempoMapEdit refuses a captured inverse after its row diverges',
+        actionType: 'restoreTempoMapEdit',
+        createDivergedAction: () => createDivergedTempoMapAction('restoreTempoMapEdit'),
+    },
 ];
 
 /** Every action type a fixture proves — the one legal flagged set. */
@@ -463,6 +541,7 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
     });
 
     afterEach(() => {
+        removeCrdtDoc('root');
         resetLiveYeastRack();
         automationStore.set({ lanes: [] });
         clearHandlerRegistry();
@@ -481,12 +560,20 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
         expect(flagged).toEqual(FIXTURE_PROVEN_ACTION_TYPES);
     });
 
-    it.each(CONFLICT_CAPABLE_FIXTURES)('$title', async ({ divergedAction, reason }) => {
-        const handler = getCommandHandler(divergedAction);
+    it.each(CONFLICT_CAPABLE_FIXTURES)(
+        '$title',
+        async ({ actionType, divergedAction, createDivergedAction, reason }) => {
+            const action = createDivergedAction?.() ?? divergedAction;
+            if (!action) {
+                throw new Error(`Expected a diverged action for ${actionType}`);
+            }
+            const handler = getCommandHandler(action);
 
-        expect(handler?.canReportConflict).toBe(true);
-        expect(await handler?.execute(divergedAction)).toEqual(
-            reason === undefined ? { status: 'conflict' } : { status: 'conflict', reason }
-        );
-    });
+            expect(action.type).toBe(actionType);
+            expect(handler?.canReportConflict).toBe(true);
+            expect(await handler?.execute(action)).toEqual(
+                reason === undefined ? { status: 'conflict' } : { status: 'conflict', reason }
+            );
+        }
+    );
 });

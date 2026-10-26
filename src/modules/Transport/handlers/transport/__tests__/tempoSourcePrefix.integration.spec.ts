@@ -79,8 +79,16 @@ function registerHandlers(): void {
 
 function owners() {
     flushAutomergeStorageWrites();
+    const tracks = structuredClone({ tracks: trackStore.value!.tracks });
+    const document = getCrdtDoc('root');
+    if (!document) {
+        throw new Error('Expected the authoritative project');
+    }
+    const project = Automerge.toJS(document);
+    // The owning track adapter writes `{ tracks }` through createAutomergeStorage's JSON-safe projection.
+    expect(project.tracks).toEqual(tracks);
     const value = {
-        tracks: JSON.parse(JSON.stringify({ tracks: trackStore.value!.tracks })),
+        tracks,
         takeLanes: structuredClone(takeLaneStore.value),
         transport: {
             tempo: transportStore.value!.tempo,
@@ -89,7 +97,11 @@ function owners() {
         },
         tempoMap: structuredClone(tempoMapStore.value),
     };
-    expect(getCrdtDoc('root')).toMatchObject(value);
+    expect(project).toMatchObject({
+        takeLanes: value.takeLanes,
+        transport: value.transport,
+        tempoMap: value.tempoMap,
+    });
     return value;
 }
 
@@ -157,7 +169,7 @@ describe('ordered tempo and audio split source preparation', () => {
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();

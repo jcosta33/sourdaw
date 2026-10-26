@@ -1,5 +1,7 @@
 import 'fake-indexeddb/auto';
 
+import * as Automerge from '@automerge/automerge';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -68,18 +70,22 @@ function clip(id: string, trackId: string, type: Clip['type'], startBeat: number
 }
 
 function installProject(confident = true): void {
+    const midiClips: Clip[] = [];
+    if (confident) {
+        midiClips.push(
+            clip('midi-first', 'midi', 'midi', 0, 8),
+            clip('midi-second', 'midi', 'midi', MIDI_PHASE_BEATS, 8 + MIDI_PHASE_BEATS)
+        );
+    } else {
+        midiClips.push(clip('midi-first', 'midi', 'midi', 0, 0.5));
+    }
     trackStore.set({
         tracks: [
             normalizeTrack({
                 id: 'midi',
                 name: 'Overlapping beat grids',
                 kind: 'midi',
-                clips: confident
-                    ? [
-                          clip('midi-first', 'midi', 'midi', 0, 8),
-                          clip('midi-second', 'midi', 'midi', MIDI_PHASE_BEATS, 8 + MIDI_PHASE_BEATS),
-                      ]
-                    : [clip('midi-first', 'midi', 'midi', 0, 0.5)],
+                clips: midiClips,
             }),
             normalizeTrack({
                 id: 'audio',
@@ -120,9 +126,15 @@ function sourceEntry(): number {
 
 function authority(): void {
     flushAutomergeStorageWrites();
-    expect(getCrdtDoc('root')).toMatchObject({
+    const document = getCrdtDoc('root');
+    if (!document) {
+        throw new Error('Expected the authoritative project');
+    }
+    const project = Automerge.toJS(document);
+    // The owning track adapter writes `{ tracks }` through createAutomergeStorage's JSON-safe projection.
+    expect(project.tracks).toEqual({ tracks: trackStore.value!.tracks });
+    expect(project).toMatchObject({
         transport: { tempo: transportStore.value!.tempo },
-        tracks: JSON.parse(JSON.stringify({ tracks: trackStore.value!.tracks })),
         tempoMap: tempoMapStore.value,
     });
 }
@@ -187,7 +199,7 @@ describe('registered Detect Tempo is analysis only', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
@@ -232,21 +244,22 @@ describe('registered Detect Tempo is analysis only', () => {
         const state = trackStore.value!;
         trackStore.set({
             ...state,
-            tracks: state.tracks.map((track) =>
-                track.id === 'audio'
-                    ? {
-                          ...track,
-                          clips: [
-                              ...track.clips,
-                              {
-                                  ...clip('buffer-target', 'audio', 'audio', 16, 20),
-                                  audioBufferId: 'analysis-buffer',
-                                  audioOffsetBeats: 0,
-                              },
-                          ],
-                      }
-                    : track
-            ),
+            tracks: state.tracks.map((track) => {
+                if (track.id !== 'audio') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    clips: [
+                        ...track.clips,
+                        {
+                            ...clip('buffer-target', 'audio', 'audio', 16, 20),
+                            audioBufferId: 'analysis-buffer',
+                            audioOffsetBeats: 0,
+                        },
+                    ],
+                };
+            }),
         });
         authority();
         const before = getCrdtDoc('root');
@@ -267,8 +280,8 @@ describe('registered Detect Tempo is analysis only', () => {
         await executeAppAction({ type: 'detectTempo', payload: { clipId: 'midi-first' } });
         expect(transportStore.value!.tempo).toBe(BASE_BPM);
         expect(undoHistoryStore.value?.past).toHaveLength(0);
-        const beforeTracks = JSON.parse(JSON.stringify(trackStore.value!.tracks));
-        await executeAppAction({ type: 'setTempo', payload: { bpm: enteredBpm! } });
+        const beforeTracks = structuredClone(trackStore.value!.tracks);
+        await executeAppAction({ type: 'setTempo', payload: { bpm: enteredBpm } });
         authority();
         expect(transportStore.value!.tempo).toBe(adoptedBpm);
         expect(sourceEntry()).toBe(6);
@@ -277,7 +290,7 @@ describe('registered Detect Tempo is analysis only', () => {
         expect((await undo()).headConsumed).toBe(true);
         authority();
         expect(transportStore.value!.tempo).toBe(BASE_BPM);
-        expect(JSON.parse(JSON.stringify(trackStore.value!.tracks))).toEqual(beforeTracks);
+        expect(trackStore.value!.tracks).toEqual(beforeTracks);
         expect(sourceEntry()).toBe(6);
         await redo();
         authority();

@@ -250,10 +250,11 @@ describe('canonical loop source boundary', () => {
                     tempoAtClipStart: 120,
                     secondsAtBeat: (beat) => (beat <= 8 ? beat / 2 : 4 + beat - 8),
                 });
-                expect(segments).toEqual([
-                    { startOffsetBeats: 0, endOffsetBeats: headEnd, sourceStartSeconds: sourceHead },
-                    ...(headEnd < 4 ? [{ startOffsetBeats: headEnd, endOffsetBeats: 4, sourceStartSeconds: 0 }] : []),
-                ]);
+                const expected = [{ startOffsetBeats: 0, endOffsetBeats: headEnd, sourceStartSeconds: sourceHead }];
+                if (headEnd < 4) {
+                    expected.push({ startOffsetBeats: headEnd, endOffsetBeats: 4, sourceStartSeconds: 0 });
+                }
+                expect(segments).toEqual(expected);
             }
         }
     );

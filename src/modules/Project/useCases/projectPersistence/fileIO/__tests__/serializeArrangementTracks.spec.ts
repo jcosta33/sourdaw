@@ -35,7 +35,10 @@ describe('serializeArrangementTracks (clip-shape mapping)', () => {
             ],
         });
 
-        const serialized = JSON.parse(JSON.stringify(serializeArrangementTracks([track])));
+        const wire = JSON.stringify(serializeArrangementTracks([track]));
+        expect(wire).toContain(`"audioOffsetSeconds":${entry}`);
+        expect(wire).toContain('"audioLoopPassEntrySeconds":0');
+        const serialized = JSON.parse(wire);
         expect(serialized[0].clips[0]).toMatchObject({
             sampleStartBeat: 12,
             audioOffsetSeconds: entry,
@@ -78,7 +81,17 @@ describe('serializeArrangementTracks (clip-shape mapping)', () => {
                 },
             ],
         });
-        const serialized = JSON.parse(JSON.stringify(serializeArrangementTracks([track])));
+        const wire = JSON.stringify(serializeArrangementTracks([track]));
+        for (const field of [
+            'audioOffsetSeconds',
+            'audioUnwrappedOffsetSeconds',
+            'audioLoopStartSeconds',
+            'audioLoopPassEntrySeconds',
+            'audioLoopPassOriginBeat',
+        ]) {
+            expect(wire).not.toContain(`"${field}"`);
+        }
+        const serialized = JSON.parse(wire);
         const [restored] = hydrateArrangementTracks(serialized);
 
         for (const clip of [serialized[0].clips[0], restored?.clips[0]]) {

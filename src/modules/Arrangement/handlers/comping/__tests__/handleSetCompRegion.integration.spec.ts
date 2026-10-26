@@ -284,7 +284,7 @@ describe('setCompRegion command integration', () => {
         takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         flushAutomergeStorageWrites();
         removeCrdtDoc('root');
         configureAutomergeStoragePort(null);
@@ -1629,7 +1629,9 @@ describe('setCompRegion command integration', () => {
         );
         vi.stubGlobal('cancelAnimationFrame', vi.fn());
         const patch = compRegionInterval.captureRemovePatch({ trackId: 'track-1', startBeat: 0 });
-        if (!patch) throw new Error('Expected a removable unscoped interval');
+        if (!patch) {
+            throw new Error('Expected a removable unscoped interval');
+        }
         expect(compRegionInterval.applyPatch(patch)).toBe('written');
         expect(frames).toHaveLength(1);
         mutateCrdtDoc<{ takeLanes: { lanes: (typeof lane)[] } }>({
