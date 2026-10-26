@@ -6,12 +6,14 @@ import {
     REVIEW_REPAIR_FORMAT,
     REVIEW_REPAIR_SUMMARY_MAX_BYTES,
     assertReviewRepairRecord,
+    authorRepairRecords,
     confirmClientMutationId,
     parseReviewRepairReplyForRole,
     parseReviewRepairReply,
     renderReviewRepairConfirmationMarker,
     renderReviewRepairReply,
     reviewRepairRecordDigest,
+    reviewerConfirmationState,
     selectEligibleRepairs,
 } from '../reviewRepair.ts';
 
@@ -884,6 +886,31 @@ describe('selectEligibleRepairs', () => {
             refused: [],
             ignored: [{ thread: THREAD, reason: 'no repair recorded' }],
         });
+    });
+
+    it('shares the pure record and confirmation replay selection without unresolved-thread admission', () => {
+        const first = repairRecord();
+        const second = repairRecord({ head: LATER_HEAD });
+        const thread = {
+            thread: THREAD,
+            replies: [
+                repairReply(11, first),
+                repairReply(12, second),
+                { id: 13, body: renderConfirmationReply(second), authorNodeId: FOREIGN_NODE_ID },
+            ],
+        };
+        expect(authorRepairRecords(thread, AUTHOR_NODE_ID, inReviewedRange)).toEqual({
+            kind: 'one',
+            candidate: { record: second, replyId: 12 },
+        });
+        expect(
+            reviewerConfirmationState(thread, second, FOREIGN_NODE_ID, {
+                pr: PR,
+                head: LATER_HEAD,
+                isAncestor: inReviewedRange,
+                authorReplyId: 12,
+            })
+        ).toEqual({ alreadyPosted: true });
     });
 
     it('should ignore an already-resolved thread even when it carries a valid record', () => {

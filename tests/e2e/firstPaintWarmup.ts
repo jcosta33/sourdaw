@@ -54,15 +54,29 @@ function logWarmupPhase(phase: string): void {
  */
 // oxlint-disable-next-line import/no-default-export -- Playwright resolves globalSetup by default export.
 export default async function warmFirstPaint(config: FullConfig): Promise<void> {
-    const baseURL = config.projects[0]?.use.baseURL;
-    if (baseURL === undefined) {
-        throw new Error('First-paint warmup requires the project baseURL naming the app server');
+    // A shard can serve a built app and a dev server side by side; each origin
+    // pays its own cold start, so each is warmed.
+    const baseURLs = new Set<string>();
+    for (const project of config.projects) {
+        const baseURL = project.use.baseURL;
+        if (baseURL === undefined) {
+            throw new Error(`First-paint warmup requires the baseURL of project ${project.name} naming its app server`);
+        }
+        baseURLs.add(baseURL);
+    }
+    if (baseURLs.size === 0) {
+        throw new Error('First-paint warmup requires a project with a baseURL naming the app server');
     }
 
-    logWarmupPhase('checkout identity: start');
-    await assertServingCheckoutIdentity(baseURL, resolve(import.meta.dirname, '../..'));
-    logWarmupPhase('checkout identity: complete');
+    for (const baseURL of baseURLs) {
+        logWarmupPhase(`${baseURL} checkout identity: start`);
+        await assertServingCheckoutIdentity(baseURL, resolve(import.meta.dirname, '../..'));
+        logWarmupPhase('checkout identity: complete');
+        await warmOrigin(baseURL);
+    }
+}
 
+async function warmOrigin(baseURL: string): Promise<void> {
     logWarmupPhase('browser launch: start');
     const browser = await chromium.launch();
     logWarmupPhase('browser launch: complete');

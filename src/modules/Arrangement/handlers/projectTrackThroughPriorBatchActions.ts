@@ -72,6 +72,8 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             projected.automationMode = action.payload.mode;
         } else if (action.type === 'muteTrack') {
             projected.muted = action.payload.muted;
+        } else if (action.type === 'soloTrack') {
+            projected.soloed = action.payload.soloed;
         } else if (action.type === 'setTrackOutput') {
             projected.outputId = action.payload.outputId;
         } else if (action.type === 'addSend') {

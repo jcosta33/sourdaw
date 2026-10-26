@@ -207,6 +207,7 @@ export { discardRecording } from './recording/discardRecording';
 export { stageRecordingTake } from './recording/stageRecordingTake';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
+export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';

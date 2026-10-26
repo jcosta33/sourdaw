@@ -131,6 +131,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: vi.fn(),
+    takeOwnsRecordingRoot: vi.fn(() => true),
     // The punched clip the recorder opens; the audio arm then starts the
     // recorder for the armed track that owns it. `stopRecording` resolves the
     // commit the teardown hands the recording lifecycle.

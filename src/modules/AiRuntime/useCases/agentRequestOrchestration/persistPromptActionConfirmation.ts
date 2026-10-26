@@ -39,6 +39,7 @@ type PersistPromptActionConfirmationInput = {
     batchPosition?: ConfirmationProposal['batchPosition'];
     /** What a terse refinement of this card inherits; present only for an ordinary card. */
     groundingBasis?: ConfirmationProposal['groundingBasis'];
+    protectionFacts?: ConfirmationProposal['protectionFacts'];
     executionMode: ConfirmationProposal['executionMode'];
     group: {
         groupId: string;
@@ -128,6 +129,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             measuredPreview: bindMeasuredPreviewToBatch(input.measuredPreview, input.parsedCommandBatch.envelope),
             batchPosition: input.batchPosition,
             groundingBasis: input.groundingBasis,
+            protectionFacts: input.protectionFacts,
             risk: {
                 level: input.agentApproval.policy.risk,
                 reason: input.agentApproval.policy.reasons.join(' ') || null,
