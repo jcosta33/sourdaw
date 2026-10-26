@@ -116,6 +116,49 @@ const MEASURED_PREVIEW: MeasuredPreview = {
     revision: 'revision-1',
 };
 
+const MEASURED_PREVIEW_WITH_AUDITION: MeasuredPreview = {
+    ...MEASURED_PREVIEW,
+    targets: MEASURED_PREVIEW.targets.map((target) => ({
+        ...target,
+        audition: {
+            baselineRender: {
+                route: 'mixdown',
+                artifact: {
+                    contentAddress: 'local-audition-baseline-address',
+                    sampleRate: 48_000,
+                    frameCount: 96_000,
+                    channelCount: 2,
+                    durationSeconds: 2,
+                },
+            },
+            previewRender: {
+                route: 'mixdown',
+                artifact: {
+                    contentAddress: 'local-audition-preview-address',
+                    sampleRate: 44_100,
+                    frameCount: 88_200,
+                    channelCount: 1,
+                    durationSeconds: 2,
+                },
+            },
+            baselineIntegratedLoudness: {
+                status: 'measured',
+                metricVersion: 1,
+                unit: 'LUFS',
+                value: -18,
+                confidence: 'exact',
+            },
+            previewIntegratedLoudness: {
+                status: 'measured',
+                metricVersion: 1,
+                unit: 'LUFS',
+                value: -19.5,
+                confidence: 'exact',
+            },
+        },
+    })),
+};
+
 function message(id: string, role: ChatMessage['role'], content: string, extra: Partial<ChatMessage> = {}) {
     return { id, role, content, timestamp: 1, ...extra } satisfies ChatMessage;
 }
@@ -411,7 +454,7 @@ describe('thread context for the planner', () => {
                             runId: 'run-committed',
                             assistantMessageId: 'assistant-1',
                             status: 'executed',
-                            measuredPreview: MEASURED_PREVIEW,
+                            measuredPreview: MEASURED_PREVIEW_WITH_AUDITION,
                         }),
                     ],
                     runs: [{ runId: 'run-committed', receipts: [receipt('run-committed')] }],
@@ -427,7 +470,8 @@ describe('thread context for the planner', () => {
                 commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload }],
                 measuredDeltas: [{ targetId: 'master', metric: 'integratedLoudness', delta: -1.5, unit: 'LUFS' }],
             });
-            expect(readSection(buildContext(thread).message)).toMatchObject({
+            const providerContext = buildContext(thread);
+            expect(readSection(providerContext.message)).toMatchObject({
                 lastCommit: {
                     receiptIds: ['command:run-committed:batch-1'],
                     commands: [{ name: 'setTrackGain' }],
@@ -435,6 +479,8 @@ describe('thread context for the planner', () => {
                     measuredDeltas: [{ metric: 'integratedLoudness', delta: -1.5, unit: 'LUFS' }],
                 },
             });
+            expect(providerContext.message).not.toContain('local-audition-');
+            expect(providerContext.localMessage).not.toContain('local-audition-');
         });
 
         it('reads a direct commit from its run and its history entry, newest commit first', () => {

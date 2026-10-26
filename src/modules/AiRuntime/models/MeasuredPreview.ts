@@ -21,6 +21,31 @@ export type MeasuredPreviewTarget = {
     readonly baseline: Readonly<Partial<Record<string, MeasuredMetricEntry>>>;
     readonly preview: Readonly<Partial<Record<string, MeasuredMetricEntry>>>;
     readonly deltas: Readonly<Partial<Record<string, MeasuredMetricDelta>>>;
+    /** Local audition data tied to the exact pair of buffers retained for this measurement. */
+    readonly audition?: {
+        readonly baselineRender: {
+            readonly route: 'mixdown' | 'isolated-subgraph';
+            readonly artifact: {
+                readonly contentAddress: string;
+                readonly sampleRate: number;
+                readonly frameCount: number;
+                readonly channelCount: number;
+                readonly durationSeconds: number;
+            };
+        };
+        readonly previewRender: {
+            readonly route: 'mixdown' | 'isolated-subgraph';
+            readonly artifact: {
+                readonly contentAddress: string;
+                readonly sampleRate: number;
+                readonly frameCount: number;
+                readonly channelCount: number;
+                readonly durationSeconds: number;
+            };
+        };
+        readonly baselineIntegratedLoudness: MeasuredMetricEntry;
+        readonly previewIntegratedLoudness: MeasuredMetricEntry;
+    };
 };
 
 /**

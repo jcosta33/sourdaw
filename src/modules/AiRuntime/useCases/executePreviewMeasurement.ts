@@ -133,14 +133,27 @@ function measureTarget(
     preview: RenderedTarget,
     metrics: ParsedArguments['metrics']
 ): MeasuredPreview['targets'][number] {
-    const baselineMeasurements = measureAgentScopeRender(baseline.buffer, metrics);
-    const previewMeasurements = measureAgentScopeRender(preview.buffer, metrics);
+    const measurementMetrics = metrics.includes('integratedLoudness') ? metrics : [...metrics, 'integratedLoudness'];
+    const baselineMeasurements = measureAgentScopeRender(baseline.buffer, measurementMetrics);
+    const previewMeasurements = measureAgentScopeRender(preview.buffer, measurementMetrics);
+    const requested = (measurements: typeof baselineMeasurements) =>
+        Object.fromEntries(
+            Object.entries(measurements).filter(([metric]) => metrics.includes(metric as (typeof metrics)[number]))
+        );
+    const baselineRequested = requested(baselineMeasurements);
+    const previewRequested = requested(previewMeasurements);
     return {
         targetId: baseline.targetId,
         targetKind: baseline.targetKind,
-        baseline: baselineMeasurements,
-        preview: previewMeasurements,
-        deltas: compareAgentScopeMeasurements({ baseline: baselineMeasurements, preview: previewMeasurements }),
+        baseline: baselineRequested,
+        preview: previewRequested,
+        deltas: compareAgentScopeMeasurements({ baseline: baselineRequested, preview: previewRequested }),
+        audition: {
+            baselineRender: artifactOf(baseline),
+            previewRender: artifactOf(preview),
+            baselineIntegratedLoudness: baselineMeasurements.integratedLoudness,
+            previewIntegratedLoudness: previewMeasurements.integratedLoudness,
+        },
     };
 }
 
@@ -214,7 +227,11 @@ function successRead(
             },
             metrics: parsed.metrics,
             targets: targets.map((target, index) => ({
-                ...target,
+                targetId: target.targetId,
+                targetKind: target.targetKind,
+                baseline: target.baseline,
+                preview: target.preview,
+                deltas: target.deltas,
                 baselineRender: artifactOf(pairs[index]![0]),
                 previewRender: artifactOf(pairs[index]![1]),
             })),
