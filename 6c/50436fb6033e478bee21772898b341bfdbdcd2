@@ -1,0 +1,35 @@
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToBrowser.spec.ts
+  s_59e31a5c6f3e31::t_abf6a2433ff4c9 102-103,107,109,111-112,114,119,121-127,129-130,132,134-135
+  s_59e31a5c6f3e31::t_76479f2d958030 104-106,108,110,131
+  s_59e31a5c6f3e31::t_72d60cd27b65bd 113,115-118,120,128,133
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_29e132a73d0ace 10-36,49,56-60,86-89,92-95,97-106,112-115
+  s_59e31a5c6f3e31::t_09c4326533065b 117
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_43c449243ffcca 2329-2374,2376-2378,2382-2391,2395,2397-2402,2404-2411,2413
+  s_59e31a5c6f3e31::t_6d4ee4445dcac3 2375,2379-2381,2392-2394,2396,2403,2412,2414-2418
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_96050689655ec6 565,812,829,836
+  s_59e31a5c6f3e31::t_f064f3a1b61275 463
+  s_59e31a5c6f3e31::t_03a2766308cf57 433-439,475,484,489-492,535,540,545,554,568,782,841
+  s_59e31a5c6f3e31::t_31ceba39c01e88 188,203-213,401,408-411,430-432,442,493,528,530-532,581,622,692,749,794-796
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  s_59e31a5c6f3e31::t_f96b86930a2b54 87-88,98,128
+  s_59e31a5c6f3e31::t_931660242eb092 23,26-52,124,129-150,192,221,224-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6c50436fb6033e478bee21772898b341bfdbdcd2",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
