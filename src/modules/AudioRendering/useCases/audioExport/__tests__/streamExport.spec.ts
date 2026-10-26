@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+
 import { unzipSync } from 'fflate';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DELIVERY_PRESETS } from '../../../models/DeliveryPresets';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';

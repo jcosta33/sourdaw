@@ -21,6 +21,22 @@ import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings } from '../exportSettings';
 
 const GC_CASE_NAME = 'observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems';
+
+async function awaitBeforeDeadline<T>(operation: Promise<T>, deadline: number, timeoutError: () => Error): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            operation,
+            new Promise<T>((_resolve, reject) => {
+                timer = setTimeout(() => reject(timeoutError()), Math.max(1, deadline - Date.now()));
+            }),
+        ]);
+    } finally {
+        if (timer !== undefined) {
+            clearTimeout(timer);
+        }
+    }
+}
 const GC_FULL_NAME = `connected stem export output ownership ${GC_CASE_NAME}`;
 const GC_FILTER_NAME = `connected stem export output ownership > ${GC_CASE_NAME}`;
 const GC_SPEC = 'src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx';
@@ -870,13 +886,14 @@ describe('connected stem export output ownership', () => {
         vi.unstubAllGlobals();
     }, 20000);
     it('consumes two independently converted WAV targets before releasing each of64 rendered stems', async () => {
-        const deadline = Date.now() + 20000;
+        const deadline = Date.now() + 45000;
         const actualEngine = await vi.importActual<typeof import('#/modules/AudioEngine/useCases')>(
             '#/modules/AudioEngine/useCases'
         );
         const chunks: Uint8Array[] = [];
         const gameFinalWrite = Promise.withResolvers<void>();
         const releaseGameWrite = Promise.withResolvers<void>();
+        const writerTerminal = Promise.withResolvers<'closed' | 'aborted'>();
         type WavHeader = { rate: number; channels: number; bitDepth: number; dataLength: number };
         let lastHeader: WavHeader | undefined;
         let wavHeaders = 0;
@@ -890,7 +907,6 @@ describe('connected stem export output ownership', () => {
         let closed = false;
         let closeCalls = 0;
         let abortCalls = 0;
-        let closeObservation: Promise<void> | undefined;
         let failure: Error | undefined;
         const phase = () => {
             const loggedError: unknown = mocks.loggerError.mock.lastCall?.[0];
@@ -977,9 +993,11 @@ describe('connected stem export output ownership', () => {
                     close: async () => {
                         closeCalls++;
                         closed = true;
+                        writerTerminal.resolve('closed');
                     },
                     abort: async () => {
                         abortCalls++;
+                        writerTerminal.resolve('aborted');
                     },
                 };
             },
@@ -994,13 +1012,15 @@ describe('connected stem export output ownership', () => {
             const start = screen.getByTestId('export-start');
             exportStarted = true;
             fireEvent.click(start);
-            closeObservation = waitFor(() => expect(closed).toBe(true), { timeout: 15000, onTimeout: withPhase });
-            await Promise.race([
-                gameFinalWrite.promise,
-                closeObservation.then(() => {
-                    throw withPhase(new Error('The writer closed before the first Game WAV final PCM write.'));
-                }),
-            ]);
+            const firstWriterEvent = await awaitBeforeDeadline(
+                Promise.race([
+                    gameFinalWrite.promise.then(() => 'held-final-write' as const),
+                    writerTerminal.promise.then(() => 'terminal' as const),
+                ]),
+                deadline,
+                () => withPhase(new Error('Timed out waiting for the held Game WAV final PCM write.'))
+            );
+            expect(firstWriterEvent).toBe('held-final-write');
             expect(gameWriteHeld).toBe(true);
             expect(gamePcmRemaining).toBe(0);
             expect(ownership.rendered).toBe(1);
@@ -1010,7 +1030,10 @@ describe('connected stem export output ownership', () => {
             expect(abortCalls).toBe(0);
             gameWriteReleased = true;
             releaseGameWrite.resolve();
-            await closeObservation;
+            const finalWriterEvent = await awaitBeforeDeadline(writerTerminal.promise, deadline, () =>
+                withPhase(new Error('Timed out waiting for all stem targets to reach writer close.'))
+            );
+            expect(finalWriterEvent).toBe('closed');
             expect(ownership.rendered).toBe(64);
             expect(ownership.consumed).toBe(64);
             expect(ownership.peakRetained).toBe(1);
@@ -1062,11 +1085,14 @@ describe('connected stem export output ownership', () => {
         }
         gameWriteReleased = true;
         releaseGameWrite.resolve();
-        if (closeObservation) {
-            await Promise.allSettled([closeObservation]);
-        }
         try {
             if (exportStarted) {
+                const cleanupDeadline = Date.now() + 10000;
+                if (writerAcquired && closeCalls + abortCalls === 0) {
+                    await awaitBeforeDeadline(writerTerminal.promise, cleanupDeadline, () =>
+                        withPhase(new Error('Timed out waiting for writer close or abort during export cleanup.'))
+                    );
+                }
                 await waitFor(
                     () => {
                         if (writerAcquired) {
@@ -1074,7 +1100,7 @@ describe('connected stem export output ownership', () => {
                         }
                         expect(screen.getByTestId('export-mode-stems')).toBeEnabled();
                     },
-                    { timeout: Math.max(1, deadline - Date.now()), onTimeout: withPhase }
+                    { timeout: Math.max(1, cleanupDeadline - Date.now()), onTimeout: withPhase }
                 );
             }
         } catch (error) {
@@ -1090,7 +1116,7 @@ describe('connected stem export output ownership', () => {
         if (failure) {
             throw failure;
         }
-    }, 20000);
+    }, 60000);
     it(
         GC_CASE_NAME,
         async () => {

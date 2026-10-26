@@ -29,6 +29,58 @@ type StreamExportInput = {
     signal?: AbortSignal;
 } & ({ targets: readonly Target[] } | LegacySettings);
 
+function copyTargets(targets: readonly Target[]): Target[] {
+    return targets.map((target) => {
+        const dither: PcmDitherOptions = { mode: target.dither.mode };
+        if (Object.hasOwn(target.dither, 'seed')) {
+            dither.seed = target.dither.seed;
+        }
+        let metadata: Target['metadata'];
+        if (target.metadata) {
+            metadata = {
+                title: target.metadata.title,
+                artist: target.metadata.artist,
+                description: target.metadata.description,
+            };
+        }
+        return {
+            ...target,
+            formats: [...target.formats],
+            dither,
+            metadata,
+        };
+    });
+}
+
+function createExportPlan(
+    targets: readonly Target[] | undefined,
+    input: StreamExportInput,
+    source: ExportAudioSource
+): readonly Target[] {
+    if (targets !== undefined) {
+        return targets;
+    }
+    if (!('formats' in input)) {
+        return [];
+    }
+    return [
+        {
+            id: 'custom',
+            name: 'Custom',
+            formats: [...input.formats],
+            sampleRate: source.sampleRate,
+            channels: source.numberOfChannels,
+            bitDepth: input.bitDepth,
+            mp3BitRate: input.mp3BitRate,
+            dither: input.dither,
+            metadata: input.metadata,
+            normalization: input.normalization ? 'r128' : 'off',
+            targetLufs: input.normalization?.targetLufs ?? -14,
+            ceilingDbTp: input.normalization?.ceilingDbTp ?? -1,
+        },
+    ];
+}
+
 function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: AbortSignal): Promise<TValue> {
     if (!signal) {
         return operation;
@@ -58,29 +110,7 @@ function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: Abort
 
 /** Storage precedes rendering; each borrowed render drains all targets before its owner continues. */
 export async function streamExport(input: StreamExportInput) {
-    let targets: Target[] | undefined;
-    if ('targets' in input) {
-        targets = input.targets.map((target) => {
-            const dither: PcmDitherOptions = { mode: target.dither.mode };
-            if (Object.hasOwn(target.dither, 'seed')) {
-                dither.seed = target.dither.seed;
-            }
-            let metadata: Target['metadata'];
-            if (target.metadata) {
-                metadata = {
-                    title: target.metadata.title,
-                    artist: target.metadata.artist,
-                    description: target.metadata.description,
-                };
-            }
-            return {
-                ...target,
-                formats: [...target.formats],
-                dither,
-                metadata,
-            };
-        });
-    }
+    const targets = 'targets' in input ? copyTargets(input.targets) : undefined;
     let destination:
         Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
     if (input.destination.kind === 'native') {
@@ -100,25 +130,7 @@ export async function streamExport(input: StreamExportInput) {
             onLimited: (target: Target) => void;
         }) {
             input.checkCancelled();
-            let plan: readonly Target[] = targets ?? [];
-            if (targets === undefined && 'formats' in input) {
-                plan = [
-                    {
-                        id: 'custom',
-                        name: 'Custom',
-                        formats: [...input.formats],
-                        sampleRate: options.source.sampleRate,
-                        channels: options.source.numberOfChannels,
-                        bitDepth: input.bitDepth,
-                        mp3BitRate: input.mp3BitRate,
-                        dither: input.dither,
-                        metadata: input.metadata,
-                        normalization: input.normalization ? 'r128' : 'off',
-                        targetLufs: input.normalization?.targetLufs ?? -14,
-                        ceilingDbTp: input.normalization?.ceilingDbTp ?? -1,
-                    },
-                ];
-            }
+            const plan = createExportPlan(targets, input, options.source);
             for (const target of plan) {
                 input.checkCancelled();
                 const prepared = await awaitExportOperation(

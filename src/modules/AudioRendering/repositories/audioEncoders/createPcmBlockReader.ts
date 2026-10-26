@@ -26,6 +26,22 @@ function sanitize(value: number): number {
     return 0;
 }
 
+function measurePeak(source: ExportAudioSource, channelCount: number, sourceGain: number): number {
+    let peak = 0;
+    for (let start = 0; start < source.length; start += 4096) {
+        const channels = readExportPcmBlock({ source, start, length: Math.min(4096, source.length - start) });
+        for (const channel of channels.slice(0, channelCount)) {
+            for (const sample of channel) {
+                const value = Math.abs(sample * sourceGain);
+                if (Number.isFinite(value)) {
+                    peak = Math.max(peak, value);
+                }
+            }
+        }
+    }
+    return peak;
+}
+
 /** Whole-window gain, then bounded channel-major TPDF. Recreating a reader replays a supplied seed. */
 export function createPcmBlockReader(input: {
     source: ExportAudioSource;
@@ -54,17 +70,7 @@ export function createPcmBlockReader(input: {
         }
         peak = source.samplePeak * sourceGain;
     } else {
-        for (let start = 0; start < source.length; start += 4096) {
-            const channels = readExportPcmBlock({ source, start, length: Math.min(4096, source.length - start) });
-            for (const channel of channels.slice(0, channelCount)) {
-                for (const sample of channel) {
-                    const value = Math.abs(sample * sourceGain);
-                    if (Number.isFinite(value)) {
-                        peak = Math.max(peak, value);
-                    }
-                }
-            }
-        }
+        peak = measurePeak(source, channelCount, sourceGain);
     }
     const gain = peak > 1 ? 1 / peak : 1;
     const dither = input.dither ?? { mode: 'tpdf' };

@@ -1,11 +1,53 @@
+import { createIntegratedLoudnessAccumulator } from '#/utils/audioMetering/measureIntegratedLoudness';
+import { createTruePeakAccumulator } from '#/utils/audioMetering/measureTruePeak';
+
 import { type ExportAudioSource } from '../../models/ExportAudioSource';
 import { createDeliveryPcmSource } from '../../repositories/audioEncoders/createDeliveryPcmSource';
 import { readExportPcmBlock } from '../../repositories/audioEncoders/readExportPcmBlock';
 import { normalizeExportBuffer } from '../normalizeExportBuffer';
 import { type resolveDeliveryTargets } from '../resolveDeliveryTargets';
 
-import { createIntegratedLoudnessAccumulator } from '#/utils/audioMetering/measureIntegratedLoudness';
-import { createTruePeakAccumulator } from '#/utils/audioMetering/measureTruePeak';
+function includeFiniteSamples(peak: number, channels: readonly Float32Array[]): number {
+    for (const channel of channels) {
+        for (const sample of channel) {
+            if (Number.isFinite(sample)) {
+                peak = Math.max(peak, Math.abs(sample));
+            }
+        }
+    }
+    return peak;
+}
+
+function createPreparedSource(
+    source: ReturnType<typeof createDeliveryPcmSource>,
+    samplePeak: number,
+    gain: number
+): ExportAudioSource {
+    const shape = {
+        length: source.length,
+        numberOfChannels: source.numberOfChannels,
+        sampleRate: source.sampleRate,
+        gain,
+        samplePeak,
+    };
+    const readChannels = source.readChannels;
+    const getChannelData = source.getChannelData;
+    if (!readChannels && !getChannelData) {
+        throw new Error('Delivery PCM reader is unavailable.');
+    }
+    if (readChannels) {
+        return { ...shape, readChannels: (start, length) => readChannels.call(source, start, length) };
+    }
+    return {
+        ...shape,
+        getChannelData: (channel) => {
+            if (!getChannelData) {
+                throw new Error('Delivery PCM reader is unavailable.');
+            }
+            return getChannelData.call(source, channel);
+        },
+    };
+}
 
 /** Meter converted target PCM in bounded blocks, then use the existing single-gain law. */
 export async function prepareDeliveryTarget(input: {
@@ -42,13 +84,7 @@ export async function prepareDeliveryTarget(input: {
             checkCancelled();
             const channels = readExportPcmBlock({ source, start, length: Math.min(4096, source.length - start) });
             if (relativeGatePower === undefined) {
-                for (const channel of channels) {
-                    for (const sample of channel) {
-                        if (Number.isFinite(sample)) {
-                            samplePeak = Math.max(samplePeak, Math.abs(sample));
-                        }
-                    }
-                }
+                samplePeak = includeFiniteSamples(samplePeak, channels);
             }
             if (loudness) {
                 let measured: readonly Float32Array[];
@@ -84,31 +120,6 @@ export async function prepareDeliveryTarget(input: {
         });
     }
     // AudioBuffer's PCM access lives on its prototype and requires its original receiver.
-    const shape = {
-        length: source.length,
-        numberOfChannels: source.numberOfChannels,
-        sampleRate: source.sampleRate,
-        gain: sourceGain * (normalization?.appliedGain ?? 1),
-        samplePeak,
-    };
-    const readChannels = source.readChannels;
-    const getChannelData = source.getChannelData;
-    if (!readChannels && !getChannelData) {
-        throw new Error('Delivery PCM reader is unavailable.');
-    }
-    let prepared: ExportAudioSource;
-    if (readChannels) {
-        prepared = { ...shape, readChannels: (start, length) => readChannels.call(source, start, length) };
-    } else {
-        prepared = {
-            ...shape,
-            getChannelData: (channel) => {
-                if (!getChannelData) {
-                    throw new Error('Delivery PCM reader is unavailable.');
-                }
-                return getChannelData.call(source, channel);
-            },
-        };
-    }
+    const prepared = createPreparedSource(source, samplePeak, sourceGain * (normalization?.appliedGain ?? 1));
     return { source: prepared, normalization };
 }
