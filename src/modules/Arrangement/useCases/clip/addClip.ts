@@ -18,6 +18,11 @@ export function addClip(input: {
     isGhost?: boolean;
     /** Optional source-clip properties to preserve (e.g. when duplicating). */
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
+    audioUnwrappedOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
+    audioLoopPassEntrySeconds?: number;
+    audioLoopPassOriginBeat?: number;
     midiOffsetBeats?: number;
     fadeInBeats?: number;
     fadeOutBeats?: number;
@@ -72,6 +77,29 @@ export function addClip(input: {
     }
     const inferredType = input.type ?? (track.kind === 'midi' ? 'midi' : 'audio');
 
+    const audioTimeFields: Pick<
+        Clip,
+        | 'audioOffsetSeconds'
+        | 'audioUnwrappedOffsetSeconds'
+        | 'audioLoopStartSeconds'
+        | 'audioLoopPassEntrySeconds'
+        | 'audioLoopPassOriginBeat'
+    > = {};
+    if (input.audioOffsetSeconds !== undefined) {
+        audioTimeFields.audioOffsetSeconds = input.audioOffsetSeconds;
+    }
+    if (input.audioUnwrappedOffsetSeconds !== undefined) {
+        audioTimeFields.audioUnwrappedOffsetSeconds = input.audioUnwrappedOffsetSeconds;
+    }
+    if (input.audioLoopStartSeconds !== undefined) {
+        audioTimeFields.audioLoopStartSeconds = input.audioLoopStartSeconds;
+    }
+    if (input.audioLoopPassEntrySeconds !== undefined) {
+        audioTimeFields.audioLoopPassEntrySeconds = input.audioLoopPassEntrySeconds;
+    }
+    if (input.audioLoopPassOriginBeat !== undefined) {
+        audioTimeFields.audioLoopPassOriginBeat = input.audioLoopPassOriginBeat;
+    }
     const clip: Clip = {
         id: clipId,
         trackId: input.trackId,
@@ -82,6 +110,7 @@ export function addClip(input: {
         audioBufferId: input.audioBufferId,
         assetHash: input.assetHash,
         audioOffsetBeats: input.audioOffsetBeats,
+        ...audioTimeFields,
         midiOffsetBeats: input.midiOffsetBeats,
         fadeInBeats: input.fadeInBeats ?? 0,
         fadeOutBeats: input.fadeOutBeats ?? 0,

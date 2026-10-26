@@ -27,3 +27,39 @@ could pass while the waveform, analysis, and edit helpers inspected different
 source samples than playback. A change inside the clip's audible span requires
 integrated source-to-timeline mapping and separate edit-history review; a
 clip-start conversion alone does not prove that case.
+
+## Escape: inverse convergence across a short tempo excursion
+
+PR [#4987](https://github.com/jcosta33/sourdaw/pull/4987), merged as
+`62a116ee0073b1cb62d7c8ebf239b3cd93524533`, introduced the unbracketed
+local-tempo inverse in `renderTempoTimeline`. A 180 to 60 to 180 BPM excursion
+at beats 0.25 and 0.5 alternated between segments and mapped a source ending
+at frame 8320 to frame 320. The public approval described tempo-map attacks;
+the exact historical stance, prompt and tier are unestablished. The missed
+failure mode was convergence when a local step crosses a complete excursion.
+
+Invert that map through the real render callback at 48 kHz, then resolve the
+same finite captured pass through live and offline readers with comp entry at
+beat zero and inside the slow segment. Require the exact exclusive ending at
+frame 8320 and last audible frame 8319, including stretched playback. Restoring
+only the unbracketed inverse must fail the owning inverse spec and reader parity
+spec. Keep zero and negative-time probes so convergence repair cannot drop run-up.
+
+## Escape: short tempo segments lost an exact source frame
+
+The segment integrator introduced by PR [#263](https://github.com/jcosta33/sourdaw/pull/263)
+and used for shared scheduling by PR [#2078](https://github.com/jcosta33/sourdaw/pull/2078)
+accumulated durations without compensation. Instant changes of 120 BPM at beat
+0, 240 at 0.25, and 120 at 0.45 produced `S(0.5) = 0.19999999999999998`.
+Adding source entry `-0.1 s` selected frame 4799 at 48 kHz instead of 4800.
+Changing segment multiplication order alone remained insufficient. The missed
+input was an integrated prefix landing exactly on a source-frame boundary;
+historical review prompt, model, and tier are unestablished.
+
+Use that map and signed source entry, split through the registered action at
+beat 0.5, and require raw and projected source entry `0.1 s` / frame 4800
+through binary reopen, Undo, and Redo. Remove only the compensation and require
+this probe to fail at frame 4799; a passing unmutated suite does not establish
+that discrimination. Retain a genuinely fractional-frame endpoint, negative
+pre-roll and its inverse, and a constant-tempo linear segment so the repair
+cannot pass by rounding or substituting another source clock.

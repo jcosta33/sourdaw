@@ -1,73 +1,322 @@
-/**
- * The audio window a clip actually plays, as one shared law for both timeline
- * renderers (Canvas2D `clipDrawing.ts` and WebGPU `createWebGpuRenderer.ts`),
- * so the waveform a musician aligns by eye is the material that sounds.
- */
+import { resolveAudioSourceOffsetSeconds, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
-/**
- * The draw path's own stretch floor. The playback runtimes bound the ratio
- * through `boundStretchRatio` ([0.01, 100], #2532); the renderers keep their
- * historical floor, and changing it here would redraw every clip whose stored
- * ratio falls between the two laws. Not part of this span's contract.
- */
-const DRAW_STRETCH_FLOOR = 0.0001;
+import type { ClipRenderModel, TimelineRenderModel } from '../../models/TimelineRenderModel';
+
+type SourceTimeline = NonNullable<TimelineRenderModel['sourceTimeline']>;
+
+function flatSourceTimeline(secondsPerBeat: number): SourceTimeline {
+    return {
+        secondsAtBeat: (beat) => beat * secondsPerBeat,
+        beatAtSeconds: (seconds) => seconds / secondsPerBeat,
+    };
+}
 
 export type AudioWaveformDrawSpan = {
-    /** Source sample the audible material starts at (0 under a negative offset). */
     startSample: number;
-    /** Source sample the audible material ends at. */
     endSample: number;
-    /**
-     * Timeline beats of silence at the clip's head, before the first audible
-     * sample. Zero unless the offset is negative.
-     */
     leadingSilenceBeats: number;
-    /**
-     * Timeline beats during which source material sounds. At or below zero the
-     * pre-roll swallowed the whole clip and nothing is audible to draw.
-     */
     audibleTimelineBeats: number;
+    sourceStartSeconds: number;
+    sourceEndSeconds: number;
+    soundStartSongSeconds: number;
+    audibleStartBeat: number;
+    stretchRatio: number;
 };
 
-/**
- * Map a clip's beats onto source samples, mirroring the live scheduler's
- * negative-offset semantics (`scheduleAudioClips`).
- *
- * A negative offset puts the clip's head before the source's sample 0: the
- * head is silent until the source would have reached its own start, and the
- * material then plays from sample 0 for the shortened remainder — the
- * iteration still ends where the clip says it does, so the pre-roll shortens
- * what is heard rather than moving the tail. The pre-roll is measured exactly
- * as the scheduler plays it (`preRollSeconds = max(0, -offsetSeconds) /
- * stretchRatio`): the offset span is source time, and crossing it at the
- * clip's playback rate costs `span / rate` of the timeline.
- *
- * The audible span consumes `timelineBeats * ratio` of source, matching the
- * scheduler's `playbackRate = stretchRatio` (source consumed over destination
- * time T is T * stretchRatio). Fit-to-beats stores ratio 0.5 when stretching
- * 4 beats of material across 8 destination beats, so the draw shows 4 source
- * beats over those 8.
- *
- * Pure: both renderers must derive identical spans from identical inputs.
- */
+/** One source window for one actual playback iteration. */
 export function computeAudioWaveformDrawSpan({
     offsetBeats,
+    offsetSeconds,
     stretchRatio,
     clipBeats,
     secondsPerBeat,
     sampleRate,
+    clipStartBeat = 0,
+    timeline = flatSourceTimeline(secondsPerBeat),
+    bufferLengthSamples,
 }: {
     offsetBeats: number;
+    offsetSeconds?: number;
     stretchRatio: number;
     clipBeats: number;
     secondsPerBeat: number;
     sampleRate: number;
+    clipStartBeat?: number;
+    timeline?: SourceTimeline;
+    bufferLengthSamples?: number;
 }): AudioWaveformDrawSpan {
-    const ratio = Math.max(stretchRatio, DRAW_STRETCH_FLOOR);
-    const leadingSilenceBeats = Math.max(0, -offsetBeats) / ratio;
-    const audibleTimelineBeats = clipBeats - leadingSilenceBeats;
-    const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
-    const beatsConsumed = audibleTimelineBeats * ratio;
-    const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
-    return { startSample, endSample, leadingSilenceBeats, audibleTimelineBeats };
+    const ratio = boundStretchRatio(stretchRatio);
+    const sourceOffsetSeconds = resolveAudioSourceOffsetSeconds(
+        { audioOffsetSeconds: offsetSeconds, audioOffsetBeats: offsetBeats },
+        60 / secondsPerBeat
+    );
+    const sourceStartSeconds = Math.max(0, sourceOffsetSeconds);
+    const sourceLimitSeconds = bufferLengthSamples === undefined ? Infinity : bufferLengthSamples / sampleRate;
+    const iterationStartSeconds = timeline.secondsAtBeat(clipStartBeat);
+    const iterationDurationSeconds = timeline.secondsAtBeat(clipStartBeat + clipBeats) - iterationStartSeconds;
+    const preRollSeconds = Math.max(0, -sourceOffsetSeconds) / ratio;
+    const soundStartSongSeconds = iterationStartSeconds + preRollSeconds;
+    const audibleStartBeat = timeline.beatAtSeconds(soundStartSongSeconds);
+    const audibleTimelineBeats = clipBeats - (audibleStartBeat - clipStartBeat);
+    const availableSourceSeconds = Math.max(0, sourceLimitSeconds - sourceStartSeconds);
+    const sourceDurationSeconds = Math.min(
+        Math.max(0, iterationDurationSeconds - preRollSeconds) * ratio,
+        availableSourceSeconds
+    );
+    const sourceEndSeconds = sourceStartSeconds + sourceDurationSeconds;
+
+    return {
+        startSample: Math.max(0, Math.floor(sourceStartSeconds * sampleRate)),
+        // Peaks cover every PCM cell intersecting the half-open source span.
+        // A fractional end includes its last cell; an integer end excludes it.
+        endSample: Math.max(0, Math.min(bufferLengthSamples ?? Infinity, Math.ceil(sourceEndSeconds * sampleRate))),
+        leadingSilenceBeats: audibleStartBeat - clipStartBeat,
+        audibleTimelineBeats,
+        sourceStartSeconds,
+        sourceEndSeconds,
+        soundStartSongSeconds,
+        audibleStartBeat,
+        stretchRatio: ratio,
+    };
+}
+
+export type AudioWaveformOccurrence = {
+    iteration: number;
+    span: AudioWaveformDrawSpan;
+    numBins: number;
+};
+
+type CachedLayout = {
+    timeline: TimelineRenderModel['sourceTimeline'];
+    programme: ClipRenderModel['audioProgramme'];
+    key: string;
+    occurrences: readonly AudioWaveformOccurrence[];
+    peakPositions: Map<string, Float64Array>;
+};
+
+const layoutCache = new WeakMap<ClipRenderModel, CachedLayout>();
+
+function layoutKey(
+    clip: ClipRenderModel,
+    model: TimelineRenderModel,
+    sampleRate: number,
+    bufferLength: number,
+    maxBins: number
+): string {
+    return [
+        clip.startBeat,
+        clip.endBeat,
+        clip.audioOffsetSeconds,
+        clip.audioLoopStartSeconds,
+        clip.audioLoopPassEntrySeconds,
+        clip.audioLoopPassOriginBeat,
+        clip.loopOriginBeat,
+        clip.audioOffsetBeats,
+        clip.clipStartTempo,
+        clip.stretchMode,
+        clip.stretchRatio,
+        clip.loopEnabled,
+        clip.loopLength,
+        model.tempo,
+        model.viewportStartBeat,
+        model.viewportEndBeat,
+        model.pixelsPerBeat,
+        sampleRate,
+        bufferLength,
+        maxBins,
+    ].join(':');
+}
+
+function visibleSourceWindow(
+    span: AudioWaveformDrawSpan,
+    timeline: SourceTimeline,
+    iterationEndBeat: number,
+    viewportStartBeat: number,
+    viewportEndBeat: number,
+    sampleRate: number
+): AudioWaveformDrawSpan | null {
+    const soundEndSongSeconds =
+        span.soundStartSongSeconds + (span.sourceEndSeconds - span.sourceStartSeconds) / span.stretchRatio;
+    const boundedEndBeat = Math.min(iterationEndBeat, viewportEndBeat);
+    const boundedEndSongSeconds = timeline.secondsAtBeat(boundedEndBeat);
+    const visibleStartBeat = Math.max(span.audibleStartBeat, viewportStartBeat);
+    let visibleEndBeat = boundedEndBeat;
+    if (boundedEndSongSeconds > soundEndSongSeconds) {
+        visibleEndBeat = timeline.beatAtSeconds(soundEndSongSeconds);
+    }
+    if (visibleEndBeat <= visibleStartBeat) {
+        return null;
+    }
+
+    // Uncropped source endpoints already belong to this span. An inverse and
+    // forward round trip can move one just below its exact PCM boundary.
+    let visibleStartSongSeconds = span.soundStartSongSeconds;
+    let sourceStartSeconds = span.sourceStartSeconds;
+    if (visibleStartBeat > span.audibleStartBeat) {
+        visibleStartSongSeconds = timeline.secondsAtBeat(visibleStartBeat);
+        sourceStartSeconds = Math.max(
+            span.sourceStartSeconds,
+            Math.min(
+                span.sourceEndSeconds,
+                span.sourceStartSeconds + (visibleStartSongSeconds - span.soundStartSongSeconds) * span.stretchRatio
+            )
+        );
+    }
+    let sourceEndSeconds = span.sourceEndSeconds;
+    if (boundedEndSongSeconds < soundEndSongSeconds) {
+        sourceEndSeconds = Math.max(
+            sourceStartSeconds,
+            Math.min(
+                span.sourceEndSeconds,
+                span.sourceStartSeconds + (boundedEndSongSeconds - span.soundStartSongSeconds) * span.stretchRatio
+            )
+        );
+    }
+    const startSample = Math.max(span.startSample, Math.floor(sourceStartSeconds * sampleRate));
+    const endSample = Math.min(span.endSample, Math.ceil(sourceEndSeconds * sampleRate));
+    if (endSample <= startSample) {
+        return null;
+    }
+    return {
+        ...span,
+        startSample,
+        endSample,
+        sourceStartSeconds,
+        sourceEndSeconds,
+        soundStartSongSeconds: visibleStartSongSeconds,
+        audibleStartBeat: visibleStartBeat,
+        audibleTimelineBeats: visibleEndBeat - visibleStartBeat,
+    };
+}
+
+/** One bounded uniform PCM peak window per visible actual loop occurrence. */
+export function getAudioWaveformOccurrences({
+    clip,
+    model,
+    sampleRate,
+    bufferLength,
+    maxBins,
+}: {
+    clip: ClipRenderModel;
+    model: TimelineRenderModel;
+    sampleRate: number;
+    bufferLength: number;
+    maxBins: number;
+}): readonly AudioWaveformOccurrence[] {
+    const timeline = model.sourceTimeline ?? flatSourceTimeline(60 / model.tempo);
+    const key = layoutKey(clip, model, sampleRate, bufferLength, maxBins);
+    const cached = layoutCache.get(clip);
+    if (
+        cached &&
+        cached.timeline === model.sourceTimeline &&
+        cached.programme === clip.audioProgramme &&
+        cached.key === key
+    ) {
+        return cached.occurrences;
+    }
+
+    const occurrences: AudioWaveformOccurrence[] = [];
+    const visibleStartBeat = Math.max(model.viewportStartBeat, clip.startBeat);
+    const visibleEndBeat = Math.min(model.viewportEndBeat, clip.endBeat);
+    for (const source of clip.audioProgramme ?? [clip]) {
+        const clipBeats = source.endBeat - source.startBeat;
+        const loop = projectClipLoopExpansion({
+            clipDurationBeats: clipBeats,
+            configuredLoopLengthBeats: source.loopLength,
+            loopEnabled: source.loopEnabled ?? false,
+        });
+        const ratio =
+            source.stretchMode && source.stretchMode !== 'off' ? boundStretchRatio(source.stretchRatio ?? 1) : 1;
+        const firstIteration = Math.max(0, Math.floor((visibleStartBeat - source.startBeat) / loop.loopLengthBeats));
+        const lastIteration = Math.min(
+            loop.iterationCount,
+            Math.ceil((visibleEndBeat - source.startBeat) / loop.loopLengthBeats)
+        );
+        for (let iteration = firstIteration; iteration < lastIteration; iteration++) {
+            const iterationStartBeat = source.startBeat + iteration * loop.loopLengthBeats;
+            const iterationEndBeat = Math.min(source.endBeat, iterationStartBeat + loop.loopLengthBeats);
+            const segments = projectAudioLoopPassSegments({
+                clip: { ...source },
+                loopLengthBeats: loop.loopLengthBeats,
+                iterationStartBeat,
+                iterationEndBeat,
+                stretchRatio: ratio,
+                tempoAtClipStart: source.clipStartTempo ?? model.tempo,
+                secondsAtBeat: timeline.secondsAtBeat,
+            });
+            for (const segment of segments) {
+                const segmentStartBeat = iterationStartBeat + segment.startOffsetBeats;
+                const segmentEndBeat = iterationStartBeat + segment.endOffsetBeats;
+                const span = computeAudioWaveformDrawSpan({
+                    offsetBeats: source.audioOffsetBeats ?? 0,
+                    offsetSeconds: segment.sourceStartSeconds,
+                    stretchRatio: ratio,
+                    clipBeats: segmentEndBeat - segmentStartBeat,
+                    secondsPerBeat: 60 / (source.clipStartTempo ?? model.tempo),
+                    sampleRate,
+                    clipStartBeat: segmentStartBeat,
+                    timeline,
+                    bufferLengthSamples: bufferLength,
+                });
+                const visibleSpan = visibleSourceWindow(
+                    span,
+                    timeline,
+                    segmentEndBeat,
+                    visibleStartBeat,
+                    visibleEndBeat,
+                    sampleRate
+                );
+                if (!visibleSpan) {
+                    continue;
+                }
+                const numBins = Math.min(maxBins, Math.floor(visibleSpan.audibleTimelineBeats * model.pixelsPerBeat));
+                if (numBins > 0) {
+                    occurrences.push({ iteration: occurrences.length, span: visibleSpan, numBins });
+                }
+            }
+        }
+    }
+
+    layoutCache.set(clip, {
+        timeline: model.sourceTimeline,
+        programme: clip.audioProgramme,
+        key,
+        occurrences,
+        peakPositions: new Map(),
+    });
+    return occurrences;
+}
+
+/** Cached source-bin placement through the same inverse song clock as playback. */
+export function getAudioWaveformPeakPositions({
+    clip,
+    model,
+    occurrence,
+    binCount,
+}: {
+    clip: ClipRenderModel;
+    model: TimelineRenderModel;
+    occurrence: AudioWaveformOccurrence;
+    binCount: number;
+}): Float64Array {
+    const cached = layoutCache.get(clip);
+    const key = `${occurrence.iteration}:${binCount}`;
+    const prior = cached?.peakPositions.get(key);
+    if (prior) {
+        return prior;
+    }
+    const positions = new Float64Array(binCount + 1);
+    const timeline = model.sourceTimeline ?? flatSourceTimeline(60 / model.tempo);
+    const span = occurrence.span;
+    for (let index = 0; index <= binCount; index++) {
+        const sourceSeconds =
+            span.sourceStartSeconds + ((span.sourceEndSeconds - span.sourceStartSeconds) * index) / binCount;
+        const songSeconds = span.soundStartSongSeconds + (sourceSeconds - span.sourceStartSeconds) / span.stretchRatio;
+        const beat = timeline.beatAtSeconds(songSeconds);
+        positions[index] = (beat - model.viewportStartBeat) * model.pixelsPerBeat;
+    }
+    cached?.peakPositions.set(key, positions);
+    return positions;
 }

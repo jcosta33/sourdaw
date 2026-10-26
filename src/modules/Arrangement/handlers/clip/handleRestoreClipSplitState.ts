@@ -72,7 +72,7 @@ function clipAutomationLanesMatch(
 function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: HandlerValidationContext): boolean {
     const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
     const projected = projectClipReplayPrefix(priorActions);
-    if (!projected) {
+    if (!projected || (action.payload.expected.leftClip.type === 'audio' && !projected.tracks)) {
         return false;
     }
     const tracks =
@@ -80,6 +80,15 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
             id: track.id,
             clips: projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip),
         })) ?? [];
+    let takePriorActions = priorActions;
+    let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
+    if (priorActions.some((action) => action.type === 'setTempo' || action.type === 'restoreTempoEdit')) {
+        if (!projected.tracks) {
+            return false;
+        }
+        takePriorActions = [];
+        takeLanes = projected.takeLanes;
+    }
     return (
         !hasForeignPendingProjectWrites() &&
         clipSplitCaptureOwnersMatch(action.payload) &&
@@ -87,7 +96,8 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         reKeyedTakeLaneOwnersMatchStore(
             action.payload.reKeyedTakeLanes ?? [],
             action.payload.replacement.rightClip ? 'apply' : 'restore',
-            priorActions
+            takePriorActions,
+            takeLanes
         ) &&
         clipSplitStateRestorable(action.payload, { tracks }) &&
         midiClipSplitStateMatches(
@@ -125,7 +135,12 @@ function applySplitTakeTransition(
         );
         // Capture late right-side material before the transition's liveness
         // filter retires it. Transition-owned ids remain its sole responsibility.
-        const stagedRetired = planTakeRetirement([payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
+        const reKeyedTiles = (payload.reKeyedTakeLanes ?? []).flatMap(
+            (transition) => transition.baseGapAudioSourcesAfter ?? []
+        );
+        const stagedRetired =
+            planTakeRetirement([payload.rightClipId], reKeyedTakeIds, { preservedBaseGapAudioSources: reKeyedTiles })
+                ?.retiredLanes ?? [];
         // The split's re-key (#5048) rides the shared payload array: with
         // the clips back on the track and the lane still present, put its
         // pre-split facets back before retiring any remaining right material.

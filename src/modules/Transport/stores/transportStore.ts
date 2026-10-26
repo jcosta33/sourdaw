@@ -1,5 +1,9 @@
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    AutomergeStorageWriteConflictError,
+    createAutomergeStorage,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoWriteIntent } from './tempoWriteIntent';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { defaultTransportState, type TransportState } from '../models/TransportState';
@@ -15,7 +19,7 @@ export const MAX_TEMPO = 300;
  * projector, an import before the project loads). Every `?? tempo` default in
  * the module reads this so all such paths assume the same fallback BPM.
  */
-export const DEFAULT_TEMPO_BPM = 120;
+export { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 const MIN_TIME_SIGNATURE_NUMERATOR = 1;
 const MAX_TIME_SIGNATURE_NUMERATOR = 32;
 const MIN_BARS = 1;
@@ -386,11 +390,25 @@ function sanitize_transport_state(value: unknown): TransportState {
 }
 
 export const transportStore = createStore<TransportState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'transport', {
+    storage: createAutomergeStorage<TransportState, readonly TempoWriteIntent[]>(DOC_PREFIX_ROOT, 'transport', {
         fromCrdt: sanitize_transport_state,
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTransportState,
+        writeMetadata: {
+            captureMode: 'operation',
+            capture: () => captureTempoWriteMetadata('transport'),
+            reduce: ({ current, captured }) => {
+                const pending = current ? current.slice() : [];
+                pending.push(...captured);
+                return pending;
+            },
+        },
+        validateBeforeMutation: ({ metadata, doc }) => {
+            if (metadata && !tempoWriteIntentsMatch(doc, metadata, 'transport')) {
+                throw new AutomergeStorageWriteConflictError('Tempo edit conflicts with current source or base tempo');
+            }
+        },
         projectCommittedLocalState: ({ authorityValue, localValue }) => ({
             ...authorityValue,
             isPlaying: localValue.isPlaying,

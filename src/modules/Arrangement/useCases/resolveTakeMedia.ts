@@ -1,3 +1,4 @@
+import { resolveAudioTakeSource } from '#/utils/audioSourceTime';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { type Take } from '../models/TakeLane';
@@ -14,6 +15,7 @@ type TakeMedia = {
     sourceStartBeat: number;
     /** The media offset a fragment of the take starting at `beat` carries. */
     offsetAt: (beat: number) => number;
+    offsetSecondsAt?: (beat: number) => number;
 };
 
 /** A clip's own media offset, in the field its readers read. */
@@ -110,6 +112,12 @@ function placedPassMedia(
                 depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
         },
+        offsetSecondsAt: (beat) => {
+            if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
+                return depthSeconds + (((beat - passStartBeat) * 60) / passStartTempo) * sourceRate;
+            }
+            return depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
+        },
     };
     if (sourceEndSeconds !== undefined) {
         const passEndBeat = beatAfterSourceSeconds(
@@ -146,10 +154,28 @@ function placedPassMedia(
  * the tempo of the fragment's own first beat.
  */
 export function resolveTakeMedia(
-    take: Pick<Take, 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds' | 'passSourceEndSeconds'>,
+    take: Pick<
+        Take,
+        | 'sourceOffsetBeats'
+        | 'sourceOffsetSeconds'
+        | 'passAnchorSeconds'
+        | 'passDepthSeconds'
+        | 'passSourceEndSeconds'
+        | 'passOriginBeat'
+        | 'passOriginSourceSeconds'
+    >,
     clip: Clip,
     timeline: TempoTimeline
-): TakeMedia {
+): TakeMedia | null {
+    if (clip.type === 'audio') {
+        const physical = resolveAudioTakeSource(take, clip, timeline);
+        if (physical && 'status' in physical) {
+            return null;
+        }
+        if (physical) {
+            return physical;
+        }
+    }
     if (take.sourceOffsetBeats === undefined) {
         return {
             earliestBeat: clip.startBeat,

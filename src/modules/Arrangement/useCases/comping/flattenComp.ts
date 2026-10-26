@@ -11,7 +11,8 @@ import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { restoreClipGlueState } from '../clipEditing/restoreClipGlueState';
-import { resolveClipsWithComping, type ResolvedClip } from '../resolveComping';
+import { type ResolvedClip } from '../../models/ResolvedClip';
+import { resolveClipsWithComping } from '../resolveComping';
 
 import { insertTakeLane } from './insertTakeLane';
 import { removeTakeLane } from './removeTakeLane';
@@ -148,7 +149,7 @@ export function flattenComp(trackId: string): boolean {
     }
     const laneIndex = laneState.lanes.indexOf(lane);
 
-    if (lane.activeCompRegions.length === 0 || track.clips.length === 0) {
+    if ((lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length) || track.clips.length === 0) {
         removeTakeLane(lane.id);
         // The entry captures only the removed lane (#4081): replaying a
         // whole-store snapshot on undo erased every later edit to any other lane.

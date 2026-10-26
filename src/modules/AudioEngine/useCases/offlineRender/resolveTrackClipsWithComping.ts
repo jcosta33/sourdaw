@@ -1,4 +1,12 @@
 import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
+import {
+    audioSourceSnapshotAtBeat,
+    captureAudioSourceSnapshot,
+    partitionAudioSourceTiles,
+    audioTakeFragmentSource,
+    resolveAudioTakeSource,
+    hasCanonicalAudioTakeSource,
+} from '#/utils/audioSourceTime';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -18,6 +26,7 @@ type TakeMedia = {
     latestBeatAt?: (fragmentStartBeat: number) => number;
     sourceStartBeat: number;
     offsetAt: (beat: number) => number;
+    offsetSecondsAt?: (beat: number) => number;
 };
 
 /*
@@ -130,7 +139,8 @@ function placedPassMedia(
 ): TakeMedia {
     const sourceRate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline, sourceRate);
-    const depthBeats = (depthSeconds * timeline.tempoAtBeat(passStartBeat)) / 60;
+    const passStartTempo = timeline.tempoAtBeat(passStartBeat);
+    const depthBeats = (depthSeconds * passStartTempo) / 60;
     const media: TakeMedia = {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat: passStartBeat - depthBeats / sourceRate,
@@ -141,6 +151,12 @@ function placedPassMedia(
             const mediaSeconds =
                 depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
+        },
+        offsetSecondsAt: (beat) => {
+            if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
+                return depthSeconds + (((beat - passStartBeat) * 60) / passStartTempo) * sourceRate;
+            }
+            return depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
         },
     };
     if (sourceEndSeconds !== undefined) {
@@ -163,7 +179,16 @@ function placedPassMedia(
     return media;
 }
 
-function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia {
+function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia | null {
+    if (clip.type === 'audio') {
+        const physical = resolveAudioTakeSource(take, clip, timeline);
+        if (physical && 'status' in physical) {
+            return null;
+        }
+        if (physical) {
+            return physical;
+        }
+    }
     if (take.sourceOffsetBeats === undefined) {
         return {
             earliestBeat: clip.startBeat,
@@ -231,7 +256,7 @@ export function resolveTrackClipsWithComping(
     }
 
     const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
-    if (!lane || lane.activeCompRegions.length === 0) {
+    if (!lane || (lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length)) {
         return clips.map((clip) => ({
             ...clip,
             regionStartBeat: clip.startBeat,
@@ -258,6 +283,9 @@ export function resolveTrackClipsWithComping(
         }
 
         const media = resolveTakeMedia(take, sourceClip, timeline);
+        if (!media) {
+            continue;
+        }
         const overlapStart = Math.max(region.startBeat, media.earliestBeat);
         const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
         if (overlapStart >= overlapEnd) {
@@ -280,8 +308,28 @@ export function resolveTrackClipsWithComping(
         // there unchanged.
         const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
         const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
+        let audioSource:
+            ReturnType<typeof audioSourceSnapshotAtBeat> | ReturnType<typeof audioTakeFragmentSource> | null = null;
+        if (sourceClip.type === 'audio') {
+            if (region.audioSource && take.passAnchorSeconds === undefined) {
+                let rate = 1;
+                if (sourceClip.stretchMode && sourceClip.stretchMode !== 'off') {
+                    rate = boundStretchRatio(sourceClip.stretchRatio ?? 1);
+                }
+                audioSource = audioSourceSnapshotAtBeat(
+                    region.audioSource,
+                    overlapStart,
+                    rate,
+                    sourceClip.loopEnabled ?? false,
+                    timeline.secondsAtBeat
+                );
+            } else if (hasCanonicalAudioTakeSource(take, sourceClip) && media.offsetSecondsAt) {
+                audioSource = audioTakeFragmentSource(media.offsetSecondsAt(overlapStart), overlapStart);
+            }
+        }
         resolvedClips.push({
             ...takeFragmentBasis,
+            ...audioSource,
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
@@ -311,18 +359,47 @@ export function resolveTrackClipsWithComping(
         }
 
         for (const gap of gaps) {
-            resolvedClips.push({
-                ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, gap.start, timeline)),
-                startBeat: gap.start,
-                endBeat: gap.end,
-                regionStartBeat: gap.start,
-                regionEndBeat: gap.end,
-                sourceStartBeat: resolveLoopAnchoredStartBeat({
-                    startBeat: clip.startBeat,
-                    loopOriginBeat: clip.loopOriginBeat,
-                    loopEnabled: clip.loopEnabled ?? false,
-                }),
-            });
+            const windows = partitionAudioSourceTiles(
+                clip.id,
+                gap.start,
+                gap.end,
+                clip.type === 'audio' ? (lane.baseGapAudioSources ?? []) : []
+            );
+            for (const window of windows) {
+                const rate =
+                    clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
+                let snapshot = window.audioSource ?? null;
+                if (snapshot === null && clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+                    snapshot = captureAudioSourceSnapshot(
+                        clip,
+                        clip.loopLength ?? clip.endBeat - clip.startBeat,
+                        timeline.tempoAtBeat(clip.startBeat)
+                    );
+                }
+                let source: ReturnType<typeof audioSourceSnapshotAtBeat> = null;
+                if (snapshot) {
+                    source = audioSourceSnapshotAtBeat(
+                        snapshot,
+                        window.startBeat,
+                        rate,
+                        clip.loopEnabled ?? false,
+                        timeline.secondsAtBeat
+                    );
+                }
+                resolvedClips.push({
+                    ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, window.startBeat, timeline)),
+                    ...source,
+                    startBeat: window.startBeat,
+                    endBeat: window.endBeat,
+                    regionStartBeat: window.startBeat,
+                    regionEndBeat: window.endBeat,
+                    sourceStartBeat: resolveLoopAnchoredStartBeat({
+                        startBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
+                        loopEnabled: clip.loopEnabled ?? false,
+                    }),
+                });
+            }
         }
     }
 

@@ -3,6 +3,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 
+import { takeReKeySourceValuesMatch } from './reconcileTakeReKeySources';
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
 
 function replayFacets(take: Take): Record<string, unknown> {
@@ -45,9 +46,10 @@ function regionsMatchReplayFootprint(
 export function reKeyedTakeLaneOwnersMatchStore(
     transitions: readonly TakeReKeyLaneTransitionSnapshot[],
     direction: 'apply' | 'restore',
-    priorActions: readonly AppAction[] = []
+    priorActions: readonly AppAction[] = [],
+    initialLanes?: Parameters<typeof projectedTakeLaneOwners>[1]
 ): boolean {
-    const lanes = projectedTakeLaneOwners(priorActions);
+    const lanes = projectedTakeLaneOwners(priorActions, initialLanes);
     return transitions.every((transition) => {
         const target = lanes.find((live) => live.id === transition.laneId || live.trackId === transition.trackId);
         const from = direction === 'apply' ? transition.takesBefore : transition.takesAfter;
@@ -62,6 +64,7 @@ export function reKeyedTakeLaneOwnersMatchStore(
         }
         const targetTakes = new Map(to.map((take) => [take.id, take]));
         return (
+            takeReKeySourceValuesMatch(target, transition, direction) &&
             regionsMatchReplayFootprint(target, from, to, fromRegions, toRegions) &&
             lanes.every((live) => live.id !== transition.laneId || live.trackId === transition.trackId) &&
             lanes.every((live) =>

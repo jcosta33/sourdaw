@@ -1,4 +1,5 @@
 import { getGoverningTempoChange, getTempoAtBeat } from '../../models/TempoMap';
+import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
@@ -40,6 +41,8 @@ export type GetTempoWriteTargetInput = {
      * resolved target so a position-dependent write stays pinned.
      */
     tempoChangeId?: string | null;
+    /** A prepared sibling prefix supplies values without changing the live clock. */
+    clock?: TempoSourceClock;
 };
 
 /**
@@ -61,11 +64,11 @@ export type GetTempoWriteTargetInput = {
  * another nothing-happened.
  */
 export function getTempoWriteTarget(input: GetTempoWriteTargetInput = {}): TempoWriteTarget | null {
-    const changes = tempoMapStore.value?.changes ?? [];
+    const changes = input.clock?.changes ?? tempoMapStore.value?.changes ?? [];
 
     if (input.tempoChangeId === null) {
         const transport = transportStore.value;
-        return transport ? { tempo: transport.tempo, tempoChangeId: null, writable: true } : null;
+        return transport ? { tempo: input.clock?.tempo ?? transport.tempo, tempoChangeId: null, writable: true } : null;
     }
 
     if (input.tempoChangeId !== undefined) {
@@ -84,11 +87,11 @@ export function getTempoWriteTarget(input: GetTempoWriteTargetInput = {}): Tempo
     const beat = transport.isPlaying ? playheadPositionRef.current : transport.playheadPosition;
     const governing = getGoverningTempoChange(changes, beat);
     if (!governing) {
-        return { tempo: transport.tempo, tempoChangeId: null, writable: true };
+        return { tempo: input.clock?.tempo ?? transport.tempo, tempoChangeId: null, writable: true };
     }
     if (governing.interpolated) {
         return {
-            tempo: getTempoAtBeat(changes, beat, transport.tempo),
+            tempo: getTempoAtBeat(changes, beat, input.clock?.tempo ?? transport.tempo),
             tempoChangeId: governing.change.id,
             writable: false,
         };

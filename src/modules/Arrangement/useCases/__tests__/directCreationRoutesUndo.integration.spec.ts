@@ -22,23 +22,29 @@ import {
     executeAppAction,
     executeAppActionBatch,
     registerProductionCommandHandlers,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { playheadPositionRef } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import {
     type ConfirmPayload,
     type NotifyPayload,
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
+
+import { ClipDummy } from '../../__tests__/ClipDummy';
 
 // Audit #4591 — the empty-timeline menu, the empty-arrangement buttons, the
 // Sends inspector's Create Bus, the Instruments and Samples tabs, the Pattern
@@ -74,8 +80,10 @@ const noActionHistoryMetadataPort = {
 describe('direct track and clip creation and Undo', () => {
     let notifications: NotifyPayload[] = [];
     let unsubscribeFromNotifications: () => void = () => undefined;
+    let previousPlayheadBeat = 0;
 
     beforeEach(() => {
+        previousPlayheadBeat = playheadPositionRef.current;
         Container.clear();
         const notificationEventBus = createEventBus<NotificationEvents>();
         notifications = [];
@@ -111,6 +119,7 @@ describe('direct track and clip creation and Undo', () => {
     });
 
     afterEach(() => {
+        playheadPositionRef.current = previousPlayheadBeat;
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -174,6 +183,88 @@ describe('direct track and clip creation and Undo', () => {
         const clips = trackStore.value?.tracks.find((track) => track.id === 't-drums')?.clips ?? [];
         expect.soft(clips.map((clip) => clip.id)).toEqual(['clip-src']);
         expect.soft(trackColor()).toBe('#222222');
+    });
+
+    it('pastes a trimmed stretched audio loop with its physical entry through raw and projected Undo and Redo', async () => {
+        const source = ClipDummy.create({
+            id: 'audio-source',
+            trackId: 't-audio',
+            startBeat: 6,
+            endBeat: 14,
+            audioOffsetBeats: 99,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 4,
+            loopOriginBeat: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [{ ...createTrack({ id: 't-audio', name: 'Audio', kind: 'audio' }), clips: [source] }],
+            selectedTrackId: 't-audio',
+        });
+        selectClip(source.id);
+        expect(copySelectedClip()).toBe(true);
+        playheadPositionRef.current = 20;
+
+        await executeAppAction({ type: 'pasteClip' });
+        const pasted = trackStore.value?.tracks[0]?.clips.find((clip) => clip.id !== source.id);
+        expect(pasted).toBeDefined();
+        const pastedId = pasted!.id;
+        const rawClip = (clipId: string) =>
+            getCrdtDoc<{ tracks?: NonNullable<(typeof trackStore)['value']> }>('root')?.tracks?.tracks[0]?.clips.find(
+                (clip) => clip.id === clipId
+            );
+        const projectedClip = (clipId: string) => trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === clipId);
+        const expectPaste = () => {
+            for (const clip of [rawClip(pastedId), projectedClip(pastedId)]) {
+                expect(clip).toMatchObject({
+                    id: pastedId,
+                    startBeat: 20,
+                    endBeat: 28,
+                    audioOffsetSeconds: -0.25,
+                    audioUnwrappedOffsetSeconds: 3.5,
+                    audioLoopStartSeconds: 1.5,
+                    audioLoopPassEntrySeconds: 4.5,
+                    loopOriginBeat: 16,
+                    audioLoopPassOriginBeat: 18,
+                });
+            }
+            const clip = projectedClip(pastedId)!;
+            const secondsAtBeat = (beat: number) => (beat <= 12 ? beat / 2 : 6 + beat - 12);
+            const windows = [20, 24].flatMap((iterationStartBeat) =>
+                projectAudioLoopPassSegments({
+                    clip,
+                    loopLengthBeats: 4,
+                    iterationStartBeat,
+                    iterationEndBeat: iterationStartBeat + 4,
+                    stretchRatio: 2,
+                    tempoAtClipStart: 60,
+                    secondsAtBeat,
+                }).map((part) => [iterationStartBeat + part.startOffsetBeats, part.sourceStartSeconds])
+            );
+            expect(windows).toEqual([
+                [20, -0.25],
+                [22, 4.5],
+                [24, 1.5],
+                [26, 4.5],
+            ]);
+        };
+
+        expectPaste();
+        for (const clip of [rawClip(source.id), projectedClip(source.id)]) {
+            expect(clip).toMatchObject({ startBeat: 6, audioOffsetSeconds: -0.25, audioLoopPassOriginBeat: 4 });
+        }
+        await undo();
+        expect(rawClip(pastedId)).toBeUndefined();
+        expect(projectedClip(pastedId)).toBeUndefined();
+        await redo();
+        expectPaste();
     });
 
     it('undoes a paste together with the satellites the paste cloned onto its clip', async () => {

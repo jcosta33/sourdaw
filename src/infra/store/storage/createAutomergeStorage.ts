@@ -84,12 +84,22 @@ type AutomergeStoragePort = {
     waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
 
-type AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata> = {
-    capture(input: {
-        readonly beforeValue: TData | null;
-        readonly nextValue: TData | null;
-        readonly operation: 'set' | 'clear';
-    }): TWriteMetadata | null;
+type AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata> = (
+    | {
+          /** Default capture receives detached values it may inspect without changing the write. */
+          captureMode?: 'values';
+          capture(input: {
+              readonly beforeValue: TData | null;
+              readonly nextValue: TData | null;
+              readonly operation: 'set' | 'clear';
+          }): TWriteMetadata | null;
+      }
+    | {
+          /** Explicit opt-in for owner-local intent that does not read the store values. */
+          captureMode: 'operation';
+          capture(input: { readonly operation: 'set' | 'clear' }): TWriteMetadata | null;
+      }
+) & {
     reduce(input: { readonly current: TWriteMetadata | null; readonly captured: TWriteMetadata }): TWriteMetadata;
 };
 
@@ -140,6 +150,18 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
         /** The value this write was derived from, already narrowed by `toCrdt`. */
         baseValue: Partial<TData> | null;
         value: TData;
+    }) => void;
+    /**
+     * Validate raw draft authority before this slot is changed or decoded.
+     * Runs for sets and clears, including writes with null metadata, before
+     * either custom mutation hook or the ordinary identity-aware reconciler.
+     * May only inspect the document and throw to refuse the atomic write;
+     * value transformation belongs in a mutation hook.
+     */
+    validateBeforeMutation?: (input: {
+        readonly doc: AutomergeStorageReadableDoc;
+        readonly key: string;
+        readonly metadata: TWriteMetadata | null;
     }) => void;
     /**
      * Explicit metadata-aware mutation path. Unlike the legacy `mutateCrdt`
@@ -209,7 +231,11 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
         pendingValue: TData | null;
         hydratedValue: TData;
         metadata: TWriteMetadata | null;
+        /** Read-only authority paired with hydratedValue, including sibling slots. */
+        document: AutomergeStorageReadableDoc | undefined;
     }) => TData | null;
+    /** Re-evaluate a pending journal when document heads change but this slot does not. */
+    rebasePendingOnDocumentChange?: true;
     /** Opt in to immutable owner-local metadata captured at each actual set or clear. */
     writeMetadata?: AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata>;
     /** Restore local fields, or only their explicit changes when previousLocalValue is supplied. */
@@ -1313,8 +1339,10 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const discardsRaw = options?.discardsRaw;
     const crdtEntityIdentity = options?.crdtEntityIdentity;
     const rebasePending = options?.rebasePending;
+    const rebasePendingOnDocumentChange = options?.rebasePendingOnDocumentChange;
     const writeMetadata = options?.writeMetadata;
     const mutateCrdtWithMetadata = options?.mutateCrdtWithMetadata;
+    const validateBeforeMutation = options?.validateBeforeMutation;
     const projectCommittedLocalState = options?.projectCommittedLocalState;
     const isLocalRuntimeStateUpdate = options?.isLocalRuntimeStateUpdate;
     const preserveLocalRuntimeStateOnRecompute = options?.preserveLocalRuntimeStateOnRecompute;
@@ -1457,6 +1485,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
      * JSON compare it replaces.
      */
     let lastHydratedHeads: string | null = null;
+    // The read-only document that supplied the committed baseline. A settled
+    // predecessor must not pair that baseline with a later global document read.
+    let committedAuthorityDocument: AutomergeStorageReadableDoc | undefined;
     /**
      * Both compares above answer "is the document what the store last
      * projected?", which holds only while the committed value is still that
@@ -1531,11 +1562,14 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         if (!writeMetadata) {
             return null;
         }
-        const captured = writeMetadata.capture({
-            beforeValue: beforeValue === null ? null : toDocSafe(beforeValue),
-            nextValue: nextValue === null ? null : toDocSafe(nextValue),
-            operation,
-        });
+        const captured =
+            writeMetadata.captureMode === 'operation'
+                ? writeMetadata.capture({ operation })
+                : writeMetadata.capture({
+                      beforeValue: beforeValue === null ? null : toDocSafe(beforeValue),
+                      nextValue: nextValue === null ? null : toDocSafe(nextValue),
+                      operation,
+                  });
         return captured === null ? null : freezeMetadata(captured);
     };
 
@@ -1579,6 +1613,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             docId,
             key,
             changeFn: (doc) => {
+                validateBeforeMutation?.({ doc, key, metadata });
                 if (mutateCrdtWithMetadata) {
                     const authorityValue = decodeDocumentValue(doc) ?? null;
                     mutateCrdtWithMetadata({
@@ -1816,7 +1851,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         // Scoped pendings are exempt: transaction commit order is deliberate
         // terminal order (compensating transactions legitimately commit older
         // values last).
-        if (!pending.scoped && !writeMetadata && frozen.revision < committedSetRevision) {
+        // Installing a hook does not make every write journaled. A null
+        // capture keeps ordinary supersession; even an empty journal is intent.
+        if (!pending.scoped && frozen.metadata === null && frozen.revision < committedSetRevision) {
             return { status: 'abandon' };
         }
 
@@ -1916,6 +1953,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         }
         committedCacheValue = pending.value;
         committedCacheIsDeferred = true;
+        committedAuthorityDocument = undefined;
         committedCacheRevision = pending.revision;
         forgetLastHydratedDocument();
     };
@@ -2004,6 +2042,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         refusedPending: AdapterPendingWrite,
         claimRevision: number,
         authorityValue: TData | null,
+        document: AutomergeStorageReadableDoc,
         isCurrentAuthority: () => boolean
     ): void => {
         let projectedValue = authorityValue;
@@ -2027,6 +2066,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     baseValue: successor.baseValue,
                     pendingValue: successor.value,
                     hydratedValue: projectedValue,
+                    document,
                     metadata: successor.metadata === null ? null : freezeMetadata(successor.metadata),
                 });
             } else if (
@@ -2095,6 +2135,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         }
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
+        committedAuthorityDocument = document;
         committedCacheIsDeferred = false;
         forgetLastHydratedDocument();
         // The claim was refused, so it advances the visible authority baseline
@@ -2110,6 +2151,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             pending,
             claimRevision,
             decoded ?? projected,
+            document,
             () =>
                 execution.isCurrent() &&
                 projectionGeneration === generation &&
@@ -2173,6 +2215,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
 
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
+        committedAuthorityDocument = document;
         committedCacheIsDeferred = false;
         forgetLastHydratedDocument();
         committedCacheRevision = Math.max(committedCacheRevision, claimRevision);
@@ -2418,6 +2461,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 baseValue: intentBase,
                 pendingValue: intendedValue,
                 hydratedValue: cachedValue,
+                document: committedAuthorityDocument,
                 metadata,
             }),
             'visible'
@@ -2457,6 +2501,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
 
         hasObservedDocumentAuthority = true;
         committedCacheValue = defaultValue;
+        committedAuthorityDocument = undefined;
         committedCacheIsDeferred = false;
         committedCacheRevision = ++nextRevision;
         committedSetRevision = committedCacheRevision;
@@ -2679,7 +2724,13 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 // than re-stringifying cachedValue; 2 JSON ops per hydrate
                 // instead of 3–4.
                 const incomingJson = JSON.stringify(incomingValues);
-                if (incomingJson === lastHydratedJson) {
+                const visiblePending = [...pendingWritesByOwner.values()].find(
+                    (pending) => pending.revision === cachedRevision
+                );
+                if (
+                    incomingJson === lastHydratedJson &&
+                    !(rebasePendingOnDocumentChange && rebasePending && visiblePending)
+                ) {
                     return false;
                 }
                 const rawValues = JSON.parse(incomingJson) as unknown[];
@@ -2688,9 +2739,6 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     return false;
                 }
 
-                const visiblePending = [...pendingWritesByOwner.values()].find(
-                    (pending) => pending.revision === cachedRevision
-                );
                 const localSeed = cachedValue;
                 if (visiblePending) {
                     const acceptedBaseline = keepLocalRuntimeState(
@@ -2707,6 +2755,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     }
                     const authorityRevision = ++nextRevision;
                     committedCacheValue = acceptedBaseline;
+                    committedAuthorityDocument = doc;
                     committedCacheIsDeferred = false;
                     committedCacheRevision = authorityRevision;
                     committedSetRevision = committedCacheRevision;
@@ -2724,6 +2773,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                             baseValue: visiblePending.baseValue,
                             pendingValue: visiblePending.value,
                             hydratedValue: crdtData,
+                            document: doc,
                             metadata: visiblePending.metadata === null ? null : freezeMetadata(visiblePending.metadata),
                         });
                     } else if (
@@ -2801,6 +2851,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     const authorityRevision = ++nextRevision;
                     cachedValue = acceptedValue;
                     committedCacheValue = acceptedValue;
+                    committedAuthorityDocument = doc;
                     committedCacheIsDeferred = false;
                     committedCacheRevision = authorityRevision;
                     committedSetRevision = committedCacheRevision;
@@ -2834,6 +2885,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 }
                 cachedValue = missingValue;
                 committedCacheValue = missingValue;
+                committedAuthorityDocument = doc;
                 committedCacheIsDeferred = false;
                 committedCacheRevision = ++nextRevision;
                 committedSetRevision = committedCacheRevision;

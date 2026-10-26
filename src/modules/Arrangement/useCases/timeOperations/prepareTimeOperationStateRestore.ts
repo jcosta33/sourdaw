@@ -6,6 +6,7 @@ import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { planTakeRetirement } from '../comping/planTakeRetirement';
+import { reconcileTransitionBaseGaps } from '../comping/reconcileTakeReKeySources';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
@@ -735,6 +736,47 @@ function localStateIsStillPrepared(prepared: PreparedLocalState): boolean {
     );
 }
 
+function takeLaneSourcesAndTakesAreStillPrepared(plan: TakeLaneTransitionPlan | null): boolean {
+    if (!plan) {
+        return true;
+    }
+    const lanes = takeLaneStore.value?.lanes ?? [];
+    const direction = plan.appliedEffect === 'restore' ? 'restore' : 'apply';
+    const replayFacets = (take: NonNullable<TakeLaneTransitionPlan['reKeyedLanes']>[number]['takesBefore'][number]) =>
+        Object.fromEntries(Object.entries(take).filter(([key, value]) => key !== 'selected' && value !== undefined));
+    return (plan.reKeyedLanes ?? []).every((transition) => {
+        const owner = lanes.find((lane) => lane.id === transition.laneId || lane.trackId === transition.trackId);
+        const from = direction === 'restore' ? transition.takesAfter : transition.takesBefore;
+        const to = direction === 'restore' ? transition.takesBefore : transition.takesAfter;
+        const toById = new Map(to.map((take) => [take.id, take]));
+        const reserved = new Map(to.map((take) => [take.id, take.clipId]));
+        for (const take of from) {
+            reserved.set(take.id, take.clipId);
+        }
+        return (
+            reconcileTransitionBaseGaps(
+                owner ?? { id: transition.laneId, trackId: transition.trackId, takes: [], activeCompRegions: [] },
+                transition,
+                direction
+            ) !== null &&
+            lanes.every((lane) => lane.id !== transition.laneId || lane.trackId === transition.trackId) &&
+            lanes.every((lane) =>
+                lane.takes.every(
+                    (take) => !reserved.has(take.id) || (lane === owner && take.clipId === reserved.get(take.id))
+                )
+            ) &&
+            from.every((source) => {
+                const target = toById.get(source.id);
+                if (target && timeOperationStateCodec.valuesEqual(replayFacets(source), replayFacets(target))) {
+                    return true;
+                }
+                const live = owner?.takes.find((take) => take.id === source.id);
+                return !live || timeOperationStateCodec.valuesEqual(replayFacets(live), replayFacets(source));
+            })
+        );
+    });
+}
+
 function prepareDisappearingClipTakeRetirement(
     local: PreparedLocalState,
     takeLanes: TakeLaneTransitionPlan | null
@@ -765,7 +807,24 @@ function prepareDisappearingClipTakeRetirement(
     const preservedLaneIds = new Set(
         (capturedState?.lanes ?? []).filter((lane) => !planOwnedLaneIds.has(lane.id)).map((lane) => lane.id)
     );
-    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, { preservedLaneIds });
+    // The joined transition also owns its exact FROM source tiles. Retiring
+    // them here makes that owner's later source guard refuse its own replay.
+    const preservedBaseGapAudioSources = (takeLanes?.reKeyedLanes ?? [])
+        .flatMap(
+            (lane) =>
+                (takeLanes?.appliedEffect === 'restore'
+                    ? lane.baseGapAudioSourcesAfter
+                    : lane.baseGapAudioSourcesBefore) ?? []
+        )
+        .concat(
+            takeLanes?.appliedEffect === 'retire'
+                ? takeLanes.retiredLanes.flatMap((snapshot) => snapshot.retiredBaseGapAudioSources ?? [])
+                : []
+        );
+    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, {
+        preservedLaneIds,
+        preservedBaseGapAudioSources,
+    });
     if (!retirement) {
         return null;
     }
@@ -905,7 +964,8 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
         plan,
         handles,
         hasChanges: handles.length > 0,
-        preflight: () => localStateIsStillPrepared(localState),
+        preflight: () =>
+            localStateIsStillPrepared(localState) && takeLaneSourcesAndTakesAreStillPrepared(plan.takeLanes),
     };
 }
 

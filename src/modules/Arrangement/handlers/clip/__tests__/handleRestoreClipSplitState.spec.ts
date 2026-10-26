@@ -174,6 +174,39 @@ beforeEach(() => {
 
 describe('handleRestoreClipSplitState — surviving left source', () => {
     it.each([
+        { audioOffsetSeconds: 0 },
+        { audioLoopStartSeconds: 0 },
+        { audioLoopPassEntrySeconds: 0 },
+        { audioLoopPassOriginBeat: 1 },
+        { loopOriginBeat: 1 },
+        { loopLength: 2 },
+    ])('rejects a changed source facet under an audio-promotion capture %j', (change) => {
+        const source = { ...makeClipSnapshot('c1'), audioOffsetBeats: 1, loopEnabled: true };
+        const promoted = {
+            ...source,
+            endBeat: 2,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            audioOffsetSeconds: 0.5,
+            audioLoopStartSeconds: 0.5,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 0,
+        };
+        const original = makeSnapshot({ leftClip: source, rightClip: null, audioSourceTempoAtStart: 120 });
+        const captured = makeSnapshot({
+            leftClip: promoted,
+            rightClip: { ...makeClipSnapshot('c2'), startBeat: 2 },
+            audioSourceTempoAtStart: 120,
+        });
+        const valid = makeAction(captured, original);
+        expect(handleRestoreClipSplitState.validateSessionActionArguments?.(valid.payload)).toBe(true);
+        const changed = makeAction({ ...captured, leftClip: { ...promoted, ...change } }, original);
+        expect(handleRestoreClipSplitState.validateSessionActionArguments?.(changed.payload)).toBe(false);
+        expect(handleRestoreClipSplitState.execute(changed)).toEqual({ status: 'conflict' });
+        expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+    });
+
+    it.each([
         ['loop anchor', { loopOriginBeat: 4 }, { loopOriginBeat: 3 }],
         ['absent loop anchor', {}, { loopOriginBeat: 0 }],
         ['present loop anchor', { loopOriginBeat: 0 }, {}],

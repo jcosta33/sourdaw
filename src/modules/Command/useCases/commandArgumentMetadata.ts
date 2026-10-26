@@ -108,6 +108,30 @@ function appendValueMetadata(metadata: CommandArgumentMetadata, value: unknown, 
     }
 }
 
+export function isDerivedSourceSupportPath(operation: string | undefined, path: string): boolean {
+    if (operation === 'editTempoMap' || operation === 'restoreTempoMapEdit') {
+        return (
+            path === 'rowPlan' ||
+            path.startsWith('rowPlan.') ||
+            path === 'audioSourcePromotion' ||
+            path.startsWith('audioSourcePromotion.')
+        );
+    }
+    if (operation === 'setTempo' || operation === 'restoreTempoEdit') {
+        return path === 'audioSourcePromotion' || path.startsWith('audioSourcePromotion.');
+    }
+    if (
+        operation !== 'setCompRegion' &&
+        operation !== 'removeCompRegion' &&
+        operation !== 'restoreCompRegionInterval'
+    ) {
+        return false;
+    }
+    return (
+        path.startsWith('audioSourcePromotions[') || /^(expected|replacement)\[\d+\]\.audioSource(?:\.|$)/.test(path)
+    );
+}
+
 export function compileCommandArgumentMetadata(
     argumentsValue: Readonly<Record<string, unknown>>,
     operation?: string
@@ -129,5 +153,15 @@ export function compileCommandArgumentMetadata(
             }
         }
     }
-    return metadata;
+    // Source preservation is derived support. Its owner still validates every
+    // value; these captures do not expand the musician's requested scope.
+    return {
+        objectReferences: metadata.objectReferences.filter(
+            (reference) => !isDerivedSourceSupportPath(operation, reference.argument)
+        ),
+        parameterUnits: metadata.parameterUnits.filter(
+            (parameter) => !isDerivedSourceSupportPath(operation, parameter.argument)
+        ),
+        time: metadata.time.filter((time) => !isDerivedSourceSupportPath(operation, time.argument)),
+    };
 }

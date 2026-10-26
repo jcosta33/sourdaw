@@ -117,6 +117,132 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
         vi.unstubAllGlobals();
     });
 
+    it('rebases an opted-in pending journal when only a sibling document slot changes', () => {
+        const doc = { state: { items: ['a'], selected: null } as State, contextVersion: 1 };
+        const mutateDoc = vi.fn(({ changeFn }: { changeFn: (document: typeof doc) => void }) => changeFn(doc));
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getDocHeads: () => [String(doc.contextVersion)],
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc,
+        });
+        const rebasePending = vi.fn(
+            ({
+                pendingValue,
+                document,
+            }: {
+                pendingValue: State | null;
+                document?: Readonly<Record<string, unknown>>;
+            }) => pendingValue && { ...pendingValue, selected: String(document?.contextVersion) }
+        );
+        const storage = createAutomergeStorage<State, State>('root', 'state', {
+            writeMetadata: { capture: ({ nextValue }) => nextValue, reduce: ({ captured }) => captured },
+            rebasePendingOnDocumentChange: true,
+            rebasePending,
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        storage.set({ items: ['a', 'local'], selected: null });
+        doc.contextVersion = 2;
+        expect(storage.hydrate?.()).toBe(true);
+        expect(storage.get()).toEqual({ items: ['a', 'local'], selected: '2' });
+        expect(rebasePending).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ document: doc }));
+        expect(mutateDoc).not.toHaveBeenCalled();
+        expect(countPendingAutomergeStorageWrites()).toBe(1);
+        flushAutomergeStorageWrites();
+        expect(doc.state).toEqual(storage.get());
+        // A commit invalidates the last-hydrated baseline; establish it once.
+        expect(storage.hydrate?.()).toBe(true);
+        doc.contextVersion = 3;
+        expect(storage.hydrate?.()).toBe(false);
+        expect(rebasePending).toHaveBeenCalledTimes(1);
+    });
+
+    it('pairs predecessor settlement with its authoritative sibling document', () => {
+        const doc = { state: { items: [], selected: null } as State, contextVersion: 1 };
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                doc.contextVersion = 2;
+                changeFn(doc);
+            },
+        });
+        const rebasePending = vi.fn(
+            ({
+                pendingValue,
+                document,
+            }: {
+                pendingValue: State | null;
+                document?: Readonly<Record<string, unknown>>;
+            }) => pendingValue && { ...pendingValue, selected: String(document?.contextVersion) }
+        );
+        const storage = createAutomergeStorage<State, State>('root', 'state', {
+            writeMetadata: { capture: ({ nextValue }) => nextValue, reduce: ({ captured }) => captured },
+            rebasePending,
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        storage.set({ items: ['a'], selected: null });
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ items: ['a', 'scoped'], selected: null });
+        });
+        expect(rebasePending).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                hydratedValue: { items: ['a'], selected: null },
+                document: doc,
+            })
+        );
+        transaction.commit();
+        expect(doc.state).toEqual({ items: ['a', 'scoped'], selected: '2' });
+    });
+
+    it('pairs a conflict successor rebase with the document that supplied refused-owner authority', () => {
+        const doc = { state: { items: ['a'], selected: null } as State, contextVersion: 1 };
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(doc),
+        });
+        const rebasePending = vi.fn(
+            ({
+                pendingValue,
+                document,
+            }: {
+                pendingValue: State | null;
+                document?: Readonly<Record<string, unknown>>;
+            }) => pendingValue && { ...pendingValue, selected: String(document?.contextVersion) }
+        );
+        const storage = createAutomergeStorage<State, State>('root', 'state', {
+            writeMetadata: { capture: ({ nextValue }) => nextValue, reduce: ({ captured }) => captured },
+            rebasePending,
+            mutateCrdtWithMetadata: ({ value, authorityValue, metadata, reconcile }) => {
+                if (metadata?.items.includes('refused')) {
+                    throw new AutomergeStorageWriteConflictError('owned conflict');
+                }
+                reconcile(value, authorityValue);
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const refused = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ items: ['a', 'refused'], selected: null });
+        });
+        storage.set({ items: ['a', 'successor'], selected: null });
+        doc.contextVersion = 2;
+        doc.state = { items: ['a', 'peer'], selected: null };
+        expect(() => refused.commit()).toThrow(AutomergeStorageWriteConflictError);
+        expect(rebasePending).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                hydratedValue: doc.state,
+                document: doc,
+            })
+        );
+        refused.abort();
+        flushAutomergeStorageWrites();
+        expect(doc.state).toEqual({ items: ['a', 'successor'], selected: '2' });
+    });
+
     it('settles the private unscoped predecessor before the first scoped write and preserves peer state', () => {
         const doc: { state: State } = { state: { items: [], selected: null } };
         const mutations: Array<{
