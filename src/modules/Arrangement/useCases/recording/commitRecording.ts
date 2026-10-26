@@ -170,6 +170,9 @@ export async function commitRecording(
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: coverRecordedPasses(placed, capture) } }, dispatchOptions);
+    await executeAppAction(
+        { type: 'commitRecording', payload: { clip: coverRecordedPasses(placed, capture) } },
+        dispatchOptions
+    );
     recordingPassTiming.retireIfOwner(clip.id, passOwner);
 }

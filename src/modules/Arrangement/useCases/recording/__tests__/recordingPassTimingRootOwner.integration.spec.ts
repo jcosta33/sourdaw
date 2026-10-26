@@ -1,7 +1,10 @@
 import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort, flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     DOC_PREFIX_ROOT,
@@ -121,7 +124,9 @@ describe('recording pass timing belongs to its captured project root', () => {
 
         replaceRootWithSuccessor();
 
-        expect(() => recordingPassTiming.depthSeconds(pass, 0, 0)).toThrow('Recording pass has no captured source timing');
+        expect(() => recordingPassTiming.depthSeconds(pass, 0, 0)).toThrow(
+            'Recording pass has no captured source timing'
+        );
         expect(() => recordingPassTiming.sourceEndSeconds(pass, 0, 0)).toThrow(
             'Recording pass has no captured source ending'
         );
