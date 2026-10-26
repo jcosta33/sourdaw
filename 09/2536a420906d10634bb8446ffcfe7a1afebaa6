@@ -1,0 +1,39 @@
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  s_b3201877f50e8a::t_01f06384d66b6d 146-162
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  s_b3201877f50e8a::t_a745de92ef97b7 26-27,78-79,119-127
+src/modules/Automation/useCases/automationRecording/__tests__/recordAutomationValue.spec.ts
+  s_b3201877f50e8a::t_e949730c0b1694 132-145
+src/modules/Automation/useCases/automationRecording/__tests__/releaseTouchAutomation.spec.ts
+  s_b3201877f50e8a::t_de0b324bdb569b 3,65-94
+src/modules/Automation/useCases/automationRecording/recordAutomationValue.ts
+  s_b3201877f50e8a::t_28db004bd2a56f 12-18,107-109
+src/modules/Automation/useCases/automationRecording/recordingSessionState.ts
+  s_b3201877f50e8a::t_b81c00f8bde4e9 23-24
+src/modules/Automation/useCases/automationRecording/releaseTouchAutomation.ts
+  s_b3201877f50e8a::t_6fad226f0f2072 6-11,13-16
+src/modules/Automation/useCases/index.ts
+  s_b3201877f50e8a::t_ffa6a1dffa3064 41-44
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_b3201877f50e8a::t_aa97f24c4be49c 19-23,55,111,384,447
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_b3201877f50e8a::t_7ef2de721de888 259,286,288-289,291-292,301
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_b3201877f50e8a::t_4e8d543ddefbe2 510-512,876,1010-1013,1099-1101,1182-1188,1246-1247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "092536a420906d10634bb8446ffcfe7a1afebaa6",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
