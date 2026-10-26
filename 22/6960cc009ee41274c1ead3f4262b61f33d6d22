@@ -1,0 +1,20 @@
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_29d8df116c5b92::t_4cafde435a91db 1,17-18,23,25,160-165,180-234
+  s_29d8df116c5b92::t_44e075befc6819 235-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "226960cc009ee41274c1ead3f4262b61f33d6d22",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
