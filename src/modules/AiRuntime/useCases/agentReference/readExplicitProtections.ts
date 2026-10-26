@@ -586,6 +586,12 @@ function exemptControls(found: Accumulator, trackIds: readonly string[], carvedO
     }
 }
 
+function hasResolvedTrackOwners(reading: SlotReading, requireUniqueTrackOwners: boolean | undefined): boolean {
+    return (
+        reading.complete && (!requireUniqueTrackOwners || reading.uniqueTrackOwners) && reading.unresolved.length === 0
+    );
+}
+
 /**
  * Reads every explicit protection clause of the request. A protection that names a project object by
  * an object form and binds to none is reported unresolved; one that binds reports what it keeps: a
@@ -655,9 +661,7 @@ export function readExplicitProtections(
         const resolvesOwner = found.wholeTrackIds.size > 0 || found.controls.size > 0 || carvesOutTrack;
         if (
             slot.completeRange !== null &&
-            reading.complete &&
-            (!options.requireUniqueTrackOwners || reading.uniqueTrackOwners) &&
-            reading.unresolved.length === 0 &&
+            hasResolvedTrackOwners(reading, options.requireUniqueTrackOwners) &&
             resolvesOwner &&
             (reading.controls.length === 0 || carvesOutTrack)
         ) {
