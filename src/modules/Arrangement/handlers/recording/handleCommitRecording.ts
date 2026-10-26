@@ -5,7 +5,7 @@ import {
     planRecordedControllers,
 } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type ClipStateSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../../stores/trackStore';
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
@@ -34,8 +34,25 @@ function withMinimumRecordingLength<TClip extends { startBeat: number; endBeat: 
     return { ...clip, endBeat: Math.max(clip.startBeat + 1, clip.endBeat) };
 }
 
-function composeRecordedClip(clip: Clip, provisional?: Clip): Clip {
-    return structuredClone({ ...provisional, ...withMinimumRecordingLength(clip) });
+function mutableRecordingClip(snapshot: ClipStateSnapshot): Clip {
+    const { kneadState, overrides, ...fields } = structuredClone(snapshot);
+    const clip: Clip = fields;
+    if (Object.hasOwn(snapshot, 'overrides')) {
+        clip.overrides = overrides;
+    }
+    if (Object.hasOwn(snapshot, 'kneadState')) {
+        clip.kneadState = kneadState
+            ? {
+                  ...kneadState,
+                  blobs: kneadState.blobs.map((blob) => ({ ...blob, pitchCurveCents: [...blob.pitchCurveCents] })),
+              }
+            : undefined;
+    }
+    return clip;
+}
+
+function composeRecordedClip(snapshot: ClipStateSnapshot, provisional?: Clip): Clip {
+    return structuredClone({ ...provisional, ...withMinimumRecordingLength(mutableRecordingClip(snapshot)) });
 }
 
 /**

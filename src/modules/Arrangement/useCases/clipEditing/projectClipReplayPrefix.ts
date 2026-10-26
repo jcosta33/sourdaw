@@ -24,6 +24,7 @@ import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 
 import { type Clip, type Track, sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { projectTempoAudioSources } from '../../stores/tempoAudioSources';
@@ -46,6 +47,10 @@ type ShiftedOwnerState = {
     clock: TempoSourceClock;
     timeline: TempoTimeline;
 };
+
+function isAudioClip(clip: LocatedClip['clip']): boolean {
+    return 'type' in clip && clip.type === 'audio';
+}
 
 function capturedTimeline(clock: TempoSourceClock): TempoTimeline {
     return {
@@ -78,7 +83,7 @@ function capturedClip(snapshot: ClipStateSnapshot): Clip {
     const { kneadState, overrides, ...fields } = structuredClone(snapshot);
     const clip: Clip = fields;
     if (Object.hasOwn(snapshot, 'overrides')) {
-        clip.overrides = overrides ? { ...overrides } : undefined;
+        clip.overrides = overrides ? structuredClone(overrides) : undefined;
     }
     if (Object.hasOwn(snapshot, 'kneadState')) {
         clip.kneadState = kneadState
@@ -281,21 +286,21 @@ function hasUnprojectedAudioSourceWrite(action: AppAction, state: ShiftedOwnerSt
         case 'setClipStretchMode':
         case 'setClipStretchRatio':
         case 'restoreClipStretchState':
-            return state.clips.some((owner) => owner.clip.id === action.payload.clipId && owner.clip.type === 'audio');
+            return state.clips.some((owner) => owner.clip.id === action.payload.clipId && isAudioClip(owner.clip));
         case 'setCompRegion':
         case 'removeCompRegion':
         case 'restoreCompRegionInterval':
             return state.clips.some(
                 (owner) =>
                     owner.owningTrackId === action.payload.trackId &&
-                    owner.clip.type === 'audio' &&
+                    isAudioClip(owner.clip) &&
                     owner.clip.endBeat > action.payload.startBeat &&
                     (action.payload.endBeat === undefined || owner.clip.startBeat < action.payload.endBeat)
             );
         case 'selectTake':
         case 'switchTrackAlternative':
             return state.clips.some(
-                (owner) => owner.owningTrackId === action.payload.trackId && owner.clip.type === 'audio'
+                (owner) => owner.owningTrackId === action.payload.trackId && isAudioClip(owner.clip)
             );
         default:
             return false;
@@ -448,17 +453,21 @@ export function projectClipReplayPrefix(
         }
         const { trackId, clipIndex, clipSnapshot, ripplePlan } = action.payload;
         if (state.tracks) {
-            state = {
-                ...state,
-                tracks: state.tracks.map((track) =>
-                    track.id === trackId
-                        ? {
-                              ...track,
-                              clips: [...track.clips, capturedClip(clipSnapshot)],
-                          }
-                        : track
-                ),
-            };
+            if (isExactClipSnapshot(clipSnapshot, action.payload.clipId, trackId)) {
+                state = {
+                    ...state,
+                    tracks: state.tracks.map((track) => {
+                        if (track.id !== trackId) {
+                            return track;
+                        }
+                        return { ...track, clips: [...track.clips, capturedClip(clipSnapshot)] };
+                    }),
+                };
+            } else {
+                // The restore payload carries only clip geometry. Keep the exact
+                // geometry projection below, but stop claiming a complete Clip model.
+                state = { ...state, tracks: null };
+            }
         }
         const removedClips = ripplePlan?.removedClips ?? [clipSnapshot];
         const liveClipIds = new Set(state.clips.map((owner) => owner.clip.id));
