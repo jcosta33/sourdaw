@@ -135,13 +135,16 @@ function rootAdvancedOnlyByCommandCheckpoint(expectedHeads: Heads): boolean {
  * document identity or content change is a real project change.
  */
 export function projectRevisionMatchesLiveIgnoringCommandCheckpoint(expectedRevision: string): boolean {
+    const expected = parseCapturedProjectRevision(expectedRevision);
+    if (!expected || automergeRepository.getLastHistoryDiscardEpoch() > expected.mutationEpoch) {
+        return false;
+    }
     const liveRevision = captureProjectRevision();
     if (liveRevision === expectedRevision) {
         return true;
     }
-    const expected = parseCapturedProjectRevision(expectedRevision);
     const live = parseCapturedProjectRevision(liveRevision);
-    if (!expected || !live || expected.documentIdentityEpoch !== live.documentIdentityEpoch) {
+    if (!live || expected.documentIdentityEpoch !== live.documentIdentityEpoch) {
         return false;
     }
     if (expected.documents.length !== live.documents.length) {

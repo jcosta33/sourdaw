@@ -24,6 +24,7 @@ import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { appendChatMessage, setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
 import { describePlanningOutcome } from '../../transformers/describePlanningOutcome';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
+import { unionProposalProtectionFacts } from '../agentReference/proposalGroundingBasis';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -584,6 +585,7 @@ async function dispatchPromptPlan(input: {
                 refinedCardProtections,
                 result.refinementProtectedUnchanged ?? [],
                 result.groundingBasis?.protectedUnchanged ?? [],
+                result.protectionFacts?.protectedUnchanged ?? [],
             ].flat(),
             keptDirectionActionIndexes: result.keptDirectionActionIndexes ?? [],
         });
@@ -591,6 +593,16 @@ async function dispatchPromptPlan(input: {
             result.groundingBasis === undefined
                 ? undefined
                 : { ...result.groundingBasis, protectedUnchanged: confirmationDescription.protectedUnchanged };
+        const protectionFacts = unionProposalProtectionFacts(
+            result.protectionFacts ?? { protectedUnchanged: [], protectedControls: [] },
+            refinement?.status === 'admitted'
+                ? (refinement.confirmation.approvalSnapshot.protectionFacts ?? {
+                      protectedUnchanged: [],
+                      protectedControls: [],
+                  })
+                : { protectedUnchanged: [], protectedControls: [] },
+            { protectedUnchanged: confirmationDescription.protectedUnchanged, protectedControls: [] }
+        );
         const materializedPlan = materializePromptCommandPlan({
             userText: request.userText,
             runId: admission.runId,
@@ -648,6 +660,7 @@ async function dispatchPromptPlan(input: {
                 measuredPreview: result.measuredPreview,
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
+                protectionFacts,
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,

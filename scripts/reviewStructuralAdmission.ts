@@ -2,7 +2,8 @@
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { reviewStanceFloor, STRONGEST_DRAW_CLASSES } from './reviewRiskPolicy.ts';
+import { assertReviewModelEligible } from './reviewerModelDiversity.ts';
+import { reviewStanceFloor } from './reviewRiskPolicy.ts';
 
 import type { ReviewDocument } from './reviewDocumentParser.ts';
 import type { CompletedReviewStance } from './reviewDossier.ts';
@@ -19,7 +20,7 @@ export function assertReviewEvidenceClaimsSafe(document: ReviewDocument): void {
 
 /**
  * The machine-checked minimum (ADR 0054): the round's completed draws cover at least the plan's
- * stance floor in distinct stances, and a specialist plan carries at least one strongest-tier draw.
+ * stance floor in distinct stances and every effective draw meets the review-model cost ceiling.
  * It checks the record's shape only; whether the stances attack independent risks, and whether each
  * reviewer ran its probe, stays the orchestrator's judgement. Exact replay and recovered binding
  * never call it.
@@ -32,8 +33,8 @@ export function assertReviewDrawFloor(plan: ReviewRiskPlan, draws: readonly Comp
             `review.json draws cover ${stances.size} distinct stances; the ${plan.riskClasses.join(', ')} risk plan requires at least ${floor}`
         );
     }
-    const specialist = plan.riskClasses.filter((risk) => STRONGEST_DRAW_CLASSES.has(risk));
-    if (specialist.length > 0 && !draws.some((draw) => draw.modelTier === 'strongest')) {
-        fail(`review.json draws need at least one strongest-tier draw for the ${specialist.join(', ')} risk plan`);
+    for (const [index, draw] of draws.entries()) {
+        // Pre-ADR caller documents can reuse an unpublished dossier instead of declaring draws.
+        assertReviewModelEligible(draw.reviewerModel, `review dossier draws[${index}].reviewerModel`, draw.modelTier);
     }
 }

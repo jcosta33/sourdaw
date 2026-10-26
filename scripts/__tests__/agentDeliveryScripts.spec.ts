@@ -989,6 +989,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/trustedGithubWriteBootstrap.ts pr:supersede');
+        expect(pkg.scripts['pr:retire']).toBe('node scripts/trustedGithubWriteBootstrap.ts pr:retire');
         expect(pkg.scripts['branch:prune']).toBe('node scripts/pruneRemoteBranches.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
@@ -1159,7 +1160,6 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/resolveThread.ts',
-            'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
@@ -1458,11 +1458,10 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:resolve' as const,
                 entry: 'scripts/resolveThread.ts',
-                required: 'scripts/githubAppIdentity.ts',
+                required: 'scripts/prContract.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/resolveThread.ts',
-                    'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -2984,7 +2983,7 @@ describe('package scripts and gitignore', () => {
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
                 // The usage must name every command `parseCommand` accepts, not a subset of them.
                 expect(result.stderr).toContain(
-                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|ruleset:harden>'
+                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden>'
                 );
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
@@ -3483,7 +3482,7 @@ describe('package scripts and gitignore', () => {
                         },
                     ],
                 },
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'gpt-6-luna',
             })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');

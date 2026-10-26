@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
     chmodSync,
     existsSync,
@@ -15,6 +16,9 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { canonicalJson } from '../canonicalRecord.ts';
+import { renderConfirmationReply } from '../confirmReviewRepairs.ts';
+import { renderReviewRepairReply, type ReviewRepairRecord } from '../reviewRepair.ts';
 import {
     bareModuleSpecifiers,
     executeTrustedSnapshot,
@@ -23,6 +27,7 @@ import {
     resolveTrustedLauncherBinding,
     snapshotComputedDynamicSpecifiers,
     snapshotImportSpecifiers,
+    trustedDependencyGraphs,
     trustedSnapshotRunsDetached,
 } from '../trustedGithubWriteBootstrap.ts';
 
@@ -30,6 +35,7 @@ const supersessionPaths = [
     'scripts/trustedGithubWriteBootstrap.ts',
     'scripts/supersedePullRequest.ts',
     'scripts/supersedePullRequestGh.ts',
+    'scripts/stackedLanes.ts',
     'scripts/findingLineage.ts',
     'scripts/pullRequestMutationLock.ts',
     'scripts/reviewRepair.ts',
@@ -38,13 +44,15 @@ const supersessionPaths = [
     'scripts/githubAppIdentity.ts',
     'scripts/prContract.ts',
 ];
+const retirementPaths = [...supersessionPaths, 'scripts/retirePullRequest.ts', 'scripts/retirementRecord.ts'];
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 /** Only credential and remote-PR ports are controlled; the native launcher, CLI and lock are real. */
 function withNativeSupersession(
     run: (root: string, bin: string, env: NodeJS.ProcessEnv) => void,
     mutation?: 'direct-package' | 'unfenced-command' | 'dropped-parent-argument',
-    parentProof = false
+    parentProof = false,
+    retirementMode?: 'admission' | 'rollback'
 ): void {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-native-supersession-'));
     const bin = join(root, 'bin');
@@ -76,7 +84,7 @@ function withNativeSupersession(
             chmodSync(join(bin, name), 0o700);
         }
         env.PATH = [bin, dirname(process.execPath)].join(delimiter);
-        for (const path of supersessionPaths) {
+        for (const path of retirementMode === undefined ? supersessionPaths : retirementPaths) {
             writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
         }
         const manifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
@@ -89,14 +97,19 @@ function withNativeSupersession(
                         mutation === 'direct-package'
                             ? 'node scripts/supersedePullRequest.ts'
                             : manifest.scripts['pr:supersede'],
+                    'pr:retire':
+                        mutation === 'direct-package'
+                            ? 'node scripts/retirePullRequest.ts'
+                            : manifest.scripts['pr:retire'],
                 },
             })
         );
         if (mutation === 'unfenced-command') {
             const path = join(root, 'scripts/trustedGithubWriteBootstrap.ts');
             const source = readFileSync(path, 'utf8');
-            expect(source).toContain("command === 'pr:supersede' ||");
-            writeFileSync(path, source.replace("command === 'pr:supersede' ||", ''));
+            const fence = retirementMode === undefined ? "command === 'pr:supersede' ||" : "command === 'pr:retire' ||";
+            expect(source).toContain(fence);
+            writeFileSync(path, source.replace(fence, ''));
         }
         if (mutation === 'dropped-parent-argument') {
             const path = join(root, 'scripts/supersedePullRequest.ts');
@@ -119,6 +132,7 @@ function withNativeSupersession(
             `
             export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
             export const REQUIRED_REPOSITORY = 'fixture/repository';
+            export const REQUIRED_BASE_BRANCH = 'main';
             export const isAuthorBotNodeId = value => value === AUTHOR_BOT_NODE_ID;
             export const assertTrustedExecutingBlob = () => undefined;
             export const originMainBlob = () => 'controlled-source-port';
@@ -170,8 +184,11 @@ function withNativeSupersession(
             }
         `
         );
+        if (retirementMode !== undefined) {
+            writeNativeRetirementPorts(root, retirementMode);
+        }
         git('init', '--initial-branch=main');
-        git('add', 'scripts', 'package.json', 'lineage.json');
+        git('add', '.');
         git(
             '-c',
             'user.name=Fixture',
@@ -203,6 +220,245 @@ function invokeNativeSupersession(root: string, env: NodeJS.ProcessEnv, supersed
         encoding: 'utf8',
     });
 }
+
+function writeNativeRetirementPorts(root: string, mode: 'admission' | 'rollback'): void {
+    const head = 'a'.repeat(40);
+    const body = 'One attested blocking finding.';
+    const repair: ReviewRepairRecord = {
+        format: 'repair-v1',
+        pr: 2244,
+        thread: 'PRRT_fixture',
+        finding: { commentId: 1001, path: 'scripts/fixture.ts', line: 1, side: 'RIGHT' },
+        commit: head,
+        head,
+        summary: 'Corrected the finding.',
+        evidence: [],
+    };
+    writeFileSync(
+        join(root, 'retirement.json'),
+        canonicalJson({
+            format: 'retirement-v1',
+            pr: 2244,
+            head,
+            base: 'main',
+            rationale: 'The branch is obsolete.',
+            evidence: [
+                {
+                    url: 'https://github.com/jcosta33/sourdaw/pull/2244',
+                    observation: 'Owner released the obsolete branch.',
+                },
+            ],
+            findings: [
+                {
+                    rootCommentId: '1001',
+                    threadId: 'PRRT_fixture',
+                    authorRepairCommentId: '1002',
+                    reviewerConfirmationCommentId: '1003',
+                },
+            ],
+            reviewBodies: [
+                {
+                    reviewId: 'PRR_fixture',
+                    bodyDigest: createHash('sha256').update(body, 'utf8').digest('hex'),
+                    rootCommentIds: ['1001'],
+                },
+            ],
+        })
+    );
+    const reviews = {
+        nodes: [{ id: 'PRR_fixture', state: 'CHANGES_REQUESTED', body, commit: { oid: head } }],
+        pageInfo: { hasNextPage: false },
+    };
+    const reviewThreads = {
+        nodes: [
+            {
+                id: 'PRRT_fixture',
+                isResolved: true,
+                comments: {
+                    nodes: [
+                        { databaseId: 1001, pullRequestReview: { id: 'PRR_fixture' } },
+                        {
+                            databaseId: 1002,
+                            body: renderReviewRepairReply(repair),
+                            author: { __typename: 'Bot', id: 'BOT_fixture_author' },
+                        },
+                        {
+                            databaseId: 1003,
+                            body: renderConfirmationReply(repair, head),
+                            author: { __typename: 'Bot', id: 'BOT_fixture_reviewer' },
+                        },
+                    ],
+                    pageInfo: { hasNextPage: false },
+                },
+            },
+        ],
+        pageInfo: { hasNextPage: false },
+    };
+    writeFileSync(join(root, 'reviews.json'), JSON.stringify({ reviews, reviewThreads }));
+    writeFileSync(
+        join(root, 'scripts/githubAppIdentity.ts'),
+        `
+        import { existsSync, readFileSync } from 'node:fs';
+        import { join } from 'node:path';
+        export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
+        export const REVIEWER_BOT_NODE_ID = 'BOT_fixture_reviewer';
+        export const REQUIRED_REPOSITORY = 'fixture/repository';
+        export const REQUIRED_BASE_BRANCH = 'main';
+        export const isAuthorBotNodeId = value => value === AUTHOR_BOT_NODE_ID;
+        export const assertTrustedExecutingBlob = () => undefined;
+        export const originMainBlob = () => 'controlled-source-port';
+        export const resolvePrimaryRoot = () => process.cwd();
+        export const assertRequiredRepository = value => { if (value !== REQUIRED_REPOSITORY) throw new Error('wrong repository'); };
+        export const spawnCapture = (_command, args) => {
+            if (args[0] !== 'api') return REQUIRED_REPOSITORY;
+            const state = JSON.parse(readFileSync(join(process.cwd(), 'reviews.json'), 'utf8'));
+            if (existsSync(join(process.cwd(), 'marker-posted'))) state.reviews.nodes[0].body += ' A later blocker.';
+            return JSON.stringify({ data: { repository: { nameWithOwner: REQUIRED_REPOSITORY, pullRequest: { number: 2244, ...state } } } });
+        };
+        export async function authenticateRole() {
+            return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session: { env: process.env, dispose() {} } };
+        }
+    `
+    );
+    writeFileSync(
+        join(root, 'scripts/supersedePullRequestGh.ts'),
+        `
+        import { spawnSync } from 'node:child_process';
+        import { writeFileSync } from 'node:fs';
+        import { join } from 'node:path';
+        import { pullRequestMutationLockRef, readPullRequestMutationLockOid, readPullRequestMutationLockOwner } from './pullRequestMutationLock.ts';
+        export const commentClientMutationId = (number, body) => 'comment:' + number + ':' + body;
+        export const isDecimalId = value => typeof value === 'string' && /^[1-9][0-9]*$/.test(value);
+        export function shellPort() {
+            const root = process.cwd();
+            let comments = [];
+            const persist = () => writeFileSync(join(root, 'remote.json'), JSON.stringify({ state: 'OPEN', comments }));
+            const owner = () => {
+                const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(2244), 2244);
+                return readPullRequestMutationLockOwner(root, oid, 2244);
+            };
+            return {
+                inspect: number => {
+                    const held = owner();
+                    writeFileSync(join(root, 'admitted.json'), JSON.stringify({ pid: process.pid, ownerFence: held.ownerFence,
+                        psPath: process.env.SOURDAW_TRUSTED_PS_PATH, mutation: held.mutation }));
+                    if (${JSON.stringify(mode)} === 'admission') throw new Error('controlled retirement refusal before remote mutation');
+                    return { number, repository: 'fixture/repository', headRepository: 'fixture/repository',
+                        head: '${head}', headRefName: 'fix/fixture', base: 'main', state: 'OPEN', merged: false, closedAt: null, comments: [...comments] };
+                },
+                inspectReviewThreads: () => [],
+                comment: (number, body) => {
+                    const created = { id: 'IC_2001', fullDatabaseId: '2001', body, authorNodeId: 'BOT_fixture_author', authorType: 'Bot' };
+                    comments.push(created);
+                    persist();
+                    const result = spawnSync(process.execPath, ['--run', 'pr:retire', '--', '2244', '--head', '${head}', '--record', join(root, 'retirement.json')],
+                        { cwd: root, env: process.env, encoding: 'utf8' });
+                    writeFileSync(join(root, 'contender.json'), JSON.stringify({ status: result.status, stderr: result.stderr }));
+                    writeFileSync(join(root, 'marker-posted'), 'edited');
+                    return { ...created, clientMutationId: commentClientMutationId(number, body) };
+                },
+                deleteComment: id => { comments = comments.filter(comment => comment.id !== id); persist(); },
+                close: () => { throw new Error('retirement must refuse before close'); },
+                log: message => console.log(message),
+            };
+        }
+    `
+    );
+}
+
+function invokeNativeRetirement(root: string, env: NodeJS.ProcessEnv) {
+    return spawnSync(
+        process.execPath,
+        ['--run', 'pr:retire', '--', '2244', '--head', 'a'.repeat(40), '--record', join(root, 'retirement.json')],
+        { cwd: root, env, encoding: 'utf8' }
+    );
+}
+
+describe('native retirement process-tool admission', () => {
+    it('owns the real pinned default process fence before the first retirement PR read', () => {
+        withNativeSupersession(
+            (root, _bin, env) => {
+                const result = invokeNativeRetirement(root, { ...env, SOURDAW_TRUSTED_PS_PATH: '/forged/ps' });
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('controlled retirement refusal before remote mutation');
+                const admitted = JSON.parse(readFileSync(join(root, 'admitted.json'), 'utf8'));
+                expect(admitted.ownerFence).toMatchObject({
+                    kind: 'pgid',
+                    pgid: admitted.pid,
+                    leaderStartedAt: expect.any(String),
+                });
+                expect(admitted.psPath).toBe(resolveTrustedExecutable('ps'));
+                expect(admitted.mutation).toEqual({ phase: 'prepared', epoch: 0 });
+            },
+            undefined,
+            false,
+            'admission'
+        );
+    }, 30_000);
+
+    it('excludes a native contender while the creator can still roll its marker back', () => {
+        withNativeSupersession(
+            (root, _bin, env) => {
+                const result = invokeNativeRetirement(root, env);
+                expect(result.status).toBe(1);
+                expect(result.stderr).toMatch(/review.*body/u);
+                const contender = JSON.parse(readFileSync(join(root, 'contender.json'), 'utf8'));
+                expect(contender.status).toBe(1);
+                expect(contender.stderr).toContain('already being delivered');
+                expect(JSON.parse(readFileSync(join(root, 'remote.json'), 'utf8'))).toEqual({
+                    state: 'OPEN',
+                    comments: [],
+                });
+                const lock = spawnSync(
+                    resolveTrustedExecutable('git'),
+                    ['rev-parse', '--verify', '--quiet', 'refs/sourdaw/delivery/pr-2244'],
+                    { cwd: root, env, encoding: 'utf8' }
+                );
+                expect(lock.status).toBe(1);
+            },
+            undefined,
+            false,
+            'rollback'
+        );
+    }, 30_000);
+
+    it.each(['direct-package', 'unfenced-command'] as const)(
+        'detects %s before retirement PR I/O',
+        { timeout: 30_000 },
+        (mutation) => {
+            withNativeSupersession(
+                (root, _bin, env) => {
+                    const result = invokeNativeRetirement(root, env);
+                    expect(result.status).toBe(1);
+                    expect(result.stderr).toContain('mutation lock requires the trusted ps executable');
+                    expect(existsSync(join(root, 'admitted.json'))).toBe(false);
+                },
+                mutation,
+                false,
+                'admission'
+            );
+        }
+    );
+
+    it('pins the retirement process tools on both platforms and includes its complete source closure', () => {
+        withNativeSupersession(
+            (root, bin, env) => {
+                expect(resolveTrustedLauncherBinding(root, env, 'pr:retire', 'darwin').psPath).toBe(
+                    resolveTrustedExecutable('ps')
+                );
+                expect(
+                    resolveTrustedLauncherBinding(root, { ...env, PATH: bin }, 'pr:retire', 'win32').powershellPath
+                ).toBe(join(bin, 'powershell.exe'));
+                expect(trustedSnapshotRunsDetached('pr:retire', 'darwin')).toBe(true);
+                expect(trustedSnapshotRunsDetached('pr:retire', 'win32')).toBe(false);
+                expect([...trustedDependencyGraphs['pr:retire']].sort()).toEqual([...retirementPaths].sort());
+            },
+            undefined,
+            false,
+            'admission'
+        );
+    }, 30_000);
+});
 
 describe('native supersession process-tool admission', () => {
     it('forwards the superseded parent flag through the native package into the owned parent proof read', () => {
