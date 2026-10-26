@@ -44,6 +44,11 @@ type MasterGainEntry = {
     predecessors: PendingMasterGainCommit[];
 };
 
+type MasterGainCopyObservation = {
+    authority: ProjectTransitionAuthority;
+    predecessorsSettled: Promise<void>;
+};
+
 function useMasterGainCommitQueue() {
     const pending = useRef<PendingMasterGainCommit[]>([]);
     const queue = useRef<Promise<void>>(Promise.resolve());
@@ -72,6 +77,20 @@ function useMasterGainCommitQueue() {
             predecessors: pending.current.filter((commit) => !commit.committed),
         };
     };
+    const captureCopyObservation = (): MasterGainCopyObservation | null => {
+        if (transportStore.value?.masterGain === undefined) {
+            return null;
+        }
+        const authority = captureProjectTransitionAuthority();
+        const intent = latestIntent.current;
+        return {
+            authority: {
+                ...authority,
+                isCurrent: () => mounted.current && latestIntent.current === intent && authority.isCurrent(),
+            },
+            predecessorsSettled: queue.current,
+        };
+    };
     const enqueue = (value: number, commit: (record: PendingMasterGainCommit) => Promise<void>): void => {
         const record: PendingMasterGainCommit = { targetPercent: value * 100, committed: false };
         pending.current.push(record);
@@ -84,7 +103,7 @@ function useMasterGainCommitQueue() {
     const invalidateIntent = (): void => {
         latestIntent.current += 1;
     };
-    return { captureEntry, enqueue, invalidateIntent };
+    return { captureEntry, captureCopyObservation, enqueue, invalidateIntent };
 }
 
 function resolveEntryExpectedPercent(entry: MasterGainEntry): number | null {
@@ -320,19 +339,27 @@ function createMasterGainClipboardActions(
     commitPastedGain: (value: number, entry: MasterGainEntry) => void
 ) {
     const copyMasterGain = (): void => {
-        const entry = commitQueue.captureEntry();
-        if (!entry) {
+        const observation = commitQueue.captureCopyObservation();
+        if (!observation) {
             return;
         }
-        const encoded = `gain:${String(entry.expectedPercent / 100)}`;
         void (async () => {
             try {
                 if (!navigator.clipboard?.writeText) {
                     throw new Error('Clipboard unavailable');
                 }
+                await observation.predecessorsSettled;
+                if (!observation.authority.isCurrent()) {
+                    return;
+                }
+                const masterGain = transportStore.value?.masterGain;
+                if (masterGain === undefined) {
+                    return;
+                }
+                const encoded = `gain:${String(masterGain / 100)}`;
                 await navigator.clipboard.writeText(encoded);
             } catch {
-                if (entry.authority.isCurrent()) {
+                if (observation.authority.isCurrent()) {
                     notifyUser('Could not copy master gain to the clipboard.', 'error');
                 }
             }
