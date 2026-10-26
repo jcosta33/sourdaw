@@ -1,0 +1,46 @@
+src/utils/__tests__/tempoAudioSourcePromotion.spec.ts
+  s_29d8df116c5b92::t_f75620e89888b0 5,95-140,147
+  s_29d8df116c5b92::t_7220f19bad5b6b 1
+  s_29d8df116c5b92::t_cdefab7ece93e1 141-146,148-151
+src/modules/Arrangement/stores/compAudioSourcePromotions.ts
+  s_29d8df116c5b92::t_1610d75f222143 120,123-124
+src/utils/tempoAudioSourcePromotion.ts
+  s_29d8df116c5b92::t_169928ae19e9a0 166,169-172,175-181
+  s_29d8df116c5b92::t_5da9a750ea16ba 6,155-165,167-168,173-174,182-227,248
+  s_29d8df116c5b92::t_8827c9e45c0994 228-234,247
+src/modules/Transport/handlers/transport/__tests__/tempoSourcePrefix.integration.spec.ts
+  s_29d8df116c5b92::t_4ce6879a6ab0a3 241,256,264,266-270
+  s_29d8df116c5b92::t_658318ab818567 265,271
+  s_29d8df116c5b92::t_b278227120298a 31,242-255,257-263
+  s_29d8df116c5b92::t_14411724abe13b 272-273
+src/modules/Transport/stores/tempoWriteIntent.ts
+  s_29d8df116c5b92::t_1610d75f222143 6,8,14-18
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_29d8df116c5b92::t_1610d75f222143 45
+src/modules/Arrangement/stores/__tests__/projectAudioSourcePrefixTracks.spec.ts
+  s_29d8df116c5b92::t_fdb2274594c926 1-126
+src/modules/Arrangement/stores/__tests__/takeLaneSourcePrefixProjection.spec.ts
+  s_29d8df116c5b92::t_c5a0d0c0423128 1-85
+src/modules/Arrangement/stores/projectAudioSourcePrefixTracks.ts
+  s_29d8df116c5b92::t_4ac48892cad5d1 1-72
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_29d8df116c5b92::t_ca26f968761cc5 8,342-412,416
+src/modules/Arrangement/useCases/clipEditing/prepareAudioSourcePrefixWitness.ts
+  s_29d8df116c5b92::t_8978e704b6dcf2 17,307-309,312,332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "50f74632d7cd77db152ac7069f4971562c335bf2",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
