@@ -1,0 +1,22 @@
+src/modules/Setlist/useCases/setlist/goToItem.ts
+  s_29d8df116c5b92::t_e86dd208c81f49 28-38
+src/modules/Setlist/useCases/setlist/__tests__/setlistTempoCommand.integration.spec.ts
+  s_29d8df116c5b92::t_5ce5e2540df224 28,335,356-359,368,372-373
+  s_29d8df116c5b92::t_ecf1a91b7efd8c 336-355,360-367,369-371,374-385
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f793c4b43258f6c03414a0b7ac9287a19442bf5e",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

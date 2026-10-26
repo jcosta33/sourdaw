@@ -1,0 +1,29 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_567a084d0540c4::t_a547972e35f6aa 1419,1423
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  s_567a084d0540c4::t_e8d311e6685e47 31
+scripts/__tests__/repairReviewFinding.spec.ts
+  s_567a084d0540c4::t_fb99d37894c508 8-12
+scripts/gitAncestry.ts
+  s_567a084d0540c4::t_04071d1864cedd 1-39
+scripts/repairReviewFinding.ts
+  s_567a084d0540c4::t_f254d19e8dfb98 21-22,56-57
+scripts/trustedGithubWriteBootstrap.ts
+  s_567a084d0540c4::t_54504d63791ce6 356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "489a75da62518329d17bbb16d338e0fea34b16a9",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
