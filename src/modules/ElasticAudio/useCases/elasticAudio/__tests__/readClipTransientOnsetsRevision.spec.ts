@@ -31,7 +31,10 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         },
     },
 }));
-vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: () => 'project-1' }));
+vi.mock('#/modules/Project/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/stores')>()),
+    getSettledProjectId: () => 'project-1',
+}));
 vi.mock('#/modules/AudioEngine/stores', () => ({ audioBufferCache: { get: mocks.cache } }));
 vi.mock('../../../repositories/transientOnsetWorkerClient', () => ({ runTransientOnsetWorker: mocks.worker }));
 

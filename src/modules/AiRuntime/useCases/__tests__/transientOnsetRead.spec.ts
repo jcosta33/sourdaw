@@ -304,7 +304,7 @@ let cacheRead: MockInstance<typeof audioBufferCache.get>;
 function readReceipt(callId: string): ApplicationToolReceipt {
     const message = bodies.at(-1)?.messages.find((entry) => entry.role === 'tool' && entry.tool_call_id === callId);
     if (typeof message?.content !== 'string') {
-        throw new Error(`Missing correlated provider receipt ${callId}`);
+        throw new TypeError(`Missing correlated provider receipt ${callId}`);
     }
     return JSON.parse(message.content) as ApplicationToolReceipt;
 }
