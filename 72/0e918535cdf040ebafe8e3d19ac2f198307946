@@ -1,0 +1,80 @@
+src/modules/AiRuntime/useCases/admitPerceptualGoalDecline.ts
+  s_1c08b47ac3792f::t_8d70b6a538db86 1-10,12,14-15,18,20-34,38-39,42-44,46,54-55,57-62,69-71,73,78,79,81-93,95-97,99-100,102-103,194,198,200,201,212,227,229-233,236,239-241,248,250-255,257-261,349-360,365-368
+  s_3168504f6ce387::t_61c7da1d84263c 369-414,417-418,422-423,425-426,428-429
+  s_993e8cd4f5fad8::t_2a6e5038d20506 361-364
+  s_3168504f6ce387::t_1739c052f38836 13,17,104-141,142-145,147,149-155,156,158-159,165-173,174-181,189-193,195-197,199,209-210
+  s_3168504f6ce387::t_eb2798a90558e9 11,35-37,40-41,63-68,72,74-77,80,94,98,101,146,148,157,160-164,188,202-207,213-219,228,234-235,237-238,242-247,249,256,262-270,277-296,302,312-317,322-324,326-327,329-332
+  s_3168504f6ce387::t_aa0ff855220356 297-300,303-311,318-321,325,328,421,424,427
+  s_3168504f6ce387::t_7e959ca5d0d647 45,47,182-186,220-224,272-276
+  s_3168504f6ce387::t_c757426bd3fb5a 48-53,56,301
+  s_b3201877f50e8a::t_7a133bb5cdb210 187,333
+  s_3168504f6ce387::t_06786dfbb11e01 208-211
+  s_3168504f6ce387::t_db32f944c6dec0 8,19
+src/modules/AiRuntime/useCases/__tests__/perceptualGoalAdmission.spec.ts
+  s_3168504f6ce387::t_c1c689ebe5ab0e 1-89,140,142-150,152-205,207-210,224-249,250-279,286-287,349-415,450-451,457,485-491,494-574,576-592,632
+  s_3168504f6ce387::t_3e2fb907c2f719 288-293,311-348,452-456,458-484,492-493
+  s_3168504f6ce387::t_dcc4fc29a77fb5 280,294-309,416-441,448-449
+  s_3168504f6ce387::t_c757426bd3fb5a 444
+  s_3168504f6ce387::t_7e959ca5d0d647 281-285,310,442-443,445-447
+  s_3168504f6ce387::t_9d8c7d4d7c4067 575,593-630
+  s_3168504f6ce387::t_baf2c6a3a547c1 631
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_b3201877f50e8a::t_3663ba0df155fb 168-169,198-203,2197-2233
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_b3201877f50e8a::t_15460c756a4142 6,171-173,175-178,192
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_7acdc945b846b6::t_727d2ed13df14b 691-697
+  s_993e8cd4f5fad8::t_5b1e268f4b43ed 47
+src/modules/AiRuntime/useCases/agentReference/resolveWholeMember.ts
+  s_3168504f6ce387::t_db32f944c6dec0 1-43
+src/modules/AiRuntime/useCases/agentReference/findCoordinatedTrackLists.ts
+  s_3168504f6ce387::t_db32f944c6dec0 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "720e918535cdf040ebafe8e3d19ac2f198307946",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7acdc945b846b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffa-184d-7f50-87e7-b72e78165b24",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_993e8cd4f5fad8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16ffd-2641-7f40-9221-3bd2de725b9b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
