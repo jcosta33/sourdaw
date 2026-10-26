@@ -1,8 +1,10 @@
-import { type UndoEntry } from '../models/UndoEntry';
+import { AppActionConflictError } from '../errors/AppActionExecutionError';
+import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { commitRevertedEntries } from './commitRevertedEntries';
 import { executeAppAction } from './executeAppAction';
+import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 import { isAppActionCommittedError } from './isAppActionCommittedError';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runUndoRedoExclusive } from './undoRedo';
@@ -19,7 +21,7 @@ import { runUndoRedoExclusive } from './undoRedo';
  * restore anchorless — a slip's captured offset verbatim, rows unmoved — not
  * replay the fresh-action mint or wrap laws.
  */
-async function revertEntry(entry: UndoEntry): Promise<boolean> {
+async function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
     if (entry.kind === 'callback') {
         entry.undo();
         return true;
@@ -28,6 +30,7 @@ async function revertEntry(entry: UndoEntry): Promise<boolean> {
         await executeAppAction(normalizeLegacyLoopAnchorInverse(entry.inverseAction), {
             skipUndo: true,
             skipMacroRecording: true,
+            ...(authorizeFirstHandler ? { authorizeFirstHandler } : {}),
         });
         return true;
     }
@@ -52,12 +55,31 @@ async function revertActionGroupImpl(groupId: string): Promise<void> {
         return;
     }
 
+    const hasLegacyTrim = groupEntries.some(
+        (entry) =>
+            isActionEntry(entry) &&
+            entry.inverseAction?.type === 'trimClipStart' &&
+            entry.inverseAction.payload.midiOffsetBeats === undefined
+    );
+    if (hasLegacyTrim && groupEntries.some((entry) => !isActionEntry(entry))) {
+        throw new AppActionConflictError('trimClipStart', 'A callback prefix cannot prove the legacy trim coordinates');
+    }
+
     const revertedEntries: UndoEntry[] = [];
     let failure: unknown;
     for (let index = groupEntries.length - 1; index >= 0; index--) {
         const entry = groupEntries[index]!;
         try {
-            if (await revertEntry(entry)) {
+            const remainingInverses = groupEntries
+                .slice(0, index + 1)
+                .reverse()
+                .flatMap((candidate) =>
+                    isActionEntry(candidate) && candidate.inverseAction ? [candidate.inverseAction] : []
+                );
+            const authorizeReplay = hasLegacyTrim
+                ? () => getLegacyTrimInverseReplayFailure(remainingInverses)
+                : undefined;
+            if (await revertEntry(entry, authorizeReplay)) {
                 revertedEntries.unshift(entry);
             }
         } catch (error) {

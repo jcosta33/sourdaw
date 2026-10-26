@@ -4,6 +4,7 @@ import { AppActionCommittedError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 
 /**
@@ -66,6 +67,9 @@ export async function executeActionGroupUndo(
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,
+        ...(actions.some((action) => action.type === 'trimClipStart' && action.payload.midiOffsetBeats === undefined)
+            ? { preExecutionValidation: () => getLegacyTrimInverseReplayFailure(actions) }
+            : {}),
         ...options,
     });
     if (result.status === 'conflicted' || result.status === 'cancelled') {

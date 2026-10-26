@@ -7,6 +7,7 @@ import { undoStore } from '../stores/undoStore';
 import { executeActionGroupUndo, type UndoOutcome } from './executeActionGroupUndo';
 import { executeAppAction } from './executeAppAction';
 import { getCommandHandler } from './getCommandHandler';
+import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
@@ -84,9 +85,13 @@ async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Pr
     }
 
     try {
-        await runExecuteAppAction(normalizeLegacyLoopAnchorInverse(entry.inverseAction), {
+        const inverseAction = normalizeLegacyLoopAnchorInverse(entry.inverseAction);
+        await runExecuteAppAction(inverseAction, {
             skipUndo: true,
             skipMacroRecording: true,
+            ...(inverseAction.type === 'trimClipStart' && inverseAction.payload.midiOffsetBeats === undefined
+                ? { authorizeFirstHandler: () => getLegacyTrimInverseReplayFailure([inverseAction]) }
+                : {}),
         });
         return { status: 'undone' };
     } catch (error) {
