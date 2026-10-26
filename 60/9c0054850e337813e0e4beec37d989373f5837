@@ -1,0 +1,35 @@
+.agents/skills/review-stances/ai-notes-publication.md
+  s_d99a62fe2de3a3::t_db610c0263dfba 32-42
+scripts/__tests__/deliverAuthorshipBoundary.spec.ts
+  s_d99a62fe2de3a3::t_db610c0263dfba 50,69-70
+  s_d99a62fe2de3a3::t_4a946d6e963795 1-11,13,17-49,51-68,71-89,139-153,165-171,188-190,200,222-225,228
+  s_d99a62fe2de3a3::t_00539f1f44e062 158,181-184
+  s_d99a62fe2de3a3::t_34d014892e6b44 90-94,98-101,105-138,154-157,159-164,196-199,209-221,226-227
+  s_d99a62fe2de3a3::t_511dbc1180d409 191
+  s_d99a62fe2de3a3::t_2a7762bb366a61 14-16,95-97,102-104,172-180,185-187,201-208
+  s_d99a62fe2de3a3::t_f22caf211e3dbd 12,192-195
+scripts/deliverPullRequest.ts
+  s_d99a62fe2de3a3::t_5e081e8d4653fe 3822,3831,3934-3935,3939-3946,3948-3954
+  s_d99a62fe2de3a3::t_34d014892e6b44 3936-3938,3947
+  s_d99a62fe2de3a3::t_d295a14514810d 3955-3956
+.agents/skills/review-stances/test-validity.md
+  s_d99a62fe2de3a3::t_db610c0263dfba 9-23
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_d99a62fe2de3a3::t_250efb687ba8e0 12466-12467,12472,12490,12494,12513-12514,12521,12549-12550,12557,12575,12579,12603-12604,12612
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "609c0054850e337813e0e4beec37d989373f5837",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
