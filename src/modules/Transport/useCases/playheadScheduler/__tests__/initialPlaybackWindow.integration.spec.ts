@@ -204,6 +204,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     yeastPanic: vi.fn(() => Promise.resolve()),
     getYeastSchedulingLookahead: () => ({ earlyBeats: 0, lateBeats: 0 }),
 }));
+vi.mock('#/modules/Yeast/stores', () => ({ readYeastRack: () => ({ processors: [] }) }));
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));

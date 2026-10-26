@@ -1,14 +1,16 @@
+import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
+import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
+import { readYeastRack } from '#/modules/Yeast/stores';
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import {
-    captureInitialMidiProgramme,
-    prepareInitialMidiWindow,
-    type SchedulerCancellation,
-} from '../scheduling/scheduleMidiNotes';
+import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { prepareInitialMidiWindow, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 
 import {
     INITIAL_HIGH_WATER_OFFSET_BEATS,
@@ -32,6 +34,31 @@ const PROGRAMME_FIELDS = [
     'punchOutBeat',
     'scheduleGrainMs',
 ] as const;
+
+/** A source witness captured before any external readiness wait. */
+function captureInitialMidiProgramme(cancellation: SchedulerCancellation) {
+    const trackState = trackStore.value;
+    const midiState = midiStore.value;
+    const takeState = takeLaneStore.value;
+    const grooveState = grooveTemplateStore.value;
+    const tempoState = tempoMapStore.value;
+    const meterState = timeSignatureMapStore.value;
+    const racks = (trackState?.tracks ?? []).flatMap((track) =>
+        track.devices
+            .filter((device) => device.type === 'yeast')
+            .map((device) => ({ id: device.id, processors: structuredClone(readYeastRack(device.id).processors) }))
+    );
+    const isCurrent = () =>
+        cancellation.isCurrent() &&
+        racks.every((rack) => valuesEqual(readYeastRack(rack.id).processors, rack.processors)) &&
+        trackStore.value === trackState &&
+        midiStore.value === midiState &&
+        takeLaneStore.value === takeState &&
+        grooveTemplateStore.value === grooveState &&
+        tempoMapStore.value === tempoState &&
+        timeSignatureMapStore.value === meterState;
+    return { trackState, midiState, tempoState, isCurrent };
+}
 
 /** Capture the requested programme before scheduler-owned recording preparation. */
 export function prepareInitialBrowserPlayback(generation: number) {

@@ -1,5 +1,5 @@
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
-import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
@@ -15,7 +15,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
-import { grooveTemplateStore, midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectChannelBend,
@@ -38,8 +38,6 @@ import {
     type NoteReceivingInstrumentKind,
     resolveDrumKitOutputGain,
 } from '#/utils/deviceTypeMatching';
-import { valuesEqual } from '#/utils/structuralEquality';
-import { readYeastRack } from '#/modules/Yeast/stores';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
@@ -1120,38 +1118,18 @@ async function prepareYeastTrackNotes(
 
 type PreparedYeastTrackNotes = NonNullable<Awaited<ReturnType<typeof prepareYeastTrackNotes>>>;
 
-/** A source witness captured before any external readiness wait. */
-export function captureInitialMidiProgramme(cancellation: SchedulerCancellation) {
-    const trackState = trackStore.value;
-    const midiState = midiStore.value;
-    const takeState = takeLaneStore.value;
-    const grooveState = grooveTemplateStore.value;
-    const tempoState = tempoMapStore.value;
-    const meterState = timeSignatureMapStore.value;
-    const racks = (trackState?.tracks ?? []).flatMap((track) =>
-        track.devices
-            .filter((device) => device.type === 'yeast')
-            .map((device) => ({ id: device.id, processors: structuredClone(readYeastRack(device.id).processors) }))
-    );
-    const isCurrent = () =>
-        cancellation.isCurrent() &&
-        racks.every((rack) => valuesEqual(readYeastRack(rack.id).processors, rack.processors)) &&
-        trackStore.value === trackState &&
-        midiStore.value === midiState &&
-        takeLaneStore.value === takeState &&
-        grooveTemplateStore.value === grooveState &&
-        tempoMapStore.value === tempoState &&
-        timeSignatureMapStore.value === meterState;
-    return { trackState, midiState, tempoState, isCurrent };
-}
-
 /** Prepare only the external MIDI work. No controller, note or source is emitted here. */
 export async function prepareInitialMidiWindow(
     fromBeat: number,
     toBeat: number,
     transport: TransportState,
     cancellation: SchedulerCancellation,
-    programme: ReturnType<typeof captureInitialMidiProgramme>
+    programme: {
+        trackState: typeof trackStore.value;
+        midiState: typeof midiStore.value;
+        tempoState: typeof tempoMapStore.value;
+        isCurrent: () => boolean;
+    }
 ) {
     const { trackState, midiState, tempoState, isCurrent } = programme;
     const yeastByTrack = new Map<string, PreparedYeastTrackNotes>();
