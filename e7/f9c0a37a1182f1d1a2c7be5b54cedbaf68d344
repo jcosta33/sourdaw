@@ -1,0 +1,43 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_567a084d0540c4::t_aece2e52c29794 1996-2004,4667-4694
+  s_59e31a5c6f3e31::t_98f39702fdc30c 4695-4696
+scripts/healthGateWorkflowContract.ts
+  s_567a084d0540c4::t_2357248ce85b20 109-113,190
+.github/workflows/validation.yml
+  s_567a084d0540c4::t_2357248ce85b20 338-340
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_567a084d0540c4::t_cff10d45ec03f7 715-717
+  s_d99a62fe2de3a3::t_007bdd98315af3 714
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7f9c0a37a1182f1d1a2c7be5b54cedbaf68d344",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
