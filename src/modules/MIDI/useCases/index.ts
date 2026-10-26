@@ -56,6 +56,7 @@ export { canPrepareMidiClipGlueState } from './midiClipData/canPrepareMidiClipGl
 export { prepareMidiClipFanOutState } from './midiClipData/prepareMidiClipFanOutState';
 export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueState';
 export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
+export { isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from './midiClipData/projectFrozenMidiTakeWindow';
 export { projectMidiClipPlayback } from './midiClipData/projectMidiClipPlayback';
 export { projectClipControllerEvents } from './midiClipData/projectClipControllerEvents';
 export { projectClipControllerRestore } from './midiClipData/projectClipControllerRestore';
