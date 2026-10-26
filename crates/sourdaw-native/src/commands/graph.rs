@@ -4082,6 +4082,7 @@ fn map_command(
                 },
                 registry,
                 samples,
+                timeline_lease,
                 sample_rate,
                 engine_owned_devices,
                 attached_crumbs,
@@ -5233,6 +5234,10 @@ pub async fn apply_graph_commands(
             Err(reason) => return result_json(&GraphApplyResultPayload::rejected(reason)),
         },
     };
+    #[cfg(test)]
+    if !native_receipts.is_empty() {
+        tests::pause_after_native_model_preparation(&native_receipts);
+    }
     // A scalar batch, removal, engine restart or another command producer can
     // advance while preparation runs. Nothing prepared against that old view
     // is admitted into its successor. Losing work is destroyed control-side.
@@ -5258,6 +5263,11 @@ pub async fn apply_graph_commands(
             "Native graph/engine generation changed during preparation".into(),
         ));
     }
+
+    let mut samples = state
+        .timeline_samples
+        .lock()
+        .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
 
     // Whole-batch admission and visibility: `send_graph_batch` provisions a
     // command ring large enough for the batch when the current one is too
@@ -5319,6 +5329,7 @@ pub async fn apply_graph_commands(
         registry_guard.engine_epoch,
         working.batches_sent,
     );
+    drop(samples);
 
     // The batch is on this engine's ring, so `working` names the strips the
     // engine now has: a punch arm recorded before this engine booted, before a
@@ -5861,6 +5872,319 @@ mod tests {
     use crate::block_on_test;
     use crate::commands::plugins::serialize_against_exclusive_gate_holds;
     use serde_json::json;
+
+    struct NativePreparationPause {
+        request_id: String,
+        prepared: std::sync::mpsc::SyncSender<GrinderModelReceipt>,
+        resume: std::sync::mpsc::Receiver<()>,
+    }
+
+    std::thread_local! {
+        static NATIVE_PREPARATION_PAUSE: std::cell::RefCell<Option<NativePreparationPause>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    pub(super) fn pause_after_native_model_preparation(receipts: &[GrinderModelReceipt]) {
+        NATIVE_PREPARATION_PAUSE.with(|slot| {
+            let receipt = {
+                let armed = slot.borrow();
+                let Some(pause) = armed.as_ref() else {
+                    return;
+                };
+                let Some(receipt) = receipts
+                    .iter()
+                    .find(|receipt| receipt.request_id == pause.request_id)
+                else {
+                    return;
+                };
+                receipt.clone()
+            };
+            let pause = slot
+                .borrow_mut()
+                .take()
+                .expect("the matching pause is armed");
+            pause
+                .prepared
+                .send(receipt)
+                .expect("the test is observing preparation");
+            pause
+                .resume
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("the test must release the prepared admission");
+        });
+    }
+
+    struct ResumeNativePreparation(Option<std::sync::mpsc::SyncSender<()>>);
+
+    impl ResumeNativePreparation {
+        fn release(&mut self) {
+            self.0
+                .take()
+                .expect("preparation is released once")
+                .send(())
+                .expect("the prepared admission is waiting");
+        }
+    }
+
+    impl Drop for ResumeNativePreparation {
+        fn drop(&mut self) {
+            // An assertion must release the scoped worker before its join.
+            if let Some(resume) = self.0.take() {
+                let _ = resume.send(());
+            }
+        }
+    }
+
+    fn prepare_versioned_native_test_sample(state: &AppState, owner: &str, value: f32) -> String {
+        use crate::commands::timeline_sample_lifecycle::{
+            register_timeline_material, timeline_sample_lifecycle,
+        };
+        let prepared = block_on_test(timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner, "materials": [{
+                "sourceId": "take", "version": "v1", "frames": 4,
+                "channels": 1, "sampleRate": 48000
+            }]}),
+            state,
+        ))
+        .unwrap();
+        let lease = prepared["lease"].as_str().unwrap().to_string();
+        block_on_test(register_timeline_material(
+            lease.clone(),
+            "take".into(),
+            "v1".into(),
+            48000.0,
+            1,
+            [value; 4]
+                .iter()
+                .flat_map(|sample| sample.to_le_bytes())
+                .collect(),
+            state,
+        ))
+        .unwrap();
+        lease
+    }
+
+    // Called by the existing NAM parity test so both use the process-wide
+    // single-preparation permit sequentially, rather than racing two tests.
+    fn native_preparation_revalidates_exact_timeline_lease() {
+        use crate::commands::timeline_sample_lifecycle::timeline_sample_lifecycle;
+        let mut failures = Vec::new();
+        for change in ["retired-incoming", "released-incoming", "retired-unrelated"] {
+            let state = Arc::new(AppState::default());
+            let (engine, mut commands_rx, _adoption) =
+                daw_engine::engine_handle_for_command_capture(128);
+            let engine_id = engine.instance_id();
+            *state.engine.lock().unwrap() = Some(engine);
+            let standing =
+                block_on_test(timeline_sample_lifecycle(json!({"action": "open"}), &state))
+                    .unwrap()["owner"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+            let incoming =
+                block_on_test(timeline_sample_lifecycle(json!({"action": "open"}), &state))
+                    .unwrap()["owner"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+            let unrelated =
+                block_on_test(timeline_sample_lifecycle(json!({"action": "open"}), &state))
+                    .unwrap()["owner"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+            let standing_lease = prepare_versioned_native_test_sample(&state, &standing, 0.25);
+            let incoming_lease = prepare_versioned_native_test_sample(&state, &incoming, 0.5);
+            let unrelated_lease = prepare_versioned_native_test_sample(&state, &unrelated, -0.25);
+            let initial = block_on_test(apply_graph_commands(
+                json!({"schemaVersion": 1, "timelineLease": standing_lease,
+                    "commands": [track_strip("standing")]}),
+                &state,
+                &CrumbsState::default(),
+            ))
+            .unwrap();
+            assert_eq!(initial["application"], "applied");
+            assert_eq!(drain_counting_fences(&mut commands_rx), 1);
+            let baseline = {
+                let registry = state.graph.lock().unwrap();
+                (
+                    registry.runtime_revision,
+                    registry.batches_sent,
+                    registry.timeline_owner.clone(),
+                )
+            };
+            assert_eq!(baseline.2.as_deref(), Some(standing.as_str()));
+            let request = format!("lease-window-{change}");
+            let mut commands =
+                strip_with_device("incoming-nam", "grinder", json!({"engineMode": 1}));
+            commands[0]["devices"][0]["grinderModel"] = json!({
+                "requestId": request,
+                "modelJson": "{\"architecture\":\"Linear\",\"config\":{\"receptive_field\":1,\"bias\":false},\"weights\":[0.5]}"
+            });
+            commands.as_array_mut().unwrap().push(json!({
+                "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": {"sourceId": "take", "materialVersion": "v1"},
+                    "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0,
+                    "playbackRate": 1, "gain": 1, "fade": {"microFadeSeconds": 0}
+                }
+            }));
+            let batch = json!({"schemaVersion": 2, "replaceTopology": true,
+                "timelineLease": incoming_lease, "commands": commands});
+            let (prepared_tx, prepared_rx) = std::sync::mpsc::sync_channel(1);
+            let (resume_tx, resume_rx) = std::sync::mpsc::sync_channel(1);
+            let worker_state = Arc::clone(&state);
+            let worker_request = request.clone();
+            let result = std::thread::scope(|scope| {
+                let mut resume = ResumeNativePreparation(Some(resume_tx));
+                let worker = scope.spawn(move || {
+                    NATIVE_PREPARATION_PAUSE.with(|slot| {
+                        assert!(slot
+                            .borrow_mut()
+                            .replace(NativePreparationPause {
+                                request_id: worker_request,
+                                prepared: prepared_tx,
+                                resume: resume_rx,
+                            })
+                            .is_none());
+                    });
+                    block_on_test(apply_graph_commands(
+                        batch,
+                        &worker_state,
+                        &CrumbsState::default(),
+                    ))
+                });
+                let prepared = prepared_rx
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .expect("the real NAM builder must reach its prepared receipt");
+                assert_eq!(prepared.request_id, request);
+                assert_eq!(prepared.engine_id, engine_id.to_string());
+                assert_eq!(prepared.content_hash.len(), 64);
+                drop(
+                    state
+                        .graph
+                        .try_lock()
+                        .expect("NAM preparation released graph"),
+                );
+                drop(
+                    state
+                        .engine
+                        .try_lock()
+                        .expect("NAM preparation released engine"),
+                );
+                drop(
+                    state
+                        .timeline_samples
+                        .try_lock()
+                        .expect("NAM preparation released samples"),
+                );
+                drop(
+                    state
+                        .levain_banks
+                        .try_lock()
+                        .expect("NAM preparation released banks"),
+                );
+                assert!(
+                    commands_rx.pop().is_err(),
+                    "no incoming command may precede admission"
+                );
+                if change == "released-incoming" {
+                    block_on_test(timeline_sample_lifecycle(
+                        json!({"action": "release", "lease": incoming_lease}),
+                        &state,
+                    ))
+                    .unwrap();
+                } else {
+                    let owner = if change == "retired-incoming" {
+                        &incoming
+                    } else {
+                        &unrelated
+                    };
+                    let retired = block_on_test(timeline_sample_lifecycle(
+                        json!({"action": "retire", "owner": owner}),
+                        &state,
+                    ))
+                    .unwrap();
+                    if change == "retired-incoming" {
+                        assert_eq!(retired["complete"], false);
+                        assert_eq!(retired["remainingReaders"], 1);
+                    }
+                }
+                {
+                    let registry = state.graph.lock().unwrap();
+                    assert_eq!(
+                        (registry.runtime_revision, registry.batches_sent, registry.timeline_owner.clone()),
+                        baseline,
+                        "incoming/unrelated retirement must not trigger the existing generation guard"
+                    );
+                    let pool = state.timeline_samples.lock().unwrap();
+                    assert_eq!(
+                        pool.timeline_lease_owner(&standing_lease).unwrap(),
+                        standing
+                    );
+                    let standing_pcm = pool
+                        .resolve_timeline_sample(Some(&standing_lease), "take", Some("v1"))
+                        .unwrap();
+                    assert_eq!(standing_pcm.left.as_ref(), &[0.25f32; 4]);
+                    if change != "retired-unrelated" {
+                        assert!(pool.timeline_lease_owner(&incoming_lease).is_err());
+                        assert_eq!(
+                            pool.timeline_lease_owner(&unrelated_lease).unwrap(),
+                            unrelated
+                        );
+                    }
+                }
+                resume.release();
+                worker
+                    .join()
+                    .expect("the prepared command worker completes")
+                    .unwrap()
+            });
+            let fences = drain_counting_fences(&mut commands_rx);
+            {
+                let pool = state.timeline_samples.lock().unwrap();
+                let standing_pcm = pool
+                    .resolve_timeline_sample(Some(&standing_lease), "take", Some("v1"))
+                    .unwrap();
+                assert_eq!(standing_pcm.left.as_ref(), &[0.25f32; 4]);
+            }
+            if change == "retired-unrelated" {
+                assert_eq!(result["application"], "applied");
+                assert_eq!(fences, 1);
+                assert_eq!(result["grinderModels"][0]["requestId"], request);
+                assert_eq!(
+                    state.graph.lock().unwrap().timeline_owner.as_deref(),
+                    Some(incoming.as_str())
+                );
+            } else {
+                let registry = state.graph.lock().unwrap();
+                if result["acceptance"] != "rejected"
+                    || fences != 0
+                    || (
+                        registry.runtime_revision,
+                        registry.batches_sent,
+                        registry.timeline_owner.clone(),
+                    ) != baseline
+                {
+                    failures.push(format!("{change}: expected rejected with zero fences and unchanged standing graph; result={result}, fences={fences}"));
+                }
+                drop(registry);
+                if result["acceptance"] == "rejected" {
+                    let retired = block_on_test(timeline_sample_lifecycle(
+                        json!({"action": "retire", "owner": incoming}),
+                        &state,
+                    ))
+                    .unwrap();
+                    assert_eq!(retired["complete"], true);
+                    assert_eq!(retired["remainingReaders"], 0);
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "prepared native lease admission: {}",
+            failures.join("; ")
+        );
+    }
 
     /// Map a batch against an engine holding no hosted plugin instances and a
     /// process holding no Levain bank — the state every case below is about
@@ -8191,6 +8515,7 @@ mod tests {
             &state
         ))
         .is_err());
+        native_preparation_revalidates_exact_timeline_lease();
     }
 
     /// The honesty slice (#3635): an `EngineHandle` can outlive its output

@@ -16,7 +16,7 @@ import {
 } from '../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
-import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
+import { type nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { effectiveMasterGain } from '../engineAccess/masterGainState';
 
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';

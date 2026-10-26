@@ -3050,6 +3050,171 @@ describe('an edit issued while the start apply is pending (#4785)', () => {
 });
 
 describe('native NAM initial ownership requires actual model drain', () => {
+    it.each(['maps', 'roll-material', 'roll-position', 'roll-admission'] as const)(
+        'keeps the NAM rolling join honest at %s after matching model readback',
+        async (checkpoint) => {
+            const receipt = {
+                trackId: 'audio-1',
+                deviceId: 'd-nam',
+                engineId: '1',
+                targetGeneration: '42',
+                requestId: 'rolling-join',
+                contentHash: 'a'.repeat(64),
+            };
+            mocks.topologyOverride = [
+                {
+                    ...CARRIED_STRIP,
+                    devices: [
+                        {
+                            id: receipt.deviceId,
+                            name: 'Grinder',
+                            type: 'grinder',
+                            bypassed: false,
+                            parameterValues: {},
+                            grinderModel: {
+                                requestId: receipt.requestId,
+                                modelJson:
+                                    '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}',
+                            },
+                        },
+                    ],
+                },
+                {
+                    ...SCHEDULED_CLIP,
+                    playback: { ...SCHEDULED_CLIP.playback, source: { sourceId: 'sample-1', buffer: MATERIAL } },
+                },
+            ];
+            let matchingReadbacks = 0;
+            vi.mocked(getEngineTransportPosition).mockImplementation(async () => {
+                matchingReadbacks += 1;
+                return {
+                    ...rollingReading(0),
+                    playing: false,
+                    engineId: receipt.engineId,
+                    batchesApplied: 7,
+                    grinderModels: [receipt],
+                };
+            });
+            let mapsEntered!: () => void;
+            const installingMaps = new Promise<void>((resolve) => {
+                mapsEntered = resolve;
+            });
+            let releaseMaps!: (value: SetEngineTransportMapsResult) => void;
+            const mapsAnswer = new Promise<SetEngineTransportMapsResult>((resolve) => {
+                releaseMaps = resolve;
+            });
+            const appliedMaps: SetEngineTransportMapsResult = {
+                outcome: 'applied',
+                applied: {
+                    sampleRate: SAMPLE_RATE,
+                    tempoSegments: 1,
+                    timeSignatureSegments: 1,
+                    loopEnabled: false,
+                    admittedBatch: 8,
+                },
+            };
+            mocks.setEngineTransportMaps.mockImplementationOnce(() => {
+                mapsEntered();
+                return mapsAnswer;
+            });
+            let materialEntered!: () => void;
+            const preparingRoll = new Promise<void>((resolve) => {
+                materialEntered = resolve;
+            });
+            let releaseMaterial!: () => void;
+            const materialAnswer = new Promise<void>((resolve) => {
+                releaseMaterial = resolve;
+            });
+            const lifecycle = transport.timelineSampleLifecycle;
+            if (!lifecycle) {
+                throw new Error('the protocol fixture must expose timeline leases');
+            }
+            let preparations = 0;
+            const timelineSampleLifecycle = async (request: Parameters<typeof lifecycle>[0]) => {
+                const answer = await lifecycle(request);
+                if (request.action === 'prepare') {
+                    preparations += 1;
+                    if (preparations === 2) {
+                        materialEntered();
+                        await materialAnswer;
+                    }
+                }
+                return answer;
+            };
+            mocks.availability = { available: true, transport: { ...transport, timelineSampleLifecycle } };
+            let rollEntered!: () => void;
+            const sendingRoll = new Promise<void>((resolve) => {
+                rollEntered = resolve;
+            });
+            let releaseRoll!: (value: unknown) => void;
+            const rollAnswer = new Promise<unknown>((resolve) => {
+                releaseRoll = resolve;
+            });
+            let sentRollPosition: number | undefined;
+            mocks.applyGraphCommands.mockImplementation(async ({ batch }) => {
+                const wire = batch as NativeGraphWireBatch;
+                if (wire.replaceTopology) {
+                    return {
+                        ...APPLIED,
+                        admittedBatch: 7,
+                        engineId: receipt.engineId,
+                        grinderModels: [receipt],
+                        reports: [{ kind: 'track', id: 'audio-1', deviceIds: [receipt.deviceId] }],
+                    };
+                }
+                const roll = wire.commands.find((command) => command.kind === 'set-transport' && command.playing);
+                if (roll?.kind === 'set-transport') {
+                    sentRollPosition = roll.positionSeconds;
+                    rollEntered();
+                    return rollAnswer;
+                }
+                return APPLIED;
+            });
+            mocks.contextSeconds = 10;
+            const starting = startNativeLiveGraphSession({
+                positionSeconds: 2.5,
+                transport: { kind: 'rolling', anchoredAtContextSeconds: 10 },
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            });
+            try {
+                await installingMaps;
+                expect(matchingReadbacks).toBe(1);
+                expect(sentRollPosition).toBeUndefined();
+                if (checkpoint === 'maps') {
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(false);
+                    expect(mocks.carriedClaims.at(-1)?.ids ?? []).not.toContain('audio-1');
+                    expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+                }
+                releaseMaps(appliedMaps);
+                await preparingRoll;
+                expect(preparations).toBe(2);
+                expect(sentRollPosition).toBeUndefined();
+                if (checkpoint === 'roll-material') {
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(false);
+                    expect(mocks.carriedClaims.at(-1)?.ids ?? []).not.toContain('audio-1');
+                }
+                // Web Audio advances while the native roll still cannot be sent.
+                mocks.contextSeconds = 10.4;
+                releaseMaterial();
+                await sendingRoll;
+                if (checkpoint === 'roll-position') {
+                    expect(sentRollPosition).toBeCloseTo(2.9, 9);
+                }
+                if (checkpoint === 'roll-admission') {
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(true);
+                    expect(mocks.carriedClaims.at(-1)?.ids).toContain('audio-1');
+                }
+            } finally {
+                releaseMaps(appliedMaps);
+                releaseMaterial();
+                releaseRoll({ ...APPLIED, admittedBatch: 9 });
+                await starting;
+            }
+        }
+    );
+
     it.each(['project', 'epoch', 'backend'] as const)(
         'refuses %s invalidation during PCM preparation before any native admission',
         async (change) => {
@@ -3116,7 +3281,7 @@ describe('native NAM initial ownership requires actual model drain', () => {
                         throw new Error('the protocol fixture must return its prepared lease');
                     }
                     if (typeof result.lease !== 'string') {
-                        throw new Error('the protocol fixture must return a string lease');
+                        throw new TypeError('the protocol fixture must return a string lease');
                     }
                     preparedLease = result.lease;
                     entered();
