@@ -478,17 +478,25 @@ describe('live store edits on the existing writer pass', () => {
                     settle = resolve;
                 });
             }, [trackHolding([FIRST_PLUGIN]), other]);
-            const target: AudioGraphParameterTarget =
-                route === 'strip'
-                    ? { kind: 'track-pan', trackId: STRIP_ID }
-                    : { kind: 'device-parameter', trackId: STRIP_ID, deviceId: FIRST_PLUGIN.id, parameterId: '4' };
+            let target: AudioGraphParameterTarget = {
+                kind: 'device-parameter',
+                trackId: STRIP_ID,
+                deviceId: FIRST_PLUGIN.id,
+                parameterId: '4',
+            };
+            if (route === 'strip') {
+                target = { kind: 'track-pan', trackId: STRIP_ID };
+            }
             const targetWrites = (commands: readonly AudioGraphCommand[]) =>
-                commands.flatMap((command) =>
-                    (command.kind === 'write-device-parameter' || command.kind === 'write-parameter') &&
-                    JSON.stringify(command.target) === JSON.stringify(target)
-                        ? [command.write]
-                        : []
-                );
+                commands.flatMap((command) => {
+                    if (
+                        (command.kind === 'write-device-parameter' || command.kind === 'write-parameter') &&
+                        JSON.stringify(command.target) === JSON.stringify(target)
+                    ) {
+                        return [command.write];
+                    }
+                    return [];
+                });
             const outgoing = nativeLiveAutomationWriter.pass!;
             const unaffected = outgoing.targets.filter(
                 (slot) => JSON.stringify(slot.target) !== JSON.stringify(target)
@@ -532,15 +540,11 @@ describe('live store edits on the existing writer pass', () => {
             const successorEpoch = nativeLiveAutomationWriter.epoch;
             const acceptedRevision = outgoing.inputs.acceptedRevision;
             pending = false;
-            settle(
-                application === 'applied'
-                    ? applied
-                    : {
-                          acceptance: 'rejected',
-                          application: 'not-applied',
-                          reason: 'test refusal',
-                      }
-            );
+            let result: AudioGraphApplyResult = applied;
+            if (application === 'not-applied') {
+                result = { acceptance: 'rejected', application: 'not-applied', reason: 'test refusal' };
+            }
+            settle(result);
             await flight;
             await vi.waitFor(() => expect(nativeLiveAutomationWriter.inFlightEpoch).toBeNull());
             expect(nativeLiveAutomationWriter.pass).toBe(successor);
@@ -550,14 +554,11 @@ describe('live store edits on the existing writer pass', () => {
             const corrected = targetWrites(successorCommands);
             expect(corrected[0]).toEqual({ shape: 'hold', time: 0.02 });
             if (route !== 'strip') {
-                expect(corrected).toEqual(
-                    change === 'revert'
-                        ? [
-                              { shape: 'hold', time: 0.02 },
-                              { shape: 'step', time: 0.02, value: 0.2 },
-                          ]
-                        : [{ shape: 'hold', time: 0.02 }]
-                );
+                const expected: AudioGraphParameterWrite[] = [{ shape: 'hold', time: 0.02 }];
+                if (change === 'revert') {
+                    expected.push({ shape: 'step', time: 0.02, value: 0.2 });
+                }
+                expect(corrected).toEqual(expected);
             }
             expect(
                 successorCommands.filter(
@@ -1030,6 +1031,219 @@ describe('live store edits on the existing writer pass', () => {
             nativeLiveAutomationWriter.pass!.inputs.acceptedRevision
         );
     });
+
+    it.each(
+        (['vca', 'mute', 'solo'] as const).flatMap((control) =>
+            (['applied', 'not-applied'] as const).map((application) => ({ control, application }))
+        )
+    )(
+        'restores a pending $control control after typed revert and re-arm following $application',
+        async ({ control, application }) => {
+            Container.clear();
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            clearHandlerRegistry();
+            registerHandlerMap(getArrangementHandlers());
+            clearUndoHistory();
+            resetActionReplayAuthority();
+            setActionHistoryMetadataPort({
+                record: recordActionHistoryEntry,
+                markReverted: markActionHistoryEntryReverted,
+                clear: clearActionHistory,
+            });
+            try {
+                const track = { ...trackHolding([]), gain: 1.5, vcaGroupId: 'group', automationMode: 'off' as const };
+                const soloSource = { ...trackHolding([]), id: 'solo-source', soloSafe: true };
+                const other = { ...trackHolding([]), id: 'unrelated', soloSafe: true };
+                const bystander: StoredAutomationLane = {
+                    ...hostedLane(FIRST_PLUGIN.id),
+                    id: 'unrelated-pan',
+                    trackId: other.id,
+                    parameterId: 'pan',
+                    points: [
+                        { beat: 0, value: 10, curve: 'step', tension: 0 },
+                        { beat: 0.16, value: 20, curve: 'step', tension: 0 },
+                    ],
+                };
+                vcaGroupStore.set({
+                    groups: [{ id: 'group', name: 'Group', gain: 1, muted: false, trackIds: [STRIP_ID] }],
+                });
+                // Command-model state begins at the acknowledged topology values.
+                // This observes native commands, not rendered PCM or hardware output.
+                const native = { multiplier: 1, rawGain: track.gain, muteGate: 1, soloGate: 1 };
+                const acceptCommands = (batch: AudioGraphCommandBatch): void => {
+                    for (const command of batch.commands) {
+                        if (command.kind === 'set-strip-vca-multiplier' && command.trackId === STRIP_ID) {
+                            native.multiplier = command.multiplier;
+                        } else if (
+                            command.kind === 'write-parameter' &&
+                            command.target.trackId === STRIP_ID &&
+                            command.write.shape === 'step'
+                        ) {
+                            if (command.target.kind === 'track-fader') {
+                                native.rawGain = command.write.value;
+                            } else if (command.target.kind === 'track-mute-gate') {
+                                native.muteGate = command.write.value;
+                            } else if (command.target.kind === 'track-solo-gate') {
+                                native.soloGate = command.write.value;
+                            }
+                        }
+                    }
+                };
+                let pending = false;
+                let settle!: (result: AudioGraphApplyResult) => void;
+                let observed!: () => void;
+                const sent = new Promise<void>((resolve) => {
+                    observed = resolve;
+                });
+                const batches = await playingWith(
+                    [bystander],
+                    async (batch) => {
+                        if (pending) {
+                            observed();
+                            return new Promise((resolve) => {
+                                settle = (result) => {
+                                    if (result.application === 'applied') {
+                                        acceptCommands(batch);
+                                    }
+                                    resolve(result);
+                                };
+                            });
+                        }
+                        acceptCommands(batch);
+                        return applied;
+                    },
+                    [track, soloSource, other]
+                );
+                const changeControl = async (changed: boolean): Promise<void> => {
+                    if (control === 'vca') {
+                        let gain = 1;
+                        if (changed) {
+                            gain = 0.5;
+                        }
+                        await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'group', gain } });
+                    } else if (control === 'mute') {
+                        await executeAppAction({ type: 'muteTrack', payload: { trackId: STRIP_ID, muted: changed } });
+                    } else {
+                        await executeAppAction({
+                            type: 'soloTrack',
+                            payload: { trackId: soloSource.id, soloed: changed },
+                        });
+                    }
+                };
+                pending = true;
+                await changeControl(true);
+                const outgoing = nativeLiveAutomationWriter.pass!;
+                const acceptedRevision = outgoing.inputs.acceptedRevision;
+                const preserved = outgoing.targets
+                    .flatMap((slot) => slot.queued)
+                    .filter((stamp) => stamp.startFrame >= 2880);
+                expect(preserved.length).toBeGreaterThan(0);
+                const flight = pump();
+                await sent;
+                let changedCommand: AudioGraphCommand = {
+                    kind: 'set-strip-vca-multiplier',
+                    trackId: STRIP_ID,
+                    multiplier: 0.5,
+                };
+                let restoreCommand: AudioGraphCommand = {
+                    kind: 'set-strip-vca-multiplier',
+                    trackId: STRIP_ID,
+                    multiplier: 1,
+                };
+                if (control !== 'vca') {
+                    let kind: 'track-mute-gate' | 'track-solo-gate' = 'track-mute-gate';
+                    if (control === 'solo') {
+                        kind = 'track-solo-gate';
+                    }
+                    changedCommand = {
+                        kind: 'write-parameter',
+                        target: { kind, trackId: STRIP_ID },
+                        write: { shape: 'step', time: 0.02, value: 0 },
+                    };
+                    restoreCommand = { ...changedCommand, write: { shape: 'step', time: 0.02, value: 1 } };
+                }
+                expect(batches.at(-1)!.commands).toContainEqual(changedCommand);
+                await changeControl(false);
+                expect(vcaGroupStore.value?.groups[0]?.gain).toBe(1);
+                expect(trackStore.value?.tracks.find((row) => row.id === STRIP_ID)?.muted).toBe(false);
+                expect(trackStore.value?.tracks.find((row) => row.id === soloSource.id)?.soloed).toBe(false);
+                // Re-read reverted truth while the submitted controls are still unanswered.
+                await pump();
+                rearmNativeLiveAutomationWriterInPlace({ positionSeconds: 0.02, provenAfterBatch: 11 });
+                const successor = nativeLiveAutomationWriter.pass!;
+                const epoch = nativeLiveAutomationWriter.epoch;
+                const unrelated = successor.targets.find((slot) => slot.target.trackId === other.id)!;
+                const normalRearmWrites = unrelated.writes.filter((write) => {
+                    if (write.shape === 'ramp-to') {
+                        return write.startTime < 0.12;
+                    }
+                    return write.time < 0.12;
+                });
+                const successorBatchIndex = batches.length;
+                expect(successor).not.toBe(outgoing);
+                pending = false;
+                let result: AudioGraphApplyResult = applied;
+                if (application === 'not-applied') {
+                    result = { acceptance: 'rejected', application: 'not-applied', reason: 'test refusal' };
+                }
+                settle(result);
+                await flight;
+                await vi.waitFor(() => expect(nativeLiveAutomationWriter.inFlightEpoch).toBeNull());
+                const restored = batches.slice(successorBatchIndex).flatMap((batch) => batch.commands);
+                expect(restored).toContainEqual(restoreCommand);
+                const unrelatedCommands = restored.filter(
+                    (command) =>
+                        (command.kind === 'set-strip-vca-multiplier' && command.trackId !== STRIP_ID) ||
+                        ((command.kind === 'write-parameter' || command.kind === 'write-device-parameter') &&
+                            command.target.trackId !== STRIP_ID)
+                );
+                expect(unrelatedCommands).toEqual(
+                    normalRearmWrites.map((write) => ({
+                        kind: 'write-parameter',
+                        target: unrelated.target,
+                        write,
+                    }))
+                );
+                expect(native).toEqual({ multiplier: 1, rawGain: 1.5, muteGate: 1, soloGate: 1 });
+                expect(native.rawGain * native.multiplier * native.muteGate * native.soloGate).toBe(1.5);
+                expect(nativeLiveAutomationWriter.pass).toBe(successor);
+                expect(nativeLiveAutomationWriter.epoch).toBe(epoch);
+                expect(outgoing.inputs.acceptedRevision).toBe(acceptedRevision);
+                expect(successor.inputs.strips.get(STRIP_ID)).toEqual({
+                    multiplier: 1,
+                    gain: 1.5,
+                    muted: false,
+                    soloGated: false,
+                });
+                expect(successor.targets).toContain(unrelated);
+                expect(unrelated.cursor).toBe(normalRearmWrites.length);
+                for (const stamp of preserved) {
+                    expect(successor.targets.flatMap((slot) => slot.queued)).toContain(stamp);
+                    expect(stamp.admittedBatch).toBe(11);
+                }
+                const count = batches.length;
+                await pump();
+                expect(batches).toHaveLength(count);
+            } finally {
+                disarmNativeLiveAutomationWriter();
+                setActionHistoryMetadataPort({
+                    record: () => [],
+                    markReverted: () => ({ status: 'unavailable' }),
+                    clear: () => undefined,
+                });
+                clearUndoHistory();
+                resetActionReplayAuthority();
+                clearActionHistory();
+                clearHandlerRegistry();
+                configureAutomergeStoragePort(null);
+                removeCrdtDoc('root');
+                Container.clear();
+            }
+        }
+    );
 
     it('replays raw gain after the owning typed VCA action with a gain lane, without one and with automation off', async () => {
         Container.clear();
