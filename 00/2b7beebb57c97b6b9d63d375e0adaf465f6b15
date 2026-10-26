@@ -1,0 +1,29 @@
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_59e31a5c6f3e31::t_fe840c1413b4b4 11,13,28-30,51,65,67-70,84-87,181-183,197-199,336,363,369-438,448-450
+src/modules/MixerConsole/presentations/views/Mixer/MasterGainControl.tsx
+  s_59e31a5c6f3e31::t_db14ad825c0fae 28-30,39-40,97-105,149-154,164-166,205,241,246-257,277-278
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.commandAdmission.spec.tsx
+  s_59e31a5c6f3e31::t_d642b0166d5c9d 150-153,155,371-585
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterGainControl.promptDialog.spec.tsx
+  s_59e31a5c6f3e31::t_c5f99d235aac3e 19-29
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterGainControl.spec.tsx
+  s_59e31a5c6f3e31::t_dd40a701040965 38-45,63,87-93,115,132-138,157-163,182-188,206-212,231-237,258-266,272-273,279-282,285-286,289,300-325,332-338
+tests/e2e/masterGainKeyboardTestId.spec.ts
+  s_59e31a5c6f3e31::t_c2793d3a8733e8 42-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "002b7beebb57c97b6b9d63d375e0adaf465f6b15",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
