@@ -67,6 +67,10 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
         },
     },
 }));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    resetMidiState: vi.fn(),
+}));
 vi.mock('../../../stores/transportStore', () => ({
     transportStore: {
         get value() {
@@ -91,6 +95,7 @@ vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: null } }));
 vi.mock('#/modules/Automation/useCases', () => ({
     startAutomationRecording: vi.fn(),
+    stopAutomationRecording: vi.fn(),
     applyModulation: vi.fn(),
     applyModulationToEngine: vi.fn(),
     getAutomationValueAtBeat: vi.fn(() => null),
@@ -141,6 +146,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     scheduleFaustNote: vi.fn(),
     audioEngine: { setTransportInfo: (...args: unknown[]) => transportPublications.push(args) },
     stopAllScheduled: vi.fn(),
+    cancelTrackAutomationRamps: vi.fn(),
     startAudioRecording: vi.fn(),
     stopAudioRecording: vi.fn(),
     cacheAudioBuffer: vi.fn(),
