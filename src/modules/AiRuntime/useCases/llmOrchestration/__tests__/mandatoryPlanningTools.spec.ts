@@ -404,7 +404,12 @@ describe('mandatory planning tools', () => {
                 );
             }
 
-            async function sendLocalRequest(context: ProjectContext, receiptSummary?: string, thread?: ThreadContext) {
+            async function sendLocalRequest(
+                context: ProjectContext,
+                receiptSummary?: string,
+                thread?: ThreadContext,
+                transientOnsetsDiscovered?: true
+            ) {
                 const catalog = prepareCreativeInterpretationCatalog({
                     prompt: REQUEST,
                     context,
@@ -439,7 +444,9 @@ describe('mandatory planning tools', () => {
                     undefined,
                     undefined,
                     AUTO_TOOL_CHOICE,
-                    undefined,
+                    transientOnsetsDiscovered
+                        ? { firstUserMessage: built.message, history: [], budgetNote: '', transientOnsetsDiscovered }
+                        : undefined,
                     built.localMessage
                 );
                 return { built, outcome, providerResults, sent: mocks.generateWebLlmCompletion.mock.calls[0] };
@@ -521,6 +528,129 @@ describe('mandatory planning tools', () => {
                 expect(local?.pendingCommandCount).toBeGreaterThan(0);
                 expect(userText).toContain(threadRequest(thread.requests.length));
                 expect(userText).not.toContain(threadRequest(1));
+            });
+
+            it('fits a discovered 64-hit source-onset receipt and a full thread in the five-track local window', async () => {
+                mocks.generateWebLlmCompletion.mockResolvedValue('[]');
+                const identity = 'x'.repeat(256);
+                const receipt = {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: identity,
+                    toolName: 'analysis.detectTransients',
+                    turn: 2,
+                    status: 'success',
+                    revision: 'f'.repeat(64),
+                    data: {
+                        kind: 'transient-onset-read',
+                        schemaVersion: 1,
+                        projectId: identity,
+                        clipId: identity,
+                        trackId: identity,
+                        alternativeId: identity,
+                        activeAlternative: false,
+                        bufferId: 'b'.repeat(64),
+                        sourceRevisionDigest: 'f'.repeat(64),
+                        timeAxis: 'source-buffer',
+                        sampleRate: 192_000,
+                        frameCount: 10_000_000,
+                        channelCount: 1,
+                        sensitivity: 0.5,
+                        totalHitCount: 65,
+                        coverage: { startFrame: 0, endFrame: 10_000_000, offset: 0, endOffset: 64 },
+                        hits: Array.from({ length: 64 }, (_, index) => ({
+                            sourceSeconds: (9_000_000 + index * 512) / 192_000,
+                            confidence: 0.10000000000000002,
+                        })),
+                        nextCursor: 'c'.repeat(73),
+                        complete: false,
+                    },
+                    summary: 'Read 64 source-buffer onsets; 65 total.',
+                    warnings: [],
+                    error: null,
+                };
+                expect(byteLength(receipt)).toBeLessThan(MAX_RECEIPT_BYTES_PER_CALL);
+                let evidence = '';
+                let transientOnsetsDiscovered: true | undefined;
+                await runApplicationOwnedToolLoop({
+                    loopId: 'maximum-onset-receipt',
+                    terminalToolNames: new Set(['answer.respond']),
+                    transientOnsetRead: {
+                        execute: async ({ callId, turn }) => ({
+                            ...receipt,
+                            callId,
+                            turn,
+                            schema: 'sourdaw.application-tool-receipt',
+                            schemaVersion: 1,
+                            status: 'success',
+                        }),
+                    },
+                    requestTurn: async (input) => {
+                        if (input.turn === 1)
+                            return {
+                                status: 'complete',
+                                toolCalls: [
+                                    {
+                                        id: 'discovery',
+                                        name: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                                        arguments: { category: 'analysis', names: ['analysis.detectTransients'] },
+                                    },
+                                ],
+                            };
+                        if (input.turn === 2)
+                            return {
+                                status: 'complete',
+                                toolCalls: [
+                                    {
+                                        id: identity,
+                                        name: 'analysis.detectTransients',
+                                        arguments: { clipId: identity },
+                                    },
+                                ],
+                            };
+                        evidence = input.receiptContext ?? '';
+                        transientOnsetsDiscovered = input.transientOnsetsDiscovered;
+                        return { status: 'complete', toolCalls: [] };
+                    },
+                });
+                expect(transientOnsetsDiscovered).toBe(true);
+                const { built, outcome, sent } = await sendLocalRequest(
+                    fiveTrackProject(),
+                    evidence,
+                    createFullThreadContext(),
+                    true
+                );
+                expect(outcome).toMatchObject({ status: 'complete' });
+                const [systemText, userText] = sent ?? [];
+                if (typeof systemText !== 'string' || typeof userText !== 'string')
+                    throw new TypeError('The discovered receipt request must reach the local engine.');
+                const selected = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
+                expect(selected).toHaveLength(WEBLLM_TOOL_BUDGET);
+                expect(selected).toContain('analysis.detectTransients');
+                expect(userText).toBe(built.localMessage);
+                expect(userText).toContain('transient-onset-read');
+                const evidenceSection = JSON.parse(
+                    userText.split('relevant_evidence:\n')[1]?.split('\n\n')[0] ?? 'null'
+                ) as { receipts: { summary: { truncated: boolean; value: string } }[] };
+                const retained = evidenceSection.receipts[0]?.summary;
+                expect(
+                    retained?.truncated,
+                    JSON.stringify({
+                        contextCharacters: evidence.length,
+                        retainedCharacters: retained?.value.length,
+                        retainedTail: retained?.value.slice(-180),
+                        expectedTail: evidence.slice(-180),
+                    })
+                ).toBe(false);
+                expect(evidenceSection.receipts[0]?.summary.value).toBe(evidence);
+                expect(userText).toContain('thread_context:');
+                expect(
+                    estimateConservativePromptTokens(systemText) +
+                        estimateConservativePromptTokens(userText) +
+                        LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS +
+                        LOCAL_PLANNING_REPLY_RESERVE_TOKENS
+                ).toBeLessThanOrEqual(32_768);
+                expect(LOCAL_PLANNING_REPLY_RESERVE_TOKENS).toBe(2_048);
             });
 
             it('refuses a 64-track project with the typed code, before the engine loads or runs', async () => {

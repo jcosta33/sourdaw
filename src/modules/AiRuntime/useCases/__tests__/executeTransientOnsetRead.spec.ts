@@ -137,7 +137,7 @@ describe('one planning run transient onset read', () => {
             coverage: { offset: 0, endOffset: 64 },
         });
         expect(firstData.hits).toHaveLength(64);
-        expect(firstData.hits[0]).toEqual({ sampleOffset: 512, sourceSeconds: 512 / 48_000, confidence: 0.5 });
+        expect(firstData.hits[0]).toEqual({ sourceSeconds: 512 / 48_000, confidence: 0.5 });
         expect(firstData.sourceRevisionDigest).toMatch(/^[0-9a-f]{64}$/u);
         expect(JSON.stringify(first)).not.toContain(PROJECT_REVISION);
         expect(JSON.stringify(first)).not.toMatch(/"(channels|samples|pcm|path|url)"/iu);

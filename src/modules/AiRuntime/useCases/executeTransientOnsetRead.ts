@@ -189,7 +189,6 @@ export function executeTransientOnsetRead(input: {
         const { source } = entry;
         const offset = requestedPage?.offset ?? 0;
         const hits = source.hits.slice(offset, offset + PAGE_SIZE).map((hit) => ({
-            sampleOffset: hit.sampleOffset,
             sourceSeconds: hit.sampleOffset / source.identity.sampleRate,
             confidence: hit.confidence,
         }));
