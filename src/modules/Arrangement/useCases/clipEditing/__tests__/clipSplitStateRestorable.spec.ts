@@ -80,9 +80,9 @@ describe('clipSplitStateRestorable', () => {
                 state
             )
         ).toBe(false);
-        expect(clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement: expected }, state)).toBe(
-            true
-        );
+        expect(
+            clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement: expected }, state)
+        ).toBe(true);
     });
 
     it('accepts a different in-range insertion slot for a composed split', () => {
