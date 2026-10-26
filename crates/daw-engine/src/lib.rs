@@ -153,6 +153,8 @@ pub struct EngineHandle {
     /// One attempt per nonempty input-holder period, including a refused open.
     capture_period_requested: bool,
     capture_period_used: bool,
+    /// Revoked once by the control side; reopening uses a different slot.
+    capture_period_revoked: Arc<AtomicBool>,
     retired_capture_events: Vec<(Consumer<EngineEvent>, Arc<AtomicU8>)>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
@@ -310,6 +312,7 @@ impl EngineHandle {
             capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             capture_period_requested: false,
             capture_period_used: false,
+            capture_period_revoked: spawned.capture_period_revoked,
             retired_capture_events: Vec::new(),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
@@ -395,12 +398,14 @@ impl EngineHandle {
             ));
             self.input_latency_frames = Arc::clone(&latency);
             self.retrospective = control;
+            self.capture_period_revoked = Arc::new(AtomicBool::new(false));
             self.audio_thread
                 .prepare_capture(audio_thread::CapturePeriod {
                     events: events_tx,
                     latency,
                     refusal,
                     retrospective: writer,
+                    revoked: Arc::clone(&self.capture_period_revoked),
                 });
         }
         self.capture_period_used = false;
@@ -416,8 +421,8 @@ impl EngineHandle {
         self.audio_thread.request_capture_open();
     }
 
-    /// Stop retrospective retention and release its input holder. A take
-    /// keeps capture open independently until its own accepted release.
+    /// Stop retrospective retention and release its input holder. Accepted
+    /// recording consumers keep capture open until their own final release.
     pub fn disarm_retrospective_capture(&mut self) {
         self.retrospective.disarm();
         self.close_unused_capture();
@@ -430,6 +435,9 @@ impl EngineHandle {
         {
             return;
         }
+        // Revoke before a later registration can render, even while the
+        // owner is still opening or closing this period's device.
+        self.capture_period_revoked.store(true, Ordering::Release);
         self.capture_period_requested = false;
         // An in-flight old reader may still publish; detach its slot.
         self.input_latency_frames = audio_thread::new_input_latency_slot();
@@ -1548,6 +1556,7 @@ fn engine_handle_fixture(
         capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
         capture_period_requested: false,
         capture_period_used: false,
+        capture_period_revoked: Arc::new(AtomicBool::new(false)),
         retired_capture_events: Vec::new(),
         midi_rt_diagnostics,
         timeline_rt_diagnostics,
