@@ -4,6 +4,7 @@ import { readBeatAtSamples, transportStore } from '#/modules/Transport/stores';
 
 import { activeNotes } from '../../repositories/webMidi/state';
 import { type ActiveNoteData } from '../../models/WebMidiTypes';
+import { type MidiNote } from '../../models/MidiNote';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { appendRecordedMidiNote } from '../appendRecordedMidiNote';
 import { createMidiNote } from '../createMidiNote';
@@ -21,6 +22,64 @@ type SealHeldRecordedMidiNotesInput = {
     endSourceBeat?: number;
 };
 
+/** The owner admission is authoritative whether key-up or Stop closes the note. */
+export function createRecordedAdmittedMidiNote(
+    admitted: RecordingMidiAdmission,
+    endedAt: number,
+    endSourceBeat?: number
+): MidiNote {
+    const durationSeconds = Math.max(
+        0,
+        Math.min(admitted.releaseAudioTime ?? endedAt, endedAt) - admitted.onsetAudioTime
+    );
+    const tempo = transportStore.value?.tempo ?? 120;
+    const durationBeats =
+        admitted.releaseSourceBeat === undefined
+            ? endSourceBeat === undefined
+                ? (durationSeconds * tempo) / 60
+                : endSourceBeat - admitted.onsetSourceBeat
+            : admitted.releaseSourceBeat - admitted.onsetSourceBeat;
+    const note = createMidiNote(
+        admitted.note,
+        admitted.onsetSourceBeat,
+        Math.max(durationBeats, 0.0625),
+        admitted.velocity
+    );
+    if (!admitted.initialExpression && !admitted.expressionChanges?.length) {
+        return note;
+    }
+    const initial = admitted.initialExpression;
+    const held: ActiveNoteData = {
+        startTime: admitted.onsetAudioTime,
+        startBeat: admitted.onsetSourceBeat,
+        channel: admitted.channel,
+        note: admitted.note,
+        velocity: admitted.velocity,
+        trackId: admitted.trackId,
+        instrumentTrackId: admitted.trackId,
+        pressure: initial?.pressure,
+        slide: initial?.slide,
+        pitchBend: initial?.pitchBend,
+        pitchBendRangeSemitones: initial?.pitchBendRangeSemitones,
+    };
+    const sourceOffsets = new Map<number, number>();
+    for (const change of admitted.expressionChanges ?? []) {
+        const offsetSeconds = change.audioTime - admitted.onsetAudioTime;
+        sourceOffsets.set(offsetSeconds, change.sourceBeat - admitted.onsetSourceBeat);
+        recordHeldNoteExpression(held, {
+            dimension: change.dimension,
+            value: change.value,
+            eventTime: change.audioTime,
+            bendRangeSemitones: change.bendRangeSemitones,
+        });
+        held[change.dimension] = change.value;
+        if (change.dimension === 'pitchBend') {
+            held.pitchBendRangeSemitones = change.bendRangeSemitones;
+        }
+    }
+    return withRecordedNoteExpression(note, held, (seconds) => sourceOffsets.get(seconds) ?? (seconds * tempo) / 60);
+}
+
 /** Close registered held keys inside the recording's existing Stop commit. */
 export function sealHeldRecordedMidiNotes({
     clipId,
@@ -34,64 +93,7 @@ export function sealHeldRecordedMidiNotes({
         if (admitted.clipId !== clipId || admitted.trackId !== trackId || admitted.onsetAudioTime >= stoppedAt) {
             continue;
         }
-        const durationSeconds = Math.max(
-            0,
-            Math.min(admitted.releaseAudioTime ?? stoppedAt, stoppedAt) - admitted.onsetAudioTime
-        );
-        const tempo = transportStore.value?.tempo ?? 120;
-        const durationBeats =
-            admitted.releaseSourceBeat === undefined
-                ? endSourceBeat === undefined
-                    ? (durationSeconds * tempo) / 60
-                    : endSourceBeat - admitted.onsetSourceBeat
-                : admitted.releaseSourceBeat - admitted.onsetSourceBeat;
-        const note = createMidiNote(
-            admitted.note,
-            admitted.onsetSourceBeat,
-            Math.max(durationBeats, 0.0625),
-            admitted.velocity
-        );
-        if (!admitted.initialExpression && !admitted.expressionChanges?.length) {
-            appendRecordedMidiNote({ clipId, note });
-            continue;
-        }
-        const initial = admitted.initialExpression;
-        const held: ActiveNoteData = {
-            startTime: admitted.onsetAudioTime,
-            startBeat: admitted.onsetSourceBeat,
-            channel: admitted.channel,
-            note: admitted.note,
-            velocity: admitted.velocity,
-            trackId,
-            instrumentTrackId: trackId,
-            pressure: initial?.pressure,
-            slide: initial?.slide,
-            pitchBend: initial?.pitchBend,
-            pitchBendRangeSemitones: initial?.pitchBendRangeSemitones,
-        };
-        const sourceOffsets = new Map<number, number>();
-        for (const change of admitted.expressionChanges ?? []) {
-            const offsetSeconds = change.audioTime - admitted.onsetAudioTime;
-            sourceOffsets.set(offsetSeconds, change.sourceBeat - admitted.onsetSourceBeat);
-            recordHeldNoteExpression(held, {
-                dimension: change.dimension,
-                value: change.value,
-                eventTime: change.audioTime,
-                bendRangeSemitones: change.bendRangeSemitones,
-            });
-            held[change.dimension] = change.value;
-            if (change.dimension === 'pitchBend') {
-                held.pitchBendRangeSemitones = change.bendRangeSemitones;
-            }
-        }
-        appendRecordedMidiNote({
-            clipId,
-            note: withRecordedNoteExpression(
-                note,
-                held,
-                (seconds) => sourceOffsets.get(seconds) ?? (seconds * tempo) / 60
-            ),
-        });
+        appendRecordedMidiNote({ clipId, note: createRecordedAdmittedMidiNote(admitted, stoppedAt, endSourceBeat) });
     }
     for (const held of activeNotes.values()) {
         if (held.trackId !== trackId || held.recordingClipId !== clipId || held.startTime >= stoppedAt) {

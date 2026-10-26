@@ -14,6 +14,7 @@ import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActi
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
 import { releaseKeyInRemovedYeastRack } from './releaseKeyInRemovedYeastRack';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -21,6 +22,7 @@ import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInp
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
 import { resolveRecordingPlacement } from './resolveRecordingPlacement';
+import { createRecordedAdmittedMidiNote } from './sealHeldRecordedMidiNotes';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
@@ -379,6 +381,21 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
+        const admission = noteData.recordingAdmissionId
+            ? getRecordingMidiAdmission(noteData.recordingAdmissionId)
+            : undefined;
+        if (noteData.recordingAdmissionId) {
+            if (!admission || !isRecordingOnArmedTrack(deps, targetTrackId)) {
+                return;
+            }
+            deps.appendRecordedMidiNote({
+                clipId: admission.clipId,
+                note: createRecordedAdmittedMidiNote(admission, eventTime),
+            });
+            retireRecordingMidiAdmission(admission.id);
+            return;
+        }
+
         // The note belongs to the clip holding its admitted onset and is stored
         // at the beat its heard instant maps to, exactly as controller events
         // of the same take are.
@@ -397,12 +414,6 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             defaultTempo,
             flatTimeline,
         } = placement;
-        const admission = noteData.recordingAdmissionId
-            ? getRecordingMidiAdmission(noteData.recordingAdmissionId)
-            : undefined;
-        if (noteData.recordingAdmissionId && !admission) {
-            return;
-        }
 
         // The end is read at the heard seconds from the SAME rewound
         // origin the start was placed with — the take conversion's
@@ -417,9 +428,6 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 readBeatAtSamples({ samples: originSeconds + durationSeconds, sampleRate: 1 }) -
                 latencyAdjustedOnsetBeat;
         }
-        if (admission?.releaseSourceBeat !== undefined) {
-            durationBeats = admission.releaseSourceBeat - admission.onsetSourceBeat;
-        }
 
         // Expression offsets share the compensated origin, so a curve
         // point lands on the beat its own heard instant maps to.
@@ -433,22 +441,16 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         // Preserve the played velocity (was hardcoded 100, M-143).
         const midiNote = deps.createMidiNote(
             note,
-            admission?.onsetSourceBeat ?? compensatedStartBeat,
+            compensatedStartBeat,
             Math.max(durationBeats, 0.0625),
             noteData.velocity ?? DEFAULT_NOTE_VELOCITY
         );
 
         if (!getMpeEnabled()) {
             deps.appendRecordedMidiNote({ clipId, note: midiNote });
-            if (admission) {
-                retireRecordingMidiAdmission(admission.id);
-            }
             return;
         }
         const recordedNote = withRecordedNoteExpression(midiNote, noteData, secondsToBeats);
         deps.appendRecordedMidiNote({ clipId, note: recordedNote });
-        if (admission) {
-            retireRecordingMidiAdmission(admission.id);
-        }
     };
 });
