@@ -13,8 +13,15 @@ const BASE = 'b'.repeat(40);
 const ID = 1183242917;
 const SARIF_ID = '6c81cd8e-b078-4ac3-a3be-1dad7dbd0b53';
 const OTHER_SARIF_ID = '47177e22-5596-11eb-80a1-c1e54ef945c6';
+// #5308 introduced this unpinned writer; see .agents/skills/review-stances/test-validity.md for the paired-ZIP clock probe.
+const fixedZipFixtureMtime = new Date(Date.UTC(2026, 0, 1, 12));
+const zipDosBoundaryTimes = [1767268801999, 1767268802000];
 const zip = (body: unknown) =>
-    Buffer.from(zipSync({ 'evidence.json': new TextEncoder().encode(JSON.stringify(body)) }));
+    Buffer.from(
+        zipSync({ 'evidence.json': new TextEncoder().encode(JSON.stringify(body)) }, { mtime: fixedZipFixtureMtime })
+    );
+const wrongMemberZip = () =>
+    Buffer.from(zipSync({ 'nested/evidence.json': new TextEncoder().encode('{}') }, { mtime: fixedZipFixtureMtime }));
 const evidence = () => ({
     version: 1,
     repositoryId: ID,
@@ -455,6 +462,70 @@ describe('trusted nightly evidence consumer', () => {
         expect(f.calls.jobs).toBe(0);
     });
 
+    it('keeps a valid evidence fixture readable across a forced DOS timestamp boundary', async () => {
+        const clock = vi.spyOn(Date, 'now');
+        let f: ReturnType<typeof fixture>;
+        try {
+            clock
+                .mockImplementationOnce(() => zipDosBoundaryTimes[0])
+                .mockImplementationOnce(() => zipDosBoundaryTimes[1]);
+            f = fixture();
+        } finally {
+            clock.mockRestore();
+        }
+
+        await expect(validateNightlyEvidence(f.event, f.port)).resolves.toEqual({
+            kind: 'validated',
+            runId: 42,
+            attempt: 1,
+            failedLegs: ['End-to-end report'],
+            analysisId: 123,
+        });
+    });
+
+    it('keeps CRC rejection distinct from ZIP timestamp metadata across the forced boundary', async () => {
+        const clock = vi.spyOn(Date, 'now');
+        let f: ReturnType<typeof fixture>;
+        try {
+            clock
+                .mockImplementationOnce(() => zipDosBoundaryTimes[0])
+                .mockImplementationOnce(() => zipDosBoundaryTimes[1]);
+            f = fixture();
+        } finally {
+            clock.mockRestore();
+        }
+
+        const brokenCrc = Buffer.from(f.bytes);
+        const position = brokenCrc.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+        if (position < 0) {
+            throw new Error('Fixture is missing its ZIP central directory');
+        }
+        brokenCrc.writeUInt8(brokenCrc.readUInt8(position + 16) ^ 1, position + 16);
+        f.port.downloadArtifact = async () => brokenCrc;
+        f.artifact.size_in_bytes = brokenCrc.length;
+        f.artifact.digest = `sha256:${createHash('sha256').update(brokenCrc).digest('hex')}`;
+        await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow(/CRC|size/);
+    });
+
+    it('keeps wrong-member rejection distinct from ZIP timestamp metadata across the forced boundary', async () => {
+        const f = fixture();
+        let wrongMember: Buffer;
+        const clock = vi.spyOn(Date, 'now');
+        try {
+            clock
+                .mockImplementationOnce(() => zipDosBoundaryTimes[0])
+                .mockImplementationOnce(() => zipDosBoundaryTimes[1]);
+            wrongMember = wrongMemberZip();
+        } finally {
+            clock.mockRestore();
+        }
+
+        f.port.downloadArtifact = async () => wrongMember;
+        f.artifact.size_in_bytes = wrongMember.length;
+        f.artifact.digest = `sha256:${createHash('sha256').update(wrongMember).digest('hex')}`;
+        await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('Unexpected');
+    });
+
     it('rejects changed digest, size, member, CRC, and typed identity', async () => {
         const f = fixture();
         f.artifact.digest = `sha256:${'0'.repeat(64)}`;
@@ -463,7 +534,7 @@ describe('trusted nightly evidence consumer', () => {
         f.artifact.size_in_bytes++;
         await expect(validateNightlyEvidence(f.event, f.port)).rejects.toThrow('size');
         f.artifact.size_in_bytes--;
-        const wrongMember = Buffer.from(zipSync({ 'nested/evidence.json': new TextEncoder().encode('{}') }));
+        const wrongMember = wrongMemberZip();
         f.port.downloadArtifact = async () => wrongMember;
         f.artifact.size_in_bytes = wrongMember.length;
         f.artifact.digest = `sha256:${createHash('sha256').update(wrongMember).digest('hex')}`;
