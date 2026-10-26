@@ -16,6 +16,8 @@ Core audio domain primitives, numeric identifiers (TrackId, ClipId, PluginInstan
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-cargo test --package daw-core
+pnpm cargo:test --package daw-core <filter>
 ```

@@ -7,7 +7,7 @@ import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
-import { type ProposalGroundingBasis } from '../models/ProposalGroundingBasis';
+import { type ProposalGroundingBasis, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import { type AdoptedRecipe } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
@@ -130,6 +130,8 @@ type PendingActionApprovalSnapshot = {
      * form, and every object the chain protects. A terse refinement of the card inherits from it.
      */
     groundingBasis?: ProposalGroundingBasis;
+    /** Immutable admission facts, present even for a compiled card without a grounding basis. */
+    protectionFacts?: ProposalProtectionFacts;
 };
 
 type PendingActionBatchPosition = { index: number; total: number };
@@ -333,6 +335,7 @@ type ProposePendingActionConfirmationInput = {
     measuredPreview?: MeasuredPreview;
     batchPosition?: PendingActionBatchPosition;
     groundingBasis?: ProposalGroundingBasis;
+    protectionFacts?: ProposalProtectionFacts;
     risk?: PendingActionRisk;
     executionMode?: 'atomic';
     groupId?: string;
@@ -379,6 +382,7 @@ export function proposePendingActionConfirmation(
         measuredPreview: input.measuredPreview && structuredClone(input.measuredPreview),
         ...(input.batchPosition === undefined ? {} : { batchPosition: { ...input.batchPosition } }),
         ...(input.groundingBasis === undefined ? {} : { groundingBasis: structuredClone(input.groundingBasis) }),
+        ...(input.protectionFacts === undefined ? {} : { protectionFacts: structuredClone(input.protectionFacts) }),
     };
     const confirmation: PendingAppActionConfirmation = {
         kind: 'app_actions',

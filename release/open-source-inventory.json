@@ -167,7 +167,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:6b54ed079a44f89c35b4fd9dc4b68f2c0ba9300194e32f4b43510874760784a7:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:3b5b5ee39eb4dde600bc079b3f6791b36dc028a0ee7811610fa384d20ca635f9:release/dependency-license-proofs.json"
+                "sha256:58df78cda8089fbabdf68134d617083619990207e1a99ab3c46b7744aafa5122:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1208,8 +1208,8 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:0dee6dbc7998602dcdad2ea721575c2df3a9977ef34c535e5f6416546f99d03a:grand-boule-discovery-catalog",
                 "tracked-set-sha256:d90916200a6151f9245d134989a9920bf616a7309fe3a8154347fdd2c3dbe522:grand-boule-factory-admission",
-                "tracked-set-sha256:6169b6b82751be7dbeba32a7cd1ca5b54ad7abc0827b7bd6db50facf650c64e5:grand-boule-live-runtime",
-                "tracked-set-sha256:b354a4b2ea565ebf42f7fcb21597d6a55fd196a8638dfad42666e6a3b44cb33b:grand-boule-project-state",
+                "tracked-set-sha256:0fbb94853f35ddd44fad546d803757e26c06ab7761ec1d256c9007dd3469ad43:grand-boule-live-runtime",
+                "tracked-set-sha256:0349a5e3611a7cb6f2fe57d6998a2f0646082e14a500be817bf039b9287e72d4:grand-boule-project-state",
                 "tracked-set-sha256:08e286707f9218a437a98b4e2cc06d09af5c07e3a25e564b06df826418a1d5c6:grand-boule-offline-composition",
                 "tracked-set-sha256:4cf6df4ec83e92ee30dc93eb4f0ed990f4656a3813a812e3226d3a67a7eedbcb:grand-boule-release-proof"
             ],
@@ -1342,13 +1342,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:ff907bfb93d42299ba99a5d3977f5c7538d478c622f5b5083dfac17dea13aaca",
+                "daw-dsp sha256:6b7c34abee70bc1ddf14f689f14acd9c0069eb7c6eaf6478b0e6434710ea83e1",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:1c3a4e4ed1ac200437a1f99ac185f1ccaf465c903afc864fa204968ff6e866b2",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:b552491574abf7cbf03162d47fd02a443d0cc3b01ca756fa63e57e3393f88238:public/wasm/manifest.json"
+                "sha256:9316fe75585ebecd9ac6639ea5ada05b5732732c491e607a335d74f9e56aab74:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1740,7 +1740,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "89b699a6f606b94e0953addbc3740312c2acf21f20d76654481a446584142078"
+            "sha256": "a480a2585af916e59731efea573fd3bbafd07ac2f2f2515641bf9fee55f5921e"
         },
         {
             "path": "server/package.json",
@@ -1768,7 +1768,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "b552491574abf7cbf03162d47fd02a443d0cc3b01ca756fa63e57e3393f88238"
+            "sha256": "9316fe75585ebecd9ac6639ea5ada05b5732732c491e607a335d74f9e56aab74"
         }
     ],
     "externalReferences": [
@@ -2240,6 +2240,22 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/retargetCapabilityPlan.ts",
+            "value": "https://api.github.com/repos/jcosta33/sourdaw/branches/main/protection"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/retargetCapabilitySnapshot.ts",
+            "value": "https://api.github.com/${slot}${slot}per_page=100&page=${slot}",
+            "templateSha256": "3922199f6821c354d4734cda7d408d616ef2f881c16d52c41a0de012cc8bbe9c"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/retirementRecord.ts",
+            "value": "https://github.com/jcosta33/sourdaw/"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/run-gitleaks-history-scan.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
@@ -2249,6 +2265,12 @@
             "file": "scripts/generateEgressVendorShapes.ts",
             "value": "https://raw.githubusercontent.com/gitleaks/gitleaks/${slot}/config/gitleaks.toml",
             "templateSha256": "9c68d728d545ff457028af485cdfaef8276f3dc6ca30d439f5bace4de3924c63"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/supersedePullRequestGh.ts",
+            "value": "https://api.github.com/${slot}",
+            "templateSha256": "725407b8838cd002370ac4e364fd714c7be6ff0c379600b259f1b8e43cc3505b"
         },
         {
             "surface": "project-source",

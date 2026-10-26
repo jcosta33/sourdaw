@@ -8,6 +8,9 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type ProposalGroundingTarget, type ProposalGroundingValue } from '../../models/ProposalGroundingBasis';
+import { proposalControlProtection } from '../../services/proposalControlProtection';
+
+import { findTargetOwnerTrackIds } from './findTargetOwnerTrackIds';
 
 /** The arguments the action registry declares as this type's targets, in registry order. */
 function getTargetArguments(actionType: string): string[] {
@@ -169,9 +172,10 @@ function getIdentity(actionType: string, argumentsRecord: Readonly<Record<string
 /** Each id a command's targets name, with the capability of the target that names it. */
 function getTargetObjects(
     actionType: string,
-    argumentsRecord: Readonly<Record<string, unknown>>
+    argumentsRecord: Readonly<Record<string, unknown>>,
+    targetRules = getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []
 ): Array<{ id: string; capability: TargetRule['capability'] }> {
-    return (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).flatMap((rule) => {
+    return targetRules.flatMap((rule) => {
         const value = argumentsRecord[rule.argument];
         const members = Array.isArray(value) ? value : [value];
         return members
@@ -271,13 +275,113 @@ function getCreatedObject(
     return { idFields, names };
 }
 
+/** Every object a command touches and the owning tracks of its targets, using the registry's capabilities. */
+function getDeclaredTouchedObjectIds(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+): string[] {
+    const owners = getTargetObjects(actionType, payload).flatMap((target) =>
+        findTargetOwnerTrackIds(target.capability, target.id, context)
+    );
+    return [...new Set([...getObjectIds(actionType, payload), ...owners])];
+}
+
+/**
+ * A source-owned track field or send belongs to its declared source, even though its mutation
+ * identity also names a referenced destination. Other operations retain every touched owner: a
+ * child edit and a placement can change owners beyond a single source. Whole-object protection
+ * always uses touchedObjectIds, including routing destinations.
+ */
+function getDeclaredControlOwnerIds(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext
+): string[] {
+    const rules = getExecutableAppActionGroundingRules(actionType);
+    const mutations = rules?.mutationIdentityRules.filter((rule) => rule.resourceReferenceOnly !== true) ?? [];
+    const references = new Set(
+        (rules?.mutationIdentityRules ?? [])
+            .filter((rule) => rule.resourceReferenceOnly === true)
+            .flatMap((rule) => rule.arguments.map((argument) => argument.argument))
+    );
+    const destinations = rules?.targetRules.filter((rule) => rule.promptRole === 'destination') ?? [];
+    const ownsTrackField =
+        mutations.some((rule) => rule.resourceFamily === 'track') &&
+        destinations.every((rule) => references.has(rule.argument));
+    const ownsSend =
+        mutations.some((rule) => rule.resourceFamily === 'send') &&
+        destinations.every((rule) => rule.capability === 'bus');
+    const sources = rules?.targetRules.filter((rule) => rule.promptRole === 'source') ?? [];
+    const ownsAutomatedSend =
+        getExecutableAppActionEffect(actionType)?.dimensions.includes('automation') === true &&
+        destinations.length > 0 &&
+        destinations.every((rule) => rule.capability === 'bus') &&
+        mutations.some((rule) =>
+            [...sources, ...destinations].every((target) =>
+                rule.arguments.some((argument) => argument.argument === target.argument)
+            )
+        );
+    if ((!ownsTrackField && !ownsSend && !ownsAutomatedSend) || sources.length === 0) {
+        return getDeclaredTouchedObjectIds(actionType, payload, context);
+    }
+    const targets = getTargetObjects(actionType, payload, sources);
+    return [
+        ...new Set(
+            targets.flatMap((target) => [target.id, ...findTargetOwnerTrackIds(target.capability, target.id, context)])
+        ),
+    ];
+}
+
+function getControlEffects(actionType: string, payload: Readonly<Record<string, unknown>>, context: ProjectContext) {
+    const laneRules = (getExecutableAppActionGroundingRules(actionType)?.targetRules ?? []).filter(
+        (rule) => rule.capability === 'automation-lane'
+    );
+    return proposalControlProtection.readEffects({
+        actionType,
+        payload,
+        context,
+        declaredOwners: getDeclaredControlOwnerIds(actionType, payload, context),
+        automation: getExecutableAppActionEffect(actionType)?.dimensions.includes('automation') === true,
+        laneTargetIds: getTargetObjects(actionType, payload, laneRules).map((target) => target.id),
+    });
+}
+
+function getControlOwnerIds(actionType: string, payload: Readonly<Record<string, unknown>>, context: ProjectContext) {
+    return getControlEffects(actionType, payload, context).map((effect) => effect.trackId);
+}
+
+function getControlOperations(
+    actionType: string,
+    payload: Readonly<Record<string, unknown>>,
+    context: ProjectContext,
+    trackId: string
+): readonly string[] {
+    return (
+        getControlEffects(actionType, payload, context).find((effect) => effect.trackId === trackId)?.operations ?? []
+    );
+}
+
+/** Whole-object protection retains broad target coverage and includes actual linked-control owners. */
+function getTouchedObjectIds(actionType: string, payload: Readonly<Record<string, unknown>>, context: ProjectContext) {
+    return [
+        ...new Set([
+            ...getDeclaredTouchedObjectIds(actionType, payload, context),
+            ...getControlOwnerIds(actionType, payload, context),
+        ]),
+    ];
+}
+
 /** How a proposed command's targets and value read, from the action registry's declarations alone. */
 export const proposalCommandShape = {
+    controlOwnerIds: getControlOwnerIds,
+    controlOperations: getControlOperations,
     createdObject: getCreatedObject,
     identity: getIdentity,
     objectIds: getObjectIds,
     targetObjects: getTargetObjects,
     targets: getTargets,
+    touchedObjectIds: getTouchedObjectIds,
     targetKey: getTargetKey,
     value: getValue,
 } as const;

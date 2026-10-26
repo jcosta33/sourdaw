@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type ProposalProtectionFacts } from '../../models/ProposalGroundingBasis';
 import {
     commitPendingActionResourceLease,
     clearPendingActionConfirmations,
@@ -15,6 +16,37 @@ import {
 describe('pendingActionConfirmationStore', () => {
     beforeEach(() => {
         clearPendingActionConfirmations();
+    });
+
+    it('isolates protection facts without an ordinary grounding basis at proposal and read boundaries', () => {
+        const protectionFacts: ProposalProtectionFacts = {
+            protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
+            protectedControls: [
+                { trackId: 'track-vocals', operations: ['setTrackGain'] },
+                { trackId: 'track-bass', operations: [], exceptOperations: ['setTrackGain'] },
+            ],
+        };
+        const expected = structuredClone(protectionFacts);
+        const proposed = proposePendingActionConfirmation({
+            id: 'confirmation-protection-facts',
+            prompt: 'turn Snare down 3 dB; leave the selected fader alone',
+            assistantMessageId: 'message-protection-facts',
+            actions: [{ type: 'setTrackGain', payload: { trackId: 'track-snare', deltaDb: -3, expectedGain: 1 } }],
+            actionLabels: ['Turn Snare down'],
+            protectionFacts,
+            projectRevision: 'revision-protection-facts',
+        });
+        expect(proposed?.approvalSnapshot.groundingBasis).toBeUndefined();
+        expect(proposed?.approvalSnapshot.protectionFacts).toEqual(expected);
+        protectionFacts.protectedControls[0]?.operations.push('setTrackPan');
+        protectionFacts.protectedControls[1]?.exceptOperations?.push('setTrackPan');
+        protectionFacts.protectedUnchanged[0]!.name = 'Changed input';
+        proposed?.approvalSnapshot.protectionFacts?.protectedControls[0]?.operations.push('muteTrack');
+        proposed?.approvalSnapshot.protectionFacts?.protectedUnchanged.splice(0);
+
+        expect(getPendingActionConfirmation('confirmation-protection-facts')?.approvalSnapshot.protectionFacts).toEqual(
+            expected
+        );
     });
 
     it('preserves one materialized bus identity across a pending compound confirmation', () => {

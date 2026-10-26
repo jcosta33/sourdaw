@@ -675,5 +675,27 @@ describe('projectClipControllerEvents', () => {
             expect(placed(before)).toEqual([{ beat: 4.5, value: 127 }]);
             expect(after).toEqual([]);
         });
+
+        it('lifts the pedal on the clip end when the closing pass ends on its wrapped head (#5528)', () => {
+            // The lift at content 2 is the region entry: the closing pass
+            // reaches it only through its wrapped head window, whose end is
+            // the clip end, so the lift is that window's closing line.
+            // Dropping it leaves the press at content 1 — replaying at 9 on
+            // the last pass — holding the pedal down past the clip end.
+            const events = projectClipControllerEvents({
+                controlChanges: [controller('press', 1, 127), controller('lift', 2, 0)],
+                clip,
+                fromBeat: 0,
+                toBeat: 12,
+            });
+
+            expect(events.map(({ beat, value, closesClip }) => [beat, value, closesClip])).toEqual([
+                [2, 0, false],
+                [5, 127, false],
+                [6, 0, false],
+                [9, 127, false],
+                [10, 0, true],
+            ]);
+        });
     });
 });

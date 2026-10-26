@@ -14,10 +14,10 @@
  * retries. A failure mid-pass stops at once and leaves earlier resolutions standing, so a re-run
  * ignores the resolved threads and completes the remainder.
  *
- * The confirmation reply carries the confirmed record's canonical form on the contract's own marker
- * line, so a later reader reconstructs which record was accepted from the same bytes
- * `parseReviewRepairReply` already reads. Both mutations carry an id derived from the pr, thread and
- * head, never from a clock or a random source, so a replay repeats the identical request.
+ * The confirmation reply carries a canonical digest of the author record, so a later reader
+ * reconstructs which record was accepted without copying its evidence. Both mutations carry an id
+ * derived from the pr, thread and head, never from a clock or a random source, so a replay repeats
+ * the identical request.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -37,6 +37,7 @@ import {
     type GitHubJsonClient,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import { withPullRequestMutationLock, type PullRequestMutationSerialization } from './pullRequestMutationLock.ts';
 import {
     REVIEW_THREAD_COMMENT_FIELDS,
     confirmClientMutationId,
@@ -77,6 +78,7 @@ export type ConfirmReviewRepairsPort = {
 
 export type ConfirmReviewRepairsCoordinatorDependencies = {
     primaryRoot: () => string;
+    serialize: PullRequestMutationSerialization;
     authenticateReviewer: (primaryRoot: string) => Promise<ConfirmReviewRepairsAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
     port: (session: GhSession, primaryRoot: string) => ConfirmReviewRepairsPort;
@@ -89,8 +91,7 @@ type ConfirmRepair = { thread: string; record: ReviewRepairRecord; replyId: numb
 
 /**
  * `addPullRequestReviewThreadReply` is the mutation that names a thread; `resolveReviewThread` is the
- * one that settles it. A review command cannot hand a rendered body to `review:resolve`, whose only
- * body is the fixed word `Done`.
+ * one that settles it. The reviewer owns both writes after validating the author record.
  */
 export function confirmReplyClientMutationId(pr: number, thread: string, head: string): string {
     return `${confirmClientMutationId(pr, thread, head)}:reply`;
@@ -639,6 +640,7 @@ export async function authenticateConfirmReviewer(
 export function defaultConfirmReviewRepairsCoordinatorDependencies(): ConfirmReviewRepairsCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
+        serialize: withPullRequestMutationLock,
         authenticateReviewer: authenticateConfirmReviewer,
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
@@ -656,15 +658,44 @@ export async function coordinateConfirmReviewRepairs(
     dependencies: ConfirmReviewRepairsCoordinatorDependencies = defaultConfirmReviewRepairsCoordinatorDependencies()
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    const auth = await dependencies.authenticateReviewer(primaryRoot);
+    let attemptedOwner: string | undefined;
     try {
-        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+        await dependencies.serialize(primaryRoot, number, async (boundary) => {
+            const auth = await dependencies.authenticateReviewer(primaryRoot);
+            try {
+                if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+                    fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+                }
+                assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+                const port = dependencies.port(auth.session, primaryRoot);
+                const guardedPort: ConfirmReviewRepairsPort = {
+                    ...port,
+                    postConfirmation: (...args) => {
+                        boundary.markRemoteMutationAttempt();
+                        attemptedOwner = boundary.ownerOid;
+                        port.postConfirmation(...args);
+                    },
+                    resolve: (...args) => {
+                        boundary.markRemoteMutationAttempt();
+                        attemptedOwner = boundary.ownerOid;
+                        port.resolve(...args);
+                    },
+                };
+                dependencies.confirm(number, head, guardedPort);
+            } finally {
+                auth.session.dispose();
+            }
+        });
+    } catch (error) {
+        if (attemptedOwner !== undefined) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(
+                `${message}; PR #${number} confirm preserved lock owner ${attemptedOwner}: ` +
+                    `pnpm deliver --recover-lock ${number} --owner ${attemptedOwner}`,
+                { cause: error }
+            );
         }
-        assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-        dependencies.confirm(number, head, dependencies.port(auth.session, primaryRoot));
-    } finally {
-        auth.session.dispose();
+        throw error;
     }
 }
 
