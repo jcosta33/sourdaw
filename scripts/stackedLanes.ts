@@ -14,6 +14,50 @@ export type LaneStack = {
     parentPullRequest?: number;
 };
 
+export type HistoricalAdmissionReceipt = {
+    version: 1;
+    childPullRequest: number;
+    expectedChildHead: string;
+    descriptor: LaneStack;
+};
+
+export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmissionReceipt {
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+        fail('invalid historical admission receipt');
+    const row = value as Record<string, unknown>;
+    if (
+        Object.keys(row).sort().join(',') !== 'childPullRequest,descriptor,expectedChildHead,version' ||
+        row.version !== 1 ||
+        typeof row.childPullRequest !== 'number' ||
+        !Number.isSafeInteger(row.childPullRequest) ||
+        row.childPullRequest <= 0 ||
+        typeof row.expectedChildHead !== 'string' ||
+        !/^[0-9a-f]{40}$/.test(row.expectedChildHead)
+    )
+        fail('invalid historical admission receipt');
+    const descriptor = parseLaneStack(row.descriptor);
+    if (descriptor.parentPullRequest === undefined || descriptor.parentPullRequest === row.childPullRequest) {
+        fail('historical admission receipt requires a distinct pinned parent');
+    }
+    return {
+        version: 1,
+        childPullRequest: row.childPullRequest,
+        expectedChildHead: row.expectedChildHead,
+        descriptor,
+    };
+}
+
+export function readHistoricalAdmissionReceipt(
+    primaryRoot: string,
+    branch: string
+): HistoricalAdmissionReceipt | undefined {
+    const path = `${laneStackPath(primaryRoot, branch)}.admission.json`;
+    if (!existsSync(path)) return undefined;
+    const raw = readFileSync(path, 'utf8');
+    if (raw.length > 65536) fail('invalid historical admission receipt');
+    return parseHistoricalAdmissionReceipt(JSON.parse(raw));
+}
+
 export type StackParent = {
     number: number;
     branch: string;
@@ -64,12 +108,12 @@ export function parseLaneStack(value: unknown): LaneStack {
     return descriptor;
 }
 
-function descriptorPath(primaryRoot: string, branch: string): string {
+export function laneStackPath(primaryRoot: string, branch: string): string {
     return join(primaryRoot, '.agents', 'lane-stacks', `${createHash('sha256').update(branch).digest('hex')}.json`);
 }
 
 export function readLaneStack(primaryRoot: string, branch: string): LaneStack | undefined {
-    const path = descriptorPath(primaryRoot, branch);
+    const path = laneStackPath(primaryRoot, branch);
     if (!existsSync(path)) {
         return undefined;
     }
@@ -91,7 +135,7 @@ export function writeLaneStack(primaryRoot: string, descriptor: LaneStack): void
     ) {
         fail('refusing to replace recorded stack lineage or parent pull request');
     }
-    const path = descriptorPath(primaryRoot, validated.childBranch);
+    const path = laneStackPath(primaryRoot, validated.childBranch);
     mkdirSync(join(path, '..'), { recursive: true });
     const temporary = `${path}.${randomUUID()}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(validated, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
@@ -104,6 +148,18 @@ export function readRegisteredLaneStack(
     forkMarker: string
 ): LaneStack | undefined {
     const descriptor = readLaneStack(primaryRoot, branch);
+    const receipt = readHistoricalAdmissionReceipt(primaryRoot, branch);
+    if (
+        receipt !== undefined &&
+        (descriptor === undefined ||
+            receipt.descriptor.childBranch !== branch ||
+            receipt.descriptor.forkHead !== forkMarker ||
+            JSON.stringify({ ...receipt.descriptor, parentHead: descriptor.parentHead }) !== JSON.stringify(descriptor))
+    ) {
+        fail(
+            'historical admission is incomplete or conflicts with registered lineage; resume the exact native admission'
+        );
+    }
     if (forkMarker !== '' && descriptor === undefined) {
         fail('stack descriptor missing; restore the recorded descriptor before publication');
     }
