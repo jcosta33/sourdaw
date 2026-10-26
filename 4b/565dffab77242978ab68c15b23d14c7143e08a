@@ -1,0 +1,43 @@
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_895c0db5840a63 106-113,138-145,151-159
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_593b863fe98bfb 51-55,384-386,468-474,578-582,667-671,742-746
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_b4982eec4c756c 68-75,157-164,170-178
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_29d8df116c5b92::t_43c38001682d74 43-49,94-97,130-138,190-191
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_29d8df116c5b92::t_7994a2d9c975d2 73-79,130-133,165-173,226-227
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_29d8df116c5b92::t_4217e846047523 50-56,103-106,140-148,200-201
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_29d8df116c5b92::t_a5771d577f35c9 52-58,109-112,167-175,234-235
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_29d8df116c5b92::t_52e6fba271d99b 42-48,93-96,129-137,189-190
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_29d8df116c5b92::t_ac2dea5583d282 53-59,106-109,151-159,207-208
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_29d8df116c5b92::t_f808887e8e345a 161-167,214-217,246-254,299-300
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_29d8df116c5b92::t_cc63041801fca1 66-72,109-112,140-148,191-192
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_29d8df116c5b92::t_fabefc564e7337 43-49,94-97,130-138,190-191
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_29d8df116c5b92::t_a234608cd8ad95 60-63,75-77,91-105,130-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b565dffab77242978ab68c15b23d14c7143e08a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
