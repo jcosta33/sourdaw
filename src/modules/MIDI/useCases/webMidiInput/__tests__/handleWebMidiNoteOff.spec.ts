@@ -24,6 +24,11 @@ const schedule_device_key_on = vi.hoisted(() => vi.fn());
 const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingMidiNoteOff: () => undefined,
+    admitRecordingMidiNoteOn: () => undefined,
+    admitRecordingMidiExpression: () => undefined,
+    findOpenRecordingMidiAdmission: () => undefined,
+    findOpenRecordingMidiMemberAdmission: () => undefined,
     getRecordingMidiAdmission: () => undefined,
     retireRecordingMidiAdmission: () => undefined,
     takeOwnsRecordingRoot: () => true,
