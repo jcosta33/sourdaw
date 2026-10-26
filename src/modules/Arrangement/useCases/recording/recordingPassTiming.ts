@@ -127,7 +127,7 @@ function beginNextPass(timing: RecordingPassTiming, contextSeconds: number, beat
 }
 
 function recordingPassDepthSeconds(take: Take, sourceContextOriginSeconds: number, mediaOriginSeconds: number): number {
-    const start = recordingPassTimings.get(take.clipId)?.starts.get(take.id);
+    const start = currentRecordingPassTiming(take.clipId)?.starts.get(take.id);
     if (!start) {
         throw new Error('Recording pass has no captured source timing');
     }
@@ -142,7 +142,7 @@ function recordingPassSourceEndSeconds(
     sourceContextOriginSeconds: number,
     mediaOriginSeconds: number
 ): number {
-    const timing = recordingPassTimings.get(take.clipId);
+    const timing = currentRecordingPassTiming(take.clipId);
     const start = timing?.starts.get(take.id);
     if (!start) {
         throw new Error('Recording pass has no captured source ending');
@@ -262,7 +262,7 @@ function finishRecordingPass(clipId: string, receipt: RecordingEnd, intendedEndB
 
 /** Excess producer drain can never extend the frozen intended ending. */
 function recordingPassCaptureEnd(clipId: string, availableEndContextSeconds: number) {
-    const ending = recordingPassTimings.get(clipId)?.ending;
+    const ending = currentRecordingPassTiming(clipId)?.ending;
     if (!ending) {
         return undefined;
     }
@@ -274,7 +274,7 @@ function recordingPassCaptureEnd(clipId: string, availableEndContextSeconds: num
 
 /** Close the provisional final lap only after its preceding seam sounded. */
 function finalRecordingPass(clipId: string, availableEndContextSeconds: number) {
-    const timing = recordingPassTimings.get(clipId);
+    const timing = currentRecordingPassTiming(clipId);
     if (
         !timing?.ending ||
         timing.ending.takeId !== undefined ||
@@ -311,6 +311,11 @@ export const recordingPassTiming = {
     depthSeconds: recordingPassDepthSeconds,
     sourceEndSeconds: recordingPassSourceEndSeconds,
     retire: retireRecordingPassTiming,
+    retireIfOwner: (clipId: string, owner: RecordingPassTiming | undefined): void => {
+        if (owner && recordingPassTimings.get(clipId) === owner) {
+            recordingPassTimings.delete(clipId);
+        }
+    },
     finish: finishRecordingPass,
     captureEnd: recordingPassCaptureEnd,
     finalPass: finalRecordingPass,

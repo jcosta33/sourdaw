@@ -146,6 +146,7 @@ export async function commitRecording(
     // Placement changes projected take rows before dispatch. Check their owner
     // first, then repeat inside the dispatch after its snapshot-transaction wait.
     requireRecordingRoot(options);
+    const passOwner = recordingPassTiming.ownedTakes(clip.id);
     const dispatchOptions = options && {
         shouldExecute: () => {
             requireRecordingRoot(options);
@@ -154,7 +155,7 @@ export async function commitRecording(
     };
     if (capture === undefined) {
         await executeAppAction({ type: 'commitRecording', payload: { clip } }, dispatchOptions);
-        recordingPassTiming.retire(clip.id);
+        recordingPassTiming.retireIfOwner(clip.id, passOwner);
         return;
     }
     stageFinalCapturedPass(clip, capture);
@@ -170,5 +171,5 @@ export async function commitRecording(
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
     await executeAppAction({ type: 'commitRecording', payload: { clip: coverRecordedPasses(placed, capture) } }, dispatchOptions);
-    recordingPassTiming.retire(clip.id);
+    recordingPassTiming.retireIfOwner(clip.id, passOwner);
 }
