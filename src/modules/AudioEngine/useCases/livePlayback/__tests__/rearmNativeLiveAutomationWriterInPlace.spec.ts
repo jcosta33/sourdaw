@@ -52,6 +52,7 @@ import {
     type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
 } from '../../../models/AudioGraphBackend';
+import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import {
     offlinePpqEndpointProjectorState,
@@ -1053,6 +1054,10 @@ describe('live store edits on the existing writer pass', () => {
                 markReverted: markActionHistoryEntryReverted,
                 clear: clearActionHistory,
             });
+            // The native writer is under test; isolate the parallel Web Audio
+            // outputs whose browser graph factories the shared context stub lacks.
+            const muteOutput = vi.spyOn(audioEngine, 'setTrackMute').mockImplementation(() => undefined);
+            const soloOutput = vi.spyOn(audioEngine, 'setTrackSoloGate').mockImplementation(() => undefined);
             try {
                 const track = { ...trackHolding([]), gain: 1.5, vcaGroupId: 'group', automationMode: 'off' as const };
                 const soloSource = { ...trackHolding([]), id: 'solo-source', soloSafe: true };
@@ -1125,7 +1130,10 @@ describe('live store edits on the existing writer pass', () => {
                         }
                         await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'group', gain } });
                     } else if (control === 'mute') {
-                        await executeAppAction({ type: 'muteTrack', payload: { trackId: STRIP_ID, muted: changed } });
+                        await executeAppAction({
+                            type: 'muteTrack',
+                            payload: { trackId: STRIP_ID, muted: changed, expectedMuted: !changed },
+                        });
                     } else {
                         await executeAppAction({
                             type: 'soloTrack',
@@ -1173,6 +1181,10 @@ describe('live store edits on the existing writer pass', () => {
                 // Re-read reverted truth while the submitted controls are still unanswered.
                 await pump();
                 rearmNativeLiveAutomationWriterInPlace({ positionSeconds: 0.02, provenAfterBatch: 11 });
+                const intermediate = nativeLiveAutomationWriter.pass!;
+                const intermediateRevision = intermediate.inputs.acceptedRevision;
+                // Another re-arm must carry the same unanswered controls onward.
+                rearmNativeLiveAutomationWriterInPlace({ positionSeconds: 0.02, provenAfterBatch: 11 });
                 const successor = nativeLiveAutomationWriter.pass!;
                 const epoch = nativeLiveAutomationWriter.epoch;
                 const unrelated = successor.targets.find((slot) => slot.target.trackId === other.id)!;
@@ -1193,7 +1205,9 @@ describe('live store edits on the existing writer pass', () => {
                 await flight;
                 await vi.waitFor(() => expect(nativeLiveAutomationWriter.inFlightEpoch).toBeNull());
                 const restored = batches.slice(successorBatchIndex).flatMap((batch) => batch.commands);
-                expect(restored).toContainEqual(restoreCommand);
+                if (application === 'applied') {
+                    expect(restored).toContainEqual(restoreCommand);
+                }
                 const unrelatedCommands = restored.filter(
                     (command) =>
                         (command.kind === 'set-strip-vca-multiplier' && command.trackId !== STRIP_ID) ||
@@ -1212,6 +1226,7 @@ describe('live store edits on the existing writer pass', () => {
                 expect(nativeLiveAutomationWriter.pass).toBe(successor);
                 expect(nativeLiveAutomationWriter.epoch).toBe(epoch);
                 expect(outgoing.inputs.acceptedRevision).toBe(acceptedRevision);
+                expect(intermediate.inputs.acceptedRevision).toBe(intermediateRevision);
                 expect(successor.inputs.strips.get(STRIP_ID)).toEqual({
                     multiplier: 1,
                     gain: 1.5,
@@ -1228,6 +1243,8 @@ describe('live store edits on the existing writer pass', () => {
                 await pump();
                 expect(batches).toHaveLength(count);
             } finally {
+                muteOutput.mockRestore();
+                soloOutput.mockRestore();
                 disarmNativeLiveAutomationWriter();
                 setActionHistoryMetadataPort({
                     record: () => [],

@@ -54,6 +54,7 @@ import {
 import { automationWriteCommand } from '../offlineRender/automationWriteCommand';
 
 import { carryQueuedStamps } from './carryQueuedStamps';
+import { changedStripControls } from './changedStripControls';
 import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
 import {
     AUTOMATION_QUEUE_CAPACITY,
@@ -643,6 +644,7 @@ type Refresh = Readonly<{
     projection: Projection | null;
     holds: readonly AudioGraphParameterTarget[];
     controls: readonly AudioGraphCommand[];
+    inheritedStripControls: NonNullable<LiveAutomationWriterPass['inputs']['inheritedStripControls']>;
 }>;
 
 function targetKey(target: AudioGraphParameterTarget): string {
@@ -690,40 +692,6 @@ function changedCurveTargets(
     );
 }
 
-function changedStripControls(
-    pass: LiveAutomationWriterPass,
-    projection: Projection,
-    positionSeconds: number
-): Readonly<{ controls: AudioGraphCommand[]; faders: Set<string> }> {
-    const controls: AudioGraphCommand[] = [];
-    const faders = new Set<string>();
-    for (const [trackId, next] of projection.strips) {
-        const old = pass.inputs.strips.get(trackId);
-        if (!old) {
-            continue;
-        }
-        if (old.multiplier !== next.multiplier) {
-            controls.push({ kind: 'set-strip-vca-multiplier', trackId, multiplier: next.multiplier });
-            faders.add(trackId);
-        }
-        if (old.gain !== next.gain) {
-            faders.add(trackId);
-        }
-        for (const kind of ['track-solo-gate', 'track-mute-gate'] as const) {
-            const wasClosed = kind === 'track-solo-gate' ? old.soloGated : old.muted;
-            const closed = kind === 'track-solo-gate' ? next.soloGated : next.muted;
-            if (wasClosed !== closed) {
-                controls.push({
-                    kind: 'write-parameter',
-                    target: { kind, trackId },
-                    write: { shape: 'step', time: positionSeconds, value: closed ? 0 : 1 },
-                });
-            }
-        }
-    }
-    return { controls, faders };
-}
-
 function refreshTargets(
     before: readonly LiveAutomationWriterTarget[],
     fresh: readonly LiveAutomationWriterTarget[],
@@ -758,7 +726,7 @@ function prepareRefresh(pass: LiveAutomationWriterPass, positionSeconds: number)
     observeProjection(pass);
     const projection = pass.inputs.pending;
     if (!projection) {
-        return { working: pass, projection: null, holds: [], controls: [] };
+        return { working: pass, projection: null, holds: [], controls: [], inheritedStripControls: [] };
     }
     const changed = changedCurveTargets(pass.inputs.reference, projection.reference);
     for (const [key, target] of changedCurveTargets(pass.loopTargets ?? [], projection.loop ?? [])) {
@@ -767,7 +735,12 @@ function prepareRefresh(pass: LiveAutomationWriterPass, positionSeconds: number)
     for (const target of pass.inputs.inheritedHolds) {
         changed.set(targetKey(target), target);
     }
-    const { controls, faders } = changedStripControls(pass, projection, positionSeconds);
+    const { controls, faders, submitted } = changedStripControls({
+        before: pass.inputs.strips,
+        after: projection.strips,
+        inherited: pass.inputs.inheritedStripControls ?? [],
+        positionSeconds,
+    });
     for (const trackId of faders) {
         const target = { kind: 'track-fader', trackId } as const;
         changed.set(targetKey(target), target);
@@ -797,6 +770,7 @@ function prepareRefresh(pass: LiveAutomationWriterPass, positionSeconds: number)
     return {
         projection,
         controls,
+        inheritedStripControls: submitted,
         holds: [...changed.values()],
         working: {
             ...pass,
@@ -817,6 +791,7 @@ function commitProjection(pass: LiveAutomationWriterPass, refresh: Refresh): voi
     pass.inputs.strips = projection.strips;
     pass.inputs.acceptedRevision = projection.revision;
     pass.inputs.inheritedHolds = [];
+    pass.inputs.inheritedStripControls = [];
     if (pass.inputs.pending?.revision === projection.revision) {
         pass.inputs.pending = null;
     }
@@ -879,6 +854,9 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
             // curve may still land, even if project truth has already reverted.
             // Keep its cancellation duties until the accepted projection commits.
             pass.inputs.inheritedHolds = refresh.holds;
+            // Controls own no curve slot. Carry their identities separately so
+            // a successor restores current truth even after an edit reverts.
+            pass.inputs.inheritedStripControls = refresh.inheritedStripControls;
             return backend.apply({
                 schemaVersion: 1,
                 commands,

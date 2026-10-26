@@ -166,6 +166,11 @@ export type LiveAutomationWriterPass = {
         readStrips: () => ReadonlyMap<string, StripValues>;
         pending: InputProjection | null;
         inheritedHolds: readonly AudioGraphParameterTarget[];
+        /** Submitted controls may land after re-arm, even when their values have reverted. */
+        inheritedStripControls?: readonly Readonly<{
+            trackId: string;
+            control: 'multiplier' | 'muted' | 'soloGated';
+        }>[];
         observers: (() => void)[];
     };
     /**

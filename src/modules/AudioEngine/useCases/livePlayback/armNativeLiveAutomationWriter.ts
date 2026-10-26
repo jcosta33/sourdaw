@@ -270,6 +270,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         dispose();
     }
     const inheritedHolds = unacceptedHolds(previousPass);
+    const inheritedStripControls = previousPass?.inputs.inheritedStripControls ?? [];
     const spans = passSpans(input);
     const entry = readSpan(input, spans.entry);
     const loop = spans.loop ? readSpan(input, spans.loop) : null;
@@ -294,7 +295,9 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
     nativeLiveAutomationWriter.pass = {
         inputs: {
             revision:
-                inheritedHolds.length > 0 || previousPass?.inputs.revision !== previousPass?.inputs.acceptedRevision
+                inheritedHolds.length > 0 ||
+                inheritedStripControls.length > 0 ||
+                previousPass?.inputs.revision !== previousPass?.inputs.acceptedRevision
                     ? 1
                     : 0,
             acceptedRevision: 0,
@@ -307,6 +310,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
             readStrips: () => readStripValues(input.stripTracks),
             pending: null,
             inheritedHolds,
+            inheritedStripControls,
             observers: [],
         },
         stripTracks: input.stripTracks,
