@@ -818,7 +818,7 @@ describe('useChannelStripActions', () => {
         const shouldExecute = () => current;
         const { result } = renderHook(() => useChannelStripActions(makeTrack({ pan: 3.5 })));
 
-        act(() => {
+        await act(async () => {
             result.current.setPanFromMenu({
                 trackId: 'track-1',
                 expectedPan: 3.5,
@@ -827,8 +827,9 @@ describe('useChannelStripActions', () => {
                 onCommitted: vi.fn(),
             });
             current = false;
+            await Promise.resolve();
         });
-        await waitFor(() => expect(mocks.executeUserAppAction).not.toHaveBeenCalled());
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
         expect(mocks.setTrackPan).not.toHaveBeenCalled();
     });
 

@@ -426,6 +426,19 @@ describe('ExpandedChannelStrip', () => {
         expect(knob).toHaveFocus();
     });
 
+    it('keeps an outside focus choice when the pan menu closes', async () => {
+        trackStore.set({ tracks: [createProjectTrack()], selectedTrackId: null, ghostClips: [] });
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Track 1 pan' }));
+        const menu = screen.getByRole('menu', { name: 'Track 1 pan actions' });
+        const outside = document.createElement('button');
+        document.body.append(outside);
+        outside.focus();
+        fireEvent.blur(menu, { relatedTarget: outside });
+        await waitFor(() => expect(outside).toHaveFocus());
+        outside.remove();
+    });
+
     it('resets, enters a fractional raw pan, and copies and pastes the exact canonical value', async () => {
         trackStore.set({ tracks: [createProjectTrack({ pan: 12.25 })], selectedTrackId: null, ghostClips: [] });
         const writeText = vi.fn(() => Promise.resolve());
