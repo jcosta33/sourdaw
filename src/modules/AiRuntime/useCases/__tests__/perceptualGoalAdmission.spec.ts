@@ -572,7 +572,7 @@ describe('perceptual goal admission', () => {
     it.each([
         { label: 'receipt', limits: { maxTotalReceiptBytes: 128 }, turns: 1, reason: 'bounded context budget' },
         { label: 'call', limits: { maxTotalCalls: 1 }, turns: 2, reason: 'total application tool-call budget' },
-    ])('charges refused declines to the existing $label budget', async ({ limits, turns, reason }) => {
+    ])('ends refused-decline loops at the existing $label budget', async ({ limits, turns, reason }) => {
         let count = 0;
         const requestTurn = vi.fn(async () => {
             count += 1;
@@ -589,5 +589,44 @@ describe('perceptual goal admission', () => {
 
         expect(result).toMatchObject({ status: 'rejected', turns, reason: expect.stringContaining(reason) });
         expect(requestTurn).toHaveBeenCalledTimes(turns);
+    });
+
+    it('charges refused-decline payload bytes to the next turn receipt budget', async () => {
+        type RequestTurnInput = Parameters<Parameters<typeof runApplicationOwnedToolLoop>[0]['requestTurn']>[0];
+        const readNextTurnBudget = async (reason: string) => {
+            const requestTurn = vi.fn(async (input: RequestTurnInput) => ({
+                status: 'complete' as const,
+                toolCalls: [{ ...decline, id: `decline-${String(input.turn)}` }],
+            }));
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'decline-payload-charge',
+                terminalToolNames: new Set(['command.batch.decline']),
+                declineAdmission: () => ({ status: 'refused', reason }),
+                requestTurn,
+                limits: { maxTotalCalls: 1 },
+            });
+
+            expect(result).toMatchObject({
+                status: 'rejected',
+                turns: 2,
+                reason: expect.stringContaining('total application tool-call budget'),
+            });
+            expect(requestTurn).toHaveBeenCalledTimes(2);
+            const [first, next] = requestTurn.mock.calls;
+            if (first === undefined || next === undefined) {
+                throw new Error('Expected the admitted refusal receipt to reach the next request turn.');
+            }
+            return { initial: first[0].remaining.receiptBytes, next: next[0].remaining.receiptBytes };
+        };
+
+        const short = await readNextTurnBudget('Plan this goal.');
+        const long = await readNextTurnBudget(
+            'Plan this supported perceptual goal using the resolved target. Preserve every declared restriction and propose the recipe.'
+        );
+
+        expect(short.initial).toBe(long.initial);
+        expect(short.next).toBeLessThan(short.initial);
+        expect(long.next).toBeGreaterThan(0);
+        expect(long.next).toBeLessThan(short.next);
     });
 });
