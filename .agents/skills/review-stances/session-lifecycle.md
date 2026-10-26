@@ -333,3 +333,21 @@ capture in the successor. A fresh successor On admission must then connect both 
 without the stale settlement deleting their authority or stopping their shared stream. Removal
 continuation probes do not exercise this incoming grant boundary; deleting the root-identity
 fencing in shared admission, including its retained reader, must redden both replacement cases.
+
+### 2026-10-26 — user and automatic Stop outlived their recording root (issue #5517)
+
+Unfenced recording closure originates in commit `0249a95cc5292` (associated PR unverified);
+PR #4564 (`40c5218228c5`) added the asynchronous MIDI commit and failure-discard continuation.
+Neither route captured the installed root when the take opened. Successful Stop/Undo tests
+missed an outgoing recording resumed under a replacement root; historical review dispatch is
+unverified. A capture-terminal guard does not cover these separate Stop routes.
+
+Drive both user Stop and automatic punch-out with a real captured-root identity. Replace the
+root before entry and independently while the real commit is held: preserve the owning staged
+result, reject successor writes/cleanup and emit the branch-move warning. Spy directly on
+`trackTakeCommit`: neither refused entry may register, even when downstream outcome filtering
+would hide that error. Remove each caller's ownership conjunct separately and require its own
+spy assertion to fail. Clear refs, then finalize again: no second gesture counts. Pair a genuine
+closure, legacy null witness and a landed sibling with a refused sibling; capture authority
+before clearing refs, retain it across every queued wait, and distinguish refused resume from
+success that settled just before replacement.

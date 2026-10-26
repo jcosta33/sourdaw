@@ -56,6 +56,8 @@ type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) 
 
 // Shared mutable test state, hoisted so the vi.mock factories below can close
 // over it (vi.mock factories are hoisted above imports).
+const activeRecordingRefState = vi.hoisted((): { current: string[] } => ({ current: [] }));
+
 const harness = vi.hoisted(() => ({
     clock: 0,
     logger: {
@@ -103,9 +105,9 @@ vi.mock('../../models/TempoMap', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: harness.track_store,
     takeLaneStore: { value: { lanes: [] } },
-    // The loop-wrap take path reads which clips are actively recording; no test
-    // here records, so the ref stays empty.
-    activeRecordingRef: { current: [] },
+    // The loop-wrap take path and the #5517 ownership guard read which clips
+    // are actively recording; cases that model a punch take seed it.
+    activeRecordingRef: activeRecordingRefState,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: vi.fn(),
@@ -116,6 +118,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     startRecording: harness.start_recording,
     stopRecording: harness.stop_recording,
     updateClip: harness.update_clip,
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('../evaluateFollowActions', () => ({
     evaluateFollowActions: vi.fn(() => ({ jumpToPosition: null, shouldStop: false })),
@@ -340,6 +343,9 @@ describe('stopPlayheadScheduler', () => {
         harness.stop_recording.mockImplementationOnce(() => held_commit);
         schedulerSession.punchRecordingActive = true;
         playheadPositionRef.current = 1.5;
+        // The teardown registers the punch take on the lifecycle only while a
+        // take is actually open and owns the root (#5517).
+        activeRecordingRefState.current = ['punch-take'];
 
         stopPlayheadScheduler();
 
@@ -360,6 +366,7 @@ describe('stopPlayheadScheduler', () => {
         release_commit!();
         await waiting;
         expect(settled).toBe(true);
+        activeRecordingRefState.current = [];
     });
 });
 

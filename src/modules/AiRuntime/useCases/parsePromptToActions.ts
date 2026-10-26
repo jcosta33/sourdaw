@@ -44,6 +44,7 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
+import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
@@ -687,6 +688,13 @@ const planPromptIntent = inject({ logger })(
                     },
                     terminalToolNames,
                     signal,
+                    declineAdmission: (decline) =>
+                        admitPerceptualGoalDecline({
+                            decline,
+                            prompt,
+                            context,
+                            unresolvedExplicitReferences: creativeCatalog.unresolvedExplicitReferences,
+                        }),
                     transform:
                         transformSnapshot === null
                             ? undefined

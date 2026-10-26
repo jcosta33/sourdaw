@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -67,18 +68,48 @@ function closeTakeAt(take: Take, endBeat: number): Take {
  * events only, so mid-playback it still holds the beat playback started at.
  * Omitting it keeps the stationary behaviour — close at the store playhead.
  */
-export async function stopRecording(atBeat?: number): Promise<void> {
+/**
+ * Why a dispatched commit refused to resume: the root was replaced while the
+ * dispatch was parked on the snapshot-transaction queue (#5517). Thrown from
+ * the `shouldExecute` hook so the refusal rejects into `executeAppAction`'s
+ * catch — a silent `false` return cannot be told apart from a
+ * commit that landed just before the root moved.
+ */
+class RecordingRootMovedRefusal extends Error {
+    constructor() {
+        super('recording commit refused: the project root moved while the take was landing');
+    }
+}
+
+/** What a stop did: `refused` closed nothing (the root moved), `closed` finished normally. */
+export type StopRecordingOutcome = 'refused' | 'closed';
+
+export async function stopRecording(atBeat?: number): Promise<StopRecordingOutcome> {
     const clipIds = activeRecordingRef.current;
+    const captureRootIdentity = activeRecordingRef.capturedRootIdentity ?? null;
     activeRecordingRef.current = [];
+    activeRecordingRef.capturedRootIdentity = null;
 
     if (clipIds.length === 0) {
-        return;
+        return 'closed';
+    }
+    // The take belongs to the root it was opened on (#5517): a branch switch
+    // that replaced the root mid-recording must not have its clip closures,
+    // take entries, or commit entries written into the successor. The outgoing
+    // branch keeps its staged take, the same refusal shape the capture
+    // terminal's guards settled on (#5289). A null witness is a legacy
+    // in-flight take and always reads as owning.
+    const stillOwnsCaptureRoot = (): boolean =>
+        captureRootIdentity === null || captureProjectRootIdentity() === captureRootIdentity;
+    if (!stillOwnsCaptureRoot()) {
+        notifyUser('Recording stopped — the project switched branches while recording, so it was not kept.', 'warning');
+        return 'refused';
     }
 
     const trackState = getTrackState();
     const transportState = transportStore.value;
     if (!trackState || !transportState) {
-        return;
+        return 'closed';
     }
 
     const endBeat = atBeat ?? transportState.playheadPosition;
@@ -135,17 +166,53 @@ export async function stopRecording(atBeat?: number): Promise<void> {
         });
     }
 
-    await Promise.all(
-        finalizedMidiClips.map((clip) =>
-            commitRecording(clip).catch((error: unknown) => {
+    const commits = finalizedMidiClips.map((clip) => {
+        // The commit parks on the snapshot-transaction queue, and a root
+        // replacement in that window must not resume into the successor
+        // (#5517): the dispatch re-checks ownership after the wait, and a
+        // refused resume keeps the finalized take on its owning root. The
+        // refusal is thrown from the hook so it rejects into this catch —
+        // a landed commit can never be mistaken for a refused one.
+        return commitRecording(clip, undefined, {
+            shouldExecute: () => {
+                if (!stillOwnsCaptureRoot()) {
+                    throw new RecordingRootMovedRefusal();
+                }
+                return true;
+            },
+        })
+            .then(() => 'closed' as const)
+            .catch((error: unknown) => {
+                // A refused resume closed nothing: the take stays on its
+                // owning branch and the musician is told the branch moved.
+                if (error instanceof RecordingRootMovedRefusal) {
+                    notifyUser(
+                        'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+                        'warning'
+                    );
+                    return 'refused' as const;
+                }
                 logger.error(new Error('MIDI recording commit failed', { cause: error }));
                 // A commit that never landed must not leave a visible recording
                 // that no entry owns (#4439): retire the same provisional result
                 // the discard inverse retires, and tell the user the way the
-                // capture-failure path does.
-                notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
-                discardRecording(clip.id);
-            })
-        )
-    );
+                // capture-failure path does — but only under the root that
+                // owns the take; a discard under a successor would delete a
+                // clip this branch never owned.
+                if (stillOwnsCaptureRoot()) {
+                    notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+                    discardRecording(clip.id);
+                } else {
+                    notifyUser(
+                        'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+                        'warning'
+                    );
+                }
+                return 'closed' as const;
+            });
+    });
+    // A landed or retired sibling still settles this gesture even when another
+    // clip refuses. With no MIDI commits, the audio finalizer also closes normally.
+    const outcomes = await Promise.all(commits);
+    return outcomes.length > 0 && outcomes.every((outcome) => outcome === 'refused') ? 'refused' : 'closed';
 }
