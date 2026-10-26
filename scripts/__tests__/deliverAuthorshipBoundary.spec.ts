@@ -9,7 +9,7 @@ import { shellPort, type ShellRunner } from '../deliverPullRequest';
 
 function authorshipFixture() {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-landed-authorship-'));
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = Object.assign({}, process.env);
     for (const key of Object.keys(env)) {
         if (key.startsWith('GIT_')) {
             delete env[key];
@@ -189,10 +189,10 @@ describe('landed authorship destination boundary', () => {
                     mergeCommitSha = f.git(['commit-tree', tree, '-p', f.parent, '-p', f.input.headSha], 'M\n');
                 }
                 if (state === 'unavailable parent' || state === 'noncommit parent') {
-                    const parent =
-                        state === 'noncommit parent'
-                            ? f.git(['hash-object', '-w', '--stdin'], 'not a commit\n')
-                            : '1'.repeat(40);
+                    let parent = '1'.repeat(40);
+                    if (state === 'noncommit parent') {
+                        parent = f.git(['hash-object', '-w', '--stdin'], 'not a commit\n');
+                    }
                     mergeCommitSha = f.git(
                         ['hash-object', '-t', 'commit', '-w', '--stdin'],
                         `tree ${tree}\nparent ${parent}\nauthor Fixture <fixture@example.com> 1 +0000\ncommitter Fixture <fixture@example.com> 1 +0000\n\ninvalid parent\n`
