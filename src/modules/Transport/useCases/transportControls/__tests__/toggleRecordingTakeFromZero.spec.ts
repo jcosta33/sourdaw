@@ -50,7 +50,7 @@ const mocks = vi.hoisted(() => {
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
-        startPlayback: vi.fn<() => Promise<void>>(),
+        startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
         cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
         startAudioRecording: vi.fn<StartAudioRecording>(),
@@ -158,7 +158,9 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         // `startPlayback` now resolves when the transport has actually rolled,
         // and the recording path waits on it; the default here is a roll that
         // costs nothing.
-        mocks.startPlayback.mockResolvedValue(undefined);
+        mocks.startPlayback.mockImplementation(async (onRoll) => {
+            onRoll?.(audioClock.currentTime, 0);
+        });
         mocks.stopActiveRecording.mockImplementation(() => {
             recordingLifecycle.cancelPendingRecordingStart();
             const timerId = recordingLifecycle.countInTimerId;

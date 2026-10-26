@@ -40,7 +40,10 @@ type StartAudioRecording = (trackId: string, callback: (result: TestRecordingRes
 const mocks = vi.hoisted(() => ({
     audioClock: { currentTime: 0, baseLatency: 0.02, outputLatency: 0 },
     startAudioRecording: vi.fn<StartAudioRecording>(),
-    startPlayback: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(async (onRoll) => {
+        // This controlled roll starts immediately at the two-bar pre-roll head.
+        onRoll?.(0, 4);
+    }),
 }));
 
 // The capture and the roll are the hardware's; everything the take becomes —
