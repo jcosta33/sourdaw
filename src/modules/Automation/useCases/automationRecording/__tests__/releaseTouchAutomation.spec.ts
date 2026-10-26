@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { releaseTouchAutomation } from '../releaseTouchAutomation';
+import { captureTouchAutomationRecordingAuthority, releaseTouchAutomation } from '../releaseTouchAutomation';
 
 const { activeRecording, touchActive, flushPendingPoints } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
@@ -61,6 +61,36 @@ describe('releaseTouchAutomation', () => {
 
         expect(activeRecording.get('t1::gain')?.lastValue).toBeNull();
     });
+
+    it.each(['owned', 'successor', 'ownerless', 'absent'] as const)(
+        'releases only its latest recorded producer when the session is %s',
+        (producer) => {
+            const authority = captureTouchAutomationRecordingAuthority('t1', 'gain');
+            if (producer !== 'absent') {
+                activeRecording.set('t1::gain', {
+                    parameterId: 'gain',
+                    trackId: 't1',
+                    startBeat: 0,
+                    lastValue: 0.5,
+                    recordingOwner:
+                        producer === 'owned'
+                            ? authority.owner
+                            : producer === 'successor'
+                              ? Symbol('new gesture')
+                              : undefined,
+                });
+                touchActive.add('t1::gain');
+            }
+
+            authority.release();
+
+            expect(flushPendingPoints).toHaveBeenCalledTimes(producer === 'owned' ? 1 : 0);
+            expect(touchActive.has('t1::gain')).toBe(producer === 'successor' || producer === 'ownerless');
+            expect(activeRecording.get('t1::gain')?.lastValue).toBe(
+                producer === 'owned' ? null : producer === 'absent' ? undefined : 0.5
+            );
+        }
+    );
 
     it('leaves an absent session untouched (no throw) on release', () => {
         expect(() => releaseTouchAutomation('ghost', 'gain')).not.toThrow();

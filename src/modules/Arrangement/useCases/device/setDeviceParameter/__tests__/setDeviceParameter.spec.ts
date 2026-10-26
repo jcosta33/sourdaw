@@ -143,6 +143,23 @@ describe('setDeviceParameter', () => {
         expect(mocks.updateTrack).toHaveBeenCalledTimes(transient ? 0 : 1);
     });
 
+    it('forwards recording ownership independently of runtime ownership', () => {
+        const track = makeTrack('t1');
+        track.automationMode = 'touch';
+        setTrackState([track]);
+        mocks.transportStoreValue = { isPlaying: true };
+        mocks.captureGestureBeat.mockReturnValue(4);
+        const automationRecordingOwner = Symbol('recording producer');
+        const runtimeOwner = Symbol('runtime producer');
+
+        expect(setDeviceParameter('d1', 'gain', 0.5, { transient: true, runtimeOwner, automationRecordingOwner })).toBe(
+            true
+        );
+
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([['t1', 'd1', 'gain', 0.5, runtimeOwner]]);
+        expect(mocks.recordAutomationValue.mock.calls).toEqual([['t1', 'd1:gain', 0.5, 4, automationRecordingOwner]]);
+    });
+
     it.each(['missing', 'duplicate', 'vca'])('refuses an invalid transient target: %s', (kind) => {
         const track = makeTrack('t1');
         if (kind === 'missing') {

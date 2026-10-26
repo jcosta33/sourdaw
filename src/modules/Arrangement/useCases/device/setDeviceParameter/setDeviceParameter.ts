@@ -23,6 +23,8 @@ type SetDeviceParameterOptions = {
     automationRecordingPolicy?: AutomationRecordingPolicy;
     /** Identifies the transient producer that may later restore this runtime write. */
     runtimeOwner?: symbol;
+    /** Identifies the recording producer that may release its latest Touch sample. */
+    automationRecordingOwner?: symbol;
 };
 
 export function setDeviceParameter(
@@ -73,11 +75,8 @@ export function setDeviceParameter(
 
     if (!options.projectOnly) {
         // Update audio engine (non-blocking)
-        if (options.runtimeOwner === undefined) {
-            updateDeviceParam(target.trackId, target.deviceId, paramId, clamped);
-        } else {
-            updateDeviceParam(target.trackId, target.deviceId, paramId, clamped, options.runtimeOwner);
-        }
+        const runtimeOwner: [] | [symbol] = options.runtimeOwner === undefined ? [] : [options.runtimeOwner];
+        updateDeviceParam(target.trackId, target.deviceId, paramId, clamped, ...runtimeOwner);
     }
 
     if (!options.transient) {
@@ -117,7 +116,15 @@ export function setDeviceParameter(
         transport?.isPlaying &&
         RECORDING_MODES.has(track.automationMode)
     ) {
-        recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, clamped, captureGestureBeat());
+        const recordingOwner: [] | [symbol] =
+            options.automationRecordingOwner === undefined ? [] : [options.automationRecordingOwner];
+        recordAutomationValue(
+            target.trackId,
+            `${target.deviceId}:${paramId}`,
+            clamped,
+            captureGestureBeat(),
+            ...recordingOwner
+        );
     }
 
     return true;

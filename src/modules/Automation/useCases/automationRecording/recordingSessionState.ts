@@ -20,6 +20,8 @@ export type RecordingSession = {
     trackId: string;
     startBeat: number;
     lastValue: number | null;
+    /** Producer of the latest recording sample; independent of DSP runtime ownership. */
+    recordingOwner?: symbol;
     /**
      * Tempo (BPM) captured when the session first records a value. Reused for
      * every subsequent value so a mid-session tempo change does not silently

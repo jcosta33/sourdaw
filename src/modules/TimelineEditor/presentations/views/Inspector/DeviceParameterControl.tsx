@@ -16,7 +16,11 @@ import {
     modulationRuntimeStore,
     type ModulationStoreState,
 } from '#/modules/Automation/stores';
-import { addAutomationLane, releaseTouchAutomation, removeAutomationLane } from '#/modules/Automation/useCases';
+import {
+    addAutomationLane,
+    captureTouchAutomationRecordingAuthority,
+    removeAutomationLane,
+} from '#/modules/Automation/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -48,6 +52,7 @@ type ParameterGesture = {
     authority: ReturnType<typeof captureProjectTransitionAuthority>;
     runtimeAuthority: ReturnType<typeof captureDeviceParameterRuntimeWriteAuthority>;
     startedInTouchAutomation: boolean;
+    recordingAuthority: ReturnType<typeof captureTouchAutomationRecordingAuthority>;
     previewValue?: number;
     invalidated: boolean;
     settling: boolean;
@@ -103,7 +108,7 @@ function restoreGesturePreview(gesture: ParameterGesture): void {
 function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
     const currentMode = trackStore.value?.tracks.find((track) => track.id === gesture.trackId)?.automationMode;
     if (currentMode === 'touch' || (currentMode === undefined && gesture.startedInTouchAutomation)) {
-        releaseTouchAutomation(gesture.trackId, createDeviceAutomationTargetId(gesture.deviceId, gesture.paramId));
+        gesture.recordingAuthority.release();
     }
 }
 
@@ -376,6 +381,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             authority: captureProjectTransitionAuthority(),
             runtimeAuthority: captureDeviceParameterRuntimeWriteAuthority(trackId, device.id, param.id),
             startedInTouchAutomation: liveOwner?.automationMode === 'touch',
+            recordingAuthority: captureTouchAutomationRecordingAuthority(trackId, targetId),
             invalidated: false,
             settling: false,
             committed: false,
@@ -438,6 +444,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         const previewOptions: NonNullable<Parameters<typeof setDeviceParameter>[3]> = {
             transient: true,
             runtimeOwner: gesture.runtimeAuthority.owner,
+            automationRecordingOwner: gesture.recordingAuthority.owner,
         };
         if (!recordingSample) {
             previewOptions.automationRecordingPolicy = 'suppressed';

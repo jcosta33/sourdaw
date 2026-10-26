@@ -256,6 +256,7 @@ describe('DeviceParameterControl', () => {
         expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1.5, {
             transient: true,
             runtimeOwner: expect.any(Symbol),
+            automationRecordingOwner: expect.any(Symbol),
         });
         expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
             {
@@ -282,10 +283,13 @@ describe('DeviceParameterControl', () => {
             props.onChange(0.9, true);
         });
         const runtimeOwner = mockSetDeviceParameter.mock.calls[0]![3].runtimeOwner;
+        const automationRecordingOwner = mockSetDeviceParameter.mock.calls[0]![3].automationRecordingOwner;
         expect(runtimeOwner).toEqual(expect.any(Symbol));
+        expect(automationRecordingOwner).toEqual(expect.any(Symbol));
+        expect(automationRecordingOwner).not.toBe(runtimeOwner);
         expect(mockSetDeviceParameter.mock.calls).toEqual([
-            ['device-1', 'gain', 0.7, { transient: true, runtimeOwner }],
-            ['device-1', 'gain', 0.9, { transient: true, runtimeOwner }],
+            ['device-1', 'gain', 0.7, { transient: true, runtimeOwner, automationRecordingOwner }],
+            ['device-1', 'gain', 0.9, { transient: true, runtimeOwner, automationRecordingOwner }],
         ]);
         expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
         await act(async () => {
@@ -294,6 +298,7 @@ describe('DeviceParameterControl', () => {
         expect(mockSetDeviceParameter).toHaveBeenLastCalledWith('device-1', 'gain', 0.9, {
             transient: true,
             runtimeOwner,
+            automationRecordingOwner,
         });
         expect(mockExecuteUserAppAction).toHaveBeenCalledOnce();
         expect(mockExecuteUserAppAction).toHaveBeenCalledWith(

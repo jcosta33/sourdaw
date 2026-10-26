@@ -507,9 +507,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
             fireEvent.keyDown(slider, { key: 'End' });
             await expectCommitted('comp-threshold', 0, 1, compressor.id);
             const expectedSamples = [
-                ['track-1', 'compressor-1:comp-threshold', -36, 1],
-                ['track-1', 'compressor-1:comp-threshold', -48, 2],
-                ['track-1', 'compressor-1:comp-threshold', 0, 3],
+                ['track-1', 'compressor-1:comp-threshold', -36, 1, expect.any(Symbol)],
+                ['track-1', 'compressor-1:comp-threshold', -48, 2, expect.any(Symbol)],
+                ['track-1', 'compressor-1:comp-threshold', 0, 3, expect.any(Symbol)],
             ];
             expect(recording.mock.calls).toEqual(expectedSamples);
             beat = 4;
@@ -873,6 +873,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         });
 
         expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        settlePendingProjectWritesAndCaptureRevision();
         expect(rawValues()?.detune).toBe(65);
         expect(writes()).toEqual([25, 65]);
         expect(knob()).toHaveAttribute('aria-valuenow', '65');
@@ -1006,10 +1007,10 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 beat = 4;
                 endKnob();
                 const expectedSamples = [
-                    ['track-1', 'synth-1:detune', 25, 1],
-                    ['track-1', 'synth-1:detune', -15, 2],
-                    ['track-1', 'synth-1:detune', 65, 3],
-                    ['track-1', 'synth-1:detune', 65, 4],
+                    ['track-1', 'synth-1:detune', 25, 1, expect.any(Symbol)],
+                    ['track-1', 'synth-1:detune', -15, 2, expect.any(Symbol)],
+                    ['track-1', 'synth-1:detune', 65, 3, expect.any(Symbol)],
+                    ['track-1', 'synth-1:detune', 65, 4, expect.any(Symbol)],
                 ];
                 const expectedPoints = [
                     [1, 25],
@@ -1095,9 +1096,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 beat = 4;
                 fireEvent.pointerUp(root, { pointerId: 2 });
                 const expectedSamples = [
-                    ['track-1', 'compressor-1:comp-threshold', -36, 1],
-                    ['track-1', 'compressor-1:comp-threshold', expect.closeTo(-12, 12), 2],
-                    ['track-1', 'compressor-1:comp-threshold', -48, 3],
+                    ['track-1', 'compressor-1:comp-threshold', -36, 1, expect.any(Symbol)],
+                    ['track-1', 'compressor-1:comp-threshold', expect.closeTo(-12, 12), 2, expect.any(Symbol)],
+                    ['track-1', 'compressor-1:comp-threshold', -48, 3, expect.any(Symbol)],
                 ];
                 const expectedPoints = [
                     [1, -36],
@@ -1178,7 +1179,13 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 },
             });
             expect(recording.mock.calls).toHaveLength(1);
-            expect(recording.mock.calls[0]).toEqual(['track-1', 'compressor-1:comp-threshold', expect.any(Number), 1]);
+            expect(recording.mock.calls[0]).toEqual([
+                'track-1',
+                'compressor-1:comp-threshold',
+                expect.any(Number),
+                1,
+                expect.any(Symbol),
+            ]);
         }
     );
 
@@ -1236,8 +1243,8 @@ describe('Inspector continuous parameter gestures through real history', () => {
             expect(depth()).toBe(0);
             expect(writes().at(-1)).toBe(5);
             expect(recording.mock.calls).toEqual([
-                ['track-1', 'synth-1:detune', 25, 1],
-                ['track-1', 'synth-1:detune', 25, 4],
+                ['track-1', 'synth-1:detune', 25, 1, expect.any(Symbol)],
+                ['track-1', 'synth-1:detune', 25, 4, expect.any(Symbol)],
             ]);
             stopAutomationRecording();
             expect(
