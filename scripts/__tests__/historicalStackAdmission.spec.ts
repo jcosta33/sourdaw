@@ -31,6 +31,16 @@ const next = '2c5fdcd094be55a7a79638624260728546e61b25';
 const childBranch = 'agent/4624/delivery-targets-draft';
 const parentBranch = 'agent/4634/stream-export-output-draft';
 
+function configWithForkMarkers(branch: string, ...markers: string[]): (args: string[]) => string {
+    return () =>
+        [
+            `core.repositoryformatversion\n0`,
+            ...markers.map((marker) => `branch.${branch}.sourdaw-stack-fork\n${marker}`),
+        ]
+            .join('\0')
+            .concat('\0');
+}
+
 function reflog(entries: Array<[string, number]>): string {
     return entries
         .map(
@@ -470,12 +480,12 @@ describe('historical stack native admission', () => {
         );
         expect(port.markers()).toEqual([]);
         port.saveReceipt(receipt);
-        expect(() => readRegisteredLaneStack(root, childBranch, '')).toThrow(/historical admission/);
+        expect(() => port.readStack(childBranch)).toThrow(/historical admission/);
         port.addMarker(anchor);
         expect(port.markers()).toEqual([anchor]);
         port.installDescriptor(stack);
         port.installDescriptor(stack);
-        expect(readRegisteredLaneStack(root, childBranch, anchor)).toEqual(stack);
+        expect(port.readStack(childBranch)).toEqual(stack);
         expect(() => port.installDescriptor({ ...stack, parentPullRequest: 9999 })).toThrow();
         expect(port.readDescriptor()).toEqual(stack);
         port.addMarker(anchor);
@@ -658,13 +668,19 @@ describe('historical stack native admission', () => {
             `${laneStackPath(root, pending.childBranch)}.admission.json`,
             JSON.stringify({ ...f.receipt(), descriptor: pending })
         );
-        expect(() => readRegisteredLaneStack(root, pending.childBranch, '')).toThrow(/historical admission/);
+        expect(() =>
+            readRegisteredLaneStack(root, pending.childBranch, configWithForkMarkers(pending.childBranch))
+        ).toThrow(/historical admission/);
         writeFileSync(`${path}.admission.json`, JSON.stringify(f.receipt()));
-        expect(readRegisteredLaneStack(root, childBranch, anchor)).toEqual(stack);
+        expect(readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch, anchor))).toEqual(stack);
         writeLaneStack(root, { ...stack, parentHead: sha('f') });
-        expect(readRegisteredLaneStack(root, childBranch, anchor)?.parentHead).toBe(sha('f'));
+        expect(readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch, anchor))?.parentHead).toBe(
+            sha('f')
+        );
         writeFileSync(path, JSON.stringify({ ...stack, parentPullRequest: 9999 }));
-        expect(() => readRegisteredLaneStack(root, childBranch, anchor)).toThrow(/historical admission/);
+        expect(() => readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch, anchor))).toThrow(
+            /historical admission/
+        );
         writeFileSync(path, raw);
     });
     it('binds the actual 5438 creation anchor to the original unique named parent and replays without writes', () => {

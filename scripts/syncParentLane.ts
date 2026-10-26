@@ -26,6 +26,7 @@ import {
     historicalRegisteredDescriptor,
     laneStackPath,
     parseStackParents,
+    readLaneStackForkMarkers,
     readLaneStack,
     readHistoricalAdmissionReceipt,
     readRegisteredLaneStack,
@@ -357,24 +358,12 @@ export function historicalAdmissionShellPort(
         parentLocalHead: () => local(['rev-parse', '--verify', `refs/heads/${requiredParentBranch()}^{commit}`]),
         readDescriptor,
         readReceipt: () => readHistoricalAdmissionReceipt(primaryRoot, branch),
-        markers: () => {
-            const escaped = key.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // The repository-format key guarantees a successful read even when no marker exists.
-            return local(['config', '--null', '--get-regexp', `^(core\\.repositoryformatversion|${escaped})$`])
-                .split('\0')
-                .filter((entry) => entry.startsWith(`${key}\n`))
-                .map((entry) => entry.slice(key.length + 1));
-        },
+        markers: () => readLaneStackForkMarkers(branch, local),
         saveReceipt: (receipt) => installExclusiveJson(`${laneStackPath(primaryRoot, branch)}.admission.json`, receipt),
         // Matching resumptions replace only their exact value; foreign values and duplicates remain visible.
         addMarker: (fork) => run(gitPath, ['config', '--fixed-value', key, fork, fork], { cwd: lane, env: localEnv }),
         installDescriptor: (descriptor) => installExclusiveJson(laneStackPath(primaryRoot, branch), descriptor),
-        readStack: (ref) =>
-            readRegisteredLaneStack(
-                primaryRoot,
-                ref,
-                local(['config', '--get', '--default', '', `branch.${ref}.sourdaw-stack-fork`])
-            ),
+        readStack: (ref) => readRegisteredLaneStack(primaryRoot, ref, local),
     };
 }
 
@@ -543,9 +532,8 @@ export async function runSyncParentCli(args: string[]): Promise<number> {
         fail('--lane must name the exact conforming author child root');
     }
     const local = (commandArgs: string[]) => spawnCapture(runtime.gitPath, commandArgs, { cwd: lane.path, env });
-    const marker = local(['config', '--get', '--default', '', `branch.${lane.branch}.sourdaw-stack-fork`]);
     const descriptor =
-        parsed.admission === undefined ? readRegisteredLaneStack(runtime.primaryRoot, lane.branch, marker) : undefined;
+        parsed.admission === undefined ? readRegisteredLaneStack(runtime.primaryRoot, lane.branch, local) : undefined;
     if (parsed.admission === undefined && descriptor === undefined) {
         fail('lane has no recorded parent');
     }
