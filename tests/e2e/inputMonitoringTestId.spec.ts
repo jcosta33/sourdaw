@@ -44,14 +44,5 @@ test.describe('Track input monitoring — test-id targeted', () => {
         expect(after).not.toBe(before);
     });
 
-    test('track variation lanes toggle is present', async ({ page }) => {
-        const lanes = page.getByRole('button', { name: /variation lanes/i }).first();
-        const hasLanes = await lanes.isVisible().catch(() => false);
-        if (hasLanes) {
-            const before = await lanes.getAttribute('aria-pressed');
-            await lanes.click();
-            await page.waitForTimeout(300);
-            await expect(lanes).not.toHaveAttribute('aria-pressed', before ?? '');
-        }
-    });
+    // takeLanesTestId owns variation expansion and the resulting take controls.
 });

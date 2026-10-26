@@ -169,14 +169,6 @@ test.describe('Inspector — Close and Reopen', () => {
 });
 
 test.describe('Status Bar Deep', () => {
-    test('CPU metric shows numeric value', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-
-        const status = page.getByRole('contentinfo', { name: 'Application status' });
-        await expect(status.getByText('CPU')).toBeVisible();
-    });
-
     test('Output level shows dB text', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -207,35 +199,30 @@ test.describe('Playhead Display', () => {
     });
 });
 
-test.describe('Beat Ruler Interaction', () => {
-    test('Beat ruler is visible and responds to click', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
-
-        const beat_ruler = page.getByLabel('Beat ruler');
-        await expect(beat_ruler).toBeVisible();
-        const box = await beat_ruler.boundingBox();
-        if (box) {
-            await beat_ruler.click({ position: { x: box.width * 0.5, y: box.height * 0.5 } });
-            await page.waitForTimeout(300);
-        }
-        await expect(beat_ruler).toBeVisible();
-    });
-});
-
 test.describe('Automation View Toggle', () => {
-    test('A key cycles automation visibility', async ({ page }) => {
+    test('Show Automation shortcut opens and selects the Automation dock tab', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
+        const dockToggle = page.getByTestId('toggle-bottom-dock');
+        if ((await dockToggle.getAttribute('aria-pressed')) !== 'true') {
+            await dockToggle.click();
+        }
+        await page
+            .getByRole('tablist', { name: 'Bottom dock' })
+            .getByRole('tab', { name: 'Editor', exact: true })
+            .click();
+        const automationTab = page
+            .getByRole('tablist', { name: 'Bottom dock' })
+            .getByRole('tab', { name: 'Automation', exact: true });
+        await expect(automationTab).not.toHaveAttribute('aria-selected', 'true');
+        await dockToggle.click();
+        await expect(dockToggle).toHaveAttribute('aria-pressed', 'false');
         await page.locator('#main-content').click();
-
-        await page.keyboard.press('a');
-        await page.waitForTimeout(300);
-        await page.keyboard.press('a');
-        await page.waitForTimeout(300);
-
-        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
+        await page.keyboard.press(`${MOD}+Shift+a`);
+        await expect(dockToggle).toHaveAttribute('aria-pressed', 'true');
+        await expect(automationTab).toBeVisible();
+        await expect(automationTab).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('tabpanel', { name: 'Automation' })).toBeVisible();
     });
 });

@@ -84,6 +84,9 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         arpeggiate: actual.arpeggiate,
         canPrepareMidiClipGlueState: vi.fn(),
         downloadMidiFile: actual.downloadMidiFile,
+        commitRecordedControllers: actual.commitRecordedControllers,
+        discardRecordedControllers: actual.discardRecordedControllers,
+        planRecordedControllers: actual.planRecordedControllers,
         duplicateClipNotes: actual.duplicateClipNotes,
         duplicateMidiClipData: actual.duplicateMidiClipData,
         getGrooveTemplate: vi.fn(),
@@ -116,6 +119,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         serializeMidiStateForClips: actual.serializeMidiStateForClips,
         setMidiInputTrack: actual.setMidiInputTrack,
         setNotesForClip: actual.setNotesForClip,
+        shiftClipMidiNotes: vi.fn(),
         splitMidiNotesAtBeat: actual.splitMidiNotesAtBeat,
     };
 });
@@ -142,6 +146,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     captureProjectTransitionAuthority: vi.fn(() => ({ isCurrent: () => true })),
     exportProjectFile: vi.fn(),
     newProject: vi.fn(),
+    pendingProjectReplacements: { capture: vi.fn(() => () => true), withdraw: vi.fn() },
     pickFiles: vi.fn(),
     saveProject: vi.fn(),
     saveProjectBeforeReplacement: vi.fn(),

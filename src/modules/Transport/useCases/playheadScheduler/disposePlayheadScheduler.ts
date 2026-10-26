@@ -3,6 +3,7 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { forgetStoredControllerEngagements } from '../../services/storedControllerEngagement';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
+import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
@@ -54,5 +55,6 @@ export function disposePlayheadScheduler(): void {
     // The graph the engagements were pressed on is being discarded with the
     // session, so there is nothing left to release them on.
     forgetStoredControllerEngagements();
+    forgetHeldNoteExpression();
     disposeAudioClipScheduling();
 }

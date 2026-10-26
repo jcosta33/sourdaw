@@ -11,6 +11,8 @@ vi.mock('../../setActiveInput', () => ({
     setActiveInput: (input: MIDIInput | null) => setActiveInputMock(input),
 }));
 
+import { heldPedalState } from '../../heldPedalState';
+import { ingestChannelControlChange } from '../../ingestChannelControlChange';
 import { memberExpressionState, setMemberExpression } from '../../memberExpressionState';
 import { resetChannelControllerState } from '../../resetChannelControllerState';
 import { detachActiveInput } from '../detachActiveInput';
@@ -23,7 +25,13 @@ describe('webMidi/lifecycle/helpers', () => {
         vi.clearAllMocks();
         webMidiRuntime.midiMessageListener = null;
         resetChannelControllerState();
+        heldPedalState.clear();
     });
+
+    const holdSustainPedal = (): void => {
+        ingestChannelControlChange({ channel: 0, cc: 64, value: 127 });
+        expect(heldPedalState.get(0)?.get(64)).toBe(127);
+    };
 
     describe('attachInput', () => {
         it('should set active input and subscribe to midimessage', () => {
@@ -66,6 +74,27 @@ describe('webMidi/lifecycle/helpers', () => {
             expect(memberExpressionState.get(1)).toBeUndefined();
         });
 
+        it('drops a held pedal when the input changes, so the next take is not seeded with it', () => {
+            const previous = { addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MIDIInput;
+            const next = { addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MIDIInput;
+            getActiveInputMock.mockReturnValue(previous);
+            holdSustainPedal();
+
+            attachInput({ input: next, onMidiMessage: vi.fn() });
+
+            expect(heldPedalState.get(0)?.get(64)).toBeUndefined();
+        });
+
+        it('keeps a held pedal when the same input is attached again', () => {
+            const input = { addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MIDIInput;
+            getActiveInputMock.mockReturnValue(input);
+            holdSustainPedal();
+
+            attachInput({ input, onMidiMessage: vi.fn() });
+
+            expect(heldPedalState.get(0)?.get(64)).toBe(127);
+        });
+
         it('should not remove listener when re-attaching the same input', () => {
             const input = {
                 addEventListener: vi.fn(),
@@ -82,6 +111,17 @@ describe('webMidi/lifecycle/helpers', () => {
             expect(input.addEventListener).toHaveBeenCalledWith('midimessage', onMidiMessageMock);
             expect(memberExpressionState.get(1)?.pressure).toBe(80);
         });
+    });
+
+    it('drops a held pedal when the input disconnects, so the next take is not seeded with it', () => {
+        const input = { removeEventListener: vi.fn(), onmidimessage: vi.fn() } as unknown as MIDIInput;
+        getActiveInputMock.mockReturnValue(input);
+        webMidiRuntime.midiMessageListener = vi.fn();
+        holdSustainPedal();
+
+        detachActiveInput();
+
+        expect(heldPedalState.get(0)?.get(64)).toBeUndefined();
     });
 
     it('drops the old member values when the input disconnects', () => {

@@ -1645,6 +1645,39 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe('device parameter presence guards', () => {
+        function admits(payload: unknown): boolean {
+            const guard = PAYLOAD_VALIDATORS.setDeviceParameter;
+            if (guard === 'unchecked') {
+                throw new Error('Expected setDeviceParameter to carry a payload guard');
+            }
+            return guard(payload);
+        }
+
+        it.each([true, false])(
+            'admits the boolean presence guard %s through runtime validation',
+            (expectedValuePresent) => {
+                const action: Extract<RuntimeAction, { type: 'setDeviceParameter' }> = {
+                    type: 'setDeviceParameter',
+                    payload: { deviceId: 'device-1', paramId: 'level', value: -6, expectedValuePresent },
+                };
+                expect(admits(action.payload)).toBe(true);
+                expect(validateActions([action])).toEqual([action]);
+            }
+        );
+
+        it.each(['false', 0, null, [], {}])('rejects a nonboolean presence guard %j', (expectedValuePresent) => {
+            expect(
+                admits({
+                    deviceId: 'device-1',
+                    paramId: 'level',
+                    value: -6,
+                    expectedValuePresent,
+                })
+            ).toBe(false);
+        });
+    });
+
     // A level command takes one of three forms, and the payload guard is the
     // first place a provider-sourced one meets that rule.
     describe('decibel level arguments', () => {

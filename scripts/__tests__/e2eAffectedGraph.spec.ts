@@ -1,12 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { completeRuntimeGraph, loadAffectedE2e, selectAffectedE2e, type SourceNode } from '../e2eAffectedGraph';
 
 const observedGraphs = vi.hoisted(() => new Array<string>());
+const observedRoots = vi.hoisted(() => new Array<string>());
 
 vi.mock('dependency-cruiser', async (importOriginal) => {
     const actual = await importOriginal<typeof import('dependency-cruiser')>();
@@ -15,6 +16,7 @@ vi.mock('dependency-cruiser', async (importOriginal) => {
         cruise: async (...args: Parameters<typeof actual.cruise>) => {
             const result = await actual.cruise(...args);
             if (typeof result.output === 'string') {
+                rejectGraphsOutsideObservedRoot(result.output);
                 observedGraphs.push(result.output);
             }
             return result;
@@ -22,16 +24,48 @@ vi.mock('dependency-cruiser', async (importOriginal) => {
     };
 });
 
-function observedModules(): unknown[] {
-    const output = observedGraphs.at(-1);
-    if (output === undefined) {
-        throw new Error('installed cruise did not emit a graph');
-    }
+function graphModules(output: string): unknown[] {
     const parsed: unknown = JSON.parse(output);
     if (typeof parsed !== 'object' || parsed === null || !('modules' in parsed) || !Array.isArray(parsed.modules)) {
         throw new Error('installed cruise emitted an invalid graph');
     }
     return parsed.modules;
+}
+
+/**
+ * A resolver that lost its alias base silently rebases '#' imports onto the
+ * process cwd and cruises the caller's repository instead of the fixture
+ * (#5290): repeated repository-scale cruises then burn the case's deadline
+ * before any source-set assertion can name the escape. Refuse the first
+ * graph that leaves the declared fixture root.
+ */
+function rejectGraphsOutsideObservedRoot(output: string): void {
+    const root = observedRoots.at(-1);
+    if (root === undefined) {
+        return;
+    }
+    const fixtureRoot = realpathSync(root);
+    const escaped = graphModules(output)
+        .map((node: unknown) => {
+            if (typeof node !== 'object' || node === null || !('source' in node) || typeof node.source !== 'string') {
+                throw new Error('installed cruise emitted an invalid source');
+            }
+            return node.source;
+        })
+        .filter((source) => !realpathSync(resolve(root, source)).startsWith(`${fixtureRoot}${sep}`));
+    if (escaped.length > 0) {
+        throw new Error(
+            `cruise escaped the fixture root: ${escaped.length} sources including ${escaped.slice(0, 3).join(', ')}`
+        );
+    }
+}
+
+function observedModules(): unknown[] {
+    const output = observedGraphs.at(-1);
+    if (output === undefined) {
+        throw new Error('installed cruise did not emit a graph');
+    }
+    return graphModules(output);
 }
 
 function observedSources(): string[] {
@@ -123,6 +157,14 @@ function selectCompleted(root: string, nodes: SourceNode[]) {
 }
 
 describe('affected E2E graph', () => {
+    beforeAll(async () => {
+        // The installed-library import and this file's mock factory are a
+        // one-time cost per worker (~150-320 ms measured). Paying it inside
+        // the first case's deadline lets a cold hosted runner alone time the
+        // case out (#5290).
+        await import('dependency-cruiser');
+    });
+
     it('follows transitive file consumers but stops at the exact composition shell', () => {
         expect(selectAffectedE2e([TUNER], inventory, manifest, graph)).toEqual({
             kind: 'narrow',
@@ -240,7 +282,9 @@ describe('affected E2E graph', () => {
         'rejects shadowed imports and qualified Workers in the installed graph loader (%s baseUrl)',
         async (baseUrl) => {
             observedGraphs.length = 0;
+            observedRoots.length = 0;
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-shadowed-runtime-'));
+            observedRoots.push(root);
             const sharedLoader = 'src/components/SharedRuntimeLoader.ts';
             const sources: Record<string, string> = {
                 [TUNER]: 'export const tuner = 1;',
@@ -318,7 +362,9 @@ describe('affected E2E graph', () => {
             const originalProject = process.env.TS_NODE_PROJECT;
             const originalBaseUrl = process.env.TS_NODE_BASEURL;
             observedGraphs.length = 0;
+            observedRoots.length = 0;
             try {
+                observedRoots.push(root);
                 delete process.env.TS_NODE_PROJECT;
                 delete process.env.TS_NODE_BASEURL;
                 const sources = {
@@ -379,6 +425,7 @@ describe('affected E2E graph', () => {
     it('refuses inherited implicit alias bases before a shadow graph can narrow selection', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-inherited-alias-base-'));
         observedGraphs.length = 0;
+        observedRoots.length = 0;
         const sources = {
             [TUNER]: 'export const tuner = true;',
             [SHELL]: "import '../../../Tuner/presentations/components/TunerDisplay';",
@@ -416,6 +463,7 @@ describe('affected E2E graph', () => {
         async (configuration) => {
             const root = mkdtempSync(join(tmpdir(), 'sourdaw-invalid-graph-config-'));
             observedGraphs.length = 0;
+            observedRoots.length = 0;
             try {
                 mkdirSync(join(root, 'scripts'));
                 mkdirSync(join(root, 'src'));

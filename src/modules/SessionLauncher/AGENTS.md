@@ -26,7 +26,8 @@ Owns clip launcher matrix scenes, pad triggers, and live loop-station multi-laye
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/SessionLauncher
-pnpm deps:validate
+pnpm test:run <changed-spec>
 ```

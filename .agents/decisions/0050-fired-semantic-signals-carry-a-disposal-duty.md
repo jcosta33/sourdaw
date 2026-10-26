@@ -2,7 +2,7 @@
 type: adr
 id: 0050
 title: Fired semantic signals carry a disposal duty at publication
-status: accepted
+status: superseded by 0054
 date: 2026-09-26
 owner: The Sourdaw team
 sources:
@@ -15,6 +15,12 @@ sources:
 ---
 
 # 0050 - Fired semantic signals carry a disposal duty at publication
+
+## Superseded 2026-10-22
+
+[0054](0054-proportional-machine-checked-review-floor.md) removes the disposal duty and every other
+semantic-review publication requirement. The decision below records the former policy; records it
+produced keep verifying unchanged.
 
 ## Context
 

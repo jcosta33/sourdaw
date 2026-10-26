@@ -20,6 +20,8 @@ Tuner device panel UI and real-time pitch telemetry ingestion (detected note, ce
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/Tuner
+pnpm test:run <changed-spec>
 ```

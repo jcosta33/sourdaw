@@ -6,6 +6,7 @@ import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 
+import { pendingProjectReplacements } from '../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/saveProject/saveProjectBeforeReplacement';
 import { createFromTemplate } from '../../useCases/projectTemplates/templateDefinitions/createFromTemplate';
 import { getTemplates } from '../../useCases/projectTemplates/templateDefinitions/getTemplates';
@@ -342,6 +343,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
         const template = templates.find((time) => time.id === templateId);
         setLoadingName(template?.name ?? 'Project');
         setIsLoading(true);
+        const isStillChosen = pendingProjectReplacements.capture();
 
         void (async () => {
             try {
@@ -350,10 +352,11 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                 // — a plugin capture rejected before commit keeps that edit
                 // uncaptured, and the template would destroy it. Both refusal
                 // surfaces already notified; the current project stays open.
-                if (!(await saveProjectBeforeReplacement())) {
+                // Choosing the open project meanwhile withdraws the template.
+                if (!(await saveProjectBeforeReplacement()) || !isStillChosen()) {
                     return;
                 }
-                await createFromTemplate(templateId);
+                await createFromTemplate(templateId, { shouldProceed: isStillChosen });
             } finally {
                 setIsLoading(false);
                 onClose();

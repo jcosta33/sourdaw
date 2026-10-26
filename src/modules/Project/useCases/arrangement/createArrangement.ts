@@ -16,6 +16,7 @@ export function createArrangement(name: string): void {
     const id = `arr-${crypto.randomUUID()}`;
 
     syncCurrentArrangementToStore(); // Save current to its slot before switching
+    const currentState = arrangementStore.value!;
 
     const newArrangement: ArrangementSnapshot = {
         id,
@@ -26,7 +27,7 @@ export function createArrangement(name: string): void {
     };
 
     arrangementStore.set({
-        arrangements: [...state.arrangements, newArrangement],
+        arrangements: [...currentState.arrangements, newArrangement],
         activeArrangementId: id,
     });
 

@@ -45,11 +45,19 @@ export const AGENT_PROMPT_CLASSES = [...AGENT_SCORED_PROMPT_CLASSES, 'boundary']
 export type AgentPromptClass = (typeof AGENT_PROMPT_CLASSES)[number];
 
 /**
- * What a corpus case's oracle demands. `pending` is the schema-2 placeholder a case carries while
- * its prompt class waits for the command contract that would answer it: the prompt is already
- * written down and frozen, and the class is excluded from scoring until it is sealed.
+ * What a corpus case's oracle demands. `revert` is a refinement case's undo of the commit its prior
+ * turn made, an executed change that carries no batch. `pending` is the schema-2 placeholder a case
+ * carries while its prompt class waits for the command contract that would answer it: the prompt is
+ * already written down and frozen, and the class is excluded from scoring until it is sealed.
  */
-export const AGENT_ACCEPTANCE_ORACLE_KINDS = ['proposal', 'clarify', 'unsupported', 'denied', 'pending'] as const;
+export const AGENT_ACCEPTANCE_ORACLE_KINDS = [
+    'proposal',
+    'revert',
+    'clarify',
+    'unsupported',
+    'denied',
+    'pending',
+] as const;
 
 export type AgentAcceptanceOracleKind = (typeof AGENT_ACCEPTANCE_ORACLE_KINDS)[number];
 
