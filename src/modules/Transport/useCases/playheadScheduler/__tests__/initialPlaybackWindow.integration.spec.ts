@@ -446,28 +446,32 @@ describe('initial browser playback window', () => {
         }
     });
 
-    it.each(['stop', 'project switch'] as const)('emits no stale prepared window after %s', async (change) => {
-        const ready = Promise.withResolvers<void>();
-        vi.mocked(processYeastMidi).mockImplementation(async (input) => {
-            await ready.promise;
-            return [...input.events];
-        });
-        const playback = startPlayback();
-        deliverWorkerTick();
-        try {
-            await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
-            if (change === 'stop') await stopPlayback();
-            else projectRoot.current = 'replacement-root';
-            ctxTime.now = 10;
-            ready.resolve();
-            await playback;
-            expect(notes).toEqual([]);
-            expect(sources).toHaveLength(0);
-        } finally {
-            ready.resolve();
-            await playback;
+    it.each(['stop', 'project switch', 'transport removal'] as const)(
+        'emits no stale prepared window after %s',
+        async (change) => {
+            const ready = Promise.withResolvers<void>();
+            vi.mocked(processYeastMidi).mockImplementation(async (input) => {
+                await ready.promise;
+                return [...input.events];
+            });
+            const playback = startPlayback();
+            deliverWorkerTick();
+            try {
+                await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
+                if (change === 'stop') await stopPlayback();
+                else if (change === 'project switch') projectRoot.current = 'replacement-root';
+                else transportStoreState.value = null;
+                ctxTime.now = 10;
+                ready.resolve();
+                await playback;
+                expect(notes).toEqual([]);
+                expect(sources).toHaveLength(0);
+            } finally {
+                ready.resolve();
+                await playback;
+            }
         }
-    });
+    );
 
     function seedSeam(): void {
         const tracks = programmeTracks();

@@ -117,9 +117,13 @@ export function prepareInitialBrowserPlayback(generation: number) {
         return prepareWindows(programme);
     }
     async function prepareWindows(programme: ReturnType<typeof captureInitialMidiProgramme>) {
+        const current = getTransportState();
+        if (!current?.isPlaying || !programme.isCurrent()) {
+            return null;
+        }
         const midiWindows: NonNullable<Awaited<ReturnType<typeof prepareInitialMidiWindow>>>[] = [];
         for (const window of windows) {
-            const prepared = await prepareInitialMidiWindow(window.from, window.to, state, cancellation, programme);
+            const prepared = await prepareInitialMidiWindow(window.from, window.to, current, cancellation, programme);
             if (!prepared || !programme.isCurrent()) {
                 return null;
             }

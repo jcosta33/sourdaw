@@ -754,7 +754,10 @@ export function startPlayheadScheduler(
                 )
             );
         }
-        function publishClock(): void {
+        function publishClock(): boolean {
+            if (!current || !transportStore.value?.isPlaying || !cancellation.isCurrent()) {
+                return false;
+            }
             playheadClockRef.beat = publishedBeat;
             playheadClockRef.audioTimeSeconds = now;
             releasePlayheadClockHold(schedulerGeneration);
@@ -788,9 +791,10 @@ export function startPlayheadScheduler(
                 current.loopEnd,
                 current.isLooping
             );
+            return true;
         }
-        if (!initial) {
-            publishClock();
+        if (!initial && !publishClock()) {
+            return;
         }
 
         const recordingAdmissions: Promise<unknown>[] = [];
@@ -998,7 +1002,9 @@ export function startPlayheadScheduler(
                 };
                 schedulerSession.lastLoopSeamAudioTime = seam.seamAudioTime;
             }
-            publishClock();
+            if (!publishClock()) {
+                return;
+            }
             onRoll?.(now, publishedBeat);
             if (!cancellation.isCurrent()) {
                 return;
