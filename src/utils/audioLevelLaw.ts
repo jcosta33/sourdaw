@@ -92,9 +92,10 @@ export function faderValueToPosition(
     if (!Number.isFinite(lower) || !Number.isFinite(upper) || !(upper > lower)) {
         return 0;
     }
-    const normalizedValue = Number.isNaN(domainValue)
-        ? 0
-        : Math.max(0, Math.min(1, (domainValue - lower) / (upper - lower)));
+    if (Number.isNaN(domainValue)) {
+        return 0;
+    }
+    const normalizedValue = Math.max(0, Math.min(1, (domainValue - lower) / (upper - lower)));
     const exponent = faderCurveExponent(lower, upper, scale);
     return exponent === null ? normalizedValue : normalizedValue ** (1 / exponent);
 }

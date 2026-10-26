@@ -14,9 +14,13 @@ type DesignToken = { name: string; value: string };
 function readDesignTokens(source: string): DesignToken[] {
     const tokens = new Map<string, string>();
     for (const match of source.matchAll(/^\s*(--[\w-]+)\s*:\s*([^;]+);/gm)) {
-        tokens.set(match[1], match[2].trim());
+        const name = match[1];
+        const value = match[2];
+        if (name !== undefined && value !== undefined) {
+            tokens.set(name, value.trim());
+        }
     }
-    return [...tokens].map(([name, value]) => ({ name, value }));
+    return Array.from(tokens, ([name, value]) => ({ name, value }));
 }
 
 const DEFAULT_DESIGN_TOKENS = readDesignTokens(tokenSource);

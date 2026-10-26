@@ -9,7 +9,14 @@ import { ControlGallery } from '../ControlGallery';
 const tokenSource = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
 
 function tokenNamesFromSource(source: string): string[] {
-    return [...new Set([...source.matchAll(/^\s*(--[\w-]+)\s*:\s*[^;]+;/gm)].map((match) => match[1]))];
+    const names = new Set<string>();
+    for (const match of source.matchAll(/^\s*(--[\w-]+)\s*:\s*[^;]+;/gm)) {
+        const name = match[1];
+        if (name !== undefined) {
+            names.add(name);
+        }
+    }
+    return Array.from(names);
 }
 
 describe('ControlGallery', () => {
