@@ -44,6 +44,7 @@ import {
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { defaultTransportState, transportStore } from '../../../stores/transportStore';
 import { getTransportHandlers } from '../../../useCases/getTransportHandlers';
+import { addTempoChange } from '../../../useCases/tempoMap/addTempoChange';
 
 function source(id = 'source'): Clip {
     return {
@@ -173,6 +174,67 @@ describe('ordered tempo and audio split source preparation', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
+    });
+
+    it('preserves source frame 4800 through a real three-row split and saved replay', async () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [
+                normalizeTrack({
+                    id: 'audio',
+                    name: 'Audio',
+                    kind: 'audio',
+                    clips: [
+                        {
+                            ...source(),
+                            endBeat: 1,
+                            audioOffsetBeats: -0.2,
+                            audioOffsetSeconds: -0.1,
+                            audioUnwrappedOffsetSeconds: -0.1,
+                        },
+                    ],
+                }),
+            ],
+        });
+        flushAutomergeStorageWrites();
+        await addTempoChange(0, 120);
+        await addTempoChange(0.25, 240);
+        await addTempoChange(0.45, 120);
+        const before = owners();
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: { clipId: 'source', beat: 0.5, resolvedBeat: 0.5, rightClipId: 'frame-right' },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(result.status).toBe('committed');
+        const assertEntry = () => {
+            const right = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id === 'frame-right');
+            const raw = getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>(
+                'root'
+            )?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'frame-right');
+            expect(right?.startBeat).toBe(0.5);
+            expect(right?.audioOffsetSeconds).toBe(0.1);
+            expect(raw?.audioOffsetSeconds).toBe(0.1);
+            if (!right || right.audioOffsetSeconds === undefined) {
+                throw new Error('Expected the actual physical right-fragment entry');
+            }
+            expect(right.audioOffsetSeconds * 48_000).toBe(4_800);
+            expect(Math.floor(right.audioOffsetSeconds * 48_000)).toBe(4_800);
+        };
+        assertEntry();
+        const after = owners();
+        await reopen(4);
+        assertEntry();
+        expect((await undo()).headConsumed).toBe(true);
+        expect(owners()).toEqual(before);
+        await reopen(3);
+        await redo();
+        assertEntry();
+        expect(owners()).toEqual(after);
     });
 
     it.each([

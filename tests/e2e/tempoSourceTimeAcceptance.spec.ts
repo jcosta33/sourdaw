@@ -751,7 +751,9 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         expect(rendered.occurrences).toHaveLength(2);
         const ordered = [...rendered.occurrences].sort((a, b) => a.startSample - b.startSample);
         expect(ordered[0]!.startSample).toBe(4_800);
-        expect(ordered[0]!.endSample).toBe(Math.floor(selectedSourceStart * SAMPLE_RATE));
+        // A fractional half-open end intersects its last PCM cell; the start
+        // below still uses floor, and an exact integer end excludes that cell.
+        expect(ordered[0]!.endSample).toBe(Math.ceil(selectedSourceStart * SAMPLE_RATE));
         expect(ordered[1]!.startSample).toBe(Math.floor(selectedSourceStart * SAMPLE_RATE));
         expect(ordered[1]!.endSample).toBe(EXCLUSIVE_SOURCE_FRAME);
         await info.attach('selected-waveform', { body: await page.screenshot(), contentType: 'image/png' });
