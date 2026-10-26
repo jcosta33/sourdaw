@@ -60,6 +60,8 @@ const FullMicMixer = ({
                                 }}
                                 min={-70}
                                 max={6}
+                                valueScale="decibels"
+                                unityValue={0}
                                 defaultValue={-6}
                                 height={100}
                                 unit="dB"

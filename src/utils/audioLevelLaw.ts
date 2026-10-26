@@ -44,6 +44,88 @@ export function gainToDb(gain: number): number {
     return 20 * Math.log10(gain);
 }
 
+export type FaderValueScale = 'linear' | 'gain' | 'decibels';
+
+const FADER_UNITY_TRAVEL = 0.7;
+
+function finiteRange(min: number, max: number): boolean {
+    return Number.isFinite(min) && Number.isFinite(max) && max > min;
+}
+
+function toFaderDomainValue(value: number, scale: FaderValueScale): number {
+    return scale === 'decibels' ? dbToGain(value) : value;
+}
+
+function fromFaderDomainValue(value: number, scale: FaderValueScale): number {
+    if (scale !== 'decibels') {
+        return value;
+    }
+    const db = gainToDb(value);
+    return Math.abs(db) < 1e-12 ? 0 : db;
+}
+
+function faderCurveExponent(min: number, max: number, scale: FaderValueScale): number | null {
+    if (scale === 'linear') {
+        return null;
+    }
+    const unity = scale === 'gain' ? 1 : dbToGain(0);
+    const unityFraction = (unity - min) / (max - min);
+    if (!(unityFraction > 0 && unityFraction < 1)) {
+        return null;
+    }
+    return Math.log(unityFraction) / Math.log(FADER_UNITY_TRAVEL);
+}
+
+/** Position a fader value on a normalized 0–1 travel. Audio scales put unity at 70%. */
+export function faderValueToPosition(
+    value: number,
+    min: number,
+    max: number,
+    scale: FaderValueScale = 'linear'
+): number {
+    if (!finiteRange(min, max)) {
+        return 0;
+    }
+    const lower = toFaderDomainValue(min, scale);
+    const upper = toFaderDomainValue(max, scale);
+    const domainValue = toFaderDomainValue(value, scale);
+    if (!Number.isFinite(lower) || !Number.isFinite(upper) || !(upper > lower)) {
+        return 0;
+    }
+    const normalizedValue = Number.isNaN(domainValue)
+        ? 0
+        : Math.max(0, Math.min(1, (domainValue - lower) / (upper - lower)));
+    const exponent = faderCurveExponent(lower, upper, scale);
+    return exponent === null ? normalizedValue : normalizedValue ** (1 / exponent);
+}
+
+/** Inverse of {@link faderValueToPosition}; raw callback and stored values keep their original units. */
+export function faderPositionToValue(
+    position: number,
+    min: number,
+    max: number,
+    scale: FaderValueScale = 'linear'
+): number {
+    if (!finiteRange(min, max)) {
+        return Number.isFinite(min) ? min : 0;
+    }
+    const lower = toFaderDomainValue(min, scale);
+    const upper = toFaderDomainValue(max, scale);
+    if (!Number.isFinite(lower) || !Number.isFinite(upper) || !(upper > lower)) {
+        return min;
+    }
+    const normalizedPosition = Number.isFinite(position) ? Math.max(0, Math.min(1, position)) : 0;
+    if (normalizedPosition === 0) {
+        return min;
+    }
+    if (normalizedPosition === 1) {
+        return max;
+    }
+    const exponent = faderCurveExponent(lower, upper, scale);
+    const normalizedValue = exponent === null ? normalizedPosition : normalizedPosition ** exponent;
+    return fromFaderDomainValue(lower + normalizedValue * (upper - lower), scale);
+}
+
 /**
  * How a dB readout renders its digits. The *law* — the conversion and the
  * `-∞` branch — never varies; only the presentation does.
@@ -184,8 +266,8 @@ export type LevelLaw = {
 /**
  * Track and master faders. The ceiling is the fader's own headroom; the floor
  * is {@link SEND_MIN_DB}, because the fader control itself has no dB floor —
- * its travel is linear from a hard `0` (true silence), so there is no taper
- * constant to reuse. Below −60 dB a fader is inaudible under any programme
+ * its travel curves continuously from hard `0` (true silence) to the headroom
+ * ceiling, so every representable amplitude remains reachable. Below −60 dB a fader is inaudible under any programme
  * material, so a dB request past it is a mistake worth reporting rather than a
  * level worth storing; asking for silence stays available through the linear
  * form, which is what a fader dragged to the bottom writes.
