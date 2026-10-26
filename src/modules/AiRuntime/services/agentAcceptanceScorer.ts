@@ -18,8 +18,9 @@ import { type PlanningOutcome } from '../models/PlanningOutcome';
 /**
  * Reads the class a live planning attempt actually landed in, from the same `PlanningOutcome` every
  * caller in this module already classifies against — never a second, parallel reading of the run.
- * `null` means the outcome carries no class the frozen four cover (`no-match`, or a `proposal` that
- * compiled no action): a corpus case landing here is a corpus defect, never a fifth class.
+ * `null` means the outcome carries no class the frozen four cover (`no-match`, an `answer`, or a
+ * `proposal` that compiled no action): a corpus case landing here is a corpus defect, never a fifth
+ * class.
  */
 export function classifyPlanningOutcome(
     outcome: PlanningOutcome,
@@ -39,6 +40,10 @@ export function classifyPlanningOutcome(
         // The answer class is sealed with its corpus; until then an answer lands in no frozen class.
         case 'answer':
             return null;
+        // The undo of the last commit runs a reversible change through the chat's commit authority,
+        // so it is executed exactly as a batch is, and it carries no batch to count.
+        case 'revert':
+            return 'execute-exact';
         default: {
             const exhaustive: never = outcome;
             throw new Error(`Planning outcome is not supported: ${JSON.stringify(exhaustive)}`);

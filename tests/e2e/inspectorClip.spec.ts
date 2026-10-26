@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -31,15 +32,16 @@ test.describe('Inspector — Clip Properties', () => {
 
     test('Clip can be duplicated via keyboard shortcut', async ({ page }) => {
         const timeline = page.getByLabel('Timeline editor surface');
-        // Select the clip at x=300 (where it was created).
         await timeline.click({ position: { x: 300, y: 30 } });
-        await page.waitForTimeout(500);
-
-        await page.locator('#main-content').click();
+        const dockToggle = page.getByTestId('toggle-bottom-dock');
+        if ((await dockToggle.getAttribute('aria-pressed')) !== 'true') {
+            await dockToggle.click();
+        }
+        await page.getByRole('tab', { name: 'Editor', exact: true }).click();
+        const clipCount = page.getByTestId('selected-track-clip-count');
+        await expect(clipCount).toHaveText('1 clip');
         await page.keyboard.press(`${MOD}+d`);
-
-        await page.waitForTimeout(1000);
-        await expect(page.getByText(/clip/i).first()).toBeVisible();
+        await expect(clipCount).toHaveText('2 clips');
     });
 
     test('Double-clicking a clip opens the MIDI editor', async ({ page }) => {

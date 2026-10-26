@@ -34,7 +34,10 @@ describe('handleSlipClipContent', () => {
             payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
         });
 
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5);
+        // A fresh keyless dispatch forwards no recorded lift — the handler
+        // passes the payload's field verbatim, so the use-case sees the
+        // keyless fresh-action shape, not a zero lift.
+        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5, undefined);
     });
 
     it('provides a description with no inverse when the clip is gone', () => {
@@ -62,7 +65,7 @@ describe('handleSlipClipContent', () => {
         });
     });
 
-    it('falls back to offset 0 for the inverse when the clip never carried a midi offset', () => {
+    it('records a zero lift on the midi inverse — the restoration key rides every capture', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: [{ id: 'cm', type: 'midi' }] }],
         });
@@ -72,9 +75,13 @@ describe('handleSlipClipContent', () => {
             payload: { clipId: 'cm', clipType: 'midi', offset: 1 },
         });
 
+        // Zero included: the replay keys verbatim restoration on the key's
+        // presence, so a capture that omitted it at lift 0 sent the undo
+        // through the fresh wrap law instead of restoring the captured
+        // offset (#5198 repair).
         expect(desc.inverseAction).toEqual({
             type: 'slipClipContent',
-            payload: { clipId: 'cm', clipType: 'midi', offset: 0 },
+            payload: { clipId: 'cm', clipType: 'midi', offset: 0, rowLiftBeats: 0 },
         });
     });
 

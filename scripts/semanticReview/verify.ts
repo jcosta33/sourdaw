@@ -52,113 +52,19 @@ import {
     TYPESAFE_SDK_VERSION_FOR_CACHE,
     type SemanticBudgetController,
 } from './provider.ts';
+import { verifyRequestPreview, type SemanticVerifyRequestPreview } from './requestPayload.ts';
 import { computePolicyDigest, type SemanticBudgetProfile } from './rules.ts';
 import { asFailure, executionState, usageReport, type SemanticPorts } from './run.ts';
+import { DRY_RUN_REASON } from './scopeAccounting.ts';
 import { sensitiveContentReason } from './sensitive.ts';
 import { sliceLines } from './slicing.ts';
+import { computeVerifyQuestionsDigest, findingQuestions } from './verifyQuestions.ts';
 
 import type { SemanticVerifyReport } from './report.ts';
 
 export { assertFindingIdsAreDistinct, assertFindingsBoundToHead, parseCandidateFindings };
 export type { CandidateFinding, CandidateFindingEvidence };
-
-/**
- * The static wording of the verification questions. Digested separately from the scan rules because a
- * verify report's dispositions come from these questions, not from `SEMANTIC_RULES`; recording the
- * scan digest on a verify report named a question set that did not produce it.
- */
-const VERIFY_QUESTION_SPEC = {
-    support: {
-        instructions:
-            'Does the supplied implementation evidence support the claim? The expected behavior is stated in the finding. Judge only from the supplied regions; reported observations are not verified execution.',
-        criteria: {
-            supported: 'The supplied evidence supports the claim and its expected behavior.',
-            contradicted: 'The supplied evidence shows the claim is not correct as stated.',
-            insufficient_context: 'The supplied evidence is not enough to decide.',
-        },
-    },
-    attribution: {
-        instructions:
-            'Was the condition the claim describes introduced by the supplied change, or did it already exist at the before side?',
-        criteria: {
-            introduced_by_change: 'The after-side evidence shows the condition arising from the change.',
-            pre_existing: 'The before-side evidence already shows the same condition.',
-            undetermined: 'The supplied evidence cannot distinguish the two.',
-        },
-    },
-    kind: {
-        instructions:
-            'Does the claim describe behavioral or contractual harm, or a style preference with no behavior or contract consequence?',
-        criteria: {
-            behavioral_or_contract_issue: 'The claim names behavior or a contract that changes.',
-            style_preference: 'The claim is about presentation, naming, or preference only.',
-            undetermined: 'The supplied evidence cannot decide.',
-        },
-    },
-    strongestEvidence: {
-        instructions: 'Which single supplied region is the strongest evidence for your answers above?',
-    },
-} as const;
-
-/**
- * The identity of the questions a verify report's dispositions came from.
- *
- * The static spec is not enough: the questions actually sent interpolate each finding's claim and
- * expected behavior, and the evidence-selection labels are that finding's own ids. Digesting only the
- * spec made two different finding sets share one identity — and one sidecar path, so the second
- * silently overwrote the first.
- */
-export function computeVerifyQuestionsDigest(findings: readonly CandidateFinding[]): string {
-    return semanticDigest({
-        spec: VERIFY_QUESTION_SPEC,
-        findings: findings.map((finding) => ({
-            findingId: finding.findingId,
-            claim: finding.claim,
-            expectedBehavior: finding.expectedBehavior,
-            // Every field below reaches the model or changes a recorded disposition: the first three
-            // are sent in the state, and the category drives `escalate`. Omitting them let two
-            // materially different runs share one identity and one sidecar path.
-            allegedFailureInputOrState: finding.allegedFailureInputOrState ?? null,
-            allegedObservedBehavior: finding.allegedObservedBehavior ?? null,
-            reproductionReferences: (finding.reproductionReferences ?? []).map(
-                (reference) => `${reference.path}|${reference.note}|${String(reference.verifiedExecution)}`
-            ),
-            claimedImpactCategory: finding.claimedImpactCategory ?? null,
-            evidenceReferences: finding.evidenceReferences.map((reference) => `${reference.side}:${reference.path}`),
-        })),
-    });
-}
-
-function findingQuestions(finding: CandidateFinding, evidenceIds: readonly string[]): Record<string, unknown> {
-    const selectionLabels: Record<string, string> = {
-        [NO_EVIDENCE_ID]: 'No supplied region is the strongest evidence.',
-    };
-    for (const id of evidenceIds) {
-        selectionLabels[id] = `Region ${id} is the strongest evidence for this finding.`;
-    }
-    return {
-        support: {
-            type: 'choice',
-            instructions: `${VERIFY_QUESTION_SPEC.support.instructions} The claim is "${finding.claim}" and the expected behavior is "${finding.expectedBehavior}".`,
-            criteria: VERIFY_QUESTION_SPEC.support.criteria,
-        },
-        attribution: {
-            type: 'choice',
-            instructions: VERIFY_QUESTION_SPEC.attribution.instructions,
-            criteria: VERIFY_QUESTION_SPEC.attribution.criteria,
-        },
-        kind: {
-            type: 'choice',
-            instructions: VERIFY_QUESTION_SPEC.kind.instructions,
-            criteria: VERIFY_QUESTION_SPEC.kind.criteria,
-        },
-        strongestEvidence: {
-            type: 'choice',
-            instructions: VERIFY_QUESTION_SPEC.strongestEvidence.instructions,
-            criteria: selectionLabels,
-        },
-    };
-}
+export { computeVerifyQuestionsDigest };
 
 function findingState(
     finding: CandidateFinding,
@@ -194,21 +100,65 @@ function findingState(
     return { finding: described, evidence: regions };
 }
 
+/** The payload one finding's request sends: the state the provider reads and the questions it answers. */
+function findingRequestPayload(
+    finding: CandidateFinding,
+    evidence: { readonly references: readonly EvidenceReference[]; readonly contents: ReadonlyMap<string, string> }
+): { readonly state: Record<string, unknown>; readonly questions: Record<string, unknown> } {
+    return {
+        state: findingState(finding, evidence),
+        questions: findingQuestions(
+            finding,
+            evidence.references.map((reference) => reference.evidenceId)
+        ),
+    };
+}
+
 /** The exact bytes the provider measures for one finding's request: its state plus its questions. */
 function findingRequestBytes(
     finding: CandidateFinding,
     evidence: { readonly references: readonly EvidenceReference[]; readonly contents: ReadonlyMap<string, string> }
 ): number {
-    return Buffer.byteLength(
-        JSON.stringify({
-            state: findingState(finding, evidence),
-            questions: findingQuestions(
-                finding,
-                evidence.references.map((reference) => reference.evidenceId)
-            ),
-        }),
-        'utf8'
+    return Buffer.byteLength(JSON.stringify(findingRequestPayload(finding, evidence)), 'utf8');
+}
+
+/** The request a dry run reports for a finding whose every named region was withheld: the empty one. */
+function withheldRequestPreview(finding: CandidateFinding, cause: string): SemanticVerifyRequestPreview {
+    return verifyRequestPreview(
+        finding.findingId,
+        findingRequestPayload(finding, { references: [], contents: new Map() }),
+        TYPESAFE_MODEL,
+        cause
     );
+}
+
+/**
+ * The outcome for a finding whose every named region was withheld: nothing assessed, under the cause
+ * that withheld it. A dry run records the omission its report arithmetic reads instead, and previews
+ * the empty request the live path never sends.
+ */
+function withheldOutcome(input: {
+    readonly finding: CandidateFinding;
+    readonly dryRun: boolean;
+    readonly cause: string;
+    readonly limitations: readonly string[];
+    readonly truncated: readonly SemanticScopeExclusion[];
+}) {
+    let unassessedReason = input.cause;
+    let preview: SemanticVerifyRequestPreview | undefined;
+    if (input.dryRun) {
+        unassessedReason = DRY_RUN_REASON;
+        preview = withheldRequestPreview(input.finding, input.cause);
+    }
+    return {
+        assessment: undefined,
+        returnedModel: undefined,
+        limitations: input.limitations,
+        truncated: input.truncated,
+        fromCache: false,
+        unassessedReason,
+        preview,
+    };
 }
 
 /**
@@ -405,9 +355,15 @@ export type RunVerifyInput = {
     readonly profile: SemanticBudgetProfile;
     readonly findings: readonly CandidateFinding[];
     readonly runId: string;
+    /** A dry run builds every finding's request and reports it instead of calling the provider. */
+    readonly dryRun: boolean;
 };
 
-export type RunVerifyResult = { readonly report: SemanticVerifyReport };
+export type RunVerifyResult = {
+    readonly report: SemanticVerifyReport;
+    /** The request each finding would send, in finding order; the `--export-payload` material. */
+    readonly previews: readonly SemanticVerifyRequestPreview[];
+};
 
 type VerifyAccumulation = {
     assessments: FindingAssessment[];
@@ -418,6 +374,20 @@ type VerifyAccumulation = {
     failureCode: string | undefined;
     limitations: string[];
     truncated: SemanticScopeExclusion[];
+    previews: SemanticVerifyRequestPreview[];
+};
+
+/** What one finding's assessment attempt produced, sent or withheld. */
+type AssessOneFindingOutcome = {
+    /** Absent when nothing could be sent; `unassessedReason` then carries why. */
+    assessment: FindingAssessment | undefined;
+    returnedModel: string | undefined;
+    limitations: readonly string[];
+    truncated: readonly SemanticScopeExclusion[];
+    fromCache: boolean;
+    unassessedReason: string;
+    /** The request this finding would send; a dry run reports it instead of sending it. */
+    preview: SemanticVerifyRequestPreview | undefined;
 };
 
 async function assessOneFinding(input: {
@@ -428,15 +398,8 @@ async function assessOneFinding(input: {
     readonly limits: SemanticEvidenceLimits;
     readonly budget: SemanticBudgetController;
     readonly deadline: number;
-}): Promise<{
-    /** Absent when nothing could be sent; `unassessedReason` then carries why. */
-    assessment: FindingAssessment | undefined;
-    returnedModel: string | undefined;
-    limitations: readonly string[];
-    truncated: readonly SemanticScopeExclusion[];
-    fromCache: boolean;
-    unassessedReason: string;
-}> {
+    readonly dryRun: boolean;
+}): Promise<AssessOneFindingOutcome> {
     const set = collectFindingEvidence({
         port: input.ports.source,
         finding: input.finding,
@@ -448,16 +411,13 @@ async function assessOneFinding(input: {
     if (set.references.length === 0) {
         // Returned rather than thrown: the reason a region was withheld belongs in the report, and a
         // thrown failure would reduce it to a bare code.
-        return {
-            assessment: undefined,
-            returnedModel: undefined,
+        return withheldOutcome({
+            finding: input.finding,
+            dryRun: input.dryRun,
+            cause: nothingSentReason(set.truncated),
             limitations: set.limitations,
             truncated: set.truncated,
-            fromCache: false,
-            // Nothing survived collection, and the reason comes from why: a size gate withheld every
-            // region, or the evidence was never admissible at all.
-            unassessedReason: nothingSentReason(set.truncated),
-        };
+        });
     }
     // What the collector admitted is not yet what one request can carry: the state ceiling bounds the
     // regions plus the questions together, so the collected set is fitted to the payload before it is
@@ -470,28 +430,44 @@ async function assessOneFinding(input: {
     const truncated = [...set.truncated, ...fitted.truncated];
     const limitations = [...set.limitations, ...fitted.limitations];
     if (fitted.references.length === 0) {
+        // The reason comes from why, through the same rule the collector's empty case uses: a request
+        // that could not carry the regions is a size cause, and a record holding any other cause reads
+        // as inadmissible.
+        return withheldOutcome({
+            finding: input.finding,
+            dryRun: input.dryRun,
+            cause: nothingSentReason(truncated),
+            limitations,
+            truncated,
+        });
+    }
+    assertEvidenceIntegrity(fitted.references);
+    const supplied = new Set(fitted.references.map((reference) => reference.evidenceId));
+    // One construction for the request and its preview, so what a dry run reports is byte for byte
+    // what a live run would send.
+    const payload = findingRequestPayload(input.finding, fitted);
+    const preview = verifyRequestPreview(input.finding.findingId, payload, TYPESAFE_MODEL);
+    if (input.dryRun) {
+        // The request is genuinely built — collected, fitted, and integrity-checked — then reported
+        // instead of sent, under the dry-run omission the report's arithmetic reads.
         return {
             assessment: undefined,
             returnedModel: undefined,
             limitations,
             truncated,
             fromCache: false,
-            // The reason comes from why, through the same rule the collector's empty case uses: a request
-            // that could not carry the regions is a size cause, and a record holding any other cause reads
-            // as inadmissible.
-            unassessedReason: nothingSentReason(truncated),
+            unassessedReason: DRY_RUN_REASON,
+            preview,
         };
     }
-    assertEvidenceIntegrity(fitted.references);
-    const supplied = new Set(fitted.references.map((reference) => reference.evidenceId));
     const result = await assessUnit({
         port: input.ports.provider,
         cache: input.ports.cache,
         budget: input.budget,
         profile: input.profile,
         deadline: input.deadline,
-        state: findingState(input.finding, fitted),
-        questions: findingQuestions(input.finding, [...supplied]),
+        state: payload.state,
+        questions: payload.questions,
         requestedModel: TYPESAFE_MODEL,
         signal: input.ports.signal,
         now: input.ports.clock.now,
@@ -518,6 +494,7 @@ async function assessOneFinding(input: {
         truncated,
         fromCache: result.fromCache,
         unassessedReason: '',
+        preview,
     };
 }
 
@@ -533,6 +510,7 @@ async function assessFindings(input: {
     readonly limits: SemanticEvidenceLimits;
     readonly budget: SemanticBudgetController;
     readonly deadline: number;
+    readonly dryRun: boolean;
 }): Promise<VerifyAccumulation> {
     const accumulation: VerifyAccumulation = {
         assessments: [],
@@ -543,6 +521,7 @@ async function assessFindings(input: {
         failureCode: undefined,
         limitations: [],
         truncated: [],
+        previews: [],
     };
     for (const finding of input.findings) {
         try {
@@ -554,9 +533,13 @@ async function assessFindings(input: {
                 limits: input.limits,
                 budget: input.budget,
                 deadline: input.deadline,
+                dryRun: input.dryRun,
             });
             accumulation.limitations.push(...outcome.limitations);
             accumulation.truncated.push(...outcome.truncated);
+            if (outcome.preview !== undefined) {
+                accumulation.previews.push(outcome.preview);
+            }
             if (outcome.assessment === undefined) {
                 accumulation.unassessed.push({ path: finding.findingId, reason: outcome.unassessedReason });
                 continue;
@@ -617,6 +600,7 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
         limits,
         budget,
         deadline,
+        dryRun: input.dryRun,
     });
 
     const usage = budget.totals();
@@ -624,7 +608,7 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
     const { assessments, unassessed, returnedModels, assessed, cacheHits, failureCode, limitations, truncated } =
         outcome;
     const execution = executionState({
-        dryRun: false,
+        dryRun: input.dryRun,
         assessed,
         eligible: input.findings.length,
         failureCode,
@@ -659,7 +643,7 @@ export async function runVerify(input: RunVerifyInput): Promise<RunVerifyResult>
         publication: { state: 'not_requested' },
         failureCode,
     };
-    return { report };
+    return { report, previews: outcome.previews };
 }
 
 function readSelectedEvidenceId(value: unknown, supplied: ReadonlySet<string>): string {

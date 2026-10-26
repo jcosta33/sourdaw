@@ -17,6 +17,7 @@ import {
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
+import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationWriter';
 import { nativeLiveAutomationWriter, type LiveAutomationWriterPass } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSessionSplice } from '../nativeLiveGraphSessionSplice';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
@@ -67,6 +68,19 @@ function trackHolding(devices: readonly Device[]): Track {
 /** A pass in flight, which is what makes a re-read something the writer can owe. */
 function passInFlight(): LiveAutomationWriterPass {
     return {
+        inputs: {
+            revision: 0,
+            acceptedRevision: 0,
+            referenceSpan: { startSeconds: 0, endSeconds: 12, clipsAtEnd: false },
+            loopSpan: null,
+            reference: [],
+            strips: new Map(),
+            readTargets: () => [],
+            readStrips: () => new Map(),
+            pending: null,
+            inheritedHolds: [],
+            observers: [],
+        },
         stripTracks: [],
         sampleRate: 48_000,
         programmeEndSeconds: 12,
@@ -102,6 +116,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    disarmNativeLiveAutomationWriter();
     trackStore.set(null);
     nativeLiveAutomationWriter.pass = null;
     nativeLiveAutomationWriter.pendingRearm = null;

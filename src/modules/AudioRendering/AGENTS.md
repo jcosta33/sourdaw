@@ -35,5 +35,7 @@ Owns audio export encoding (WAV, MP3, FLAC), export normalization (LUFS / true p
 
 ## Verification
 
-- **Focused unit tests**: `pnpm test:run src/modules/AudioRendering`
-- **Module boundaries**: `pnpm deps:validate`
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
+- **Focused unit tests**: `pnpm test:run <changed-spec>`
+- PR CI checks module boundaries; inspect that result after cross-module changes.

@@ -266,7 +266,9 @@ function describeOwnerFence(ownerFence: PullRequestMutationLockOwnerFence): stri
 
 function reportRecoveredLock(number: number, ownerOid: string, state: string): void {
     console.log(`delivery-lock-recovered:${number}:${ownerOid}:${state}`);
-    console.log(`pnpm deliver ${number}`);
+    console.log(
+        `Rerun the original operation for PR #${number} with its original bound inputs. Lock recovery does not certify completion or authorize delivery.`
+    );
 }
 
 function isJournaledRecoveryReceipt(

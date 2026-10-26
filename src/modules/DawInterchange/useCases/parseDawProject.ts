@@ -18,5 +18,6 @@ export async function parseDawProject(input: ArrayBuffer): Promise<DawProjectPar
         timeSignatureChanges: project.timeSignatureChanges,
         markers: project.markers,
         audioAssets,
+        warnings: project.warnings,
     };
 }

@@ -379,6 +379,8 @@ const MAX_MIDI_CONTROLLER_VALUE: u8 = 127;
 pub struct GraphBatchPayload {
     pub schema_version: u32,
     #[serde(default)]
+    pub timeline_lease: Option<String>,
+    #[serde(default)]
     pub correlation: Option<Value>,
     /// Whether this batch **replaces** the graph rather than adding to it.
     ///
@@ -445,6 +447,8 @@ pub enum GraphCommandPayload {
     #[serde(rename_all = "camelCase")]
     RemoveDevice { track_id: String, device_id: String },
     #[serde(rename_all = "camelCase")]
+    SetStripVcaMultiplier { track_id: String, multiplier: f64 },
+    #[serde(rename_all = "camelCase")]
     WriteParameter {
         target: StripParameterTargetPayload,
         write: ParameterWritePayload,
@@ -452,7 +456,7 @@ pub enum GraphCommandPayload {
     #[serde(rename_all = "camelCase")]
     WriteDeviceParameter {
         target: DeviceParameterTargetPayload,
-        write: StepWritePayload,
+        write: DeviceParameterWritePayload,
     },
     /// Land every named value on a built-in body at the next audio callback,
     /// replacing the value the body currently holds and leaving whatever the
@@ -822,9 +826,11 @@ pub enum ParameterWritePayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "shape", rename_all = "kebab-case")]
-pub enum StepWritePayload {
+pub enum DeviceParameterWritePayload {
     #[serde(rename_all = "camelCase")]
     Step { value: f64, time: f64 },
+    #[serde(rename_all = "camelCase")]
+    Hold { time: f64 },
 }
 
 /// One scheduled note, as the producer writes it.
@@ -879,6 +885,8 @@ pub struct ClipPlaybackPayload {
 #[serde(rename_all = "camelCase")]
 pub struct ClipSourcePayload {
     pub source_id: String,
+    #[serde(default)]
+    pub material_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1309,13 +1317,15 @@ impl DeviceEntry {
 /// self-contained batch.
 #[derive(Clone, Debug)]
 pub struct GraphRegistry {
+    pub(crate) timeline_owner: Option<String>,
     strips: HashMap<String, StripEntry>,
     devices: HashMap<String, DeviceEntry>,
     track_count: usize,
     bus_count: usize,
     next_node_id: usize,
     next_effect_id: usize,
-    runtime_revision: u64,
+    pub(crate) runtime_revision: u64,
+    pub(crate) engine_epoch: u64,
     /// Fenced batches this registry has committed onto the live engine's
     /// ring — the control-side twin of the drain's `batches_applied` count.
     /// Every send is one fence ([`daw_engine::EngineHandle::send_graph_batch`])
@@ -1336,6 +1346,7 @@ pub struct GraphRegistry {
 impl Default for GraphRegistry {
     fn default() -> Self {
         Self {
+            timeline_owner: None,
             strips: HashMap::new(),
             devices: HashMap::new(),
             track_count: 0,
@@ -1343,6 +1354,7 @@ impl Default for GraphRegistry {
             next_node_id: 1,
             next_effect_id: FIRST_GRAPH_EFFECT_ID,
             runtime_revision: 0,
+            engine_epoch: 0,
             batches_sent: 0,
             automation_pending: HashMap::new(),
             device_param_pending: HashMap::new(),
@@ -1497,7 +1509,7 @@ impl GraphRegistry {
     /// The queue ledgers do go, with the strips they describe: every stamp
     /// addresses a node or an effect this teardown removes, and a removed
     /// node's queue is removed with it.
-    fn take_topology_down(&mut self) -> Vec<GraphCommand> {
+    pub(crate) fn take_topology_down(&mut self) -> Vec<GraphCommand> {
         let mut strips: Vec<&StripEntry> = self.strips.values().collect();
         // Registry order is a `HashMap`'s, which is not an order at all. Native
         // id is creation order, so the teardown reads the way the build did.
@@ -1517,6 +1529,7 @@ impl GraphRegistry {
             });
         }
 
+        self.timeline_owner = None;
         self.strips.clear();
         self.devices.clear();
         self.track_count = 0;
@@ -1546,6 +1559,7 @@ impl GraphRegistry {
     pub(crate) fn reset_for_engine_restart(&mut self) {
         let _ops_for_an_engine_that_is_gone = self.take_topology_down();
         self.batches_sent = 0;
+        self.engine_epoch = self.engine_epoch.saturating_add(1);
     }
 
     /// Take every chain entry naming `engine_plugin_id` out of the graph,
@@ -1782,11 +1796,11 @@ struct PendingStamp {
 }
 
 /// One device-parameter change the ledger believes a device's pending window
-/// still holds. Device queues have no cancellation laws to mirror — no
-/// replace, no locate ([`daw_engine::timeline::DeviceParamQueue`]) — so the
-/// only way a stamp leaves is the progress echo proving it popped.
+/// still holds. A parameter Hold cancels its own old tail; locate still leaves
+/// device queues alone. Other stamps leave only on proven progress.
 #[derive(Clone, Copy, Debug)]
 struct DeviceParamStamp {
+    param: DeviceParamTarget,
     at_frame: u64,
     admitted_batch: u64,
     /// As [`PendingStamp::landed_wraps`].
@@ -1902,7 +1916,18 @@ impl QueueBudgets {
         Ok(())
     }
 
-    fn charge_device_param(&mut self, effect_id: usize, at_frame: u64) -> Result<(), String> {
+    fn hold_device_param(&mut self, effect_id: usize, param: DeviceParamTarget, at_frame: u64) {
+        if let Some(queued) = self.device_params.get_mut(&effect_id) {
+            queued.retain(|stamp| stamp.param != param || stamp.at_frame < at_frame);
+        }
+    }
+
+    fn charge_device_param(
+        &mut self,
+        effect_id: usize,
+        param: DeviceParamTarget,
+        at_frame: u64,
+    ) -> Result<(), String> {
         let queued = self.device_params.entry(effect_id).or_default();
         if queued.len() == DEVICE_PARAM_QUEUE_CAPACITY {
             return Err(format!(
@@ -1915,6 +1940,7 @@ impl QueueBudgets {
             ));
         }
         queued.push(DeviceParamStamp {
+            param,
             at_frame,
             admitted_batch: self.charging_batch,
             landed_wraps: None,
@@ -1924,8 +1950,8 @@ impl QueueBudgets {
 
     /// Mirror of the engine's locate law: a seek drops every queued write
     /// stamped at or past the target frame, so the ledger releases the same
-    /// slots. Device-param queues have no cancellation law to mirror, so
-    /// their depths deliberately stay.
+    /// slots. A device-param Hold is separate from locate, so those depths
+    /// deliberately stay until explicit Hold or proven playback progress.
     fn apply_seek(&mut self, frame: u64) {
         for queued in self.automation.values_mut() {
             queued.retain(|pending| pending.at_frame < frame);
@@ -3078,6 +3104,19 @@ fn map_batch(
         ));
     }
 
+    if let Some(lease) = &batch.timeline_lease {
+        let owner = samples.timeline_lease_owner(lease)?;
+        if !batch.replace_topology
+            && registry
+                .timeline_owner
+                .as_deref()
+                .is_some_and(|current| current != owner)
+        {
+            return Err("Timeline graph belongs to another project owner".into());
+        }
+    } else if samples.residency.fenced() {
+        return Err("Graph batch requires a timeline material lease".into());
+    }
     let mut ops = Vec::new();
     // A replacing batch tears the previous topology down inside its own fence,
     // so the swap is one step for the audio thread: no block renders the old
@@ -3085,6 +3124,9 @@ fn map_batch(
     // after the teardown because the teardown clears it.
     if batch.replace_topology {
         ops.extend(registry.take_topology_down());
+    }
+    if let Some(lease) = &batch.timeline_lease {
+        registry.timeline_owner = Some(samples.timeline_lease_owner(lease)?.into());
     }
     let mut touched: Vec<String> = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
@@ -3095,6 +3137,7 @@ fn map_batch(
             command,
             registry,
             samples,
+            batch.timeline_lease.as_deref(),
             sample_rate,
             engine_owned_devices,
             &mut *attached_crumbs,
@@ -3161,6 +3204,7 @@ fn map_command(
     command: &GraphCommandPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
+    timeline_lease: Option<&str>,
     sample_rate: f32,
     engine_owned_devices: &HashMap<String, EngineOwnedDevice>,
     attached_crumbs: &mut AttachedCrumbs,
@@ -3632,6 +3676,26 @@ fn map_command(
             map_parameter_write(target, write, registry, sample_rate, budgets, ops)
         }
 
+        GraphCommandPayload::SetStripVcaMultiplier {
+            track_id,
+            multiplier,
+        } => {
+            let value = finite(*multiplier, "set-strip-vca-multiplier multiplier")?;
+            if value < 0.0 || value > f32::MAX as f64 {
+                return Err(
+                    "set-strip-vca-multiplier requires a nonnegative f32 multiplier".into(),
+                );
+            }
+            let strip = registry
+                .strips
+                .get_mut(track_id)
+                .ok_or_else(|| format!("set-strip-vca-multiplier: unknown strip '{track_id}'"))?;
+            // The following raw fader replay maps through this working value.
+            // No callback operation is needed until that replay is admitted.
+            strip.vca_multiplier = value as f32;
+            Ok(())
+        }
+
         GraphCommandPayload::WriteDeviceParameter { target, write } => {
             let DeviceParameterTargetPayload::DeviceParameter {
                 track_id,
@@ -3664,19 +3728,33 @@ fn map_command(
                     })?,
                 ),
             };
-            let StepWritePayload::Step { value, time } = write;
-            let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
-            let value = finite(*value, "write-device-parameter value")?;
             let effect_id = device.native_effect_id;
-            budgets
-                .charge_device_param(effect_id, at_frame)
-                .map_err(|reason| format!("write-device-parameter: {reason}"))?;
-            ops.push(GraphCommand::AutomateDeviceParam {
-                effect_id,
-                param,
-                value,
-                at_frame,
-            });
+            match write {
+                DeviceParameterWritePayload::Hold { time } => {
+                    let at_frame =
+                        seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+                    budgets.hold_device_param(effect_id, param, at_frame);
+                    ops.push(GraphCommand::HoldDeviceParam {
+                        effect_id,
+                        param,
+                        at_frame,
+                    });
+                }
+                DeviceParameterWritePayload::Step { value, time } => {
+                    let at_frame =
+                        seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+                    let value = finite(*value, "write-device-parameter value")?;
+                    budgets
+                        .charge_device_param(effect_id, param, at_frame)
+                        .map_err(|reason| format!("write-device-parameter: {reason}"))?;
+                    ops.push(GraphCommand::AutomateDeviceParam {
+                        effect_id,
+                        param,
+                        value,
+                        at_frame,
+                    });
+                }
+            }
             Ok(())
         }
 
@@ -3961,9 +4039,14 @@ fn map_command(
             Ok(())
         }
 
-        GraphCommandPayload::ScheduleClip { playback } => {
-            map_schedule_clip(playback, registry, samples, sample_rate, ops)
-        }
+        GraphCommandPayload::ScheduleClip { playback } => map_schedule_clip(
+            playback,
+            registry,
+            samples,
+            timeline_lease,
+            sample_rate,
+            ops,
+        ),
 
         GraphCommandPayload::SetTransport {
             playing,
@@ -4176,6 +4259,7 @@ fn map_schedule_clip(
     playback: &ClipPlaybackPayload,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
+    timeline_lease: Option<&str>,
     sample_rate: f32,
     ops: &mut Vec<GraphCommand>,
 ) -> Result<(), String> {
@@ -4196,12 +4280,11 @@ fn map_schedule_clip(
         ));
     }
     let native_track_id = strip.native_id;
-    let sample = samples.get(&playback.source.source_id).ok_or_else(|| {
-        format!(
-            "schedule-clip: unknown sample '{}' — register it with register_timeline_sample first",
-            playback.source.source_id
-        )
-    })?;
+    let sample = samples.resolve_timeline_sample(
+        timeline_lease,
+        &playback.source.source_id,
+        playback.source.material_version.as_deref(),
+    )?;
 
     let rate = finite(playback.playback_rate, "playbackRate")?;
     if rate <= 0.0 {
@@ -4413,6 +4496,15 @@ pub async fn register_timeline_sample(
     pcm: Vec<u8>,
     state: &AppState,
 ) -> Result<Value, String> {
+    if state
+        .timeline_samples
+        .lock()
+        .map_err(|e| e.to_string())?
+        .residency
+        .fenced()
+    {
+        return Err("register_timeline_sample requires a fenced material lease; use register_timeline_material".into());
+    }
     if sample_id.is_empty() {
         return Err("Sample id must not be empty".to_string());
     }
@@ -4428,6 +4520,8 @@ pub async fn register_timeline_sample(
         }
     };
     let frames = pcm_frame_count(pcm.len(), channels)?;
+    let mut samples = state.timeline_samples.lock().map_err(|e| e.to_string())?;
+    samples.admit_legacy_material(&sample_id, pcm.len())?;
     let bytes_per_frame = 4 * channels;
     // Collected straight into the shared channels every clip over this material
     // will hold, so registration allocates each one exactly once.
@@ -4443,10 +4537,6 @@ pub async fn register_timeline_sample(
         Arc::from([])
     };
 
-    let mut samples = state
-        .timeline_samples
-        .lock()
-        .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
     samples.insert(
         sample_id,
         TimelineSample {
@@ -4542,6 +4632,19 @@ pub async fn apply_graph_commands(
         validate_correlation(batch.correlation.as_ref(), registry_guard.runtime_revision)
     {
         return result_json(&GraphApplyResultPayload::rejected(reason));
+    }
+
+    {
+        let samples = state.timeline_samples.lock().map_err(|e| e.to_string())?;
+        if let Some(lease) = &batch.timeline_lease {
+            if let Err(reason) = samples.timeline_lease_owner(lease) {
+                return result_json(&GraphApplyResultPayload::rejected(reason));
+            }
+        } else if samples.residency.fenced() {
+            return result_json(&GraphApplyResultPayload::rejected(
+                "Graph batch requires a timeline material lease".into(),
+            ));
+        }
     }
 
     if let Err(failure) = start_into_empty_slot(&state.engine, daw_engine::EngineHandle::new) {
@@ -4681,7 +4784,7 @@ pub async fn apply_graph_commands(
     // Lock order, here and in `map_graph_batch` and `render_graph_offline`:
     // timeline samples first, then levain banks. All three sites take both, and
     // a site that took them the other way round would deadlock against these.
-    let samples = state
+    let mut samples = state
         .timeline_samples
         .lock()
         .map_err(|error| format!("Failed to lock timeline samples: {error}"))?;
@@ -4766,6 +4869,13 @@ pub async fn apply_graph_commands(
             );
         }
     }
+
+    samples.residency.record_graph_replacement(
+        registry_guard.timeline_owner.as_deref(),
+        working.timeline_owner.as_deref(),
+        registry_guard.engine_epoch,
+        working.batches_sent,
+    );
 
     // The batch is on this engine's ring, so `working` names the strips the
     // engine now has: a punch arm recorded before this engine booted, before a
@@ -4938,6 +5048,7 @@ struct MappingSessionKeyPayload {
 /// [`MAX_BATCH_COMMANDS`] so the incoming batch still meets the same ceiling.
 fn replay_prior_commands(
     mut commands: Vec<GraphCommandPayload>,
+    timeline_lease: Option<&str>,
     registry: &mut GraphRegistry,
     samples: &TimelineSamplePool,
     sample_rate: f32,
@@ -4951,6 +5062,7 @@ fn replay_prior_commands(
         };
         let replay = GraphBatchPayload {
             schema_version: 1,
+            timeline_lease: timeline_lease.map(str::to_string),
             correlation: None,
             replace_topology: false,
             commands,
@@ -5077,6 +5189,7 @@ pub async fn map_graph_batch(
             if !prior_commands.is_empty() {
                 replay_prior_commands(
                     prior_commands,
+                    batch.timeline_lease.as_deref(),
                     &mut registry,
                     &samples,
                     sample_rate as f32,
@@ -6912,6 +7025,13 @@ mod tests {
                 "write": { "shape": "step", "value": value, "time": time } })
     }
 
+    fn device_hold(track: &str, device: &str, parameter: &str, time: f64) -> Value {
+        json!({ "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": track,
+                            "deviceId": device, "parameterId": parameter },
+                "write": { "shape": "hold", "time": time } })
+    }
+
     /// Push one mapped batch behind a fence, exactly as
     /// `EngineHandle::send_graph_batch` publishes the live ones — the fence
     /// is what the drain counts, so the ledger's batch numbers only line up
@@ -6942,6 +7062,500 @@ mod tests {
         send_mapped(renderer, mapped.ops);
         *registry = working;
         Ok(())
+    }
+
+    #[test]
+    fn device_hold_native_ledger_cancels_only_its_parameter_and_rolls_back_refusal() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 256);
+        let mut fill = vec![track_strip("t1"), knead_insert("t1", "d1")];
+        for index in 0..DEVICE_PARAM_QUEUE_CAPACITY {
+            fill.push(json!({ "kind": "write-device-parameter",
+                "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                    "parameterId": if index % 2 == 0 { "shift_semitones" } else { "retune_speed_ms" } },
+                "write": { "shape": "step", "time": 1.0, "value": 0.25 } }));
+        }
+        admit_and_send(&mut registry, &mut renderer, Value::Array(fill), &samples).unwrap();
+        let hold = device_hold("t1", "d1", "shift_semitones", 1.0);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([hold.clone()]),
+            &samples,
+        )
+        .unwrap();
+        let effect = registry.devices["d1"].native_effect_id;
+        assert_eq!(registry.device_param_pending[&effect].len(), 32);
+        assert!(registry.device_param_pending[&effect]
+            .iter()
+            .all(|stamp| stamp.param == DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs)));
+        let step = device_step("t1", "d1", 0.6, 1.0);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([step.clone()]),
+            &samples,
+        )
+        .unwrap();
+        let mut overflow = vec![hold.clone()];
+        overflow.extend(std::iter::repeat(step.clone()).take(33));
+        let before = registry.batches_sent;
+        assert!(admit_and_send(
+            &mut registry,
+            &mut renderer,
+            Value::Array(overflow),
+            &samples
+        )
+        .unwrap_err()
+        .contains("device-param-queue-capacity"));
+        assert_eq!(registry.batches_sent, before);
+        assert_eq!(registry.device_param_pending[&effect].len(), 33);
+        assert!(registry.device_param_pending[&effect]
+            .iter()
+            .any(|stamp| stamp.param == DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones)));
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([hold.clone()]),
+            &samples,
+        )
+        .unwrap();
+        let b_step = json!({ "kind": "write-device-parameter",
+            "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                        "parameterId": "retune_speed_ms" },
+            "write": { "shape": "step", "time": 2.0, "value": 0.25 } });
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            Value::Array(vec![b_step; 32]),
+            &samples,
+        )
+        .unwrap();
+        admit_and_send(&mut registry, &mut renderer, json!([hold]), &samples).unwrap();
+        assert_eq!(
+            registry.device_param_pending[&effect].len(),
+            64,
+            "A Hold cannot release B headroom"
+        );
+        assert!(
+            admit_and_send(&mut registry, &mut renderer, json!([step]), &samples)
+                .unwrap_err()
+                .contains("device-param-queue-capacity")
+        );
+        assert!(
+            serde_json::from_value::<GraphBatchPayload>(json!({ "schemaVersion": 1,
+                "commands": [{ "kind": "write-device-parameter",
+                    "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                                "parameterId": "shift_semitones" },
+                    "write": { "shape": "ramp-to", "value": 1, "startTime": 0, "landTime": 1 }
+                }]
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn live_vca_zero_then_half_replays_raw_gain_once_into_actual_pcm() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 128);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "VCA member",
+                  "state": { "gain": 3, "pan": 0, "muted": false,
+                             "soloGated": false, "vcaMultiplier": 0 },
+                  "devices": [], "honorMuted": true, "contributesAudio": true },
+                { "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.1,
+                    "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 }
+                } },
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0,
+                  "locate": false }
+            ]),
+            &samples,
+        )
+        .unwrap();
+        let (zero_left, zero_right) = renderer.render(64);
+        assert_eq!(zero_left.len(), 64);
+        assert_eq!(zero_right.len(), 64);
+        assert!(zero_left
+            .iter()
+            .chain(&zero_right)
+            .all(|value| *value == 0.0));
+        let change = json!([
+            { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
+            { "kind": "write-parameter", "target": { "kind": "track-fader", "trackId": "t1" },
+              "write": { "shape": "hold", "time": 64.0 / 48_000.0 } },
+            { "kind": "write-parameter", "target": { "kind": "track-fader", "trackId": "t1" },
+              "write": { "shape": "step", "value": 3, "time": 64.0 / 48_000.0 } }
+        ]);
+        admit_and_send(&mut registry, &mut renderer, change, &samples).unwrap();
+        assert_eq!(registry.strips["t1"].vca_multiplier, 0.5);
+        let (half_left, half_right) = renderer.render(64);
+        assert_eq!(half_left.len(), 64);
+        assert_eq!(half_right.len(), 64);
+        assert!(half_left
+            .iter()
+            .chain(&half_right)
+            .all(|value| (*value - 0.75).abs() < 1e-6));
+        let before = registry.batches_sent;
+        assert!(admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.25 },
+                { "kind": "write-parameter",
+                  "target": { "kind": "track-fader", "trackId": "missing" },
+                  "write": { "shape": "step", "value": 1, "time": 0 } }
+            ]),
+            &samples,
+        )
+        .is_err());
+        assert_eq!(registry.strips["t1"].vca_multiplier, 0.5);
+        assert_eq!(registry.batches_sent, before);
+    }
+
+    #[test]
+    fn live_vca_removed_fader_restores_raw_base_and_recovers_from_zero() {
+        for multiplier in [0.0, 1.0] {
+            let samples = sample_pool();
+            let mut registry = GraphRegistry::default();
+            let mut renderer = OfflineRenderer::new(48_000.0, 128);
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    { "kind": "create-track-strip", "trackId": "t1", "name": "Member",
+                      "state": { "gain": 1.5, "pan": 0, "muted": false,
+                                 "soloGated": false, "vcaMultiplier": multiplier },
+                      "devices": [], "honorMuted": true, "contributesAudio": true },
+                    { "kind": "schedule-clip", "playback": {
+                        "trackId": "t1", "source": { "sourceId": "source-a" },
+                        "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.1,
+                        "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 }
+                    } },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0, "value": 0.25 } },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0.01, "value": 0.8 } },
+                    { "kind": "set-transport", "playing": true, "positionSeconds": 0,
+                      "locate": false }
+                ]),
+                &samples,
+            )
+            .unwrap();
+            let automated = (0.125 * multiplier) as f32;
+            let (automated_left, automated_right) = renderer.render(64);
+            assert_eq!(automated_left.len(), 64);
+            assert_eq!(automated_right.len(), 64);
+            assert!(automated_left
+                .iter()
+                .chain(&automated_right)
+                .all(|value| (*value - automated).abs() < 1e-6));
+            let hold = json!({ "kind": "write-parameter",
+                "target": { "kind": "track-fader", "trackId": "t1" },
+                "write": { "shape": "hold", "time": 64.0 / 48_000.0 } });
+            let replay = json!({ "kind": "write-parameter",
+                "target": { "kind": "track-fader", "trackId": "t1" },
+                "write": { "shape": "step", "time": 64.0 / 48_000.0, "value": 1.5 } });
+            let before = registry.batches_sent;
+            assert!(admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    hold.clone(), replay.clone(),
+                    { "kind": "set-strip-vca-multiplier", "trackId": "missing", "multiplier": 0.5 }
+                ]),
+                &samples,
+            )
+            .is_err());
+            assert_eq!(registry.batches_sent, before);
+            let (rejected_left, rejected_right) = renderer.render(64);
+            assert_eq!(rejected_left.len(), 64);
+            assert_eq!(rejected_right.len(), 64);
+            assert!(rejected_left
+                .iter()
+                .chain(&rejected_right)
+                .all(|value| (*value - automated).abs() < 1e-6));
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([hold, replay]),
+                &samples,
+            )
+            .unwrap();
+            let restored = (0.75 * multiplier) as f32;
+            let (restored_left, restored_right) = renderer.render(64);
+            assert_eq!(restored_left.len(), 64);
+            assert_eq!(restored_right.len(), 64);
+            assert!(restored_left
+                .iter()
+                .chain(&restored_right)
+                .all(|value| (*value - restored).abs() < 1e-6));
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "hold", "time": 192.0 / 48_000.0 } },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 192.0 / 48_000.0, "value": 1.5 } }
+                ]),
+                &samples,
+            )
+            .unwrap();
+            let (final_left, final_right) = renderer.render(512);
+            assert_eq!(final_left.len(), 512);
+            assert_eq!(final_right.len(), 512);
+            assert!(
+                final_left
+                    .iter()
+                    .chain(&final_right)
+                    .all(|value| (*value - 0.375).abs() < 1e-6),
+                "the removed lane's old .8 Step must not return at frame 480"
+            );
+        }
+    }
+
+    #[test]
+    fn device_hold_future_time_and_invalid_identity_preserve_the_whole_batch() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 128);
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"), knead_insert("t1", "d1"),
+                device_step("t1", "d1", 1.0, 0.5),
+                device_step("t1", "d1", 2.0, 1.0),
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "t1", "deviceId": "d1",
+                              "parameterId": "retune_speed_ms" },
+                  "write": { "shape": "step", "time": 1, "value": 3 } }
+            ]),
+            &samples,
+        )
+        .unwrap();
+        let effect = registry.devices["d1"].native_effect_id;
+        let hold = device_hold("t1", "d1", "shift_semitones", 0.75);
+        for (track, device, parameter, time) in [
+            ("wrong", "d1", "shift_semitones", 0.75),
+            ("t1", "missing", "shift_semitones", 0.75),
+            ("t1", "d1", "unknown", 0.75),
+            ("t1", "d1", "shift_semitones", -1.0),
+            ("t1", "d1", "shift_semitones", 1e20),
+        ] {
+            let before = registry.batches_sent;
+            assert!(admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([hold.clone(), device_hold(track, device, parameter, time)]),
+                &samples,
+            )
+            .is_err());
+            assert_eq!(registry.device_param_pending[&effect].len(), 3);
+            assert_eq!(registry.batches_sent, before);
+        }
+        admit_and_send(&mut registry, &mut renderer, json!([hold]), &samples).unwrap();
+        let retained = &registry.device_param_pending[&effect];
+        assert_eq!(retained.len(), 2);
+        assert_eq!(
+            retained[0].param,
+            DeviceParamTarget::Builtin(DeviceParam::ShiftSemitones)
+        );
+        assert_eq!(retained[0].at_frame, 24_000);
+        assert_eq!(
+            retained[1].param,
+            DeviceParamTarget::Builtin(DeviceParam::RetuneSpeedMs)
+        );
+        assert_eq!(retained[1].at_frame, 48_000);
+        for multiplier in [-1.0, f64::MAX] {
+            assert!(admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([{ "kind": "set-strip-vca-multiplier", "trackId": "t1",
+                         "multiplier": multiplier }]),
+                &samples,
+            )
+            .is_err());
+            assert_eq!(registry.strips["t1"].vca_multiplier, 1.0);
+        }
+    }
+
+    #[test]
+    fn device_hold_resolves_hosted_aliases_to_the_same_u32_queue_identity() {
+        let mut registry = registry_holding_a_bound_hosted_plugin();
+        let mapped = map_bound_batch(
+            &batch(json!([
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "lead",
+                              "deviceId": "d-plugin", "parameterId": "042" },
+                  "write": { "shape": "step", "time": 0.5, "value": 0.1 } },
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "lead",
+                              "deviceId": "d-plugin", "parameterId": "42" },
+                  "write": { "shape": "step", "time": 1, "value": 0.2 } },
+                { "kind": "write-device-parameter",
+                  "target": { "kind": "device-parameter", "trackId": "lead",
+                              "deviceId": "d-plugin", "parameterId": "43" },
+                  "write": { "shape": "step", "time": 1, "value": 0.3 } },
+                device_hold("lead", "d-plugin", "42", 0.75)
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+            &attached("inst-1", 1_007),
+        )
+        .unwrap();
+        assert!(matches!(
+            mapped.ops.last(),
+            Some(GraphCommand::HoldDeviceParam {
+                effect_id: 1_007,
+                param: DeviceParamTarget::Hosted { id: 42 },
+                at_frame: 36_000
+            })
+        ));
+        let retained = &registry.device_param_pending[&1_007];
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0].param, DeviceParamTarget::Hosted { id: 42 });
+        assert_eq!(retained[0].at_frame, 24_000);
+        assert_eq!(retained[1].param, DeviceParamTarget::Hosted { id: 43 });
+        for parameter in ["knead", "4294967296"] {
+            assert!(map_bound_batch(
+                &batch(json!([device_hold("lead", "d-plugin", parameter, 0.0)])),
+                &mut registry.clone(),
+                &sample_pool(),
+                48_000.0,
+                &attached("inst-1", 1_007),
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn live_vca_mute_and_solo_steps_preserve_the_prefader_send_distinction() {
+        for (gate, expected) in [("track-mute-gate", 0.25f32), ("track-solo-gate", 0.0)] {
+            let samples = sample_pool();
+            let mut registry = GraphRegistry::default();
+            let mut renderer = OfflineRenderer::new(48_000.0, 128);
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    { "kind": "create-track-strip", "trackId": "t1", "name": "Source",
+                      "state": strip_state(0.0), "devices": [], "honorMuted": true,
+                      "contributesAudio": true },
+                    { "kind": "create-bus-strip", "busId": "cue", "name": "Cue",
+                      "state": strip_state(1.0), "devices": [], "honorMuted": true,
+                      "contributesAudio": false },
+                    { "kind": "add-send", "trackId": "t1", "busId": "cue",
+                      "tap": "pre-fader", "level": 0.5 },
+                    { "kind": "schedule-clip", "playback": {
+                        "trackId": "t1", "source": { "sourceId": "source-a" },
+                        "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
+                        "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 }
+                    } },
+                    { "kind": "set-strip-vca-multiplier", "trackId": "t1", "multiplier": 0.5 },
+                    { "kind": "write-parameter",
+                      "target": { "kind": "track-fader", "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0, "value": 0 } },
+                    { "kind": "write-parameter", "target": { "kind": gate, "trackId": "t1" },
+                      "write": { "shape": "step", "time": 0, "value": 0 } },
+                    { "kind": "set-transport", "playing": true, "positionSeconds": 0,
+                      "locate": false }
+                ]),
+                &samples,
+            )
+            .unwrap();
+            let (edge_left, edge_right) = renderer.render(128);
+            assert_eq!(edge_left.len(), 128);
+            assert_eq!(edge_right.len(), 128);
+            assert_eq!(
+                edge_left[0], 0.25,
+                "{gate} retains the old level at the edge"
+            );
+            assert_eq!(
+                edge_right[0], 0.25,
+                "{gate} retains the old level at the edge"
+            );
+            for (index, (left, right)) in edge_left.iter().zip(&edge_right).enumerate() {
+                let edge_expected = if gate == "track-solo-gate" {
+                    // The solo gate precedes the cue tap and follows the existing
+                    // 5 ms one-pole, using the old level before each advance.
+                    (0.25 * (-(index as f64) / (48_000.0 * 0.005)).exp()) as f32
+                } else {
+                    0.25
+                };
+                assert!(
+                    (*left - edge_expected).abs() < 1e-6,
+                    "{gate} left cue edge at frame {index}"
+                );
+                assert!(
+                    (*right - edge_expected).abs() < 1e-6,
+                    "{gate} right cue edge at frame {index}"
+                );
+            }
+            // 4,096 frames exceed 17 time constants and the gate's snap bound.
+            // The one-second source remains active for closure and restoration.
+            let (settling_left, settling_right) = renderer.render(4_096 - 128);
+            assert_eq!(settling_left.len(), 4_096 - 128);
+            assert_eq!(settling_right.len(), 4_096 - 128);
+            let (closed_left, closed_right) = renderer.render(128);
+            assert_eq!(closed_left.len(), 128);
+            assert_eq!(closed_right.len(), 128);
+            assert!(
+                closed_left
+                    .iter()
+                    .chain(&closed_right)
+                    .all(|value| *value == expected),
+                "{gate} settled cue PCM while the source is active"
+            );
+            admit_and_send(
+                &mut registry,
+                &mut renderer,
+                json!([
+                    { "kind": "write-parameter", "target": { "kind": gate, "trackId": "t1" },
+                      "write": { "shape": "step", "time": 4_224.0 / 48_000.0, "value": 1 } }
+                ]),
+                &samples,
+            )
+            .unwrap();
+            let (opening_left, opening_right) = renderer.render(4_096);
+            assert_eq!(opening_left.len(), 4_096);
+            assert_eq!(opening_right.len(), 4_096);
+            assert_eq!(
+                opening_left[0], expected,
+                "{gate} reopening keeps the closed edge"
+            );
+            assert_eq!(
+                opening_right[0], expected,
+                "{gate} reopening keeps the closed edge"
+            );
+            let (restored_left, restored_right) = renderer.render(128);
+            assert_eq!(restored_left.len(), 128);
+            assert_eq!(restored_right.len(), 128);
+            assert!(
+                restored_left
+                    .iter()
+                    .chain(&restored_right)
+                    .all(|value| *value == 0.25),
+                "{gate} restores the cue before the source ends"
+            );
+            assert_eq!(
+                renderer.timeline_diagnostics(),
+                TimelineRtDiagnosticsSnapshot::default()
+            );
+        }
     }
 
     /// Debt 1+2's discriminating case: more sequential single-write batches
@@ -8637,17 +9251,24 @@ mod tests {
         assert_eq!(sample_16.byte_len(), 16);
         assert_eq!(sample_64.byte_len(), 64);
 
-        pool.insert("s1".to_string(), sample_16.clone());
+        pool.insert("s1".to_string(), sample_16);
         assert_eq!(pool.len(), 1);
         assert_eq!(pool.total_bytes(), 16);
 
         // Re-register s1 with 64 bytes
-        pool.insert("s1".to_string(), sample_64.clone());
+        pool.insert("s1".to_string(), sample_64);
         assert_eq!(pool.len(), 1);
         assert_eq!(pool.total_bytes(), 64);
 
         // Re-register s1 with 16 bytes
-        pool.insert("s1".to_string(), sample_16);
+        pool.insert(
+            "s1".to_string(),
+            TimelineSample {
+                left: vec![0.0; 2].into(),
+                right: vec![0.0; 2].into(),
+                sample_rate: 48_000.0,
+            },
+        );
         assert_eq!(pool.len(), 1);
         assert_eq!(pool.total_bytes(), 16);
 
@@ -8655,6 +9276,12 @@ mod tests {
         let removed = pool.remove("s1");
         assert!(removed.is_some());
         assert_eq!(pool.len(), 0);
+        assert_eq!(
+            pool.total_bytes(),
+            16,
+            "the returned reader still owns the PCM"
+        );
+        drop(removed);
         assert_eq!(pool.total_bytes(), 0);
     }
 
@@ -8673,7 +9300,14 @@ mod tests {
         }; // 128 bytes (larger than max_bytes = 64)
 
         // Empty pool: oversized sample is retained
-        pool.insert("oversized_empty".to_string(), sample_128.clone());
+        pool.insert(
+            "oversized_empty".to_string(),
+            TimelineSample {
+                left: vec![0.0; 16].into(),
+                right: vec![0.0; 16].into(),
+                sample_rate: 48_000.0,
+            },
+        );
         assert_eq!(pool.len(), 1);
         assert_eq!(pool.total_bytes(), 128);
         assert!(pool.contains_key("oversized_empty"));
@@ -8683,8 +9317,15 @@ mod tests {
         assert_eq!(pool.total_bytes(), 0);
 
         // Multi-entry pool: oversized sample evicts prior entries and is retained
-        pool.insert("s1".to_string(), sample_16.clone());
-        pool.insert("s2".to_string(), sample_16.clone());
+        pool.insert("s1".to_string(), sample_16);
+        pool.insert(
+            "s2".to_string(),
+            TimelineSample {
+                left: vec![0.0; 2].into(),
+                right: vec![0.0; 2].into(),
+                sample_rate: 48_000.0,
+            },
+        );
         assert_eq!(pool.len(), 2);
         assert_eq!(pool.total_bytes(), 32);
 
@@ -8909,6 +9550,7 @@ mod tests {
         for param_name in ["shift_semitones", "retune_speed_ms", "formant_preserve"] {
             let batch = GraphBatchPayload {
                 schema_version: 1,
+                timeline_lease: None,
                 correlation: None,
                 replace_topology: false,
                 commands: vec![GraphCommandPayload::WriteDeviceParameter {
@@ -8917,7 +9559,7 @@ mod tests {
                         device_id: device_id.clone(),
                         parameter_id: param_name.to_string(),
                     },
-                    write: StepWritePayload::Step {
+                    write: DeviceParameterWritePayload::Step {
                         value: 1.0,
                         time: 0.0,
                     },
@@ -8937,6 +9579,7 @@ mod tests {
         // 2. Unknown param must be refused
         let unknown_batch = GraphBatchPayload {
             schema_version: 1,
+            timeline_lease: None,
             correlation: None,
             replace_topology: false,
             commands: vec![GraphCommandPayload::WriteDeviceParameter {
@@ -8945,7 +9588,7 @@ mod tests {
                     device_id: device_id.clone(),
                     parameter_id: "unknown_param".to_string(),
                 },
-                write: StepWritePayload::Step {
+                write: DeviceParameterWritePayload::Step {
                     value: 1.0,
                     time: 0.0,
                 },
@@ -9001,6 +9644,7 @@ mod tests {
 
         let write_batch = |parameter_id: &str| GraphBatchPayload {
             schema_version: 1,
+            timeline_lease: None,
             correlation: None,
             replace_topology: false,
             commands: vec![GraphCommandPayload::WriteDeviceParameter {
@@ -9009,7 +9653,7 @@ mod tests {
                     device_id: device_id.clone(),
                     parameter_id: parameter_id.to_string(),
                 },
-                write: StepWritePayload::Step {
+                write: DeviceParameterWritePayload::Step {
                     value: 0.2,
                     time: 0.0,
                 },
@@ -9098,6 +9742,7 @@ mod tests {
 
         let write_batch = |parameter_id: &str| GraphBatchPayload {
             schema_version: 1,
+            timeline_lease: None,
             correlation: None,
             replace_topology: false,
             commands: vec![GraphCommandPayload::WriteDeviceParameter {
@@ -9106,7 +9751,7 @@ mod tests {
                     device_id: device_id.clone(),
                     parameter_id: parameter_id.to_string(),
                 },
-                write: StepWritePayload::Step {
+                write: DeviceParameterWritePayload::Step {
                     value: 0.2,
                     time: 0.0,
                 },
@@ -15910,5 +16555,255 @@ mod tests {
             )),
             "a display-cased device type registered something other than the drum machine"
         );
+    }
+
+    #[tokio::test]
+    async fn native_timeline_residency_fifty_mapped_clips_keep_one_allocation_until_the_real_reader_releases(
+    ) {
+        use crate::commands::timeline_sample_lifecycle::{
+            register_timeline_material, timeline_sample_lifecycle,
+        };
+        let state = AppState::default();
+        state.timeline_samples.lock().unwrap().set_max_bytes(32);
+        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
+        let owner = opened["owner"].as_str().unwrap();
+        let prepared = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner,
+            "materials": [{"sourceId": "take", "version": "v1", "frames": 4, "channels": 2, "sampleRate": 48000}]}), &state).await.unwrap();
+        let lease = prepared["lease"].as_str().unwrap();
+        let pcm: Vec<u8> = [0.25f32, -0.25]
+            .iter()
+            .cycle()
+            .take(8)
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        register_timeline_material(
+            lease.into(),
+            "take".into(),
+            "v1".into(),
+            48000.0,
+            2,
+            pcm,
+            &state,
+        )
+        .await
+        .unwrap();
+        let mut commands = vec![
+            json!({"kind": "create-track-strip", "trackId": "t1", "name": "Take",
+            "state": strip_state(1.0), "devices": [], "honorMuted": true, "contributesAudio": true}),
+        ];
+        for index in 0..50 {
+            commands.push(json!({"kind": "schedule-clip", "playback": {"trackId": "t1",
+                "source": {"sourceId": "take", "materialVersion": "v1"}, "startTime": f64::from(index * 4) / 48000.0,
+                "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0, "playbackRate": 1,
+                "gain": 1, "fade": {"microFadeSeconds": 0}}}));
+        }
+        let wire = json!({"schemaVersion": 1, "timelineLease": lease, "commands": commands});
+        // Exercise the public production render body before holding a real mapped reader.
+        let output = render_graph_offline(wire.clone(), 200, 48000.0, &state)
+            .await
+            .unwrap();
+        let decoded: Vec<_> = output
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect();
+        assert!(decoded.iter().all(|value| value.is_finite()));
+        assert!(decoded.iter().any(|value| value.abs() > 0.0));
+        let batch = parse_batch(wire).unwrap();
+        let ops = {
+            let samples = state.timeline_samples.lock().unwrap();
+            let ops = map_offline_batch(&batch, &samples, &mut LevainBankStore::default(), 48000.0)
+                .unwrap();
+            let sample = samples
+                .resolve_timeline_sample(Some(lease), "take", Some("v1"))
+                .unwrap();
+            assert_eq!(Arc::strong_count(&sample.left), 51);
+            assert_eq!(Arc::strong_count(&sample.right), 51);
+            assert_eq!(samples.total_bytes(), 32);
+            ops
+        };
+        let waiting =
+            timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
+                .await
+                .unwrap();
+        assert_eq!(waiting["complete"], false);
+        assert_eq!(waiting["remainingReaders"], 1);
+        assert_eq!(state.timeline_samples.lock().unwrap().total_bytes(), 32);
+        assert!(render_graph_offline(
+            json!({"schemaVersion": 1, "timelineLease": lease, "commands": []}),
+            1,
+            48000.0,
+            &state
+        )
+        .await
+        .is_err());
+        let incoming = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
+        let request = json!({"action": "prepare", "owner": incoming["owner"],
+            "materials": [{"sourceId": "next", "version": "v2", "frames": 4, "channels": 2, "sampleRate": 48000}]});
+        assert!(timeline_sample_lifecycle(request.clone(), &state)
+            .await
+            .unwrap_err()
+            .contains("budget"));
+        // These are the actual mapped clips, consumed by the existing scheduler.
+        let (left, right) = render_offline_ops(ops, 200, 48000.0).unwrap();
+        assert!(left.iter().chain(&right).all(|value| value.is_finite()));
+        let complete =
+            timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
+                .await
+                .unwrap();
+        assert_eq!(complete["complete"], true);
+        assert_eq!(state.timeline_samples.lock().unwrap().total_bytes(), 0);
+        assert!(timeline_sample_lifecycle(request, &state).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn native_timeline_residency_eviction_reacquires_and_history_keeps_exact_same_id_versions(
+    ) {
+        use crate::commands::timeline_sample_lifecycle::{
+            register_timeline_material, timeline_sample_lifecycle,
+        };
+        let state = AppState::default();
+        state.timeline_samples.lock().unwrap().set_max_bytes(32);
+        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
+        let owner = opened["owner"].as_str().unwrap();
+        let descriptor = |version: &str| {
+            json!({"sourceId": "take", "version": version,
+            "frames": 4, "channels": 1, "sampleRate": 48000})
+        };
+        let old = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner, "materials": [descriptor("v1")]}),
+            &state,
+        )
+        .await
+        .unwrap();
+        let old_lease = old["lease"].as_str().unwrap();
+        register_timeline_material(
+            old_lease.into(),
+            "take".into(),
+            "v1".into(),
+            48000.0,
+            1,
+            [0.25f32; 4].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            &state,
+        )
+        .await
+        .unwrap();
+        let union = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner,
+            "materials": [descriptor("v1"), descriptor("v2")]}),
+            &state,
+        )
+        .await
+        .unwrap();
+        let lease = union["lease"].as_str().unwrap();
+        assert_eq!(union["missing"].as_array().unwrap().len(), 1);
+        register_timeline_material(
+            lease.into(),
+            "take".into(),
+            "v2".into(),
+            48000.0,
+            1,
+            [0.75f32; 4].iter().flat_map(|v| v.to_le_bytes()).collect(),
+            &state,
+        )
+        .await
+        .unwrap();
+        let wire = json!({"schemaVersion": 1, "timelineLease": lease, "commands": [
+            {"kind": "create-track-strip", "trackId": "t1", "name": "Take", "state": strip_state(1.0),
+                "devices": [], "honorMuted": true, "contributesAudio": true},
+            {"kind": "schedule-clip", "playback": {"trackId": "t1", "source": {"sourceId": "take", "materialVersion": "v1"},
+                "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0, "playbackRate": 1, "gain": 1, "fade": {"microFadeSeconds": 0}}},
+            {"kind": "schedule-clip", "playback": {"trackId": "t1", "source": {"sourceId": "take", "materialVersion": "v2"},
+                "startTime": 4.0 / 48000.0, "sourceOffsetSeconds": 0, "durationSeconds": 4.0 / 48000.0, "playbackRate": 1, "gain": 1, "fade": {"microFadeSeconds": 0}}}
+        ]});
+        let output = render_graph_offline(wire, 8, 48000.0, &state)
+            .await
+            .unwrap();
+        let first = f32::from_le_bytes(output[0..4].try_into().unwrap());
+        let second = f32::from_le_bytes(output[32..36].try_into().unwrap());
+        assert!(first > 0.0);
+        assert!((second - first * 3.0).abs() < 0.00001);
+        timeline_sample_lifecycle(json!({"action": "release", "lease": old_lease}), &state)
+            .await
+            .unwrap();
+        timeline_sample_lifecycle(json!({"action": "release", "lease": lease}), &state)
+            .await
+            .unwrap();
+        // Both cached rows can now be evicted to admit a complete new working set.
+        let replacement = timeline_sample_lifecycle(json!({"action": "prepare", "owner": owner,
+            "materials": [{"sourceId": "other", "version": "other", "frames": 8, "channels": 1, "sampleRate": 48000}]}), &state).await.unwrap();
+        timeline_sample_lifecycle(
+            json!({"action": "release", "lease": replacement["lease"]}),
+            &state,
+        )
+        .await
+        .unwrap();
+        let reacquired = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner,
+            "materials": [descriptor("v1")]}),
+            &state,
+        )
+        .await
+        .unwrap();
+        assert_eq!(reacquired["missing"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn native_timeline_residency_retirement_reclaims_no_engine_strip_capacity_without_booting_audio(
+    ) {
+        use crate::commands::timeline_sample_lifecycle::timeline_sample_lifecycle;
+        let state = AppState::default();
+        let opened = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
+        let owner = opened["owner"].as_str().unwrap();
+        let prepared = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": owner, "materials": []}),
+            &state,
+        )
+        .await
+        .unwrap();
+        let commands: Vec<_> = (0..MAX_TIMELINE_TRACKS).map(|index| json!({
+            "kind": "create-track-strip", "trackId": format!("t{index}"), "name": "Track",
+            "state": strip_state(1.0), "devices": [], "honorMuted": true, "contributesAudio": false
+        })).collect();
+        let batch = parse_batch(
+            json!({"schemaVersion": 1, "timelineLease": prepared["lease"], "commands": commands}),
+        )
+        .unwrap();
+        {
+            let mut registry = state.graph.lock().unwrap();
+            let samples = state.timeline_samples.lock().unwrap();
+            let mapped = map_unbound_batch(&batch, &mut registry, &samples, 48000.0).unwrap();
+            assert_eq!(registry.track_count, MAX_TIMELINE_TRACKS);
+            drop(mapped);
+        }
+        let retired =
+            timeline_sample_lifecycle(json!({"action": "retire", "owner": owner}), &state)
+                .await
+                .unwrap();
+        assert_eq!(retired["complete"], true);
+        assert!(state.engine.lock().unwrap().is_none());
+        assert_eq!(state.graph.lock().unwrap().track_count, 0);
+        let successor = timeline_sample_lifecycle(json!({"action": "open"}), &state)
+            .await
+            .unwrap();
+        let lease = timeline_sample_lifecycle(
+            json!({"action": "prepare", "owner": successor["owner"], "materials": []}),
+            &state,
+        )
+        .await
+        .unwrap();
+        let mut again = batch;
+        again.timeline_lease = Some(lease["lease"].as_str().unwrap().into());
+        let mut registry = state.graph.lock().unwrap();
+        let samples = state.timeline_samples.lock().unwrap();
+        assert!(map_unbound_batch(&again, &mut registry, &samples, 48000.0).is_ok());
+        assert_eq!(registry.track_count, MAX_TIMELINE_TRACKS);
     }
 }
