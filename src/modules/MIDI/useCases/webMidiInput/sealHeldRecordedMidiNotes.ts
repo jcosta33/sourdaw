@@ -1,5 +1,6 @@
 import { audioEngine } from '#/modules/AudioEngine/useCases';
-import { readBeatAtSamples } from '#/modules/Transport/stores';
+import { type RecordingMidiAdmission } from '#/modules/Arrangement/stores';
+import { readBeatAtSamples, transportStore } from '#/modules/Transport/stores';
 
 import { activeNotes } from '../../repositories/webMidi/state';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -14,13 +15,45 @@ type SealHeldRecordedMidiNotesInput = {
     clipId: string;
     trackId: string;
     endAudioTime?: number;
+    admissions?: readonly RecordingMidiAdmission[];
 };
 
 /** Close registered held keys inside the recording's existing Stop commit. */
-export function sealHeldRecordedMidiNotes({ clipId, trackId, endAudioTime }: SealHeldRecordedMidiNotesInput): void {
+export function sealHeldRecordedMidiNotes({
+    clipId,
+    trackId,
+    endAudioTime,
+    admissions = [],
+}: SealHeldRecordedMidiNotesInput): void {
     const stoppedAt = endAudioTime ?? audioEngine.context.currentTime;
+    for (const admitted of admissions) {
+        if (admitted.clipId !== clipId || admitted.trackId !== trackId || admitted.onsetAudioTime >= stoppedAt) {
+            continue;
+        }
+        const durationSeconds = Math.max(
+            0,
+            Math.min(admitted.releaseAudioTime ?? stoppedAt, stoppedAt) - admitted.onsetAudioTime
+        );
+        const tempo = transportStore.value?.tempo ?? 120;
+        const durationBeats =
+            admitted.releaseSourceBeat === undefined
+                ? (durationSeconds * tempo) / 60
+                : admitted.releaseSourceBeat - admitted.onsetSourceBeat;
+        appendRecordedMidiNote({
+            clipId,
+            note: createMidiNote(
+                admitted.note,
+                admitted.onsetSourceBeat,
+                Math.max(durationBeats, 0.0625),
+                admitted.velocity
+            ),
+        });
+    }
     for (const held of activeNotes.values()) {
         if (held.trackId !== trackId || held.recordingClipId !== clipId || held.startTime >= stoppedAt) {
+            continue;
+        }
+        if (admissions.some((admitted) => admitted.id === held.recordingAdmissionId)) {
             continue;
         }
         const placement = resolveRecordingPlacement(midiMessageHandlerDependencies, {

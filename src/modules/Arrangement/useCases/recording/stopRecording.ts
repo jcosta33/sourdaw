@@ -93,8 +93,10 @@ export async function stopRecording(
 ): Promise<StopRecordingOutcome> {
     const clipIds = activeRecordingRef.current;
     const captureRootIdentity = activeRecordingRef.capturedRootIdentity ?? null;
+    const midiAdmissions = activeRecordingRef.midiAdmissions;
     activeRecordingRef.current = [];
     activeRecordingRef.capturedRootIdentity = null;
+    activeRecordingRef.midiAdmissions = [];
 
     if (clipIds.length === 0) {
         return 'closed';
@@ -171,7 +173,12 @@ export async function stopRecording(
     });
 
     for (const clip of finalizedMidiClips) {
-        sealHeldRecordedMidiNotes({ clipId: clip.id, trackId: clip.trackId, endAudioTime: ending?.contextSeconds });
+        sealHeldRecordedMidiNotes({
+            clipId: clip.id,
+            trackId: clip.trackId,
+            endAudioTime: ending?.contextSeconds,
+            admissions: midiAdmissions,
+        });
     }
 
     // A MIDI clip stays on its record point, and so do the notes stored against

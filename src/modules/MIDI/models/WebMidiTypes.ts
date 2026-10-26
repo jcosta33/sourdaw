@@ -91,6 +91,8 @@ export type ActiveNoteData = {
     trackId: string;
     /** Provisional recording owner at onset; a later recording must not seal this held key. */
     recordingClipId?: string;
+    /** Owner-bound onset admission, retained through queued and worker work. */
+    recordingAdmissionId?: string;
     /** Scheduler pass traversed at onset, captured with the admitted beat before queued work. */
     recordingPassIndex?: number;
     /** Instrument owner resolved at note-on; source-track changes must not retarget release. */
