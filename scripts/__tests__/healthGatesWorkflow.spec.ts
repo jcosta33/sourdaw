@@ -475,6 +475,7 @@ const { parsed: prChecksWorkflow } = loadWorkflow('pr-checks.yml');
 const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
+const { parsed: nightlyEvidenceReporter } = loadWorkflow('nightly-evidence-report.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
 const { parsed: semanticReviewWorkflow } = loadWorkflow('semantic-review.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
@@ -1484,6 +1485,7 @@ type WorkflowSet = {
     cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
     nightly: UnknownRecord;
+    nightlyEvidenceReporter: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
     semanticReview: UnknownRecord;
@@ -1497,6 +1499,7 @@ function workflowSet(): WorkflowSet {
         cargoDependencySeed,
         heavy: heavyWorkflow,
         nightly,
+        nightlyEvidenceReporter,
         hostedQuantumMeasurement,
         hostedWasm,
         semanticReview: semanticReviewWorkflow,
@@ -1512,6 +1515,7 @@ function cloneWorkflows(label: string): WorkflowSet {
         cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
         nightly: asRecord(clone.nightly, `${label} nightly`),
+        nightlyEvidenceReporter: asRecord(clone.nightlyEvidenceReporter, `${label} nightly evidence reporter`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
         semanticReview: asRecord(clone.semanticReview, `${label} semantic review`),
@@ -1543,6 +1547,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
         ['nightly.yml', set.nightly],
+        ['nightly-evidence-report.yml', set.nightlyEvidenceReporter],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
         ['semantic-review.yml', set.semanticReview],
@@ -1958,6 +1963,14 @@ function assertSummaryMembership(set: WorkflowSet): void {
 }
 
 function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
+    const staticCheckout = stepNamed(jobAt(candidate, 'static'), 'Checkout');
+    const staticOptions = recordAt(staticCheckout, 'with');
+    if (staticOptions['fetch-depth'] !== 0) {
+        throw new Error('static must retain complete history for release inventory provenance');
+    }
+    if (staticOptions.ref !== '${{ github.sha }}') {
+        throw new Error('static release inventory must inspect the current workflow revision');
+    }
     const unitCheckout = stepNamed(jobAt(candidate, 'unit'), 'Checkout');
     if (recordAt(unitCheckout, 'with')['fetch-depth'] !== 0) {
         throw new Error('unit must retain complete history for immutable measurement provenance');
@@ -1971,6 +1984,12 @@ function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
         ) {
             throw new Error(`${jobName} must not fetch complete history`);
         }
+    }
+}
+
+function assertReleaseInventoryCommand(job: UnknownRecord): void {
+    if (stepNamed(job, 'Release inventory').run !== 'pnpm test:release-inventory') {
+        throw new Error('release inventory must run its exact validation command');
     }
 }
 
@@ -4636,32 +4655,53 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('keeps release provenance out of pull-request validation and in the nightly train', () => {
+    it('runs release inventory on every pull request and nightly with full provenance history', () => {
         const validationStatic = jobSteps('validation.yml', 'static', jobAt(validationWorkflow, 'static'));
         const nightlyStatic = jobSteps('nightly.yml', 'static', jobAt(nightly, 'static'));
-        expect(validationStatic.map((step) => step.name)).not.toContain('Release inventory');
-        expect(nightlyStatic.map((step) => step.name)).toContain('Release inventory');
-        expect(stringAt(stepNamed(jobAt(nightly, 'static'), 'Release inventory'), 'run')).toBe(
-            'pnpm test:release-inventory'
-        );
-        expect(stepNamed(jobAt(nightly, 'static'), 'Release inventory').if).toBeUndefined();
-        for (const workflowText of [
-            readFileSync(join(repositoryRoot, '.github/workflows/validation.yml'), 'utf8'),
-            readFileSync(join(repositoryRoot, '.github/workflows/pr-checks.yml'), 'utf8'),
-            readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8'),
-        ]) {
-            expect(workflowText).not.toMatch(/^\s+run: .*test:release-inventory/mu);
+        for (const [workflowName, staticJob] of [
+            ['validation.yml', jobAt(validationWorkflow, 'static')],
+            ['nightly.yml', jobAt(nightly, 'static')],
+        ] as const) {
+            expect(jobSteps(workflowName, 'static', staticJob).map((step) => step.name)).toContain('Release inventory');
+            const inventory = stepNamed(staticJob, 'Release inventory');
+            expect(() => assertReleaseInventoryCommand(staticJob)).not.toThrow();
+            expect(inventory.if).toBeUndefined();
+            expect(inventory['continue-on-error']).toBeUndefined();
         }
+        expect(validationStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(nightlyStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
-        // Mutation: restoring the inventory step to pull-request validation (or
-        // dropping it from the nightly train) drifts from the pinned inventory.
-        const restored = cloneWorkflows('release inventory restored to validation');
-        const staticSteps = arrayAt(jobAt(restored.validation, 'static'), 'steps');
-        staticSteps.splice(staticSteps.length - 1, 0, {
-            name: 'Release inventory',
-            run: 'pnpm test:release-inventory',
-        });
-        expect(() => assertStepInventory(restored)).toThrow('validation.yml job static steps drifted');
+        const droppedPr = cloneWorkflows('release inventory dropped from validation');
+        removeStepNamed(jobAt(droppedPr.validation, 'static'), 'Release inventory');
+        expect(() => assertStepInventory(droppedPr)).toThrow('validation.yml job static steps drifted');
+
+        const conditionalPr = cloneWorkflows('release inventory conditional in validation');
+        stepNamed(jobAt(conditionalPr.validation, 'static'), 'Release inventory').if = false;
+        expect(() => assertUnconditionalSteps(conditionalPr)).toThrow();
+
+        const wrongCommand = cloneWorkflows('release inventory command changed');
+        stepNamed(jobAt(wrongCommand.validation, 'static'), 'Release inventory').run = 'pnpm test:collection-scope';
+        expect(() => assertReleaseInventoryCommand(jobAt(wrongCommand.validation, 'static'))).toThrow(
+            'release inventory must run its exact validation command'
+        );
+
+        const softenedPr = cloneWorkflows('release inventory softened in validation');
+        stepNamed(jobAt(softenedPr.validation, 'static'), 'Release inventory')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softenedPr)).toThrow();
+
+        const shallowPr = cloneWorkflows('release inventory shallow validation checkout');
+        recordAt(stepNamed(jobAt(shallowPr.validation, 'static'), 'Checkout'), 'with')['fetch-depth'] = 1;
+        expect(() => assertUnitProvenanceHistory(shallowPr.validation)).toThrow(
+            'static must retain complete history for release inventory provenance'
+        );
+
+        const baseRevision = cloneWorkflows('release inventory on pull request base');
+        recordAt(stepNamed(jobAt(baseRevision.validation, 'static'), 'Checkout'), 'with').ref =
+            '${{ github.event.pull_request.base.sha }}';
+        expect(() => assertUnitProvenanceHistory(baseRevision.validation)).toThrow(
+            'static release inventory must inspect the current workflow revision'
+        );
 
         const dropped = cloneWorkflows('release inventory dropped from nightly');
         removeStepNamed(jobAt(dropped.nightly, 'static'), 'Release inventory');
@@ -5021,6 +5061,53 @@ export -f sudo timeout sleep apt-get
         expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
     });
 
+    it('pins the trusted nightly evidence reporter before granting issue writes', () => {
+        expect(HEALTH_GATE_WORKFLOW_FILES).toContain('nightly-evidence-report.yml');
+        const surface = (set: WorkflowSet) => () =>
+            assertWorkflowSecuritySurface(Object.fromEntries(workflowFiles(set)));
+        expect(surface(workflowSet())).not.toThrow();
+
+        for (const job of ['validate', 'publish']) {
+            const widened = cloneWorkflows(`nightly evidence ${job} permissions`);
+            recordAt(jobAt(widened.nightlyEvidenceReporter, job), 'permissions').contents = 'write';
+            expect(surface(widened)).toThrow(
+                `nightly-evidence-report.yml job ${job} must keep exactly its pinned permissions`
+            );
+
+            const extraSecret = cloneWorkflows(`nightly evidence ${job} secret`);
+            jobAt(extraSecret.nightlyEvidenceReporter, job).env = { TOKEN: '${{ secrets.JEV_KEY }}' };
+            expect(surface(extraSecret)).toThrow(
+                `nightly-evidence-report.yml job ${job} must read exactly its pinned secrets: GITHUB_TOKEN`
+            );
+        }
+
+        for (const [job, step] of [
+            ['validate', 'Checkout trusted default-branch reporter'],
+            ['publish', 'Checkout trusted default-branch repository context'],
+        ] as const) {
+            const persisted = cloneWorkflows(`nightly evidence ${job} persisted token`);
+            delete recordAt(stepNamed(jobAt(persisted.nightlyEvidenceReporter, job), step), 'with')[
+                'persist-credentials'
+            ];
+            expect(surface(persisted)).toThrow(
+                `nightly-evidence-report.yml job ${job} step ${step} must check out with persist-credentials: false`
+            );
+        }
+
+        const bypassedValidation = cloneWorkflows('nightly evidence validation removed');
+        removeStepNamed(
+            jobAt(bypassedValidation.nightlyEvidenceReporter, 'validate'),
+            'Validate independent run, artifact, jobs and CodeQL analysis'
+        );
+        expect(() => assertStepInventory(bypassedValidation)).toThrow(
+            'nightly-evidence-report.yml job validate steps drifted from the pinned inventory'
+        );
+
+        const counterfeitGate = cloneWorkflows('nightly evidence Gate name');
+        jobAt(counterfeitGate.nightlyEvidenceReporter, 'publish').name = 'Gate';
+        expect(surface(counterfeitGate)).toThrow('nightly-evidence-report.yml job publish must not be named Gate');
+    });
+
     it('refuses a workflows directory that drifts from the recorded file inventory', () => {
         expect(() =>
             assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), repositoryRoot)
@@ -5331,7 +5418,7 @@ export -f sudo timeout sleep apt-get
         expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });
 
-    it('fetches immutable measurement provenance history only in the unit matrix', () => {
+    it('fetches provenance history in static validation and the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
         const shallowUnit = asRecord(structuredClone(validationWorkflow), 'shallow unit validationWorkflow');

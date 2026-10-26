@@ -43,6 +43,8 @@ type NativeMenu = NonNullable<ReturnType<typeof nativeApplicationMenu>>;
 type NativeMenuIntent = Parameters<Parameters<NativeMenu['listen']>[0]>[0];
 type CanvasEditorCommand = Parameters<typeof dispatchCanvasEditorCommand>[1];
 
+const DOM_EDIT_OWNER_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+
 const isCanvasEditorCommand = (action: NativeMenuIntent['action']): action is CanvasEditorCommand =>
     action.startsWith('edit:');
 
@@ -114,6 +116,9 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             if (action === 'edit:cut' || action === 'edit:copy' || action === 'edit:paste') {
                 return;
             }
+        }
+        if (document.activeElement?.closest(DOM_EDIT_OWNER_SELECTOR)) {
+            return;
         }
     }
     switch (action) {

@@ -165,7 +165,8 @@ function stemImportAction(): AppAction {
 function propose(
     id: string,
     actions: readonly AppAction[] = TRACK_IDS.map((trackId) => gainAction(trackId)),
-    adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes']
+    adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes'],
+    protectionFacts?: Parameters<typeof proposePendingActionConfirmation>[0]['protectionFacts']
 ) {
     const confirmation = proposePendingActionConfirmation({
         id,
@@ -177,6 +178,7 @@ function propose(
         commandBatch: originalBatch,
         agentApproval: AGENT_APPROVAL,
         adoptedRecipes,
+        protectionFacts,
         affectedIds: [...TRACK_IDS],
         groupId: 'group-repropose',
         groupLabel: 'Rebalance the drums',
@@ -217,6 +219,38 @@ describe('reproposePendingChatActions', () => {
 
     afterEach(() => {
         clearPendingActionConfirmations();
+    });
+
+    it.each([false, true])('keeps independent protection facts when re-proposing subset=%s', async (subset) => {
+        const protectionFacts = {
+            protectedUnchanged: [{ id: 'track-keys', name: 'Keys' }],
+            protectedControls: [
+                { trackId: 'track-vocals', operations: ['setTrackGain'] },
+                { trackId: 'track-bass', operations: [], exceptOperations: ['setTrackGain'] },
+            ],
+        };
+        propose('confirmation-protection-facts', undefined, undefined, protectionFacts);
+        if (subset) {
+            mocks.preview.mockReturnValue(previewedSelection());
+            mocks.compilePartial.mockReturnValue({
+                status: 'compiled',
+                authority: subsetBatch.authority,
+                serialized: subsetBatch.serialized,
+                includedOriginalCommandIds: [COMMAND_IDS[0], COMMAND_IDS[2]],
+            });
+            mocks.refresh.mockReturnValue(readyRefresh(subsetBatch));
+        }
+
+        const options: Parameters<typeof reproposePendingChatActions>[0] = {
+            confirmationId: 'confirmation-protection-facts',
+        };
+        if (subset) {
+            options.selectedIntentGroupIds = [COMMAND_IDS[2]];
+        }
+        const result = await reproposePendingChatActions(options);
+
+        expect(result.status).toBe('reproposed');
+        expect(mocks.persistConfirmation).toHaveBeenCalledWith(expect.objectContaining({ protectionFacts }));
     });
 
     // Red when an unknown confirmation id is re-proposed instead of reported missing.

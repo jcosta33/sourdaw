@@ -286,13 +286,21 @@ function eventFieldEntries(event: ReviewDossierEvent): FieldEntry[] {
         return entries;
     }
     if (event.kind === 'finding-accepted') {
-        return [
+        const entries: FieldEntry[] = [
             ['kind', event.kind],
             ['findingId', event.findingId],
             ['path', event.path],
             ['line', event.line],
             ['side', event.side],
         ];
+        // Missing historical attribution stays absent from both serialization and digest preimages.
+        if (event.sources !== undefined) {
+            entries.push([
+                'sources',
+                event.sources.map((source) => ({ stance: source.stance, reviewerModel: source.reviewerModel })),
+            ]);
+        }
+        return entries;
     }
     if (event.kind === 'review-published') {
         return [

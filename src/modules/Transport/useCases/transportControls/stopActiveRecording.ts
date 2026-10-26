@@ -1,6 +1,7 @@
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
-import { stopRecording } from '#/modules/Arrangement/useCases';
+import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
+import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
@@ -15,12 +16,14 @@ async function closeActiveRecording(): Promise<void> {
     // store still holds the beat playback started at (it is written on discrete
     // events only), which would truncate the take back to its own start beat.
     const rolling = getTransportState()?.isPlaying === true;
-    const closesTake = activeRecordingRef.current.length > 0;
+    const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
     const recordingCommit = stopRecording(rolling ? playheadPositionRef.current : undefined);
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to
-        // know that the project it is leaving gained a take.
-        recordingLifecycle.trackCommit(recordingCommit);
+        // know that the project it is leaving gained a take. A stop the root
+        // guard will refuse closes no take (#5517): counting it would owe the
+        // next replacement a save for a take this project never gained.
+        recordingLifecycle.trackTakeCommit(recordingCommit);
     }
 
     const timerId = recordingLifecycle.countInTimerId;
@@ -63,5 +66,9 @@ export async function stopActiveRecording(): Promise<void> {
         await closing;
     } finally {
         await recordingLifecycle.waitForClosing();
+        // The falling edge this stop wrote started an overdub pass landing, behind the snapshot
+        // transaction queue; the stop is not done until it has landed or been refused, or the next
+        // Undo would act on the entry before it and the pass would arrive as an orphan.
+        await waitForOverdubLanding();
     }
 }

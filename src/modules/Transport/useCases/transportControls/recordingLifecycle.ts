@@ -1,6 +1,8 @@
+import { countSettledOverdubPasses, isOverdubLanding } from '#/modules/MIDI/useCases';
+
 type RecordingLifecycle = {
     readonly countInTimerId: ReturnType<typeof setTimeout> | null;
-    /** How many take commits have settled, whether they landed or were retired. */
+    /** How many take commits and overdub passes have settled, whether they landed or were retired. */
     readonly settledCommitCount: number;
     beginPendingRecordingStart: () => number;
     cancelPendingRecordingStart: () => void;
@@ -14,6 +16,13 @@ type RecordingLifecycle = {
     trackClosing: (closing: Promise<void>) => void;
     /** Own the commit a capture terminal started, so a stop can await it. */
     trackCommit: (commit: Promise<void>) => void;
+    /**
+     * Track a stop's promise for the settled-TAKE count: a stop that resolved `refused`
+     * (#5517) closed nothing, so it must not read as a take this
+     * project gained. Failures still count — a discarded take is a settled
+     * gesture the #4439 semantics keep counting.
+     */
+    trackTakeCommit: (commit: Promise<'refused' | 'closed'>) => void;
     /** Resolve once every closing stop has settled, including ones registered while waiting. */
     waitForClosing: () => Promise<void>;
     /**
@@ -48,8 +57,33 @@ const commitsInFlight = new Set<Promise<void>>();
  */
 const closingStops = new Set<Promise<void>>();
 
+/**
+ * An overdub pass writes its rows after the falling edge, behind the snapshot transaction queue
+ * (MIDI's `isOverdubLanding`), so a stop that has resolved its own commit is not
+ * done while one is still landing: the pass counts as a take in flight, and as a settled one
+ * once it has landed or been refused.
+ */
 function isClosingRecording(): boolean {
-    return closingStops.size > 0 || commitsInFlight.size > 0;
+    return closingStops.size > 0 || commitsInFlight.size > 0 || isOverdubLanding();
+}
+
+function trackTakeCommit(commit: Promise<'refused' | 'closed'>): void {
+    const onSettled = (outcome?: 'refused' | 'closed'): void => {
+        commitsInFlight.delete(settled);
+        if (outcome !== 'refused') {
+            settledCommitCount++;
+        }
+    };
+    const settled = commit.then(
+        (outcome) => onSettled(outcome),
+        () => onSettled()
+    );
+    commitsInFlight.add(settled);
+    pendingCommits.add(
+        commit.then((outcome) => {
+            void outcome;
+        })
+    );
 }
 
 function trackCommit(commit: Promise<void>): void {
@@ -100,7 +134,7 @@ export const recordingLifecycle: RecordingLifecycle = {
         return countInTimerId;
     },
     get settledCommitCount() {
-        return settledCommitCount;
+        return settledCommitCount + countSettledOverdubPasses();
     },
     beginPendingRecordingStart: () => {
         const token = ++nextRecordingStartToken;
@@ -125,6 +159,7 @@ export const recordingLifecycle: RecordingLifecycle = {
     },
     trackClosing,
     trackCommit,
+    trackTakeCommit,
     waitForClosing,
     waitForCommits,
 };

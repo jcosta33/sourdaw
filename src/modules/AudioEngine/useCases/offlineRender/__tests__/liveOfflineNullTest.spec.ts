@@ -177,6 +177,7 @@ import {
 } from '../../../models/AudioGraphBackend';
 import { type Device } from '../../../models/TrackViewTypes';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 
 import {
@@ -2546,6 +2547,15 @@ const { NATIVE_ADDON_FILE } = await import('../../../../../../electron/native');
 
 /** The napi surface this leg drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
+    timelineSampleLifecycle: (request: unknown) => Promise<unknown>;
+    registerTimelineMaterial: (
+        lease: string,
+        sampleId: string,
+        version: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
     registerTimelineSample: (
         sampleId: string,
         sampleRate: number,
@@ -2609,6 +2619,16 @@ function requireNativeHost(): NativeHostAddon {
  */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
+        timelineSampleLifecycle: (request) => host.timelineSampleLifecycle(request),
+        registerTimelineMaterial: (input) =>
+            host.registerTimelineMaterial(
+                input.lease,
+                input.sampleId,
+                input.version,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            ),
         async registerTimelineSample(input) {
             return host.registerTimelineSample(
                 input.sampleId,
@@ -2642,6 +2662,41 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
 }
 
 const NATIVE_LEG_SOURCE_ID = 'native-leg-take';
+const nativeAudioBuffers = new WeakMap<HarnessAudioBuffer, AudioBuffer>();
+
+function nativeAudioBuffer(material: HarnessAudioBuffer): AudioBuffer {
+    const existing = nativeAudioBuffers.get(material);
+    if (existing) {
+        return existing;
+    }
+    const channels = Array.from({ length: material.numberOfChannels }, (_, channelIndex) => {
+        const channel: Float32Array<ArrayBuffer> = new Float32Array(material.length);
+        channel.set(material.getChannelData(channelIndex));
+        return channel;
+    });
+    const getChannelData = (channelNumber: number): Float32Array<ArrayBuffer> => {
+        const channel = channels[channelNumber];
+        if (!channel) {
+            throw new Error(`Native fixture has no channel ${String(channelNumber)}`);
+        }
+        return channel;
+    };
+    const buffer: AudioBuffer = {
+        length: material.length,
+        sampleRate: material.sampleRate,
+        duration: material.duration,
+        numberOfChannels: material.numberOfChannels,
+        getChannelData,
+        copyFromChannel(destination, channelNumber, bufferOffset = 0) {
+            destination.set(getChannelData(channelNumber).subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel(source, channelNumber, bufferOffset = 0) {
+            getChannelData(channelNumber).set(source, bufferOffset);
+        },
+    };
+    nativeAudioBuffers.set(material, buffer);
+    return buffer;
+}
 
 function nativeLegClip(input: {
     trackId: string;
@@ -2649,13 +2704,15 @@ function nativeLegClip(input: {
     playbackRate?: number;
     material?: HarnessAudioBuffer;
 }): AudioGraphCommand {
+    const buffer = nativeAudioBuffer(input.material ?? CLIP_MATERIAL);
+    nativeTimelineMaterialLeases.ownSnapshot(NATIVE_LEG_SOURCE_ID, buffer);
     return {
         kind: 'schedule-clip',
         playback: {
             trackId: input.trackId,
             source: {
                 sourceId: NATIVE_LEG_SOURCE_ID,
-                buffer: (input.material ?? CLIP_MATERIAL) as unknown as AudioBuffer,
+                buffer,
             },
             startTime: CLIP_START_SEC,
             sourceOffsetSeconds: 0.02,
