@@ -324,6 +324,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
 
             return true;
         } catch (error) {
+            if (!isCurrentInit(initGeneration)) {
+                return false;
+            }
             webMidiFailure = enumerationFailureMessage(error);
             logger.warn('[MIDI] Web MIDI failed, trying native fallback:', error);
         }
