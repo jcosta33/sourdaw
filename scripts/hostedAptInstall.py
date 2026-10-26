@@ -74,6 +74,10 @@ def drained(fields, unit):
     events = Path("/sys/fs/cgroup") / group.lstrip("/") / "cgroup.events"
     try:
         values = dict(line.split(" ", 1) for line in events.read_text().splitlines())
+    except FileNotFoundError:
+        # systemd may remove the cgroup after show returned its old path.
+        # Re-observe the bound invocation before accepting a drain witness.
+        return None
     except (OSError, ValueError) as error:
         raise Unproven(f"owned cgroup status unavailable: {error}") from error
     if values.get("populated") == "0":

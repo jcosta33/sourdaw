@@ -250,6 +250,33 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
         }
     });
 
+    it('re-observes the bound unit when its cgroup disappears during a read', () => {
+        const probe = spawnSync(
+            '/usr/bin/python3',
+            [
+                '-c',
+                `import importlib.util
+from unittest.mock import patch
+spec = importlib.util.spec_from_file_location('hosted', 'scripts/hostedAptInstall.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+fields = {'ControlGroup': '/system.slice/example.service'}
+with patch.object(module.Path, 'read_text', side_effect=FileNotFoundError()):
+    assert module.drained(fields, 'example.service') is None
+with patch.object(module.Path, 'read_text', side_effect=PermissionError('denied')):
+    try:
+        module.drained(fields, 'example.service')
+    except module.Unproven:
+        pass
+    else:
+        raise AssertionError('unreadable cgroup was accepted')
+`,
+            ],
+            { encoding: 'utf8' }
+        );
+        expect(probe.status, probe.stderr).toBe(0);
+    });
+
     it('fixture acknowledges a separate-session unpack before accepting finish', async () => {
         const f = fixture();
         const child = spawn('/usr/bin/python3', [installer, f.root, 'wait'], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -295,9 +322,11 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
 describe.skipIf(process.env.SOURDAW_SYSTEMD_TESTS !== '1')('real systemd fake package transaction', () => {
     it('requires the Linux system manager and passwordless sudo', () => {
         expect(process.platform).toBe('linux');
-        const probe = spawnSync('sudo', ['-n', 'systemctl', 'is-system-running'], { encoding: 'utf8' });
-        expect(probe.error).toBeUndefined();
-        expect(probe.stdout.trim()).toMatch(/^(running|degraded)$/);
+        const probe = spawnSync('sudo', ['-n', 'systemctl', 'show', '--property=Version', '--value'], {
+            encoding: 'utf8',
+        });
+        expect(probe.status, probe.stderr).toBe(0);
+        expect(Number.parseInt(probe.stdout, 10)).toBeGreaterThanOrEqual(255);
     });
     it('refuses a numeric private journal before launching a payload', async () => {
         const f = fixture();
