@@ -1,0 +1,45 @@
+.agents/skills/review-stances/ai-notes-publication.md
+  s_567a084d0540c4::t_a7169310b907b2 32-42
+.agents/skills/review-stances/session-lifecycle.md
+  s_567a084d0540c4::t_00593e2df929a5 384-389
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_6d5b789cdf86cc 17-30
+scripts/__tests__/deliverAuthorshipBoundary.spec.ts
+  s_567a084d0540c4::t_55f388c94e3ab5 1-228
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_567a084d0540c4::t_869e1bbec632aa 12466-12467,12472,12490,12494,12513-12514,12521,12549-12550,12557,12575,12579,12603-12604,12612
+scripts/deliverPullRequest.ts
+  s_567a084d0540c4::t_5f835f9027b47e 3822,3831,3934-3956
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  s_567a084d0540c4::t_fd68d6856157f7 1-351
+src/modules/Arrangement/handlers/__tests__/mixerCompensationBatch.spec.ts
+  s_567a084d0540c4::t_96cc595dcb7743 8,21,179-180,182-225,229-246,248,252-254,256-276
+src/modules/Arrangement/handlers/track/__tests__/soloTrack.spec.ts
+  s_567a084d0540c4::t_1c6a61bb98d089 82,90,99,107-118
+src/modules/Arrangement/handlers/track/soloTrack.ts
+  s_567a084d0540c4::t_92d88baee49979 18-24,27-31,39
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_567a084d0540c4::t_0b2390cfbab36d 197-215
+src/modules/CrdtDocument/repositories/readChangesSinceHeads.ts
+  s_567a084d0540c4::t_862ce025419a53 8,12,17-20
+src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts
+  s_567a084d0540c4::t_3f3787c2e5e387 1,8-15,261-326
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringCommandCheckpoint.ts
+  s_567a084d0540c4::t_598bd4e2a83019 5,112-115,123-124,127-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2e8b9ed0fa5ff1a8c551e3fa1be116899091f52",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
