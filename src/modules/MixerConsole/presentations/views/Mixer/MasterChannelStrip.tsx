@@ -211,7 +211,6 @@ function enqueueDiscreteMasterGain(
     entry: MasterGainEntry,
     settleContinuation: (token: number) => void
 ): void {
-    const [, setGestureGain] = state.gestureGain;
     state.gestureOpen.current = false;
     state.lastGrooveSettleTime.current = null;
     state.gestureToken.current += 1;
