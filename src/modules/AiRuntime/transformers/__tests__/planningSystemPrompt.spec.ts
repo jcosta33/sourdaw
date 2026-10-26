@@ -78,6 +78,12 @@ describe('buildPlanningSystemPrompt mixing method', () => {
         expect(prompt).not.toContain('report the measured deltas');
     });
 
+    it('states that the application reports available measured preview figures in approval', () => {
+        expect(prompt).toContain(
+            'The application shows available measured preview figures in approval: baseline, preview and delta with units; comparable deltas are signed. End with command.batch.propose only.'
+        );
+    });
+
     it('states that recipes and their ranges come only from the catalog', () => {
         expect(prompt).toContain('Recipes and their ranges come only from the catalog, never invented.');
     });
