@@ -366,7 +366,8 @@ export function historicalAdmissionShellPort(
                 .map((entry) => entry.slice(key.length + 1));
         },
         saveReceipt: (receipt) => installExclusiveJson(`${laneStackPath(primaryRoot, branch)}.admission.json`, receipt),
-        addMarker: (fork) => run(gitPath, ['config', '--add', key, fork], { cwd: lane, env: localEnv }),
+        // Matching resumptions replace only their exact value; foreign values and duplicates remain visible.
+        addMarker: (fork) => run(gitPath, ['config', '--fixed-value', key, fork, fork], { cwd: lane, env: localEnv }),
         installDescriptor: (descriptor) => installExclusiveJson(laneStackPath(primaryRoot, branch), descriptor),
         readStack: (ref) =>
             readRegisteredLaneStack(

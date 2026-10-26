@@ -188,6 +188,120 @@ function synchronizedProgressFixture() {
 }
 
 describe('historical stack native admission', () => {
+    it('replays when two matching resumes both observed the missing marker', () => {
+        const f = fixture();
+        const expected = admitHistoricalStack(f.input, f.port);
+        const receipt = f.receipt();
+        if (receipt === undefined) {
+            throw new Error('fixture did not produce its receipt');
+        }
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-concurrent-marker-'));
+        execFileSync('git', ['init', root], { stdio: 'pipe' });
+        const disk = historicalAdmissionShellPort(
+            {
+                lane: root,
+                branch: childBranch,
+                primaryRoot: root,
+                gitPath: 'git',
+                ghPath: 'gh',
+                session: { configDir: join(root, 'session'), env: {}, dispose: () => undefined },
+                localEnv: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+            },
+            f.input
+        );
+        disk.saveReceipt(receipt);
+        const firstRead = disk.markers();
+        const secondRead = disk.markers();
+        for (const observed of [firstRead, secondRead]) {
+            if (observed.length === 0) {
+                disk.addMarker(anchor);
+            }
+        }
+        const port = {
+            ...f.port,
+            readReceipt: disk.readReceipt,
+            readDescriptor: disk.readDescriptor,
+            markers: disk.markers,
+            saveReceipt: disk.saveReceipt,
+            addMarker: disk.addMarker,
+            installDescriptor: disk.installDescriptor,
+        };
+        let replay: LaneStack | undefined;
+        let replayError: unknown;
+        try {
+            replay = admitHistoricalStack(f.input, port);
+        } catch (error) {
+            replayError = error;
+        }
+        let errorMessage: string | undefined;
+        if (replayError instanceof Error) {
+            errorMessage = replayError.message;
+        }
+        expect({ firstRead, secondRead, markers: disk.markers(), errorMessage }).toEqual({
+            firstRead: [],
+            secondRead: [],
+            markers: [anchor],
+            errorMessage: undefined,
+        });
+        expect(replayError).toBeUndefined();
+        expect(replay).toEqual(expected);
+        expect(disk.readDescriptor()).toEqual(expected);
+        expect(disk.readReceipt()).toEqual(receipt);
+    });
+
+    it.each([
+        { kind: 'foreign only', values: [sha('d')] },
+        { kind: 'matching and foreign', values: [anchor, sha('d')] },
+    ])('preserves $kind marker values and refuses conflicting resumption', ({ values }) => {
+        const f = fixture();
+        admitHistoricalStack(f.input, f.port);
+        const receipt = f.receipt();
+        if (receipt === undefined) {
+            throw new Error('fixture did not produce its receipt');
+        }
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-foreign-marker-'));
+        execFileSync('git', ['init', root], { stdio: 'pipe' });
+        const localEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+        const disk = historicalAdmissionShellPort(
+            {
+                lane: root,
+                branch: childBranch,
+                primaryRoot: root,
+                gitPath: 'git',
+                ghPath: 'gh',
+                session: { configDir: join(root, 'session'), env: {}, dispose: () => undefined },
+                localEnv,
+            },
+            f.input
+        );
+        disk.saveReceipt(receipt);
+        for (const value of values) {
+            execFileSync('git', ['config', '--add', `branch.${childBranch}.sourdaw-stack-fork`, value], {
+                cwd: root,
+                env: localEnv,
+            });
+        }
+        disk.addMarker(anchor);
+        const expected = [...values];
+        if (!values.includes(anchor)) {
+            expected.push(anchor);
+        }
+        expect(disk.markers()).toEqual(expected);
+        const port = {
+            ...f.port,
+            readReceipt: disk.readReceipt,
+            readDescriptor: disk.readDescriptor,
+            markers: disk.markers,
+            saveReceipt: disk.saveReceipt,
+            addMarker: disk.addMarker,
+            installDescriptor: disk.installDescriptor,
+        };
+        expect(() => admitHistoricalStack(f.input, port)).toThrow(/conflicting/);
+        expect(disk.markers()).toEqual(expected);
+        expect(disk.readDescriptor()).toBeUndefined();
+        expect(disk.readReceipt()).toEqual(receipt);
+    });
+
     it('replays admission after a no-op native sync advances only the stored parent head', () => {
         const { f, original, progressed, ancestry, merges, result, receipt } = synchronizedProgressFixture();
         expect(result).toBe(child);
@@ -365,6 +479,13 @@ describe('historical stack native admission', () => {
         expect(() => port.installDescriptor({ ...stack, parentPullRequest: 9999 })).toThrow();
         expect(port.readDescriptor()).toEqual(stack);
         port.addMarker(anchor);
+        expect(port.markers()).toEqual([anchor]);
+        execFileSync('git', ['config', '--add', `branch.${childBranch}.sourdaw-stack-fork`, anchor], {
+            cwd: root,
+            env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+        });
+        expect(port.markers()).toEqual([anchor, anchor]);
+        expect(() => port.addMarker(anchor)).toThrow();
         expect(port.markers()).toEqual([anchor, anchor]);
     });
     it('requires explicit exact-head admission arguments and preserves ordinary sync selection', () => {
@@ -675,7 +796,20 @@ describe('historical stack native admission', () => {
                 ]).replace('commit: retained native history', 'reset: moving to another branch')
             );
         }
-        const port = change === 'unrelated history' ? { ...f.port, isAncestor: () => false } : f.port;
+        let port: HistoricalAdmissionPort = f.port;
+        if (change === 'unrelated history') {
+            port = { ...f.port, isAncestor: () => false };
+        }
+        if (change === 'parent at another commit') {
+            const order = [anchor, sha('e'), sha('f'), next, parent, child];
+            port = {
+                ...f.port,
+                isAncestor: (a, b) => {
+                    const first = order.indexOf(a);
+                    return first >= 0 && order.indexOf(b) >= first;
+                },
+            };
+        }
         expect(() => admitHistoricalStack(f.input, port)).toThrow();
         expect(f.writes).toEqual([]);
     });
