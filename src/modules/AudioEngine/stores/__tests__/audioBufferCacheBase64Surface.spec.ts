@@ -79,6 +79,15 @@ const ENCODED_PCM = encodeFloat32(PCM);
 function buildInvocations(): Record<string, () => unknown> {
     return {
         get: () => audioBufferCache.get('pcm'),
+        readRuntimeMaterialPublication: () => {
+            const buffer = audioBufferCache.get('pcm');
+            if (!buffer) {
+                throw new Error('expected the owned PCM census fixture');
+            }
+            const publication = audioBufferCache.readRuntimeMaterialPublication('pcm', buffer);
+            expect(publication).toBeDefined();
+            return publication;
+        },
         set: () => audioBufferCache.set('pcm-2', makeAudioBuffer([PCM])),
         remove: () => audioBufferCache.remove('pcm-2'),
         has: () => audioBufferCache.has('pcm'),

@@ -94,6 +94,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: vi.fn(),
+    takeOwnsRecordingRoot: vi.fn(() => true),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
     addTakeLane: vi.fn(),

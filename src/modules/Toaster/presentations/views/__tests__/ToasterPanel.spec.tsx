@@ -70,27 +70,32 @@ describe('ToasterPanel', () => {
 
     it('should render without crashing', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         expect(document.body).toBeTruthy();
     });
 
     it('should handle store state', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
 
     it('tells the musician Play is session-only and To timeline is what export/native playback sees', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         expect(
             screen.getByText(
                 'Play sounds the pattern live only. To timeline writes it to the arrangement for export and native playback.'
@@ -100,6 +105,7 @@ describe('ToasterPanel', () => {
 
     it('exposes labeled pattern groove assignment controls', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         expect(screen.getByRole('combobox', { name: 'Pattern groove template' })).toBeEnabled();
         expect(screen.getByRole('slider', { name: 'Pattern groove amount' })).toBeEnabled();
@@ -107,6 +113,7 @@ describe('ToasterPanel', () => {
 
     it('disables assignment controls when the pattern consumer identity is invalid', () => {
         render(<ToasterPanel deviceId="" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         expect(screen.getByRole('combobox', { name: 'Pattern groove template' })).toBeDisabled();
         expect(screen.getByRole('slider', { name: 'Pattern groove amount' })).toBeDisabled();
@@ -116,6 +123,7 @@ describe('ToasterPanel', () => {
     it('reports a rejected assignment without throwing from the event handler', async () => {
         mocks.assignToasterPatternGroove.mockRejectedValueOnce(new Error('assignment failed'));
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         fireEvent.change(screen.getByRole('combobox', { name: 'Pattern groove template' }), {
             target: { value: 'groove-builtin-swing-8' },
@@ -126,6 +134,7 @@ describe('ToasterPanel', () => {
 
     it('commits one assignment after a continuous amount drag', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         const amount = screen.getByRole('slider', { name: 'Pattern groove amount' });
 
         fireEvent.change(amount, { target: { value: '0.8' } });
@@ -146,12 +155,14 @@ describe('ToasterPanel', () => {
 
     it('announces straight timing when the pattern has no assignment', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         expect(screen.getByRole('status')).toHaveTextContent('Straight timing is active; no groove is assigned.');
     });
 
     it('toggles 16-levels enters and exits 16-levels session', () => {
         const { unmount } = render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const toggleButton = screen.getByRole('button', { name: '16 Levels mode' });
         expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
@@ -183,6 +194,7 @@ describe('ToasterPanel', () => {
 
     it('toggling 16-levels triggers 16-levels target on pad click', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const toggleButton = screen.getByRole('button', { name: '16 Levels mode' });
         fireEvent.click(toggleButton);
@@ -200,6 +212,7 @@ describe('ToasterPanel', () => {
 
     it('toggling note repeat starts and stops note repeat', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const repeatButton = screen.getByRole('button', { name: 'Note repeat mode' });
         expect(repeatButton).toHaveAttribute('aria-pressed', 'false');
@@ -231,6 +244,7 @@ describe('ToasterPanel', () => {
 
     it('combines 16-levels and note repeat on pad trigger', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         fireEvent.click(screen.getByRole('button', { name: '16 Levels mode' }));
         fireEvent.click(screen.getByRole('button', { name: 'Note repeat mode' }));
@@ -281,6 +295,7 @@ describe('ToasterPanel', () => {
 
     it('passes onSetSoundLock to StepSequencer and invokes setSoundLock', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const stepCell = screen.getByTestId('toaster-step-0-0');
         fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
@@ -294,6 +309,7 @@ describe('ToasterPanel', () => {
 
     it('passes onSetRetrigger to StepSequencer and invokes setStepRetrigger', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const stepCell = screen.getByTestId('toaster-step-0-0');
         fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
@@ -307,6 +323,7 @@ describe('ToasterPanel', () => {
 
     it('passes onSetCondition to StepSequencer and invokes setStepCondition', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const stepCell = screen.getByTestId('toaster-step-0-0');
         fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
@@ -320,6 +337,7 @@ describe('ToasterPanel', () => {
 
     it('passes onSetProbability to StepSequencer and invokes setStepProbability', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const stepCell = screen.getByTestId('toaster-step-0-0');
         fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
@@ -333,6 +351,7 @@ describe('ToasterPanel', () => {
 
     it('passes onSetMicroTiming to StepSequencer and invokes setStepMicroTiming', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
 
         const stepCell = screen.getByTestId('toaster-step-0-0');
         fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
@@ -346,9 +365,10 @@ describe('ToasterPanel', () => {
 
     it('ensures section cards do not collapse in the bottom panel', () => {
         const { container } = render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         const sectionCards = container.querySelectorAll('section.toaster-window.shrink-0');
-        expect(sectionCards.length).toBe(6);
-        for (const title of ['Kit shelf', 'Pad bay', 'Transport', 'Pad mixer', 'Fill tools', 'Groove']) {
+        expect(sectionCards.length).toBe(7);
+        for (const title of ['Kit shelf', 'Pad bay', 'Transport', 'Pad mixer', 'Fill tools', 'Groove', 'Macros']) {
             const heading = screen.getByText(title);
             const section = heading.closest('section');
             expect(section).not.toBeNull();
@@ -358,6 +378,7 @@ describe('ToasterPanel', () => {
 
     it('applies DAW styling classes to the pattern groove amount slider', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         const slider = screen.getByRole('slider', { name: 'Pattern groove amount' });
         expect(slider).toHaveClass(
             'h-1.5',

@@ -57,6 +57,7 @@ import {
 import { FADER_MAX_GAIN, gainLaneLevelLaw, resolveLevelFields } from '#/utils/audioLevelLaw';
 
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
+import { type ProposalProtectionFacts } from '../../models/ProposalGroundingBasis';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -66,6 +67,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
+import { beginConfirmedCommandExecution } from '../agentRequestOrchestration/beginConfirmedCommandExecution';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
@@ -77,6 +79,10 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from './aiWorkflowCommandPreflightFixture';
 
 const runtimeMocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
@@ -280,7 +286,7 @@ function gainAtDecibels(db: number): number {
     return resolved.linear;
 }
 
-function propose(actions: ExecutableRuntimeAction[], id: string): void {
+function propose(actions: ExecutableRuntimeAction[], id: string, protectionFacts?: ProposalProtectionFacts): void {
     const projectRevision = captureProjectRevision();
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: id,
@@ -316,7 +322,86 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
         agentApproval: compileAgentRiskApproval({ commandBatch }),
         executionMode: 'atomic',
         projectRevision,
+        protectionFacts,
     });
+}
+
+const BASS_TRACK_ID = 'track-bass';
+const savedProtectionCases: Array<{
+    name: string;
+    facts: ProposalProtectionFacts;
+    followerParameter: 'gain' | 'pan';
+    invalidates: boolean;
+}> = [
+    {
+        name: 'Bass fader',
+        facts: {
+            protectedUnchanged: [],
+            protectedControls: [{ trackId: BASS_TRACK_ID, operations: ['setTrackGain'] }],
+        },
+        followerParameter: 'gain',
+        invalidates: true,
+    },
+    {
+        name: 'whole Bass',
+        facts: { protectedUnchanged: [{ id: BASS_TRACK_ID, name: 'Bass' }], protectedControls: [] },
+        followerParameter: 'gain',
+        invalidates: true,
+    },
+    {
+        name: 'Bass fader exemption',
+        facts: {
+            protectedUnchanged: [],
+            protectedControls: [{ trackId: BASS_TRACK_ID, operations: [], exceptOperations: ['setTrackGain'] }],
+        },
+        followerParameter: 'gain',
+        invalidates: false,
+    },
+    {
+        name: 'independent Bass pan',
+        facts: {
+            protectedUnchanged: [],
+            protectedControls: [{ trackId: BASS_TRACK_ID, operations: ['setTrackGain'] }],
+        },
+        followerParameter: 'pan',
+        invalidates: false,
+    },
+    {
+        name: 'independent source gain',
+        facts: { protectedUnchanged: [], protectedControls: [{ trackId: TRACK_ID, operations: ['setTrackGain'] }] },
+        followerParameter: 'gain',
+        invalidates: false,
+    },
+];
+
+function prepareProtectedPanSource() {
+    const vocals = createVocalsTrack([DRIVE_DEVICE, PHASER_DEVICE]);
+    const bass: Track = { ...createVocalsTrack([]), id: BASS_TRACK_ID, name: 'Bass' };
+    const source = createStoredLane({ id: FOLLOWED_LANE_ID, parameterId: 'pan', parameterName: 'Pan' });
+    trackStore.set({ tracks: [vocals, bass], selectedTrackId: vocals.id, ghostClips: [] });
+    automationStore.set({ lanes: [source] });
+    flushAutomergeStorageWrites();
+    configureAiWorkflowCommandPreflightFixture(captureProjectIdentity());
+    const action: ExecutableRuntimeAction = { type: 'scaleAutomation', payload: { laneId: source.id, factor: 0.5 } };
+    return { source, action };
+}
+
+function addProtectedFollower(source: AutomationLane, parameterId: 'gain' | 'pan'): void {
+    const follower: AutomationLane = {
+        ...createStoredLane({ id: 'lane-bass-follower', parameterId, parameterName: parameterId }),
+        trackId: BASS_TRACK_ID,
+        linkedLaneId: source.id,
+    };
+    automationStore.set({ lanes: [source, follower] });
+    flushAutomergeStorageWrites();
+}
+
+function requireConfirmation(id: string) {
+    const confirmation = getPendingActionConfirmation(id);
+    if (!confirmation?.approvalSnapshot.commandBatch) {
+        throw new Error('Expected an approved source proposal.');
+    }
+    return confirmation;
 }
 
 async function confirm(actions: ExecutableRuntimeAction[], id: string) {
@@ -965,5 +1050,122 @@ describe('automation lane binding in one agent batch', () => {
             },
         ]);
         expect(automationStore.value?.lanes).toEqual([]);
+    });
+
+    it.each(savedProtectionCases)(
+        'revalidates saved $name protection before stale confirmation rebind',
+        async ({ facts, followerParameter, invalidates }) => {
+            const id = 'confirmation-stale-protected-source';
+            try {
+                const { source, action } = prepareProtectedPanSource();
+                propose([action], id, facts);
+                const original = requireConfirmation(id);
+                const originalBatch = original.approvalSnapshot.commandBatch?.serialized;
+                expect(original.approvalSnapshot.protectionFacts).toEqual(facts);
+
+                addProtectedFollower(source, followerParameter);
+                expect(captureProjectRevision()).not.toBe(original.projectRevision);
+                const before = projectSnapshot();
+                const undoBefore = structuredClone(undoHistoryStore.value);
+                const laneWrites = recordLaneWrites();
+                let result: Awaited<ReturnType<typeof confirmPendingChatActions>>;
+                try {
+                    result = await confirmPendingChatActions({ confirmationId: id });
+                } finally {
+                    laneWrites.stop();
+                }
+
+                const settled = requireConfirmation(id);
+                expect(settled.approvalSnapshot.protectionFacts).toEqual(facts);
+                if (invalidates) {
+                    expect(result).toMatchObject({ status: 'invalidated', detail: expect.stringContaining('Bass') });
+                    expect(settled.status).toBe('invalidated');
+                    expect(settled.projectRevision).toBe(original.projectRevision);
+                    expect(settled.approvalSnapshot.commandBatch?.serialized).toBe(originalBatch);
+                } else {
+                    expect(result).toMatchObject({ status: 'reapproval_required' });
+                    expect(settled.status).toBe('proposed');
+                    expect(settled.projectRevision).toBe(captureProjectRevision());
+                    expect(settled.approvalSnapshot.commandBatch?.serialized).not.toBe(originalBatch);
+                }
+                expect(laneWrites.writes).toEqual([]);
+                expect(projectSnapshot()).toBe(before);
+                expect(undoHistoryStore.value).toEqual(undoBefore);
+            } finally {
+                resetAiWorkflowCommandPreflightFixture();
+            }
+        }
+    );
+
+    it.each(savedProtectionCases)(
+        'revalidates saved $name protection at same-revision final execution admission',
+        async ({ facts, followerParameter, invalidates }) => {
+            const id = 'confirmation-final-protected-source';
+            try {
+                const { source, action } = prepareProtectedPanSource();
+                addProtectedFollower(source, followerParameter);
+                propose([action], id, facts);
+                const confirmation = requireConfirmation(id);
+                expect(captureProjectRevision()).toBe(confirmation.projectRevision);
+                const before = projectSnapshot();
+                const undoBefore = structuredClone(undoHistoryStore.value);
+
+                const admission = beginConfirmedCommandExecution({
+                    confirmation,
+                    priorVerifiedBatchReceipt: null,
+                    recoveringPendingEffects: false,
+                });
+
+                if (invalidates) {
+                    expect(admission.status).toBe('settled');
+                    if (admission.status !== 'settled') {
+                        throw new Error('Expected final admission to refuse the protected live effect.');
+                    }
+                    await expect(admission.result).resolves.toMatchObject({
+                        status: 'invalidated',
+                        detail: expect.stringContaining('Bass'),
+                    });
+                    expect(requireConfirmation(id).status).toBe('invalidated');
+                } else {
+                    expect(admission.status).toBe('ready');
+                    expect(requireConfirmation(id).status).toBe('accepted');
+                }
+                expect(projectSnapshot()).toBe(before);
+                expect(undoHistoryStore.value).toEqual(undoBefore);
+            } finally {
+                resetAiWorkflowCommandPreflightFixture();
+            }
+        }
+    );
+
+    it('checks immutable approved actions for protected effects even when mutable actions hide them', async () => {
+        const id = 'confirmation-hidden-protected-source';
+        try {
+            const { source, action } = prepareProtectedPanSource();
+            addProtectedFollower(source, 'gain');
+            propose([action], id, {
+                protectedUnchanged: [],
+                protectedControls: [{ trackId: BASS_TRACK_ID, operations: ['setTrackGain'] }],
+            });
+            const confirmation = requireConfirmation(id);
+            const before = projectSnapshot();
+            const admission = beginConfirmedCommandExecution({
+                confirmation: { ...confirmation, actions: [] },
+                priorVerifiedBatchReceipt: null,
+                recoveringPendingEffects: false,
+            });
+
+            expect(admission.status).toBe('settled');
+            if (admission.status !== 'settled') {
+                throw new Error('Expected immutable protection admission to settle.');
+            }
+            await expect(admission.result).resolves.toMatchObject({
+                status: 'invalidated',
+                detail: expect.stringContaining('Bass'),
+            });
+            expect(projectSnapshot()).toBe(before);
+        } finally {
+            resetAiWorkflowCommandPreflightFixture();
+        }
     });
 });

@@ -63,7 +63,7 @@ import {
     type ContractCarryingSides,
 } from '../evidenceOrdering.ts';
 import { fitUnitEvidence, regionCost, regionFitsRequest, regionRequestBytes } from '../fit.ts';
-import { parseUnifiedDiffRanges } from '../gitSource.ts';
+import { parseChangedLines, parseUnifiedDiffRanges } from '../gitSource.ts';
 import { interpretFinding, interpretScanOutcome, readChoiceAnswer } from '../interpret.ts';
 import {
     assessUnit,
@@ -108,6 +108,7 @@ import {
 } from '../run.ts';
 import { DRY_RUN_REASON } from '../scopeAccounting.ts';
 import { sensitiveContentReason } from '../sensitive.ts';
+import { certifyTestCaseContext } from '../testCaseContext.ts';
 import { computeVerifyQuestionsDigest, type CandidateFinding } from '../verify.ts';
 
 import { generatedDigestProbes } from './digestProbes.ts';
@@ -6633,6 +6634,487 @@ describe('budget profiles', () => {
         // small by design — a local run assesses a handful of units, not a plan.
         const local = SEMANTIC_BUDGET_PROFILES.local;
         expect(local.overallDeadlineMs).toBeLessThanOrEqual(local.maxAttempts * local.attemptTimeoutMs);
+    });
+});
+
+describe('test-case admission question', () => {
+    const path = 'scripts/__tests__/runIsolatedUnitShard.spec.ts';
+    const previousRulesDigest = 'd794f0d0d577d991c558cee16718a440df20ceda44bd0cad271da4c97af78f9d';
+    const before = `it('checks admission', () => {
+    const result = run();
+    expect(result.status).toBe(0);
+});\n`;
+
+    it('withholds a case judgement when a six-line hunk omits a later assertion', async () => {
+        const after = `it('checks admission', () => {
+    const run = vi.fn(() => {
+        if (missingModule) {
+            return { status: 1 };
+        }
+        return { status: 0 };
+    });
+    const result = run();
+    const context1 = 1;
+    const context2 = 2;
+    const context3 = 3;
+    const context4 = 4;
+    const context5 = 5;
+    const context6 = 6;
+    const context7 = 7;
+    const context8 = 8;
+    const context9 = 9;
+    const context10 = 10;
+    expect(result.status).toBe(1);
+});\n`;
+        const sent: { state: unknown; questions: SemanticProviderQuestions }[] = [];
+        const provider = constantProvider(0.02, {
+            systemOne: async ({ state, questions }) => {
+                sent.push({ state, questions });
+                return {
+                    model: TYPESAFE_MODEL,
+                    answers: Object.fromEntries(Object.keys(questions).map((id) => [id, { type: 'noul', noul: 0.02 }])),
+                    usage: { input_tokens: 5, output_tokens: 0 },
+                };
+            },
+        });
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+            hunks: new Map([
+                [path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 11 }] }],
+            ]),
+        });
+        const result = await runScan({
+            ...scanPorts(provider, source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
+        const preview = result.previews.find((entry) => entry.path === path);
+        expect(preview?.ruleIds).toContain('admission_branch_completes_without_asserting');
+        expect(preview?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(
+            result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting')
+        ).toMatchObject({ outcome: 'insufficient_context' });
+        expect(result.report.execution).toBe('partial');
+        expect(sent.some((request) => JSON.stringify(request.state).includes('expect(result.status).toBe(1)'))).toBe(
+            false
+        );
+    });
+
+    it.each([
+        ['property access', "it.only('checks admission', () => {"],
+        ['computed access', "it['only']('checks admission', () => {"],
+        ['aliased call', "aliasedCase('checks admission', () => {"],
+        ['regex literal', "aliasedCase('checks admission', () => {"],
+    ])('withholds an unsupported case (%s) that shares a changed line with a complete case', async (_form, call) => {
+        const sharedPath = 'scripts/__tests__/sharedLineAdmission.spec.ts';
+        let control = "it('control', () => { expect(true).toBe(true); });";
+        if (_form === 'regex literal') {
+            control = String.raw`it('control', () => { expect(/\/\//.test('x')).toBe(false); });`;
+        }
+        const firstLine = `${control} ${call}`;
+        const padding = Array.from({ length: 9 }, (_, index) => `    const context${index} = ${index};`);
+        const oldSource = [firstLine, ...padding, '    expect(run()).toBe(1);', '});', ''].join('\n');
+        const newSource = [
+            `${firstLine} if (missingModule) return;`,
+            ...padding,
+            '    expect(run()).toBe(1);',
+            '});',
+            '',
+        ].join('\n');
+        const diff = [
+            `diff --git a/${sharedPath} b/${sharedPath}`,
+            `--- a/${sharedPath}`,
+            `+++ b/${sharedPath}`,
+            '@@ -1,7 +1,7 @@',
+            `-${oldSource.split('\n')[0]}`,
+            `+${newSource.split('\n')[0]}`,
+            ...padding.slice(0, 6).map((line) => ` ${line}`),
+            '',
+        ].join('\n');
+        for (const withChangedLines of [true, false]) {
+            const sent: unknown[] = [];
+            const source = fakeSource({
+                files: [changedFile(sharedPath)],
+                blobs: { [`${MERGE_BASE}:${sharedPath}`]: oldSource, [`${HEAD}:${sharedPath}`]: newSource },
+                hunks: parseUnifiedDiffRanges(diff),
+                changedLines: withChangedLines ? parseChangedLines(diff) : undefined,
+            });
+            const ports = scanPorts(
+                constantProvider(0.02, {
+                    systemOne: async ({ state, questions }) => {
+                        sent.push(state);
+                        return {
+                            model: TYPESAFE_MODEL,
+                            answers: Object.fromEntries(
+                                Object.keys(questions).map((id) => [id, { type: 'noul', noul: 0.02 }])
+                            ),
+                            usage: { input_tokens: 5, output_tokens: 0 },
+                        };
+                    },
+                }),
+                source,
+                fixedClock(1_000)
+            );
+            const set = collectEvidence({
+                port: source,
+                mergeBaseSha: MERGE_BASE,
+                headSha: HEAD,
+                contractSourceSha: MERGE_BASE,
+                limits: ports.limits,
+            });
+            const result = await runScan({ ...ports, profile: SEMANTIC_BUDGET_PROFILES.ci });
+            expect(set.testCaseContext?.get(sharedPath)?.complete, String(withChangedLines)).toBe(false);
+            expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+            expect(
+                result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting')
+            ).toMatchObject({ outcome: 'insufficient_context' });
+            expect(result.report.scope.truncated).toContainEqual({
+                path: sharedPath,
+                reason: 'test-case-context-not-supplied',
+            });
+            expect(result.report.execution).toBe('partial');
+            expect(sent).not.toHaveLength(0);
+            expect(JSON.stringify(sent)).not.toContain('expect(run()).toBe(1)');
+        }
+    });
+
+    it.each(['it', 'test'])('keeps a complete direct %s case with a semicolon and whitespace askable', async (call) => {
+        const after = `  ${call}('checks admission', () => { expect(run()).toBe(1); });   \n`;
+        const { state } = await plannedRequest(after, {
+            path,
+            before: [{ startLine: 1, endLine: 7 }],
+            after: [{ startLine: 1, endLine: 1 }],
+        });
+        expect(JSON.stringify(state)).toContain('expect(run()).toBe(1)');
+    });
+
+    async function plannedRequest(
+        after: string,
+        hunks?: PathHunks
+    ): Promise<{
+        state: unknown;
+        question: { instructions: string; criteria: { true: string; false: string } };
+    }> {
+        const sent: { state: unknown; questions: SemanticProviderQuestions }[] = [];
+        const provider: SemanticProviderPort = {
+            systemOne: async ({ state, questions }) => {
+                sent.push({ state, questions });
+                const answers = Object.fromEntries(
+                    Object.keys(questions).map((key) => [key, { type: 'noul', noul: 0.02 }])
+                );
+                return { model: TYPESAFE_MODEL, answers, usage: { input_tokens: 5, output_tokens: 0 } };
+            },
+        };
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+            hunks: hunks === undefined ? undefined : new Map([[path, hunks]]),
+        });
+        const base = scanPorts(provider, source, fixedClock(1_000));
+        const { report } = await runScan({ ...base, profile: SEMANTIC_BUDGET_PROFILES.ci });
+        expect(report.scope.assessed).toBe(1);
+        expect(sent).toHaveLength(1);
+        const request = sent[0];
+        const question = request?.questions.admission_branch_completes_without_asserting as
+            { instructions: string; criteria: { true: string; false: string } } | undefined;
+        expect(question).toBeDefined();
+        if (request === undefined || question === undefined) {
+            throw new Error('the production request planner did not ask the admission question');
+        }
+        return { state: request.state, question };
+    }
+
+    it('asks about a completed case, not an ordinary mock callback return', async () => {
+        // Frozen pilot J13: the mock returns within the case, then the case asserts the result.
+        const after = `it('checks admission', () => {
+    const run = vi.fn(() => {
+        if (missingModule) {
+            return { status: 1 };
+        }
+        return { status: 0 };
+    });
+    const result = run();
+    expect(result.status).toBe(1);
+});\n`;
+        const { state, question } = await plannedRequest(after, {
+            path,
+            before: [{ startLine: 1, endLine: 7 }],
+            after: [{ startLine: 1, endLine: 11 }],
+        });
+        const supplied = JSON.stringify(state);
+        expect(supplied).toContain('return { status: 1 }');
+        expect(supplied).toContain('expect(result.status).toBe(1)');
+        expect(question.instructions).toMatch(/test case.*complete.*assertion/iu);
+        expect(question.instructions).toMatch(/mock.*return.*case/iu);
+        expect(question.criteria.false).toMatch(/mock.*return.*assertion/iu);
+    });
+
+    it('still asks about a case-level early return before its sole assertion', async () => {
+        // The shipped paired positive adds this return inside the test case itself.
+        const after = `it('exposes the snap value control', () => {
+    const toolbar = readToolbar();
+    if (!toolbar.mounted) {
+        return;
+    }
+    expect(toolbar.snapValue).toBe('1/16');
+});\n`;
+        const { state, question } = await plannedRequest(after, {
+            path,
+            before: [{ startLine: 1, endLine: 7 }],
+            after: [{ startLine: 1, endLine: 9 }],
+        });
+        const supplied = JSON.stringify(state);
+        expect(supplied).toContain('if (!toolbar.mounted)');
+        expect(supplied).toContain("expect(toolbar.snapValue).toBe('1/16')");
+        expect(question.criteria.true).toMatch(/test case.*complet.*without.*assertion/iu);
+    });
+
+    it('records an unasked question when the case source exceeds the fixed region budget', async () => {
+        const after = `${before}${'// unrelated case content\n'.repeat(300)}`;
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+        });
+        const base = scanPorts(constantProvider(0.02), source, fixedClock(1_000));
+        const result = await runScan({ ...base, profile: SEMANTIC_BUDGET_PROFILES.ci });
+        const preview = result.previews.find((entry) => entry.path === path);
+        expect(preview?.ruleIds).toContain('admission_branch_completes_without_asserting');
+        expect(preview?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(result.report.scope.truncated).toContainEqual({
+            path,
+            reason: 'region-exceeds-per-region-budget (after)',
+        });
+        expect(result.report.execution).toBe('unavailable');
+    });
+
+    it('abstains on an unrecognized test callback shape and discloses the missing case context', async () => {
+        const after = `it.only('checks admission', () => {
+    if (missingModule) return;
+    expect(run()).toBe(1);
+});\n`;
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+            hunks: new Map([
+                [path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 6 }] }],
+            ]),
+        });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
+        expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(result.report.scope.truncated).toContainEqual({ path, reason: 'test-case-context-not-supplied' });
+        expect(result.report.execution).toBe('partial');
+    });
+
+    it('abstains when the full source has syntax errors even if a hunk looks complete', async () => {
+        const after = `it('checks admission', () => {
+    if (missingModule) return;
+    expect(run()).toBe(1);
+});
+const broken = (;\n`;
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+            hunks: new Map([
+                [path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 4 }] }],
+            ]),
+        });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
+        expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(result.report.scope.truncated).toContainEqual({ path, reason: 'test-case-context-not-supplied' });
+    });
+
+    it('tracks the previous and destination paths of a renamed collected case', async () => {
+        const previousPath = 'scripts/__tests__/previousAdmission.spec.ts';
+        const after = `it('checks admission', () => {
+    if (missingModule) return;
+    expect(run()).toBe(1);
+});\n`;
+        const source = fakeSource({
+            files: [changedFile(path, { kind: 'renamed', previousPath })],
+            blobs: { [`${MERGE_BASE}:${previousPath}`]: before, [`${HEAD}:${path}`]: after },
+            hunks: new Map([
+                [
+                    path,
+                    {
+                        path,
+                        previousPath,
+                        before: [{ startLine: 1, endLine: 5 }],
+                        after: [{ startLine: 1, endLine: 5 }],
+                    },
+                ],
+            ]),
+        });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
+        expect(result.previews[0]?.askedRuleIds).toContain('admission_branch_completes_without_asserting');
+        expect(result.report.execution).toBe('completed');
+    });
+
+    it('does not ask the case-level question for a deleted case', async () => {
+        const source = fakeSource({
+            files: [changedFile(path, { kind: 'deleted' })],
+            blobs: { [`${MERGE_BASE}:${path}`]: before },
+            hunks: new Map([[path, { path, before: [{ startLine: 1, endLine: 5 }], after: [] }]]),
+        });
+        const result = await runScan({
+            ...scanPorts(constantProvider(0.02), source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
+        expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(
+            result.report.signals.find((signal) => signal.ruleId === 'admission_branch_completes_without_asserting')
+        ).toMatchObject({ outcome: 'insufficient_context' });
+    });
+
+    it('requires every relevant case across separate hunks in the same answering pass', async () => {
+        const twoCases = `${before}it('checks a second admission', () => {
+    if (missingModule) return;
+    expect(run()).toBe(1);
+});\n`;
+        const hunks: PathHunks = {
+            path,
+            before: [
+                { startLine: 1, endLine: 4 },
+                { startLine: 5, endLine: 8 },
+            ],
+            after: [
+                { startLine: 1, endLine: 4 },
+                { startLine: 5, endLine: 8 },
+            ],
+        };
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: twoCases, [`${HEAD}:${path}`]: twoCases },
+            hunks: new Map([[path, hunks]]),
+        });
+        const base = scanPorts(constantProvider(0.02), source, fixedClock(1_000));
+        const full = await runScan({ ...base, profile: SEMANTIC_BUDGET_PROFILES.ci });
+        expect(full.previews[0]?.askedRuleIds).toContain('admission_branch_completes_without_asserting');
+        const set = collectEvidence({
+            port: source,
+            mergeBaseSha: MERGE_BASE,
+            headSha: HEAD,
+            contractSourceSha: MERGE_BASE,
+            limits: base.limits,
+        });
+        const singleRegion = Math.max(
+            ...set.references.map((reference) => regionCost(reference, set.contents.get(reference.evidenceId) ?? ''))
+        );
+        const reservation = unitReservationBytes(
+            changedFile(path),
+            applicableRules([path]),
+            changedLineFacts(undefined)
+        );
+        const splitProfile = {
+            ...SEMANTIC_BUDGET_PROFILES.ci,
+            maxStatePlusQuestionBytes: reservation + singleRegion + 1,
+        };
+        const split = await runScan({ ...base, profile: splitProfile });
+        expect(split.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(split.report.scope.truncated).toContainEqual({ path, reason: 'test-case-context-not-supplied' });
+    });
+
+    it('keeps sensitive text beyond the hunk local when a complete case is unavailable', async () => {
+        const credential = secretFixture('Authorization', ': Bearer ', 's'.repeat(24));
+        const after = `it('checks admission', () => {
+    if (missingModule) return;
+    const context1 = 1;
+    const context2 = 2;
+    const context3 = 3;
+    const context4 = 4;
+    const context5 = 5;
+    const context6 = 6;
+    const context7 = 7;
+    const context8 = 8;
+    const credential = ${JSON.stringify(credential)};
+    expect(run()).toBe(1);
+});\n`;
+        const sent: unknown[] = [];
+        const provider = constantProvider(0.02, {
+            systemOne: async ({ state, questions }) => {
+                sent.push(state);
+                return {
+                    model: TYPESAFE_MODEL,
+                    answers: Object.fromEntries(Object.keys(questions).map((id) => [id, { type: 'noul', noul: 0.02 }])),
+                    usage: { input_tokens: 5, output_tokens: 0 },
+                };
+            },
+        });
+        const source = fakeSource({
+            files: [changedFile(path)],
+            blobs: { [`${MERGE_BASE}:${path}`]: before, [`${HEAD}:${path}`]: after },
+            hunks: new Map([
+                [path, { path, before: [{ startLine: 1, endLine: 7 }], after: [{ startLine: 1, endLine: 8 }] }],
+            ]),
+        });
+        const result = await runScan({
+            ...scanPorts(provider, source, fixedClock(1_000)),
+            profile: SEMANTIC_BUDGET_PROFILES.ci,
+        });
+        expect(result.previews[0]?.askedRuleIds).not.toContain('admission_branch_completes_without_asserting');
+        expect(JSON.stringify(sent)).not.toContain(credential);
+        expect(result.report.scope.truncated).toContainEqual({ path, reason: 'test-case-context-not-supplied' });
+    });
+
+    it('uses LF line bounds even when TypeScript sees a Unicode line separator', () => {
+        const source = `// prefix\u2028it('checks admission', () => {\n    expect(run()).toBe(1);\n});`;
+        const reference: EvidenceReference = {
+            evidenceId: 'a1',
+            revisionSha: HEAD,
+            path,
+            side: 'after',
+            startLine: 1,
+            endLine: 3,
+            contentHash: semanticTextDigest(source),
+        };
+        expect(
+            certifyTestCaseContext({
+                after: { path, source, hunks: [{ startLine: 1, endLine: 3 }], references: [reference] },
+            })
+        ).toEqual({ complete: true, beforeEvidenceIds: [], afterEvidenceIds: ['a1'] });
+    });
+
+    it('refuses a complete-looking case when a changed line lies outside it', () => {
+        const source = `it('checks admission', () => {
+    expect(run()).toBe(1);
+});
+const unrelated = changed();`;
+        const reference: EvidenceReference = {
+            evidenceId: 'a1',
+            revisionSha: HEAD,
+            path,
+            side: 'after',
+            startLine: 1,
+            endLine: 4,
+            contentHash: semanticTextDigest(source),
+        };
+        expect(
+            certifyTestCaseContext({
+                after: {
+                    path,
+                    source,
+                    hunks: [{ startLine: 1, endLine: 4 }],
+                    changedLines: [4],
+                    references: [reference],
+                },
+            }).complete
+        ).toBe(false);
+    });
+
+    it('refuses to replay answers to the earlier branch-body question', () => {
+        expect(semanticRule('admission_branch_completes_without_asserting').version).toBe('3');
+        expect(computeRulesDigest()).not.toBe(previousRulesDigest);
+        expect(() => assertQuestionsAreReplayable({ rulesDigest: previousRulesDigest })).toThrow(
+            /changed question needs a new assessment/u
+        );
     });
 });
 

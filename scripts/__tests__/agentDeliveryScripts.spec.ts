@@ -988,7 +988,8 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['ruleset:harden']).toBe('node scripts/trustedGithubWriteBootstrap.ts ruleset:harden');
         expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
-        expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
+        expect(pkg.scripts['pr:supersede']).toBe('node scripts/trustedGithubWriteBootstrap.ts pr:supersede');
+        expect(pkg.scripts['pr:retire']).toBe('node scripts/trustedGithubWriteBootstrap.ts pr:retire');
         expect(pkg.scripts['branch:prune']).toBe('node scripts/pruneRemoteBranches.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
@@ -1159,7 +1160,6 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/resolveThread.ts',
-            'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
@@ -1416,10 +1416,11 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:repair' as const,
                 entry: 'scripts/repairReviewFinding.ts',
-                required: 'scripts/reviewRepair.ts',
+                required: 'scripts/gitAncestry.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/repairReviewFinding.ts',
+                    'scripts/gitAncestry.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/reviewDossierViews.ts',
@@ -1437,6 +1438,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/wasm-artifacts.ts',
                     'scripts/wasmToolchainPins.ts',
                     'scripts/workspaceManifestFingerprint.ts',
+                    'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1444,13 +1446,14 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:confirm' as const,
                 entry: 'scripts/confirmReviewRepairs.ts',
-                required: 'scripts/reviewRepair.ts',
+                required: 'scripts/pullRequestMutationLock.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/confirmReviewRepairs.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
+                    'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1458,11 +1461,10 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:resolve' as const,
                 entry: 'scripts/resolveThread.ts',
-                required: 'scripts/githubAppIdentity.ts',
+                required: 'scripts/prContract.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/resolveThread.ts',
-                    'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -2493,7 +2495,7 @@ describe('package scripts and gitignore', () => {
             );
 
             runGit(checkout, ['restore', 'scripts/trustedGithubWriteBootstrap.ts']);
-            runGit(checkout, ['worktree', 'add', '-b', 'agent/test/current-route', lane]);
+            runGit(checkout, ['worktree', 'add', '-b', 'agent/test-current-route', lane]);
             expect(() => runPackageRoute(lane, ['lane:publish', policyLog])).toThrow(/protected primary checkout/);
         } finally {
             removeTemporaryDirectory(fixtureRoot);
@@ -2984,7 +2986,7 @@ describe('package scripts and gitignore', () => {
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
                 // The usage must name every command `parseCommand` accepts, not a subset of them.
                 expect(result.stderr).toContain(
-                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|ruleset:harden>'
+                    'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden>'
                 );
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
@@ -2996,7 +2998,7 @@ describe('package scripts and gitignore', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-launcher-root-');
             const lane = join(fixtureRoot, 'lane');
             try {
-                runGit(primary, ['worktree', 'add', '-b', 'agent/test/launcher', lane]);
+                runGit(primary, ['worktree', 'add', '-b', 'agent/test-launcher', lane]);
 
                 expect(resolveTrustedLauncherBinding(primary).primaryRoot).toBe(realpathSync(primary));
                 expect(() => resolveTrustedLauncherBinding(lane)).toThrow(/protected primary checkout/);
@@ -3389,7 +3391,7 @@ describe('package scripts and gitignore', () => {
         mkdirSync(primary);
         try {
             trustedReviewMutationFixture(primary, mutationLog);
-            runGit(primary, ['worktree', 'add', '-b', 'agent/test/reviewer-route', lane]);
+            runGit(primary, ['worktree', 'add', '-b', 'agent/test-reviewer-route', lane]);
             for (const entry of ['publishReview.ts', 'resolveThread.ts']) {
                 expect(readFileSync(join(lane, 'scripts', entry), 'utf8')).toBe(
                     runGit(primary, ['show', `refs/remotes/origin/main:scripts/${entry}`])
@@ -3483,7 +3485,7 @@ describe('package scripts and gitignore', () => {
                         },
                     ],
                 },
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'gpt-6-luna',
             })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');

@@ -19,28 +19,29 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 
 ## Command reference
 
-| Need                                                        | Command                                                                                                                                                                                       |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                                                 | `pnpm lane:open [issue] [slug] [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                         |
-| Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                    |
-| Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                          |
-| Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
-| Write the review bundle                                     | `pnpm review:prepare <pr>`                                                                                                                                                                    |
-| Post `review.json`                                          | `pnpm review:publish <pr>`                                                                                                                                                                    |
-| Post final `acceptance.json` (legacy pre-policy heads only) | `pnpm review:accept <pr>`                                                                                                                                                                     |
-| Record a repair, leave open                                 | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                       |
-| Confirm repairs, resolve                                    | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                  |
-| Reply `Done` and resolve                                    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                                                                                                         |
-| Rebuild rounds; shadow-compare                              | `pnpm review:reconstruct <pr>`                                                                                                                                                                |
-| Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                           |
-| Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                              |
-| Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                            |
-| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> --lineage <path-to-json>`                                                                                                    |
-| Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                   |
-| Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                     |
-| Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                   |
-| Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                      |
-| Restamp author identity on lanes                            | `pnpm lane:identity`                                                                                                                                                                          |
+| Need                                                        | Command                                                                                                                                                                                                                          |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open a lane                                                 | `pnpm lane:open [issue] [slug] --type <type> [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                                              |
+| Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                                                       |
+| Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                                                             |
+| Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--title "<conventional-subject>"] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
+| Write the review bundle                                     | `pnpm review:prepare <pr>`                                                                                                                                                                                                       |
+| Post `review.json`                                          | `pnpm review:publish <pr>`                                                                                                                                                                                                       |
+| Post final `acceptance.json` (legacy pre-policy heads only) | `pnpm review:accept <pr>`                                                                                                                                                                                                        |
+| Record a repair, leave open                                 | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                                                          |
+| Confirm repairs, resolve                                    | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                                                     |
+| Explain the retired resolution command                      | `pnpm review:resolve --help`                                                                                                                                                                                                     |
+| Rebuild rounds; shadow-compare                              | `pnpm review:reconstruct <pr>`                                                                                                                                                                                                   |
+| Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                                                              |
+| Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                                                                 |
+| Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                                                               |
+| Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`                                     |
+| Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                                                                  |
+| Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                                                      |
+| Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                                                        |
+| Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                                                      |
+| Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                                                         |
+| Restamp author identity on lanes                            | `pnpm lane:identity`                                                                                                                                                                                                             |
 
 `pr:supersede` refuses to close a superseded pull request until every live
 review thread on it has exactly one recorded disposition on the replacement.
@@ -52,6 +53,107 @@ invocation, and a missing, unreadable, or malformed file refuses with the path.
 The transaction then posts the receipt plus a second lineage marker, converges
 duplicates to exactly one of each, and closes only afterwards, so a re-run after
 a partial transaction repairs rather than duplicates.
+
+`pr:retire` closes an owner-released obsolete PR without asserting a merged replacement. The
+caller supplies a canonical `retirement-v1` JSON record with `pr`, `head`, `base`, a one-line
+`rationale`, 1–8 repository evidence URL/observation pairs, a total `findings` list of live root
+comment/thread IDs and native author repair/reviewer confirmation comment IDs, and `reviewBodies`
+mapping each `REQUEST_CHANGES` review ID to its inline roots and `bodyDigest`, the lower-case
+SHA-256 digest of that exact review body's UTF-8 bytes (without trimming or normalization).
+The command checks this binding initially, before marker writes, before closing, after closing,
+and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new
+close or replay and must never be adopted as bound evidence.
+Each review proof reads both complete review-thread and requested-changes-review connections in
+one GraphQL response. Eligibility is bounded to 100 threads, 100 requested-changes reviews and 100
+comments per thread, with every `hasNextPage` false. Missing, malformed or truncated connections
+refuse without pagination or stitching separate responses. One response does not establish
+GraphQL resolver atomicity or prevent later changes.
+The command refuses an unconfirmed
+or unresolved root, unmatched review body, changed head/base/root set, or ambiguous role actor;
+it posts one author-App marker and closes through the native transaction. The reason, evidence,
+and mapping of review prose to inline roots are caller attestations, not machine proof of
+obsolescence. A review body with a distinct finding that cannot truthfully be mapped to a
+confirmed inline root remains a refusal; there is no discard or body-only admission in this
+version. This does not change `pr:supersede`, review, Gate, or delivery rules.
+The selected reviewer confirmation's decimal comment ID must strictly follow the selected author
+repair's ID; identity and a matching repair digest alone do not establish that chronology.
+Caller-selected IDs must identify the whole thread's authoritative native repair and sole
+confirmation. Retirement reuses native author-record supersession and reviewer replay selection,
+including historical full-record confirmations; another authorized conflicting repair or duplicate
+confirmation refuses. Older author records require verified ancestry before a descending record
+can supersede them. Plain or foreign replies do not gain authority. This does not restrict the
+original finding's actor or require every root to originate in a requested-changes review.
+Closed replay refreshes PR identity and canonical marker identity after the review proof and
+refuses movement between those observations. It cannot fence changes arriving after its last read.
+
+The replacement normally targets the old pull request's base exactly. A child
+left behind after its stack parent was natively superseded may cross that base
+only with `--superseded-parent <pr>`. The named parent must be closed without
+merge, own the child's old base branch from the child's base repository, target
+the replacement's base, and carry exactly one canonical author-Bot supersession
+receipt and one total finding lineage marker naming the merged replacement. The
+child's live `baseRef` must name that parent branch in the child's repository and
+target the parent's final head commit. The parent's final head must also belong
+to the old child's immutable history. When that head advanced after the published
+child, only the existing native registered lane provenance can establish the
+historical association: the protected-primary descriptor and matching
+`branch.<child>.sourdaw-stack-fork`, exact child/parent branches and parent PR,
+and the recorded fork commit retained in both old child and final parent. This
+uses the existing same-account native provenance boundary, not cryptographic
+ownership. A missing descriptor is never reconstructed from shared ancestry,
+reviews, workflow associations or prose. A reused branch name is insufficient.
+Any observed cached child `baseRefOid` must belong to both histories during fresh
+admission; that cached commit alone is not parent provenance. The command
+snapshots the live ref's repository, name
+and target, re-reading the child after the parent proof at each mutation boundary.
+It checks the child's finding set after that last remote proof immediately before
+close, and again after the final post-close proof, so a finding added or removed
+during parent inspection cannot inherit an earlier coverage check.
+
+Stacked closure posts a third canonical author-Bot
+`sourdaw-supersession-parent-v1` marker binding the child, parent, both replacement
+identities and immutable commits to the admitted provenance kind, fork and cached
+base. It participates in exact observation, convergence, journaled writes,
+compensation and ambiguous-write retention alongside receipt and lineage.
+An already CLOSED child may replay without writes after its live base ref or
+local lane metadata has been deleted only with exactly one strictly parsed,
+canonical authorized binding marker, receipt and total lineage. Replay uses the
+stored historical fork and cached base, verifies current identities and immutable
+ancestry, and refuses a present contradictory descriptor or live ref. A later
+cached base does not rewrite the admitted history. An old two-marker completion
+cannot acquire this binding during CLOSED replay. The distinction confirms an
+existing completion only and cannot admit fresh closure with an absent live ref.
+
+The command revalidates that live parent proof before the first child write, before
+closing, and after closing before reporting success. A refusal before writing
+leaves no child mutation, a refusal after adding child markers compensates those
+markers, and a post-close authority failure reports ambiguity while retaining
+all the closed child's markers as durable evidence.
+
+When the parent was superseded by a different merged PR, name it explicitly with
+`--parent-replacement <pr>` after `--superseded-parent`. All four PR identities
+must differ. Both replacements and the old parent must target `main`; the old
+parent's canonical receipt and total live finding lineage must name its own
+replacement, while the child keeps its independent lineage to the child
+replacement. The parent's replacement merge commit must be an ancestor of the
+child replacement's source head. The read-only comparison binds the repository,
+ordered full commit SHAs, base object, merge-base object and terminal descendant
+commit. The comparison has no paging parameters, so GitHub's terminal returned
+commit remains the newest even when its list is capped at 250. A branch match or
+status alone is insufficient, and unavailable evidence refuses. This path
+snapshots and revalidates all four identities, merge commits, parent markers and
+both old PR finding sets before the first child write, immediately before close,
+and after close. Each proof ends with independent core reads of every replacement
+and parent after the final dependent marker and thread reads, followed by the
+child's final core read. CLOSED replay uses the same final authority witnesses.
+These client reads cannot exclude changes after their respective observations.
+Pre-close refusals use the same marker compensation; post-close
+failure reports ambiguity and preserves the closed child's markers. The option
+does not infer a new parent from prose, retarget a branch, or change a registered
+stack. Ancestry proves dependency containment, not semantic replacement or product
+acceptance; those remain independently reviewed caller obligations. Historical
+same-base supersessions and the existing same-replacement parent path do not
+require this additional merge-commit proof.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a
@@ -139,13 +241,30 @@ resolved, and refuses `BLOCKED`, non-`main` bases, and unstable reads (below).
 
 ## lane:publish mechanics
 
-An issue number resolves its lane by branch prefix; `--lane` names an exact
-absolute lane root, which is what disambiguates write-disjoint lanes sharing
-one issue.
+A lane branch is `<type>/<issue>/<slug>` or `<type>/<slug>`, where `<type>` is a
+conventional-commit type (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`,
+`perf`, `build`, `ci`; never `style`) chosen at `lane:open --type`. The legacy
+`agent/<issue>/<slug>` and `agent/<slug>` shapes of lanes opened earlier are
+recognized by every script exactly as typed ones are; new lanes never use
+`agent/`. `parseLaneBranch` in `scripts/prContract.ts` is the one reader: only
+the first segment is the type, a numeric middle segment without a leading zero
+is the issue (a number inside a slug is never an issue), and a slug is
+dash-joined lowercase words that is never purely numeric, so `fix/12-beat` is an
+issueless slug and `fix/12/34` is refused. A name is at most 100 characters
+(`MAX_LANE_BRANCH_LENGTH`). Any other name, an unknown type included, is not a
+lane branch.
 
-For conforming `agent/` lanes, `lane:publish` opens a PR titled from the newest
-non-merge commit above `origin/main`; it refuses lanes lacking one and never
-retitles existing PRs, including after follow-up commits or merges. The body
+An issue number resolves its lane by that parsed issue segment, across types and
+legacy prefixes alike (two lanes carrying the same issue need `--lane`); `--lane`
+names an exact absolute lane root, which is what disambiguates write-disjoint
+lanes sharing one issue.
+
+For conforming lanes (typed or legacy `agent/`), `lane:publish` opens a PR titled from the newest
+non-merge lane commit, excluding everything reached by resolved `origin/main` and stack parent
+heads; it refuses lanes lacking one. Existing titles stay frozen through follow-up commits and
+merges unless `--title "<conventional-subject>"` explicitly supplies the creation or replacement
+title. The same effective title governs body validation, derived metadata, and branch-type
+warnings. Off-convention legacy lanes refuse `--title` and remain push-only. The body
 follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
 the script controls format and rejects malformed bodies. New PRs require
 explicit `--summary` and `--test`; later supplied flags replace their section,
@@ -191,7 +310,13 @@ membership to the operator backfill — the rest of the publish still lands. An
 issueless lane derives its project from its derived type label and keeps it only
 when the live listing names that project.
 
-Author-locked off-convention branches may publish via `--lane <absolute-path>`
+When a typed branch's type differs from the type of the title the PR will show
+(the explicit `--title`, otherwise the newest lane commit on a first publish or frozen title afterwards),
+`lane:publish` logs a `warning:` line and publishes anyway: the branch name
+cannot change after `lane:open`, and a `feat` lane routinely ends on a `test:`
+or `chore:` follow-up. `agent/` lanes name no type and never warn.
+
+Author-locked off-convention branches (any name `parseLaneBranch` rejects) may publish via `--lane <absolute-path>`
 only with an already open PR for that exact branch, proving it a genuine
 stranded lane. This path only pushes; it never writes PR title or body and
 refuses if the PR is no longer open when the push lands.
@@ -232,17 +357,17 @@ hand-edited plan can neither widen nor narrow its own review. The earned stances
 name risk surfaces to weigh; the dispatched stances are the orchestrator's
 task-derived judgement.
 
-| Class                                                                                       | Earns                                                     | Draw floor         |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
-| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1                  |
-| `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
-| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
-| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
-| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
-| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3                  |
-| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3, one `strongest` |
-| `native-security`                                                                           | correctness, security-platform, test-validity             | 3, one `strongest` |
-| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3, one `strongest` |
+| Class                                                                                       | Earns                                                     | Draw floor |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------- |
+| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1          |
+| `test-only` (every path a test)                                                             | test-validity                                             | 1          |
+| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2          |
+| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3          |
+| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3          |
+| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3          |
+| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3          |
+| `native-security`                                                                           | correctness, security-platform, test-validity             | 3          |
+| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3          |
 
 Every `.github/` path classifies as handwritten whatever its name, so it never
 plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
@@ -256,16 +381,22 @@ scripts, and the review tooling that admits CI or feeds the bundle earn
 `native-security`; worklet sources under `public/audio/worklets/` and their
 generators earn `realtime-audio`. A generated-only change plans `small`. A plan
 of several classes needs three distinct stances, or every stance its classes
-earn when they earn fewer, plus one `strongest` draw when any of them is a
-specialist class.
+earn when they earn fewer. Specialist classes keep those stance and evidence
+obligations within the same reviewer cost ceiling.
 
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
 base context. For a plan-carrying bundle it derives the canonical record from
 `review.json` and the plan, persists it as `dossier.json` before the POST, and
 refuses before any remote write when the plan is missing, malformed, or rebound
-from the head/base/pr it must bind; when `review.json` carries no `draws`; when
-the draws miss the floor above; or when a value is unsafe. The record is
+from the head/base/pr it must bind; when `review.json` carries no `draws` and no
+reusable unpublished record supplies them; when
+the draws miss the floor above; when the summary reviewer model or any effective
+draw exceeds the review cost ceiling below; or when a value is unsafe. Effective
+draws include an unpublished historical dossier reused by a caller document with
+no draws. These are fresh-publication gates: exact published replay and recovery
+keep their original model and tier metadata without rewriting canonical bytes.
+The record is
 `format: 'dossier-v1'`: an append-only event chain (`stance-completed` per draw,
 `finding-accepted` per inline comment) whose records carry `sequence`,
 `previousDigest`, and `digest`, plus `headDigest` and a `dossierDigest` over the
@@ -288,21 +419,34 @@ respin the change as one consolidated pull request, then close the frozen one
 with `pr:supersede` once the replacement merges. `review:repair` and
 `review:confirm` stay open.
 
-Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
-publishes exactly as before.
+Legacy tolerance: a bundle with no `risk-plan.json` retains its historical shape.
+A fresh publication still meets reviewer cost and diversity rules.
 
 ### Headless reviewer dispatch
+
+Reviewers use only fast, low-cost mid-tier models or below: Luna, Terra, Sonnet
+and Haiku families, recorded by their public model names. Fresh draws use
+`economy` or `standard`, including specialist and disputed-risk reviews. Never
+use Fable, Astra, Opus, any Sol model, another frontier or high-end model, or an
+unknown family or premium alias for review. Author and orchestrator routing is
+unchanged. Keep the required independent stances, blind dispatch, identity and
+head bindings, probes and evidence quality within this ceiling.
 
 When the harness cannot select subagent models, run each blind stance on another agent
 harness headlessly: one stance per dispatch, blind, read-only, no credentials, the
 report returned as text for the orchestrator to validate and publish. `reviewerModel`
 records the model actually run; the dispatch never enters the trusted snapshot; the
-harness, model, and invocation are the dispatching session's choice. When only the
-author's model is available, the same-model review still publishes: `review.json`
+harness and invocation are the dispatching session's choice within the permitted
+configured models. Diversify among those models, preferring a different model from
+the author's when available. When only one permitted model is available, disclose
+the unavailable alternatives in `modelExhaustion`; never use a prohibited model
+to obtain diversity. If no permitted model is available, report the blocker.
+When only the author's permitted model is available, the same-model review still publishes: `review.json`
 carries `modelExhaustion` (one line naming what made every other model unavailable)
 and the published body names the reviewer model, so the deviation is recorded rather
 than silently accepted. A draw on an authoring model is covered by the same
-`modelExhaustion`, and the body names that draw's model too.
+`modelExhaustion`, and the body names that draw's model too. Exhaustion never
+waives the cost ceiling.
 
 ## Review document formats
 
@@ -326,11 +470,13 @@ report.
 `review.json` is the only caller document. Beside its review fields it carries
 `draws`, one `{ stance, reviewerModel, tier, outcome }` per completed blind draw —
 several draws on one stance with distinct models count once toward the floor —
-with `tier` `economy`/`standard`/`strongest` and `outcome` `clean`/`findings`,
+with fresh `tier` `economy`/`standard` and `outcome` `clean`/`findings`,
 and optional `discarded`, one `{ finding, reason }` per discarded candidate. The
 fields are exact; an unknown tier or outcome, a repeated stance-and-model pair,
 or an extra field is refused. Discards are shape-checked and never posted or
 recorded. The accepted findings are the document's own inline comments.
+Canonical historical parsers retain `strongest`; that metadata cannot authorize
+a fresh publication and is preserved on published replay and recovery.
 
 Every draw, discard, and approval-claim value must be single-line, trimmed and
 bounded, and is refused when it carries a credential-shaped value, a private-key
@@ -483,12 +629,26 @@ reviewer markers refuse the whole batch before posting or resolving. After a
 partial post-success and resolve failure, replay recognizes the same record on
 a descendant live head, logs `repair-confirmation-replayed:<pr>:<thread>`, and
 resolves without posting a second confirmation.
-Both commands are lock-free and idempotent by their
-deterministic ids, and re-running after a partial pass ignores already-resolved
-threads and completes the remainder. `review:resolve` remains only for legacy
-roots, where it posts only its bare `Done` as author bot and resolves against
-that head; using it on a thread a reviewer blocked reintroduces bare author-side
-resolution, which is what `review:repair` and `review:confirm` exist to replace.
+Both commands acquire the existing per-PR fenced mutation owner before authentication and
+hold it through their complete read, selection, write and replay operation. Cooperating
+processes sharing the Git common directory serialize with publication, delivery and native
+closure commands; another PR remains independent. Deterministic mutation IDs correlate
+receipts; GitHub does not deduplicate these requests by ID. This is local process
+serialization, not distributed exactly-once execution across separate clones or direct APIs.
+
+Each actual reply or resolve attempt journals the owner before the remote call. A failed
+attempt retains the owner and prints its exact recovery command:
+`pnpm deliver --recover-lock <pr> --owner <oid>`. After the recorded process fence is dead,
+recover through that existing route, then rerun the original repair or confirmation command
+with its original bound inputs. Recovery itself posts and resolves nothing. Replay reads
+existing records, skips posted confirmations, and ignores threads already resolved; it
+completes the remaining work without duplicating authoritative replies.
+
+`review:resolve` is retired. Valid invocations refuse before authentication or
+GitHub access; `--help` explains the replacement. Record every repair with
+`review:repair` and let the distinct reviewer confirm it with `review:confirm`.
+Historical records remain readable, but historical roots do not restore
+author-side resolution.
 No script writes free-form thread replies; wrongly posted findings have no
 discussion route. Clarify code, not threads. Resolve only when the current head
 addresses the finding, then obtain a new review. File out-of-scope feedback; do
@@ -561,11 +721,48 @@ or already-merged recovery and tracker completion. Validate and refuse existing
 owners without waiting or automatic takeover, regardless of liveness. Crashes
 leave the ref; only `deliver --recover-lock` clears it.
 
+`pr:supersede` and `pr:retire` use this same per-PR owner for every live PR read, replay, comment,
+delete, close and compensation. A pre-close refusal releases only after verified
+rollback restores the original OPEN comment-ID set and removes every comment the
+invocation created; the overall command still fails. This permits corrected
+lineage on a later invocation without letting another native closer adopt markers
+while their creator can still roll them back. Retaining stale lineage alone would
+prevent such a corrected retry.
+An acknowledged created comment ID must be observed with its exact owned marker before deletion
+and must be absent after the acknowledged deletion. Omission from a later read alone cannot prove
+rollback; missing or altered created markers retain the owner without an unverified deletion.
+
+Ambiguous comment results, altered markers, attempted closure and unverified or
+failed compensation retain the journaled owner and print its exact recovery
+command. After that owner's process fence is dead, use the existing
+`deliver --recover-lock <pr> --owner <oid>` route. It can reconcile stable OPEN or
+CLOSED unmerged observations, but recovery does not prove supersession complete:
+rerun the original closure command with its verified head and complete bound record or lineage.
+Closure success is logged only after its mutation owner releases. Retirement preserves its exact
+marker and retained owner after ambiguous writes, failed or unverified compensation, or uncertainty
+after a close attempt; a verified complete OPEN rollback releases ownership while still refusing.
+Both native closers observe the bound PR core again after their marker/review reads and immediately
+before the close mutation, without fetching comments in that last observation. They compare PR
+number/node identity, head, source, base, state and closure facts. Post-close proof and CLOSED replay
+also finish with an independent core observation. A moved or unreadable witness refuses; safe
+pre-close compensation remains available, while uncertainty after a close preserves the evidence
+and owner. GitHub's `ClosePullRequestInput` has no expected-head comparison, so this bounds the
+client's split-read composition gap without eliminating external changes after its final read.
+
+Launch supersession and retirement through the protected primary package route. Their pinned
+snapshot closures include the CLI, transaction, GitHub adapter and record parsers;
+the launcher freezes POSIX `ps` or Windows PowerShell before the default process
+fence is acquired. POSIX snapshots own a detached process group. Calling the
+transaction script directly does not supply this trusted process-tool boundary.
+
 Recovery refuses a live recorded process fence, adopts the lock under its own
 fence before reading anything, then requires two matching remote reads. It
 never merges, retargets, posts, or closes, and accepts only the immutable
 author Bot or historical orchestrator User as merger. Clearing records a
 dead-owner-keyed receipt; repeat recovery replays it without GitHub access.
+The shared owner does not identify the original command. Fresh recovery and receipt replay guide
+rerunning that original operation with its original bound inputs; they do not prescribe delivery,
+certify completion or authorize a merge. All original operation and delivery gates still apply.
 
 Already-merged recovery accepts the immutable author Bot or historical
 orchestrator User as merger; fresh delivery requires the author App and rejects
@@ -624,7 +821,7 @@ prove App-owned comments remained unedited.
 
 ## Launcher trust boundary
 
-Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
+Run `lane:publish`, `deliver`, `pr:supersede`, `pr:retire`, `issue:claim`, and `issue:reconcile` through the
 protected primary checkout's package route; `review:accept` remains only for
 legacy pre-policy heads. This
 is the snapshot-backed write trust boundary: launcher and whole script closure

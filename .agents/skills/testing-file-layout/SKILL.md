@@ -17,7 +17,7 @@ Specs live in `__tests__/` directories, never beside the source. Co-located spec
 
 ### 1. Specs live in `__tests__/` inside the owning folder
 
-For `path/to/SourceFile.ts`, the spec is `path/to/__tests__/SourceFile.spec.ts` — same basename, `.spec.tsx` for components. Specs next to their concept folder stay discoverable and move with refactors; co-location beside the source fights the project convention.
+For a single `path/to/SourceFile.ts` subject, default to `path/to/__tests__/SourceFile.spec.ts` — same basename, `.spec.tsx` for components. A behavior spanning several subjects may have a behavior-named integration spec in the owning folder's `__tests__/`. Specs next to their concept folder stay discoverable and move with refactors; co-location beside the source fights the project convention.
 
 ### 2. Reproduce before you fix
 
@@ -25,7 +25,7 @@ For behaviour changes and bug fixes: write or update a failing test first, see r
 
 ### 3. Import the subject one level up
 
-From `useCases/__tests__/addTrack.spec.ts`, import `../addTrack`. Cross-module imports still go through contract barrels — not private `models/` or deep use-case paths. Sibling-relative imports keep the subject local; a foreign deep import is the same architecture violation in a test that it is in production code.
+From `useCases/__tests__/addTrack.spec.ts`, import `../addTrack`. For a multi-subject spec, import local subjects relatively and foreign modules through contract barrels — not private `models/` or deep use-case paths. A foreign deep import is the same architecture violation in a test that it is in production code. Test seams may double external systems while retaining real collaborators needed for the asserted behavior; see `docs/06-testing.md`.
 
 ### 4. Put shared helpers in their canonical folder
 

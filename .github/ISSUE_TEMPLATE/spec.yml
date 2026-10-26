@@ -1,7 +1,7 @@
 name: Spec
 description: Decided intent, as acceptance criteria. Not trivial work.
 title: "spec(scope): "
-labels: ["status:tracking"]
+labels: ["status:tracking", "project:features"]
 body:
   - type: markdown
     attributes:

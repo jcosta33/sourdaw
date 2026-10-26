@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
     >(() => ({ status: 'unchanged' })),
     revision: vi.fn(() => 'revision-1'),
     revisionMatchesLive: vi.fn(() => true),
+    settlePendingWrites: vi.fn(() => 'revision-1'),
     chatState: { value: null as { isGenerating: boolean } | null },
 }));
 
@@ -52,12 +53,14 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.revision,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatchesLive,
+    settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingWrites,
 }));
 vi.mock('../admitCommittedSectionRenderRetry', () => ({ admitCommittedSectionRenderRetry: mocks.admitRetry }));
 vi.mock('../revalidateApprovedMatchSelectors', () => ({
     revalidateApprovedMatchSelectors: mocks.revalidateMatchSelectors,
 }));
 vi.mock('../../compileAgentRiskApproval', () => ({ compileAgentRiskApproval: mocks.compileApproval }));
+vi.mock('../../getProjectContext', () => ({ getProjectContext: vi.fn() }));
 vi.mock('../confirmationTerminalSettlement', () => ({
     confirmationTerminalSettlement: {
         failSectionRenderRetryProof: mocks.failRetryProof,
@@ -211,6 +214,10 @@ describe('resolveConfirmationAdmission', () => {
     it('returns an ordinary ready decision with recovery facts', async () => {
         const confirmation = createConfirmation({ commandBatch: createBatch() });
         mocks.getConfirmation.mockReturnValue(confirmation);
+        mocks.revisionMatchesLive.mockImplementation(() => {
+            expect(mocks.settlePendingWrites).toHaveBeenCalledOnce();
+            return true;
+        });
         await expect(
             confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
         ).resolves.toEqual({
