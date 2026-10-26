@@ -441,8 +441,9 @@ function installExclusiveJson(path: string, value: unknown): void {
             !('code' in error) ||
             error.code !== 'EEXIST' ||
             readFileSync(path, 'utf8') !== raw
-        )
+        ) {
             throw error;
+        }
     }
 }
 
