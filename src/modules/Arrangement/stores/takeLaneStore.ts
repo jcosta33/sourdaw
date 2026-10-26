@@ -284,6 +284,24 @@ function get_normalized_takes(takes: unknown[]): Take[] {
     return takes.filter(is_valid_take).map(normalize_take);
 }
 
+function refuseMalformedMidiSources(lanes: readonly unknown[]): void {
+    for (const lane of lanes) {
+        if (lane === null || typeof lane !== 'object' || !('takes' in lane) || !Array.isArray(lane.takes)) {
+            continue;
+        }
+        for (const take of lane.takes) {
+            if (
+                take !== null &&
+                typeof take === 'object' &&
+                'midiSource' in take &&
+                !isFrozenMidiTakeSource(take.midiSource)
+            ) {
+                throw new Error('Invalid frozen MIDI take source');
+            }
+        }
+    }
+}
+
 function retain_non_overlapping_regions(regions: CompRegion[]): CompRegion[] {
     const retained_regions: CompRegion[] = [];
 
@@ -487,6 +505,8 @@ export function sanitize_take_lane_store_state(value: unknown): TakeLaneStoreSta
     if (lanes === null) {
         return defaultTakeLaneStoreState;
     }
+
+    refuseMalformedMidiSources(lanes);
 
     return {
         lanes: lanes.map(get_sanitizable_take_lane).filter(is_sanitizable_take_lane).map(normalize_take_lane),
