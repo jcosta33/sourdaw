@@ -204,9 +204,10 @@ function readNamedTrack(prompt: string, context: ProjectContext, catalog: MixRec
             capability: 'track',
             context,
         });
-        return resolution.status === 'resolved'
-            ? { kind: 'track', id: selected.id, name: selected.name, via: 'selection' }
-            : { kind: 'tie' };
+        if (resolution.status !== 'resolved') {
+            return { kind: 'tie' };
+        }
+        return { kind: 'track', id: selected.id, name: selected.name, via: 'selection' };
     }
     const forms = [prompt, prompt.replace(/^\s*(?:the|a|an)\s+/iu, '')];
     for (const memberText of forms) {
