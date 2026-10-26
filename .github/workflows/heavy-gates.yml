@@ -54,20 +54,16 @@ jobs:
       # Without this the suite cannot start: nothing else in the repository
       # installs a browser, and there is no postinstall hook that would.
       #
-      # The install is split so each half can be bounded by the user that owns
-      # it: `--with-deps` runs apt-get as root through sudo, where a `timeout`
-      # run as the runner user cannot signal it and would leave apt holding its
-      # lock for the next attempt. So the system dependencies run under
-      # `sudo timeout` and the browser download under its own `timeout`; a
-      # timed-out attempt is a failed one and the loop continues.
+      # `--with-deps` would hide apt under a user-owned browser command. Keep
+      # apt in one root-owned cgroup and retry only the separate browser
+      # download under its existing timeout.
       #
       # Caps and what they cost, from 2026-09-20 to 2026-10-08 installs: the
       # whole step took 45s at the 99th percentile until 2026-10-05, but a slow
       # Ubuntu mirror stretched the apt phase to 523s on 2026-09-29 and 1252s on 2026-10-06,
       # while the browser download never exceeded 56s. The 8m dependency cap
-      # therefore also kills the rare install that is slowly making progress
-      # (15 of about 4300) and retries it, relying on apt resuming its partial
-      # downloads; it is the price of failing a genuine stall, which prints
+      # therefore can fail the rare install that is slowly making progress
+      # (15 of about 4300); it is the price of failing a genuine stall, which prints
       # nothing after `apt-get update` for an hour, within minutes.
       #
       # Every apt run reads the runner's sources except the image's standalone
@@ -75,22 +71,14 @@ jobs:
       # failed `apt-get update` on all three attempts (#5359); see
       # scripts/aptWithoutMicrosoftFeed.sh. Any other apt failure stays fatal.
       #
-      # Limit: apt runs dpkg in its own session, which the group signal of
-      # `timeout` does not reach. A cap that expires while dpkg is unpacking,
-      # seconds after the downloads finish, can leave dpkg holding its lock
-      # and fail the next attempt; the attempt after that retries.
-      #
-      # Three timed-out attempts take 34 minutes, inside this step's 35, which this job's limit holds
-      # together with the longest observed shard.
+      # One owned root dependency transaction must drain before any user
+      # browser download starts. Downloads may retry without repeating apt.
       - name: Install Playwright browsers
         timeout-minutes: 35
         run: |
+          sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- node_modules/.bin/playwright install-deps chromium
           for attempt in 1 2 3; do
-            # GNU timeout kills the whole process group at the deadline. A TERM
-            # grace period ends if pnpm exits while an installer child survives,
-            # so the browser download is killed outright; apt gets a TERM first.
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&
-              timeout --signal=KILL 3m pnpm exec playwright install chromium; then
+            if timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
             if [ "$attempt" -eq 3 ]; then

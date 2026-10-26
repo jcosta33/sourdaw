@@ -2,7 +2,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import {
-    appendFileSync,
     chmodSync,
     closeSync,
     constants,
@@ -138,9 +137,10 @@ function installerStep(workflow: string, step: string): string {
 
 function startHelper(
     f: Fixture,
-    mode: string
-): { child: ChildProcess; result: Promise<{ code: number | null; output: string }> } {
-    const args = [helper, '--deadline', '1h', '--', '/usr/bin/python3', installer, f.root, mode];
+    mode: string,
+    deadline = '1h'
+): { child: ChildProcess; output: () => string; result: Promise<{ code: number | null; output: string }> } {
+    const args = [helper, '--deadline', deadline, '--', '/usr/bin/python3', installer, f.root, mode];
     const child = spawn(
         process.platform === 'linux' ? 'sudo' : 'bash',
         process.platform === 'linux'
@@ -158,7 +158,51 @@ function startHelper(
     child.stderr?.on('data', (chunk) => {
         output += String(chunk);
     });
-    return { child, result: once(child, 'close').then(([code]) => ({ code: code as number | null, output })) };
+    return {
+        child,
+        output: () => output,
+        result: once(child, 'close').then(([code]) => ({ code: code as number | null, output })),
+    };
+}
+
+async function outputValue(run: ReturnType<typeof startHelper>, pattern: RegExp): Promise<string> {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+        const match = run.output().match(pattern);
+        if (match?.[1]) return match[1];
+        await poll(10);
+    }
+    throw new Error(`missing controller output ${pattern}: ${run.output()}`);
+}
+
+function unitFields(unit: string): string {
+    const result = spawnSync(
+        'sudo',
+        [
+            '-n',
+            'systemctl',
+            'show',
+            unit,
+            '--no-pager',
+            '--property=Id,InvocationID,ControlGroup,ActiveState,SubState,LoadState',
+        ],
+        { encoding: 'utf8' }
+    );
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout;
+}
+
+function pidRunning(pid: number): boolean {
+    const result = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' });
+    return result.status === 0 && result.stdout.trim() !== '' && !result.stdout.trim().startsWith('Z');
+}
+
+function ownedPidRunning(pid: number, cgroup: string): boolean {
+    try {
+        return readFileSync(`/proc/${pid}/cgroup`, 'utf8') === cgroup && pidRunning(pid);
+    } catch {
+        return false;
+    }
 }
 
 // A process-control stub proves workflow control flow only. It is never a
@@ -239,10 +283,27 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
             const run = startHelper(f, 'wait');
             const result = await run.result;
             expect(events(f).filter((event) => event.event === 'installer-start')).toEqual([]);
+            expect(events(f).filter((event) => event.event === 'package-state')).toHaveLength(1);
             expect(result.code).toBe(2);
             expect(result.output).toContain('package-state=dirty');
         } finally {
             rmSync(f.root, { recursive: true });
+        }
+    });
+
+    it('refuses an audited dirty or unreadable private status before launching', async () => {
+        for (const state of ['dirty', 'unknown']) {
+            const f = fixture();
+            try {
+                if (state === 'dirty') writeFileSync(join(f.root, 'audit'), 'fake-package half-configured\n');
+                else rmSync(join(f.root, 'db/status'));
+                const result = await startHelper(f, 'wait').result;
+                expect(result.code, result.output).toBe(2);
+                expect(result.output).toContain(`package-state=${state}`);
+                expect(events(f).filter((event) => event.event === 'installer-start')).toEqual([]);
+            } finally {
+                if (state !== 'unknown') rmSync(f.root, { recursive: true });
+            }
         }
     });
 });
@@ -252,7 +313,8 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
 describe.skipIf(process.platform !== 'linux')('real systemd fake package transaction', () => {
     it('deadline after acknowledged unpack drains a TERM-ignoring separate session and preserves dirty state', async () => {
         const f = fixture();
-        const run = startHelper(f, 'wait');
+        const run = startHelper(f, 'wait', '8s');
+        const sibling = spawn('sleep', ['60'], { stdio: 'ignore' });
         let unit: string | undefined;
         try {
             const ready = await observed(f, 'child-ready');
@@ -261,22 +323,25 @@ describe.skipIf(process.platform !== 'linux')('real systemd fake package transac
             unit = ready.cgroup?.match(/\/(sourdaw-apt-[a-f0-9-]+\.service)\n?$/)?.[1];
             expect(unit, ready.cgroup).toBeDefined();
             if (!unit) throw new Error('fake installer did not observe its exact owned unit');
-            appendFileSync(join(f.root, 'events.jsonl'), JSON.stringify({ event: 'deadline-requested', unit }) + '\n');
-            const deadline = spawnSync('sudo', ['-n', 'systemctl', 'set-property', unit, 'RuntimeMaxSec=1us'], {
-                encoding: 'utf8',
-            });
-            expect(deadline.status, deadline.stderr).toBe(0);
+            expect(unitFields(unit)).toContain(`ControlGroup=/system.slice/${unit}`);
+            expect(ownedPidRunning(ready.pid!, ready.cgroup!)).toBe(true);
             const result = await run.result;
             expect(result.code, result.output).toBe(124);
             expect(result.output).toContain('containment=drained');
             expect(result.output).toContain('package-state=dirty');
+            expect(events(f).filter((event) => event.event === 'package-state')).toHaveLength(2);
             expect(events(f).filter((event) => event.event === 'installer-start')).toHaveLength(1);
             expect(existsSync(join(f.root, 'db/updates/0000'))).toBe(true);
+            expect(ownedPidRunning(ready.pid!, ready.cgroup!)).toBe(false);
+            expect(pidRunning(sibling.pid!)).toBe(true);
+            const terminal = unitFields(unit);
+            expect(terminal).not.toContain(`ControlGroup=/system.slice/${unit}`);
         } finally {
             if (unit) spawnSync('sudo', ['-n', 'systemctl', 'stop', unit], { encoding: 'utf8' });
+            sibling.kill('SIGTERM');
             // Retain this failed transaction's private journal for inspection.
         }
-    }, 30_000);
+    }, 40_000);
 
     it('retains early-exit parent ownership until its separate-session child completes', async () => {
         const f = fixture();
@@ -304,6 +369,93 @@ describe.skipIf(process.platform !== 'linux')('real systemd fake package transac
             }
             // Unknown containment deliberately retains the private evidence.
             if (run.child.exitCode === 0) rmSync(f.root, { recursive: true });
+        }
+    }, 30_000);
+
+    it('preserves the installer failure ahead of dirty postflight', async () => {
+        const f = fixture();
+        const run = startHelper(f, 'wait');
+        try {
+            await observed(f, 'unpack-start');
+            await observed(f, 'parent-ready');
+            control(f, 'X');
+            const result = await run.result;
+            expect(result.code, result.output).toBe(100);
+            expect(result.output).toContain('containment=drained');
+            expect(result.output).toContain('package-state=dirty');
+            expect(events(f).filter((event) => event.event === 'installer-start')).toHaveLength(1);
+        } finally {
+            // The failed transaction's private journal remains available.
+        }
+    }, 30_000);
+
+    it('refuses a dirty or lost postflight audit after a successful payload', async () => {
+        for (const state of ['dirty', 'unknown']) {
+            const f = fixture();
+            const run = startHelper(f, 'wait');
+            try {
+                await observed(f, 'unpack-start');
+                await observed(f, 'parent-ready');
+                if (state === 'dirty') writeFileSync(join(f.root, 'audit'), 'fake-package half-configured\n');
+                else executable(join(f.root, 'bin/dpkg'), '#!/usr/bin/env bash\nexit 64\n');
+                control(f, 'F');
+                const result = await run.result;
+                expect(result.code, result.output).toBe(2);
+                expect(result.output).toContain('containment=drained');
+                expect(result.output).toContain(`package-state=${state}`);
+                if (state === 'unknown') expect(result.output).toContain('retained evidence=');
+            } finally {
+                if (state === 'dirty') rmSync(f.root, { recursive: true });
+            }
+        }
+    }, 30_000);
+
+    it('cancels the bound unit, drains its TERM-ignoring worker, and reports cancellation', async () => {
+        const f = fixture();
+        const run = startHelper(f, 'wait');
+        try {
+            const ready = await observed(f, 'child-ready');
+            await observed(f, 'unpack-start');
+            await observed(f, 'parent-ready');
+            const controller = Number(await outputValue(run, /controller-pid=(\d+)/));
+            const identity = spawnSync('ps', ['-o', 'command=', '-p', String(controller)], { encoding: 'utf8' });
+            expect(identity.status).toBe(0);
+            expect(identity.stdout).toContain('hostedAptInstall.py');
+            const sent = spawnSync('sudo', ['-n', 'kill', '-TERM', String(controller)], { encoding: 'utf8' });
+            expect(sent.status, sent.stderr).toBe(0);
+            const result = await run.result;
+            expect(result.code, result.output).toBe(143);
+            expect(result.output).toContain('containment=drained');
+            expect(result.output).toContain('package-state=dirty');
+            expect(ownedPidRunning(ready.pid!, ready.cgroup!)).toBe(false);
+        } finally {
+            // A cancellation keeps the private package journal for diagnosis.
+        }
+    }, 35_000);
+
+    it('fails closed and retains evidence when the bound unit status disappears', async () => {
+        const f = fixture();
+        const run = startHelper(f, 'wait', '5s');
+        let unit: string | undefined;
+        try {
+            const ready = await observed(f, 'child-ready');
+            await observed(f, 'parent-ready');
+            unit = ready.cgroup?.match(/\/(sourdaw-apt-[a-f0-9-]+\.service)\n?$/)?.[1];
+            expect(unit, ready.cgroup).toBeDefined();
+            if (!unit) throw new Error('fake installer did not observe its exact owned unit');
+            expect(unitFields(unit)).toContain(`Id=${unit}`);
+            executable(join(f.root, 'bin/systemctl'), '#!/usr/bin/env bash\nexit 64\n');
+            const result = await run.result;
+            expect(result.code, result.output).toBe(2);
+            expect(result.output).toContain('containment=unknown');
+            expect(result.output).toContain('retained evidence=');
+        } finally {
+            if (unit) {
+                const observedUnit = unitFields(unit);
+                if (observedUnit.includes(`Id=${unit}`)) {
+                    spawnSync('sudo', ['-n', 'systemctl', 'stop', unit], { encoding: 'utf8' });
+                }
+            }
         }
     }, 30_000);
 });
