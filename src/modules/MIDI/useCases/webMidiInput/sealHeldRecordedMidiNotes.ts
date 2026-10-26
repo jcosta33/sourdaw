@@ -16,6 +16,7 @@ type SealHeldRecordedMidiNotesInput = {
     trackId: string;
     endAudioTime?: number;
     admissions?: readonly RecordingMidiAdmission[];
+    endSourceBeat?: number;
 };
 
 /** Close registered held keys inside the recording's existing Stop commit. */
@@ -24,6 +25,7 @@ export function sealHeldRecordedMidiNotes({
     trackId,
     endAudioTime,
     admissions = [],
+    endSourceBeat,
 }: SealHeldRecordedMidiNotesInput): void {
     const stoppedAt = endAudioTime ?? audioEngine.context.currentTime;
     for (const admitted of admissions) {
@@ -37,7 +39,9 @@ export function sealHeldRecordedMidiNotes({
         const tempo = transportStore.value?.tempo ?? 120;
         const durationBeats =
             admitted.releaseSourceBeat === undefined
-                ? (durationSeconds * tempo) / 60
+                ? endSourceBeat === undefined
+                    ? (durationSeconds * tempo) / 60
+                    : endSourceBeat - admitted.onsetSourceBeat
                 : admitted.releaseSourceBeat - admitted.onsetSourceBeat;
         appendRecordedMidiNote({
             clipId,

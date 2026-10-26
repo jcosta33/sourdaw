@@ -27,6 +27,17 @@ function sourceBeat(clipStartBeat: number, position: EventPosition): number | nu
     );
 }
 
+/** Same owner clock for a Stop boundary as for every admitted event. */
+export function recordingMidiSourceBeatAt(clipId: string, position: EventPosition): number | null {
+    if (!takeOwnsRecordingRoot() || !activeRecordingRef.current.includes(clipId)) {
+        return null;
+    }
+    const clip = getTrackState()
+        ?.tracks.flatMap((track) => track.clips)
+        .find((candidate) => candidate.id === clipId);
+    return clip ? sourceBeat(clip.startBeat, position) : null;
+}
+
 /** Accept a physical or virtual onset before its live-audio handler can queue or await. */
 export function admitRecordingMidiNoteOn(input: {
     trackId: string;
@@ -46,7 +57,7 @@ export function admitRecordingMidiNoteOn(input: {
     if (!clip || !Number.isFinite(input.audioTime)) {
         return null;
     }
-    const onsetSourceBeat = sourceBeat(clip.startBeat, input.position);
+    const onsetSourceBeat = recordingMidiSourceBeatAt(clip.id, input.position);
     if (onsetSourceBeat === null) {
         return null;
     }

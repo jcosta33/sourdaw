@@ -220,6 +220,7 @@ export {
     retireRecordingMidiAdmission,
     getRecordingMidiAdmission,
     findOpenRecordingMidiAdmission,
+    recordingMidiSourceBeatAt,
 } from './recording/recordingMidiAdmission';
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';

@@ -194,6 +194,7 @@ export { resolveLiveInputNoteReceiver } from './webMidiInput/resolveLiveInputNot
 export { panicLiveNotes } from './webMidiInput/panicLiveNotes';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 export { sealHeldRecordedMidiNotes } from './webMidiInput/sealHeldRecordedMidiNotes';
+export { captureEventPositionAt } from './webMidiInput/captureEventBeat';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';
 

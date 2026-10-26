@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
-import { sealHeldRecordedMidiNotes } from '#/modules/MIDI/useCases';
+import { captureEventPositionAt, sealHeldRecordedMidiNotes } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { startFirstPassAtRecordPoint, type Take, type TakeLane } from '../../models/TakeLane';
@@ -14,6 +14,7 @@ import { type Clip } from '../../stores/trackStore';
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
 import { recordingPassTiming } from './recordingPassTiming';
+import { recordingMidiSourceBeatAt } from './recordingMidiAdmission';
 
 /**
  * A take staged at a loop wrap names its pass's media depth; the take opened
@@ -94,6 +95,10 @@ export async function stopRecording(
     const clipIds = activeRecordingRef.current;
     const captureRootIdentity = activeRecordingRef.capturedRootIdentity ?? null;
     const midiAdmissions = activeRecordingRef.midiAdmissions;
+    const stopPosition = captureEventPositionAt({ audioTime: ending?.contextSeconds ?? 0 });
+    const midiSourceEndBeats = new Map(
+        clipIds.map((clipId) => [clipId, recordingMidiSourceBeatAt(clipId, stopPosition)])
+    );
     activeRecordingRef.current = [];
     activeRecordingRef.capturedRootIdentity = null;
     activeRecordingRef.midiAdmissions = [];
@@ -178,6 +183,7 @@ export async function stopRecording(
             trackId: clip.trackId,
             endAudioTime: ending?.contextSeconds,
             admissions: midiAdmissions,
+            endSourceBeat: midiSourceEndBeats.get(clip.id) ?? undefined,
         });
     }
 
