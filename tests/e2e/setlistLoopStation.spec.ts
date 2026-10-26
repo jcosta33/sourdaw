@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Bottom Dock — Setlist & Loop Station', () => {
@@ -41,7 +42,6 @@ test.describe('Bottom Dock — Setlist & Loop Station', () => {
             await expect(page.getByRole('button', { name: 'Stop all loops' })).toBeVisible();
             const fixed = page.getByRole('spinbutton', { name: /Fixed loop length/i });
             await expect(fixed).toBeVisible();
-            const value = await fixed.getAttribute('aria-valuenow').catch(() => null);
         });
 
         test('Stop all loops is clickable', async ({ page }) => {
@@ -57,15 +57,7 @@ test.describe('Bottom Dock — Setlist & Loop Station', () => {
             await page.locator('#bottom-dock-tab-setlist').click();
         });
 
-        test('Can add a setlist item and verify it appears', async ({ page }) => {
-            const list = page.getByRole('list', { name: 'Setlist items' });
-            const items_before = await list.getByRole('listitem').count().catch(() => 0);
-
-            await page.getByRole('button', { name: 'Add setlist item' }).click();
-            await page.waitForTimeout(500);
-
-            await expect(list).toBeVisible();
-        });
+        // setlistLoopStationTestId owns Add and the named new item.
 
         test('Previous and next buttons are interactive', async ({ page }) => {
             const prev = page.getByRole('button', { name: 'Previous item' });
@@ -74,13 +66,6 @@ test.describe('Bottom Dock — Setlist & Loop Station', () => {
             await expect(next).toBeVisible();
         });
 
-        test('Auto-advance toggle changes state when clicked', async ({ page }) => {
-            const toggle = page.getByRole('button', { name: /Auto-advance/i });
-            await expect(toggle).toBeVisible();
-            const pressed_before = await toggle.getAttribute('aria-pressed');
-            await toggle.click();
-            await page.waitForTimeout(300);
-            const pressed_after = await toggle.getAttribute('aria-pressed');
-        });
+        // midiModSetlistDeep owns the auto-advance pressed-state change.
     });
 });

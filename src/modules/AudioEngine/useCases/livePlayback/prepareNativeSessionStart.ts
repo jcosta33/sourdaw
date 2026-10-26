@@ -9,11 +9,17 @@ import {
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
-import { type AudioGraphBackend, type AudioGraphCommand } from '../../models/AudioGraphBackend';
+import {
+    type AudioGraphBackend,
+    type AudioGraphCommand,
+    type AudioGraphCommandBatch,
+} from '../../models/AudioGraphBackend';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { effectiveMasterGain } from '../engineAccess/masterGainState';
 
+import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import {
     projectLiveGraphTopology,
@@ -123,11 +129,41 @@ function projectSessionTopology(input: Omit<LiveGraphTopologyInput, 'masterGain'
  * bank, so one registration answers for every device module that builds its
  * native body from staged material rather than from its record.
  */
-function createSessionBackend(transport: NativeGraphTransport): AudioGraphBackend {
+function createSessionBackend(
+    transport: NativeGraphTransport,
+    materialOwner: ReturnType<typeof nativeTimelineMaterialLeases.captureOwner>
+): AudioGraphBackend {
     return createNativeLiveGraphBackend({
         transport,
+        materialOwner,
+        captureNativeAdmission,
         acquireNativeSampleBank: getAudioDeviceRuntimeSink().acquireNativeSampleBank,
     });
+}
+
+function captureNativeAdmission(batch: AudioGraphCommandBatch): (() => void) | undefined {
+    const carriesModel =
+        batch.replaceTopology &&
+        batch.commands.some(
+            (command) =>
+                (command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') &&
+                command.devices.some((device) => device.grinderModel !== undefined)
+        );
+    if (!carriesModel) {
+        return undefined;
+    }
+    const project = trackStore.value;
+    const backend = nativeLiveGraphSession.backend;
+    const epoch = nativeLiveGraphSession.rearmEpoch;
+    return () => {
+        if (
+            trackStore.value !== project ||
+            nativeLiveGraphSession.backend !== backend ||
+            nativeLiveGraphSession.rearmEpoch !== epoch
+        ) {
+            throw new Error('Native NAM project/session changed during material preparation');
+        }
+    };
 }
 
 type Prepared = Readonly<{
@@ -150,6 +186,7 @@ export function prepareNativeSessionStart(
         session: Readonly<{ positionSeconds: number; sampleRate: number; monitor?: LiveGraphMonitorMode }>;
         transport: NativeGraphTransport;
         defaultMonitor: LiveGraphMonitorMode;
+        materialOwner: ReturnType<typeof nativeTimelineMaterialLeases.captureOwner>;
     }>
 ): Prepared | Readonly<{ outcome: 'projection-failed'; error: unknown }> {
     const topology = readSessionTopology();
@@ -172,8 +209,7 @@ export function prepareNativeSessionStart(
     // Material before the batch that names it, always: the native side
     // refuses a `schedule-clip` whose sample the pool does not hold, and it
     // refuses the whole batch with it. That ordering lives in
-    // `applyTopologyBatch`, so both of this session's topology batches keep
-    // it.
+    // the backend, so both of this session's topology batches keep it.
     const parked = { playing: false, positionSeconds: input.session.positionSeconds } as const;
     // The programme travels beside the set it was projected against, never
     // implied from it: the two are one reading of the attach state, and a
@@ -189,7 +225,7 @@ export function prepareNativeSessionStart(
             monitor,
             programme: against,
         });
-    const backend = createSessionBackend(input.transport);
+    const backend = createSessionBackend(input.transport, input.materialOwner);
     let firstCommands: readonly AudioGraphCommand[];
     try {
         firstCommands = projectTopology(topology.attachedInstanceIds, programme);

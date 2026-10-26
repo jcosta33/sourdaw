@@ -1,7 +1,7 @@
 import { isValidElement } from 'react';
 
 import { render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
@@ -58,6 +58,8 @@ vi.mock('../bootstrap', () => {
     return {};
 });
 
+vi.mock('#/styles/main.css', () => ({}));
+
 vi.mock('../browserDisplayScaleHost', () => ({
     mountBrowserDisplayScaleHost: mocks.mountBrowserDisplayScaleHost,
     resetBrowserDisplayScaleForChildStartup: mocks.resetBrowserDisplayScaleForChildStartup,
@@ -87,6 +89,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
     projectClipControllerEvents: vi.fn(),
+    projectChannelBend: vi.fn(),
     projectClipControllerRestore: vi.fn(),
     adaptGrooveTemplateForConsumer: vi.fn(),
     addChordEvent: vi.fn(),
@@ -96,6 +99,12 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     canPrepareMidiClipGlueState: vi.fn(),
     createGrooveTemplate: vi.fn(),
     downloadMidiFile: vi.fn(),
+    commitRecordedControllers: vi.fn(),
+    discardRecordedControllers: vi.fn(),
+    planRecordedControllers: vi.fn(),
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
     duplicateClipNotes: vi.fn(),
     duplicateMidiClipData: vi.fn(),
     getCanonicalGrooveTemplateKey: vi.fn(),
@@ -143,6 +152,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setMidiStoreState: vi.fn(),
     setNotesForClip: vi.fn(),
     shouldPlayMidiEvent: vi.fn(),
+    shiftClipMidiNotes: vi.fn(),
     splitMidiNotesAtBeat: vi.fn(),
     transposeForChordTrack: vi.fn(),
 }));
@@ -205,12 +215,29 @@ describe('app main composition', () => {
         mocks.resolveAppComposition.mockReturnValue('browser-host');
     });
 
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it.each([
+        { name: 'a development server', dev: true, mode: 'development', expected: true },
+        { name: 'an e2e-mode production build', dev: false, mode: 'e2e', expected: true },
+        { name: 'a plain production build', dev: false, mode: 'production', expected: false },
+    ])('reports isDevelopment for $name as $expected', async ({ dev, mode, expected }) => {
+        vi.stubEnv('DEV', dev);
+        vi.stubEnv('MODE', mode);
+
+        await import('../main');
+
+        expect(mocks.resolveAppComposition).toHaveBeenCalledWith(expect.objectContaining({ isDevelopment: expected }));
+    });
+
     it('mounts only the browser viewport host in the top-level browser document', async () => {
         await import('../main');
 
         expect(mocks.resolveAppComposition).toHaveBeenCalledWith({
             hasDesktopBridge: false,
-            isDevelopment: import.meta.env.DEV,
+            isDevelopment: import.meta.env.DEV || import.meta.env.MODE === 'e2e',
             isTopLevel: window.parent === window,
             protocol: window.location.protocol,
             userAgent: navigator.userAgent,

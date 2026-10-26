@@ -11,8 +11,27 @@ import { type AudioGraphCommandBatch } from '../../models/AudioGraphBackend';
 
 import { serializeAudioGraphCommand, type NativeGraphWireBatch } from './serializeAudioGraphCommand';
 
-export function serializeAudioGraphCommandBatch(batch: AudioGraphCommandBatch): NativeGraphWireBatch {
-    const commands = batch.commands.map(serializeAudioGraphCommand);
+export function serializeAudioGraphCommandBatch(
+    batch: AudioGraphCommandBatch,
+    materials?: Readonly<{ lease: string; versions: ReadonlyMap<string, string> }>
+): NativeGraphWireBatch & Readonly<{ timelineLease?: string }> {
+    let timelineLease: string | undefined;
+    if (materials) {
+        timelineLease = materials.lease;
+    } else if (batch.timelineLease) {
+        timelineLease = batch.timelineLease;
+    }
+    const commands = batch.commands.map((command) => {
+        const wire = serializeAudioGraphCommand(command);
+        if (wire.kind !== 'schedule-clip' || !materials) {
+            return wire;
+        }
+        const materialVersion = materials.versions.get(wire.playback.source.sourceId);
+        if (!materialVersion) {
+            throw new Error(`Native clip source "${wire.playback.source.sourceId}" has no exact material version`);
+        }
+        return { ...wire, playback: { ...wire.playback, source: { ...wire.playback.source, materialVersion } } };
+    });
     const carriesModel = commands.some(
         (command) =>
             command.kind === 'set-grinder-model' ||
@@ -20,15 +39,14 @@ export function serializeAudioGraphCommandBatch(batch: AudioGraphCommandBatch): 
                 command.devices.some((device) => device.grinderModel !== undefined)) ||
             (command.kind === 'insert-device' && command.device.grinderModel !== undefined)
     );
-    const wire: { -readonly [Key in keyof NativeGraphWireBatch]: NativeGraphWireBatch[Key] } = {
+    const serialized: NativeGraphWireBatch & { timelineLease?: string } = {
         schemaVersion: carriesModel ? 2 : 1,
+        ...(batch.correlation ? { correlation: { ...batch.correlation } } : {}),
+        ...(batch.replaceTopology ? { replaceTopology: true } : {}),
         commands,
     };
-    if (batch.correlation) {
-        wire.correlation = { ...batch.correlation };
+    if (timelineLease !== undefined) {
+        serialized.timelineLease = timelineLease;
     }
-    if (batch.replaceTopology) {
-        wire.replaceTopology = true;
-    }
-    return wire;
+    return serialized;
 }

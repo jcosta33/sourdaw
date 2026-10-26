@@ -2,7 +2,7 @@
 type: adr
 id: 0053
 title: A pull request freezes at its fifth review round
-status: superseded
+status: superseded by 0054
 date: 2026-09-25
 owner: The Sourdaw team
 sources:
@@ -12,6 +12,13 @@ sources:
 ---
 
 # 0053 — A pull request freezes at its fifth review round
+
+## Reinstated by 0054, 2026-10-22
+
+[0054](0054-proportional-machine-checked-review-floor.md) restores the five-round freeze as a hard
+refusal of every fresh reviewer publication, retires the three-round reassessment and the advisory
+warning below, and names the way out: respin the change and close the frozen pull request with
+`pr:supersede`. The warning-flag clause of the decision below is not restored.
 
 ## Superseded 2026-09-27
 

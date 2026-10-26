@@ -72,6 +72,7 @@ vi.mock('#/infra/di/Container', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     getTrackEligibility: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),

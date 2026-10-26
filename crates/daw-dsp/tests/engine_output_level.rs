@@ -539,7 +539,7 @@ fn toaster_level() -> Level {
     instrument_level(&mut || i.process(BLOCK as u32), INSTRUMENT_BLOCKS)
 }
 
-fn levain_level() -> Level {
+fn levain_level_fixture() -> daw_dsp::levain::LevainInstance {
     use daw_dsp::levain::LevainInstance;
     let mut i = LevainInstance::new(SAMPLE_RATE, 8);
     // A real looped sample mapped across the keyboard, so this measures the
@@ -576,9 +576,38 @@ fn levain_level() -> Level {
         0.3,
     );
     i.build_zone_map(1, 1);
+    i
+}
+
+fn levain_level() -> Level {
+    let mut i = levain_level_fixture();
     i.note_on(60, 100);
     i.note_on(64, 90);
     instrument_level(&mut || i.process(BLOCK as u32), INSTRUMENT_BLOCKS)
+}
+
+#[test]
+fn a_queued_levain_attack_matches_its_isolated_humanized_destination() {
+    let mut queued = levain_level_fixture();
+    queued.note_on(60, 100);
+    queued.note_on(64, 90);
+
+    let mut isolated = levain_level_fixture();
+    // Consume the same first Humanizer draw without leaving a sounding note.
+    isolated.note_on(60, 100);
+    isolated.all_notes_off();
+    isolated.note_on(64, 90);
+
+    assert_eq!(queued.active_voices(), 1);
+    assert_eq!(isolated.active_voices(), 1);
+    let mut rendered = Vec::with_capacity(INSTRUMENT_BLOCKS * BLOCK);
+    for _ in 0..INSTRUMENT_BLOCKS {
+        let actual = unsafe { read_output(queued.process(BLOCK as u32), BLOCK) };
+        let expected = unsafe { read_output(isolated.process(BLOCK as u32), BLOCK) };
+        assert_eq!(actual, expected);
+        rendered.extend_from_slice(&actual);
+    }
+    assert!(measure(&rendered).peak > 0.05);
 }
 
 #[test]
@@ -605,7 +634,10 @@ fn device_engines_hold_their_output_level_at_the_engine_boundary() {
         ("fermenter", fermenter_level(), 1.03820, 0.27942),
         ("grand_boule", grand_boule_level(), 0.72762, 0.16118),
         ("toaster", toaster_level(), 0.54580, 0.17768),
-        ("levain", levain_level(), 0.32936, 0.19990),
+        // The queued unheard predecessor is now a fresh replacement using
+        // the destination's own velocity and humanization, including onset
+        // timing. The prior pin measured a slur before its source had sounded.
+        ("levain", levain_level(), 0.25648, 0.17880),
     ];
 
     for (name, level, expected_peak, expected_rms) in families {

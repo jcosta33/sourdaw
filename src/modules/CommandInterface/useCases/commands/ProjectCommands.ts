@@ -1,5 +1,6 @@
 import {
     newProject,
+    pendingProjectReplacements,
     pickAndImportProjectFile,
     saveProject,
     saveProjectBeforeReplacement,
@@ -16,15 +17,17 @@ export const projectCommands: CallableCommandEntry[] = [
         description: 'Create a new empty project',
         category: 'Project',
         action: () => {
+            const isStillChosen = pendingProjectReplacements.capture();
             void (async () => {
                 // Same guard as the menu's New Project: a failed save, or one
                 // that resolved with the project still dirty (a plugin capture
                 // rejected before commit), refuses the replacement — both
-                // surfaces already notified.
-                if (!(await saveProjectBeforeReplacement())) {
+                // surfaces already notified. Choosing the open project
+                // meanwhile withdraws it.
+                if (!(await saveProjectBeforeReplacement()) || !isStillChosen()) {
                     return;
                 }
-                void newProject();
+                void newProject(undefined, { shouldProceed: isStillChosen });
             })();
         },
     },

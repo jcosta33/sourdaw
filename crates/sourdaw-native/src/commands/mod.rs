@@ -18,5 +18,6 @@ pub mod plugins;
 pub mod provider_gateway;
 pub mod speech;
 pub mod store_verified_whisper_model;
+pub mod timeline_sample_lifecycle;
 pub mod tuning;
 pub mod verified_cached_model;

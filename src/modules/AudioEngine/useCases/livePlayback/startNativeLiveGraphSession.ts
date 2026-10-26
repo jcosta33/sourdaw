@@ -31,11 +31,9 @@
  * A `schedule-clip` carries a sample identity, not PCM, and the native side
  * refuses one whose sample the pool does not hold — whole-batch, so a single
  * unregistered buffer costs the session every strip. Registration therefore
- * happens here, between the projection and the apply. It is normally free:
- * `primeNativeTimelineSamples` has already put the project's material in the
- * pool while the arrangement was being edited, and the memo turns this into a
- * lookup rather than a transfer. The prime is the optimisation; this call is
- * the contract.
+ * happens inside the backend before native admission under its exact consumer
+ * lease. Priming makes decoded bytes available early; the native receipt
+ * decides whether another shipment is needed.
  *
  * ── Why the topology can go out twice ─────────────────────────────────────
  *
@@ -94,7 +92,7 @@ import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { type createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
-import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
+import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 import { getAudioContext } from '../engineAccess/getAudioContext';
 
@@ -447,27 +445,9 @@ async function applyTopologyBatch(input: {
     backend: ReturnType<typeof createNativeLiveGraphBackend>;
     commands: readonly AudioGraphCommand[];
 }): Promise<TopologyBatchOutcome> {
-    const { transport, backend } = input;
+    const { backend } = input;
     const session = { backend: nativeLiveGraphSession.backend, epoch: nativeLiveGraphSession.rearmEpoch };
     const project = trackStore.value;
-    const carriesModel = input.commands.some(
-        (command) =>
-            (command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') &&
-            command.devices.some((device) => device.grinderModel !== undefined)
-    );
-    const material = await registerNativeTimelineSamples({ transport, commands: input.commands });
-    if (material.outcome === 'declined') {
-        // No batch was sent, so nothing in the graph moved.
-        return { outcome: 'refused', reason: material.reason };
-    }
-    if (
-        carriesModel &&
-        (trackStore.value !== project ||
-            nativeLiveGraphSession.rearmEpoch !== session.epoch ||
-            nativeLiveGraphSession.backend !== session.backend)
-    ) {
-        return { outcome: 'refused', reason: 'Native NAM project/session changed during material preparation' };
-    }
     const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
     // A batch that starts the engine takes over the plugin instances loaded
@@ -991,6 +971,7 @@ export function startNativeLiveGraphSession(
     // down, and the epoch is the identity both of them check. The claim itself
     // is not handed back here; only a stop does that, because a re-armed start
     // is itself a start (see `nativeLiveGraphSessionState.ts`).
+    const materialOwner = nativeTimelineMaterialLeases.captureOwner();
     nativeLiveGraphSession.rearmEpoch += 1;
     // And the pending count with it, synchronously for the same reason: a
     // retire already queued ahead of this start would otherwise read an epoch
@@ -1007,6 +988,7 @@ export function startNativeLiveGraphSession(
                 session: input,
                 transport: availability.transport,
                 defaultMonitor: DEFAULT_MONITOR,
+                materialOwner,
             });
             if (prepared.outcome === 'projection-failed') {
                 const reason = reasonOf(prepared.error);

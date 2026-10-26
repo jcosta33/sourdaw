@@ -30,9 +30,10 @@ import {
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { getEngineTransportPosition } from '../../../repositories/engineTransport/getEngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
+import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
-import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import {
     offlinePpqEndpointProjectorState,
@@ -402,7 +403,7 @@ const APPLIED = { acceptance: 'accepted', application: 'applied', runtimeRevisio
  * observe about them is their *order* — a batch applied before its material is
  * a batch the native side refuses whole.
  */
-const transport: NativeGraphTransport = {
+const transport: NativeGraphTransport = withNativeTimelineMaterialTransport({
     applyGraphCommands: (input) => {
         mocks.wireCalls.push('apply');
         return mocks.applyGraphCommands(input);
@@ -417,7 +418,7 @@ const transport: NativeGraphTransport = {
     releaseLevainBank: () => Promise.reject(new Error('the live session stages no levain bank here')),
     renderGraphOffline: () => Promise.reject(new Error('the live session must not render offline')),
     mapGraphBatch: () => Promise.reject(new Error('the live session must not map batches')),
-};
+});
 
 function createTrack(overrides?: Partial<Track>): Track {
     return {
@@ -652,7 +653,7 @@ function attachReportedInstancesInStore(): void {
     });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
     mocks.onProgrammeRead.mockReset();
@@ -688,7 +689,8 @@ beforeEach(() => {
     retractEveryCrumbsEngineAttachment();
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
-    registeredNativeTimelineSampleIds.clear();
+    await nativeTimelineMaterialLeases.retire();
+    nativeTimelineMaterialLeases.ownSnapshot('sample-1', MATERIAL);
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;
@@ -3048,6 +3050,120 @@ describe('an edit issued while the start apply is pending (#4785)', () => {
 });
 
 describe('native NAM initial ownership requires actual model drain', () => {
+    it.each(['project', 'epoch', 'backend'] as const)(
+        'refuses %s invalidation during PCM preparation before any native admission',
+        async (change) => {
+            const receipt = {
+                trackId: 'audio-1',
+                deviceId: 'd-nam',
+                engineId: '1',
+                targetGeneration: '42',
+                requestId: 'cold',
+                contentHash: 'a'.repeat(64),
+            };
+            mocks.topologyOverride = [
+                {
+                    ...CARRIED_STRIP,
+                    devices: [
+                        {
+                            id: 'd-nam',
+                            name: 'Grinder',
+                            type: 'grinder',
+                            bypassed: false,
+                            parameterValues: {},
+                            grinderModel: {
+                                requestId: receipt.requestId,
+                                modelJson:
+                                    '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}',
+                            },
+                        },
+                    ],
+                },
+                {
+                    ...SCHEDULED_CLIP,
+                    playback: { ...SCHEDULED_CLIP.playback, source: { sourceId: 'sample-1', buffer: MATERIAL } },
+                },
+            ];
+            mocks.applyGraphCommands.mockResolvedValue({
+                ...APPLIED,
+                admittedBatch: 7,
+                engineId: receipt.engineId,
+                grinderModels: [receipt],
+            });
+            vi.mocked(getEngineTransportPosition).mockResolvedValue({
+                ...rollingReading(0),
+                engineId: receipt.engineId,
+                batchesApplied: 7,
+                grinderModels: [receipt],
+            });
+            const lifecycle = transport.timelineSampleLifecycle;
+            if (!lifecycle) {
+                throw new Error('the protocol fixture must expose timeline leases');
+            }
+            let entered!: () => void;
+            const preparing = new Promise<void>((resolve) => {
+                entered = resolve;
+            });
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            let preparedLease: string | undefined;
+            const timelineSampleLifecycle = vi.fn(async (request: Parameters<typeof lifecycle>[0]) => {
+                const result = await lifecycle(request);
+                if (request.action === 'prepare') {
+                    if (typeof result !== 'object' || result === null || !('lease' in result)) {
+                        throw new Error('the protocol fixture must return its prepared lease');
+                    }
+                    if (typeof result.lease !== 'string') {
+                        throw new Error('the protocol fixture must return a string lease');
+                    }
+                    preparedLease = result.lease;
+                    entered();
+                    await held;
+                }
+                return result;
+            });
+            mocks.availability = { available: true, transport: { ...transport, timelineSampleLifecycle } };
+            const starting = startHeldSession({
+                positionSeconds: 0,
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            });
+            await preparing;
+            try {
+                if (change === 'project') {
+                    trackStore.set({
+                        tracks: [createTrack({ id: 'successor' })],
+                        selectedTrackId: null,
+                        ghostClips: [],
+                    });
+                } else if (change === 'epoch') {
+                    nativeLiveGraphSession.rearmEpoch += 1;
+                } else {
+                    nativeLiveGraphSession.backend = {
+                        backendId: 'successor',
+                        apply: vi.fn(),
+                        dispose: vi.fn(),
+                    };
+                }
+            } finally {
+                release();
+            }
+            const result = await starting;
+            expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                outcome: 'declined',
+                reason: 'Native NAM project/session changed during material preparation',
+            });
+            expect(preparedLease).toEqual(expect.any(String));
+            expect(timelineSampleLifecycle).toHaveBeenCalledWith({ action: 'release', lease: preparedLease });
+            expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+            expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
+        }
+    );
+
     it('leaves Web Audio audible until the same engine and model target cross the admitted fence', async () => {
         const receipt = {
             trackId: 'audio-1',

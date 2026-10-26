@@ -1,6 +1,11 @@
+import { createVersionedCommandReceipt, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+
 import { updateChatMessage } from '../../stores/chatStore';
 import {
+    getPendingActionConfirmation,
+    type PendingActionExecution,
     type PendingAppActionConfirmation,
+    recordPendingActionExecution,
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
 import { getVerifiedBatchReplayDisposition } from '../getVerifiedBatchReplayDisposition';
@@ -26,6 +31,81 @@ type SettleVerifiedBatchReplayInput = {
     leaseSettlement?: ReturnType<typeof settleAgentRunWorkLeaseSafely>;
 };
 
+type ApprovedCommand = Extract<
+    ReturnType<typeof parseVersionedCommandBatchEnvelope>,
+    { status: 'valid' }
+>['envelope']['commands'][number];
+
+function restoreVerifiedExecutions(
+    confirmation: PendingAppActionConfirmation,
+    receipt: CommandVerifiedBatchReceipt
+): void {
+    const current = getPendingActionConfirmation(confirmation.id) ?? confirmation;
+    const recordedCommandIds = new Set(current.executedActions.map((execution) => execution.commandId));
+    const approvedBatch = confirmation.approvalSnapshot.commandBatch;
+    const approvedCommands = new Map<string, ApprovedCommand>();
+    const approvedLabels = new Map<string, string>();
+    if (approvedBatch) {
+        const parsedBatch = parseVersionedCommandBatchEnvelope(approvedBatch.serialized, approvedBatch.authority);
+        if (
+            parsedBatch.status === 'valid' &&
+            parsedBatch.envelope.runId === receipt.runId &&
+            parsedBatch.envelope.batchId === receipt.batchId
+        ) {
+            for (const [index, command] of parsedBatch.envelope.commands.entries()) {
+                approvedCommands.set(command.commandId, command);
+                const label = confirmation.approvalSnapshot.actionLabels[index];
+                if (label !== undefined) {
+                    approvedLabels.set(command.commandId, label);
+                }
+            }
+        }
+    }
+    for (const [index, command] of receipt.commandOutcomes.entries()) {
+        if (
+            (command.outcome !== 'committed' && command.outcome !== 'executed') ||
+            recordedCommandIds.has(command.commandId)
+        ) {
+            continue;
+        }
+        let outcome: PendingActionExecution['outcome'] = command.outcome;
+        if (receipt.outcome === 'committed-with-warning' || receipt.outcome === 'partially-committed') {
+            outcome = 'committed-with-warning';
+        }
+        if (receipt.outcome === 'executed-with-warning') {
+            outcome = 'executed-with-warning';
+        }
+        const approvedCommand = approvedCommands.get(command.commandId);
+        let commandMetadata: Pick<PendingActionExecution, 'commandSchemaVersion' | 'applicationAssigned'> = {};
+        if (approvedCommand?.operation === command.operation) {
+            const approvedReceipt = createVersionedCommandReceipt({ envelope: approvedCommand });
+            commandMetadata = {
+                commandSchemaVersion: approvedCommand.schemaVersion,
+                applicationAssigned: {
+                    ids: [...approvedReceipt.applicationAssigned.ids],
+                    timestamps: [...approvedReceipt.applicationAssigned.timestamps],
+                },
+            };
+        }
+        recordPendingActionExecution({
+            confirmationId: confirmation.id,
+            execution: {
+                actionType: command.operation,
+                commandId: command.commandId,
+                ...commandMetadata,
+                label:
+                    approvedLabels.get(command.commandId) ??
+                    confirmation.approvalSnapshot.actionLabels[index] ??
+                    command.operation,
+                executionKind: command.outcome === 'executed' ? 'runtime' : 'project',
+                affectedIds: [...command.affectedIds],
+                outcome,
+            },
+        });
+        recordedCommandIds.add(command.commandId);
+    }
+}
+
 export async function settleVerifiedBatchReplay(
     input: SettleVerifiedBatchReplayInput
 ): Promise<
@@ -42,6 +122,7 @@ export async function settleVerifiedBatchReplay(
         leaseSettlement = { accepted: true, warning: null },
     } = input;
     if (receipt.outcome === 'partially-committed' && receipt.pendingEffects.length > 0) {
+        restoreVerifiedExecutions(confirmation, receipt);
         const receiptPersistenceWarning = confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(
             confirmation,
             receipt,
@@ -67,6 +148,7 @@ export async function settleVerifiedBatchReplay(
     }
     const replay = getVerifiedBatchReplayDisposition(receipt);
     if (replay.status === 'committed' || replay.status === 'executed') {
+        restoreVerifiedExecutions(confirmation, receipt);
         const receiptPersistenceWarning = confirmedBatchOutcomeSupport.recordTrackedAgentRunReceipt(
             confirmation,
             receipt,

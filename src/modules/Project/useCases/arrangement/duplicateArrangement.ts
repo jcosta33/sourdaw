@@ -14,8 +14,9 @@ export function duplicateArrangement(id: string, newName?: string): void {
     }
 
     syncCurrentArrangementToStore(); // Ensure latest state is snapshotted
+    const currentState = arrangementStore.value!;
 
-    const sourceArrangement = arrangementStore.value!.arrangements.find((alpha) => alpha.id === id);
+    const sourceArrangement = currentState.arrangements.find((alpha) => alpha.id === id);
     if (!sourceArrangement) {
         return;
     }
@@ -26,7 +27,7 @@ export function duplicateArrangement(id: string, newName?: string): void {
     clone.name = newName || `${sourceArrangement.name} (Copy)`;
 
     arrangementStore.set({
-        arrangements: [...state.arrangements, clone],
+        arrangements: [...currentState.arrangements, clone],
         activeArrangementId: clone.id,
     });
 

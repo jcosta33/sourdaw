@@ -779,9 +779,79 @@ describe('collectBufferedClipSources', () => {
 
         expect(sources).toEqual([{ sourceId: 'take-1', buffer: first }]);
     });
+
+    it('carries the native lease without turning it into project correlation', () => {
+        expect(serializeAudioGraphCommandBatch({ schemaVersion: 1, timelineLease: 'lease-1', commands: [] })).toEqual({
+            schemaVersion: 1,
+            timelineLease: 'lease-1',
+            commands: [],
+        });
+    });
 });
 
 describe('native NAM protocol migration', () => {
+    it('carries NAM wire v2 and the consumer exact PCM lease and version together', () => {
+        const batch: AudioGraphCommandBatch = {
+            schemaVersion: 1,
+            timelineLease: 'caller-lease',
+            correlation: { appRevision: 3, projectRevision: 'project-1' },
+            commands: [
+                {
+                    kind: 'set-grinder-model',
+                    target: { trackId: 't', deviceId: 'd' },
+                    requestId: 'r',
+                    modelJson: '{"architecture":"Linear"}',
+                    values: { gain: 3 },
+                },
+                {
+                    kind: 'schedule-clip',
+                    playback: {
+                        trackId: 't',
+                        source: { sourceId: 'take-1', buffer: fakeAudioBuffer(16) },
+                        startTime: 0,
+                        sourceOffsetSeconds: 0,
+                        durationSeconds: 0.25,
+                        playbackRate: 1,
+                        gain: 1,
+                        fade: { microFadeSeconds: 0.003 },
+                    },
+                },
+            ],
+        };
+        const materials = { lease: 'consumer-lease', versions: new Map([['take-1', 'publication-7']]) };
+        expect(serializeAudioGraphCommandBatch(batch, materials)).toEqual({
+            schemaVersion: 2,
+            timelineLease: 'consumer-lease',
+            correlation: { appRevision: 3, projectRevision: 'project-1' },
+            commands: [
+                {
+                    kind: 'set-grinder-model',
+                    trackId: 't',
+                    deviceId: 'd',
+                    requestId: 'r',
+                    modelJson: '{"architecture":"Linear"}',
+                    values: { gain: 3 },
+                },
+                {
+                    kind: 'schedule-clip',
+                    playback: {
+                        trackId: 't',
+                        source: { sourceId: 'take-1', materialVersion: 'publication-7' },
+                        startTime: 0,
+                        sourceOffsetSeconds: 0,
+                        durationSeconds: 0.25,
+                        playbackRate: 1,
+                        gain: 1,
+                        fade: { microFadeSeconds: 0.003 },
+                    },
+                },
+            ],
+        });
+        expect(() => serializeAudioGraphCommandBatch(batch, { ...materials, versions: new Map() })).toThrow(
+            'Native clip source "take-1" has no exact material version'
+        );
+    });
+
     it('uses wire2 for full model and clear operations while keeping app batches at1', () => {
         const batch: AudioGraphCommandBatch = {
             schemaVersion: 1,
