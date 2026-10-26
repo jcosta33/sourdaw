@@ -241,7 +241,7 @@ describe('stopRecording publishes only under its captured root (issue #5517)', (
         // and the gesture outcome must stay `closed` so the landed entry
         // counts.
         trackStore.set({
-            tracks: [recordingTrack('midi'), { ...recordingTrack('midi'), id: TRACK_ID + '-2' }],
+            tracks: [recordingTrack('midi'), { ...recordingTrack('midi'), id: `${TRACK_ID}-2` }],
             selectedTrackId: TRACK_ID,
             ghostClips: [],
         });
