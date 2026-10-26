@@ -63,7 +63,7 @@ export function createPcmBlockReader(input: {
     if (!Number.isFinite(sourceGain) || sourceGain < 0) {
         throw new Error('Invalid export PCM gain.');
     }
-    let peak = 0;
+    let peak: number;
     if (source.samplePeak !== undefined) {
         if (!Number.isFinite(source.samplePeak) || source.samplePeak < 0) {
             throw new Error('Invalid export PCM peak.');
