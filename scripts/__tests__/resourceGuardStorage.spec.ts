@@ -2856,9 +2856,14 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             if (state !== 'unknown') {
                 expect(initial.reads).toEqual(route === 'whole' ? ['whole', 'whole'] : ['whole', 'scoped', 'whole']);
                 // Both the opening and closing list belong to the complete replacement catalog.
-                expect(initial.processSamples).toBe(
-                    route === 'whole' ? (state === 'dead' ? 3 : 2) : state === 'dead' ? 4 : 3
-                );
+                let expectedProcessSamples = 2;
+                if (route === 'scoped') {
+                    expectedProcessSamples += 1;
+                }
+                if (state === 'dead') {
+                    expectedProcessSamples += 1;
+                }
+                expect(initial.processSamples).toBe(expectedProcessSamples);
             }
         }
     );
