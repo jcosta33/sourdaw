@@ -6,6 +6,7 @@ import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { holdPlayheadClock, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
@@ -53,6 +54,11 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
     ensureTrackStrips();
 
     const startPosition = resolveRollStartBeat(state, timeSignatureMapStore.value?.changes ?? []);
+    const browserGeneration = nativeLiveGraphSessionOffered() ? null : claimSchedulerSession();
+    const browserRoot = browserGeneration === null ? null : captureProjectRootIdentity();
+    if (browserGeneration !== null) {
+        holdPlayheadClock(browserGeneration, startPosition);
+    }
 
     updateTransportState({ isPlaying: true, playheadPosition: startPosition });
     playheadPositionRef.current = startPosition;
@@ -63,12 +69,11 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
     // dead roll's wraps instead of the fresh epoch.
     playheadWrapCountRef.current = 0;
 
-    if (!nativeLiveGraphSessionOffered()) {
-        const generation = claimSchedulerSession();
-        const root = captureProjectRootIdentity();
+    if (browserGeneration !== null) {
+        const generation = browserGeneration;
         const stillOwnsRequest = () =>
             schedulerSession.generation === generation &&
-            captureProjectRootIdentity() === root &&
+            captureProjectRootIdentity() === browserRoot &&
             getTransportState()?.isPlaying === true;
         const refuseCurrentRequest = async () => {
             if (stillOwnsRequest()) {
@@ -77,6 +82,9 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
             }
         };
         try {
+            if (!stillOwnsRequest()) {
+                return;
+            }
             const prepared = prepareInitialBrowserPlayback(generation);
             if (!prepared) {
                 await refuseCurrentRequest();
@@ -91,6 +99,8 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
         } catch (error) {
             logger.error(new Error('Playback preparation failed', { cause: error }));
             await refuseCurrentRequest();
+        } finally {
+            releasePlayheadClockHold(generation);
         }
         return;
     }
@@ -100,6 +110,7 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
     // replaced, and so any session still ticking — one a pause left running
     // because its teardown is deferred behind a recording flush — is retired
     // now instead of advancing the playhead through the wait.
+    releasePlayheadClockHold(schedulerSession.generation);
     const generation = claimSchedulerSession();
     // Held: the scheduler below waits for this session, so nothing has sounded
     // between the gesture and the roll and the engine opens where play asked.

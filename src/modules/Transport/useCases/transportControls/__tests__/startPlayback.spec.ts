@@ -73,13 +73,21 @@ vi.mock('../../ensureTrackStrips', () => ({
     ensureTrackStrips: vi.fn(),
 }));
 
+function publishTransportPatch(patch: Parameters<typeof updateTransportState>[0]): void {
+    const current = getTransportState();
+    if (current) {
+        vi.mocked(getTransportState).mockReturnValue({ ...current, ...patch });
+    }
+}
+
 describe('startPlayback', () => {
     beforeEach(() => {
         playheadPositionRef.current = 0;
         playheadWrapCountRef.current = 0;
         timeSignatureMapStore.value = { changes: [] };
         vi.mocked(getTransportState).mockClear();
-        vi.mocked(updateTransportState).mockClear();
+        vi.mocked(updateTransportState).mockReset();
+        vi.mocked(updateTransportState).mockImplementation(publishTransportPatch);
         vi.mocked(resumeEngine).mockReset();
         // resumeEngine returns Promise<void>; default to a resolved promise so
         // the `.catch` chain in startPlayback has a thenable to attach to.
@@ -120,7 +128,7 @@ describe('startPlayback', () => {
     });
 
     it('should resume engine and mark playing when state exists', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -189,7 +197,7 @@ describe('startPlayback', () => {
                 { id: 'ts-b', beat: 6, numerator: 3, denominator: 4 },
             ],
         };
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -214,7 +222,7 @@ describe('startPlayback', () => {
         timeSignatureMapStore.value = {
             changes: [{ id: 'ts-a', beat: 5, numerator: 3, denominator: 4 }],
         };
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -234,7 +242,7 @@ describe('startPlayback', () => {
         // 6/8 bars are three quarter notes long, so two of them reach back six
         // beats from 12. Treating the numerator as quarter notes reached back
         // twelve and started the pre-roll at the timeline origin.
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -252,7 +260,7 @@ describe('startPlayback', () => {
     });
 
     it('clamps a pre-roll that reaches back past the timeline origin', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -322,7 +330,7 @@ describe('startPlayback', () => {
     });
 
     it('should not start when transport state is missing', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
@@ -333,7 +341,7 @@ describe('startPlayback', () => {
     });
 
     it('should be a no-op when already playing so a duplicate trigger does not re-snap the scheduler', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,

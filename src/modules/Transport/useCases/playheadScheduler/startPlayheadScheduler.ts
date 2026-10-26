@@ -24,7 +24,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { BEAT_EPSILON, getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
-import { playheadClockRef } from '../../stores/playheadClockRef';
+import { playheadClockRef, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -244,6 +244,7 @@ export function startPlayheadScheduler(
         return Promise.resolve(false);
     }
     if (!preparedInitial) {
+        releasePlayheadClockHold(schedulerSession.generation);
         schedulerSession.generation += 1;
     }
     advanceSchedulerDiscontinuityEpoch();
@@ -756,6 +757,7 @@ export function startPlayheadScheduler(
         function publishClock(): void {
             playheadClockRef.beat = publishedBeat;
             playheadClockRef.audioTimeSeconds = now;
+            releasePlayheadClockHold(schedulerGeneration);
             // The cursor follows the transport that is producing the sound. While
             // the native engine is that transport it reports where it actually
             // rendered to — loop wraps included — and this integration is only the

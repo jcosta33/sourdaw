@@ -1187,7 +1187,7 @@ export async function scheduleMidiNotes(
     initialSchedulingAnchor?: number
 ): Promise<void> {
     const isCurrent = () => (cancellation?.isCurrent() ?? true) && (preparedInitialWindow?.isCurrent() ?? true);
-    if (!isCurrent()) {
+    if (preparedInitialWindow && !isCurrent()) {
         return;
     }
     if (
