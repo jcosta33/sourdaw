@@ -1,0 +1,23 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_29d8df116c5b92::t_9c506a72f0e500 26-31
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  s_29d8df116c5b92::t_9c506a72f0e500 9-14
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffTempoMap.spec.ts
+  s_29d8df116c5b92::t_9c506a72f0e500 11-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "048dc23b7d5cf691486ea78dc694d759d49920cd",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
