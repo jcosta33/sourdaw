@@ -1,0 +1,128 @@
+crates/daw-engine/src/timeline.rs
+  s_59e31a5c6f3e31::t_8826139363e096 3899-3903,3913-3922,3924-3925
+  s_59e31a5c6f3e31::t_5e4aaf9746afe5 856-870
+  s_59e31a5c6f3e31::t_8167b3301a1387 3883-3898,3904-3912,3923,3926-3928
+  s_59e31a5c6f3e31::t_b846d995d35690 3882
+crates/sourdaw-native/src/commands/graph.rs
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 459,9562,9591,9656,9754
+  s_59e31a5c6f3e31::t_f3ffc4006897e4 7223-7227,7253,7267,7278,7293,7326-7333,7349,7351-7358,7366-7371,7376,7381-7382,7391-7397,7428-7433,7442-7445
+  s_59e31a5c6f3e31::t_005bb4d77868f3 7028-7034,7074-7077,7080-7087,7090-7100,7114-7134,7136-7145
+  s_59e31a5c6f3e31::t_69ec118816f6a8 7163-7181,7190-7194,7206-7217,7228-7252,7261-7266,7268-7277,7301-7315,7319,7324-7325
+  s_59e31a5c6f3e31::t_5e4aaf9746afe5 450-451,829,832-833,1799-1800,1803,1919-1922,1943,3683-3684,3688,3692-3698,3732-3733,3736,3742-3743,3746,3749,3756-3757
+  s_59e31a5c6f3e31::t_3583a5a8109472 1923,7067-7073,7078-7079,7088-7089,7103,7112,7156-7162,7189,7195-7197,7205,7218-7219,7559-7560
+  s_59e31a5c6f3e31::t_d6294c0afea0b7 1925-1930,3689-3691,3734-3735,3737-3741,3744-3745,3747-3748,3750-3755
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 1953-1954
+  s_59e31a5c6f3e31::t_194ec436e3c3ef 7334-7348,7350,7359-7365,7372-7375,7377-7380,7383-7390,7398-7427,7434-7441,7455-7464,7466-7472,7478-7479,7516,7557
+  s_59e31a5c6f3e31::t_7ae97235bb8ec9 7101-7102,7113,7135,7220-7222,7446-7447,7558
+  s_1c08b47ac3792f::t_481534a93dbeb4 1924
+  s_59e31a5c6f3e31::t_2cb51350e5b0c3 7483-7490,7536-7543
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSessionSplice.spec.ts
+  s_59e31a5c6f3e31::t_86f5bcdb4843be 20,71-76
+  s_59e31a5c6f3e31::t_12dded73faf3f8 77-83,119
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 95,103,822-848,853,877-878,883
+  s_59e31a5c6f3e31::t_923ca2357e0274 192
+  s_59e31a5c6f3e31::t_5e3d3d64948eff 849-852,854-876,879-882,884-904
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_59e31a5c6f3e31::t_3583a5a8109472 30-45
+  s_59e31a5c6f3e31::t_b052de9d8aa3ac 46-75
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_59e31a5c6f3e31::t_163497891f660d 44,640,724
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_59e31a5c6f3e31::t_163497891f660d 78,97
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_59e31a5c6f3e31::t_20ef9026e29ab6 1037-1061,1348
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 1069,1345-1347,1349-1365
+  s_59e31a5c6f3e31::t_923ca2357e0274 25,330-333
+  s_59e31a5c6f3e31::t_2d8869d4bf0936 335,1065-1068,1366,1370-1379
+crates/daw-engine/src/scheduler.rs
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 7044-7045
+  s_59e31a5c6f3e31::t_8826139363e096 7033-7037,14385-14390,14393-14403,14405-14414,14424-14434,14436-14437
+  s_59e31a5c6f3e31::t_8167b3301a1387 14376-14384,14391-14392,14404,14415-14423,14435,14438-14442
+  s_59e31a5c6f3e31::t_5e4aaf9746afe5 898-903,1025,1113,7038-7043,7046
+  s_59e31a5c6f3e31::t_fec045641f4e62 7047-7048
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_59e31a5c6f3e31::t_9df6c200854945 479-480
+  s_59e31a5c6f3e31::t_fffb36101b4197 138-143
+src/modules/AudioEngine/useCases/livePlayback/__tests__/abandonNativeLiveGraphSession.spec.ts
+  s_59e31a5c6f3e31::t_86f5bcdb4843be 15,60-65
+  s_59e31a5c6f3e31::t_89ff3ff8b39eee 66-72,114
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 229-231,518-519
+  s_59e31a5c6f3e31::t_9df6c200854945 524-531,858
+src/modules/AudioEngine/useCases/livePlayback/disarmNativeLiveAutomationWriter.ts
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 18
+  s_59e31a5c6f3e31::t_5e68ef54809f08 19-20
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  s_59e31a5c6f3e31::t_8b94775f48e42a 41-48,193-202,204-214,218-220,222-224,227,233-242,249-253,257-262,268-269,296-297,305-306,309-311
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 49-50,52,55,60,191-192,203,215-217,221,225-226,243-248,254-256,263-266,270,301-304,308,312
+  s_59e31a5c6f3e31::t_c9e0a14fbc16e8 271-272,314-315,332
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 325,328,330,657
+  s_59e31a5c6f3e31::t_f1ee68e7623746 750,754,757-759
+  s_59e31a5c6f3e31::t_804a7be0d2d38f 101-102,374-375,416,419-420,430,470,503,565-567,571,580-582
+  s_59e31a5c6f3e31::t_64292be38bbff8 641-646,648-650,658-662,666-673,693-694,700-702,706-709,721-727,731,748-749,755-756,768-770,780-784,788-793,798-799,807,818-819,836,852,860-862,885-886,891,898
+  s_59e31a5c6f3e31::t_8b94775f48e42a 48-53,410-415,421-423,555-559,568-570,572-579,651-656,663-665,674-692,695-699,703-705,710-711,720,728,730,732-737,744-747,751-753,760-767,771-772,774-779,785-787,795-797,829-833,837-844,847-851,865-870,887-888,896-897
+src/modules/AudioEngine/useCases/livePlayback/carryQueuedStamps.ts
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 12,15,17
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 26-27
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createWebAudioOfflineBackend.spec.ts
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 16,89,91
+  s_59e31a5c6f3e31::t_3583a5a8109472 15,82-88,90,92-96,99
+  s_59e31a5c6f3e31::t_2b4cd5caf26ee5 97-98,100-116
+src/modules/AudioEngine/useCases/offlineRender/automationWriteCommand.ts
+  s_59e31a5c6f3e31::t_9df6c200854945 22,25-26
+  s_59e31a5c6f3e31::t_ad988ac1fc3a8a 8,12-15
+  s_59e31a5c6f3e31::t_17df7cbd5bd451 27-29,40
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_59e31a5c6f3e31::t_9df6c200854945 99,115-117,360-362,401
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  s_59e31a5c6f3e31::t_569bab0ea5cc2d 31-46,210-223,269-271,274,281-292,294-295,302-310,313-319,322-324,327-329,332-338,341-345,371-377,390-392,395-403,591-597,599-614,616-618,620-634,648-649,657-661,664-665,675-683,689-697,701-703,706,813,817,825-827,829-834,850-856,867-874,876-882,891-897,901-910,921-925,928-930,932-939,948-955,957-966,979-981,996-999,1009-1018,1023-1025,1267-1271,1273-1300,1313-1349,1352-1363
+  s_59e31a5c6f3e31::t_cce436d5e85b84 915-920,926-927,931,940-941,956,967-978,985-992
+  s_59e31a5c6f3e31::t_866674455d5d68 1028
+  s_59e31a5c6f3e31::t_8de3dd9900e34d 194-195,280,875
+  s_59e31a5c6f3e31::t_b6e428f4dc1a4f 387,393-394,404-406,413,416
+  s_59e31a5c6f3e31::t_c89e9068836e0d 25-26,30,276,312,320,330-331,364-365,369,1029-1035,1265-1266,1272,1350-1351
+  s_59e31a5c6f3e31::t_cb3790b5b659a6 993-995,1000-1008,1019-1022,1026-1027
+  s_59e31a5c6f3e31::t_afdf8c7d9eb111 23,27-28,62,65,193,196,209,224,275,278-279,296-301,311,321,325-326,339-340,359-360,370,378,380-386,388-389,407-412,414-415,417-423,913-914,1364-1365,1375
+  s_59e31a5c6f3e31::t_0b1c1bca4c0d7b 277,424-425,589-590,598,615,619,635-646,885-890,898-900,911-912
+  s_59e31a5c6f3e31::t_8da13ef53f59b6 647,650-656,662-663,666-672,674,684,687,698-699,818-824,828,835-849,857-866,883-884
+  s_59e31a5c6f3e31::t_f810193f4ec543 1366-1374
+  s_59e31a5c6f3e31::t_2cb51350e5b0c3 237-239,246,248,349,707
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  s_59e31a5c6f3e31::t_785c6b9c8c0f7b 147-155,157-168,174-175
+evidence/agent-campaign/manifest.json
+  s_26f70b851e8f7a::t_05ef872b8d2f50 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b83039dd1ba9cd28105c336ca7a55049ec245c5",
+  "prompts": {},
+  "sessions": {
+    "s_1c08b47ac3792f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f52c2bcc-3d5e-462d-b760-d007de4d610f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
