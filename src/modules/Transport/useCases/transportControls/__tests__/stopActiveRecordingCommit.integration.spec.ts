@@ -566,6 +566,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         }
         flushAutomergeStorageWrites();
         mocks.audioClock.currentTime = 0.5;
+        vi.spyOn(audioEngine.context, 'currentTime', 'get').mockImplementation(() => mocks.audioClock.currentTime);
         expect(audioEngine.context.currentTime).toBe(0.5);
         expect(activeRecordingRef.current).toEqual([provisional.id]);
         expect(getTargetTrackId()).toBe(TRACK_ID);
