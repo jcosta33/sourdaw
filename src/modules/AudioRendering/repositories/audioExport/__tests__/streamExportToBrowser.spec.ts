@@ -99,6 +99,40 @@ describe('browser export transaction', () => {
         await batch.abort();
         expect(writable.close).not.toHaveBeenCalled();
     });
+    it('holds a ZIP producer behind a deferred sink write', async () => {
+        const { writable } = createDestination();
+        let releaseSink: () => void = () => {
+            throw new Error('Sink write was not initialized');
+        };
+        const sinkWrite = new Promise<void>((resolve) => {
+            releaseSink = resolve;
+        });
+        writable.write.mockImplementationOnce(() => sinkWrite);
+        const batch = await streamExportToBrowser(options);
+        const entry = await batch.beginFile('one.wav');
+        let firstChunkFinished = false;
+        let producerFinished = false;
+        const writing = (async () => {
+            await entry.writer.write(new Uint8Array([1, 2, 3]));
+            firstChunkFinished = true;
+            await entry.writer.write(new Uint8Array([4, 5, 6]));
+            producerFinished = true;
+        })();
+
+        await vi.waitFor(() => expect(writable.write).toHaveBeenCalledTimes(1));
+        const result = await Promise.race([
+            writing.then(() => 'finished'),
+            new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 0)),
+        ]);
+        expect(result).toBe('pending');
+        expect(firstChunkFinished).toBe(false);
+        expect(producerFinished).toBe(false);
+
+        releaseSink();
+        await writing;
+        expect(writable.write.mock.calls.length).toBeGreaterThan(1);
+        await batch.abort();
+    });
     it('aborts on cancellation and leaves the previously committed destination intact', async () => {
         let cancelled = false;
         let bytes = new Uint8Array([9, 9]);

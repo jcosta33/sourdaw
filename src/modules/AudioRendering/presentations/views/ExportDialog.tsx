@@ -185,6 +185,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     openRef.current = open;
     const cancelledRef = useRef(false);
     const commitStartedRef = useRef(false);
+    const activeExportCancellationRef = useRef<AbortController | null>(null);
 
     // AppShell keeps this dialog mounted and toggles only `open`, so the last
     // export's progress, status and error would otherwise survive a close — a
@@ -199,6 +200,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         setProgress(0);
         setStatusText('');
         setErrorText('');
+        return () => {
+            if (commitStartedRef.current) {
+                return;
+            }
+            const cancellation = activeExportCancellationRef.current;
+            if (cancellation && !cancellation.signal.aborted) {
+                cancelledRef.current = true;
+                cancellation.abort();
+                cancelExport();
+            }
+        };
     }, [open]);
 
     const loopAvailable = transport.loopEnd > transport.loopStart;
@@ -386,18 +398,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             return;
         }
         cancelledRef.current = true;
+        activeExportCancellationRef.current?.abort();
         cancelExport();
         setStatusText('Cooling down...');
     };
 
     const handleClose = () => {
         cancelledRef.current = true;
+        if (!commitStartedRef.current) {
+            activeExportCancellationRef.current?.abort();
+            cancelExport();
+        }
         onClose();
     };
     const handleExport = async () => {
         setErrorText('');
-        cancelledRef.current = false;
-        commitStartedRef.current = false;
         let metadataSnapshot: Parameters<typeof encodeMp3>[4];
         if (mode === 'mixdown' && deliveryPreset === PODCAST_RSS_MP3_PRESET.id && formats.has('mp3')) {
             metadataSnapshot = podcastMetadata;
@@ -412,9 +427,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setProgress(0);
             return;
         }
+        cancelledRef.current = false;
+        commitStartedRef.current = false;
+        const cancellation = new AbortController();
+        activeExportCancellationRef.current = cancellation;
+        const clearActiveCancellation = () => {
+            if (activeExportCancellationRef.current === cancellation) {
+                activeExportCancellationRef.current = null;
+                commitStartedRef.current = false;
+            }
+        };
         const session = openSessionRef.current;
         const currentSession = () => openSessionRef.current === session && openRef.current;
-        const destinationBelongsToSession = () => !cancelledRef.current && currentSession();
+        const destinationBelongsToSession = () => !cancellation.signal.aborted && currentSession();
         const finishCancelledPreparation = () => {
             if (!currentSession()) {
                 return;
@@ -435,7 +460,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
         let output: Awaited<ReturnType<typeof streamExport>> | undefined;
         const checkCancelled = () => {
-            if (cancelledRef.current) {
+            if (cancellation.signal.aborted || !currentSession()) {
                 throw new Error('Export cancelled');
             }
         };
@@ -447,6 +472,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     if (mode === 'stems') {
                         nativeDirPath = await selectNativeAudioExportDirectory();
                         if (!nativeDirPath) {
+                            clearActiveCancellation();
                             return;
                         }
                     } else {
@@ -455,9 +481,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             suggestedName: `${baseName}.${Array.from(formats)[0] ?? 'wav'}`,
                         });
                         if (!nativeFilePath) {
+                            clearActiveCancellation();
                             return;
                         }
                     }
+                }
+                if (cancellation.signal.aborted || !currentSession()) {
+                    finishCancelledPreparation();
+                    clearActiveCancellation();
+                    return;
                 }
                 const archive = mode === 'stems' || formats.size > 1;
                 const primaryExt = Array.from(formats)[0] ?? 'wav';
@@ -493,17 +525,24 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     metadata: metadataSnapshot,
                     normalization: exportNormalization,
                     checkCancelled,
+                    signal: cancellation.signal,
                 });
+                if (cancelledRef.current || !currentSession()) {
+                    cancellation.abort();
+                }
             } catch (error) {
                 if (!currentSession()) {
+                    clearActiveCancellation();
                     return;
                 }
                 if (cancelledRef.current) {
                     finishCancelledPreparation();
+                    clearActiveCancellation();
                     return;
                 }
                 if (error instanceof Error && error.name === 'AbortError') {
                     setExporting(false);
+                    clearActiveCancellation();
                     return;
                 }
                 const message = error instanceof Error ? error.message : 'Export storage is unavailable.';
@@ -512,6 +551,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setStatusText('The bread burned...');
                 setProgress(0);
                 notifyUser(message, 'error');
+                clearActiveCancellation();
                 return;
             }
         }
@@ -522,9 +562,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             } catch (cleanupError) {
                 logger.error(new Error('Export cleanup failed', { cause: cleanupError }));
             }
-            if (cancelledRef.current) {
+            if (cancellation.signal.aborted && currentSession()) {
                 finishCancelledPreparation();
             }
+            clearActiveCancellation();
             return;
         }
 
@@ -537,7 +578,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         // dispatch of the final native write. From then on the export has succeeded and a Cancel no
         // longer decides its outcome, so the export ends in exactly one of the two states.
         let committed = false;
-        const endedCancelled = (): boolean => cancelledRef.current && !committed;
+        const endedCancelled = (): boolean => cancellation.signal.aborted && !committed;
 
         // Every callback a render or encoder calls back into goes through here: work that was past
         // its last checkpoint when Cancel landed still reports, and must not repaint the cancelled state.
@@ -578,7 +619,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
             // Cancel only raises the render's flag while a render holds the lock, so one pressed
             // during the restore above is seen here or nowhere: no render may start after it.
-            if (cancelledRef.current) {
+            if (endedCancelled()) {
                 return;
             }
 
@@ -648,7 +689,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         'warning'
                     );
                 }
-                if (cancelledRef.current) {
+                if (endedCancelled()) {
                     return;
                 }
                 const endBeat = startBeat + durationBeats;
@@ -705,7 +746,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         'warning'
                     );
                 }
-                if (cancelledRef.current) {
+                if (endedCancelled()) {
                     return;
                 }
             } else {
@@ -738,7 +779,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         'warning'
                     );
                 }
-                if (cancelledRef.current) {
+                if (endedCancelled()) {
                     return;
                 }
             }
@@ -750,7 +791,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             if (output) {
                 await output.commit(() => {
                     committed = true;
-                    commitStartedRef.current = true;
+                    if (activeExportCancellationRef.current === cancellation) {
+                        commitStartedRef.current = true;
+                    }
                 });
             }
 
@@ -766,7 +809,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }, 2500);
         } catch (error) {
             // A Cancel's own failure is reported by the finally below.
-            if (!endedCancelled()) {
+            if (!endedCancelled() && currentSession()) {
                 const msg = error instanceof Error ? error.message : 'Unknown oven malfunction';
                 logger.error(new Error('Export failed', { cause: error }));
                 setErrorText(msg);
@@ -783,18 +826,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setErrorText(message);
             }
             // Always unlock the UI. On cancel, delay briefly so the status text is readable.
-            if (endedCancelled()) {
+            if (currentSession() && endedCancelled()) {
                 // Every Cancel exit before the commit ends here, whether it threw or returned: the
                 // export is reported as cancelled, so the bar must not keep the encoder's last
                 // figure, and 100 would show the finished state. All uncommitted files were aborted.
                 setProgress(0);
                 setStatusText('Oven turned off.');
                 setTimeout(() => setExporting(false), 1500);
-            } else {
+            } else if (currentSession()) {
                 // Success or error — both unblock the button immediately.
                 // progress===100 drives the "Close Bakery" button state; exporting===false re-enables export.
                 setExporting(false);
             }
+            clearActiveCancellation();
         }
     };
 

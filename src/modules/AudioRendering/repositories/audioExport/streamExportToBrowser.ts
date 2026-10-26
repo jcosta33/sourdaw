@@ -20,7 +20,35 @@ type BrowserExportInput = {
     mime: string;
     archive: boolean;
     checkCancelled: () => void;
+    signal?: AbortSignal;
 };
+
+function awaitSinkWrite(write: Promise<void>, signal?: AbortSignal): Promise<void> {
+    if (!signal) {
+        return write;
+    }
+    if (signal.aborted) {
+        return Promise.reject(new Error('Export cancelled'));
+    }
+
+    return new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+            signal.removeEventListener('abort', onAbort);
+            reject(new Error('Export cancelled'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        write.then(
+            () => {
+                signal.removeEventListener('abort', onAbort);
+                resolve();
+            },
+            (error: unknown) => {
+                signal.removeEventListener('abort', onAbort);
+                reject(error);
+            }
+        );
+    });
+}
 
 async function openBrowserWritable(input: BrowserExportInput): Promise<WritableExportFile> {
     const picker: unknown = Reflect.get(window, 'showSaveFilePicker');
@@ -56,7 +84,8 @@ async function drainZipOutput(
     emitted: Uint8Array[],
     writable: WritableExportFile,
     checkCancelled: () => void,
-    state: ArchiveDrainState
+    state: ArchiveDrainState,
+    signal?: AbortSignal
 ): Promise<void> {
     while (emitted.length > 0) {
         const bytes = emitted.shift()!;
@@ -66,7 +95,7 @@ async function drainZipOutput(
         state.archiveBytes += bytes.length;
         for (let offset = 0; offset < bytes.length; offset += MAX_CHUNK) {
             checkCancelled();
-            await writable.write(bytes.subarray(offset, offset + MAX_CHUNK));
+            await awaitSinkWrite(writable.write(bytes.subarray(offset, offset + MAX_CHUNK)), signal);
         }
     }
     if (state.failure) {
@@ -92,10 +121,33 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
     let count = 0;
     let closed = false;
     let fileOpen = false;
+    let abortPromise: Promise<void> | undefined;
     const emitted: Uint8Array[] = [];
     const names = new Set<string>();
     const zip = input.archive ? createZipOutput(emitted, drainState) : undefined;
-    const drain = () => drainZipOutput(emitted, writable, input.checkCancelled, drainState);
+    const drain = () => drainZipOutput(emitted, writable, input.checkCancelled, drainState, input.signal);
+    const abort = (): Promise<void> => {
+        if (closed) {
+            return Promise.resolve();
+        }
+        if (abortPromise) {
+            return abortPromise;
+        }
+        zip?.terminate();
+        emitted.length = 0;
+        abortPromise = writable.abort().then(() => {
+            closed = true;
+        });
+        return abortPromise;
+    };
+    const abortOnSignal = () => {
+        void abort().catch(() => {});
+    };
+    input.signal?.addEventListener('abort', abortOnSignal, { once: true });
+    if (input.signal?.aborted) {
+        await abort();
+        throw new Error('Export cancelled');
+    }
     return {
         async beginFile(name: string) {
             input.checkCancelled();
@@ -137,7 +189,7 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
                         entry.push(bytes);
                         await drain();
                     } else {
-                        await writable.write(bytes);
+                        await awaitSinkWrite(writable.write(bytes), input.signal);
                     }
                 },
             };
@@ -166,15 +218,11 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
             onCommitBegin();
             await writable.close();
             closed = true;
+            input.signal?.removeEventListener('abort', abortOnSignal);
         },
         async abort() {
-            if (closed) {
-                return;
-            }
-            zip?.terminate();
-            emitted.length = 0;
-            await writable.abort();
-            closed = true;
+            input.signal?.removeEventListener('abort', abortOnSignal);
+            await abort();
         },
     };
 }

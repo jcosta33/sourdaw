@@ -7,6 +7,33 @@ import { streamExportToNative } from '../../repositories/audioExport/streamExpor
 import { audioBufferToMp3 } from '../audioBufferToMp3';
 import { normalizeExportBuffer } from '../normalizeExportBuffer';
 
+function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: AbortSignal): Promise<TValue> {
+    if (!signal) {
+        return operation;
+    }
+    if (signal.aborted) {
+        return Promise.reject(new Error('Export cancelled'));
+    }
+
+    return new Promise<TValue>((resolve, reject) => {
+        const onAbort = () => {
+            signal.removeEventListener('abort', onAbort);
+            reject(new Error('Export cancelled'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        operation.then(
+            (value) => {
+                signal.removeEventListener('abort', onAbort);
+                resolve(value);
+            },
+            (error: unknown) => {
+                signal.removeEventListener('abort', onAbort);
+                reject(error);
+            }
+        );
+    });
+}
+
 /** Acquire output storage before rendering; every render then drains into this one staged batch. */
 export async function streamExport(input: {
     destination:
@@ -19,13 +46,18 @@ export async function streamExport(input: {
     metadata?: Parameters<typeof audioBufferToMp3>[4];
     normalization?: { targetLufs: number; ceilingDbTp: number };
     checkCancelled: () => void;
+    signal?: AbortSignal;
 }) {
     let destination:
         Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
     if (input.destination.kind === 'native') {
         destination = await streamExportToNative({ ...input.destination, checkCancelled: input.checkCancelled });
     } else {
-        destination = await streamExportToBrowser({ ...input.destination, checkCancelled: input.checkCancelled });
+        destination = await streamExportToBrowser({
+            ...input.destination,
+            checkCancelled: input.checkCancelled,
+            signal: input.signal,
+        });
     }
     return {
         async writeAudio(options: {
@@ -51,26 +83,38 @@ export async function streamExport(input: {
             }
             for (const format of input.formats) {
                 input.checkCancelled();
-                const entry = await destination.beginFile(`${options.name}.${format}`);
+                const entry = await awaitExportOperation(
+                    destination.beginFile(`${options.name}.${format}`),
+                    input.signal
+                );
                 const progress = (fraction: number) => options.onProgress(format, fraction);
                 if (format === 'wav') {
-                    await audioBufferToWav(source, input.bitDepth, progress, input.dither, entry.writer);
+                    await awaitExportOperation(
+                        audioBufferToWav(source, input.bitDepth, progress, input.dither, entry.writer),
+                        input.signal
+                    );
                 } else if (format === 'mp3') {
-                    await audioBufferToMp3(
-                        source,
-                        input.mp3BitRate,
-                        progress,
-                        input.dither,
-                        input.metadata,
-                        entry.writer
+                    await awaitExportOperation(
+                        audioBufferToMp3(
+                            source,
+                            input.mp3BitRate,
+                            progress,
+                            input.dither,
+                            input.metadata,
+                            entry.writer
+                        ),
+                        input.signal
                     );
                 } else {
                     if (input.bitDepth === 32) {
                         throw new Error('FLAC export supports 16-bit or 24-bit only.');
                     }
-                    await audioBufferToFlac(source, input.bitDepth, progress, input.dither, entry.writer);
+                    await awaitExportOperation(
+                        audioBufferToFlac(source, input.bitDepth, progress, input.dither, entry.writer),
+                        input.signal
+                    );
                 }
-                await entry.finish();
+                await awaitExportOperation(entry.finish(), input.signal);
             }
         },
         commit: destination.commit,

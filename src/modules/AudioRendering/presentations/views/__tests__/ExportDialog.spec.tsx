@@ -2326,6 +2326,96 @@ describe('ExportDialog', () => {
         }
     });
 
+    it.each(['resolve', 'reject'] as const)(
+        'aborts a browser destination immediately when Cancel interrupts a pending write that later %s',
+        async (settlement) => {
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+            const pendingWrite = createDeferred<void>();
+            const writable = {
+                write: vi.fn(() => pendingWrite.promise),
+                close: vi.fn().mockResolvedValue(undefined),
+                abort: vi.fn().mockResolvedValue(undefined),
+            };
+            vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => writable }));
+            const view = render(<ExportDialog open onClose={vi.fn()} />);
+            let settled = false;
+            try {
+                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+                await waitFor(() => expect(writable.write).toHaveBeenCalledTimes(1));
+
+                fireEvent.click(screen.getByRole('button', { name: 'Turn off Oven' }));
+
+                await waitFor(() => expect(writable.abort).toHaveBeenCalledTimes(1));
+                await waitFor(() => expect(screen.getByText('Oven turned off.')).toBeInTheDocument());
+                expect(writable.close).not.toHaveBeenCalled();
+                expect(mocks.notifyUser).not.toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+
+                await act(async () => {
+                    settled = true;
+                    if (settlement === 'resolve') {
+                        pendingWrite.resolve();
+                    } else {
+                        pendingWrite.reject(new Error('Late sink failure'));
+                    }
+                    await pendingWrite.promise.catch(() => undefined);
+                });
+                expect(writable.close).not.toHaveBeenCalled();
+                expect(screen.queryByText('Late sink failure')).not.toBeInTheDocument();
+            } finally {
+                if (!settled) {
+                    pendingWrite.resolve();
+                }
+                view.unmount();
+                vi.unstubAllGlobals();
+            }
+        }
+    );
+
+    it('closes a dialog with a blocked browser write without affecting its reopened export', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const oldWrite = createDeferred<void>();
+        const oldWritable = {
+            write: vi.fn(() => oldWrite.promise),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        const currentWritable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        const picker = vi
+            .fn()
+            .mockResolvedValueOnce({ createWritable: async () => oldWritable })
+            .mockResolvedValueOnce({ createWritable: async () => currentWritable });
+        vi.stubGlobal('showSaveFilePicker', picker);
+        const view = render(<ExportDialog open onClose={vi.fn()} />);
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(oldWritable.write).toHaveBeenCalledTimes(1));
+
+            view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+            await waitFor(() => expect(oldWritable.abort).toHaveBeenCalledTimes(1));
+            view.rerender(<ExportDialog open onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(currentWritable.close).toHaveBeenCalledTimes(1));
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+
+            await act(async () => {
+                oldWrite.reject(new Error('Retired sink failure'));
+                await oldWrite.promise.catch(() => undefined);
+            });
+            expect(oldWritable.close).not.toHaveBeenCalled();
+            expect(currentWritable.close).toHaveBeenCalledTimes(1);
+            expect(screen.getByText('Ding! Baking Complete! 🍞')).toBeInTheDocument();
+            expect(screen.queryByText('Retired sink failure')).not.toBeInTheDocument();
+        } finally {
+            oldWrite.resolve();
+            view.unmount();
+            vi.unstubAllGlobals();
+        }
+    });
+
     it('retires a pending browser destination when the dialog closes and reopens', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
         const destination = createDeferred<FileSystemFileHandle>();
