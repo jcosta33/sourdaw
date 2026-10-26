@@ -1327,6 +1327,70 @@ describe('executeSelectedTimeRangeDeletion', () => {
         });
     });
 
+    it('keeps selected and unselected three-pass MIDI sources through Delete Time and replay', () => {
+        const span = {
+            ...createClip({ id: 'span', trackId: 'target', startBeat: 0, endBeat: 10, type: 'midi' }),
+            loopEnabled: true,
+            loopLength: 4,
+        };
+        setArrangement([createTrack('target', [span], 'midi')]);
+        midiStore.set({
+            notesByClipId: {
+                span: [
+                    { id: 'pass-two', pitch: 60, startBeat: 5, duration: 1, velocity: 100 },
+                    { id: 'pass-three', pitch: 67, startBeat: 9, duration: 1, velocity: 100 },
+                ],
+            },
+            ccByClipId: { span: [{ id: 'pedal', channel: 0, controller: 64, value: 127, beat: 5.25 }] },
+            pitchBendByClipId: { span: [{ id: 'bend', channel: 0, value: 1024, beat: 5.5 }] },
+        });
+        const selected = { ...createTake('span', 'Selected', 0, 10, 4), id: 'selected', selected: true };
+        const unselected = { ...createTake('span', 'Unselected', 0, 10, 8), id: 'unselected' };
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...createTakeLane('target'),
+                    takes: [selected, unselected],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 10, takeId: selected.id }],
+                },
+            ],
+        });
+
+        const first = requireApplied(
+            executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] })
+        );
+        const rightTakes =
+            takeLaneStore.value?.lanes[0]?.takes.filter((take) => take.clipId === 'clip-dtr-12345678') ?? [];
+        expect(rightTakes).toHaveLength(2);
+        for (const take of rightTakes) {
+            expect(take.midiSource?.sourceClipId).toBe('span');
+            expect(take.midiSource?.rows.notes.value.map((note) => note.id)).toEqual(['pass-two', 'pass-three']);
+            expect(take.midiSource?.rows.controlChanges.value.map((row) => row.id)).toEqual(['pedal']);
+            expect(take.midiSource?.rows.pitchBends.value.map((row) => row.id)).toEqual(['bend']);
+        }
+        expect(
+            resolveClipsWithComping('target', trackStore.value?.tracks[0]?.clips ?? [])
+                .filter((clip) => clip.midiTakeId !== undefined)
+                .map((clip) => clip.midiTakeId)
+        ).toEqual(['selected', 'selected:time-delete-right:2:6']);
+        expect(first.undo()).toBe(true);
+        expect(takeLaneStore.value?.lanes[0]?.takes.every((take) => take.midiSource === undefined)).toBe(true);
+        const replay = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 2,
+                endBeat: 6,
+                trackIds: ['target'],
+                replayPlan: first.replayPlan,
+            })
+        );
+        expect(
+            takeLaneStore.value?.lanes[0]?.takes
+                .filter((take) => take.clipId === 'clip-dtr-12345678')
+                .map((take) => take.midiSource)
+        ).toEqual(rightTakes.map((take) => take.midiSource));
+        expect(replay.undo()).toBe(true);
+    });
+
     it('restores the split takes on undo and re-keys them identically on replay redo', () => {
         const span = createClip({ id: 'span', trackId: 'target', startBeat: 0, endBeat: 10 });
         const originalState = setArrangement([createTrack('target', [span])]);
