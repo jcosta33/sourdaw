@@ -37,7 +37,7 @@ describe('clipSplitStateRestorable', () => {
         );
     });
 
-    it('still authenticates a present right clip at its captured slot and with its exact value', () => {
+    it('authenticates owned fragment order and exact values after unrelated clip reordering', () => {
         const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
         const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
         const peer = ClipDummy.create({ id: 'peer', trackId: 'track-1' });
@@ -45,13 +45,48 @@ describe('clipSplitStateRestorable', () => {
         const payload = { clipId: 'left', rightClipId: 'right', expected, replacement: snapshot(left) };
         const atSlot = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, right, peer] })] };
         const moved = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, peer, right] })] };
+        const reversed = { tracks: [TrackDummy.create({ id: 'track-1', clips: [right, left, peer] })] };
         const edited = {
             tracks: [TrackDummy.create({ id: 'track-1', clips: [left, { ...right, name: 'Peer edit' }, peer] })],
         };
 
         expect(clipSplitStateRestorable(payload, atSlot)).toBe(true);
-        expect(clipSplitStateRestorable(payload, moved)).toBe(false);
+        expect(clipSplitStateRestorable(payload, moved)).toBe(true);
+        expect(clipSplitStateRestorable(payload, reversed)).toBe(false);
         expect(clipSplitStateRestorable(payload, edited)).toBe(false);
+    });
+
+    it('accepts an earlier unrelated deletion while preserving the owned fragments', () => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
+        const expected = { ...snapshot(left), rightClip: right, rightClipIndex: 2 };
+        const state = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, right] })] };
+
+        expect(
+            clipSplitStateRestorable(
+                { clipId: 'left', rightClipId: 'right', expected, replacement: snapshot(left) },
+                state
+            )
+        ).toBe(false);
+        expect(
+            clipSplitStateRestorable(
+                { clipId: 'left', rightClipId: 'right', expected, replacement: { ...expected, rightClip: null } },
+                state
+            )
+        ).toBe(true);
+    });
+
+    it('accepts a different in-range insertion slot for a composed split', () => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
+        const peer = ClipDummy.create({ id: 'peer', trackId: 'track-1' });
+        const expected = { ...snapshot(left), rightClipIndex: 2 };
+        const replacement = { ...expected, rightClip: right, rightClipIndex: 1 };
+        const state = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, peer] })] };
+
+        expect(clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement }, state)).toBe(
+            true
+        );
     });
 
     it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 3])(

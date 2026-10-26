@@ -3881,6 +3881,89 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
     });
 
+    it('rejects a saved non-ripple removal with a forged but geometrically valid shifted peer', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === 'clip-b' ? { ...clip, startBeat: 0, endBeat: 4 } : clip)),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        await executeAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const entries = saved.past as {
+            action: { payload: { ripple: boolean } };
+            inverseAction: { payload: { ripplePlan: { shiftedClips: unknown[] } } };
+        }[];
+        expect(entries[0]!.action.payload.ripple).toBe(false);
+        expect(entries[0]!.inverseAction.payload.ripplePlan.shiftedClips).toEqual([]);
+        entries[0]!.inverseAction.payload.ripplePlan.shiftedClips.push({
+            clipId: 'clip-b',
+            origStartBeat: 4,
+            origEndBeat: 8,
+            automationDelta: -4,
+            expectedAutomationLanes: [],
+        });
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        const before = structuredClone(getCrdtDoc('root'));
+        const beforeHeads = Automerge.getHeads(getCrdtDoc('root')!);
+        reloadSavedProject();
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(beforeHeads);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
+        await expectReplayRefused('undo');
+        expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 0, endBeat: 4 });
+        expect(
+            getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-b')
+        ).toMatchObject({
+            startBeat: 0,
+            endBeat: 4,
+        });
+    });
+
+    it('undoes a saved split after a peer deletes an unrelated earlier clip', async () => {
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            { source: 'manual' }
+        );
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        reloadSavedProject();
+        expect(trackStore.value!.tracks[0]!.clips.map((clip) => clip.id)).toEqual(['clip-a', 'clip-b', 'clip-right']);
+        syncPeerProject((project) => project.tracks.tracks[0]!.clips.splice(1, 1));
+        expect(trackStore.value!.tracks[0]!.clips.map((clip) => clip.id)).toEqual(['clip-a', 'clip-right']);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect((await undo()).headConsumed).toBe(true);
+        const raw = getCrdtDoc<PeerProject>('root');
+        expect(raw?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a']);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a']);
+        expect(raw?.tracks.tracks[0]?.clips[0]).toMatchObject({ id: 'clip-a', startBeat: 0, endBeat: 4 });
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        reloadSavedProject();
+        await redo();
+        expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual([
+            'clip-a',
+            'clip-right',
+        ]);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a', 'clip-right']);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(undoHistoryStore.value?.future).toHaveLength(0);
+    });
+
     describe.each([false, true])('saved ripple shifted-owner freshness with grouped=%s', (grouped) => {
         it.each([
             'geometry',
