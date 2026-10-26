@@ -55,7 +55,7 @@ describe('removeMarker', () => {
     });
 
     it('is a no-op when the marker cannot be found', () => {
-        removeMarker('missing');
+        removeMarker('clip-1', 'missing');
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
 
@@ -69,9 +69,38 @@ describe('removeMarker', () => {
             stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
-        removeMarker('m-1');
+        removeMarker('clip-1', 'm-1');
         const markers = mocks.warpStates.get('clip-1')!.markers;
         expect(markers.map((m) => m.id)).toEqual(['m-2']);
+    });
+
+    it('removes only the named clip marker when two clips share the marker id', () => {
+        // Warp-marker identity is clip-local (#5570): duplication copies marker
+        // ids into independent states, so removing in one clip must leave the
+        // other clip's same-id marker untouched.
+        const markers = (beat: number) => [{ id: 'm-1', originalBeat: beat, warpedBeat: beat, origin: 'user' }];
+        mocks.warpStates.set('clip-a', {
+            enabled: true,
+            markers: markers(1),
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
+        mocks.warpStates.set('clip-b', {
+            enabled: true,
+            markers: markers(2),
+            stretchMode: 'phase-vocoder',
+            originalTempo: null,
+        });
+
+        removeMarker('clip-b', 'm-1');
+
+        expect(mocks.warpStates.get('clip-a')!.markers.map((m) => m.id)).toEqual(['m-1']);
+        expect(mocks.warpStates.get('clip-b')!.markers).toEqual([]);
+        // Undo restores only the clip the edit targeted.
+        const [, undoFn] = mocks.pushUndoEntry.mock.calls[0]!;
+        (undoFn as () => void)();
+        expect(mocks.warpStates.get('clip-a')!.markers.map((m) => m.id)).toEqual(['m-1']);
+        expect(mocks.warpStates.get('clip-b')!.markers.map((m) => m.id)).toEqual(['m-1']);
     });
 
     it('undo restores the removed marker', () => {
@@ -84,7 +113,7 @@ describe('removeMarker', () => {
             stretchMode: 'phase-vocoder',
             originalTempo: null,
         });
-        removeMarker('m-1');
+        removeMarker('clip-1', 'm-1');
         const [, undoFn] = mocks.pushUndoEntry.mock.calls[0]!;
         (undoFn as () => void)();
         const markers = mocks.warpStates.get('clip-1')!.markers;

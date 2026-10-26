@@ -276,6 +276,78 @@ describe('runBranchLineageTransition', () => {
     });
 
     /**
+     * T1c — the transport stop before a cross-lineage rollback awaits a
+     * recording commit, and the project can be replaced while it does. The
+     * guard that ran before the stop no longer describes the repository, so
+     * the restore must not write the old snapshots over the replacement.
+     */
+    it('skips the rollback when the project was replaced while the transport stopped', async () => {
+        (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
+        const stopTransport = vi.fn(() => {
+            persistenceQueue.generation += 1;
+            persistenceQueue.replacement += 1;
+            return Promise.resolve();
+        });
+
+        await expect(
+            runBranchLineageTransition({
+                affectedDocIds: ['doc-1'],
+                apply: () => {
+                    throw new Error('apply failed');
+                },
+                from: 'a',
+                previousState,
+                stopTransportBeforeRollback: stopTransport,
+                to: 'b',
+            })
+        ).rejects.toThrow('apply failed');
+
+        expect(stopTransport).toHaveBeenCalledTimes(1);
+        expect(mockAutomergeRepo.replaceDoc).not.toHaveBeenCalled();
+        expect(mockAutomergeRepo.replaceRootContentPreservingIdentity).not.toHaveBeenCalled();
+        expect(mockLoadCrdtProject).not.toHaveBeenCalled();
+        expect(mockProjectCrdtToStores).not.toHaveBeenCalled();
+        expect(mockBranchStore.set).not.toHaveBeenCalled();
+    });
+
+    /**
+     * T1d — the stop runs before any snapshot is restored, and a stop that
+     * fails is logged without abandoning the restore.
+     */
+    it('stops the transport before restoring, and restores anyway when the stop fails', async () => {
+        const order: string[] = [];
+        (mockAutomergeRepo.getDoc as ReturnType<typeof vi.fn>).mockReturnValue({ data: 'doc-1-content' });
+        (mockAutomergeRepo.hasDoc as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+        mockAutomergeRepo.replaceDoc.mockImplementationOnce(() => {
+            order.push('restore');
+        });
+        const stopFailure = new Error('recorder would not flush');
+
+        await expect(
+            runBranchLineageTransition({
+                affectedDocIds: ['doc-1'],
+                apply: () => {
+                    throw new Error('apply failed');
+                },
+                from: 'a',
+                previousState,
+                stopTransportBeforeRollback: () => {
+                    order.push('stop');
+                    return Promise.reject(stopFailure);
+                },
+                to: 'b',
+            })
+        ).rejects.toThrow('apply failed');
+
+        expect(order).toEqual(['stop', 'restore']);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('Failed to stop the transport before the branch rollback'),
+            stopFailure
+        );
+        expect(mockProjectCrdtToStores).toHaveBeenCalledTimes(1);
+    });
+
+    /**
      * T1b — the lineage operation this transition starts begins a new
      * persistence generation before the commit is decided, and replaces no
      * project. A refused commit therefore still has to unwind: the documents

@@ -1,9 +1,11 @@
+import { clone } from '@automerge/automerge';
 import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import {
+    countPendingAutomergeStorageWrites,
     configureAutomergeStoragePort,
     createAutomergeStorage,
     flushAutomergeStorageWrites,
@@ -51,6 +53,7 @@ import {
     getCrdtDoc,
     inspectAgentProjectDivergence,
     registerCrdtStorageRuntime,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
@@ -688,6 +691,392 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'invalidated',
             content: expect.stringContaining('project changed'),
         });
+    });
+
+    it('executes an approved batch after a queued track selection writes no project change', async () => {
+        const tracks = [
+            createRuntimeTestTrack(),
+            { ...createRuntimeTestTrack(), id: 'track-drums', name: 'Drums', devices: [] },
+        ];
+        trackStore.set({ tracks, selectedTrackId: 'track-bass', ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const confirmationId = 'confirmation-selection-flush';
+        const commandBatch = configureLateSettlementConfirmation({
+            runId: confirmationId,
+            confirmationId,
+            batchId: 'group-selection-flush',
+        });
+        const approvedRevision = captureProjectRevision();
+        const originalApproval = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.agentApproval;
+        if (!originalApproval) {
+            throw new Error('Expected the proposed batch to carry its exact risk approval.');
+        }
+        const rootBeforeSelection = JSON.stringify(getCrdtDoc('root'));
+        const pendingBeforeSelection = countPendingAutomergeStorageWrites();
+
+        trackStore.set({ tracks, selectedTrackId: 'track-drums', ghostClips: [] });
+
+        expect(trackStore.value?.selectedTrackId).toBe('track-drums');
+        expect(countPendingAutomergeStorageWrites()).toBe(pendingBeforeSelection + 1);
+        expect(captureProjectRevision()).toBe(approvedRevision);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBeforeSelection);
+
+        const executeRealBatch = commandUseCases.executeVersionedCommandBatchEnvelope;
+        let revisionAtExecution: string | null = null;
+        let rootAtExecution: string | null = null;
+        const execute = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockImplementation((input) => {
+                // The batch entry is after confirmation's authorization capture.
+                // Release the actual pending store write here if admission did not settle it.
+                flushAutomergeStorageWrites();
+                revisionAtExecution = captureProjectRevision();
+                rootAtExecution = JSON.stringify(getCrdtDoc('root'));
+                return executeRealBatch(input);
+            });
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+            expect(execute).toHaveBeenCalledOnce();
+        } finally {
+            execute.mockRestore();
+        }
+
+        expect(revisionAtExecution).not.toBe(approvedRevision);
+        const approvedSnapshot = JSON.parse(approvedRevision) as {
+            documentIdentityEpoch: number;
+            mutationEpoch: number;
+            documents: unknown;
+        };
+        const executionSnapshot = JSON.parse(revisionAtExecution ?? '') as typeof approvedSnapshot;
+        expect(executionSnapshot).toMatchObject({
+            documentIdentityEpoch: approvedSnapshot.documentIdentityEpoch,
+            mutationEpoch: approvedSnapshot.mutationEpoch + 1,
+            documents: approvedSnapshot.documents,
+        });
+        expect(rootAtExecution).toBe(rootBeforeSelection);
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+            status: 'executed',
+            approvalSnapshot: { commandBatch },
+        });
+        expect(trackStore.value?.selectedTrackId).toBe('track-drums');
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        const originalKeyReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+        });
+        expect(originalKeyReceipt).toMatchObject({ batchId: 'group-selection-flush', outcome: 'committed' });
+        proposePendingActionConfirmation({
+            id: `${confirmationId}-replay`,
+            runId: confirmationId,
+            prompt: 'set tempo to 132',
+            assistantMessageId: 'assistant-1',
+            actions: [{ type: 'setTempo', payload: { bpm: 132 } }],
+            actionLabels: ['Set tempo to 132 BPM'],
+            commandBatch,
+            agentApproval: originalApproval,
+            executionMode: 'atomic',
+            groupId: 'group-selection-flush',
+            groupLabel: 'Set tempo batch',
+            projectRevision: approvedRevision,
+        });
+        await expect(confirmPendingChatActions({ confirmationId: `${confirmationId}-replay` })).resolves.toEqual({
+            status: 'executed',
+        });
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('settles a track selection queued during receipt lookup before checking the approved revision', async () => {
+        const tracks = [
+            createRuntimeTestTrack(),
+            { ...createRuntimeTestTrack(), id: 'track-drums', name: 'Drums', devices: [] },
+        ];
+        trackStore.set({ tracks, selectedTrackId: 'track-bass', ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const confirmationId = 'confirmation-selection-during-receipt-lookup';
+        configureLateSettlementConfirmation({
+            runId: confirmationId,
+            confirmationId,
+            batchId: 'group-selection-during-receipt-lookup',
+        });
+        const approvedRevision = captureProjectRevision();
+        const rootBeforeSelection = JSON.stringify(getCrdtDoc('root'));
+
+        let markLookupStarted!: () => void;
+        let releaseLookup!: (receipt: null) => void;
+        const lookupStarted = new Promise<void>((resolve) => {
+            markLookupStarted = resolve;
+        });
+        const heldLookup = new Promise<null>((resolve) => {
+            releaseLookup = resolve;
+        });
+        const lookup = vi
+            .spyOn(commandUseCases, 'getVersionedCommandBatchIdempotentReplay')
+            .mockImplementationOnce(() => {
+                markLookupStarted();
+                return heldLookup;
+            });
+        try {
+            const confirmation = confirmPendingChatActions({ confirmationId });
+            await lookupStarted;
+            const pendingBeforeSelection = countPendingAutomergeStorageWrites();
+            trackStore.set({ tracks, selectedTrackId: 'track-drums', ghostClips: [] });
+            expect(countPendingAutomergeStorageWrites()).toBe(pendingBeforeSelection + 1);
+            expect(captureProjectRevision()).toBe(approvedRevision);
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBeforeSelection);
+            releaseLookup(null);
+
+            await expect(confirmation).resolves.toEqual({ status: 'executed' });
+            expect(lookup).toHaveBeenCalledOnce();
+        } finally {
+            releaseLookup(null);
+            lookup.mockRestore();
+        }
+        expect(trackStore.value?.selectedTrackId).toBe('track-drums');
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+    });
+
+    it('binds an unchanged epoch advance but rejects a real unrelated document edit at the final approval boundary', () => {
+        const confirmationId = 'confirmation-direct-binding-revision';
+        const commandBatch = configureLateSettlementConfirmation({
+            runId: confirmationId,
+            confirmationId,
+            batchId: 'group-direct-binding-revision',
+        });
+        const approval = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.agentApproval;
+        if (!approval) {
+            throw new Error('Expected the proposed batch to carry its exact risk approval.');
+        }
+        const approvedRevision = captureProjectRevision();
+        const rootBefore = JSON.stringify(getCrdtDoc('root'));
+        const issuer = vi.spyOn(commandUseCases, 'issueCommandApprovalBinding');
+        try {
+            const binding = issueAgentCommandApprovalBinding({ approval, commandBatch });
+            expect(binding.kind).toBe('command-approval-binding');
+            expect(issuer).toHaveBeenCalledOnce();
+            const issued = issuer.mock.calls[0]?.[0];
+            if (!issued) {
+                throw new Error('Expected the Command boundary to receive the approval binding.');
+            }
+            expect(issued.authority).toEqual(commandBatch.authority);
+            expect(issued.serialized).toBe(commandBatch.serialized);
+
+            mutateCrdtDoc({ id: 'independent', changeFn: () => {} });
+            const afterNoopRevision = captureProjectRevision();
+            const approvedSnapshot = JSON.parse(approvedRevision) as {
+                documentIdentityEpoch: number;
+                mutationEpoch: number;
+                documents: unknown;
+            };
+            expect(JSON.parse(afterNoopRevision)).toMatchObject({
+                documentIdentityEpoch: approvedSnapshot.documentIdentityEpoch,
+                mutationEpoch: approvedSnapshot.mutationEpoch + 1,
+                documents: approvedSnapshot.documents,
+            });
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBefore);
+            expect(issued.validate()).toEqual({ status: 'valid' });
+
+            mutateCrdtDoc<Record<string, unknown>>({
+                id: 'independent',
+                changeFn: (doc) => {
+                    doc.unrelatedEdit = 'changed after approval';
+                },
+            });
+            expect(captureProjectRevision()).not.toBe(afterNoopRevision);
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBefore);
+            expect(issued.validate()).toEqual({
+                status: 'invalid',
+                reason: 'The approved source revision is stale.',
+                stale: true,
+            });
+        } finally {
+            issuer.mockRestore();
+        }
+    });
+
+    it('rejects an old approval after a published edit is rewound to its exact approved heads', async () => {
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.reviewSource = 120;
+            },
+        });
+        const confirmationId = 'confirmation-published-root-rewind';
+        const commandBatch = configureLateSettlementConfirmation({
+            runId: confirmationId,
+            confirmationId,
+            batchId: 'group-published-root-rewind',
+        });
+        const approval = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.agentApproval;
+        const approvedRoot = getCrdtDoc<Record<string, unknown>>('root');
+        if (!approval || !approvedRoot) {
+            throw new Error('Expected the approved batch and root document.');
+        }
+        const approvedRootSnapshot = clone(approvedRoot);
+        const approvedRevision = JSON.parse(captureProjectRevision()) as {
+            documentIdentityEpoch: number;
+            mutationEpoch: number;
+            documents: unknown;
+        };
+
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.reviewSource = 128;
+            },
+        });
+        expect(getCrdtDoc<Record<string, unknown>>('root')?.reviewSource).toBe(128);
+        replaceCrdtDocInLineage({ id: 'root', doc: clone(approvedRootSnapshot) });
+        expect(getCrdtDoc<Record<string, unknown>>('root')?.reviewSource).toBe(120);
+        expect(JSON.parse(captureProjectRevision())).toMatchObject({
+            documentIdentityEpoch: approvedRevision.documentIdentityEpoch,
+            mutationEpoch: approvedRevision.mutationEpoch + 2,
+            documents: approvedRevision.documents,
+        });
+
+        const issuer = vi.spyOn(commandUseCases, 'issueCommandApprovalBinding');
+        let bindingValidation: ReturnType<
+            Parameters<typeof commandUseCases.issueCommandApprovalBinding>[0]['validate']
+        > | null = null;
+        try {
+            issueAgentCommandApprovalBinding({ approval, commandBatch });
+            expect(issuer).toHaveBeenCalledOnce();
+            const issued = issuer.mock.calls[0]?.[0];
+            if (!issued) {
+                throw new Error('Expected the final Command binding to receive the original approval.');
+            }
+            expect(issued.authority).toEqual(commandBatch.authority);
+            expect(issued.serialized).toBe(commandBatch.serialized);
+            bindingValidation = issued.validate();
+        } finally {
+            issuer.mockRestore();
+        }
+
+        const executeBatch = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope');
+        try {
+            const result = await confirmPendingChatActions({ confirmationId });
+            expect(result).toMatchObject({ status: 'reapproval_required' });
+            expect(bindingValidation).toEqual({
+                status: 'invalid',
+                reason: 'The approved source revision is stale.',
+                stale: true,
+            });
+            expect(executeBatch).not.toHaveBeenCalled();
+            expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+            expect(undoStore.value?.past).toEqual([]);
+            expect(aiActionHistoryStore.value?.groups).toEqual([]);
+            expect(
+                await getVersionedCommandBatchIdempotentReplay({
+                    authority: commandBatch.authority,
+                    serialized: commandBatch.serialized,
+                })
+            ).toBeNull();
+
+            const refreshed = getPendingActionConfirmation(confirmationId);
+            const refreshedBatch = refreshed?.approvalSnapshot.commandBatch;
+            expect(refreshed?.status).toBe('proposed');
+            expect(refreshedBatch?.authority.baseRevision).toBe(captureProjectRevision());
+            expect(refreshedBatch?.serialized).not.toBe(commandBatch.serialized);
+
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toEqual({ status: 'executed' });
+            expect(executeBatch).toHaveBeenCalledOnce();
+            expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 132 } });
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(
+                await getVersionedCommandBatchIdempotentReplay({
+                    authority: commandBatch.authority,
+                    serialized: commandBatch.serialized,
+                })
+            ).toBeNull();
+        } finally {
+            executeBatch.mockRestore();
+        }
+    });
+
+    it.each(['conflicting edit', 'edit then restore', 'project switch'] as const)(
+        'does not execute the old approval after a real %s before confirmation',
+        async (change) => {
+            if (change !== 'project switch') {
+                mutateCrdtDoc<{ transport?: { bpm: number } }>({
+                    id: 'owned',
+                    changeFn: (doc) => {
+                        doc.transport = { bpm: 120 };
+                    },
+                });
+            }
+            const confirmationId = `confirmation-selection-${change}`;
+            configureLateSettlementConfirmation({
+                runId: confirmationId,
+                confirmationId,
+                batchId: `group-selection-${change}`,
+            });
+            const approvedRevision = captureProjectRevision();
+
+            if (change === 'project switch') {
+                resetCrdtProjectAuthority('replacement while awaiting confirmation');
+            } else {
+                mutateCrdtDoc<{ transport?: { bpm: number } }>({
+                    id: 'owned',
+                    changeFn: (doc) => {
+                        doc.transport = { bpm: 128 };
+                    },
+                });
+                if (change === 'edit then restore') {
+                    mutateCrdtDoc<{ transport?: { bpm: number } }>({
+                        id: 'owned',
+                        changeFn: (doc) => {
+                            doc.transport = { bpm: 120 };
+                        },
+                    });
+                }
+            }
+            expect(captureProjectRevision()).not.toBe(approvedRevision);
+
+            const result = await confirmPendingChatActions({ confirmationId });
+            expect(['invalidated', 'reapproval_required']).toContain(result.status);
+            expect(getCrdtDoc<{ transport?: { bpm: number } }>('owned')?.transport?.bpm).not.toBe(132);
+            expect(undoStore.value?.past).toEqual([]);
+        }
+    );
+
+    it('revokes confirmation when a new no-op selection write flushes after authorization capture', async () => {
+        const tracks = [
+            createRuntimeTestTrack(),
+            { ...createRuntimeTestTrack(), id: 'track-drums', name: 'Drums', devices: [] },
+        ];
+        trackStore.set({ tracks, selectedTrackId: 'track-bass', ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const confirmationId = 'confirmation-late-selection-flush';
+        configureLateSettlementConfirmation({
+            runId: confirmationId,
+            confirmationId,
+            batchId: 'group-late-selection-flush',
+        });
+        const rootBeforeSelection = JSON.stringify(getCrdtDoc('root'));
+        const approvedRevision = captureProjectRevision();
+        const executeRealBatch = commandUseCases.executeVersionedCommandBatchEnvelope;
+        const executeBatch = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockImplementation((input) => {
+                trackStore.set({ tracks, selectedTrackId: 'track-drums', ghostClips: [] });
+                flushAutomergeStorageWrites();
+                expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBeforeSelection);
+                expect(captureProjectRevision()).not.toBe(approvedRevision);
+                return executeRealBatch(input);
+            });
+        try {
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'invalidated',
+                reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            });
+            expect(executeBatch).toHaveBeenCalledOnce();
+        } finally {
+            executeBatch.mockRestore();
+        }
+        expect(trackStore.value?.selectedTrackId).toBe('track-drums');
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     // The classifier reports non-overlapping with mayReapply true, but
@@ -3455,8 +3844,6 @@ describe('confirmPendingChatActions transaction admission', () => {
             scheduledAnimationFrames.clear();
         });
 
-        bufferedStore.set({ touched: 1 });
-        expect(scheduledAnimationFrames.size).toBe(1);
         expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('buffered');
         const projectRevision = captureProjectRevision();
         const unownedMutationBaseline = captureUnownedProjectMutations();
@@ -3492,10 +3879,22 @@ describe('confirmPendingChatActions transaction admission', () => {
             projectRevision,
         });
 
-        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-foreign-flush' })).resolves.toEqual({
-            status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
-        });
+        const executeRealBatch = commandUseCases.executeVersionedCommandBatchEnvelope;
+        const executeBatch = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockImplementation((input) => {
+                bufferedStore.set({ touched: 1 });
+                expect(scheduledAnimationFrames.size).toBe(1);
+                return executeRealBatch(input);
+            });
+        try {
+            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-foreign-flush' })).resolves.toEqual({
+                status: 'invalidated',
+                reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            });
+        } finally {
+            executeBatch.mockRestore();
+        }
 
         expect(captureUnownedProjectMutations()).toBe(unownedMutationBaseline + 1);
         expect(executedBpms).toContain(128);

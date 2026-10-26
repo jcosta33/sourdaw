@@ -141,6 +141,7 @@ function hasDeviceParameterStateGuards(
         action.payload.expectedDeviceType !== undefined ||
         action.payload.expectedDeviceIds !== undefined ||
         action.payload.expectedValue !== undefined ||
+        action.payload.expectedValuePresent !== undefined ||
         action.payload.expectedTrackFrozen !== undefined
     );
 }
@@ -437,6 +438,17 @@ export function materializeActionStateGuards(
             });
             continue;
         }
+        if (action.type === 'soloTrack') {
+            const track = tracksById.get(action.payload.trackId);
+            if (!track) {
+                return { status: 'rejected', reason: `Track is unavailable: ${action.payload.trackId}` };
+            }
+            materialized.push({
+                type: 'soloTrack',
+                payload: { ...action.payload, expectedSoloed: track.soloed },
+            });
+            continue;
+        }
         if (action.type === 'addTrack' && action.payload.id) {
             if (tracksById.has(action.payload.id)) {
                 return { status: 'rejected', reason: `Track identity is already in use: ${action.payload.id}` };
@@ -539,6 +551,7 @@ export function materializeActionStateGuards(
             const owner = owners.length === 1 ? owners[0] : undefined;
             const device = owner?.devices.find((candidate) => candidate.id === action.payload.deviceId);
             const parameter = device?.parameters?.find((candidate) => candidate.id === action.payload.paramId);
+            const valuePresent = parameter?.valuePresent !== false;
             if (
                 !owner ||
                 !device ||
@@ -547,7 +560,10 @@ export function materializeActionStateGuards(
                 (action.payload.expectedTrackId !== undefined && action.payload.expectedTrackId !== owner.id) ||
                 (action.payload.expectedDeviceType !== undefined &&
                     action.payload.expectedDeviceType !== device.type) ||
-                (action.payload.expectedValue !== undefined && action.payload.expectedValue !== parameter.value) ||
+                (action.payload.expectedValuePresent !== undefined &&
+                    action.payload.expectedValuePresent !== valuePresent) ||
+                (action.payload.expectedValue !== undefined &&
+                    (!valuePresent || action.payload.expectedValue !== parameter.value)) ||
                 (action.payload.expectedTrackFrozen !== undefined &&
                     action.payload.expectedTrackFrozen !== owner.frozen)
             ) {

@@ -77,6 +77,25 @@ describe('resolveClauseActionIntent', () => {
             phrase: 'turn down',
         });
     });
+
+    it('resolves a referenced level phrase to the reference it acts on', () => {
+        expect(resolveClauseActionIntent('set □□□□□□ to -6 dB', catalog)).toEqual({
+            actionType: 'setTrackGain',
+            index: 0,
+            phrase: 'set {reference} to',
+            referenceSlot: { start: 4, end: 10 },
+        });
+    });
+
+    it('resolves no referenced level phrase when the clause states no figure the action can read', () => {
+        const overflowingFigure = `1${'0'.repeat(400)}`;
+
+        expect(resolveClauseActionIntent(`set □□□□□□ to ${overflowingFigure} dB`, catalog)).toMatchObject({
+            actionType: 'setDeviceParameter',
+            phrase: 'set',
+        });
+        expect(resolveClauseActionIntent(`□□□□□□ up ${overflowingFigure} dB`, catalog)).toBeNull();
+    });
 });
 
 describe('hasTrailingIntentCancellation', () => {

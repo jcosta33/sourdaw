@@ -1,9 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import {
-    type Track,
-    type persistDeviceParam,
-    type resolveEligibleDeviceWriteTarget,
-} from '#/modules/Arrangement/stores';
+import { type persistDeviceParam, type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type sendNativeLiveMidiControl, type writeNativeBuiltinParameters } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
@@ -47,7 +43,6 @@ type CommittedBank = {
 };
 
 export type LevainBridgeDeps = {
-    getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
     /**
@@ -610,6 +605,19 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         queueParam(deviceId, `mic_${micIndex}_${param}`, value);
     }
 
+    function readRegistrySizes() {
+        return Object.freeze({
+            activeDevices: activeDevices.size,
+            activePorts: activePorts.size,
+            registrationProgress: registrationProgress.size,
+            loadOperations: loadOperations.size,
+            committedBanks: committedBanks.size,
+            latestLoadState: latestLoadState.size,
+            pendingKeysByDevice: pendingKeysByDevice.size,
+            pendingParamBatches: paramBatcher.pendingSize,
+        });
+    }
+
     return {
         registerLevainDevice,
         unregisterLevainDevice,
@@ -618,6 +626,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         setMacroWithAudio,
         sendMicParamToEngine,
         applyPatchToEngine,
+        readRegistrySizes,
     };
 }
 

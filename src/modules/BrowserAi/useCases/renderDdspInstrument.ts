@@ -6,6 +6,7 @@ import { type DdspInstrumentId, resolveDdspInstrument } from '../models/DdspInst
 import { type RenderProvenance } from '../models/RenderProgress';
 import { checkDdspInstrumentReady } from '../repositories/checkDdspInstrumentReady';
 import { computeRenderCacheKey } from '../repositories/computeRenderCacheKey';
+import { getStorageStatus } from '../repositories/getStorageStatus';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readRenderCache } from '../repositories/readRenderCache';
 import { renderRequestCancellation } from '../repositories/renderRequestCancellation';
@@ -20,6 +21,7 @@ import {
 } from '../services/ddspRenderPipeline';
 import { type MidiNote, assertMonophonicNotes, midiToDdspInput } from '../services/midiToDdspInput';
 import { clearActiveRender, startActiveRender } from '../stores/inferenceProgressStore';
+import { setStorageUsed } from '../stores/modelRegistryStore';
 import {
     cancelQueuedRender,
     enqueueRender,
@@ -85,6 +87,7 @@ export const renderDdspInstrument = inject({
     applyFades,
     checkDdspInstrumentReady,
     computeRenderCacheKey,
+    getStorageStatus,
     inferenceWorkerBridge,
     logger,
     readRenderCache,
@@ -98,6 +101,7 @@ export const renderDdspInstrument = inject({
         applyFades,
         checkDdspInstrumentReady,
         computeRenderCacheKey,
+        getStorageStatus,
         inferenceWorkerBridge,
         logger,
         readRenderCache,
@@ -255,6 +259,9 @@ export const renderDdspInstrument = inject({
                     applyFades(audio, FADE_SAMPLES);
                     await writeRenderCache({ cacheKey, audio });
                     assertRequestOwner(phraseId, requestId, requestSignal);
+                    const storageStatus = await getStorageStatus();
+                    assertRequestOwner(phraseId, requestId, requestSignal);
+                    setStorageUsed(storageStatus.usedBytes);
                     markRenderComplete(phraseId, requestId, cacheKey);
                     return {
                         audio,

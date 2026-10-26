@@ -459,13 +459,22 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  */
 function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): Set<string> {
     const duplicateIds = new Set<string>();
-    const { arrangements, ...liveDocument } = document;
+    const { arrangements, warpStates, ...liveDocument } = document;
     findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>());
     const snapshots = asRecord(arrangements)?.arrangements;
     const arrangementIds = new Set<string>();
     for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
         recordId(asRecord(snapshot)?.id, arrangementIds, duplicateIds);
         findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
+    }
+    // Warp-marker identity is clip-local (#5570): duplication, paste and Strip
+    // Silence deliberately copy marker ids into independent states under
+    // different clip ids, so each clip's warp state is scanned in its own
+    // namespace — a shared marker id across clips is the valid copy contract,
+    // a repeated id inside one clip's state is the violation.
+    const warpSlot = asRecord(warpStates)?.states;
+    for (const state of Object.values(warpSlot ?? {})) {
+        findDuplicateIds(state, new Set<string>(), duplicateIds, new WeakSet<object>());
     }
     return duplicateIds;
 }

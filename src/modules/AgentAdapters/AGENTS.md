@@ -34,6 +34,8 @@ Normalized external-client contracts and the ephemeral session state behind them
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm test:run src/modules/AgentAdapters/useCases/__tests__/externalAgentAdapterConformance.spec.ts
+pnpm test:run <changed-spec>
 ```

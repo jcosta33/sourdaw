@@ -31,13 +31,16 @@ import {
 import {
     assertConventionalSubject,
     assertIssueNumber,
-    AUTHOR_LANE_BRANCH_PREFIX,
     canonicalPath,
     composePublishBody,
     containsPath,
+    conventionalType,
     fail,
     howToTestFromBody,
+    isLaneBranch,
     issueRelationshipFromBody,
+    LEGACY_LANE_BRANCH_PREFIX,
+    parseLaneBranch,
     readGuardFailureReceipt,
     TRUSTED_COMMON_DIR_ENV,
     TRUSTED_GH_PATH_ENV,
@@ -91,7 +94,7 @@ export type StackPublicationContext = {
 };
 
 export const PUBLISH_LANE_USAGE =
-    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--title <conventional-subject>] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
 
 /**
  * The source trees whose changes a user runs in the app: a lane touching any of them is product
@@ -600,7 +603,7 @@ export type PublishLanePort = {
     issueExists: (issue: number) => boolean;
     aheadBehind: (lane: string, baseSha: string, headSha: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
-    laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
+    laneSubject: (lane: string, baseSha: string, headSha: string, excludedBaseShas: string[]) => string | undefined;
     /**
      * Author email of every commit reachable from `headSha` but from neither `deltaBaseSha` nor any
      * `excludedBaseSha`, merges included, read in the lane itself without replacement objects, so
@@ -633,7 +636,7 @@ export type PublishLanePort = {
     /** The lane's changed paths between `baseSha` and `headSha`, classified for scope gates. */
     changedPaths: (lane: string, baseSha: string, headSha: string) => readonly ReviewChangedPath[];
     createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
-    updatePullRequest: (number: number, input: { body: string }) => void;
+    updatePullRequest: (number: number, input: { body: string; title?: string }) => void;
     saveAuthorModel: (branch: string, model: string) => void;
     readAuthorModel: (branch: string) => string | undefined;
     ensureModelLabel: (model: string) => void;
@@ -659,6 +662,7 @@ export function parsePublishLaneArgs(args: string[]): {
     relationship?: IssueRelationship;
     testInstructions?: string;
     summary?: string;
+    title?: string;
     model?: string;
     milestone?: string;
     projects?: string[];
@@ -676,6 +680,7 @@ export function parsePublishLaneArgs(args: string[]): {
     let relationship: IssueRelationship | undefined;
     let testInstructions: string | undefined;
     let summary: string | undefined;
+    let title: string | undefined;
     let model: string | undefined;
     let milestone: string | undefined;
     const projects: string[] = [];
@@ -704,6 +709,16 @@ export function parsePublishLaneArgs(args: string[]): {
                 fail(PUBLISH_LANE_USAGE);
             }
             summary = value;
+            index += 1;
+            continue;
+        }
+        if (arg === '--title') {
+            const value = args[index + 1];
+            if (title !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            assertConventionalSubject(value, 'pull-request title');
+            title = value;
             index += 1;
             continue;
         }
@@ -766,6 +781,7 @@ export function parsePublishLaneArgs(args: string[]): {
         ...(relationship === undefined ? {} : { relationship }),
         ...(testInstructions === undefined ? {} : { testInstructions }),
         ...(summary === undefined ? {} : { summary }),
+        ...(title === undefined ? {} : { title }),
         ...(model === undefined ? {} : { model }),
         ...(milestone === undefined ? {} : { milestone }),
         ...(projects.length === 0 ? {} : { projects: [...new Set(projects)] }),
@@ -775,7 +791,8 @@ export function parsePublishLaneArgs(args: string[]): {
 }
 
 /**
- * `legacy` marks a lane resolved through the pre-`agent/` path. It is not decoration: that lane's
+ * `legacy` marks a lane resolved through the pre-convention path (a branch `parseLaneBranch` does
+ * not recognise; `agent/...` lanes are recognised and are not this). It is not decoration: that lane's
  * pull request predates `lane:publish` and is not this script's to rewrite, so the flag has to
  * travel with the lane all the way to the publish step.
  */
@@ -795,11 +812,7 @@ export const NO_ISSUE_LANE_FAILURE =
 function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
     return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        if (
-            worktree.lockReason !== AUTHOR_LOCK_REASON ||
-            branch === undefined ||
-            !branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX)
-        ) {
+        if (worktree.lockReason !== AUTHOR_LOCK_REASON || branch === undefined || !isLaneBranch(branch)) {
             return [];
         }
         return [{ path: worktree.path, branch, legacy: false }];
@@ -809,12 +822,12 @@ function authorLanes(worktrees: PublishWorktree[]): ResolvedLane[] {
 export type LegacyLaneCandidate = { path: string; branch: string; lockReason: string | undefined };
 
 /**
- * Worktrees whose branch predates the `agent/` convention but are still lock-shaped (locked for
+ * Worktrees whose branch predates the lane branch convention but are still lock-shaped (locked for
  * *some* reason). Structural shape alone proves nothing: a worktree locked for an unrelated purpose
  * (a collaboration session, say) looks identical at this stage. `resolveLegacyCandidate` below is
  * the only thing allowed to turn one of these into a resolved lane or a specific refusal — it
  * requires both an open pull request for the exact branch (the fact that migrates a stranded
- * pre-`agent/` lane) and the correct lock (the fact that grants push authority); either alone falls
+ * pre-convention lane) and the correct lock (the fact that grants push authority); either alone falls
  * through to the ordinary "not a lane" refusal instead of misdirecting a worktree that was never an
  * author lane in the first place.
  *
@@ -827,12 +840,7 @@ function legacyLaneCandidates(worktrees: PublishWorktree[]): LegacyLaneCandidate
     const primaryRoot = worktrees[0]?.path;
     return worktrees.flatMap((worktree) => {
         const branch = worktree.branch;
-        if (
-            worktree.path === primaryRoot ||
-            branch === undefined ||
-            branch.startsWith(AUTHOR_LANE_BRANCH_PREFIX) ||
-            !worktree.locked
-        ) {
+        if (worktree.path === primaryRoot || branch === undefined || isLaneBranch(branch) || !worktree.locked) {
             return [];
         }
         return [{ path: worktree.path, branch, lockReason: worktree.lockReason }];
@@ -871,7 +879,7 @@ function legacyForeignLockMessage(candidate: LegacyLaneCandidate, owner: string)
 
 function legacyNoPullRequestMessage(candidate: LegacyLaneCandidate): string {
     return (
-        `${candidate.branch} does not match the ${AUTHOR_LANE_BRANCH_PREFIX} convention and has no open pull ` +
+        `${candidate.branch} does not match the lane branch convention (<type>/[<issue>/]<slug>, or the legacy agent/ prefix) and has no open pull ` +
         `request: an off-convention branch may only publish once the repository already has an open pull ` +
         `request for that exact branch.`
     );
@@ -918,16 +926,13 @@ function resolveLegacyCandidate(
 }
 
 /**
- * The issue a lane branch carries, or `undefined` for an issueless lane. `lane:open <issue>` is the
- * only producer of the `agent/<issue>/<slug>` shape, so the branch records the issue it tracks.
+ * The issue a lane branch carries, or `undefined` for an issueless lane or a name that is no lane
+ * branch. `lane:open <issue>` is the only producer of the `<type>/<issue>/<slug>` shape (and of the
+ * legacy `agent/<issue>/<slug>`), so the numeric middle segment records the issue the lane tracks;
+ * `parseLaneBranch` reads nothing else, never a number inside a slug.
  */
 export function laneIssueNumber(branch: string): number | undefined {
-    const captured = /^agent\/(\d+)\//.exec(branch)?.[1];
-    if (captured === undefined) {
-        return undefined;
-    }
-    const issue = Number(captured);
-    return Number.isSafeInteger(issue) && issue > 0 ? issue : undefined;
+    return parseLaneBranch(branch)?.issue;
 }
 
 export function resolveAuthorLane(
@@ -989,13 +994,13 @@ export function resolveAuthorLane(
         return fail(`${cwd} is ${NO_ISSUE_LANE_FAILURE}`);
     }
     // Deliberately no legacy fallback here. An off-convention branch carries no issue of its own
-    // (`laneIssueNumber` requires the `agent/` prefix), so nothing ties a passed issue number to a
-    // *specific* legacy candidate. Resolving one anyway would let `pnpm lane:publish <any issue>`
+    // (`laneIssueNumber` reads only a recognised lane branch), so nothing ties a passed issue number
+    // to a *specific* legacy candidate. Resolving one anyway would let `pnpm lane:publish <any issue>`
     // pick up an unrelated stranded lane and stamp `Closes #<that issue>` on its pull request. A
     // legacy lane resolves only from an explicit lane-path selection with no issue argument — see
-    // the `issue === undefined` branch above.
-    const prefix = `${AUTHOR_LANE_BRANCH_PREFIX}${issue}/`;
-    const matches = lanes.filter((lane) => lane.branch.startsWith(prefix));
+    // the `issue === undefined` branch above. The match is on the parsed issue segment, never on a
+    // string prefix, so `fix/55730/x` and `fix/5573-x` cannot answer for issue 5573.
+    const matches = lanes.filter((lane) => laneIssueNumber(lane.branch) === issue);
     if (matches.length !== 1) {
         return fail(`expected exactly one locked author lane for issue #${issue}`);
     }
@@ -1007,6 +1012,10 @@ export const DIRTY_LANE_FAILURE =
 
 export const NO_LANE_SUBJECT_FAILURE =
     'carries no non-merge commit above origin/main: commit the lane work with a conventional subject (type(scope): subject) before publishing';
+
+function resolvedBaseShas(comparisonHead: string, baseSha: string, stackParentHead: string | undefined): string[] {
+    return [...new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])];
+}
 
 /**
  * Gate exactly the commits this publication adds to the remote: `remoteTip..head` when the branch
@@ -1025,8 +1034,7 @@ function assertBotAuthoredDelta(
     lane: ResolvedLane,
     remoteRead: RemoteBranchRead,
     comparisonHead: string,
-    baseSha: string,
-    stackParentHead: string | undefined,
+    excludedBaseShas: string[],
     headSha: string,
     port: PublishLanePort
 ): void {
@@ -1035,9 +1043,6 @@ function assertBotAuthoredDelta(
     // the undefined-vs-remote-tip split always worked, and an absent branch is a first publication
     // whose delta base is the comparison head.
     const deltaBase = remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead;
-    const excludedBaseShas = Array.from(
-        new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
-    );
     const offending = port
         .commitAuthorEmails(lane.path, deltaBase, excludedBaseShas, headSha)
         .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
@@ -1211,7 +1216,8 @@ export function publishLane(
     testInstructions?: string,
     summary?: string,
     authorization?: AuthorizedResolvedLane,
-    metadataFlags?: PublishMetadataFlags
+    metadataFlags?: PublishMetadataFlags,
+    title?: string
 ): number {
     const lane = resolveAuthorLane(
         issue,
@@ -1220,6 +1226,12 @@ export function publishLane(
         realpathSync,
         (branch) => port.existingOpenPullRequest(branch) !== undefined
     );
+    if (title !== undefined) {
+        if (lane.legacy) {
+            fail('--title requires a conforming lane; pre-convention pull requests remain push-only');
+        }
+        assertConventionalSubject(title, 'pull-request title');
+    }
     if (
         authorization !== undefined &&
         (canonicalPath(lane.path, realpathSync) !== canonicalPath(authorization.lanePath, realpathSync) ||
@@ -1262,6 +1274,7 @@ export function publishLane(
     }
     const stack = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
     const comparisonHead = stack?.head ?? baseSha;
+    const excludedBaseShas = resolvedBaseShas(comparisonHead, baseSha, stack?.parentHead);
     const { ahead } = port.aheadBehind(lane.path, comparisonHead, headSha);
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
@@ -1271,11 +1284,14 @@ export function publishLane(
         lane,
         comparisonHead,
         headSha,
+        excludedBaseShas,
         port,
         relationship,
         testInstructions,
-        summary
+        summary,
+        title
     );
+    warnOnBranchTypeMismatch(lane.branch, write, port);
     // Resolved before the push: every refusal it can raise (no model on record, a model token
     // colliding with an existing label, an unknown flag title or label) must land with nothing
     // written, not even the branch push.
@@ -1352,7 +1368,7 @@ export function publishLane(
             assertObservableTestInstructions(testInstructions);
         }
     }
-    assertBotAuthoredDelta(lane, remoteRead, comparisonHead, baseSha, stack?.parentHead, headSha, port);
+    assertBotAuthoredDelta(lane, remoteRead, comparisonHead, excludedBaseShas, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1409,9 +1425,9 @@ export function publishLane(
  * record is written only after every validation here has passed, so a refused run leaves the
  * shared git config untouched.
  *
- * `subject` is the pull request's effective title: the title frozen on an existing pull request
- * (this script never retitles, so a follow-up commit's subject must not re-derive the label), or
- * the newest non-merge conventional subject on a fresh create. A manually retitled,
+ * `subject` is the pull request's effective title: an explicit replacement, otherwise the frozen
+ * existing title or newest non-merge lane subject on a fresh create. A follow-up commit alone must
+ * not re-derive the label. A manually retitled,
  * non-conventional title derives nothing. It is `undefined` for a legacy lane, whose title is not
  * this script's to derive, so a legacy lane derives neither a label nor a project.
  */
@@ -1638,7 +1654,10 @@ function pullRequestNumber(
             ...(base === undefined ? {} : { base }),
         });
     }
-    port.updatePullRequest(existing.number, { body: content.body });
+    port.updatePullRequest(existing.number, {
+        body: content.body,
+        ...(content.updateTitle === undefined ? {} : { title: content.updateTitle }),
+    });
     return existing.number;
 }
 
@@ -1647,24 +1666,57 @@ function pullRequestNumber(
  * them because it is read once, before the push: the relationship a flagless update must preserve
  * and the create-vs-update decision both come out of that single read.
  *
- * `title` is the newest lane subject — the title a create writes. `effectiveTitle` is the title
- * GitHub will show after this publish: the existing title when one is frozen on the pull request
- * (this script never retitles), the lane subject only on a fresh create. Label derivation reads
+ * `title` is the title a create writes. `updateTitle` exists only for an explicit correction.
+ * `effectiveTitle` is the title GitHub will show after this publish: an explicit title, otherwise
+ * the frozen existing title or the lane subject on a fresh create. Label derivation reads
  * `effectiveTitle`, because the label must describe the change the title names, not a follow-up
  * commit the PR was never retitled for.
  */
 type PullRequestWrite = {
     title: string;
     effectiveTitle: string;
+    updateTitle?: string;
     body: string;
     existing: ExistingPullRequest | undefined;
 };
 
 /**
+ * A typed branch names the change type at `lane:open`; the pull-request title is a separate fact,
+ * supplied explicitly or taken from the newest lane commit on a first publish and frozen
+ * afterwards. When the two types disagree the reviewer reads a title the branch contradicts, so
+ * the publish says so.
+ *
+ * It warns and never refuses. A refusal has no remedy short of rewriting published history or
+ * renaming a branch that stack descriptors, receipts and the pull request all key on, while the
+ * disagreement is routinely legitimate: a `feat` lane whose newest commit is a `test:` or `chore:`
+ * follow-up. The title is compared, not the newest commit, because after the first publish the
+ * title is what the pull request actually shows. `agent/` lanes name no type, so they never warn.
+ */
+function warnOnBranchTypeMismatch(
+    branch: string,
+    write: PullRequestWrite | undefined,
+    port: Pick<PublishLanePort, 'log'>
+): void {
+    const branchType = parseLaneBranch(branch)?.prefix;
+    if (write === undefined || branchType === undefined || branchType === LEGACY_LANE_BRANCH_PREFIX) {
+        return;
+    }
+    const titleType = conventionalType(write.effectiveTitle);
+    if (titleType === undefined || titleType === branchType) {
+        return;
+    }
+    port.log(
+        `warning: ${branch} names the change type ${branchType}, but the pull-request title is ` +
+            `${JSON.stringify(write.effectiveTitle)} (type ${titleType}); publishing anyway, since the title ` +
+            `is independent of the branch type`
+    );
+}
+
+/**
  * The title and body to write, or `undefined` for a legacy lane, whose pull request this script must
  * not touch. `lane:publish` never authored that pull request — the branch predates the convention
  * and was unpublishable by it — and cannot reproduce it: `laneIssueNumber` reads only the
- * `agent/<issue>/` shape, so recomposing the body would put `None.` under Related tickets and sever
+ * `<type>/<issue>/` shape of a recognised lane branch, so recomposing the body would put `None.` under Related tickets and sever
  * the `Closes #<issue>` a human wrote, and retitling from HEAD would rename it too. Parsing an issue
  * out of the branch slug instead is not the fix; the slug is nobody's record, and a rename would
  * then close the wrong ticket.
@@ -1686,15 +1738,17 @@ function pullRequestWrite(
     lane: ResolvedLane,
     baseSha: string,
     headSha: string,
+    excludedBaseShas: string[],
     port: PublishLanePort,
     relationship: IssueRelationship | undefined,
     testInstructions: string | undefined,
-    summary: string | undefined
+    summary: string | undefined,
+    title: string | undefined
 ): PullRequestWrite | undefined {
     if (lane.legacy) {
         return undefined;
     }
-    const laneSubject = port.laneSubject(lane.path, baseSha, headSha);
+    const laneSubject = port.laneSubject(lane.path, baseSha, headSha, excludedBaseShas);
     if (laneSubject === undefined) {
         fail(`${lane.branch} ${NO_LANE_SUBJECT_FAILURE}`);
     }
@@ -1741,10 +1795,11 @@ function pullRequestWrite(
         }
         resolvedSummary = whatFromBody(existing.body);
     }
-    const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
+    const pullRequestTitle = title ?? (typeof existingTitle === 'string' ? existingTitle : laneSubject);
     return {
-        title: laneSubject,
+        title: title ?? laneSubject,
         effectiveTitle: pullRequestTitle,
+        ...(title === undefined ? {} : { updateTitle: title }),
         body: composePublishBody(
             laneIssue,
             pullRequestTitle,
@@ -1774,15 +1829,23 @@ function legacyPullRequestNumber(lane: ResolvedLane, existing: ExistingPullReque
 
 /**
  * The pull-request title is squash-merged onto `main`, so the opening write has to name the lane's
- * work. Later publishes leave that title: a follow-up commit must not retitle the pull request, and
- * merging `origin/main` in leaves HEAD a merge commit that must not either. This walk still picks
- * the opening title and still refuses a lane whose only commits above `origin/main` are merges.
- * `--no-merges` skips the merge commits, and the pinned-base range keeps the walk inside the lane's
- * own commits. Without the range, a lane commit older than `origin/main`'s tip loses the date sort
- * and the opening title comes from a commit `main` already has.
+ * work. Later publishes leave that title unless explicitly corrected: a follow-up commit must not
+ * retitle the pull request, and merging `origin/main` in leaves HEAD a merge commit that must not
+ * either. This walk still picks
+ * the opening title and still refuses a lane whose own commits are only merges.
+ * The range and resolved-base exclusions match the authorship gate: a landed parent's retained
+ * pre-squash commits are inherited history even though main cannot reach them.
  */
-function laneSubjectArgs(baseSha: string, headSha: string): string[] {
-    return ['log', '-1', '--format=%s', '--no-merges', `${baseSha}..${headSha}`];
+function laneSubjectArgs(baseSha: string, headSha: string, excludedBaseShas: string[]): string[] {
+    return [
+        '--no-replace-objects',
+        'log',
+        '-1',
+        '--format=%s',
+        '--no-merges',
+        `${baseSha}..${headSha}`,
+        ...excludedBaseShas.map((sha) => `^${sha}`),
+    ];
 }
 
 /**
@@ -1979,9 +2042,11 @@ export function shellPort(
                 cwd: lane,
                 env: session.env,
             }) !== '',
-        laneSubject: (lane, baseSha, headSha) =>
-            spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
-            undefined,
+        laneSubject: (lane, baseSha, headSha, excludedBaseShas) =>
+            spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha, excludedBaseShas), {
+                cwd: lane,
+                env: session.env,
+            }) || undefined,
         commitAuthorEmails: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
             readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
                 // Untrimmed: the parse strips exactly one trailing blank itself, so a genuinely
@@ -2140,8 +2205,8 @@ export function shellPort(
             }
             return number;
         },
-        updatePullRequest: (number, { body }) => {
-            ghRun(updatePullRequestArgs(number, body));
+        updatePullRequest: (number, { body, title }) => {
+            ghRun(updatePullRequestArgs(number, body, title));
         },
         saveAuthorModel: (branch, model) => {
             spawnRun(executables.git, ['config', `branch.${branch}.sourdaw-author-model`, model], {
@@ -2275,8 +2340,17 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
     ];
 }
 
-export function updatePullRequestArgs(number: number, body: string): string[] {
-    return ['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body];
+export function updatePullRequestArgs(number: number, body: string, title?: string): string[] {
+    return [
+        'pr',
+        'edit',
+        String(number),
+        '--repo',
+        REQUIRED_REPOSITORY,
+        '--body',
+        body,
+        ...(title === undefined ? [] : ['--title', title]),
+    ];
 }
 
 export function issueTrackerMetadataArgs(issue: number): string[] {
@@ -2325,7 +2399,7 @@ export type OpenPullRequestRow = {
  * `hasOpenPullRequest`), so the match has to be proven client-side instead of trusted from the
  * server-side filter: only a row whose `headRefName` is exactly `branch` and whose `isCrossRepository`
  * is `false` counts. This also gates the ordinary update-vs-create path for conforming lanes, where a
- * `lane:publish` push always targets the same repository under the exact `agent/<issue>/<slug>`
+ * `lane:publish` push always targets the same repository under the exact `<type>/<issue>/<slug>`
  * branch name, so the tightened match changes nothing there — except to keep a fork's body out of
  * the relationship a flagless update carries forward.
  */
@@ -2463,7 +2537,8 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
                 ...(parsed.milestone === undefined ? {} : { milestone: parsed.milestone }),
                 ...(parsed.projects === undefined ? {} : { projects: parsed.projects }),
                 ...(parsed.labels === undefined ? {} : { labels: parsed.labels }),
-            }
+            },
+            parsed.title
         );
         return 0;
     } finally {
