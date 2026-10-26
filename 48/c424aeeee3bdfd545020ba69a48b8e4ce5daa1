@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_3168504f6ce387::t_41b3cb2ed72afd 548-549
+  s_3168504f6ce387::t_62f6cebbff308e 8,542-547,550-581
+  s_3168504f6ce387::t_5a93c327ebaed3 582-583
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_3168504f6ce387::t_140081e91c220f 11,142-150
+  s_3168504f6ce387::t_86e5833addd88a 131-141,151-152,158,161-170,182-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48c424aeeee3bdfd545020ba69a48b8e4ce5daa1",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
