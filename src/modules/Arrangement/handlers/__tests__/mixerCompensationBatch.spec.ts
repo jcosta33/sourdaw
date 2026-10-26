@@ -202,6 +202,43 @@ describe('agent mixer batches with required compensation', () => {
         expect(notifyUserMock).not.toHaveBeenCalled();
     });
 
+    it('admits a fresh target-equal guarded solo as a no-op without changing project or history', async () => {
+        const projectRevision = captureProjectRevision();
+        const rootDocument = JSON.stringify(getCrdtDoc('root'));
+        const trackState = trackStore.value;
+        const history = undoStore.value;
+
+        const result = await commitAgentBatch([
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: false, expectedSoloed: true } },
+        ]);
+
+        expect(result).toMatchObject({ status: 'no-op' });
+        expect(captureProjectRevision()).toBe(projectRevision);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootDocument);
+        expect(trackStore.value).toBe(trackState);
+        expect(undoStore.value).toBe(history);
+        expect(vocals()?.soloed).toBe(false);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it('undoes a valid send while skipping a guarded solo inverse whose target already holds', async () => {
+        const result = await commitAgentBatch([
+            { type: 'setSend', payload: { trackId: VOCALS_ID, busId: REVERB_ID, level: 0.5 } },
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: false } },
+        ]);
+        expect(result).toMatchObject({ status: 'committed' });
+        soloTrackExclusive(REVERB_ID);
+        const soloGateCalls = runtimeMocks.engineSetTrackSoloGate.mock.calls.length;
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+
+        expect(reverbSendLevel()).toBe(0.25);
+        expect(vocals()?.soloed).toBe(false);
+        expect(trackStore.value?.tracks.find((track) => track.id === REVERB_ID)?.soloed).toBe(true);
+        expect(runtimeMocks.engineSetTrackSoloGate).toHaveBeenCalledTimes(soloGateCalls);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
     it('consumes a guarded target-equal redo without writing', async () => {
         await commitAgentBatch([
             { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: false } },

@@ -15,6 +15,8 @@ export const handleSoloTrack = createHandler<'soloTrack'>({
     // on one and overwrite a solo the user set since.
     validate: (action, context) => {
         const currentSoloed = getPlannedTrackState(context, action.payload.trackId)?.soloed;
+        // Grouped undo/redo validates before its no-op check, so an already-held
+        // target must pass this guard to consume history without writing.
         return (
             action.payload.expectedSoloed === undefined ||
             currentSoloed === action.payload.expectedSoloed ||
