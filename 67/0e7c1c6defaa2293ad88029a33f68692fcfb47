@@ -1,0 +1,21 @@
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_29d8df116c5b92::t_ba95a5686d0f6a 1076-1077,1080
+  s_29d8df116c5b92::t_6cafe94297796a 1073-1074
+  s_29d8df116c5b92::t_62f2801e5f7ca0 12,50,1014-1017,1068,1072,1075,1078-1079,1081-1096
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "670e7c1c6defaa2293ad88029a33f68692fcfb47",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
