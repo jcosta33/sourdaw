@@ -2416,6 +2416,75 @@ describe('ExportDialog', () => {
         }
     });
 
+    it('keeps a reopened export pending when an older browser close finishes', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const oldClosing = createDeferred<void>();
+        const currentClosing = createDeferred<void>();
+        const oldWritable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn(() => oldClosing.promise),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        const currentWritable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn(() => currentClosing.promise),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        vi.stubGlobal(
+            'showSaveFilePicker',
+            vi
+                .fn()
+                .mockResolvedValueOnce({ createWritable: async () => oldWritable })
+                .mockResolvedValueOnce({ createWritable: async () => currentWritable })
+        );
+        const onClose = vi.fn();
+        const view = render(<ExportDialog open onClose={onClose} />);
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(oldWritable.close).toHaveBeenCalledTimes(1));
+            view.rerender(<ExportDialog open={false} onClose={onClose} />);
+            view.rerender(<ExportDialog open onClose={onClose} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(currentWritable.close).toHaveBeenCalledTimes(1));
+            const pendingProgress = screen.getByRole('progressbar').getAttribute('aria-valuenow');
+            expect(screen.getByText('Proofing Whole Loaf (offline mixdown)...')).toBeInTheDocument();
+
+            vi.useFakeTimers();
+            await act(async () => {
+                oldClosing.resolve();
+                await oldClosing.promise;
+            });
+            expect(screen.queryByText(/Baking Complete/)).not.toBeInTheDocument();
+            expect(screen.getByText('Proofing Whole Loaf (offline mixdown)...')).toBeInTheDocument();
+            expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', pendingProgress);
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /start baking/i })).not.toBeInTheDocument();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+            await act(async () => vi.advanceTimersByTimeAsync(2500));
+            expect(onClose).not.toHaveBeenCalled();
+            expect(oldWritable.abort).not.toHaveBeenCalled();
+            expect(currentWritable.abort).not.toHaveBeenCalled();
+
+            await act(async () => {
+                currentClosing.resolve();
+                await currentClosing.promise;
+            });
+            expect(screen.getByText('Ding! Baking Complete! 🍞')).toBeInTheDocument();
+            expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+            expect(screen.getByRole('button', { name: /close bakery/i })).toBeInTheDocument();
+            expect(mocks.notifyUser.mock.calls.filter((call) => call[1] === 'success')).toHaveLength(1);
+            await act(async () => vi.advanceTimersByTimeAsync(2500));
+            expect(onClose).toHaveBeenCalledTimes(1);
+        } finally {
+            oldClosing.resolve();
+            currentClosing.resolve();
+            view.unmount();
+            vi.unstubAllGlobals();
+            vi.clearAllTimers();
+            vi.useRealTimers();
+        }
+    });
+
     it('logs an older cleanup failure without replacing a reopened export failure', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
         const oldWrite = createDeferred<void>();

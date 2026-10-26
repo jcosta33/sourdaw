@@ -585,7 +585,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         const whileNotCancelled =
             <Args extends unknown[]>(report: (...args: Args) => void) =>
             (...args: Args): void => {
-                if (!endedCancelled()) {
+                if (!endedCancelled() && currentSession()) {
                     report(...args);
                 }
             };
@@ -795,6 +795,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         commitStartedRef.current = true;
                     }
                 });
+            }
+
+            if (!currentSession()) {
+                return;
             }
 
             setProgress(100);

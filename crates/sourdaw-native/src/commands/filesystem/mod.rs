@@ -131,6 +131,7 @@ pub(crate) fn replace_file_atomically(
     path: &Path,
     write: impl FnOnce(&mut std::fs::File) -> Result<(), String>,
 ) -> Result<(), String> {
+    refuse_export_staging_path(path)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -306,8 +307,30 @@ pub fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+/// Staging names belong only to the export registry, even under a recursive user grant.
+/// Ordinary writers must refuse them before creation as well as after canonicalisation;
+/// otherwise a second atomic write can replace the file that a token later commits.
+fn refuse_export_staging_path(path: &Path) -> Result<(), String> {
+    for component in path.components() {
+        // Match the spellings Windows and case-insensitive volumes may deliver to this name.
+        let name = component.as_os_str().to_string_lossy();
+        let name = name.trim_end_matches(['.', ' ']).to_uppercase();
+        let Some((target, suffix)) = name.rsplit_once(".SOURDAW-EXPORT-") else {
+            continue;
+        };
+        let Some(token) = suffix.strip_suffix(".TMP") else {
+            continue;
+        };
+        if target.starts_with('.') && uuid::Uuid::parse_str(token).is_ok() {
+            return Err("Export temporary paths are native-only".into());
+        }
+    }
+    Ok(())
+}
+
 pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
+    refuse_export_staging_path(&resolved)?;
     if let Ok(canonical) = canonicalize_existing_path(&resolved) {
         ensure_allowed_root(&canonical, GrantMode::ReadWrite)?;
         if canonical.is_dir() {
@@ -467,6 +490,9 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), Stri
         // A distinct one would tell a probing renderer that it had found the
         // directory holding the state that decides what it may reach.
         return Err("Path is outside allowed native file roots".to_string());
+    }
+    if mode == GrantMode::ReadWrite {
+        refuse_export_staging_path(resolved_path)?;
     }
 
     for root in built_in_roots() {
@@ -1759,6 +1785,132 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"new audio");
         registry.abort(std::slice::from_ref(&token)).unwrap();
         assert!(temp_file_residue(&dir.root).is_empty());
+    }
+
+    #[test]
+    fn export_transactions_keep_staging_private_from_other_native_writers() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        for route in ["bytes", "audio", "atomic", "wav", "transaction"] {
+            for sealed in [false, true] {
+                let dir = TempExportDir::create("private-staging");
+                let external = TempAuthorityDir::create_external_sibling();
+                let target = external.path("picked.wav");
+                std::fs::write(&target, b"old committed audio").unwrap();
+                grant_registry::with_grants_for_test(
+                    vec![FileGrant {
+                        canonical: external.root.canonicalize().unwrap(),
+                        mode: GrantMode::ReadWrite,
+                        recursive: true,
+                    }],
+                    || {
+                        let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+                        let token = registry
+                            .begin(target.to_string_lossy().into_owned(), 1)
+                            .unwrap();
+                        registry.append(&token, b"intended audio", 1).unwrap();
+                        if sealed {
+                            registry.seal(&token, 1).unwrap();
+                        }
+                        let temp = registry.transactions[&token].record.temp.clone();
+                        let unrelated = b"unrelated concurrent file";
+                        let result = match route {
+                            "bytes" => runtime.block_on(write_file_bytes(
+                                temp.to_string_lossy().into_owned(),
+                                unrelated,
+                            )),
+                            "audio" => runtime.block_on(write_audio_file(
+                                temp.to_string_lossy().into_owned(),
+                                unrelated.to_vec(),
+                            )),
+                            "atomic" => write_bytes_atomically(&temp, unrelated),
+                            "wav" => write_wav_atomically(
+                                &temp,
+                                WavSpec {
+                                    channels: 1,
+                                    sample_rate: 44100,
+                                    bits_per_sample: 16,
+                                    sample_format: hound::SampleFormat::Int,
+                                },
+                                |writer| writer.write_sample(123_i16).map_err(|e| e.to_string()),
+                            ),
+                            "transaction" => {
+                                let mut other =
+                                    ExportFileRegistry::open(&dir.path("other-private")).unwrap();
+                                other
+                                    .begin(temp.to_string_lossy().into_owned(), 1)
+                                    .and_then(|other_token| {
+                                        other.append(&other_token, unrelated, 1)?;
+                                        other.seal(&other_token, 1)?;
+                                        other.commit(&[other_token], 1)
+                                    })
+                            }
+                            _ => unreachable!(),
+                        };
+                        assert_eq!(std::fs::read(&target).unwrap(), b"old committed audio");
+                        if !sealed {
+                            registry.seal(&token, 1).unwrap();
+                        }
+                        registry.commit(std::slice::from_ref(&token), 1).unwrap();
+                        assert_eq!(
+                            std::fs::read(&target).unwrap(),
+                            b"intended audio",
+                            "{route}, sealed={sealed}, write={result:?}"
+                        );
+                        assert!(
+                            result.is_err(),
+                            "{route} must refuse the native-only staging name"
+                        );
+                        assert!(temp_file_residue(&external.root).is_empty());
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn export_transactions_reserve_staging_names_before_creation_and_through_aliases() {
+        let dir = TempExportDir::create("staging-names");
+        let token = uuid::Uuid::new_v4();
+        let name = format!(".picked.wav.sourdaw-export-{token}.tmp");
+        for spelling in [
+            name.clone(),
+            name.to_uppercase(),
+            format!("{name}. "),
+            name.replace("sourdaw", "ſourdaw"),
+        ] {
+            let path = dir.path(&spelling);
+            assert!(
+                resolve_writable_file_path(path.to_str().unwrap()).is_err(),
+                "{spelling}"
+            );
+            assert!(
+                write_bytes_atomically(&path, b"unowned").is_err(),
+                "{spelling}"
+            );
+            assert!(resolve_writable_file_path(path.join("nested.wav").to_str().unwrap()).is_err());
+            assert!(!path.exists());
+        }
+        // Ordinary atomic destinations remain usable beside the reserved namespace.
+        for name in [
+            "picked.wav",
+            ".picked.wav.tmp",
+            "picked.sourdaw-export-user.tmp",
+        ] {
+            let path = resolve_writable_file_path(dir.path(name).to_str().unwrap()).unwrap();
+            write_bytes_atomically(&path, b"ordinary file").unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), b"ordinary file");
+        }
+        #[cfg(unix)]
+        {
+            let staging = dir.path(&name);
+            std::fs::write(&staging, b"owned staging bytes").unwrap();
+            let alias = dir.path("ordinary-alias.wav");
+            std::os::unix::fs::symlink(&staging, &alias).unwrap();
+            assert!(resolve_writable_file_path(alias.to_str().unwrap()).is_err());
+            assert_eq!(std::fs::read(staging).unwrap(), b"owned staging bytes");
+        }
     }
 
     #[test]
