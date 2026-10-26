@@ -29,3 +29,14 @@ Escape: [#4271](https://github.com/jcosta33/sourdaw/pull/4271), commit
 republish replaced a divergent remote notes history with its stale local map. The missing stance was
 concurrent-writer provenance preservation, including preservation across a later local ref refresh.
 Historical reviewer model, tier, and stance are unknown from the available evidence.
+
+The same PR #4271 forwarded the cached PR base into post-merge authorship rewriting. If unrelated
+commits landed on main before a three-commit feature squash, git-ai 1.7.5 could classify the squash
+as a rebase and select unrelated main commits (#5711). The destination boundary is the landed
+squash's verified sole parent, read from immutable commit headers after fetching; neither the cached
+PR base nor a later main tip proves that boundary. Missing, malformed, unavailable, or ambiguous
+parents must skip the optional rewrite and notes upload. Probe a real Git graph with three source
+commits, unrelated annotated main commits, and another main advance after the squash. Restore the
+cached boundary and require failure; when exercising git-ai itself, also require squash classification,
+the source note union on the squash, and byte-identical unrelated note blobs. Keep all such rewrites
+inside disposable repositories with operator configuration, state, hooks, and network isolated.

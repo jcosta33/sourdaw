@@ -1,9 +1,17 @@
-import { change, clone, getHeads, hasHeads, merge, view } from '@automerge/automerge';
+import { change, clone, getConflicts, getHeads, hasHeads, merge, toJS, view } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureProjectRevision } from '../captureProjectRevision';
 import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '../projectRevisionMatchesLiveIgnoringCommandCheckpoint';
+
+function projectTruth(document: Record<string, unknown> | undefined): unknown {
+    if (!document) {
+        throw new Error('Expected the root document');
+    }
+    const { commandBatchIdempotency: _checkpoint, ...truth } = toJS(document);
+    return truth;
+}
 
 describe('projectRevisionMatchesLiveIgnoringCommandCheckpoint', () => {
     beforeEach(() => {
@@ -249,5 +257,71 @@ describe('projectRevisionMatchesLiveIgnoringCommandCheckpoint', () => {
         expect(mergedHeads).toContain(getHeads(advancedLocal)[0]);
         expect(mergedHeads).toContain(getHeads(remote)[0]);
         expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(committedRevision)).toBe(true);
+    });
+
+    it('accepts checkpoint-only descendants of both captured root heads', () => {
+        const base = automergeRepository.getDoc<Record<string, unknown>>('root');
+        if (!base) {
+            throw new Error('Expected the root document');
+        }
+        const local = change(clone(base, { actor: '3333333333333333' }), (doc) => {
+            doc.tempo = 120;
+        });
+        const remote = change(clone(base, { actor: '4444444444444444' }), (doc) => {
+            doc.projectLabel = 'sharedmix';
+        });
+        const localBranch = clone(local);
+        const remoteBranch = clone(remote);
+        automergeRepository.replaceDocInLineage('root', merge(local, remote));
+        expect(automergeRepository.getHeads('root')).toHaveLength(2);
+        const revision = captureProjectRevision();
+        const capturedTruth = projectTruth(automergeRepository.getDoc('root'));
+
+        const localCheckpoint = change(localBranch, (doc) => {
+            doc.commandBatchIdempotency = { records: [{ batchId: 'batch-local-next' }] };
+        });
+        const remoteCheckpoint = change(remoteBranch, (doc) => {
+            doc.commandBatchIdempotency = { records: [{ batchId: 'batch-remote-next' }] };
+        });
+        automergeRepository.replaceDocInLineage('root', merge(localCheckpoint, remoteCheckpoint));
+
+        expect(automergeRepository.getHeads('root')).toHaveLength(2);
+        expect(projectTruth(automergeRepository.getDoc('root'))).toEqual(capturedTruth);
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(revision)).toBe(true);
+    });
+
+    it('rejects a branch project edit hidden by a captured sibling conflict winner', () => {
+        const base = automergeRepository.getDoc<Record<string, unknown>>('root');
+        if (!base) {
+            throw new Error('Expected the root document');
+        }
+        const local = change(clone(base, { actor: '3333333333333333' }), (doc) => {
+            doc.tempo = 120;
+        });
+        const remote = change(clone(base, { actor: '4444444444444444' }), (doc) => {
+            doc.projectLabel = 'sharedmix';
+            doc.tempo = 120;
+        });
+        const localBranch = clone(local);
+        const remoteBranch = clone(remote);
+        automergeRepository.replaceDocInLineage('root', merge(local, remote));
+        expect(automergeRepository.getHeads('root')).toHaveLength(2);
+        const revision = captureProjectRevision();
+        const capturedTruth = projectTruth(automergeRepository.getDoc('root'));
+
+        const localEdit = change(localBranch, (doc) => {
+            doc.tempo = 128;
+            doc.commandBatchIdempotency = { records: [{ batchId: 'batch-local-edit' }] };
+        });
+        const remoteCheckpoint = change(remoteBranch, (doc) => {
+            doc.commandBatchIdempotency = { records: [{ batchId: 'batch-remote-checkpoint' }] };
+        });
+        const merged = merge(localEdit, remoteCheckpoint);
+        automergeRepository.replaceDocInLineage('root', merged);
+
+        expect(localEdit.tempo).toBe(128);
+        expect(Object.values(getConflicts(merged, 'tempo') ?? {})).toContain(128);
+        expect(projectTruth(merged)).toEqual(capturedTruth);
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(revision)).toBe(false);
     });
 });
