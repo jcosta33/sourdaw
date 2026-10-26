@@ -38,6 +38,7 @@ const trackStripStub = {
     preFaderTap: { connect: () => {} },
 };
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
@@ -93,6 +94,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     takeOwnsRecordingRoot: vi.fn(() => true),
     startRecording: vi.fn(() => []),
@@ -117,6 +121,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
  */
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

@@ -12,6 +12,7 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
+import { recordingPassTiming } from './recordingPassTiming';
 
 /**
  * A take staged at a loop wrap names its pass's media depth; the take opened
@@ -84,7 +85,11 @@ class RecordingRootMovedRefusal extends Error {
 /** What a stop did: `refused` closed nothing (the root moved), `closed` finished normally. */
 export type StopRecordingOutcome = 'refused' | 'closed';
 
-export async function stopRecording(atBeat?: number): Promise<StopRecordingOutcome> {
+export async function stopRecording(
+    atBeat?: number,
+    ending?: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number },
+    manualAudioEnd = false
+): Promise<StopRecordingOutcome> {
     const clipIds = activeRecordingRef.current;
     const captureRootIdentity = activeRecordingRef.capturedRootIdentity ?? null;
     activeRecordingRef.current = [];
@@ -113,9 +118,32 @@ export async function stopRecording(atBeat?: number): Promise<StopRecordingOutco
     }
 
     const endBeat = atBeat ?? transportState.playheadPosition;
-    const clipIdSet = new Set(clipIds);
+    const clipIdSet = new Set(
+        trackState.tracks.flatMap((track) =>
+            track.clips
+                .filter((clip) => clipIds.includes(clip.id) && recordingPassTiming.isCurrent(clip.id, clip.type))
+                .map((clip) => clip.id)
+        )
+    );
+    if (clipIdSet.size === 0) {
+        return 'closed';
+    }
     const lanes = takeLaneStore.value?.lanes ?? [];
     const finalizedMidiClips: Clip[] = [];
+    const pendingEnds = new Map<string, { takeId: string; endBeat: number }>();
+    if (ending) {
+        for (const track of trackState.tracks) {
+            for (const clip of track.clips) {
+                if (!clipIdSet.has(clip.id) || clip.type !== 'audio') {
+                    continue;
+                }
+                const pendingEnd = recordingPassTiming.finish(clip.id, ending, manualAudioEnd ? undefined : endBeat);
+                if (pendingEnd) {
+                    pendingEnds.set(clip.id, pendingEnd);
+                }
+            }
+        }
+    }
 
     setTrackState({
         ...trackState,
@@ -155,7 +183,11 @@ export async function stopRecording(atBeat?: number): Promise<StopRecordingOutco
                     if (!clipIdSet.has(take.clipId)) {
                         return take;
                     }
-                    const closed = closeTakeAt(take, endBeat);
+                    const pendingEnd = pendingEnds.get(take.clipId);
+                    let closed = closeTakeAt(take, endBeat);
+                    if (pendingEnd && pendingEnd.takeId === take.id) {
+                        closed = { ...take, endBeat: Math.min(take.endBeat, pendingEnd.endBeat) };
+                    }
                     const recordPointBeat = midiRecordPointBeats.get(take.clipId);
                     if (recordPointBeat === undefined) {
                         return closed;

@@ -1529,6 +1529,7 @@ describe('scheduleAudioClips', () => {
         // instant (10.1) is still ahead of the clock (10).
         schedulerSession.pendingSeam = {
             seamAudioTime: 10.1,
+            destinationBeat: 4,
             anchorAudioTime: 9.9,
             anchorPosition: 11.8,
         };
