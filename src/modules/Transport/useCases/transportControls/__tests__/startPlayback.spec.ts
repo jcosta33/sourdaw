@@ -20,6 +20,8 @@ import { ensureTrackStrips } from '../../ensureTrackStrips';
 import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { startPlayback } from '../startPlayback';
 
 const { timeSignatureMapStore } = vi.hoisted(
@@ -60,6 +62,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
+vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'playback-root' }));
+vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('../../playheadScheduler/claimSchedulerSession', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../playheadScheduler/claimSchedulerSession')>();
     return { claimSchedulerSession: vi.fn(actual.claimSchedulerSession) };
@@ -91,7 +96,24 @@ describe('startPlayback', () => {
         // nothing about the native engine take the unheld path they always had.
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
         vi.mocked(notifyUser).mockClear();
-        vi.mocked(startPlayheadScheduler).mockClear();
+        vi.mocked(startPlayheadScheduler).mockReset();
+        vi.mocked(startPlayheadScheduler).mockImplementation((prepared) =>
+            prepared ? Promise.resolve(true) : undefined
+        );
+        vi.mocked(prepareInitialBrowserPlayback).mockImplementation((generation) => ({
+            generation,
+            epoch: schedulerSession.discontinuityEpoch,
+            seam: null,
+            ownsSession: () => true,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+            prepareMidiWindows: async () => ({
+                isCurrent: () => true,
+                midiWindow: () => {
+                    throw new Error('Scheduler boundary is mocked in this spec');
+                },
+            }),
+        }));
         vi.mocked(ensureTrackStrips).mockClear();
         // Back to the real retirement: only the one isolation case overrides it.
         vi.mocked(claimSchedulerSession).mockReset();
@@ -133,6 +155,27 @@ describe('startPlayback', () => {
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('suspended'), 'warning');
         });
+    });
+
+    it('awaits browser admission and passes the recording anchor callback to its owner', async () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false });
+        const admission = Promise.withResolvers<boolean>();
+        vi.mocked(startPlayheadScheduler).mockReturnValue(admission.promise);
+        const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
+        let settled = false;
+        const playback = startPlayback(onRoll).then(() => {
+            settled = true;
+        });
+        const schedulerCall = vi.mocked(startPlayheadScheduler).mock.calls[0];
+        expect(schedulerCall?.[0]).toBeDefined();
+        expect(schedulerCall?.[1]).toBe(onRoll);
+        expect(settled).toBe(false);
+        expect(onRoll).not.toHaveBeenCalled();
+        schedulerCall?.[1]?.(10.1, 4);
+        admission.resolve(true);
+        await playback;
+        expect(settled).toBe(true);
+        expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.1, 4);
     });
 
     it('rolls in over the bars the time-signature map defines, not the flat numerator', () => {
@@ -378,6 +421,25 @@ describe('startPlayback', () => {
             expect(rollingSinceAtRoll).toBeNull();
         });
 
+        it('hands recording the admitted native scheduler anchor after the hold ends', async () => {
+            const session = Promise.withResolvers<void>();
+            vi.mocked(startNativeLiveGraphSession).mockImplementation(async () => {
+                await session.promise;
+                return { outcome: 'declined', reason: 'controlled native admission' };
+            });
+            vi.mocked(startPlayheadScheduler).mockImplementation(() => {
+                playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+                playheadClockRef.beat = 4;
+            });
+            const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
+            const playback = startPlayback(onRoll);
+            expect(onRoll).not.toHaveBeenCalled();
+            audioClock.currentTime = 10.08;
+            session.resolve();
+            await playback;
+            expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.08, 4);
+        });
+
         it('starts the scheduler once when the native session fails, so a dead addon cannot silence play', async () => {
             vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
 
@@ -537,7 +599,7 @@ describe('startPlayback', () => {
             }
         });
 
-        it('starts the scheduler synchronously on a browser build, which is offered no session to wait for', () => {
+        it('hands browser admission to the scheduler without asking for a native session', () => {
             vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
 
             startPlayback();

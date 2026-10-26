@@ -349,8 +349,9 @@ function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
             transportHold.requestedAtContextSeconds = ctx.currentTime;
             transportHold.rollLeadBeats =
                 current.playheadPosition - resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
-            await startPlayback();
-            transportHold.rolledAtContextSeconds = ctx.currentTime;
+            await startPlayback((contextSeconds) => {
+                transportHold.rolledAtContextSeconds = contextSeconds;
+            });
         }
         return null;
     });

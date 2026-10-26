@@ -27,7 +27,8 @@ export function scheduleMetronome(
     fromBeat: number,
     toBeat: number,
     accumulatedPosition: number,
-    transport: TransportState
+    transport: TransportState,
+    initialSchedulingAnchor?: number
 ): void {
     if (!transport.metronomeEnabled) {
         return;
@@ -70,7 +71,9 @@ export function scheduleMetronome(
         // rate for the beats before the change, so with any tempo change inside
         // the look-ahead the click landed at the wrong instant and drifted
         // against the MIDI path, which has always integrated the map.
-        const time = nowTime + secondsBetweenBeats(tempoChanges, accumulatedPosition, beat, transport.tempo);
+        const time =
+            (initialSchedulingAnchor ?? nowTime) +
+            secondsBetweenBeats(tempoChanges, accumulatedPosition, beat, transport.tempo);
 
         // Suppress a second click at the same instant — the loop-wrap double-fire
         // of an integer loopEnd downbeat re-emitted as the wrapped loopStart beat.

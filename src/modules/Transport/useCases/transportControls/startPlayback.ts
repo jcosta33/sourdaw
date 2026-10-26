@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
@@ -10,19 +11,22 @@ import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
+import { prepareInitialBrowserPlayback } from '../playheadScheduler/prepareInitialBrowserPlayback';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
 import { startSchedulerWhenNativeSessionSettles, type HoldRelease } from './startSchedulerWhenNativeSessionSettles';
+import { stopPlayback } from './stopPlayback';
 
 /**
  * Resolves once the scheduler start has been decided, so a caller that has to
  * know when the transport actually rolled — a take opened from a stopped
  * transport, whose buffer is placed against that instant — can wait for it. A
- * browser build decides synchronously; a desktop build decides when the native
- * session settles or the hold cap expires.
+ * browser build prepares its first window before admitting the roll; a desktop
+ * build decides when the native session settles or the hold cap expires.
  */
-export async function startPlayback(): Promise<void> {
+export async function startPlayback(onRoll?: (contextSeconds: number, beat: number) => void): Promise<void> {
     const state = getTransportState();
     if (!state) {
         return;
@@ -60,7 +64,34 @@ export async function startPlayback(): Promise<void> {
     playheadWrapCountRef.current = 0;
 
     if (!nativeLiveGraphSessionOffered()) {
-        startPlayheadScheduler();
+        const generation = claimSchedulerSession();
+        const root = captureProjectRootIdentity();
+        const stillOwnsRequest = () =>
+            schedulerSession.generation === generation &&
+            captureProjectRootIdentity() === root &&
+            getTransportState()?.isPlaying === true;
+        const refuseCurrentRequest = async () => {
+            if (stillOwnsRequest()) {
+                await stopPlayback();
+                notifyUser('Playback changed while preparing. Press Play again.', 'warning');
+            }
+        };
+        try {
+            const prepared = prepareInitialBrowserPlayback(generation);
+            if (!prepared) {
+                await refuseCurrentRequest();
+                return;
+            }
+            // The scheduler settles recording and programme readiness before
+            // admitting its one future roll anchor.
+            const started = await startPlayheadScheduler(prepared, onRoll);
+            if (started !== true) {
+                await refuseCurrentRequest();
+            }
+        } catch (error) {
+            logger.error(new Error('Playback preparation failed', { cause: error }));
+            await refuseCurrentRequest();
+        }
         return;
     }
 
@@ -80,5 +111,5 @@ export async function startPlayback(): Promise<void> {
         kind: 'held',
         webAudioRollingSince: () => release.contextSeconds,
     });
-    await startSchedulerWhenNativeSessionSettles(session, generation, release);
+    await startSchedulerWhenNativeSessionSettles(session, generation, release, onRoll);
 }

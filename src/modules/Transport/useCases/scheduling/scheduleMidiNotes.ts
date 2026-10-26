@@ -1,5 +1,5 @@
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { getSynthParamsForTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
@@ -15,7 +15,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
-import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { grooveTemplateStore, midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectChannelBend,
@@ -38,6 +38,8 @@ import {
     type NoteReceivingInstrumentKind,
     resolveDrumKitOutputGain,
 } from '#/utils/deviceTypeMatching';
+import { valuesEqual } from '#/utils/structuralEquality';
+import { readYeastRack } from '#/modules/Yeast/stores';
 import { MAX_MIDI_DATA_7BIT, PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 import { resolveToasterPadIndex, TOASTER_NEUTRAL_MIDI_NOTE } from '#/utils/toasterNoteProjection';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
@@ -939,6 +941,260 @@ function getSourceOccurrenceOffset({
  * schedules again after a track or clip mute withheld its stored controllers gets
  * the same restore in that window.
  */
+function resolveMidiWindowClips(track: SchedulerTrack, fromBeat: number, toBeat: number) {
+    const clips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
+    if (clips.length === 0) {
+        return [];
+    }
+    return resolveClipsWithComping(track.id, clips).filter(
+        (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
+    );
+}
+
+async function prepareYeastTrackNotes(
+    track: SchedulerTrack,
+    activeMidiClips: ReturnType<typeof resolveMidiWindowClips>,
+    midiState: MidiStoreState,
+    fromBeat: number,
+    toBeat: number,
+    changes: NonNullable<typeof tempoMapStore.value>['changes'],
+    transport: TransportState,
+    cancellation?: SchedulerCancellation
+) {
+    const isCurrent = cancellation?.isCurrent ?? (() => true);
+    const yeastDevice = track.devices.find((device) => device.type === 'yeast');
+    const liveYeastIterations: LiveYeastIteration[] = [];
+    let activeYeastCarrierRouteId: string | undefined;
+
+    if (yeastDevice) {
+        for (const clip of activeMidiClips) {
+            const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
+
+            const clipVisualLength = clip.endBeat - clip.startBeat;
+            const loopProjection = projectClipLoopExpansion({
+                clipDurationBeats: clipVisualLength,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
+            const loopLength = loopProjection.loopLengthBeats;
+            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+                sourceStartBeat: clip.sourceStartBeat,
+                segmentStartBeat: clip.startBeat,
+                loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
+            const iterationCount = loopProjection.iterationCount;
+            const activeIterationRange = getScheduledIterationRange({
+                clipStartBeat: clip.startBeat,
+                fromBeat,
+                iterationCount,
+                loopEnabled: clip.loopEnabled ?? false,
+                loopLengthBeats: loopLength,
+                toBeat,
+            });
+            const candidateIterationRange = getYeastCandidateIterationRange({
+                clipStartBeat: clip.startBeat,
+                fromBeat,
+                iterationCount,
+                loopEnabled: clip.loopEnabled ?? false,
+                loopLengthBeats: loopLength,
+                midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                notes: sourceNotes,
+                toBeat,
+            });
+            for (
+                let iteration = candidateIterationRange.startIndex;
+                iteration < candidateIterationRange.endIndex;
+                iteration++
+            ) {
+                if (!isCurrent()) {
+                    return null;
+                }
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
+                const iterationStartBeat = clip.startBeat + iteration * loopLength;
+                const iterationEndBeat = Math.min(iterationStartBeat + loopLength, clip.endBeat);
+                const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
+                const candidateNotes = selectYeastNotesForSchedulerWindow({
+                    notes: sourceNotes,
+                    iterationStartBeat,
+                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                    loopEnabled: clip.loopEnabled ?? false,
+                    loopLengthBeats: loopLength,
+                    clipStartBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    fromBeat,
+                    toBeat,
+                });
+                const isActiveIteration =
+                    iteration >= activeIterationRange.startIndex && iteration < activeIterationRange.endIndex;
+                if (!isActiveIteration && candidateNotes.length === 0) {
+                    continue;
+                }
+                const iterationDescriptor = {
+                    routeId,
+                    clipId: clip.id,
+                    iterationStartBeat,
+                    iterationEndBeat,
+                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                    loopEnabled: clip.loopEnabled ?? false,
+                    loopLengthBeats: loopLength,
+                    clipStartBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    sourceNotes,
+                } satisfies LiveYeastIteration;
+                cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);
+                liveYeastIterations.push({
+                    ...iterationDescriptor,
+                    sourceNotes: candidateNotes.filter((note) =>
+                        shouldPlayMidiEvent({
+                            projectProbabilitySeed: midiState.probabilitySeed,
+                            clipId: clip.id,
+                            eventId: note.id,
+                            absoluteOccurrenceIndex,
+                            probabilityPercent: note.probability ?? 100,
+                        })
+                    ),
+                });
+                if (activeYeastCarrierRouteId === undefined && isActiveIteration) {
+                    activeYeastCarrierRouteId = routeId;
+                }
+            }
+        }
+    }
+
+    const liveYeastNotesByRoute = new Map<string, LiveYeastNote[]>();
+    const trackScopedYeastNoteIds = new Set<string>();
+    if (yeastDevice && activeYeastCarrierRouteId !== undefined) {
+        const yeastResult = await processLiveYeastTrackBlock({
+            context: getAudioContext(),
+            rackId: yeastDevice.id,
+            trackId: track.id,
+            iterations: liveYeastIterations,
+            fromBeat,
+            toBeat,
+            changes,
+            timeSignatureChanges: timeSignatureMapStore.value?.changes ?? [],
+            transport,
+            discontinuityEpoch: cancellation?.discontinuityEpoch,
+            isCurrent,
+            routeLineage: cancellation?.yeastRouteLineage,
+        });
+        if (!yeastResult) {
+            return null;
+        }
+        for (const [routeId, routeNotes] of yeastResult.notesByRoute) {
+            liveYeastNotesByRoute.set(routeId, routeNotes);
+        }
+        if (yeastResult.generatedNotes.length > 0) {
+            for (const note of yeastResult.generatedNotes) {
+                const hasOriginCarrier = liveYeastIterations.some(
+                    (iteration) =>
+                        iteration.iterationStartBeat <= note.startBeat && note.startBeat < iteration.iterationEndBeat
+                );
+                if (!hasOriginCarrier) {
+                    continue;
+                }
+                const [projectedNote] = projectCommittedGroove({
+                    events: [note],
+                    consumerType: 'sequencer',
+                    consumerId: 'project',
+                });
+                const carrierIteration = liveYeastIterations.find(
+                    (iteration) =>
+                        projectedNote &&
+                        iteration.iterationStartBeat <= projectedNote.startBeat &&
+                        projectedNote.startBeat < iteration.iterationEndBeat
+                );
+                if (!projectedNote || !carrierIteration) {
+                    continue;
+                }
+                const carrierNotes = liveYeastNotesByRoute.get(carrierIteration.routeId) ?? [];
+                carrierNotes.push(projectedNote);
+                liveYeastNotesByRoute.set(carrierIteration.routeId, carrierNotes);
+                trackScopedYeastNoteIds.add(projectedNote.id);
+            }
+        }
+    }
+    return { yeastDevice, liveYeastNotesByRoute, trackScopedYeastNoteIds };
+}
+
+type PreparedYeastTrackNotes = NonNullable<Awaited<ReturnType<typeof prepareYeastTrackNotes>>>;
+
+/** A source witness captured before any external readiness wait. */
+export function captureInitialMidiProgramme(cancellation: SchedulerCancellation) {
+    const trackState = trackStore.value;
+    const midiState = midiStore.value;
+    const takeState = takeLaneStore.value;
+    const grooveState = grooveTemplateStore.value;
+    const tempoState = tempoMapStore.value;
+    const meterState = timeSignatureMapStore.value;
+    const racks = (trackState?.tracks ?? []).flatMap((track) =>
+        track.devices
+            .filter((device) => device.type === 'yeast')
+            .map((device) => ({ id: device.id, processors: structuredClone(readYeastRack(device.id).processors) }))
+    );
+    const isCurrent = () =>
+        cancellation.isCurrent() &&
+        racks.every((rack) => valuesEqual(readYeastRack(rack.id).processors, rack.processors)) &&
+        trackStore.value === trackState &&
+        midiStore.value === midiState &&
+        takeLaneStore.value === takeState &&
+        grooveTemplateStore.value === grooveState &&
+        tempoMapStore.value === tempoState &&
+        timeSignatureMapStore.value === meterState;
+    return { trackState, midiState, tempoState, isCurrent };
+}
+
+/** Prepare only the external MIDI work. No controller, note or source is emitted here. */
+export async function prepareInitialMidiWindow(
+    fromBeat: number,
+    toBeat: number,
+    transport: TransportState,
+    cancellation: SchedulerCancellation,
+    programme: ReturnType<typeof captureInitialMidiProgramme>
+) {
+    const { trackState, midiState, tempoState, isCurrent } = programme;
+    const yeastByTrack = new Map<string, PreparedYeastTrackNotes>();
+    const tracks = trackState?.tracks ?? [];
+    const busIds = new Set(tracks.filter((track) => track.kind === 'bus').map((track) => track.id));
+    if (midiState) {
+        for (const track of tracks) {
+            if (!isCurrent()) {
+                return null;
+            }
+            if (
+                track.kind !== 'midi' ||
+                (track.muted && !track.sends.some((send) => send.preFader && busIds.has(send.busId))) ||
+                frozenBufferIdOf(track) ||
+                !track.devices.some((device) => device.type === 'yeast')
+            ) {
+                continue;
+            }
+            const clips = resolveMidiWindowClips(track, fromBeat, toBeat);
+            if (clips.length === 0) {
+                continue;
+            }
+            const prepared = await prepareYeastTrackNotes(
+                track,
+                clips,
+                midiState,
+                fromBeat,
+                toBeat,
+                tempoState?.changes ?? [],
+                transport,
+                { ...cancellation, isCurrent }
+            );
+            if (!prepared || !isCurrent()) {
+                return null;
+            }
+            yeastByTrack.set(track.id, prepared);
+        }
+    }
+    return isCurrent() ? { fromBeat, toBeat, yeastByTrack, isCurrent } : null;
+}
+
+type PreparedInitialMidiWindow = NonNullable<Awaited<ReturnType<typeof prepareInitialMidiWindow>>>;
+
 export async function scheduleMidiNotes(
     fromBeat: number,
     toBeat: number,
@@ -948,9 +1204,20 @@ export async function scheduleMidiNotes(
     transport: TransportState,
     currentTempo: number,
     cancellation?: SchedulerCancellation,
-    opensAtRelocation = false
+    opensAtRelocation = false,
+    preparedInitialWindow?: PreparedInitialMidiWindow,
+    initialSchedulingAnchor?: number
 ): Promise<void> {
-    const isCurrent = cancellation?.isCurrent ?? (() => true);
+    const isCurrent = () => (cancellation?.isCurrent() ?? true) && (preparedInitialWindow?.isCurrent() ?? true);
+    if (!isCurrent()) {
+        return;
+    }
+    if (
+        preparedInitialWindow &&
+        (preparedInitialWindow.fromBeat !== fromBeat || preparedInitialWindow.toBeat !== toBeat)
+    ) {
+        throw new Error('Prepared MIDI window does not match the initial emission');
+    }
     // A relocation is not a continuation: the changes a note's own curves parked belong to the pass it
     // leaves, and must not bend the notes the next pass starts at their pitch. A relocation that silences
     // the notes (a late wrap, a jump, an edit) has forgotten the registry before this window; the
@@ -1009,16 +1276,18 @@ export async function scheduleMidiNotes(
     // The sample frame a beat is posted at on one track's clock, for the window's own moves and for
     // a relocation's restore alike. A caller that keeps the clock past this window freezes the time it
     // stands for (`currentTime`), as a started note does.
-    const sampleFrameAtBeatOnTrack = (trackId: string, currentTime?: number) => (beat: number) => {
-        const { sampleRate } = getAudioContext();
-        return placeSamplesOnClock({
-            startSamples: beatToSamples(changes, beat, transport.tempo, sampleRate),
-            accumulatedSamples: beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate),
-            sampleRate,
-            compensation: getCompensationDelay(trackId),
-            currentTime,
-        }).sampleFrame;
-    };
+    const sampleFrameAtBeatOnTrack =
+        (trackId: string, currentTime = initialSchedulingAnchor) =>
+        (beat: number) => {
+            const { sampleRate } = getAudioContext();
+            return placeSamplesOnClock({
+                startSamples: beatToSamples(changes, beat, transport.tempo, sampleRate),
+                accumulatedSamples: beatToSamples(changes, accumulatedPosition, transport.tempo, sampleRate),
+                sampleRate,
+                compensation: getCompensationDelay(trackId),
+                currentTime,
+            }).sampleFrame;
+        };
     // The beat `sampleFrameAtBeatOnTrack` places on a frame: where a note released on that frame ends in
     // this window's beats.
     const beatAtFrameOnTrack = (trackId: string, currentTime: number) => (frame: number) => {
@@ -1180,7 +1449,7 @@ export async function scheduleMidiNotes(
         if (!soundingAtRelocation || !isCurrent()) {
             return;
         }
-        const relocationClockTime = getCurrentTime();
+        const relocationClockTime = initialSchedulingAnchor ?? getCurrentTime();
         for (const track of tracks) {
             const soundingNotes = soundingAtRelocation.get(track.id);
             if (!soundingNotes || frozenBufferIdOf(track)) {
@@ -1237,7 +1506,8 @@ export async function scheduleMidiNotes(
                     accumulatedPosition,
                     activeAudioSources,
                     currentTempo,
-                    floorsToWindowStart ? fromBeat : null
+                    floorsToWindowStart ? fromBeat : null,
+                    initialSchedulingAnchor
                 );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
@@ -1247,16 +1517,7 @@ export async function scheduleMidiNotes(
         }
 
         const resumesAfterMute = takeResumeAfterMute(track);
-        const windowMidiClips = selectMidiClipsForSchedulerWindow({ clips: track.clips, fromBeat, toBeat });
-        if (windowMidiClips.length === 0) {
-            settleGapWindow(track, resumesAfterMute);
-            continue;
-        }
-
-        const resolvedClips = resolveClipsWithComping(track.id, windowMidiClips);
-        const activeMidiClips = resolvedClips.filter(
-            (clip) => !clip.muted && clip.type === 'midi' && clip.endBeat > fromBeat && clip.startBeat < toBeat
-        );
+        const activeMidiClips = resolveMidiWindowClips(track, fromBeat, toBeat);
         if (activeMidiClips.length === 0) {
             settleGapWindow(track, resumesAfterMute);
             continue;
@@ -1270,159 +1531,26 @@ export async function scheduleMidiNotes(
         const drumKitGain = resolveDrumKitOutputGain(track.devices);
         const withheldNoteVoicingDevice = findWithheldNoteVoicingDevice(track, tracks);
         const yeastDevice = track.devices.find((device) => device.type === 'yeast');
-        const liveYeastIterations: LiveYeastIteration[] = [];
-        let activeYeastCarrierRouteId: string | undefined;
-
-        if (yeastDevice) {
-            for (const clip of activeMidiClips) {
-                const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
-
-                const clipVisualLength = clip.endBeat - clip.startBeat;
-                const loopProjection = projectClipLoopExpansion({
-                    clipDurationBeats: clipVisualLength,
-                    configuredLoopLengthBeats: clip.loopLength,
-                    loopEnabled: clip.loopEnabled ?? false,
-                });
-                const loopLength = loopProjection.loopLengthBeats;
-                const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-                    sourceStartBeat: clip.sourceStartBeat,
-                    segmentStartBeat: clip.startBeat,
-                    loopLength,
-                    loopEnabled: clip.loopEnabled ?? false,
-                });
-                const iterationCount = loopProjection.iterationCount;
-                const activeIterationRange = getScheduledIterationRange({
-                    clipStartBeat: clip.startBeat,
-                    fromBeat,
-                    iterationCount,
-                    loopEnabled: clip.loopEnabled ?? false,
-                    loopLengthBeats: loopLength,
-                    toBeat,
-                });
-                const candidateIterationRange = getYeastCandidateIterationRange({
-                    clipStartBeat: clip.startBeat,
-                    fromBeat,
-                    iterationCount,
-                    loopEnabled: clip.loopEnabled ?? false,
-                    loopLengthBeats: loopLength,
-                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                    notes: sourceNotes,
-                    toBeat,
-                });
-                for (
-                    let iteration = candidateIterationRange.startIndex;
-                    iteration < candidateIterationRange.endIndex;
-                    iteration++
-                ) {
-                    if (!isCurrent()) {
-                        return;
-                    }
-                    const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
-                    const iterationStartBeat = clip.startBeat + iteration * loopLength;
-                    const iterationEndBeat = Math.min(iterationStartBeat + loopLength, clip.endBeat);
-                    const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                    const candidateNotes = selectYeastNotesForSchedulerWindow({
-                        notes: sourceNotes,
-                        iterationStartBeat,
-                        midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                        loopEnabled: clip.loopEnabled ?? false,
-                        loopLengthBeats: loopLength,
-                        clipStartBeat: clip.startBeat,
-                        loopOriginBeat: clip.loopOriginBeat,
-                        fromBeat,
-                        toBeat,
-                    });
-                    const isActiveIteration =
-                        iteration >= activeIterationRange.startIndex && iteration < activeIterationRange.endIndex;
-                    if (!isActiveIteration && candidateNotes.length === 0) {
-                        continue;
-                    }
-                    const iterationDescriptor = {
-                        routeId,
-                        clipId: clip.id,
-                        iterationStartBeat,
-                        iterationEndBeat,
-                        midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                        loopEnabled: clip.loopEnabled ?? false,
-                        loopLengthBeats: loopLength,
-                        clipStartBeat: clip.startBeat,
-                        loopOriginBeat: clip.loopOriginBeat,
-                        sourceNotes,
-                    } satisfies LiveYeastIteration;
-                    cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);
-                    liveYeastIterations.push({
-                        ...iterationDescriptor,
-                        sourceNotes: candidateNotes.filter((note) =>
-                            shouldPlayMidiEvent({
-                                projectProbabilitySeed: midiState.probabilitySeed,
-                                clipId: clip.id,
-                                eventId: note.id,
-                                absoluteOccurrenceIndex,
-                                probabilityPercent: note.probability ?? 100,
-                            })
-                        ),
-                    });
-                    if (activeYeastCarrierRouteId === undefined && isActiveIteration) {
-                        activeYeastCarrierRouteId = routeId;
-                    }
-                }
-            }
-        }
-
-        const liveYeastNotesByRoute = new Map<string, LiveYeastNote[]>();
-        const trackScopedYeastNoteIds = new Set<string>();
-        if (yeastDevice && activeYeastCarrierRouteId !== undefined) {
-            const yeastResult = await processLiveYeastTrackBlock({
-                context: getAudioContext(),
-                rackId: yeastDevice.id,
-                trackId: track.id,
-                iterations: liveYeastIterations,
+        let yeastNotes: PreparedYeastTrackNotes | null | undefined;
+        if (preparedInitialWindow) {
+            yeastNotes = preparedInitialWindow.yeastByTrack.get(track.id);
+        } else if (yeastDevice) {
+            yeastNotes = await prepareYeastTrackNotes(
+                track,
+                activeMidiClips,
+                midiState,
                 fromBeat,
                 toBeat,
                 changes,
-                timeSignatureChanges: timeSignatureMapStore.value?.changes ?? [],
                 transport,
-                discontinuityEpoch: cancellation?.discontinuityEpoch,
-                isCurrent,
-                routeLineage: cancellation?.yeastRouteLineage,
-            });
-            if (!yeastResult) {
-                return;
-            }
-            for (const [routeId, routeNotes] of yeastResult.notesByRoute) {
-                liveYeastNotesByRoute.set(routeId, routeNotes);
-            }
-            if (yeastResult.generatedNotes.length > 0) {
-                for (const note of yeastResult.generatedNotes) {
-                    const hasOriginCarrier = liveYeastIterations.some(
-                        (iteration) =>
-                            iteration.iterationStartBeat <= note.startBeat &&
-                            note.startBeat < iteration.iterationEndBeat
-                    );
-                    if (!hasOriginCarrier) {
-                        continue;
-                    }
-                    const [projectedNote] = projectCommittedGroove({
-                        events: [note],
-                        consumerType: 'sequencer',
-                        consumerId: 'project',
-                    });
-                    const carrierIteration = liveYeastIterations.find(
-                        (iteration) =>
-                            projectedNote &&
-                            iteration.iterationStartBeat <= projectedNote.startBeat &&
-                            projectedNote.startBeat < iteration.iterationEndBeat
-                    );
-                    if (!projectedNote || !carrierIteration) {
-                        continue;
-                    }
-                    const carrierNotes = liveYeastNotesByRoute.get(carrierIteration.routeId) ?? [];
-                    carrierNotes.push(projectedNote);
-                    liveYeastNotesByRoute.set(carrierIteration.routeId, carrierNotes);
-                    trackScopedYeastNoteIds.add(projectedNote.id);
-                }
-            }
+                cancellation
+            );
         }
+        if (yeastDevice && !yeastNotes) {
+            return;
+        }
+        const liveYeastNotesByRoute = yeastNotes?.liveYeastNotesByRoute ?? new Map<string, LiveYeastNote[]>();
+        const trackScopedYeastNoteIds = yeastNotes?.trackScopedYeastNoteIds ?? new Set<string>();
 
         // Every clip of this track posts through one queue, so the order a
         // frame's events reach the instrument does not depend on the clip order.
@@ -1725,6 +1853,7 @@ export async function scheduleMidiNotes(
                             accumulatedSamples,
                             sampleRate: sr,
                             compensation,
+                            currentTime: initialSchedulingAnchor,
                         });
                         const durationSamples = noteEndSamples - noteStartSamples;
                         const duration = durationSamples / sr;
@@ -1738,6 +1867,7 @@ export async function scheduleMidiNotes(
                             accumulatedSamples,
                             sampleRate: sr,
                             compensation,
+                            currentTime: initialSchedulingAnchor,
                         }).sampleFrame;
                         const noteGain = isTrackScopedYeastNote ? 1 : clip.gain;
 
@@ -1849,7 +1979,7 @@ export async function scheduleMidiNotes(
                                     : undefined;
                             // Later windows place its changes through this
                             // same clock, frozen at the time it started.
-                            const noteClockTime = getCurrentTime();
+                            const noteClockTime = initialSchedulingAnchor ?? getCurrentTime();
                             const expression =
                                 note.expression || trackBend
                                     ? startNoteExpression({
@@ -1965,6 +2095,7 @@ export async function scheduleMidiNotes(
                     accumulatedSamples,
                     sampleRate,
                     compensation: getCompensationDelay(trackId),
+                    currentTime: initialSchedulingAnchor,
                 }).sampleFrame,
         });
     }
