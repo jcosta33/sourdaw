@@ -22,7 +22,7 @@ const ensure_track_strip = vi.hoisted(() => vi.fn());
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioEngine: { context: audio_clock },
+    audioEngine: { context: audio_clock, ensureTrackStrip: ensure_track_strip },
     applyNoteExpression: apply_note_expression,
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: () => 0,
@@ -159,6 +159,7 @@ describe('event-time recording beat (#4875)', () => {
         });
         await dispatch([0x91, 60, 100], 1000);
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(8);
+        expect(ensure_track_strip).toHaveBeenCalledExactlyOnceWith('track-1');
         expect(playheadWrapCountRef.current).toBe(0);
         expect(playheadClockRef.beat).toBe(0);
     });
