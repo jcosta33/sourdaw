@@ -22,6 +22,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { guardFailureReceiptPath } from '../prContract';
+import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     main,
     parseCliArgs,
@@ -2745,6 +2746,123 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         }
     );
 
+    it.skipIf(process.getuid === undefined).each([
+        { route: 'whole', ending: 'clear', state: 'dead', samples: 2, scopedSamples: 0 },
+        { route: 'whole', ending: 'holder', state: 'alive', samples: 2, scopedSamples: 0 },
+        { route: 'whole', ending: 'diagnostic', state: 'unknown', samples: 50, scopedSamples: 0 },
+        { route: 'whole', ending: 'omission', state: 'unknown', samples: 50, scopedSamples: 0 },
+        { route: 'scoped', ending: 'clear', state: 'dead', samples: 2, scopedSamples: 1 },
+        { route: 'scoped', ending: 'holder', state: 'alive', samples: 2, scopedSamples: 1 },
+        { route: 'scoped', ending: 'diagnostic', state: 'unknown', samples: 25, scopedSamples: 25 },
+        { route: 'scoped', ending: 'omission', state: 'unknown', samples: 49, scopedSamples: 1 },
+    ])(
+        'refreshes an incomplete Darwin $route inspection until $ending proof',
+        async ({ route, ending, state, samples, scopedSamples }) => {
+            const root = fixture();
+            chmodSync(root, 0o700);
+            // Use the real parser, census and storage release with a deterministic clock.
+            // Every lsof read costs 100 ms; ps reads leave time unchanged.
+            const program = `
+                import childProcess from 'node:child_process';
+                import os from 'node:os';
+                import {syncBuiltinESMExports} from 'node:module';
+                import {existsSync} from 'node:fs';
+                const route=${JSON.stringify(route)},ending=${JSON.stringify(ending)};
+                const uid=process.getuid(),pid=process.pid,missed=pid+100000;
+                let now=0,samples=0,scopedSamples=0,processSamples=0,temp;
+                let reads=[],timeouts=[];
+                os.platform=()=> 'darwin';
+                Date.now=()=>now;
+                process.kill=()=>true;
+                const entry=(pid,path)=>'p'+pid+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';
+                const diagnostic=(pid)=>'p'+pid+'\\0\\nf3\\0tREG\\0nPermission denied\\0\\n';
+                const omission=(pid)=>'p'+pid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                childProcess.spawnSync=(command,args,options)=>{
+                    let stdout;
+                    if(command==='ps'){
+                        if(args[0]==='-p')stdout=uid+' S\\n';
+                        else{
+                            processSamples++;
+                            stdout=pid+' '+uid+'\\n'+(route==='scoped'?missed+' '+uid+'\\n':'');
+                        }
+                    }else if(command==='lsof'){
+                        const scoped=args.includes('-p');
+                        reads.push(scoped?'scoped':'whole');
+                        timeouts.push(options.timeout);
+                        now+=100;
+                        if(scoped){
+                            scopedSamples++;
+                            stdout=diagnostic(missed);
+                        }else{
+                            samples++;
+                            if(ending==='omission'&&samples>1)stdout=omission(pid);
+                            else if(route==='whole'&&(samples===1||ending==='diagnostic')){
+                                // A path before the diagnostic must not survive the discarded catalog.
+                                stdout=entry(pid,temp)+diagnostic(missed);
+                            }else{
+                                stdout=entry(pid,'/outside');
+                                if(route==='scoped'&&samples>1&&ending!=='diagnostic')stdout+=entry(missed,ending==='holder'?temp:'/outside');
+                                if(route==='whole'&&ending==='holder')stdout=entry(pid,temp);
+                            }
+                        }
+                    }else throw Error('unexpected command '+command);
+                    return {status:0,stdout,stderr:''};
+                };
+                syncBuiltinESMExports();
+                const {storageFileState}=await import(${JSON.stringify(guardPath)});
+                const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+                const reasons=[];
+                const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
+                const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+                temp=storage.tempDirectory;
+                const state=storageFileState([temp],[],reason=>reasons.push(reason));
+                const initial={state,reasons:[...reasons],samples,scopedSamples,processSamples,reads:[...reads],timeouts:[...timeouts],elapsed:now};
+                now=0;samples=0;scopedSamples=0;processSamples=0;reads=[];timeouts=[];
+                const released=await storage.release(true);
+                console.log(JSON.stringify({initial,released,retained:existsSync(temp)}));
+            `;
+            const observed: {
+                initial: {
+                    state: string;
+                    reasons: string[];
+                    samples: number;
+                    scopedSamples: number;
+                    processSamples: number;
+                    reads: string[];
+                    timeouts: number[];
+                    elapsed: number;
+                };
+                released: boolean;
+                retained: boolean;
+            } = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                })
+            );
+            const initial = observed.initial;
+            expect(initial.state).toBe(state);
+            expect(initial.samples).toBe(samples);
+            expect(initial.scopedSamples).toBe(scopedSamples);
+            expect(initial.timeouts).toEqual(
+                Array.from({ length: samples + scopedSamples }, (_, index) => 5000 - index * 100)
+            );
+            expect(initial.elapsed).toBe(state === 'unknown' ? 5000 : (samples + scopedSamples) * 100);
+            const reason = `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`;
+            expect(initial.reasons).toEqual(state === 'unknown' ? [reason] : []);
+            expect(observed.released).toBe(state === 'dead');
+            expect(observed.retained).toBe(state !== 'dead');
+            if (state !== 'unknown') {
+                expect(initial.reads).toEqual(route === 'whole' ? ['whole', 'whole'] : ['whole', 'scoped', 'whole']);
+                // Both the opening and closing list belong to the complete replacement catalog.
+                expect(initial.processSamples).toBe(
+                    route === 'whole' ? (state === 'dead' ? 3 : 2) : state === 'dead' ? 4 : 3
+                );
+            }
+        }
+    );
+
     // Each newborn is first missed by a whole catalog and by its PID-scoped read, so only a later
     // whole catalog covers it. Every simulated lsof call costs 100 ms of the five-second deadline.
     it.skipIf(process.getuid === undefined).each([
@@ -4313,6 +4431,11 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         const reasons: string[] = [];
         expect(parseLsofCensus(missingType, (reason) => reasons.push(reason))).toBeUndefined();
         expect(reasons).toEqual(['descriptor-type-missing']);
+        const diagnosticReasons: string[] = [];
+        expect(
+            parseLsofCensus(`${valid}f4\0tREG\0nPermission denied\0\n`, (reason) => diagnosticReasons.push(reason))
+        ).toBeUndefined();
+        expect(diagnosticReasons).toEqual(['file-inspection-diagnostic']);
         for (const invalid of [
             `${missingType}f4\0tunknown\0n/owned/tmp\0\n`,
             `${missingType}f4\0tREG\0\n`,
@@ -4340,6 +4463,16 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         expect(referencesStoragePath('/owned/tmp/held', ['/owned/tmp'])).toBe(true);
         expect(referencesStoragePath('/claim/run/tmp/held (deleted)', ['/owned/tmp', '/claim/run/tmp'])).toBe(true);
         expect(referencesStoragePath('/owned/tmp-sibling/held', ['/owned/tmp'])).toBe(false);
+    });
+
+    it('keeps whole and scoped inspection diagnostics outside warning-success proof reasons', () => {
+        for (const reason of [
+            'lsof-fields-unusable:file-inspection-diagnostic',
+            'lsof-scoped-fields-unusable:file-inspection-diagnostic',
+        ]) {
+            expect(areTransientProofReasons([reason])).toBe(false);
+            expect(areTransientProofReasons(['file-census-time-bound', reason])).toBe(false);
+        }
     });
 
     it.skipIf(process.platform !== 'darwin').each([
@@ -4801,6 +4934,12 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             script: 'process.exitCode=0',
             host: censusReporting('unknown', 'lsof-fields-unusable:file-inspection-diagnostic'),
             census: 'unknown lsof-fields-unusable:file-inspection-diagnostic',
+        },
+        {
+            name: 'a stable unusable scoped-inspection reason',
+            script: 'process.exitCode=0',
+            host: censusReporting('unknown', 'lsof-scoped-fields-unusable:file-inspection-diagnostic'),
+            census: 'unknown lsof-scoped-fields-unusable:file-inspection-diagnostic',
         },
         {
             name: 'a transient reason mixed with a stable one',
