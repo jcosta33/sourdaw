@@ -1,0 +1,79 @@
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_29d8df116c5b92::t_601e7e4a81cb14 80-81,91,93-94
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_29d8df116c5b92::t_601e7e4a81cb14 127-134,191,333-342,435,440,456,459,465,853-859
+src/modules/Arrangement/stores/__tests__/takeLaneAudioSourceSnapshot.spec.ts
+  s_29d8df116c5b92::t_601e7e4a81cb14 58-62,135-137,140-142
+src/infra/store/storage/__tests__/createAutomergeStorage.predecessorSettlement.spec.ts
+  s_29d8df116c5b92::t_b8684620d78939 221-223
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_29d8df116c5b92::t_8f4336489b1d32 450-460
+src/modules/Arrangement/handlers/comping/__tests__/audioCompSourceInterval.integration.spec.ts
+  s_29d8df116c5b92::t_967d8bae576ce7 74-76,88-90,100-102,116-118,212,289,291,310-312,322-324,333-338,375-377,379-382,466,474,485,520-522,571-575,633,635,638-641,647-648,655-661,670-672,688-690,709-714,733,735,737-742,762-764,784,786,788-793,806-811,829-831
+src/modules/Arrangement/handlers/comping/__tests__/handleSetCompRegion.integration.spec.ts
+  s_29d8df116c5b92::t_33073f20eec35d 287,1632-1634
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_29d8df116c5b92::t_8ca52d19733eed 214-225
+src/modules/Arrangement/presentations/renderers/__tests__/clipDrawing.spec.ts
+  s_29d8df116c5b92::t_1c406a944ec1fe 305-322
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_29d8df116c5b92::t_199af9eca5edb4 873-875,887-904
+src/modules/Arrangement/stores/__tests__/trackStorePersistenceRoundTrip.spec.ts
+  s_29d8df116c5b92::t_22e46480e2fc28 73-82
+src/modules/Arrangement/useCases/__tests__/resolveTakeMediaSplitBasis.spec.ts
+  s_29d8df116c5b92::t_48a5e79407856e 73,75,86
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitAudioClipWithUndo.integration.spec.ts
+  s_29d8df116c5b92::t_bb3cc8a9168d94 61,72-82,105-107,188,216-218,230-232,263-268,294-296,302-304,306-308,322-331,357-362
+src/modules/AudioAnalysis/handlers/analysis/__tests__/detectTempoCommand.integration.spec.ts
+  s_29d8df116c5b92::t_e6c135902bb21d 3-4,73-81,88,129-136,202,247-262,283-284,293
+src/modules/AudioAnalysis/useCases/__tests__/audioToMidi.spec.ts
+  s_29d8df116c5b92::t_c7f1f91f7f1143 22-24,243-245
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_29d8df116c5b92::t_c72aedffd6053e 159-161,215,217,221,288-293,376-378,438-441
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_d99a62fe2de3a3::t_f4305846108db2 12,15,19,44-45,49-113,399-408,544,563-570,572-578
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeArrangementTracks.spec.ts
+  s_29d8df116c5b92::t_23dcbab957e9e2 38-41,84-94
+src/modules/TimelineEditor/presentations/hooks/__tests__/useTempoEditorState.spec.ts
+  s_d99a62fe2de3a3::t_c26f92f79bd0a4 83-88,453,469-472,504-507,524,535,548,552,559-562,732,743
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditorCommands.integration.spec.tsx
+  s_29d8df116c5b92::t_60eecfa92c3722 131
+src/modules/Transport/handlers/transport/__tests__/tempoSourcePrefix.integration.spec.ts
+  s_29d8df116c5b92::t_a5f782c1a77d99 82-89,91,100-104,172
+src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts
+  s_29d8df116c5b92::t_a3d3127899bf2a 6-7
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_29d8df116c5b92::t_68e6eca4a886c1 1034-1036,1038-1040,1044-1046
+src/modules/Transport/useCases/tempoMap/__tests__/tempoMapCommands.integration.spec.ts
+  s_29d8df116c5b92::t_3af3f6694240b6 147,166,197,223,227,316,386
+src/utils/__tests__/audioSourceTime.spec.ts
+  s_d99a62fe2de3a3::t_eaffc068695217 253-257
+src/utils/__tests__/tempoAudioSourcePromotion.spec.ts
+  s_29d8df116c5b92::t_9865a2268002e6 95-99,155
+src/utils/__tests__/tempoMapRowPlan.spec.ts
+  s_29d8df116c5b92::t_42d2016bd0cfe6 16-20,53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88e6fefbad540a76a1b6b81a3a7b2a35ed9ef8a3",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
