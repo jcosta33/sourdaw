@@ -35,6 +35,7 @@ const supersessionPaths = [
     'scripts/trustedGithubWriteBootstrap.ts',
     'scripts/supersedePullRequest.ts',
     'scripts/supersedePullRequestGh.ts',
+    'scripts/stackedLanes.ts',
     'scripts/findingLineage.ts',
     'scripts/pullRequestMutationLock.ts',
     'scripts/reviewRepair.ts',
@@ -45,6 +46,212 @@ const supersessionPaths = [
 ];
 const retirementPaths = [...supersessionPaths, 'scripts/retirePullRequest.ts', 'scripts/retirementRecord.ts'];
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+type ReviewMutationCommand = 'review:repair' | 'review:confirm';
+
+/** The package, snapshot, coordinator and default process fence are real; authentication refuses. */
+function withNativeReviewMutation(
+    command: ReviewMutationCommand,
+    run: (root: string, bin: string, env: NodeJS.ProcessEnv) => void,
+    unfenced = false
+): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-native-review-mutation-'));
+    const bin = join(root, 'bin');
+    const gitPath = resolveTrustedExecutable('git');
+    const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_TRACE2_EVENT: '0',
+    };
+    for (const key of Object.keys(env)) {
+        if (key.startsWith('SOURDAW_TRUSTED_')) {
+            delete env[key];
+        }
+    }
+    const git = (...args: string[]) => {
+        const result = spawnSync(gitPath, args, { cwd: root, env, encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+        return result.stdout.trim();
+    };
+    try {
+        mkdirSync(bin);
+        mkdirSync(join(root, 'scripts'));
+        symlinkSync(gitPath, join(bin, 'git'));
+        symlinkSync(gitPath, join(bin, 'git.exe'));
+        symlinkSync(resolveTrustedExecutable('ps'), join(bin, 'ps'));
+        for (const name of ['gh', 'gh.exe', 'powershell.exe']) {
+            writeFileSync(join(bin, name), '#!/bin/sh\nexit 97\n');
+            chmodSync(join(bin, name), 0o700);
+        }
+        env.PATH = [bin, dirname(process.execPath)].join(delimiter);
+        for (const path of trustedDependencyGraphs[command]) {
+            writeFileSync(join(root, path), readFileSync(join(repositoryRoot, path)));
+        }
+        const manifest = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
+        writeFileSync(
+            join(root, 'package.json'),
+            JSON.stringify({
+                type: 'module',
+                scripts: { [command]: manifest.scripts[command] },
+            })
+        );
+        if (unfenced) {
+            const path = join(root, 'scripts/trustedGithubWriteBootstrap.ts');
+            const source = readFileSync(path, 'utf8');
+            const fence = `command === '${command}' ||`;
+            expect(source).toContain(fence);
+            writeFileSync(path, source.replace(fence, ''));
+        }
+        const identityPath = join(root, 'scripts/githubAppIdentity.ts');
+        const identity = readFileSync(identityPath, 'utf8');
+        const authDeclaration = 'export async function authenticateRole(';
+        expect(identity).toContain(authDeclaration);
+        writeFileSync(
+            identityPath,
+            `${identity.replace(authDeclaration, 'export async function unusedFixtureAuthenticateRole(')}
+            export async function authenticateRole(input) {
+                const git = args => {
+                    const result = spawnSync(process.env.SOURDAW_TRUSTED_GIT_PATH, args,
+                        { cwd: input.primaryRoot, env: process.env, encoding: 'utf8' });
+                    if (result.status !== 0) throw new Error(result.stderr);
+                    return result.stdout.trim();
+                };
+                const oid = git(['rev-parse', '--verify', 'refs/sourdaw/delivery/pr-2244']);
+                const owner = JSON.parse(git(['cat-file', 'blob', oid]));
+                writeFileSync(join(input.primaryRoot, 'admitted.json'), JSON.stringify({
+                    pid: process.pid, role: input.role, owner,
+                    psPath: process.env.SOURDAW_TRUSTED_PS_PATH,
+                    powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH,
+                }));
+                throw new Error('controlled authentication refusal after review mutation owner acquisition');
+            }
+        `
+        );
+        git('init', '--initial-branch=main');
+        git('add', '.');
+        git(
+            '-c',
+            'user.name=Fixture',
+            '-c',
+            'user.email=fixture@example.invalid',
+            '-c',
+            'core.hooksPath=/dev/null',
+            'commit',
+            '-qm',
+            'fixture'
+        );
+        git('remote', 'add', 'origin', root);
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        run(root, bin, env);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function invokeNativeReviewMutation(root: string, env: NodeJS.ProcessEnv, command: ReviewMutationCommand) {
+    const args = ['--run', command, '--', '2244', '--head', 'a'.repeat(40)];
+    if (command === 'review:repair') {
+        args.push('--thread', 'PRRT_fixture', '--commit', 'b'.repeat(40), '--summary', 'Bound repair.');
+    }
+    return spawnSync(process.execPath, args, { cwd: root, env, encoding: 'utf8' });
+}
+
+describe.each(['review:repair', 'review:confirm'] as const)('native %s process-tool admission', (command) => {
+    it('owns the real pinned default process fence before authentication', () => {
+        withNativeReviewMutation(command, (root, _bin, env) => {
+            const result = invokeNativeReviewMutation(
+                root,
+                {
+                    ...env,
+                    SOURDAW_TRUSTED_PS_PATH: '/forged/ps',
+                    SOURDAW_TRUSTED_POWERSHELL_PATH: '/forged/powershell.exe',
+                },
+                command
+            );
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain(
+                'controlled authentication refusal after review mutation owner acquisition'
+            );
+            const admitted = JSON.parse(readFileSync(join(root, 'admitted.json'), 'utf8'));
+            expect(admitted.role).toBe(command === 'review:repair' ? 'author' : 'reviewer');
+            expect(admitted.owner).toMatchObject({
+                version: 4,
+                operation: 'delivery',
+                number: 2244,
+                pid: admitted.pid,
+                ownerFence: { kind: 'pgid', pgid: admitted.pid, leaderStartedAt: expect.any(String) },
+                mutation: { phase: 'prepared', epoch: 0 },
+            });
+            expect(admitted.psPath).toBe(resolveTrustedExecutable('ps'));
+            expect(admitted.powershellPath).toBeUndefined();
+            const lock = spawnSync(
+                resolveTrustedExecutable('git'),
+                ['rev-parse', '--verify', '--quiet', 'refs/sourdaw/delivery/pr-2244'],
+                { cwd: root, env, encoding: 'utf8' }
+            );
+            expect(lock.status).toBe(1);
+        });
+    }, 30_000);
+
+    it('detects an omitted fence classification before authentication', () => {
+        withNativeReviewMutation(
+            command,
+            (root, _bin, env) => {
+                const result = invokeNativeReviewMutation(root, env, command);
+                expect(result.status).toBe(1);
+                expect(result.stderr).toContain('mutation lock requires the trusted ps executable');
+                expect(existsSync(join(root, 'admitted.json'))).toBe(false);
+            },
+            true
+        );
+    }, 30_000);
+
+    it('pins required process tools through the launcher on both platforms', () => {
+        withNativeReviewMutation(command, (root, bin, env) => {
+            expect(resolveTrustedLauncherBinding(root, env, command, 'darwin').psPath).toBe(
+                resolveTrustedExecutable('ps')
+            );
+            expect(resolveTrustedLauncherBinding(root, { ...env, PATH: bin }, command, 'win32').powershellPath).toBe(
+                join(bin, 'powershell.exe')
+            );
+            expect(trustedSnapshotRunsDetached(command, 'darwin')).toBe(true);
+            expect(trustedSnapshotRunsDetached(command, 'win32')).toBe(false);
+            const missing = join(root, 'missing-tools');
+            mkdirSync(missing);
+            for (const name of ['git', 'git.exe']) {
+                symlinkSync(resolveTrustedExecutable('git'), join(missing, name));
+            }
+            for (const name of ['gh', 'gh.exe']) {
+                symlinkSync(join(bin, name), join(missing, name));
+            }
+            expect(() =>
+                resolveTrustedLauncherBinding(
+                    root,
+                    {
+                        ...env,
+                        PATH: missing,
+                        SOURDAW_TRUSTED_PS_PATH: '/forged/ps',
+                    },
+                    command,
+                    'darwin'
+                )
+            ).toThrow('cannot resolve trusted ps executable');
+            expect(() =>
+                resolveTrustedLauncherBinding(
+                    root,
+                    {
+                        ...env,
+                        PATH: missing,
+                        SOURDAW_TRUSTED_POWERSHELL_PATH: '/forged/powershell.exe',
+                    },
+                    command,
+                    'win32'
+                )
+            ).toThrow('cannot resolve trusted powershell executable');
+        });
+    }, 30_000);
+});
 
 /** Only credential and remote-PR ports are controlled; the native launcher, CLI and lock are real. */
 function withNativeSupersession(
@@ -131,6 +338,7 @@ function withNativeSupersession(
             `
             export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
             export const REQUIRED_REPOSITORY = 'fixture/repository';
+            export const REQUIRED_BASE_BRANCH = 'main';
             export const isAuthorBotNodeId = value => value === AUTHOR_BOT_NODE_ID;
             export const assertTrustedExecutingBlob = () => undefined;
             export const originMainBlob = () => 'controlled-source-port';
@@ -301,6 +509,7 @@ function writeNativeRetirementPorts(root: string, mode: 'admission' | 'rollback'
         export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
         export const REVIEWER_BOT_NODE_ID = 'BOT_fixture_reviewer';
         export const REQUIRED_REPOSITORY = 'fixture/repository';
+        export const REQUIRED_BASE_BRANCH = 'main';
         export const isAuthorBotNodeId = value => value === AUTHOR_BOT_NODE_ID;
         export const assertTrustedExecutingBlob = () => undefined;
         export const originMainBlob = () => 'controlled-source-port';
@@ -2500,6 +2709,8 @@ describe('trusted GitHub write snapshot launcher', () => {
         ['lane:publish', false],
         ['review:publish', true],
         ['review:publish:recover', true],
+        ['review:repair', true],
+        ['review:confirm', true],
         ['review:resolve', false],
         ['review:shadow-status', false],
         ['ruleset:harden', false],

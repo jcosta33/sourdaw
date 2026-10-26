@@ -2147,4 +2147,539 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         ]);
         expect(parsed.warnings).toHaveLength(1);
     });
+
+    it('reports a direct repeating Notes leaf while retaining its plain and nonrepeating siblings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip id="repeat" name="Repeating phrase" time="0" duration="8" loopStart="0" loopEnd="4">' +
+                    '<Notes><Note time="0" duration="1" key="60"/></Notes></Clip>' +
+                    '<Clip id="plain" name="Plain phrase" time="8" duration="2"><Notes>' +
+                    '<Note time="0" duration="1" key="62"/></Notes></Clip>' +
+                    '<Clip id="one-pass" name="One pass" time="10" duration="4" loopStart="0" loopEnd="4">' +
+                    '<Notes><Note time="0" duration="1" key="64"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Plain phrase', 'One pass']);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                sourceId: 'repeat',
+                name: 'Repeating phrase',
+                context: 'Keys',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it.each([
+        { unit: 'beats at zero offset', contentTimeUnit: '', playStart: '0', loopStart: '0', loopEnd: '4' },
+        {
+            unit: 'seconds at zero offset',
+            contentTimeUnit: ' contentTimeUnit="seconds"',
+            playStart: '0',
+            loopStart: '0',
+            loopEnd: '2',
+        },
+        { unit: 'beats at nonzero offset', contentTimeUnit: '', playStart: '1', loopStart: '1', loopEnd: '5' },
+        {
+            unit: 'seconds at nonzero offset',
+            contentTimeUnit: ' contentTimeUnit="seconds"',
+            playStart: '0.5',
+            loopStart: '0.5',
+            loopEnd: '2.5',
+        },
+    ])(
+        'keeps a fractional-start one-pass Notes loop in $unit and still rejects a real repeat',
+        ({ contentTimeUnit, playStart, loopStart, loopEnd }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes timeUnit="beats"><Clips track="keys">' +
+                        `<Clip id="one-pass" name="One pass" time="28.2" duration="4"${contentTimeUnit} playStart="${playStart}" loopStart="${loopStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                        '<Clip id="plain" name="Plain" time="32.2" duration="1"><Notes>' +
+                        '<Note time="0" duration="0.5" key="62"/></Notes></Clip>' +
+                        `<Clip id="repeat" name="Real repeat" time="36.2" duration="4.125"${contentTimeUnit} playStart="${playStart}" loopStart="${loopStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="64"/></Notes></Clip>' +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+
+            expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.notes?.[0]?.pitch])).toEqual([
+                ['One pass', 60],
+                ['Plain', 62],
+            ]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    kind: 'unsupported-clip',
+                    sourceType: 'Clip',
+                    sourceId: 'repeat',
+                    name: 'Real repeat',
+                    context: 'Keys',
+                    handling: 'dropped',
+                },
+            ]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
+    it.each([
+        { unit: 'beats near the start', time: '1', contentTimeUnit: '', playStart: '1.1', loopEnd: '3.3' },
+        { unit: 'beats later', time: '28.2', contentTimeUnit: '', playStart: '0.1', loopEnd: '2.3' },
+        {
+            unit: 'seconds content',
+            time: '28.2',
+            contentTimeUnit: ' contentTimeUnit="seconds"',
+            playStart: '0.05',
+            loopEnd: '1.15',
+        },
+    ])(
+        'keeps a decimal one-pass Notes loop in $unit but omits a 0.0001-beat repeat',
+        ({ time, contentTimeUnit, playStart, loopEnd }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                        '<Arrangement><Lanes timeUnit="beats"><Clips track="keys">' +
+                        `<Clip id="one-pass" name="One pass" time="${time}" duration="2.2"${contentTimeUnit} playStart="${playStart}" loopStart="${playStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                        `<Clip id="plain" name="Plain" time="${time}" duration="1"><Notes>` +
+                        '<Note time="0" duration="0.5" key="62"/></Notes></Clip>' +
+                        `<Clip id="repeat" name="Real repeat" time="${time}" duration="2.2001"${contentTimeUnit} playStart="${playStart}" loopStart="${playStart}" loopEnd="${loopEnd}">` +
+                        '<Notes><Note time="0" duration="0.5" key="64"/></Notes></Clip>' +
+                        '</Clips></Lanes></Arrangement>'
+                )
+            );
+
+            expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.notes?.[0]?.pitch])).toEqual([
+                ['One pass', 60],
+                ['Plain', 62],
+            ]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    kind: 'unsupported-clip',
+                    sourceId: 'repeat',
+                    name: 'Real repeat',
+                    context: 'Keys',
+                    handling: 'dropped',
+                },
+            ]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
+    it('keeps a decimal one-pass nested Notes leaf while omitting a genuinely repeating leaf', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes timeUnit="beats"><Clips track="keys">' +
+                    '<Clip id="parent" name="Parent" time="0" duration="16"><Clips>' +
+                    '<Clip id="leaf" name="One pass leaf" time="1" duration="2.2" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
+                    '<Notes><Note time="0" duration="0.5" key="67"/></Notes></Clip>' +
+                    '<Clip id="repeat-leaf" name="Repeat leaf" time="5" duration="2.2001" playStart="1.1" loopStart="1.1" loopEnd="3.3">' +
+                    '<Notes><Note time="0" duration="0.5" key="69"/></Notes></Clip>' +
+                    '<Clip name="Plain leaf" time="9" duration="1"><Notes>' +
+                    '<Note time="0" duration="0.5" key="71"/></Notes></Clip>' +
+                    '</Clips></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.notes?.[0]?.pitch])).toEqual([
+            ['Parent', undefined],
+            ['One pass leaf', 67],
+            ['Plain leaf', 71],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceId: 'repeat-leaf',
+                name: 'Repeat leaf',
+                context: 'Keys',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('still refuses a direct Notes loop whose end does not follow its start', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="keys">' +
+                    '<Clip id="invalid-loop" name="Invalid loop" time="1" duration="1" loopStart="2" loopEnd="2">' +
+                    '<Notes><Note time="0" duration="0.5" key="60"/></Notes></Clip>' +
+                    '<Clip name="Plain" time="2" duration="1"><Notes>' +
+                    '<Note time="0" duration="0.5" key="62"/></Notes></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Plain']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'invalid-loop', name: 'Invalid loop', context: 'Keys' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('reports a direct nonidentity warped Audio leaf while retaining identity and plain siblings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes><Clips track="audio">' +
+                    '<Clip id="warped" name="Stretched take" time="0" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds">' +
+                    '<Audio file="stretched.wav"/><Warp time="0" contentTime="0"/>' +
+                    '<Warp time="4" contentTime="1"/></Warps></Clip>' +
+                    '<Clip id="identity" name="Identity take" time="4" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds">' +
+                    '<Audio file="identity.wav"/><Warp time="0" contentTime="0"/>' +
+                    '<Warp time="4" contentTime="2"/></Warps></Clip>' +
+                    '<Clip id="plain-audio" name="Plain take" time="8" duration="4"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.audioAssetPath])).toEqual([
+            ['Identity take', 'identity.wav'],
+            ['Plain take', 'plain.wav'],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                kind: 'unsupported-clip',
+                sourceType: 'Clip',
+                sourceId: 'warped',
+                name: 'Stretched take',
+                context: 'Audio',
+                handling: 'dropped',
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    describe.each(['direct', 'nested'])('%s visible warp window', (placement) => {
+        it.each([
+            {
+                name: 'unused stretched suffix',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [4, 2],
+                    [8, 6],
+                ],
+                supported: true,
+            },
+            {
+                name: 'unused stretched prefix',
+                playStart: 4,
+                duration: 'duration="4"',
+                points: [
+                    [0, -1],
+                    [4, 2],
+                    [8, 4],
+                ],
+                supported: true,
+            },
+            {
+                name: 'identity segment bracketing both boundaries',
+                playStart: 2,
+                duration: 'duration="4"',
+                points: [
+                    [-4, -4],
+                    [0, 0],
+                    [8, 4],
+                    [12, 8],
+                ],
+                supported: true,
+            },
+            {
+                name: 'nonidentity segment bracketing both boundaries',
+                playStart: 2,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [8, 2],
+                ],
+                supported: false,
+            },
+            {
+                name: 'interior nonidentity point',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [2, 0.5],
+                    [4, 2],
+                ],
+                supported: false,
+            },
+            {
+                name: 'translated source seek',
+                playStart: 1,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0.5],
+                    [8, 4.5],
+                ],
+                supported: false,
+            },
+            {
+                name: 'identity source seek',
+                playStart: 1,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [8, 4],
+                ],
+                supported: true,
+            },
+            {
+                name: 'uncovered playback end',
+                playStart: 6,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [8, 4],
+                ],
+                supported: false,
+            },
+            {
+                name: 'unknown playback end',
+                playStart: 0,
+                duration: '',
+                points: [
+                    [0, 0],
+                    [8, 4],
+                ],
+                supported: false,
+            },
+            {
+                name: 'missing point coordinate',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [[0, 0], [4, 2], [8]],
+                supported: false,
+            },
+            {
+                name: 'duplicate outer coordinate',
+                playStart: 0,
+                duration: 'duration="4"',
+                points: [
+                    [0, 0],
+                    [4, 2],
+                    [4, 3],
+                ],
+                supported: false,
+            },
+            {
+                name: 'decimal identity boundaries',
+                playStart: 1.1,
+                duration: 'duration="2.2"',
+                points: [
+                    [0, 0],
+                    [3.3, 1.65],
+                    [8, 6],
+                ],
+                supported: true,
+            },
+        ])('$name', ({ playStart, duration, points, supported }) => {
+            const leaf = `<Clip id="leaf" name="Window" time="0" ${duration} playStart="${playStart}"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="window.wav"/>${points
+                .map(
+                    ([time, contentTime]) =>
+                        `<Warp time="${time}"${contentTime === undefined ? '' : ` contentTime="${contentTime}"`}/>`
+                )
+                .join('')}</Warps></Clip>`;
+            let content = leaf;
+            if (placement === 'nested') {
+                content = `<Clip name="Parent" time="0" duration="16"><Audio file="parent.wav"/><Clips>${leaf}</Clips></Clip>`;
+            }
+            const parsed = parseProjectXml(
+                project(
+                    `<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure><Arrangement><Lanes><Clips track="audio">${content}<Clip name="Plain" time="20" duration="1"><Audio file="plain.wav"/></Clip></Clips></Lanes></Arrangement>`
+                )
+            );
+            const mapped = mapToProjectData({
+                parsed: { ...parsed, meta: { title: 'Window', artist: '', comment: '' }, audioAssets: new Map() },
+                bufferIdsByPath: new Map([
+                    ['window.wav', 'window-buffer'],
+                    ['parent.wav', 'parent-buffer'],
+                    ['plain.wav', 'plain-buffer'],
+                ]),
+                fileName: 'window.dawproject',
+            });
+            const clips = mapped.arrangement.tracks.find((track) => track.name === 'Audio')?.clips ?? [];
+            if (supported) {
+                expect(clips.filter((clip) => clip.name === 'Window')).toEqual([
+                    expect.objectContaining({
+                        name: 'Window',
+                        startBeat: 0,
+                        endBeat: playStart === 1.1 ? 2.2 : 4,
+                        sampleStartBeat: playStart,
+                    }),
+                ]);
+                expect(parsed.warnings).toEqual([]);
+            } else {
+                expect(clips.filter((clip) => clip.name === 'Window')).toEqual([]);
+                expect(parsed.warnings).toMatchObject([
+                    {
+                        kind: 'unsupported-clip',
+                        sourceType: 'Clip',
+                        sourceId: 'leaf',
+                        name: 'Window',
+                        context: 'Audio',
+                        handling: 'dropped',
+                    },
+                ]);
+            }
+            expect(clips.some((clip) => clip.name === 'Plain')).toBe(true);
+            expect(parsed.warnings).toHaveLength(supported ? 0 : 1);
+        });
+    });
+
+    it('classifies seconds loops and mixed-unit warps at the local tempo while preserving an audio seek', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="keys" name="Keys" contentType="notes"/>' +
+                    '<Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes><Points target="tempo"><RealPoint time="4" value="60"/></Points>' +
+                    '<Clips track="keys">' +
+                    '<Clip id="one-pass" name="One pass" time="8" duration="4" contentTimeUnit="seconds" playStart="0.1" loopStart="0.1" loopEnd="4.1"><Notes><Note key="60"/></Notes></Clip>' +
+                    '<Clip id="repeat" name="Repeat" time="12" duration="4.0001" contentTimeUnit="seconds" playStart="0.1" loopStart="0.1" loopEnd="4.1"><Notes><Note key="62"/></Notes></Clip>' +
+                    '</Clips><Clips track="audio">' +
+                    '<Clip id="identity" name="Identity" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="identity.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="stretched" name="Stretched" time="12" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="stretched.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="2"/></Warps></Clip>' +
+                    '<Clip id="seek" name="Plain seek" time="16" duration="2" contentTimeUnit="seconds" playStart="1"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks.find((track) => track.name === 'Keys')?.clips.map((clip) => clip.name)).toEqual([
+            'One pass',
+        ]);
+        expect(
+            parsed.tracks.find((track) => track.name === 'Audio')?.clips.map((clip) => [clip.name, clip.playStartBeat])
+        ).toEqual([
+            ['Identity', undefined],
+            ['Plain seek', 2],
+        ]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'repeat', name: 'Repeat', context: 'Keys' },
+            { kind: 'unsupported-clip', sourceId: 'stretched', name: 'Stretched', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.warnings[0]!.sourceOrder).toBeLessThan(parsed.warnings[1]!.sourceOrder);
+    });
+
+    it('ignores an unused audio source prefix when proving a local seconds loop', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo"><RealPoint time="4" value="60"/></Points><Clips>' +
+                    '<Clip id="one-pass" name="Far seek" time="8" duration="4" contentTimeUnit="seconds" playStart="6" loopStart="6" loopEnd="10"><Audio file="seek.wav"/></Clip>' +
+                    '<Clip id="repeat" name="Real repeat" time="12" duration="4.0001" contentTimeUnit="seconds" playStart="6" loopStart="6" loopEnd="10"><Audio file="repeat.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.playStartBeat])).toEqual([['Far seek', 12]]);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'repeat', name: 'Real repeat', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('keeps same-unit warp identities and omits a malformed point after a tempo step', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo"><RealPoint time="4" value="60"/></Points><Clips>' +
+                    '<Clip id="beats" name="Beat identity" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="beats"><Audio file="beats.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="seconds" name="Seconds identity" time="12" duration="4"><Warps timeUnit="seconds" contentTimeUnit="seconds"><Audio file="seconds.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="malformed" name="Malformed" time="16" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="bad.wav"/><Warp time="bad" contentTime="0"/></Warps></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Beat identity', 'Seconds identity']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'malformed', name: 'Malformed', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('keeps existing nested-container warp admission separate from its supported child leaf', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo"><RealPoint time="4" value="60"/></Points><Clips>' +
+                    '<Clip id="parent" name="Parent" time="8" duration="8">' +
+                    '<Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="parent.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps>' +
+                    '<Clips><Clip id="child" name="Child" time="1" duration="1"><Notes><Note key="60"/></Notes></Clip></Clips>' +
+                    '</Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Child']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'parent', name: 'Parent', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('rejects nonaffine mixed-unit leaf warps in direct and nested paths while retaining plain siblings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    '<Arrangement><Lanes track="audio"><Points target="tempo">' +
+                    '<RealPoint time="4" value="60"/><RealPoint time="10" value="90"/></Points><Clips>' +
+                    '<Clip id="direct" name="Direct mixed" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="direct.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="parent" name="Parent" time="0" duration="32"><Audio file="parent.wav"/><Clips>' +
+                    '<Clip id="nested" name="Nested mixed" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="nested.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="plain" name="Plain" time="16" duration="1"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Clip></Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Parent', 'Plain']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'direct', name: 'Direct mixed', context: 'Audio' },
+            { kind: 'unsupported-clip', sourceId: 'nested', name: 'Nested mixed', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+    });
+
+    it.each([
+        { name: 'step', points: '<RealPoint time="4" value="60"/><RealPoint time="10" value="90"/>' },
+        {
+            name: 'ramp',
+            points: '<RealPoint time="4" value="60" interpolation="linear"/><RealPoint time="20" value="120"/>',
+        },
+    ])('omits seconds-loop and mixed-warp leaves crossing a tempo $name once each', ({ points }) => {
+        const parsed = parseProjectXml(
+            project(
+                '<Transport><Tempo value="120"/></Transport>' +
+                    '<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>' +
+                    `<Arrangement><Lanes track="audio"><Points target="tempo">${points}</Points><Clips>` +
+                    '<Clip id="loop" name="Seconds loop" time="8" duration="4" contentTimeUnit="seconds" loopStart="0" loopEnd="4"><Audio file="loop.wav"/></Clip>' +
+                    '<Clip id="warp" name="Mixed warp" time="8" duration="4"><Warps timeUnit="beats" contentTimeUnit="seconds"><Audio file="warp.wav"/><Warp time="0" contentTime="0"/><Warp time="4" contentTime="4"/></Warps></Clip>' +
+                    '<Clip id="plain" name="Plain" time="24" duration="1"><Audio file="plain.wav"/></Clip>' +
+                    '</Clips></Lanes></Arrangement>'
+            )
+        );
+
+        expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Plain']);
+        expect(parsed.warnings).toMatchObject([
+            { kind: 'unsupported-clip', sourceId: 'loop', name: 'Seconds loop', context: 'Audio' },
+            { kind: 'unsupported-clip', sourceId: 'warp', name: 'Mixed warp', context: 'Audio' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+    });
 });

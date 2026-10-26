@@ -11,6 +11,24 @@ have caught it. Keep each lesson short enough to paste into a dispatch. A behavi
 matching no more specific file carries this file; a stance with a more specific match never
 carries it in addition.
 
+### Explicit preservation must retain its whole owner and every forbidden operation
+
+Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports an unresolved protection admitting
+the requested edit. PR [#5277](https://github.com/jcosta33/sourdaw/pull/5277) introduced the coordinated
+level suite, including a Strings restriction expected to refuse; that test introduction does not
+prove the defect's introduction. The earliest introducing revision and historical review stance or
+tier remain unproven. The proven coverage gap is an owner-and-route preservation probe.
+
+Attack a reserved selection phrase colliding with a display name, a missing quoted compound owner
+containing a real name, a title-cased quality beside a real missing-object control, and an unclosed
+VCA quality beside its strict protection. A whole-track fader exception must permit gain while
+refusing pan and rename, including commands touching owned objects through canonical owner checks.
+Retain the exact selected identity through pending-card refinement and compiled replacement after
+selection moves. Independent clauses and later positive protections must restrict exceptions,
+never combine them into wider permission. Inspect the recorded basis and actual proposal scope.
+Any compatibility mask must prove full consumption of the original clause; a known control beside
+an unknown clip or unread suffix must not discharge the residual restriction.
+
 ## Standing probes
 
 - Read the full unit the diff touches at head — the function, its callers, its callee contracts —
@@ -81,6 +99,22 @@ a track ID, and require normal inspection and genuine rich split Undo/Redo.
 Keep same-envelope point duplicates, global track/clip/device collisions, and
 repeated arrangement IDs repair-required; only canonical gain point rows have
 this local scope.
+
+### 2026-10-25 — a protected clip or control became a whole track (introduced by PR #2811)
+
+PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
+(`beb59d2e74a4d98992b692ff07a40635db22ee39`) inferred whole-track protection from a track name
+contained in raw unchanged text. With a Bass track owning a Bass Verse clip, `leave Bass Verse
+unchanged` could protect the whole track and block a sibling clip edit. `leave Bass fader
+unchanged` requires control-facet authority rather than whole-track authority. The historical
+review stance, prompt and tier are unestablished.
+
+Use canonical whole-owner facts. When a track and a clip or device share the exact name Bass,
+retain actual track candidates conservatively while leaving the mixed original range unconsumed
+for generic non-track admission. Probe the real producer, initial recorded facts, a permitted
+sibling clip edit, and later admission against a frozen whole owner's actual descendants.
+Independent `leave Bass alone` and structural or frozen roots must remain whole restrictions
+beside a separately protected clip.
 
 ### 2026-10-24 — a fenced transaction had no native process-tool admission (introduced by PR #5639)
 

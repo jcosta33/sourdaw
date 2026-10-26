@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { changedReviewPaths } from '../reviewDiffSummary.ts';
 import {
     GOVERNANCE_TRANSITION_PATHS,
-    STRONGEST_DRAW_CLASSES,
     parseReviewRiskPlan,
     planReviewRisk,
     reviewStanceFloor,
@@ -526,7 +525,6 @@ describe('planReviewRisk', () => {
         expect(result.riskClasses).toEqual(['native-security']);
         expect(result.triggers).toEqual(['native-security:.github/workflows/']);
         expect(reviewStanceFloor(result)).toBe(3);
-        expect(STRONGEST_DRAW_CLASSES.has('native-security')).toBe(true);
     });
 
     it('should not plan a .github/ Markdown template docs-only', () => {
@@ -596,7 +594,6 @@ describe('planReviewRisk', () => {
             'realtime-audio:public/wasm/',
         ]);
         expect(reviewStanceFloor(result)).toBe(3);
-        expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(true);
     });
 
     it.each([
@@ -616,7 +613,6 @@ describe('planReviewRisk', () => {
             expect(result.riskClasses).toEqual(['native-security', 'realtime-audio']);
             expect(result.triggers).toEqual([`native-security:${path}`, `realtime-audio:${path}`]);
             expect(reviewStanceFloor(result)).toBe(3);
-            expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(true);
         }
     );
 
@@ -651,7 +647,6 @@ describe('planReviewRisk', () => {
 
         expect(result.riskClasses).toEqual([riskClass]);
         expect(reviewStanceFloor(result)).toBe(floor);
-        expect(result.riskClasses.some((risk) => STRONGEST_DRAW_CLASSES.has(risk))).toBe(false);
     });
 
     it.each([

@@ -10,6 +10,7 @@ import {
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
+import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { PROPOSAL_DECIBEL_FORMAT } from '../transformers/proposalDecibelFormat';
@@ -27,6 +28,8 @@ type DescribePendingActionConfirmationInput = {
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Objects a refinement's chain protects beyond those this request's own text protects. */
     inheritedProtectedUnchanged?: ReadonlyArray<{ id: string; name: string }>;
+    /** Complete resolved facts when the same request is replayed by a scheduled batch. */
+    requestProtectionFacts?: ProposalProtectionFacts;
     /** Actions whose value kept the refined change's direction; their labels say so. */
     keptDirectionActionIndexes?: readonly number[];
 };
@@ -309,6 +312,7 @@ export function describePendingActionConfirmation({
     wholeProjectVibeMixPlan,
     workflowCapabilityId,
     inheritedProtectedUnchanged = [],
+    requestProtectionFacts,
     keptDirectionActionIndexes = [],
 }: DescribePendingActionConfirmationInput) {
     const actionLabels = actions.map((action, index) => {
@@ -336,13 +340,14 @@ export function describePendingActionConfirmation({
         };
     }
     const protectedUnchanged = unionProtectedObjects(
-        getApplicationProtectedObjects({
-            actions,
-            context,
-            prompt,
-            wholeProjectVibeMixPlan,
-            workflowCapabilityId,
-        }),
+        requestProtectionFacts?.protectedUnchanged ??
+            getApplicationProtectedObjects({
+                actions,
+                context,
+                prompt,
+                wholeProjectVibeMixPlan,
+                workflowCapabilityId,
+            }),
         inheritedProtectedUnchanged
     );
     const intendedChanges = actions
