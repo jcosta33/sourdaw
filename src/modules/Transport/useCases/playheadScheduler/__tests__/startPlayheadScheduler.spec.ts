@@ -65,6 +65,14 @@ const audioEngineMocks = {
 };
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    updateClipInStore: { value: null },
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -146,11 +154,28 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
     // A held note that survived would still have a change due, so a test that expects none sees it.
     advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
         timeline,

@@ -48,6 +48,11 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: 
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    appendClipToTrack: vi.fn(),
+    clipSelectionStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn(),
+    updateClipInStore: { value: null },
+
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -376,7 +381,9 @@ describe('initial browser playback window', () => {
                     workers.push(this);
                 }
                 postMessage(data: { type: string; generation?: number }): void {
-                    if (data.type === 'start') this.generation = data.generation ?? 0;
+                    if (data.type === 'start') {
+                        this.generation = data.generation ?? 0;
+                    }
                 }
                 terminate = vi.fn();
                 addEventListener = vi.fn();
@@ -458,9 +465,13 @@ describe('initial browser playback window', () => {
             deliverWorkerTick();
             try {
                 await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
-                if (change === 'stop') await stopPlayback();
-                else if (change === 'project switch') projectRoot.current = 'replacement-root';
-                else transportStoreState.value = null;
+                if (change === 'stop') {
+                    await stopPlayback();
+                } else if (change === 'project switch') {
+                    projectRoot.current = 'replacement-root';
+                } else {
+                    transportStoreState.value = null;
+                }
                 ctxTime.now = 10;
                 ready.resolve();
                 await playback;
@@ -564,8 +575,11 @@ describe('initial browser playback window', () => {
             const playback = startPlayback();
             try {
                 await vi.waitFor(() => expect(yeastPanic).toHaveBeenCalled());
-                if (change === 'stop') await stopPlayback();
-                else projectRoot.current = 'replacement-root';
+                if (change === 'stop') {
+                    await stopPlayback();
+                } else {
+                    projectRoot.current = 'replacement-root';
+                }
                 ctxTime.now = 10;
                 ready.resolve();
                 await playback;
@@ -650,8 +664,11 @@ describe('initial browser playback window', () => {
         async (change) => {
             let stopped: Promise<void> | undefined;
             await startPlayback(() => {
-                if (change === 'stop') stopped = stopPlayback();
-                else projectRoot.current = 'replacement-root';
+                if (change === 'stop') {
+                    stopped = stopPlayback();
+                } else {
+                    projectRoot.current = 'replacement-root';
+                }
             });
             await stopped;
             expect(notes).toEqual([]);
@@ -722,8 +739,11 @@ describe('initial browser playback window', () => {
                 expect(sources).toHaveLength(0);
                 expect(onRoll).not.toHaveBeenCalled();
                 expect(playheadClockRef.audioTimeSeconds).toBe(0);
-                if (outcome === 'stop') await stopPlayback();
-                else if (outcome === 'project switch') projectRoot.current = 'replacement-root';
+                if (outcome === 'stop') {
+                    await stopPlayback();
+                } else if (outcome === 'project switch') {
+                    projectRoot.current = 'replacement-root';
+                }
                 ctxTime.now = 10;
                 ready.resolve(true);
                 await playback;

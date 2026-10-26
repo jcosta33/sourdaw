@@ -103,6 +103,14 @@ vi.mock('../../models/TempoMap', () => ({
     secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    updateClipInStore: { value: null },
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: harness.track_store,
     takeLaneStore: { value: { lanes: [] } },
     // The loop-wrap take path and the #5517 ownership guard read which clips
@@ -127,11 +135,28 @@ vi.mock('../transportControls/panicYeastRuntime', () => ({
     panicYeastRuntime: harness.panic_yeast_runtime,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
     advanceNoteExpression: vi.fn(),
     cacheAudioBuffer: harness.cache_audio_buffer,
     getTrackStrip: vi.fn(),
