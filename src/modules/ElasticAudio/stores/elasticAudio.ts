@@ -5,7 +5,6 @@ export type ElasticEditorTool = 'select' | 'add-marker' | 'remove-marker' | 'loc
 export type ElasticAudioState = {
     openClipId: string | null;
     tool: ElasticEditorTool;
-    sensitivity: number;
     selectedMarkerIds: string[];
     detected: boolean;
 };
@@ -13,7 +12,6 @@ export type ElasticAudioState = {
 export const defaultElasticAudioState: ElasticAudioState = {
     openClipId: null,
     tool: 'select',
-    sensitivity: 0.5,
     selectedMarkerIds: [],
     detected: false,
 };

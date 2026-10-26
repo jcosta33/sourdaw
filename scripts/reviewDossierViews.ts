@@ -4,7 +4,13 @@
  * already proven the record these read.
  */
 
-import type { AssessmentImpact, CompletedReviewStance, ReviewDossier, ReviewDossierStance } from './reviewDossier.ts';
+import type {
+    AcceptedReviewFinding,
+    AssessmentImpact,
+    CompletedReviewStance,
+    ReviewDossier,
+    ReviewDossierStance,
+} from './reviewDossier.ts';
 
 /**
  * The assessment impact the recommendation is recorded beside: how the round's advisory semantic
@@ -36,12 +42,21 @@ export function completedStances(dossier: ReviewDossier): CompletedReviewStance[
         }));
 }
 
-export function acceptedFindings(
-    dossier: ReviewDossier
-): { findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }[] {
+export function acceptedFindings(dossier: ReviewDossier): AcceptedReviewFinding[] {
     return dossier.events
         .filter((event) => event.kind === 'finding-accepted')
-        .map((event) => ({ findingId: event.findingId, path: event.path, line: event.line, side: event.side }));
+        .map((event) => {
+            const finding: AcceptedReviewFinding = {
+                findingId: event.findingId,
+                path: event.path,
+                line: event.line,
+                side: event.side,
+            };
+            if (event.sources !== undefined) {
+                finding.sources = event.sources;
+            }
+            return finding;
+        });
 }
 
 export function discardedDispositions(

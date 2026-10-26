@@ -1,12 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+import { channelControllerState } from '../../../repositories/webMidi/channelControllerState';
+import { ingestChannelControlChange } from '../../../repositories/webMidi/ingestChannelControlChange';
+import { recordedControllerTakeState } from '../../../repositories/webMidi/recordedControllerTakeState';
+import { bufferRecordedMidiCC } from '../../recordedControllerTake/bufferRecordedMidiCC';
+import { bufferRecordedMidiPitchBend } from '../../recordedControllerTake/bufferRecordedMidiPitchBend';
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const target_track_id = vi.hoisted(() => ({ value: null as string | null }));
 const set_track_gain = vi.hoisted(() => vi.fn());
 const set_track_pan = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
+const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
@@ -21,7 +29,7 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {
-        context: { currentTime: 2, sampleRate: 48000 },
+        context: audio_clock,
         getTrackStrip: get_track_strip,
         setTrackGain: set_track_gain,
         setTrackPan: set_track_pan,
@@ -36,6 +44,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 const { handleWebMidiCC } = await import('../handleWebMidiCC');
+const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 const { resetLiveInputDispatchFrameFloor } = await import('../../../services/liveInputDispatchFrameFloor');
@@ -73,6 +82,10 @@ function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {})
         panicLiveNotes: () => {},
         isDeviceCarriedByNativeSession: () => false,
         sendNativeLiveMidiControl: send_native_live_midi_control,
+        getTransportStoreValue: () => ({ isRecording: false, overdubEnabled: false, isLooping: false, tempo: 120 }),
+        getCompensationDelay: () => 0,
+        bufferRecordedMidiCC,
+        bufferRecordedMidiPitchBend,
         ...overrides,
     };
 }
@@ -783,6 +796,323 @@ describe('handleWebMidiCC', () => {
             fn(0, 7, 100);
 
             expect(panic).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('recording into the take', () => {
+        const RECORDING_CLIP_ID = 'clip-rec';
+
+        const recording_track_state = (armed = true) => ({
+            tracks: [
+                {
+                    id: 'track-1',
+                    armed,
+                    devices: [],
+                    clips: [{ id: RECORDING_CLIP_ID, type: 'midi', startBeat: 4, endBeat: 12, midiOffsetBeats: 0 }],
+                },
+            ],
+            selectedTrackId: 'track-1',
+        });
+
+        const recording_transport =
+            (isRecording = true) =>
+            () => ({ isRecording, overdubEnabled: false, isLooping: false, tempo: 120 });
+
+        function recording_dependencies(
+            overrides: Partial<HandleWebMidiCCDependencies> = {}
+        ): HandleWebMidiCCDependencies {
+            return make_dependencies({
+                getTrackStoreState: () => recording_track_state(),
+                getTransportStoreValue: recording_transport(),
+                ...overrides,
+            });
+        }
+
+        /** An event admitted at a timeline beat, as the dispatcher stamps a recording take's events. */
+        const at_beat = (recordingBeat: number) => ({ audioTime: 2, recordingBeat });
+
+        const recorded_cc_rows = () =>
+            (recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.cc ?? []).map(
+                ({ controller, value, beat, channel }) => ({ controller, value, beat, channel })
+            );
+
+        beforeEach(() => {
+            target_track_id.value = 'track-1';
+            audio_clock.currentTime = 2;
+            audio_clock.baseLatency = 0;
+            audio_clock.outputLatency = 0;
+            tempoMapStore.set({ changes: [] });
+            recordedControllerTakeState.buffers.clear();
+        });
+
+        afterEach(() => {
+            tempoMapStore.set({ changes: [] });
+            audio_clock.baseLatency = 0;
+            audio_clock.outputLatency = 0;
+        });
+
+        it('records a pedal press and release at their clip-relative beats', () => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 64, 127, at_beat(6));
+            fn(0, 64, 0, at_beat(7));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 64, value: 127, beat: 2, channel: 0 },
+                { controller: 64, value: 0, beat: 3, channel: 0 },
+            ]);
+        });
+
+        it('records nothing while the transport is not recording', () => {
+            const fn = handleWebMidiCC._factory(
+                recording_dependencies({ getTransportStoreValue: recording_transport(false) })
+            );
+
+            fn(0, 64, 127, at_beat(6));
+
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
+        });
+
+        it('records nothing while the target track is not armed', () => {
+            const fn = handleWebMidiCC._factory(
+                recording_dependencies({ getTrackStoreState: () => recording_track_state(false) })
+            );
+
+            fn(0, 64, 127, at_beat(6));
+
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
+        });
+
+        it('records nothing without a target track', () => {
+            target_track_id.value = null;
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 64, 127, at_beat(6));
+
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
+        });
+
+        it('records an ordinary controller on the channel it arrived on', () => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(3, 1, 90, at_beat(5));
+
+            expect(recorded_cc_rows()).toEqual([{ controller: 1, value: 90, beat: 1, channel: 3 }]);
+        });
+
+        it.each([120, 121, 123, 127])('does not record the channel-mode message %i', (controller) => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, controller, 0, at_beat(6));
+
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
+        });
+
+        it('does not record a controller an active mapping owns', () => {
+            const fn = handleWebMidiCC._factory(
+                recording_dependencies({
+                    getMidiLearnState: () => ({
+                        mappingsSchemaVersion: 1,
+                        mappings: [
+                            {
+                                id: 'mapping-1',
+                                channel: 3,
+                                cc: 1,
+                                targetType: 'trackGain',
+                                trackId: 'track-1',
+                                minValue: 0,
+                                maxValue: 1,
+                            },
+                        ],
+                        isLearning: false,
+                        learningTarget: null,
+                    }),
+                })
+            );
+
+            fn(3, 1, 90, at_beat(5));
+            fn(2, 1, 90, at_beat(5));
+
+            expect(recorded_cc_rows()).toEqual([{ controller: 1, value: 90, beat: 1, channel: 2 }]);
+        });
+
+        it('does not record a controller that MIDI learn captures', () => {
+            const fn = handleWebMidiCC._factory(
+                recording_dependencies({
+                    getMidiLearnState: () => ({
+                        mappingsSchemaVersion: 1,
+                        mappings: [],
+                        isLearning: true,
+                        learningTarget: { targetType: 'trackGain', trackId: 'track-1' },
+                    }),
+                })
+            );
+
+            fn(3, 1, 90, at_beat(5));
+
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
+        });
+
+        it('records an RPN 0 sequence as the four raw messages in arrival order', () => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 101, 0, at_beat(6));
+            fn(0, 100, 0, at_beat(6.25));
+            fn(0, 6, 12, at_beat(6.5));
+            fn(0, 38, 0, at_beat(6.75));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 101, value: 0, beat: 2, channel: 0 },
+                { controller: 100, value: 0, beat: 2.25, channel: 0 },
+                { controller: 6, value: 12, beat: 2.5, channel: 0 },
+                { controller: 38, value: 0, beat: 2.75, channel: 0 },
+            ]);
+        });
+
+        it('records an RPN 0 sequence ending in the null RPN whole when every message shares one beat', () => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 101, 0, at_beat(6));
+            fn(0, 100, 0, at_beat(6));
+            fn(0, 6, 12, at_beat(6));
+            fn(0, 38, 0, at_beat(6));
+            fn(0, 101, 127, at_beat(6));
+            fn(0, 100, 127, at_beat(6));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 101, value: 0, beat: 2, channel: 0 },
+                { controller: 100, value: 0, beat: 2, channel: 0 },
+                { controller: 6, value: 12, beat: 2, channel: 0 },
+                { controller: 38, value: 0, beat: 2, channel: 0 },
+                { controller: 101, value: 127, beat: 2, channel: 0 },
+                { controller: 100, value: 127, beat: 2, channel: 0 },
+            ]);
+        });
+
+        it('keeps the state from before a Data Entry that is the take first row into the clip', () => {
+            channelControllerState.clear();
+            for (const [controller, value] of [
+                [101, 0],
+                [100, 0],
+                [6, 12],
+                [38, 0],
+            ] as const) {
+                ingestChannelControlChange({ channel: 0, cc: controller, value });
+            }
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 6, 2, at_beat(6));
+
+            const stateAtFirstRow =
+                recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.registeredStateAtFirstRow;
+            expect(stateAtFirstRow?.map(({ controller, value }) => [controller, value])).toEqual([
+                [101, 0],
+                [100, 0],
+                [6, 12],
+                [38, 0],
+            ]);
+        });
+
+        it('records an unconsumed 14-bit MSB and LSB pair as the two raw messages, not the assembled controller', () => {
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 1, 64, at_beat(6));
+            fn(0, 33, 10, at_beat(6.5));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 1, value: 64, beat: 2, channel: 0 },
+                { controller: 33, value: 10, beat: 2.5, channel: 0 },
+            ]);
+        });
+
+        it('records both pedal messages of the first latency window at clip beat 0', () => {
+            audio_clock.outputLatency = 0.25;
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(0, 64, 0, at_beat(4.1));
+            fn(0, 64, 127, at_beat(4.3));
+
+            expect(recorded_cc_rows()).toEqual([
+                { controller: 64, value: 0, beat: 0, channel: 0 },
+                { controller: 64, value: 127, beat: 0, channel: 0 },
+            ]);
+        });
+
+        it('keeps MPE member-channel slide as per-note expression and records the master channel controller', () => {
+            mpe_enabled.value = true;
+            const fn = handleWebMidiCC._factory(recording_dependencies());
+
+            fn(2, 74, 60, at_beat(6));
+            fn(0, 74, 60, at_beat(6));
+
+            expect(recorded_cc_rows()).toEqual([{ controller: 74, value: 60, beat: 2, channel: 0 }]);
+        });
+
+        it('keeps voicing the live controller when the recording write fails', () => {
+            const apply_midi_mappings = vi.fn<(channel: number, cc: number, value: number, position: number) => void>();
+            const fn = handleWebMidiCC._factory(
+                recording_dependencies({
+                    applyMidiMappings: apply_midi_mappings,
+                    bufferRecordedMidiCC: () => {
+                        throw new Error('buffer unavailable');
+                    },
+                })
+            );
+
+            fn(0, 64, 127, at_beat(6));
+
+            expect(apply_midi_mappings).toHaveBeenCalledWith(0, 64, 127, 1);
+        });
+
+        // The note route shares the placement helper with the controller route,
+        // so agreement with it alone cannot catch a wrong conversion in both. The
+        // clip beat is therefore also derived by hand from the map: beats 0-4 run
+        // at 120 BPM (2 s) and beats 4-6 at 60 BPM (2 s), so the event at beat 6
+        // sits at 4 s; the 0.375 s of latency (0.25 output + 0.125 track) rewinds
+        // it to 3.625 s, which is 1.625 s past beat 4 at one beat per second, beat
+        // 5.625 on the timeline and 1.625 in a clip starting at beat 4.
+        it('files a controller at the beat a note-on at the same instant gets, across latency and a tempo change', async () => {
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-1', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            audio_clock.outputLatency = 0.25;
+            const dependencies = recording_dependencies({ getCompensationDelay: () => 0.125 });
+            const create_midi_note = vi.fn((pitch: number, startBeat: number, duration: number, velocity: number) => ({
+                id: 'note-1',
+                pitch,
+                startBeat,
+                duration,
+                velocity,
+            }));
+            const note_off = handleWebMidiNoteOff._factory({
+                ...dependencies,
+                createMidiNote: create_midi_note,
+                appendRecordedMidiNote: () => {},
+                getSynthParamsForTrack: () => ({ release: 0.3 }),
+                processRealtimeMidiInput: async () => [],
+                stepRecordNoteOff: () => {},
+                sendNativeLiveMidiNote: async () => true,
+                soundsNativeNotes: () => false,
+            });
+            activeNotes.set(createWebMidiNoteKey(0, 60), {
+                channel: 0,
+                note: 60,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                startTime: 1,
+                startBeat: 6,
+            });
+            await note_off(0, 60, 0, at_beat(6));
+            const noteStartBeat = create_midi_note.mock.calls[0]?.[1];
+
+            handleWebMidiCC._factory(dependencies)(0, 64, 127, at_beat(6));
+
+            expect(recorded_cc_rows()).toEqual([{ controller: 64, value: 127, beat: noteStartBeat, channel: 0 }]);
+            expect(noteStartBeat).toBeCloseTo(1.625, 9);
+            expect(recorded_cc_rows()[0]?.beat).toBeCloseTo(1.625, 9);
         });
     });
 });

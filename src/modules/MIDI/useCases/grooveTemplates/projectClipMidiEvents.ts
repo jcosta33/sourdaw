@@ -1,6 +1,6 @@
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
-import { getGrooveProjection } from './getGrooveProjection';
+import { getGrooveProjection, type ProjectedSegment } from './getGrooveProjection';
 
 type ClipMidiEvent = {
     id: string;
@@ -18,6 +18,8 @@ type ProjectClipMidiEventsInput<Event extends ClipMidiEvent> = {
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    /** The clip's loop anchor; playback callers carry it (#4988). */
+    loopOriginBeat?: number;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
 };
@@ -31,9 +33,10 @@ export function projectClipMidiEvents<Event extends ClipMidiEvent>({
     loopLengthBeats,
     midiOffsetBeats,
     loopEnabled = false,
+    loopOriginBeat,
     clipGrooveAlreadyApplied = false,
     eventsAreAbsolute = false,
-}: ProjectClipMidiEventsInput<Event>): Event[] {
+}: ProjectClipMidiEventsInput<Event>): ProjectedSegment<Event>[] {
     return getGrooveProjection(grooveTemplateStore.value ?? defaultGrooveTemplateState).projectClipMidiEvents({
         events,
         clipId,
@@ -43,6 +46,7 @@ export function projectClipMidiEvents<Event extends ClipMidiEvent>({
         loopLengthBeats,
         midiOffsetBeats,
         loopEnabled,
+        loopOriginBeat,
         clipGrooveAlreadyApplied,
         eventsAreAbsolute,
     });

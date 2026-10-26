@@ -42,6 +42,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getLastClipEndBeat: vi.fn(() => 0),
     getSynthParamsForTrack: vi.fn(),
     getTrackStoreState: vi.fn(),
+    migrateTrimmedClipPassTakes: vi.fn(),
     isDeviceParameterAutomatable: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
     quantiseDeviceParameterValue: vi.fn(),
@@ -71,6 +72,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     restoreTrackSnapshot: vi.fn(),
     setMarqueeSelection: vi.fn(),
     setTrackState: vi.fn(),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {

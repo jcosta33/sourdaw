@@ -1,7 +1,7 @@
 name: Campaign
 description: Multi-PR objective with a completion contract. Children carry status.
 title: "feat(campaign): "
-labels: ["epic", "status:tracking"]
+labels: ["epic", "status:tracking", "project:features"]
 body:
   - type: markdown
     attributes:

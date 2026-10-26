@@ -32,8 +32,12 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
+    isTransportIdle: () => true,
     stopPlayback: vi.fn(),
+    countSettledTakes: () => 0,
 }));
+
+vi.mock('../saveProject/saveProject', () => ({ saveProject: vi.fn() }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
@@ -124,7 +128,7 @@ describe('newProject with the native host absent', () => {
 
         // Activation really drove the native teardown into the rejecting bridge.
         expect(pluginHostMocks.unloadPlugin).toHaveBeenCalled();
-        expect(resetCrdtProject).toHaveBeenCalledWith('Hostless Project', expect.any(Function));
+        expect(resetCrdtProject).toHaveBeenCalledWith('Hostless Project', expect.any(Function), expect.any(Function));
 
         // `initialized: true` with `loading: false` is what AppShell's ready
         // latch reads to mount the workspace over the launch screen.

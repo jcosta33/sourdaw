@@ -21,6 +21,7 @@
  */
 
 import { HIGH_RESOLUTION_MAX } from '#/utils/midiData';
+import { CC_SOSTENUTO_PEDAL, CC_SUSTAIN_PEDAL, CC_UNA_CORDA_PEDAL } from '#/utils/pianoPedalController';
 
 /** Lowest controller number that carries the MSB of a 14-bit pair. */
 export const HIGH_RESOLUTION_MSB_MIN = 0;
@@ -45,6 +46,12 @@ export const CC_RPN_MSB = 101;
 export const CC_ALL_SOUND_OFF = 120;
 export const CC_RESET_ALL_CONTROLLERS = 121;
 export const CC_ALL_NOTES_OFF = 123;
+
+/**
+ * The pedals whose held position is state rather than an event: a pedal pressed
+ * before a take begins is still down when it does, and nothing else will say so.
+ */
+export const HELD_PEDAL_CONTROLLERS: readonly number[] = [CC_SUSTAIN_PEDAL, CC_SOSTENUTO_PEDAL, CC_UNA_CORDA_PEDAL];
 
 /** RPN 0 — Pitch Bend Sensitivity: MSB is semitones, LSB is cents. */
 export const RPN_PITCH_BEND_SENSITIVITY = 0;
@@ -141,6 +148,16 @@ export function highResolutionMsbCcFor(lsbCc: number): number {
 /** True for the four controllers that exist only to select a parameter number. */
 export function isParameterSelectCc(cc: number): boolean {
     return cc === CC_NRPN_LSB || cc === CC_NRPN_MSB || cc === CC_RPN_LSB || cc === CC_RPN_MSB;
+}
+
+/** True for a pedal whose held position the live input's pedal state keeps. */
+export function isHeldPedalCc(cc: number): boolean {
+    return HELD_PEDAL_CONTROLLERS.includes(cc);
+}
+
+/** True for a controller number below the channel-mode range (0..119). */
+export function isControllerCc(cc: number): boolean {
+    return cc >= 0 && cc < CC_ALL_SOUND_OFF;
 }
 
 /** True for the four controllers that write the selected parameter's value. */

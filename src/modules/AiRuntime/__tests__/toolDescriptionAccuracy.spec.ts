@@ -12,7 +12,7 @@ import {
 
 import { AGENT_CATALOG_CATEGORIES, AGENT_CATALOG_DISCOVERY_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type ProjectContext } from '../models/ProjectContext';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../models/ToolDefinitions';
+import { type ToolSchema } from '../models/ToolDefinitions';
 import { resolveAutomationLaneTarget } from '../transformers/resolveAutomationLaneTarget';
 import { getAgentToolCatalogSchemas } from '../useCases/agentToolCatalog';
 import { getAgentToolCatalogEntries } from '../useCases/getAgentToolCatalogEntries';
@@ -45,12 +45,6 @@ import { getPlanningProviderSchemaContract } from '../useCases/planningProviderS
 
 const DISPLAY_NAME_SITES: ReadonlySet<string> = new Set([
     'addTrack|function.parameters.properties.name.description',
-    'createBus|function.parameters.properties.name.description',
-    'addSidechainRoute|function.parameters.properties.sourceTrackId.description',
-    'addSidechainRoute|function.parameters.properties.targetTrackId.description',
-    'addMarker|function.description',
-    'addSection|function.description',
-    'addSection|function.parameters.properties.name.description',
     'automateParameterRange|function.parameters.properties.range.properties.section.description',
 ]);
 
@@ -384,18 +378,18 @@ function findUnresolvedCitations(schemas: readonly ToolSchema[], vocabulary: Voc
     return unresolved;
 }
 
-/** Legacy enumerations that differ from, or have no counterpart in, what the live registry publishes. */
-function findLegacyEnumerationDrift(legacy: readonly ToolSchema[], live: readonly ToolSchema[]): string[] {
+/** Published catalog enumerations must preserve the executable owner's legal values. */
+function findCatalogEnumerationDrift(catalog: readonly ToolSchema[], live: readonly ToolSchema[]): string[] {
     const liveByName = new Map(live.map((schema) => [schema.function.name, schema]));
     const drift: string[] = [];
-    for (const schema of legacy) {
+    for (const schema of catalog) {
         const twin = liveByName.get(schema.function.name);
         const twinEnumerations = twin === undefined ? new Map<string, readonly unknown[]>() : collectEnumerations(twin);
         for (const [path, values] of collectEnumerations(schema)) {
             const liveValues = twinEnumerations.get(path);
             if (JSON.stringify(liveValues) !== JSON.stringify(values)) {
                 drift.push(
-                    `${schema.function.name} ${path}: legacy [${values.join(', ')}] but live ${
+                    `${schema.function.name} ${path}: catalog [${values.join(', ')}] but live ${
                         liveValues === undefined ? 'publishes none' : `[${liveValues.join(', ')}]`
                     }`
                 );
@@ -437,7 +431,7 @@ function withPropertyDescription(
 }
 
 describe('planner tool description accuracy', () => {
-    let legacySchemas: readonly ToolSchema[] = [];
+    let catalogSchemas: readonly ToolSchema[] = [];
     let liveSchemas: readonly ToolSchema[] = [];
     let publishedSchemas: readonly ToolSchema[] = [];
     let vocabulary: Vocabulary;
@@ -445,8 +439,14 @@ describe('planner tool description accuracy', () => {
     beforeAll(() => {
         clearMidiTransformRegistry();
         registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);
-        legacySchemas = DAW_TOOL_SCHEMAS;
         liveSchemas = getExecutableAppActionToolSchemas();
+        catalogSchemas = liveSchemas.map((schema) => {
+            const entry = getAgentToolCatalogEntries({ category: 'command', names: [schema.function.name] }).items[0];
+            if (entry === undefined || !('function' in entry)) {
+                throw new Error(`No callable command catalog entry for ${schema.function.name}.`);
+            }
+            return entry;
+        });
         publishedSchemas = [
             ...getAgentToolCatalogSchemas(),
             ...getPlanningProviderSchemaContract().schemas,
@@ -454,7 +454,7 @@ describe('planner tool description accuracy', () => {
             ...liveSchemas,
             ...getMidiTransformToolSchemas(),
             ...getMidiNoteGenerationToolSchemas({ expectedClipId: 'probe-clip' }),
-            ...legacySchemas,
+            ...catalogSchemas,
         ];
         const plugins = getBuiltinPlugins();
         const recipeCatalog = getMixRecipeCatalog();
@@ -615,12 +615,12 @@ describe('planner tool description accuracy', () => {
         expect(isServedCatalogCategory('retired-category')).toBe(false);
     });
 
-    it('keeps every legacy tool enumeration equal to what the live registry publishes for the same tool', () => {
-        expect(findLegacyEnumerationDrift(legacySchemas, liveSchemas)).toEqual([]);
+    it('keeps every catalog enumeration equal to what the live registry publishes for the same tool', () => {
+        expect(findCatalogEnumerationDrift(catalogSchemas, liveSchemas)).toEqual([]);
     });
 
-    it('reports a legacy enumeration that has drifted from the live registry', () => {
-        const addTrack = legacySchemas.find((schema) => schema.function.name === 'addTrack');
+    it('reports a catalog enumeration that has drifted from the live registry', () => {
+        const addTrack = catalogSchemas.find((schema) => schema.function.name === 'addTrack');
         expect(addTrack).toBeDefined();
         if (addTrack === undefined) {
             return;
@@ -631,8 +631,8 @@ describe('planner tool description accuracy', () => {
             ...addTrack,
             function: { ...addTrack.function, parameters: { ...addTrack.function.parameters, properties } },
         };
-        expect(findLegacyEnumerationDrift([drifted], liveSchemas)).toEqual([
-            'addTrack parameters.properties.kind: legacy [audio, midi, bus, folder] but live [audio, midi, folder]',
+        expect(findCatalogEnumerationDrift([drifted], liveSchemas)).toEqual([
+            'addTrack parameters.properties.kind: catalog [audio, midi, bus, folder] but live [audio, midi, folder]',
         ]);
     });
 });

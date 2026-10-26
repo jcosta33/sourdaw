@@ -146,6 +146,7 @@ export type ClipStateSnapshot = {
     readonly stretchRatio?: number;
     readonly loopEnabled?: boolean;
     readonly loopLength?: number;
+    readonly loopOriginBeat?: number;
     readonly followAction?: 'stop' | 'play_next' | 'play_previous' | 'play_random' | 'play_first' | 'play_last';
     readonly generating?: boolean;
     readonly isGhost?: boolean;
@@ -332,6 +333,35 @@ export type MidiNoteExpressionSnapshot = {
 };
 export type MidiCcSnapshot = readonly { readonly id: string }[];
 export type MidiPitchBendSnapshot = readonly { readonly id: string }[];
+/** The rows one overdub pass adds to one clip, ids included. */
+export type OverdubControllerRowsSnapshot = {
+    readonly clipId: string;
+    readonly cc: readonly {
+        readonly id: string;
+        readonly controller: number;
+        readonly value: number;
+        readonly beat: number;
+        readonly channel: number;
+    }[];
+    readonly pitchBend: readonly {
+        readonly id: string;
+        readonly value: number;
+        readonly beat: number;
+        readonly channel: number;
+    }[];
+};
+/**
+ * The ids of the rows one overdub pass added to one clip, and whether each of the clip's
+ * lists existed before the pass: the inverse drops only a list the pass created, so an empty
+ * list stays empty and "no list" stays absent.
+ */
+export type OverdubControllerRowIds = {
+    readonly clipId: string;
+    readonly ccIds: readonly string[];
+    readonly pitchBendIds: readonly string[];
+    readonly ccListExisted: boolean;
+    readonly pitchBendListExisted: boolean;
+};
 /**
  * A global time operation's restore plan, as produced by `executeGlobalTimeOperation`.
  * Opaque here on purpose: the owning module encodes plans through its own codec, and
@@ -1182,7 +1212,7 @@ export type AppAction =
       }
     | { type: 'selectTrack'; payload: { trackId: string } }
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean; expectedMuted: boolean } }
-    | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
+    | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean; expectedSoloed?: boolean } }
     | {
           /** Guarded self-inverse of comp take selection. Fresh intent carries a
            *  non-null `takeId`; replay also binds the captured lane owner and may
@@ -1405,9 +1435,60 @@ export type AppAction =
               reKeyedTakeLanes?: TakeReKeyLaneTransitionSnapshot[];
           };
       }
-    | { type: 'trimClipStart'; payload: { clipId: string; newStartBeat: number } }
+    | {
+          type: 'trimClipStart';
+          payload: {
+              clipId: string;
+              newStartBeat: number;
+              /**
+               * The exact pre-action loop anchor the recorded inverse restores
+               * (#5198): a value puts that anchor back and `null` restores "no
+               * anchor", removing a key the action minted, so both replay
+               * directions restore the pre-action state. Optional so entries
+               * persisted before the field existed still decode; absent replays
+               * the mint law they always did. AiRuntime-produced trims never
+               * set it.
+               */
+              loopOriginBeat?: number | null;
+              /**
+               * The pre-action stored `midiOffsetBeats` a recorded inverse
+               * restores verbatim (#5512). The trim's forward wrap derives its
+               * loop length from the post-trim duration while the replay's wrap
+               * derives from the post-restore duration, and on a
+               * duration-derived loop (`loopLength` unset) those durations
+               * differ, so the re-wrapping replay lands the stored rows a
+               * trim-wrap distance from the figures the slip's own recorded
+               * inverse then restores against. The capture keys the verbatim
+               * restoration on this key's presence — zero included — the same
+               * recorded-inverse law the slip's `rowLiftBeats` follows. Only
+               * recorded inverses set it: a fresh dispatch never carries it,
+               * and entries recorded before the field existed decode without it
+               * and replay the re-wrapping law they always did.
+               */
+              midiOffsetBeats?: number;
+          };
+      }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
-    | { type: 'slipClipContent'; payload: { clipId: string; clipType: 'audio' | 'midi'; offset: number } }
+    | {
+          type: 'slipClipContent';
+          payload: {
+              clipId: string;
+              clipType: 'audio' | 'midi';
+              offset: number;
+              /**
+               * The row shift a recorded inverse must apply to restore the rows
+               * the forward slip's raising wrap lifted (#5198): the lift carried
+               * negative, zero included — the replay keys verbatim restoration
+               * on this key's presence, so a recorded inverse is never keyed
+               * keyless. Only recorded inverses set it — a fresh dispatch is
+               * keyless and keeps the forward wrap law, and entries recorded
+               * before the field existed decode without it; the undo seams'
+               * legacy normalizer re-keys those to the same verbatim
+               * restoration (`rowLiftBeats: 0`).
+               */
+              rowLiftBeats?: number;
+          };
+      }
     | {
           /** Draw-tool clip creation; `ripple` shifts later clips on the track by the
            *  drawn length, exactly as the gesture's ripple insert did. */
@@ -2088,6 +2169,8 @@ export type AppAction =
               fadeOutBeats?: number;
               /** Offset the restore puts back; optional so older undo entries still decode. */
               audioOffsetBeats?: number;
+              /** Loop anchor the restore puts back; optional so older undo entries still decode. */
+              loopOriginBeat?: number;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };
@@ -2148,6 +2231,14 @@ export type AppAction =
                   clipBFadeInBeats: number;
                   clipBAudioOffsetBeats?: number;
                   clipBMidiOffsetBeats?: number;
+                  /**
+                   * The loop anchor the captured clip B carried, so the undo
+                   * of a stretched crossfade restores the pre-crossfade anchor
+                   * the forward leg displaced (#5198). Absent on legacy
+                   * entries, which decode and restore exactly as before: the
+                   * live anchor is left untouched.
+                   */
+                  clipBLoopOriginBeat?: number;
               };
               replacement: {
                   clipAEndBeat: number;
@@ -2156,6 +2247,7 @@ export type AppAction =
                   clipBFadeInBeats: number;
                   clipBAudioOffsetBeats?: number;
                   clipBMidiOffsetBeats?: number;
+                  clipBLoopOriginBeat?: number;
               };
           };
       }
@@ -2388,8 +2480,34 @@ export type AppAction =
           type: 'restoreClipLoop';
           payload: {
               clipId: string;
-              expected: { present: boolean; enabled: boolean };
-              replacement: { present: boolean; enabled: boolean };
+              expected: {
+                  present: boolean;
+                  enabled: boolean;
+                  /**
+                   * The loop anchor the captured clip carried (#5198). Absent
+                   * on legacy entries, which decode and behave exactly as
+                   * before. The compare-and-swap guard reads only present and
+                   * enabled: the anchor is inert while the loop is off, and a
+                   * legacy expected snapshot must not conflict with a live
+                   * anchor a later edit minted. `null` rides on entries whose
+                   * captured clip carried none.
+                   */
+                  loopOriginBeat?: number | null;
+              };
+              replacement: {
+                  present: boolean;
+                  enabled: boolean;
+                  /**
+                   * The anchor to put back: the inverse of a loop disable
+                   * restores the pre-disable anchor instead of the enable
+                   * branch's restamp (#5198). `null` records a captured clip
+                   * that carried no anchor, so the inverse of an enable
+                   * removes the key the enable minted instead of leaving it on
+                   * a never-looped clip. Absent — legacy entries — replays the
+                   * enable's restamp exactly as before.
+                   */
+                  loopOriginBeat?: number | null;
+              };
           };
       }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }
@@ -3016,6 +3134,23 @@ export type AppAction =
               midiCcSnapshot: MidiCcSnapshot | null;
               midiPitchBendSnapshot: MidiPitchBendSnapshot | null;
           };
+      }
+    | {
+          /** The controller and pitch-bend rows one overdub pass recorded into
+           *  clips that already held rows (a take the recorder opened no clip
+           *  for), appended when the transport stops recording and ONE history
+           *  entry for the whole pass. The payload carries the rows with the ids
+           *  they keep, registered-parameter declarations included, so Undo
+           *  (`removeOverdubControllers`) removes exactly them and Redo replays
+           *  this action to put the same rows back. */
+          type: 'appendOverdubControllers';
+          payload: { clips: readonly OverdubControllerRowsSnapshot[] };
+      }
+    | {
+          /** Inverse of `appendOverdubControllers`. Removes the named rows by id and
+           *  leaves every other row of the clip, a peer's edit included, in place. */
+          type: 'removeOverdubControllers';
+          payload: { clips: readonly OverdubControllerRowIds[] };
       };
 
 export type TrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';

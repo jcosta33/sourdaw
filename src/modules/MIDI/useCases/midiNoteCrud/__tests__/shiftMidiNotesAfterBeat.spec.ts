@@ -131,8 +131,8 @@ describe('shiftMidiNotesAfterBeat', () => {
             ccByClipId: {},
             pitchBendByClipId: {
                 straddler: [
-                    { beat: 6, value: 0.5 },
-                    { beat: 2, value: 0.1 },
+                    { beat: 6, value: 4096 },
+                    { beat: 2, value: 800 },
                 ],
             },
         };
@@ -142,8 +142,8 @@ describe('shiftMidiNotesAfterBeat', () => {
         };
         // windowStartMedia = 8 - 4 = 4; beat 6 >= 4 → shifts to 10; beat 2 < 4 → stays
         expect(written.pitchBendByClipId.straddler).toEqual([
-            { beat: 10, value: 0.5 },
-            { beat: 2, value: 0.1 },
+            { beat: 10, value: 4096 },
+            { beat: 2, value: 800 },
         ]);
     });
 

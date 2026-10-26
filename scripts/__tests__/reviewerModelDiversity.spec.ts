@@ -91,7 +91,7 @@ describe('reviewer-model diversity enforcement', () => {
 });
 
 describe('assertReviewerModelDiversity', () => {
-    const authorLabel = { name: 'glm-5.3', description: 'Authored by glm-5.3' };
+    const authorLabel = { name: 'gpt-6-luna', description: 'Authored by gpt-6-luna' };
 
     it('exempts the orchestrator acceptance identity entirely', () => {
         expect(() =>
@@ -118,23 +118,24 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [{ name: 'bug', description: 'Something is broken' }, authorLabel],
-                document: { reviewerModel: ' glm-5.3 ', body: 'The change held.' },
+                document: { reviewerModel: ' gpt-6-luna ', body: 'The change held.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
 
     it('refuses when the reviewer model matches any fenced authoring model, not just the first', () => {
-        // lane:publish metadata edits are add-only, so republishing with a different --model
-        // leaves the previous fenced label on the PR; matching either fence must refuse.
+        // The check reads the live label set: a pull request last republished before the fence
+        // reconciliation (#4296), or an unconverged partial metadata write, can still wear
+        // several fences, so matching any fence present must refuse.
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [
-                    { name: 'glm-5.3', description: 'Authored by glm-5.3' },
+                    { name: 'gpt-6-luna', description: 'Authored by gpt-6-luna' },
                     { name: 'bug', description: 'Something is broken' },
-                    { name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' },
+                    { name: 'gpt-5.6-terra', description: 'Authored by gpt-5.6-terra' },
                 ],
-                document: { reviewerModel: 'glm-5.3-flash', body: 'The change held.' },
+                document: { reviewerModel: 'gpt-5.6-terra', body: 'The change held.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -144,7 +145,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'glm-5.3-flash', body: 'The change held.' },
+                document: { reviewerModel: 'gpt-5.6-terra', body: 'The change held.' },
             })
         ).not.toThrow();
     });
@@ -153,8 +154,8 @@ describe('assertReviewerModelDiversity', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [{ name: 'glm-5.3' }, { name: 'bug', description: 'Something is broken' }],
-                document: { reviewerModel: 'glm-5.3', body: 'The change held.' },
+                authorLabels: [{ name: 'gpt-6-luna' }, { name: 'bug', description: 'Something is broken' }],
+                document: { reviewerModel: 'gpt-6-luna', body: 'The change held.' },
             })
         ).not.toThrow();
     });
@@ -165,9 +166,9 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'glm-5.3',
+                    reviewerModel: 'gpt-6-luna',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Reviewed on glm-5.3 under the same-model fallback after every other harness was unavailable.',
+                    body: 'Reviewed on gpt-6-luna under the same-model fallback after every other harness was unavailable.',
                 },
             })
         ).not.toThrow();
@@ -178,14 +179,14 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'glm-5.3', body: 'Reviewed on glm-5.3.' },
+                document: { reviewerModel: 'gpt-6-luna', body: 'Reviewed on gpt-6-luna.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'glm-5.3', modelExhaustion: '   ', body: 'Reviewed on glm-5.3.' },
+                document: { reviewerModel: 'gpt-6-luna', modelExhaustion: '   ', body: 'Reviewed on gpt-6-luna.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -196,7 +197,7 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'glm-5.3',
+                    reviewerModel: 'gpt-6-luna',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
                     body: 'The change held under attack.',
                 },
@@ -210,9 +211,9 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'glm-5.3',
+                    reviewerModel: 'gpt-6-luna',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Reviewed on glm-5.3-flash under the same-model fallback.',
+                    body: 'Reviewed on gpt-6-luna-pro under the same-model fallback.',
                 },
             })
         ).toThrow(/naming the reviewer model/u);
@@ -224,9 +225,9 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'glm-5.3',
+                    reviewerModel: 'gpt-6-luna',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Same-model fallback: reviewed on glm-5.3, with glm-5.3-flash unavailable.',
+                    body: 'Same-model fallback: reviewed on gpt-6-luna, with gpt-5.6-terra unavailable.',
                 },
             })
         ).not.toThrow();
@@ -238,22 +239,26 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'glm-5.3',
+                    reviewerModel: 'gpt-6-luna',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'glm-5.3-flash was unavailable; fell back to glm-5.3 for this review',
+                    body: 'gpt-6-luna-pro was unavailable; fell back to gpt-6-luna for this review',
                 },
             })
         ).not.toThrow();
     });
 
     it('refuses the fallback when the only occurrence extends the model with a token character', () => {
-        for (const body of ['only glm-5.3.1 was named', 'only glm-5.3+edge was named', 'only xglm-5.3 was named']) {
+        for (const body of [
+            'only gpt-6-luna.1 was named',
+            'only gpt-6-luna+edge was named',
+            'only xgpt-6-luna was named',
+        ]) {
             expect(() =>
                 assertReviewerModelDiversity({
                     actorNodeId: REVIEWER_BOT_NODE_ID,
                     authorLabels: [authorLabel],
                     document: {
-                        reviewerModel: 'glm-5.3',
+                        reviewerModel: 'gpt-6-luna',
                         modelExhaustion: 'every other harness on this machine is logged out or broken',
                         body,
                     },
@@ -268,7 +273,7 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'glm-5.3-flash',
+                    reviewerModel: 'gpt-5.6-terra',
                     modelExhaustion: 'stale field from an earlier round',
                     body: 'The change held under attack.',
                 },
@@ -277,34 +282,40 @@ describe('assertReviewerModelDiversity', () => {
     });
 });
 
-describe('assertReviewerModelDiversity per-draw records', () => {
-    const authorLabel = { name: 'glm-5.3', description: 'Authored by glm-5.3' };
+describe('assertReviewerModelDiversity draw records', () => {
+    const authorLabel = { name: 'gpt-6-luna', description: 'Authored by gpt-6-luna' };
 
-    it('refuses a draw on an authoring model without its own exhaustion, naming the stance and model', () => {
-        // The composing model here differs from every author, so only the per-draw record can
-        // catch this draw: the refusal must name the stance, which the document-level rule cannot.
+    it('refuses a draw on an authoring model when the document carries no exhaustion', () => {
+        // The document reviewer model differs from every author, so only the draw can trip the rule.
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'claude-opus-4.5', body: 'The change held.' },
-                stanceDraws: [
-                    { stance: 'test-validity', reviewerModel: 'claude-opus-4.5' },
-                    { stance: 'correctness', reviewerModel: 'glm-5.3' },
-                ],
+                document: {
+                    reviewerModel: 'claude-sonnet-4.5',
+                    body: 'The change held.',
+                    draws: [
+                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5' },
+                        { stance: 'correctness', reviewerModel: 'gpt-6-luna' },
+                    ],
+                },
             })
-        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3", which matches/u);
+        ).toThrow(/reviewer model "gpt-6-luna" matches one of the PR's authoring models/u);
     });
 
-    it('refuses a draw whose exhaustion is blank as if it carried none', () => {
+    it('refuses a disclosed authoring-model draw whose model the body never names', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'claude-opus-4.5', body: 'The change held.' },
-                stanceDraws: [{ stance: 'correctness', reviewerModel: 'glm-5.3', exhaustion: '   ' }],
+                document: {
+                    reviewerModel: 'claude-sonnet-4.5',
+                    modelExhaustion: 'every other harness was down',
+                    body: 'The change held.',
+                    draws: [{ stance: 'correctness', reviewerModel: 'gpt-6-luna' }],
+                },
             })
-        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
+        ).toThrow(/naming the reviewer model "gpt-6-luna"/u);
     });
 
     it('admits draws whose models differ from every authoring model without exhaustion', () => {
@@ -312,167 +323,101 @@ describe('assertReviewerModelDiversity per-draw records', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'claude-opus-4.5', body: 'The change held.' },
-                stanceDraws: [
-                    { stance: 'correctness', reviewerModel: 'claude-opus-4.5' },
-                    { stance: 'test-validity', reviewerModel: 'glm-5.3-flash' },
-                ],
+                document: {
+                    reviewerModel: 'claude-sonnet-4.5',
+                    body: 'The change held.',
+                    draws: [
+                        { stance: 'correctness', reviewerModel: 'claude-sonnet-4.5' },
+                        { stance: 'test-validity', reviewerModel: 'gpt-5.6-terra' },
+                    ],
+                },
             })
         ).not.toThrow();
     });
 
-    it('admits a draw on an authoring model that carries its own exhaustion', () => {
+    it('admits an authoring-model draw disclosed by the document exhaustion and named in the body', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'claude-opus-4.5', body: 'The change held.' },
-                stanceDraws: [
-                    { stance: 'correctness', reviewerModel: 'glm-5.3', exhaustion: 'every other harness was down' },
-                ],
+                document: {
+                    reviewerModel: 'claude-sonnet-4.5',
+                    modelExhaustion: 'every other harness was down for the correctness draw',
+                    body: 'Correctness fell back to gpt-6-luna, the only harness left; the change held.',
+                    draws: [
+                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5' },
+                        { stance: 'correctness', reviewerModel: 'gpt-6-luna' },
+                    ],
+                },
             })
         ).not.toThrow();
     });
+});
 
-    it('admits the mixed round: document model on an author fence, one draw on that model exhausted, no document-level field', () => {
+describe('fresh review model cost ceiling', () => {
+    function admit(reviewerModel: string, draws?: { stance: string; reviewerModel: string; tier: string }[]): void {
+        assertReviewerModelDiversity({
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            authorLabels: [{ name: 'gpt-6.1-sol', description: 'Authored by gpt-6.1-sol' }],
+            document: { reviewerModel, body: 'The boundary held under attack.', draws },
+        });
+    }
+
+    it.each(['gpt-6-luna', 'gpt-5.6-terra', 'claude-sonnet-4.5', 'claude-haiku-4-5'])(
+        'admits the affordable public model %s',
+        (model) => {
+            expect(() => admit(model)).not.toThrow();
+        }
+    );
+
+    it.each([
+        'gpt-6-astra',
+        'gpt-6.1-sol',
+        'gpt-5.6-sol',
+        'fable',
+        'claude-opus-4.5',
+        'unknown-model',
+        'gpt-6-luna-pro',
+        'claude-sonnet-4.5-opus',
+    ])('refuses premium or unclassified summary model %s', (model) => {
+        expect(() => admit(model)).toThrow(/permitted low-cost review model/u);
+    });
+
+    it('checks every draw even when the summary and preceding draw are affordable', () => {
         expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: {
-                    reviewerModel: 'glm-5.3',
-                    body: 'Mixed round: test-validity ran on claude-opus-4.5; correctness fell back to glm-5.3, the only harness left.',
-                },
-                stanceDraws: [
-                    { stance: 'test-validity', reviewerModel: 'claude-opus-4.5' },
-                    { stance: 'correctness', reviewerModel: 'glm-5.3', exhaustion: 'every other harness was down' },
-                ],
-            })
+            admit('gpt-6-luna', [
+                { stance: 'lost identity', reviewerModel: 'claude-haiku-4-5', tier: 'economy' },
+                { stance: 'lost head binding', reviewerModel: 'gpt-6.1-sol', tier: 'standard' },
+            ])
+        ).toThrow(/draws\[1\].reviewerModel.*permitted low-cost review model/u);
+    });
+
+    it('admits model diversity across affordable economy and standard draws', () => {
+        expect(() =>
+            admit('gpt-6-luna', [
+                { stance: 'lost identity', reviewerModel: 'claude-haiku-4-5', tier: 'economy' },
+                { stance: 'lost head binding', reviewerModel: 'gpt-5.6-terra', tier: 'standard' },
+            ])
         ).not.toThrow();
     });
 
-    it('still requires the mixed round to name the reviewer model in the body', () => {
+    it('refuses strongest metadata on an affordable model instead of relabeling its tier', () => {
         expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: { reviewerModel: 'glm-5.3', body: 'The change held under attack.' },
-                stanceDraws: [
-                    { stance: 'correctness', reviewerModel: 'glm-5.3', exhaustion: 'every other harness was down' },
-                ],
-            })
-        ).toThrow(/naming the reviewer model/u);
+            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'gpt-6-luna', tier: 'strongest' }])
+        ).toThrow(/economy or standard/u);
     });
 
-    it('keeps the document-level refusal when draws exist but none on the document model carries exhaustion', () => {
+    it('does not let modelExhaustion waive the cost ceiling', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: { reviewerModel: 'glm-5.3', body: 'Reviewed on glm-5.3.' },
-                stanceDraws: [{ stance: 'correctness', reviewerModel: 'claude-opus-4.5' }],
-            })
-        ).toThrow(/matches one of the PR's authoring models/u);
-    });
-
-    it('admits a draw on the authoring model carrying its own exhaustion alongside the document-level field', () => {
-        expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
+                authorLabels: [{ name: 'gpt-6.1-sol', description: 'Authored by gpt-6.1-sol' }],
                 document: {
-                    reviewerModel: 'glm-5.3',
-                    modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Reviewed on glm-5.3 under the same-model fallback after every other harness was unavailable.',
+                    reviewerModel: 'gpt-6.1-sol',
+                    body: 'Reviewed on gpt-6.1-sol after other models were unavailable.',
+                    modelExhaustion: 'All permitted review models were unavailable.',
                 },
-                stanceDraws: [
-                    { stance: 'correctness', reviewerModel: 'glm-5.3', exhaustion: 'no other model offered' },
-                ],
             })
-        ).not.toThrow();
-    });
-
-    it('admits a bare authoring-model draw only under a present, non-blank document-level whole-round exhaustion', () => {
-        // The document-level whole-round fallback covers every draw, so the draw needs no
-        // exhaustion of its own; a blank field covers nothing and the refusal names the stance.
-        const stanceDraws = [{ stance: 'correctness', reviewerModel: 'glm-5.3' }];
-        expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: {
-                    reviewerModel: 'glm-5.3',
-                    modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Reviewed on glm-5.3 under the whole-round fallback after every other harness was unavailable.',
-                },
-                stanceDraws,
-            })
-        ).not.toThrow();
-        expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: {
-                    reviewerModel: 'claude-opus-4.5',
-                    modelExhaustion: '   ',
-                    body: 'The change held under attack.',
-                },
-                stanceDraws,
-            })
-        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
-    });
-
-    it('refuses naming the stance when an off-fence draw refutes the whole-round field', () => {
-        // The document-level field claims every draw fell back, but a dispatched draw on a
-        // non-author model refutes that claim; the bare author-model draw is undisclosed.
-        expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: {
-                    reviewerModel: 'glm-5.3',
-                    modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Reviewed on glm-5.3 under the whole-round fallback after every other harness was unavailable.',
-                },
-                stanceDraws: [
-                    { stance: 'correctness', reviewerModel: 'glm-5.3' },
-                    { stance: 'test-validity', reviewerModel: 'claude-opus-4.5' },
-                ],
-            })
-        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
-    });
-
-    it('refuses naming the stance when the whole-round field is stale on a document model off the fence', () => {
-        // The document reviewer model differs from every author, so the document-level field is
-        // inert baggage, not a live whole-round fallback; the bare author-model draw is undisclosed.
-        expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: {
-                    reviewerModel: 'claude-opus-4.5',
-                    modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'The change held under attack.',
-                },
-                stanceDraws: [{ stance: 'correctness', reviewerModel: 'glm-5.3' }],
-            })
-        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
-    });
-
-    it('refuses naming the stance when a blank field sits on an otherwise whole-round record', () => {
-        // Pins the field conjunct: with the document model fenced and every draw on the fences,
-        // only the blank field keeps the whole-round arm off, so the bare draw is undisclosed.
-        expect(() =>
-            assertReviewerModelDiversity({
-                actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [authorLabel],
-                document: {
-                    reviewerModel: 'glm-5.3',
-                    modelExhaustion: '   ',
-                    body: 'The change held under attack.',
-                },
-                stanceDraws: [{ stance: 'correctness', reviewerModel: 'glm-5.3' }],
-            })
-        ).toThrow(/review stance "correctness" drew reviewer model "glm-5\.3"/u);
+        ).toThrow(/permitted low-cost review model/u);
     });
 });

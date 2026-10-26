@@ -24,6 +24,8 @@ User-facing snapshot version control for projects, including point-in-time miles
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/ProjectVersioning
+pnpm test:run <changed-spec>
 ```
