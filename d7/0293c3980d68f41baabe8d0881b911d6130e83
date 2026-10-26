@@ -1,0 +1,48 @@
+src/modules/MIDI/useCases/triggerLiveNoteOff.ts
+  s_29d8df116c5b92::t_65c89c5fece8d2 12-14,17-27
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_29d8df116c5b92::t_1b329ff8f4c7e5 4,400-405,420-422,436,443-445,450-452
+src/modules/MIDI/useCases/triggerLiveNoteOn.ts
+  s_29d8df116c5b92::t_65c89c5fece8d2 11-15,18-36
+  s_29d8df116c5b92::t_89f163c0ba9b8e 37
+src/modules/Arrangement/useCases/recording/recordingMidiAdmission.ts
+  s_29d8df116c5b92::t_5a6f21d3e54689 1-72,74-88,98-113
+  s_29d8df116c5b92::t_fc13200063226f 73,89-97
+  s_29d8df116c5b92::t_ff48f5b9c21ee6 114-118
+src/modules/Arrangement/useCases/index.ts
+  s_29d8df116c5b92::t_5a6f21d3e54689 217-221,223
+  s_29d8df116c5b92::t_fc13200063226f 222
+src/modules/MIDI/useCases/webMidiInput/isRecordingOnArmedTrack.ts
+  s_29d8df116c5b92::t_1b329ff8f4c7e5 8
+  s_29d8df116c5b92::t_941888f6e25c99 1-2
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_29d8df116c5b92::t_1b329ff8f4c7e5 120-121
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  s_29d8df116c5b92::t_904e67e2c2b55e 29-32,38-41
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_29d8df116c5b92::t_904e67e2c2b55e 135-138
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_29d8df116c5b92::t_e55b48da69512b 2-6,17,20,181-203,208,219-227
+  s_29d8df116c5b92::t_9d61dab5df9924 228,236
+src/modules/MIDI/useCases/webMidiInput/captureCompensatedRecordingPosition.ts
+  s_29d8df116c5b92::t_3f22034797618b 1-13
+  s_29d8df116c5b92::t_cb5d22db1a6286 14-16
+src/modules/MIDI/useCases/webMidiInput/resolveInputEventTime.ts
+  s_29d8df116c5b92::t_3f22034797618b 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d70293c3980d68f41baabe8d0881b911d6130e83",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
