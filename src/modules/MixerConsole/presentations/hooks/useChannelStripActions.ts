@@ -39,6 +39,13 @@ export type ChannelStripActions = {
         shouldExecute: () => boolean;
         onCommitted: () => void;
     }) => void;
+    setPanFromMenu: (request: {
+        trackId: string;
+        expectedPan: number;
+        pan: number;
+        shouldExecute: () => boolean;
+        onCommitted: () => void;
+    }) => void;
     setPan: (value: number, isTransient?: boolean) => void;
     setColor: (color: string) => void;
     rename: (name: string) => void;
@@ -417,6 +424,37 @@ export function useChannelStripActions(track: Track): ChannelStripActions {
                         );
                     } catch (error) {
                         logger.error(new Error('Channel strip menu gain commit failed', { cause: error }));
+                    }
+                });
+        },
+        setPanFromMenu: ({ trackId, expectedPan, pan, shouldExecute, onCommitted }) => {
+            pendingPanCommit.current = pendingPanCommit.current
+                .catch(() => undefined)
+                .then(async () => {
+                    if (!shouldExecute()) {
+                        return;
+                    }
+                    try {
+                        await executeUserAppAction(
+                            {
+                                type: 'setTrackPan',
+                                payload: {
+                                    trackId,
+                                    pan,
+                                    expectedPan,
+                                    automationRecordingPolicy: 'suppressed',
+                                },
+                            },
+                            {
+                                shouldExecute,
+                                onCommitted: () => {
+                                    lastPanSettleTime.current = 0;
+                                    onCommitted();
+                                },
+                            }
+                        );
+                    } catch (error) {
+                        logger.error(new Error('Channel strip menu pan commit failed', { cause: error }));
                     }
                 });
         },

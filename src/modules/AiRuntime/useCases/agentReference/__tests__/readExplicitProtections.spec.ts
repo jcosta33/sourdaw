@@ -88,6 +88,95 @@ const NOTHING = {
 };
 
 describe('readExplicitProtections', () => {
+    describe('strict track-owner clause consumption', () => {
+        it.each(['leave Keys unchanged', 'leave the fader of Keys alone', 'make Vocals warmer except Keys'])(
+            'withholds an ambiguous named owner span without dropping facts in %s',
+            (prompt) => {
+                const otherKeys = createTrack('track-other-keys', 'Keys');
+                const project = { ...context, tracks: [...context.tracks, otherKeys] };
+                const original = readExplicitProtections(prompt, project);
+                const strict = readExplicitProtections(prompt, project, { requireUniqueTrackOwners: true });
+
+                expect(original.resolvedTrackClauses).toHaveLength(1);
+                expect(
+                    new Set([
+                        ...original.protectedTrackIds,
+                        ...original.protectedControls.map((control) => control.trackId),
+                    ])
+                ).toEqual(new Set([keys.id, otherKeys.id]));
+                expect(strict).toEqual({ ...original, resolvedTrackClauses: [] });
+            }
+        );
+
+        it('consumes individually unique list members while retaining both owners', () => {
+            const prompt = 'leave Keys and Bass unchanged';
+            const original = readExplicitProtections(prompt, context);
+            const strict = readExplicitProtections(prompt, context, { requireUniqueTrackOwners: true });
+
+            expect(original.protectedTrackIds).toEqual([keys.id, bass.id]);
+            expect(original.resolvedTrackClauses).toEqual([{ start: 0, end: prompt.length }]);
+            expect(strict).toEqual(original);
+        });
+
+        it('keeps reserved selection precedence and quoted literal owners', () => {
+            const collision = createTrack('track-selected-name', 'Selected Track');
+            const project = { ...context, tracks: [...context.tracks, collision] };
+            const selection = "leave the selected track's fader alone";
+            const quoted = 'leave the fader of "Selected Track" alone';
+            const selected = { ...project, selectedTrackId: drums.id };
+            const absent = readExplicitProtections(selection, project, { requireUniqueTrackOwners: true });
+            const bound = readExplicitProtections(selection, selected, { requireUniqueTrackOwners: true });
+            const literal = readExplicitProtections(quoted, project, { requireUniqueTrackOwners: true });
+
+            expect(absent).toEqual(readExplicitProtections(selection, project));
+            expect(absent.unresolved).toEqual(["the selected track's fader"]);
+            expect(absent.resolvedTrackClauses).toEqual([]);
+            expect(bound).toEqual(readExplicitProtections(selection, selected));
+            expect(bound.protectedControls).toEqual([{ trackId: drums.id, actionTypes: ['setTrackGain'] }]);
+            expect(bound.resolvedTrackClauses).toEqual([{ start: 0, end: selection.length }]);
+            expect(literal).toEqual(readExplicitProtections(quoted, project));
+            expect(literal.protectedControls).toEqual([{ trackId: collision.id, actionTypes: ['setTrackGain'] }]);
+            expect(literal.resolvedTrackClauses).toEqual([{ start: 0, end: quoted.length }]);
+        });
+
+        it.each(['device', 'clip'] as const)(
+            'leaves mixed track-and-%s names unread without dropping facts',
+            (kind) => {
+                const mixed = createTrack('track-mixed', 'Bass');
+                if (kind === 'device') {
+                    mixed.devices = [{ id: 'device-bass', name: 'Bass', type: 'builtin-eq', bypassed: false }];
+                    mixed.deviceCount = 1;
+                } else {
+                    mixed.clips = [
+                        { id: 'clip-bass', name: 'Bass', type: 'audio', startBeat: 0, endBeat: 8, noteCount: 0 },
+                    ];
+                    mixed.clipCount = 1;
+                }
+                const project = { ...context, tracks: [mixed] };
+                const prompt = 'leave Bass unchanged';
+                const strict = readExplicitProtections(prompt, project, { requireUniqueTrackOwners: true });
+
+                expect(strict).toEqual(readExplicitProtections(prompt, project));
+                expect(strict.protectedTrackIds).toEqual([mixed.id]);
+                expect(strict.resolvedTrackClauses).toEqual([]);
+            }
+        );
+
+        it('retains original UTF16 source spans after astral text', () => {
+            const emojiVocals = createTrack('track-emoji-vocals', '🥁 Vocals');
+            const protection = 'leave the fader of Keys alone';
+            const prompt = `make "🥁 Vocals" warmer; ${protection}`;
+            const project = { ...context, tracks: [emojiVocals, keys] };
+            const strict = readExplicitProtections(prompt, project, { requireUniqueTrackOwners: true });
+
+            expect(strict).toEqual(readExplicitProtections(prompt, project));
+            expect(strict.protectedControls).toEqual([{ trackId: keys.id, actionTypes: ['setTrackGain'] }]);
+            expect(strict.resolvedTrackClauses).toEqual([
+                { start: prompt.indexOf(protection), end: prompt.indexOf(protection) + protection.length },
+            ]);
+        });
+    });
+
     describe('refuses only an object form that names a project object and binds to none', () => {
         it.each([
             // a control of it

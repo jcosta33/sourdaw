@@ -35,6 +35,14 @@ function openEnterValue(): void {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Enter Value' }));
 }
 
+function menuActions() {
+    return {
+        onCopyValue: vi.fn(),
+        onPasteValue: vi.fn(),
+        onInvalidatePendingValue: vi.fn(),
+    };
+}
+
 describe('MasterGainControl', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -52,6 +60,7 @@ describe('MasterGainControl', () => {
                 onChange={onChange}
                 onEnterValue={onEnterValue}
                 onResetToDefault={onChange}
+                {...menuActions()}
             />
         );
 
@@ -75,7 +84,13 @@ describe('MasterGainControl', () => {
         const onChange = vi.fn();
         promptMocks.promptUser.mockResolvedValueOnce(input);
         render(
-            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+            <MasterGainControl
+                value={0.8}
+                onChange={onChange}
+                onEnterValue={onChange}
+                onResetToDefault={onChange}
+                {...menuActions()}
+            />
         );
 
         openEnterValue();
@@ -97,6 +112,7 @@ describe('MasterGainControl', () => {
                     onChange={onChange}
                     onEnterValue={onChange}
                     onResetToDefault={onChange}
+                    {...menuActions()}
                 />
             );
 
@@ -113,7 +129,13 @@ describe('MasterGainControl', () => {
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
         render(
-            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+            <MasterGainControl
+                value={0.8}
+                onChange={onChange}
+                onEnterValue={onChange}
+                onResetToDefault={onChange}
+                {...menuActions()}
+            />
         );
 
         openEnterValue();
@@ -132,7 +154,13 @@ describe('MasterGainControl', () => {
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
         render(
-            <MasterGainControl value={value} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+            <MasterGainControl
+                value={value}
+                onChange={onChange}
+                onEnterValue={onChange}
+                onResetToDefault={onChange}
+                {...menuActions()}
+            />
         );
 
         openEnterValue();
@@ -151,7 +179,13 @@ describe('MasterGainControl', () => {
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
         render(
-            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+            <MasterGainControl
+                value={0.8}
+                onChange={onChange}
+                onEnterValue={onChange}
+                onResetToDefault={onChange}
+                {...menuActions()}
+            />
         );
 
         openEnterValue();
@@ -169,7 +203,13 @@ describe('MasterGainControl', () => {
         const prompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(prompt.promise);
         const view = render(
-            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+            <MasterGainControl
+                value={0.8}
+                onChange={onChange}
+                onEnterValue={onChange}
+                onResetToDefault={onChange}
+                {...menuActions()}
+            />
         );
 
         openEnterValue();
@@ -188,7 +228,13 @@ describe('MasterGainControl', () => {
         const newPrompt = deferredPrompt();
         promptMocks.promptUser.mockReturnValueOnce(oldPrompt.promise).mockReturnValueOnce(newPrompt.promise);
         render(
-            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+            <MasterGainControl
+                value={0.8}
+                onChange={onChange}
+                onEnterValue={onChange}
+                onResetToDefault={onChange}
+                {...menuActions()}
+            />
         );
 
         openEnterValue();
@@ -209,24 +255,38 @@ describe('MasterGainControl', () => {
 
     it('focuses the first action and moves to Enter Value with ArrowDown', () => {
         const onReset = vi.fn();
-        render(<MasterGainControl value={0.8} onChange={vi.fn()} onEnterValue={vi.fn()} onResetToDefault={onReset} />);
+        render(
+            <MasterGainControl
+                value={0.8}
+                onChange={vi.fn()}
+                onEnterValue={vi.fn()}
+                onResetToDefault={onReset}
+                {...menuActions()}
+            />
+        );
         const slider = screen.getByRole('slider', { name: 'Master gain' });
         slider.focus();
         fireEvent.keyDown(slider, { key: 'ContextMenu' });
         const reset = screen.getByRole('menuitem', { name: 'Reset to Default' });
         const enter = screen.getByRole('menuitem', { name: 'Enter Value' });
+        const copy = screen.getByRole('menuitem', { name: 'Copy Value' });
+        const paste = screen.getByRole('menuitem', { name: 'Paste Value' });
 
         expect(reset).toHaveFocus();
         fireEvent.keyDown(reset, { key: 'ArrowDown' });
         expect(enter).toHaveFocus();
         fireEvent.keyDown(enter, { key: 'ArrowDown' });
+        expect(copy).toHaveFocus();
+        fireEvent.keyDown(copy, { key: 'ArrowDown' });
+        expect(paste).toHaveFocus();
+        fireEvent.keyDown(paste, { key: 'ArrowDown' });
         expect(reset).toHaveFocus();
         fireEvent.keyDown(reset, { key: 'ArrowUp' });
-        expect(enter).toHaveFocus();
-        fireEvent.keyDown(enter, { key: 'Home' });
+        expect(paste).toHaveFocus();
+        fireEvent.keyDown(paste, { key: 'Home' });
         expect(reset).toHaveFocus();
         fireEvent.keyDown(reset, { key: 'End' });
-        expect(enter).toHaveFocus();
+        expect(paste).toHaveFocus();
         // Native buttons own activation. Keydown must not invoke an extra action.
         fireEvent.keyDown(enter, { key: 'Enter' });
         fireEvent.keyDown(enter, { key: ' ' });
@@ -237,13 +297,45 @@ describe('MasterGainControl', () => {
         expect(onReset).not.toHaveBeenCalled();
     });
 
+    it('routes Copy Value and Paste Value through dedicated callbacks', () => {
+        const onCopyValue = vi.fn();
+        const onPasteValue = vi.fn();
+        const onInvalidatePendingValue = vi.fn();
+        render(
+            <MasterGainControl
+                value={0.8}
+                onChange={vi.fn()}
+                onEnterValue={vi.fn()}
+                onResetToDefault={vi.fn()}
+                onCopyValue={onCopyValue}
+                onPasteValue={onPasteValue}
+                onInvalidatePendingValue={onInvalidatePendingValue}
+            />
+        );
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Copy Value' }));
+        expect(onCopyValue).toHaveBeenCalledOnce();
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+        fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Paste Value' }));
+        expect(onPasteValue).toHaveBeenCalledOnce();
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
     it.each([
         { key: 'ContextMenu', shiftKey: false },
         { key: 'F10', shiftKey: true },
     ])('opens with $key and returns focus to the real slider on Escape', ({ key, shiftKey }) => {
         const onChange = vi.fn();
         render(
-            <MasterGainControl value={0.8} onChange={onChange} onEnterValue={onChange} onResetToDefault={onChange} />
+            <MasterGainControl
+                value={0.8}
+                onChange={onChange}
+                onEnterValue={onChange}
+                onResetToDefault={onChange}
+                {...menuActions()}
+            />
         );
         const slider = screen.getByRole('slider', { name: 'Master gain' });
         slider.focus();

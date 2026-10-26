@@ -1,11 +1,12 @@
+import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, startRecording } from '#/modules/Arrangement/useCases';
+import { activeRecordingRef, takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
+import { getArrangementHandlers, startRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -16,13 +17,17 @@ import {
 } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    DOC_PREFIX_ROOT,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { countSettledTakes } from '../countSettledTakes';
 import { finalizeAutomaticRecording } from '../finalizeAutomaticRecording';
 import { isTransportIdle } from '../isTransportIdle';
 import { recordingLifecycle } from '../recordingLifecycle';
@@ -82,6 +87,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser
  * so it needs no deep mock of the Arrangement recording module.
  */
 const commitGate = vi.hoisted(() => ({
+    beforeClipId: null as string | null,
+    beforePending: null as Promise<void> | null,
     pending: null as Promise<void> | null,
     release: null as (() => void) | null,
 }));
@@ -91,6 +98,9 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     return {
         ...actual,
         executeAppAction: async (...args: Parameters<typeof actual.executeAppAction>) => {
+            if (args[0].type === 'commitRecording' && args[0].payload.clip.id === commitGate.beforeClipId) {
+                await commitGate.beforePending;
+            }
             await actual.executeAppAction(...args);
             if (args[0].type === 'commitRecording' && commitGate.pending) {
                 await commitGate.pending;
@@ -241,6 +251,9 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
+        commitGate.beforeClipId = null;
+        commitGate.beforePending = null;
         agentProjectRepairStateStore.set(null);
         clearHandlerRegistry();
         clearUndoHistory();
@@ -250,6 +263,164 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('counts no settled take when the root moves while the commit is parked', async () => {
+        // The parked window this change centers on (#5517): the stop passes
+        // the ownership pre-check, the dispatch parks, the root moves, and
+        // the refused resume must not read as a take this project gained.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const settledBefore = recordingLifecycle.settledCommitCount;
+
+        const release = gateNextCommit();
+        const stopping = stopActiveRecording();
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('expected the root document to be installed');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        release();
+        await stopping;
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
+        expect(committedEntryCount()).toBe(0);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+            'warning'
+        );
+    });
+
+    it('counts the landed sibling when another clip refuses after the root moves', async () => {
+        trackStore.set({
+            tracks: [recordingTrack('midi'), { ...recordingTrack('midi'), id: `${TRACK_ID}-2` }],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        const clips = startRecording(4);
+        expect(clips).toHaveLength(2);
+        const second = clips[1];
+        if (!second) {
+            throw new Error('expected the second recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const settledBefore = countSettledTakes();
+        const gate = Promise.withResolvers<void>();
+        commitGate.beforeClipId = second.id;
+        commitGate.beforePending = gate.promise;
+
+        const stopping = stopActiveRecording();
+        try {
+            await vi.waitFor(() => expect(committedEntryCount()).toBe(1));
+            const root = getCrdtDoc(DOC_PREFIX_ROOT);
+            if (!root) {
+                throw new Error('expected the root document to be installed');
+            }
+            replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        } finally {
+            gate.resolve();
+            await stopping;
+        }
+
+        expect(countSettledTakes()).toBe(settledBefore + 1);
+        expect(committedEntryCount()).toBe(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+            'warning'
+        );
+    });
+
+    it('counts no settled take for an automatic punch-out the root guard refuses', async () => {
+        // The scheduler route (#5517): a fork mid-take, then the punch-out
+        // finaliser runs under the successor root and must count nothing.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const settledBefore = recordingLifecycle.settledCommitCount;
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('expected the root document to be installed');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+
+        // The guard itself, not the outcome filter downstream: a refused
+        // punch-out is never handed to the take counter at all (#5517).
+        const trackTakeCommit = vi.spyOn(recordingLifecycle, 'trackTakeCommit');
+        finalizeAutomaticRecording(8);
+        await vi.waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalled();
+        });
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
+        expect(committedEntryCount()).toBe(0);
+        expect(trackTakeCommit).not.toHaveBeenCalled();
+    });
+
+    it('counts no settled take for an automatic finalize after the refs are cleared', async () => {
+        // The double-stop route (#5517): the user Stop already closed the
+        // take; the scheduler teardown's later finalize is a no-op and must
+        // not count a second take.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        const settledBefore = recordingLifecycle.settledCommitCount;
+        await stopActiveRecording();
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + 1);
+
+        finalizeAutomaticRecording(8);
+        await recordingLifecycle.waitForCommits();
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + 1);
+    });
+
+    it('counts no settled take for a stop the root guard refuses', async () => {
+        // The ownership helper must answer against the real root identity epoch
+        // (#5517): a take staged under one root, moved to another, stops
+        // through the real user Stop path and closes nothing — no settled-take
+        // count, no commit entry, and the branch-move notice instead.
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        expect(takeOwnsRecordingRoot()).toBe(true);
+        const settledBefore = recordingLifecycle.settledCommitCount;
+
+        // The identity-moving replacement a branch fork or switch performs,
+        // through the barrel's own seam.
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('expected the root document to be installed');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        expect(takeOwnsRecordingRoot()).toBe(false);
+
+        // The guard itself: a refused user stop is never handed to the take
+        // counter (#5517), independent of the outcome filter downstream.
+        const trackTakeCommit = vi.spyOn(recordingLifecycle, 'trackTakeCommit');
+        await stopActiveRecording();
+        expect(trackTakeCommit).not.toHaveBeenCalled();
+
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
+        expect(committedEntryCount()).toBe(0);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while recording, so it was not kept.',
+            'warning'
+        );
+
+        // A null witness is the legacy in-flight reading and always owns.
+        const witness = activeRecordingRef.capturedRootIdentity;
+        activeRecordingRef.capturedRootIdentity = null;
+        expect(takeOwnsRecordingRoot()).toBe(true);
+        activeRecordingRef.capturedRootIdentity = witness;
     });
 
     it('records the MIDI gesture entry before Stop resolves, so one undo removes the recorded result', async () => {

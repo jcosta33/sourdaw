@@ -777,6 +777,62 @@ describe('useChannelStripActions', () => {
         expect(options?.shouldExecute?.()).toBe(false);
     });
 
+    it('commits a scalar pan menu value through the guarded Command action without transient preview', async () => {
+        seedProjectTruth({ pan: -12.25 });
+        let current = true;
+        const shouldExecute = () => current;
+        const onCommitted = vi.fn();
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ pan: -12.25 })));
+
+        act(() => {
+            result.current.setPanFromMenu({
+                trackId: 'track-1',
+                expectedPan: -12.25,
+                pan: 7.125,
+                shouldExecute,
+                onCommitted,
+            });
+        });
+
+        await waitFor(() => expect(mocks.executeUserAppAction).toHaveBeenCalledTimes(1));
+        const [action, options] = mocks.executeUserAppAction.mock.calls[0] ?? [];
+        expect(action).toEqual({
+            type: 'setTrackPan',
+            payload: {
+                trackId: 'track-1',
+                pan: 7.125,
+                expectedPan: -12.25,
+                automationRecordingPolicy: 'suppressed',
+            },
+        });
+        expect(options).toEqual({ shouldExecute, onCommitted: expect.any(Function) });
+        expect(mocks.setTrackPan).not.toHaveBeenCalled();
+        options?.onCommitted?.();
+        expect(onCommitted).toHaveBeenCalledTimes(1);
+        current = false;
+        expect(options?.shouldExecute?.()).toBe(false);
+    });
+
+    it('refuses a pan menu Command action when its final admission has gone stale', async () => {
+        let current = true;
+        const shouldExecute = () => current;
+        const { result } = renderHook(() => useChannelStripActions(makeTrack({ pan: 3.5 })));
+
+        await act(async () => {
+            result.current.setPanFromMenu({
+                trackId: 'track-1',
+                expectedPan: 3.5,
+                pan: 0,
+                shouldExecute,
+                onCommitted: vi.fn(),
+            });
+            current = false;
+            await Promise.resolve();
+        });
+        expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+        expect(mocks.setTrackPan).not.toHaveBeenCalled();
+    });
+
     it('scopes pan commit continuation to the owning gesture and serialises overlapping settles', async () => {
         seedProjectTruth({ id: 'track-1', pan: 0 });
         let resolveCommit1: (() => void) | undefined;
