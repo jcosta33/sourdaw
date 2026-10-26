@@ -121,6 +121,7 @@ export const tempoMapStore = createStore<TempoMapStoreState>({
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => create_empty_tempo_map_state(),
         writeMetadata: {
+            captureMode: 'operation',
             capture: () => captureTempoWriteMetadata('tempoMap'),
             reduce: ({ current, captured }) => {
                 const pending = current ? current.slice() : [];
@@ -128,7 +129,7 @@ export const tempoMapStore = createStore<TempoMapStoreState>({
                 return pending;
             },
         },
-        mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
+        validateBeforeMutation: ({ metadata, doc }) => {
             if (
                 metadata?.some((intent) => 'rowClock' in intent) &&
                 doc.tempoMap !== undefined &&
@@ -141,7 +142,6 @@ export const tempoMapStore = createStore<TempoMapStoreState>({
                     'Tempo edit conflicts with current source or tempo-map state'
                 );
             }
-            reconcile(value, baseValue);
         },
     }),
     initialData: create_empty_tempo_map_state(),

@@ -84,12 +84,22 @@ type AutomergeStoragePort = {
     waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
 
-type AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata> = {
-    capture(input: {
-        readonly beforeValue: TData | null;
-        readonly nextValue: TData | null;
-        readonly operation: 'set' | 'clear';
-    }): TWriteMetadata | null;
+type AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata> = (
+    | {
+          /** Default capture receives detached values it may inspect without changing the write. */
+          captureMode?: 'values';
+          capture(input: {
+              readonly beforeValue: TData | null;
+              readonly nextValue: TData | null;
+              readonly operation: 'set' | 'clear';
+          }): TWriteMetadata | null;
+      }
+    | {
+          /** Explicit opt-in for owner-local intent that does not read the store values. */
+          captureMode: 'operation';
+          capture(input: { readonly operation: 'set' | 'clear' }): TWriteMetadata | null;
+      }
+) & {
     reduce(input: { readonly current: TWriteMetadata | null; readonly captured: TWriteMetadata }): TWriteMetadata;
 };
 
@@ -140,6 +150,18 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
         /** The value this write was derived from, already narrowed by `toCrdt`. */
         baseValue: Partial<TData> | null;
         value: TData;
+    }) => void;
+    /**
+     * Validate raw draft authority before this slot is changed or decoded.
+     * Runs for sets and clears, including writes with null metadata, before
+     * either custom mutation hook or the ordinary identity-aware reconciler.
+     * May only inspect the document and throw to refuse the atomic write;
+     * value transformation belongs in a mutation hook.
+     */
+    validateBeforeMutation?: (input: {
+        readonly doc: AutomergeStorageReadableDoc;
+        readonly key: string;
+        readonly metadata: TWriteMetadata | null;
     }) => void;
     /**
      * Explicit metadata-aware mutation path. Unlike the legacy `mutateCrdt`
@@ -1320,6 +1342,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const rebasePendingOnDocumentChange = options?.rebasePendingOnDocumentChange;
     const writeMetadata = options?.writeMetadata;
     const mutateCrdtWithMetadata = options?.mutateCrdtWithMetadata;
+    const validateBeforeMutation = options?.validateBeforeMutation;
     const projectCommittedLocalState = options?.projectCommittedLocalState;
     const isLocalRuntimeStateUpdate = options?.isLocalRuntimeStateUpdate;
     const preserveLocalRuntimeStateOnRecompute = options?.preserveLocalRuntimeStateOnRecompute;
@@ -1539,11 +1562,14 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         if (!writeMetadata) {
             return null;
         }
-        const captured = writeMetadata.capture({
-            beforeValue: beforeValue === null ? null : toDocSafe(beforeValue),
-            nextValue: nextValue === null ? null : toDocSafe(nextValue),
-            operation,
-        });
+        const captured =
+            writeMetadata.captureMode === 'operation'
+                ? writeMetadata.capture({ operation })
+                : writeMetadata.capture({
+                      beforeValue: beforeValue === null ? null : toDocSafe(beforeValue),
+                      nextValue: nextValue === null ? null : toDocSafe(nextValue),
+                      operation,
+                  });
         return captured === null ? null : freezeMetadata(captured);
     };
 
@@ -1587,6 +1613,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             docId,
             key,
             changeFn: (doc) => {
+                validateBeforeMutation?.({ doc, key, metadata });
                 if (mutateCrdtWithMetadata) {
                     const authorityValue = decodeDocumentValue(doc) ?? null;
                     mutateCrdtWithMetadata({

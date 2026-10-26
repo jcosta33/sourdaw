@@ -1937,6 +1937,164 @@ describe('createAutomergeStorage', () => {
         expect(countPendingAutomergeStorageWrites()).toBe(0);
     });
 
+    it('isolates default metadata capture from both the cached preimage and the requested value', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { nested: { count: 0 } } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ nested: { count: number } }, { operation: string }>('root', 'state', {
+            writeMetadata: {
+                capture: ({ beforeValue, nextValue, operation }) => {
+                    expect(beforeValue).toEqual({ nested: { count: 0 } });
+                    expect(nextValue).toEqual({ nested: { count: 1 } });
+                    if (beforeValue && nextValue) {
+                        beforeValue.nested.count = 90;
+                        nextValue.nested.count = 91;
+                    }
+                    return { operation };
+                },
+                reduce: ({ captured }) => captured,
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const beforeValue = storage.get();
+        const nextValue = { nested: { count: 1 } };
+
+        storage.set(nextValue);
+        flushAutomergeStorageWrites();
+
+        expect(beforeValue).toEqual({ nested: { count: 0 } });
+        expect(nextValue).toEqual({ nested: { count: 1 } });
+        expect(storage.get()).toEqual(nextValue);
+        expect(doc.state).toEqual(nextValue);
+    });
+
+    it('captures only operations by explicit opt-in and freezes reduced metadata before ordinary reconcile and clear', () => {
+        type Metadata = { steps: Array<{ operation: 'set' | 'clear' }> };
+        const row = { id: 'row-1', count: 0 };
+        const state = { rows: [row] };
+        const { doc, port } = createTestPort({ initialDoc: { state } });
+        configureAutomergeStoragePort(port);
+        const captured: Metadata[] = [];
+        const observed: Array<{ key: string; metadata: Metadata | null }> = [];
+        const storage = createAutomergeStorage<typeof state, Metadata>('root', 'state', {
+            writeMetadata: {
+                captureMode: 'operation',
+                capture: (input) => {
+                    expect(Object.keys(input)).toEqual(['operation']);
+                    const metadata = { steps: [{ operation: input.operation }] };
+                    captured.push(metadata);
+                    return metadata;
+                },
+                reduce: ({ current, captured: next }) => {
+                    expect(Object.isFrozen(current?.steps)).toBe(true);
+                    expect(Object.isFrozen(next.steps[0])).toBe(true);
+                    return { steps: [...(current?.steps ?? []), ...next.steps] };
+                },
+            },
+            validateBeforeMutation: ({ doc: authority, key, metadata }) => {
+                expect(authority[key]).toBe(state);
+                expect(Object.isFrozen(metadata)).toBe(true);
+                expect(Object.isFrozen(metadata?.steps)).toBe(true);
+                expect(Object.isFrozen(metadata?.steps[0])).toBe(true);
+                observed.push({ key, metadata: structuredClone(metadata) });
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+
+        storage.set({ rows: [{ id: 'row-1', count: 1 }] });
+        storage.set({ rows: [{ id: 'row-1', count: 2 }] });
+        for (const metadata of captured) {
+            metadata.steps.length = 0;
+        }
+        flushAutomergeStorageWrites();
+
+        expect(observed).toEqual([{ key: 'state', metadata: { steps: [{ operation: 'set' }, { operation: 'set' }] } }]);
+        expect(doc.state).toBe(state);
+        expect(state.rows[0]).toBe(row);
+        expect(row.count).toBe(2);
+
+        storage.clear();
+        flushAutomergeStorageWrites();
+
+        expect(observed.at(-1)).toEqual({ key: 'state', metadata: { steps: [{ operation: 'clear' }] } });
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+    });
+
+    it.each([
+        { operation: 'set', capture: false },
+        { operation: 'clear', capture: false },
+        { operation: 'set', capture: true },
+        { operation: 'clear', capture: true },
+    ])('refuses a $operation before ordinary mutation with metadata capture $capture', ({ operation, capture }) => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const refusal = new AutomergeStorageWriteConflictError('Raw authority refused');
+        const capturedMetadata = capture ? { refuse: true } : null;
+        const storage = createAutomergeStorage<{ count: number }, { refuse: boolean }>('root', 'state', {
+            writeMetadata: {
+                captureMode: 'operation',
+                capture: () => capturedMetadata,
+                reduce: ({ captured }) => captured,
+            },
+            validateBeforeMutation: ({ doc: authority, key, metadata }) => {
+                expect(authority[key]).toEqual({ count: 0 });
+                expect(metadata).toEqual(capturedMetadata);
+                if (metadata) {
+                    expect(Object.isFrozen(metadata)).toBe(true);
+                }
+                throw refusal;
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            if (operation === 'clear') {
+                storage.clear();
+                return;
+            }
+            storage.set({ count: 1 });
+        });
+
+        expect(() => transaction.commit()).toThrow(refusal);
+
+        expect(doc.state).toEqual({ count: 0 });
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(mutations).toEqual([]);
+        expect(countPendingAutomergeStorageWrites()).toBe(0);
+    });
+
+    it('validates before custom metadata decoding and preserves the custom value transformation', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const calls: string[] = [];
+        const storage = createAutomergeStorage<{ count: number }, { delta: number }>('root', 'state', {
+            fromCrdt: (value) => {
+                calls.push('decode');
+                return value;
+            },
+            writeMetadata: {
+                captureMode: 'operation',
+                capture: () => ({ delta: 2 }),
+                reduce: ({ captured }) => captured,
+            },
+            validateBeforeMutation: ({ metadata }) => {
+                expect(Object.isFrozen(metadata)).toBe(true);
+                calls.push('validate');
+            },
+            mutateCrdtWithMetadata: ({ authorityValue, baseValue, metadata, reconcile, value }) => {
+                calls.push('mutate');
+                expect(authorityValue).toEqual({ count: 0 });
+                reconcile(value && { count: value.count + (metadata?.delta ?? 0) }, baseValue);
+            },
+        });
+        expect(storage.hydrate?.()).toBe(true);
+        calls.length = 0;
+
+        storage.set({ count: 1 });
+        flushAutomergeStorageWrites();
+
+        expect(calls.slice(0, 3)).toEqual(['validate', 'decode', 'mutate']);
+        expect(doc.state).toEqual({ count: 3 });
+    });
+
     it('freezes owner metadata captured before hydration and passes it to rebase and mutation', () => {
         type Metadata = { steps: Array<{ before: number | null; next: number | null }> };
         const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
@@ -2005,61 +2163,65 @@ describe('createAutomergeStorage', () => {
         expect(Object.hasOwn(doc, 'state')).toBe(false);
     });
 
-    it('captures one-shot metadata before semantic-message callbacks can author another write', () => {
-        type Metadata = { intent: string | null };
-        let activeIntent: string | null = 'outer-intent';
-        let semanticCallbackRan = false;
-        let nestedStorage: ReturnType<typeof createAutomergeStorage<{ count: number }, Metadata>>;
-        const observed: Array<{ key: string; metadata: Metadata | null }> = [];
-        const { port } = createTestPort({ initialDoc: { outer: { count: 0 }, nested: { count: 0 } } });
-        configureAutomergeStoragePort({
-            ...port,
-            getSemanticMessage: () => {
-                if (!semanticCallbackRan) {
-                    semanticCallbackRan = true;
-                    nestedStorage.set({ count: 1 });
-                }
-                return undefined;
-            },
-        });
-        const options = {
-            writeMetadata: {
-                capture: () => {
-                    const intent = activeIntent;
-                    activeIntent = null;
-                    return { intent };
+    it.each(['values', 'operation'] as const)(
+        'captures one-shot %s metadata before semantic-message callbacks can author another write',
+        (captureMode) => {
+            type Metadata = { intent: string | null };
+            let activeIntent: string | null = 'outer-intent';
+            let semanticCallbackRan = false;
+            let nestedStorage: ReturnType<typeof createAutomergeStorage<{ count: number }, Metadata>>;
+            const observed: Array<{ key: string; metadata: Metadata | null }> = [];
+            const { port } = createTestPort({ initialDoc: { outer: { count: 0 }, nested: { count: 0 } } });
+            configureAutomergeStoragePort({
+                ...port,
+                getSemanticMessage: () => {
+                    if (!semanticCallbackRan) {
+                        semanticCallbackRan = true;
+                        nestedStorage.set({ count: 1 });
+                    }
+                    return undefined;
                 },
-                reduce: ({ captured }: { captured: Metadata }) => captured,
-            },
-            mutateCrdtWithMetadata: ({
-                baseValue,
-                key,
-                metadata,
-                reconcile,
-                value,
-            }: {
-                baseValue: Partial<{ count: number }> | null;
-                key: string;
-                metadata: Metadata | null;
-                reconcile(value: { count: number } | null, baseValue: Partial<{ count: number }> | null): void;
-                value: { count: number } | null;
-            }) => {
-                observed.push({ key, metadata: structuredClone(metadata) });
-                reconcile(value, baseValue);
-            },
-        };
-        const outerStorage = createAutomergeStorage<{ count: number }, Metadata>('root', 'outer', options);
-        nestedStorage = createAutomergeStorage<{ count: number }, Metadata>('root', 'nested', options);
-        expect(outerStorage.hydrate?.()).toBe(true);
-        expect(nestedStorage.hydrate?.()).toBe(true);
+            });
+            const options = {
+                writeMetadata: {
+                    captureMode,
+                    capture: () => {
+                        const intent = activeIntent;
+                        activeIntent = null;
+                        return { intent };
+                    },
+                    reduce: ({ captured }: { captured: Metadata }) => captured,
+                },
+                mutateCrdtWithMetadata: ({
+                    baseValue,
+                    key,
+                    metadata,
+                    reconcile,
+                    value,
+                }: {
+                    baseValue: Partial<{ count: number }> | null;
+                    key: string;
+                    metadata: Metadata | null;
+                    reconcile(value: { count: number } | null, baseValue: Partial<{ count: number }> | null): void;
+                    value: { count: number } | null;
+                }) => {
+                    observed.push({ key, metadata: structuredClone(metadata) });
+                    reconcile(value, baseValue);
+                },
+            };
+            const outerStorage = createAutomergeStorage<{ count: number }, Metadata>('root', 'outer', options);
+            nestedStorage = createAutomergeStorage<{ count: number }, Metadata>('root', 'nested', options);
+            expect(outerStorage.hydrate?.()).toBe(true);
+            expect(nestedStorage.hydrate?.()).toBe(true);
 
-        outerStorage.set({ count: 1 });
-        flushAutomergeStorageWrites();
+            outerStorage.set({ count: 1 });
+            flushAutomergeStorageWrites();
 
-        expect(semanticCallbackRan).toBe(true);
-        expect(observed).toEqual([
-            { key: 'nested', metadata: { intent: null } },
-            { key: 'outer', metadata: { intent: 'outer-intent' } },
-        ]);
-    });
+            expect(semanticCallbackRan).toBe(true);
+            expect(observed).toEqual([
+                { key: 'nested', metadata: { intent: null } },
+                { key: 'outer', metadata: { intent: 'outer-intent' } },
+            ]);
+        }
+    );
 });

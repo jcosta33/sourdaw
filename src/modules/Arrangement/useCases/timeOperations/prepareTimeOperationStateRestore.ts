@@ -6,6 +6,7 @@ import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { planTakeRetirement } from '../comping/planTakeRetirement';
+import { reKeyedTakeLaneOwnersMatchStore } from '../comping/reKeyedTakeLaneOwnersMatchStore';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
@@ -765,7 +766,24 @@ function prepareDisappearingClipTakeRetirement(
     const preservedLaneIds = new Set(
         (capturedState?.lanes ?? []).filter((lane) => !planOwnedLaneIds.has(lane.id)).map((lane) => lane.id)
     );
-    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, { preservedLaneIds });
+    // The joined transition also owns its exact FROM source tiles. Retiring
+    // them here makes that owner's later source guard refuse its own replay.
+    const preservedBaseGapAudioSources = (takeLanes?.reKeyedLanes ?? [])
+        .flatMap(
+            (lane) =>
+                (takeLanes?.appliedEffect === 'restore'
+                    ? lane.baseGapAudioSourcesAfter
+                    : lane.baseGapAudioSourcesBefore) ?? []
+        )
+        .concat(
+            takeLanes?.appliedEffect === 'retire'
+                ? takeLanes.retiredLanes.flatMap((snapshot) => snapshot.retiredBaseGapAudioSources ?? [])
+                : []
+        );
+    const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, {
+        preservedLaneIds,
+        preservedBaseGapAudioSources,
+    });
     if (!retirement) {
         return null;
     }
@@ -905,7 +923,13 @@ function prepareCombinedStateUnchecked(value: unknown, deps: TimeOperationDepend
         plan,
         handles,
         hasChanges: handles.length > 0,
-        preflight: () => localStateIsStillPrepared(localState),
+        preflight: () =>
+            localStateIsStillPrepared(localState) &&
+            (plan.takeLanes === null ||
+                reKeyedTakeLaneOwnersMatchStore(
+                    plan.takeLanes.reKeyedLanes ?? [],
+                    plan.takeLanes.appliedEffect === 'restore' ? 'restore' : 'apply'
+                )),
     };
 }
 

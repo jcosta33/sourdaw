@@ -396,6 +396,7 @@ export const transportStore = createStore<TransportState>({
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTransportState,
         writeMetadata: {
+            captureMode: 'operation',
             capture: () => captureTempoWriteMetadata('transport'),
             reduce: ({ current, captured }) => {
                 const pending = current ? current.slice() : [];
@@ -403,11 +404,10 @@ export const transportStore = createStore<TransportState>({
                 return pending;
             },
         },
-        mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
+        validateBeforeMutation: ({ metadata, doc }) => {
             if (metadata && !tempoWriteIntentsMatch(doc, metadata, 'transport')) {
                 throw new AutomergeStorageWriteConflictError('Tempo edit conflicts with current source or base tempo');
             }
-            reconcile(value, baseValue);
         },
         projectCommittedLocalState: ({ authorityValue, localValue }) => ({
             ...authorityValue,

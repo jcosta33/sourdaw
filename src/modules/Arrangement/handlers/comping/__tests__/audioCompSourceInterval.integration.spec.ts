@@ -375,7 +375,7 @@ describe('bounded audio comp source promotion', () => {
         if (inverse?.type !== 'restoreCompRegionInterval') {
             throw new Error('Expected the real saved interval inverse');
         }
-        const original = getCrdtDoc('root');
+        const original = getCrdtDoc<{ [field: string]: unknown; transport: { tempo: number } }>('root');
         if (!original) {
             throw new Error('Expected authoritative project inputs');
         }

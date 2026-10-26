@@ -36,6 +36,7 @@ import {
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -427,11 +428,14 @@ describe('public tempo-map musical commands', () => {
     });
 
     it('derives fresh caller captures and preserves captured guards on Redo', async () => {
-        const forged = { clips: [], takes: [], regions: [], gaps: [] };
-        await executeAppAction({
+        const forgedAction: unknown = {
             type: 'editTempoMap',
-            payload: { edit: { type: 'add', beat: 0, tempo: 240 }, audioSourcePromotion: forged },
-        });
+            payload: {
+                edit: { type: 'add', beat: 0, tempo: 240 },
+                audioSourcePromotion: { clips: [], takes: [], regions: [], gaps: [] },
+            },
+        };
+        await executeAppAction(forgedAction as AppAction);
         expect(sourceEntry()).toBe(4);
         expect((await undo()).headConsumed).toBe(true);
         const state = trackStore.value!;

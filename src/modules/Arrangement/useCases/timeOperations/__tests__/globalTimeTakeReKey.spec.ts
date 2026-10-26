@@ -437,14 +437,28 @@ describe('delete time re-keys take-lane state (#4841)', () => {
             { ...takeA, id: rightTakeId, clipId: rightClip.id, startBeat: 2, endBeat: 6 },
         ]);
         expect(liveLane().activeCompRegions).toEqual([]);
+        const afterDelete = structuredClone(liveLane());
+        expect(afterDelete.baseGapAudioSources).toHaveLength(2);
+        expect(afterDelete.baseGapAudioSources).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ clipId: rightClip.id, startBeat: 2, endBeat: 6 }),
+                expect.objectContaining({ clipId: 'span', startBeat: 0, endBeat: 2 }),
+            ])
+        );
 
         const transaction = createUndoableGlobalTimeOperation({ initialResult: applied });
         transaction.undo();
 
         // The consumed take and its region ride the transition's before side,
-        // so undo puts both back.
+        // so undo puts both back, including source-field presence.
         expect(liveLane().takes).toEqual([takeA, takeB]);
         expect(liveLane().activeCompRegions).toEqual([{ startBeat: 2, endBeat: 6, takeId: takeB.id }]);
+        expect(liveLane()).toEqual(lane);
+
+        transaction.redo();
+        expect(liveLane()).toEqual(afterDelete);
+        transaction.undo();
+        expect(liveLane()).toEqual(lane);
     });
 
     it('clamps a stale region overhanging the deleted span instead of letting it swallow the remapped survivor', () => {

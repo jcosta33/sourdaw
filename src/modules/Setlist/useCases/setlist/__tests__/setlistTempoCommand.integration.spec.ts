@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
@@ -24,7 +24,7 @@ import {
     hasCrdtDoc,
     mutateCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
-import { setlistStore, type SetlistItem } from '#/modules/Setlist/stores';
+import { setlistStore, type SetlistItem, type SetlistState } from '#/modules/Setlist/stores';
 import { getSetlistHandlers, goToItem, reorderSetlistItems, updateSetlistItem } from '#/modules/Setlist/useCases';
 import {
     defaultTransportState,
@@ -42,6 +42,14 @@ import { advanceSetlistItemEnd } from '../advanceSetlistItemEnd';
 const BASE_BPM = 80;
 const LEGACY_AUDIO_OFFSET_BEATS = 8;
 type StoragePort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
+
+function currentSetlist(): SetlistState {
+    const state = setlistStore.value;
+    if (!state) {
+        throw new Error('Expected the initialized setlist state');
+    }
+    return state;
+}
 
 function controlledStoragePort(waitForSnapshotTransaction: () => Promise<void>): StoragePort {
     return {
@@ -226,7 +234,7 @@ describe('Setlist transport changes use guarded project actions', () => {
 
         expect(sourceEntrySeconds()).toBe(6);
         projectAuthorityMatchesStores();
-        expect(setlistStore.value.currentIndex).toBe(0);
+        expect(currentSetlist().currentIndex).toBe(0);
         expect(transportStore.value!.tempo).toBe(160);
         expect(transportStore.value!.timeSignatureNumerator).toBe(3);
         expect(transportStore.value!.timeSignatureDenominator).toBe(4);
@@ -241,7 +249,7 @@ describe('Setlist transport changes use guarded project actions', () => {
         expect(transportStore.value!.tempo).toBe(BASE_BPM);
         expect(transportStore.value!.timeSignatureNumerator).toBe(4);
         expect(transportStore.value!.timeSignatureDenominator).toBe(4);
-        expect(setlistStore.value.currentIndex).toBe(0);
+        expect(currentSetlist().currentIndex).toBe(0);
         expect(sourceEntrySeconds()).toBe(6);
 
         await redo();
@@ -249,7 +257,7 @@ describe('Setlist transport changes use guarded project actions', () => {
         expect(transportStore.value!.tempo).toBe(160);
         expect(transportStore.value!.timeSignatureNumerator).toBe(3);
         expect(transportStore.value!.timeSignatureDenominator).toBe(4);
-        expect(setlistStore.value.currentIndex).toBe(0);
+        expect(currentSetlist().currentIndex).toBe(0);
         expect(sourceEntrySeconds()).toBe(6);
         expect(undoHistoryStore.value?.past).toHaveLength(2);
     });
@@ -267,7 +275,7 @@ describe('Setlist transport changes use guarded project actions', () => {
         });
 
         await executeAppAction({ type: 'previousSetlistItem', payload: undefined });
-        expect(setlistStore.value.currentIndex).toBe(0);
+        expect(currentSetlist().currentIndex).toBe(0);
         projectAuthorityMatchesStores();
         expect(transportStore.value!.tempo).toBe(100);
         expect(transportStore.value!.timeSignatureNumerator).toBe(5);
@@ -275,7 +283,7 @@ describe('Setlist transport changes use guarded project actions', () => {
         expect(sourceEntrySeconds()).toBe(6);
 
         await executeAppAction({ type: 'nextSetlistItem', payload: undefined });
-        expect(setlistStore.value.currentIndex).toBe(1);
+        expect(currentSetlist().currentIndex).toBe(1);
         projectAuthorityMatchesStores();
         expect(transportStore.value!.tempo).toBe(160);
         expect(transportStore.value!.timeSignatureNumerator).toBe(3);
@@ -317,13 +325,13 @@ describe('Setlist transport changes use guarded project actions', () => {
 
         const staleNavigation = goToItem(0);
         await firstTransitionHeld;
-        expect(setlistStore.value.currentIndex).toBe(0);
+        expect(currentSetlist().currentIndex).toBe(0);
         const currentNavigation = goToItem(1);
         await currentNavigation;
         releaseFirstTransition();
         await staleNavigation;
 
-        expect(setlistStore.value.currentIndex).toBe(1);
+        expect(currentSetlist().currentIndex).toBe(1);
         projectAuthorityMatchesStores();
         expect(transportStore.value!.tempo).toBe(160);
         expect(transportStore.value!.timeSignatureNumerator).toBe(3);
@@ -366,8 +374,8 @@ describe('Setlist transport changes use guarded project actions', () => {
         releaseFirstTransition();
         await navigation;
 
-        expect(setlistStore.value.currentIndex).toBe(1);
-        expect(setlistStore.value.items[1]?.name).toBe('After rename');
+        expect(currentSetlist().currentIndex).toBe(1);
+        expect(currentSetlist().items[1]?.name).toBe('After rename');
         projectAuthorityMatchesStores();
         expect(transportStore.value!.tempo).toBe(160);
         expect(transportStore.value!.timeSignatureNumerator).toBe(3);
@@ -404,10 +412,10 @@ describe('Setlist transport changes use guarded project actions', () => {
         advanceSetlistItemEnd();
 
         await vi.advanceTimersByTimeAsync(1999);
-        expect(setlistStore.value.currentIndex).toBe(0);
+        expect(currentSetlist().currentIndex).toBe(0);
         await vi.advanceTimersByTimeAsync(1);
 
-        expect(setlistStore.value.currentIndex).toBe(1);
+        expect(currentSetlist().currentIndex).toBe(1);
         projectAuthorityMatchesStores();
         expect(transportStore.value!.tempo).toBe(160);
         expect(transportStore.value!.timeSignatureNumerator).toBe(3);

@@ -93,7 +93,7 @@ describe('projectClipReplayPrefix source completeness', () => {
             ...automationLane,
             id: 'shifted-lane',
             clipId: shifted.id,
-            points: [{ id: 'point', beat: 8, value: 0.5, curve: 'linear' as const }],
+            points: [{ id: 'point', beat: 8, value: 0.5, curve: 'linear' as const, tension: 0 }],
         };
         const restore: AppAction = {
             type: 'restoreClip',

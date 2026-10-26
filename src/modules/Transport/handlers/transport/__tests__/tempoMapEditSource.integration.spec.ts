@@ -633,11 +633,11 @@ describe('tempo edits preserve the physical audio programme', () => {
     });
 
     it('keeps source replay out of provider discovery and keeps the public tempo arguments unchanged', () => {
-        expect(getExecutableAppActionToolSchemas().some((schema) => schema.function.name === 'restoreTempoEdit')).toBe(
-            false
-        );
+        expect(
+            getExecutableAppActionToolSchemas().some((schema) => String(schema.function.name) === 'restoreTempoMapEdit')
+        ).toBe(false);
         const registrations = getExecutableCommandRegistrations();
-        expect(registrations.some((registration) => String(registration.actionType) === 'restoreTempoEdit')).toBe(
+        expect(registrations.some((registration) => String(registration.actionType) === 'restoreTempoMapEdit')).toBe(
             false
         );
         expect(registrations.find((registration) => registration.actionType === 'setTempo')?.providerSchema).toEqual({

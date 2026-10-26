@@ -101,7 +101,7 @@ function createDivergedTempoMapAction(actionType: TempoMapConflictActionType): A
     }
 
     const handler = getCommandHandler(action);
-    if (!handler?.validate?.(action)) {
+    if (!handler?.validate?.(action, { actions: [action], actionIndex: 0 })) {
         throw new Error(`Expected ${actionType} to validate before the peer row changes`);
     }
 

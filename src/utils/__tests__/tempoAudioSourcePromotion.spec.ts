@@ -210,7 +210,7 @@ describe('tempo source-promotion value decoder', () => {
 
     it('rejects an incomplete newly written loop tuple', () => {
         const value = plan();
-        const after = structuredClone(value.clips[0]!.after);
+        const after = { ...structuredClone(value.clips[0]!.after) };
         delete after.audioLoopPassOriginBeat;
         expect(isTempoAudioSourcePromotion({ ...value, clips: [{ ...value.clips[0], after }] })).toBe(false);
     });

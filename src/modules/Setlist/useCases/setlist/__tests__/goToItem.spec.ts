@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import type { getTempoWriteTarget } from '#/modules/Transport/useCases';
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { goToItem } from '../goToItem';
+
+type TempoWriteTarget = NonNullable<ReturnType<typeof getTempoWriteTarget>>;
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;
@@ -10,7 +13,7 @@ type EventBusShape = {
 
 const mocks = vi.hoisted(() => ({
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
-    getTempoWriteTarget: vi.fn(() => ({ tempo: 80, tempoChangeId: null, writable: true as const })),
+    getTempoWriteTarget: vi.fn((): TempoWriteTarget | null => ({ tempo: 80, tempoChangeId: null, writable: true })),
 }));
 
 const setlistStoreMock = vi.hoisted(() => {

@@ -372,7 +372,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
         if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'restoreClip') {
             throw new Error('Expected the MIDI removal inverse');
         }
-        const source = entry.inverseAction.payload.clipSnapshot;
+        const source = structuredClone(sourceSnapshot);
         const sourceMidi = {
             notes: { present: true, value: programme.notesSnapshot },
             controlChanges: { present: true, value: programme.controlChangeSnapshot },
