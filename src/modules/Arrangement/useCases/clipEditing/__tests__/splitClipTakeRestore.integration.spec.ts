@@ -98,6 +98,7 @@ describe('splitClipWithUndo take restore', () => {
 
     it('restores a take recorded on the right half when the split is redone', async () => {
         splitClipWithUndo('clip-1', 4);
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toHaveLength(2));
         const splitRightClipId = rightClipId();
 
         // A take lands on the right half without a local undo entry.
@@ -123,6 +124,7 @@ describe('splitClipWithUndo take restore', () => {
         const originalLane = arrangeCompedTake();
 
         splitClipWithUndo('clip-1', 4);
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toHaveLength(2));
         const splitRightClipId = rightClipId();
 
         // The forward split re-keyed the lane: the left fragment keeps the take
@@ -215,6 +217,9 @@ describe('splitClipWithUndo take restore', () => {
         await executeAppAction({ type: 'splitClip', payload: { clipId: clip.id, beat: 2 } }, { source: 'manual' });
         const afterSplit = structuredClone(lane());
         expect(afterSplit.takes.filter((take) => take.clipId !== clip.id)).toHaveLength(2);
+        expect(afterSplit.takes.map((take) => [take.name, take.clipId, take.midiSource?.sourceClipId])).toEqual(
+            afterSplit.takes.map((take) => [take.name, take.clipId, clip.id])
+        );
         for (const take of afterSplit.takes) {
             expect(take.midiSource?.sourceClipId).toBe(clip.id);
             expect(take.midiSource?.rows.notes.value.map((note) => note.id)).toEqual(['pass-1-note', 'pass-2-note']);

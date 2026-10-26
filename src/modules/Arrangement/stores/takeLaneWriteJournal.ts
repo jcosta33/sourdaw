@@ -22,7 +22,7 @@ import {
     type OptionalAudioSourceTiles,
 } from './baseGapAudioSourceDelta';
 
-import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
+import { type CompRegion, type MidiTakeSource, type Take, type TakeLane } from '../models/TakeLane';
 
 export type TakeLaneStoreValue = {
     lanes: TakeLane[];
@@ -48,6 +48,9 @@ export {
 type OptionalStringValue = { readonly present: false } | { readonly present: true; readonly value: string };
 
 type OptionalNumberValue = { readonly present: false } | { readonly present: true; readonly value: number };
+type OptionalMidiSourceValue =
+    | { readonly present: false }
+    | { readonly present: true; readonly value: MidiTakeSource };
 
 type OptionalTakeNumberField =
     | 'sourceOffsetBeats'
@@ -89,6 +92,13 @@ type TakeFieldOperation =
           readonly field: OptionalTakeNumberField;
           readonly expected: OptionalNumberValue;
           readonly replacement: OptionalNumberValue;
+      }
+    | {
+          readonly kind: 'take-midi-source-field';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: OptionalMidiSourceValue;
+          readonly replacement: OptionalMidiSourceValue;
       };
 
 export type TakeLaneWriteOperation =
@@ -203,6 +213,12 @@ function optionalNumber(source: Take, field: OptionalTakeNumberField): OptionalN
     return { present: false };
 }
 
+function optionalMidiSource(take: Take): OptionalMidiSourceValue {
+    return take.midiSource === undefined
+        ? { present: false }
+        : { present: true, value: cloneValue(take.midiSource) };
+}
+
 function previousIdentity<Item extends { readonly id: string }>(items: readonly Item[], index: number): string | null {
     return index > 0 ? (items[index - 1]?.id ?? null) : null;
 }
@@ -263,6 +279,17 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
                 replacement: nextValue,
             });
         }
+    }
+    const beforeMidiSource = optionalMidiSource(before);
+    const nextMidiSource = optionalMidiSource(next);
+    if (!valuesEqual(beforeMidiSource, nextMidiSource)) {
+        operations.push({
+            kind: 'take-midi-source-field',
+            laneId,
+            takeId: before.id,
+            expected: beforeMidiSource,
+            replacement: nextMidiSource,
+        });
     }
     return operations;
 }
@@ -535,6 +562,16 @@ function applyTakeFieldOperation(
             replacementTake[operation.field] = operation.replacement.value;
         } else {
             delete replacementTake[operation.field];
+        }
+    } else if (operation.kind === 'take-midi-source-field') {
+        if (!valuesEqual(optionalMidiSource(take), operation.expected)) {
+            return undefined;
+        }
+        replacementTake = cloneValue(take);
+        if (operation.replacement.present) {
+            replacementTake.midiSource = cloneValue(operation.replacement.value);
+        } else {
+            delete replacementTake.midiSource;
         }
     } else if (operation.kind === 'take-selected-field') {
         if (take.selected !== operation.expected) {

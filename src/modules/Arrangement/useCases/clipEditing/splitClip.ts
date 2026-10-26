@@ -101,6 +101,7 @@ export function splitClip(
             splitBeat: plan.next.leftClip.endBeat,
             clipStartBeat: plan.previous.leftClip.startBeat,
             clipEndBeat: plan.previous.leftClip.endBeat,
+            sourceMidi: plan.previous.sourceMidi,
         });
     const leftClip = cloneClipStateSnapshot(plan.next.leftClip);
     const rightClip = cloneClipStateSnapshot(plan.next.rightClip);
