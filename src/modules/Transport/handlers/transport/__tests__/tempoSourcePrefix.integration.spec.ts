@@ -28,6 +28,7 @@ import {
     projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
@@ -235,6 +236,39 @@ describe('ordered tempo and audio split source preparation', () => {
         await redo();
         assertEntry();
         expect(owners()).toEqual(after);
+    });
+
+    it('replays a grouped tempo and split after loading a raw signed-zero clip', async () => {
+        const current = getCrdtDoc('root');
+        if (!current) {
+            throw new Error('Expected the authoritative project');
+        }
+        const plain = JSON.parse(JSON.stringify(Automerge.toJS(current))) as {
+            tracks: { tracks: { clips: Clip[] }[] };
+        };
+        plain.tracks.tracks[0]!.clips[0]!.fadeInBeats = -0;
+        const loaded = Automerge.load(Automerge.save(Automerge.from(plain)));
+        replaceCrdtDoc({ id: 'root', doc: loaded });
+        projectCrdtToStores({ resetProjections: true });
+        registerHandlers();
+        const rawClip = getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips[0];
+        expect(Object.is(rawClip?.fadeInBeats, -0)).toBe(true);
+        expect(Object.is(trackStore.value?.tracks[0]?.clips[0]?.fadeInBeats, -0)).toBe(false);
+        const result = await executeAppActionBatch(
+            [
+                { type: 'setTempo', payload: { bpm: 60 } },
+                { type: 'splitClip', payload: { clipId: 'source', beat: 4, resolvedBeat: 4, rightClipId: 'right' } },
+            ],
+            { source: 'manual', requireCompensation: true, groupId: 'loaded-zero' }
+        );
+        expect(result.status).toBe('committed');
+        expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'right')?.audioOffsetSeconds).toBe(4);
+        await reopen(2);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'right')).toBeUndefined();
+        await reopen(0);
+        await redo();
+        expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'right')?.audioOffsetSeconds).toBe(4);
     });
 
     it.each([

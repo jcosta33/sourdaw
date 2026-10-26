@@ -3,6 +3,7 @@ import {
     hasValidAudioPassOrigin,
     hasValidAudioSourceState,
     isAudioSourceSnapshot,
+    type AudioSourceSnapshot,
 } from './audioSourceTime';
 import { projectClipLoopExpansion } from './clipLoopProjection';
 import {
@@ -151,6 +152,86 @@ export function readTempoSourceOwner(
     return matches.length === 1 && isRecord(matches[0]) ? matches[0] : undefined;
 }
 
+const SOURCE_OWNER_STRING_FIELDS = new Set([
+    'id',
+    'trackId',
+    'type',
+    'audioBufferId',
+    'fileId',
+    'assetHash',
+    'stretchMode',
+    'clipId',
+    'takeId',
+]);
+const SOURCE_OWNER_NUMBER_FIELDS = new Set([
+    'startBeat',
+    'endBeat',
+    'audioOffsetBeats',
+    'audioOffsetSeconds',
+    'audioUnwrappedOffsetSeconds',
+    'audioLoopStartSeconds',
+    'audioLoopPassEntrySeconds',
+    'audioLoopPassOriginBeat',
+    'loopLength',
+    'loopOriginBeat',
+    'stretchRatio',
+    'sourceOffsetBeats',
+    'sourceOffsetSeconds',
+    'passAnchorSeconds',
+    'passDepthSeconds',
+    'passSourceEndSeconds',
+    'passOriginBeat',
+    'passOriginSourceSeconds',
+]);
+
+function jsonNumber(value: number): number | null {
+    return Number.isFinite(value) ? prefixNumber(value) : null;
+}
+
+function prefixNumber(value: number): number {
+    return value === 0 ? 0 : value;
+}
+
+function projectAudioSourceSnapshot(value: AudioSourceSnapshot): AudioSourceSnapshot {
+    return {
+        startBeat: prefixNumber(value.startBeat),
+        audioOffsetSeconds: prefixNumber(value.audioOffsetSeconds),
+        audioLoopStartSeconds: prefixNumber(value.audioLoopStartSeconds),
+        audioLoopPassEntrySeconds: prefixNumber(value.audioLoopPassEntrySeconds),
+        audioLoopPassOriginBeat: prefixNumber(value.audioLoopPassOriginBeat),
+        loopOriginBeat: prefixNumber(value.loopOriginBeat),
+        loopLength: prefixNumber(value.loopLength),
+    };
+}
+
+function projectSourceOwnerFields(
+    row: Readonly<Record<string, unknown>>,
+    fields: readonly string[]
+): Readonly<Record<string, unknown>> | null {
+    const selected: Record<string, unknown> = {};
+    for (const field of fields) {
+        const value = row[field];
+        if (value === undefined) {
+            continue;
+        }
+        if (field === 'audioSource') {
+            if (!isAudioSourceSnapshot(value)) {
+                return null;
+            }
+            selected[field] = projectAudioSourceSnapshot(value);
+        } else if (SOURCE_OWNER_STRING_FIELDS.has(field) && typeof value === 'string') {
+            selected[field] = value;
+        } else if (SOURCE_OWNER_NUMBER_FIELDS.has(field) && typeof value === 'number') {
+            selected[field] = jsonNumber(value);
+        } else if (field === 'loopEnabled' && typeof value === 'boolean') {
+            selected[field] = value;
+        } else {
+            return null;
+        }
+    }
+    return selected;
+}
+
 export function captureTempoSourceOwnerValue(
     context: RawSources,
     owner: TempoSourceOwner,
@@ -163,18 +244,8 @@ export function captureTempoSourceOwnerValue(
     if (row === null) {
         return { present: false };
     }
-    try {
-        const value: unknown = JSON.parse(
-            JSON.stringify(
-                Object.fromEntries(
-                    fields.filter((field) => row[field] !== undefined).map((field) => [field, row[field]])
-                )
-            )
-        );
-        return isRecord(value) ? { present: true, value } : null;
-    } catch {
-        return null;
-    }
+    const value = projectSourceOwnerFields(row, fields);
+    return value ? { present: true, value } : null;
 }
 
 export function tempoSourceOwnerWitnessMatches(

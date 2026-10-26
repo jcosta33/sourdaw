@@ -1,7 +1,8 @@
+import { from } from '@automerge/automerge';
 import { describe, expect, it } from 'vitest';
 
 import { type TempoAudioSourcePromotionSnapshot } from '../handlerContract';
-import { isTempoAudioSourcePromotion } from '../tempoAudioSourcePromotion';
+import { captureTempoSourceOwnerValue, isTempoAudioSourcePromotion } from '../tempoAudioSourcePromotion';
 
 function plan(): TempoAudioSourcePromotionSnapshot {
     return {
@@ -91,6 +92,63 @@ function plan(): TempoAudioSourcePromotionSnapshot {
 }
 
 describe('tempo source-promotion value decoder', () => {
+    it('captures selected raw source fields with the former JSON number representation', () => {
+        const owner = {
+            kind: 'clip' as const,
+            trackId: 'audio',
+            collection: 'active' as const,
+            alternativeId: 'main',
+            clipId: 'source',
+        };
+        const audioSource = {
+            startBeat: -0,
+            audioOffsetSeconds: -0,
+            audioLoopStartSeconds: -0,
+            audioLoopPassEntrySeconds: -0,
+            audioLoopPassOriginBeat: -0,
+            loopOriginBeat: -0,
+            loopLength: 4,
+        };
+        const clip = { id: 'source', startBeat: -0, audioOffsetSeconds: -0, audioSource, name: 'cosmetic' };
+        const context = { tracks: { tracks: [{ id: 'audio', activeAlternativeId: 'main', clips: [clip] }] } };
+        const fields = ['id', 'startBeat', 'audioOffsetSeconds', 'audioSource', 'fileId'];
+        const expected = {
+            present: true,
+            value: JSON.parse(
+                JSON.stringify({
+                    id: clip.id,
+                    startBeat: clip.startBeat,
+                    audioOffsetSeconds: clip.audioOffsetSeconds,
+                    audioSource,
+                })
+            ) as Record<string, unknown>,
+        };
+        expect(captureTempoSourceOwnerValue(context, owner, fields)).toStrictEqual(expected);
+        expect(captureTempoSourceOwnerValue(from(context), owner, fields)).toStrictEqual(expected);
+        expect(Object.hasOwn(expected.value, 'fileId')).toBe(false);
+    });
+
+    it('keeps the former selected nonfinite number capture as null', () => {
+        const owner = {
+            kind: 'clip' as const,
+            trackId: 'audio',
+            collection: 'active' as const,
+            alternativeId: 'main',
+            clipId: 'source',
+        };
+        const context = {
+            tracks: {
+                tracks: [
+                    { id: 'audio', activeAlternativeId: 'main', clips: [{ id: 'source', startBeat: Number.NaN }] },
+                ],
+            },
+        };
+        expect(captureTempoSourceOwnerValue(context, owner, ['startBeat'])).toStrictEqual({
+            present: true,
+            value: { startBeat: null },
+        });
+    });
+
     it('decodes a complete bounded source programme without consulting live project state', () => {
         const wire = JSON.stringify(plan());
         expect(wire).toContain('"audioOffsetSeconds":4');

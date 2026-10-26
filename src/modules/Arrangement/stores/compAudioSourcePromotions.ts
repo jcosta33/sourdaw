@@ -117,10 +117,11 @@ function isOwner(value: unknown): value is CompAudioSourceOwnerSnapshot {
     } else if (value.kind === 'base') {
         idKey = 'clipId';
     }
+    const id = idKey === null ? null : value[idKey];
     return (
         idKey !== null &&
-        typeof value[idKey] === 'string' &&
-        value[idKey].length > 0 &&
+        typeof id === 'string' &&
+        id.length > 0 &&
         Object.keys(value).every((key) => ['kind', idKey, 'startBeat', 'endBeat', 'audioSource'].includes(key))
     );
 }

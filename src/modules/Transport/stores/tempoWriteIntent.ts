@@ -3,18 +3,19 @@ import {
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { isRecord } from '#/utils/structuralEquality';
-import { type applyTempoAudioSources } from '#/modules/Arrangement/useCases';
+import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
-import { normalizeTempoSourceOwnerContext } from '#/utils/tempoAudioSourcePromotion';
+import { normalizeTempoSourceOwnerContext, type TempoSourceOwnerWitness } from '#/utils/tempoAudioSourcePromotion';
 import { readTempoMapRows, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
 
 import { tempoMapRowPlanMatchesCurrent } from '../models/TempoMapRowPlan';
 
 type Slot = 'transport' | 'tempoMap';
-type SourcePreservation = Extract<
-    ReturnType<typeof applyTempoAudioSources>,
-    { status: 'written' }
->['sourcePreservation'];
+type SourcePreservation = {
+    readonly promotion: TempoAudioSourcePromotionSnapshot;
+    readonly direction: 'promote' | 'restore';
+    readonly ownerWitness: TempoSourceOwnerWitness;
+};
 export type TempoWriteIntent = {
     readonly tempoChangeId: string | null;
     readonly expectedBpm: number;

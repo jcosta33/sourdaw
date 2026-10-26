@@ -42,7 +42,7 @@ function captureWaveformTimeline(tempo: number, changes: Parameters<typeof secon
     const capturedChanges = structuredClone(changes);
     const projectSamples = createSamplePositionProjector({
         transport: { tempo },
-        tempoMap: { changes: capturedChanges },
+        tempoMap: { changes: [...capturedChanges] },
     });
     return {
         secondsAtBeat: (beat) => secondsBetweenBeats(capturedChanges, 0, beat, tempo),

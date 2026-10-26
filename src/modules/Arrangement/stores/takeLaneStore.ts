@@ -5,6 +5,7 @@ import {
     isAudioSourceSnapshot,
     isAudioSourceTile,
     type AudioSourceTile,
+    type AudioSourceSnapshot,
 } from '#/utils/audioSourceTime';
 import {
     AutomergeStorageWriteConflictError,
@@ -338,12 +339,81 @@ function is_exact_take_lane(value: unknown): value is TakeLane {
     );
 }
 
-export function decodeExactTakeLaneSnapshots(value: readonly unknown[]): TakeLane[] | null {
+type TakeLaneSnapshotNumbers = 'exact' | 'source-prefix';
+
+function snapshot_number(value: number, numbers: TakeLaneSnapshotNumbers): number {
+    return numbers === 'source-prefix' && value === 0 ? 0 : value;
+}
+
+function project_exact_audio_source(value: AudioSourceSnapshot, numbers: TakeLaneSnapshotNumbers): AudioSourceSnapshot {
+    return {
+        startBeat: snapshot_number(value.startBeat, numbers),
+        audioOffsetSeconds: snapshot_number(value.audioOffsetSeconds, numbers),
+        audioLoopStartSeconds: snapshot_number(value.audioLoopStartSeconds, numbers),
+        audioLoopPassEntrySeconds: snapshot_number(value.audioLoopPassEntrySeconds, numbers),
+        audioLoopPassOriginBeat: snapshot_number(value.audioLoopPassOriginBeat, numbers),
+        loopOriginBeat: snapshot_number(value.loopOriginBeat, numbers),
+        loopLength: snapshot_number(value.loopLength, numbers),
+    };
+}
+
+function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take {
+    const take: Take = {
+        id: value.id,
+        clipId: value.clipId,
+        name: value.name,
+        startBeat: snapshot_number(value.startBeat, numbers),
+        endBeat: snapshot_number(value.endBeat, numbers),
+        selected: value.selected,
+    };
+    for (const field of TAKE_OPTIONAL_KEYS) {
+        const number = value[field];
+        if (Object.hasOwn(value, field) && number !== undefined) {
+            take[field] = snapshot_number(number, numbers);
+        }
+    }
+    return take;
+}
+
+function project_exact_take_lane(value: TakeLane, numbers: TakeLaneSnapshotNumbers): TakeLane {
+    const lane: TakeLane = {
+        id: value.id,
+        trackId: value.trackId,
+        takes: value.takes.map((take) => project_exact_take(take, numbers)),
+        activeCompRegions: value.activeCompRegions.map((region) => {
+            const projected: CompRegion = {
+                startBeat: snapshot_number(region.startBeat, numbers),
+                endBeat: snapshot_number(region.endBeat, numbers),
+                takeId: region.takeId,
+            };
+            if (Object.hasOwn(region, 'audioSource') && region.audioSource !== undefined) {
+                projected.audioSource = project_exact_audio_source(region.audioSource, numbers);
+            }
+            return projected;
+        }),
+    };
+    if (Object.hasOwn(value, 'automationLaneId') && value.automationLaneId !== undefined) {
+        lane.automationLaneId = value.automationLaneId;
+    }
+    if (Object.hasOwn(value, 'baseGapAudioSources') && value.baseGapAudioSources !== undefined) {
+        lane.baseGapAudioSources = value.baseGapAudioSources.map((tile) => ({
+            clipId: tile.clipId,
+            startBeat: snapshot_number(tile.startBeat, numbers),
+            endBeat: snapshot_number(tile.endBeat, numbers),
+            audioSource: project_exact_audio_source(tile.audioSource, numbers),
+        }));
+    }
+    return lane;
+}
+
+export function decodeExactTakeLaneSnapshots(
+    value: readonly unknown[],
+    numbers: TakeLaneSnapshotNumbers = 'exact'
+): TakeLane[] | null {
     if (!value.every(is_exact_take_lane)) {
         return null;
     }
-
-    return value.map((lane) => structuredClone(lane));
+    return value.map((lane) => project_exact_take_lane(lane, numbers));
 }
 
 function normalize_take_lane(take_lane: SanitizableTakeLane): TakeLane {

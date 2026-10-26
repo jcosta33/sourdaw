@@ -32,10 +32,6 @@ function hasFiniteNumbers(value: unknown): boolean {
     return true;
 }
 
-function isFiniteNumber(value: unknown): boolean {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function optionalField(value: Record<string, unknown>, key: string, accepts: (field: unknown) => boolean): boolean {
     return !Object.hasOwn(value, key) || value[key] === undefined || accepts(value[key]);
 }

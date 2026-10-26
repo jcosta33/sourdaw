@@ -14,7 +14,7 @@ import {
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
-import { sanitizeTrackSnapshot } from '../../stores/trackStore';
+import { projectAudioSourcePrefixTracks } from '../../stores/projectAudioSourcePrefixTracks';
 import { type TempoAudioSourceWriteClock } from '../../stores/tempoAudioSourceWriteIntent';
 import { type projectTempoAudioSources } from '../../stores/tempoAudioSources';
 import { getTrackStoreState } from '../getTrackStoreState';
@@ -304,12 +304,12 @@ export function prepareAudioSourcePrefixWitness(
     if (!clock) {
         return null;
     }
-    const plainTracks: unknown = JSON.parse(JSON.stringify(document.tracks ?? { tracks: [] }));
-    const plainLanes: unknown = JSON.parse(JSON.stringify(document.takeLanes ?? { lanes: [] }));
-    if (!isRecord(plainLanes) || !Array.isArray(plainLanes.lanes)) {
+    const rawTracks: unknown = document.tracks ?? { tracks: [] };
+    const rawLanes: unknown = document.takeLanes ?? { lanes: [] };
+    if (!isRecord(rawLanes) || !Array.isArray(rawLanes.lanes)) {
         return null;
     }
-    const takeLanes = decodeExactTakeLaneSnapshots(plainLanes.lanes);
+    const takeLanes = decodeExactTakeLaneSnapshots(rawLanes.lanes, 'source-prefix');
     if (!takeLanes) {
         return null;
     }
@@ -329,7 +329,7 @@ export function prepareAudioSourcePrefixWitness(
         actions = [current];
     }
     let state = projectClipReplayPrefix([], {
-        tracks: sanitizeTrackSnapshot(plainTracks).tracks,
+        tracks: projectAudioSourcePrefixTracks(rawTracks),
         takeLanes,
         automationLanes: [],
         clock,
