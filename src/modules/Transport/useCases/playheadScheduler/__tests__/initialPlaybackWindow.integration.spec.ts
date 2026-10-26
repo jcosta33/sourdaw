@@ -38,6 +38,9 @@ const trackStripStub = {
     preFaderTap: { connect: () => {} },
 };
 
+const projectRoot = { current: 'startup-root' };
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => projectRoot.current }));
+
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
