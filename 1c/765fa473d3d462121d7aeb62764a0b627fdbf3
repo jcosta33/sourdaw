@@ -1,0 +1,22 @@
+scripts/syncParentLane.ts
+  s_b3201877f50e8a::t_593f6f56fafb01 369-370
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_b3201877f50e8a::t_593f6f56fafb01 191-269,281,283,298,302,800
+  s_b3201877f50e8a::t_de5c75aff0929f 270-280,282,284-297,299-301,303-304,482-488,799,801-812
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c765fa473d3d462121d7aeb62764a0b627fdbf3",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
