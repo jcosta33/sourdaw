@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { captureTouchAutomationRecordingAuthority, releaseTouchAutomation } from '../releaseTouchAutomation';
+import { captureTouchAutomationRecordingAuthority } from '../captureTouchAutomationRecordingAuthority';
+import { releaseTouchAutomation } from '../releaseTouchAutomation';
 
 const { activeRecording, touchActive, flushPendingPoints } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();

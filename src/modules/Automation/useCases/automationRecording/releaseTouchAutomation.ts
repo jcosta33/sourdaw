@@ -3,11 +3,6 @@ import { flushPendingPoints } from './flushPendingPoints';
 import { makeKey } from './makeKey';
 import { activeRecording, touchActive } from './recordingSessionState';
 
-export function captureTouchAutomationRecordingAuthority(trackId: string, parameterId: string) {
-    const owner = Symbol('Touch automation producer');
-    return { owner, release: () => releaseTouchAutomation(trackId, parameterId, owner) };
-}
-
 export function releaseTouchAutomation(trackId: string, parameterId: string, recordingOwner?: symbol): void {
     const key = makeKey(trackId, parameterId);
     const session = activeRecording.get(key);
