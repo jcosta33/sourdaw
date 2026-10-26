@@ -1,0 +1,24 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/planMidiRowCoordinateShift.spec.ts
+  s_d99a62fe2de3a3::t_eac0b3bc1ee0a9 43-55,119-140,145-147,150-158,164-167,174-177,180-191,193,213-216,223-238
+  s_d99a62fe2de3a3::t_2d6957a49de8c9 1-42,56-118,141-144,148-149,159-163,168-173,178-179,192,194-212,217-222,239-240
+src/modules/MIDI/useCases/midiNoteCrud/planMidiRowCoordinateShift.ts
+  s_d99a62fe2de3a3::t_ad4fd0b49cdaf2 1-44,52-65,68-79,81-130
+  s_d99a62fe2de3a3::t_2d6957a49de8c9 45-51,66-67,80
+  s_d99a62fe2de3a3::t_80452beb408649 131-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd220f9d8fe771f4c767abbed703da7dda54fb83",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+.agents/skills/review-stances/ai-notes-publication.md
+  s_d99a62fe2de3a3::t_db610c0263dfba 32-42
+scripts/__tests__/deliverAuthorshipBoundary.spec.ts
+  s_d99a62fe2de3a3::t_db610c0263dfba 48,67-68
+  s_d99a62fe2de3a3::t_4a946d6e963795 1-47,49-66,69-87,133-147,159-166,173-176,186,208-211,214
+  s_d99a62fe2de3a3::t_00539f1f44e062 152,169-172
+  s_d99a62fe2de3a3::t_34d014892e6b44 88-132,148-151,153-158,168,178-185,187-207,212-213
+  s_d99a62fe2de3a3::t_511dbc1180d409 167,177
+scripts/deliverPullRequest.ts
+  s_d99a62fe2de3a3::t_5e081e8d4653fe 3822,3831,3934-3935,3939-3946,3948-3954
+  s_d99a62fe2de3a3::t_34d014892e6b44 3936-3938,3947
+  s_d99a62fe2de3a3::t_d295a14514810d 3955-3956
+.agents/skills/review-stances/test-validity.md
+  s_d99a62fe2de3a3::t_db610c0263dfba 9-23
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_d99a62fe2de3a3::t_250efb687ba8e0 12466-12467,12472,12490,12494,12513-12514,12521,12549-12550,12557,12575,12579,12603-12604,12612
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "128e54469933448393999a699bd97e89a3b78c57",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

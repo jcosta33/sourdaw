@@ -1,0 +1,19 @@
+scripts/__tests__/deliverAuthorshipBoundary.spec.ts
+  s_d99a62fe2de3a3::t_2a7762bb366a61 14-16,95-97,102-104,172-180,185-187,201-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee07493da7dc2edefc37424f7aae84161e2c5042",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
