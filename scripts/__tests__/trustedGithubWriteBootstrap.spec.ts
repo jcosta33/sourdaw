@@ -131,6 +131,8 @@ function withNativeSupersession(
             join(root, 'scripts/githubAppIdentity.ts'),
             `
             export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
+            export const AUTHOR_BOT_COMMIT_NAME = 'Fixture';
+            export const AUTHOR_BOT_COMMIT_EMAIL = 'fixture@example.invalid';
             export const REQUIRED_REPOSITORY = 'fixture/repository';
             export const REQUIRED_BASE_BRANCH = 'main';
             export const isAuthorBotNodeId = value => value === AUTHOR_BOT_NODE_ID;
@@ -301,6 +303,8 @@ function writeNativeRetirementPorts(root: string, mode: 'admission' | 'rollback'
         import { existsSync, readFileSync } from 'node:fs';
         import { join } from 'node:path';
         export const AUTHOR_BOT_NODE_ID = 'BOT_fixture_author';
+        export const AUTHOR_BOT_COMMIT_NAME = 'Fixture';
+        export const AUTHOR_BOT_COMMIT_EMAIL = 'fixture@example.invalid';
         export const REVIEWER_BOT_NODE_ID = 'BOT_fixture_reviewer';
         export const REQUIRED_REPOSITORY = 'fixture/repository';
         export const REQUIRED_BASE_BRANCH = 'main';
