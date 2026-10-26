@@ -1,4 +1,4 @@
-import { change, clone, getHeads, merge } from '@automerge/automerge';
+import { change, clone, getConflicts, getHeads, merge } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -24,6 +24,7 @@ import {
     createCrdtDoc,
     findAutomergeProjectConflicts,
     getCrdtDoc,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     replaceCrdtDocInLineage,
@@ -248,6 +249,62 @@ describe('confirmation after concurrent command checkpoints', () => {
         expect(aiActionHistoryStore.value?.groups).toHaveLength(1);
         await undo();
         expect(getCrdtDoc('owned')).toMatchObject({ transport: { bpm: 120 } });
+    });
+
+    it('refuses conflicting whole-map checkpoints without applying or rebinding the original approval', async () => {
+        const branches = captureConcurrentBranches();
+        const commandBatch = proposeTempoChange();
+        const confirmation = getPendingActionConfirmation('confirmation-checkpoints');
+        if (!confirmation) {
+            throw new Error('Expected the pending approval');
+        }
+        const originalApproval = structuredClone(confirmation.approvalSnapshot);
+        const capturedTruth = rootProjectTruth();
+        const localCheckpoint = peerCheckpoint('batch-conflicting-local');
+        const remoteCheckpoint = peerCheckpoint('batch-conflicting-remote');
+        const local = change(branches.local, (doc) => {
+            doc.commandBatchIdempotency = localCheckpoint;
+        });
+        const remote = change(branches.remote, (doc) => {
+            doc.commandBatchIdempotency = remoteCheckpoint;
+        });
+        replaceCrdtDocInLineage({ id: 'root', doc: merge(local, remote) });
+
+        expect(getHeads(requireRoot())).toHaveLength(2);
+        expect(rootProjectTruth()).toEqual(capturedTruth);
+        expect(Object.values(getConflicts(requireRoot(), 'commandBatchIdempotency') ?? {})).toEqual(
+            expect.arrayContaining([localCheckpoint, remoteCheckpoint])
+        );
+        const conflicts = findAutomergeProjectConflicts({ document: requireRoot() });
+        expect(conflicts).toHaveLength(1);
+        expect(conflicts[0]?.path).toEqual(['commandBatchIdempotency']);
+        expect(conflicts[0]?.conflictIds).toHaveLength(2);
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(commandBatch.authority.baseRevision)).toBe(true);
+        const beforeConfirmation = captureProjectRevision();
+
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-checkpoints' })).resolves.toEqual({
+            status: 'failed',
+            reason: 'Command batch project divergence is invariant-breaking',
+        });
+
+        expect(executedTempos).toEqual([]);
+        expect(captureProjectRevision()).toBe(beforeConfirmation);
+        expect(getCrdtDoc('owned')).not.toHaveProperty('transport');
+        expect(undoStore.value?.past).toEqual([]);
+        expect(aiActionHistoryStore.value?.groups).toEqual([]);
+        const refusedConfirmation = getPendingActionConfirmation('confirmation-checkpoints');
+        expect(refusedConfirmation?.approvalSnapshot).toEqual(originalApproval);
+        expect(refusedConfirmation?.projectRevision).toBe(confirmation.projectRevision);
+        const refusalReceipt = await getVersionedCommandBatchIdempotentReplay({
+            authority: commandBatch.authority,
+            serialized: commandBatch.serialized,
+        });
+        expect(refusalReceipt).toMatchObject({
+            outcome: 'conflicted',
+            batchId: 'approved-tempo',
+            commandOutcomes: [{ operation: 'setTempo', outcome: 'not-applied', compensationAvailable: false }],
+            compensation: { available: false },
+        });
     });
 
     it.each(['edit', 'edit then restore', 'discarded history'] as const)(
