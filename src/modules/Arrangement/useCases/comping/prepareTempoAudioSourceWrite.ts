@@ -36,21 +36,40 @@ export function prepareTempoAudioSourceWrite(input: Input) {
     if (!projected) {
         return null;
     }
-    const before =
-        input.direction === 'promote' ? { tracks: tracks?.tracks ?? [], lanes: lanes?.lanes ?? [] } : projected;
+    let before: { readonly tracks: readonly Track[]; readonly lanes: readonly TakeLane[] };
+    if (input.direction === 'promote') {
+        before = { tracks: tracks?.tracks ?? [], lanes: lanes?.lanes ?? [] };
+    } else {
+        before = projected;
+    }
     const captured = captureTempoAudioSources(before.tracks, before.lanes, input.timeline);
     if (!captured || !tempoSourcePromotionsEqual(captured, promotion)) {
         return null;
     }
-    const clock =
-        'target' in input
-            ? { target: input.target, ...(input.clockPath ? { clockPath: input.clockPath } : {}) }
-            : { rowClock: input.rowClock };
-    const intent = captureTempoAudioSourceWriteIntent({
-        promotion,
-        direction: input.direction,
-        ...clock,
-        context: { ...input.clock, tracks, takeLanes: lanes },
-    });
+    let intent: ReturnType<typeof captureTempoAudioSourceWriteIntent> | null;
+    if ('target' in input) {
+        const clock: { target: typeof input.target; clockPath?: typeof input.clockPath } = {
+            target: input.target,
+        };
+        if (input.clockPath) {
+            clock.clockPath = input.clockPath;
+        }
+        const writeInput = {
+            promotion,
+            direction: input.direction,
+            ...clock,
+            context: { ...input.clock, tracks, takeLanes: lanes },
+        };
+        intent = captureTempoAudioSourceWriteIntent(writeInput);
+    } else {
+        const clock = { rowClock: input.rowClock };
+        const writeInput = {
+            promotion,
+            direction: input.direction,
+            ...clock,
+            context: { ...input.clock, tracks, takeLanes: lanes },
+        };
+        intent = captureTempoAudioSourceWriteIntent(writeInput);
+    }
     return intent ? { tracks, lanes, projected, intent } : null;
 }

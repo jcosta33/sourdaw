@@ -190,7 +190,12 @@ export function writeTempoEdit(payload: RestoreAction['payload'], context?: Pref
     if (context && !clockPath) {
         return { status: 'conflict' as const };
     }
-    const source = applyTempoAudioSources({ ...input, context, ...(clockPath ? { clockPath } : {}) });
+    let source: ReturnType<typeof applyTempoAudioSources>;
+    if (clockPath) {
+        source = applyTempoAudioSources({ ...input, context, clockPath });
+    } else {
+        source = applyTempoAudioSources({ ...input, context });
+    }
     if (source.status === 'conflict') {
         return { status: 'conflict' as const };
     }

@@ -19,12 +19,13 @@ export function laneWithLiveTakes(lane: TakeLane): TakeLane {
     const takes = takesWithLiveClips(lane.takes);
     const takeIds = new Set(takes.map((take) => take.id));
     const liveClipIds = collectLiveClipIds(getTrackStoreState()?.tracks ?? []);
-    return {
+    const next = {
         ...lane,
-        ...(lane.baseGapAudioSources === undefined
-            ? {}
-            : { baseGapAudioSources: lane.baseGapAudioSources.filter((tile) => liveClipIds.has(tile.clipId)) }),
         takes,
         activeCompRegions: lane.activeCompRegions.filter((region) => takeIds.has(region.takeId)),
     };
+    if (lane.baseGapAudioSources !== undefined) {
+        next.baseGapAudioSources = lane.baseGapAudioSources.filter((tile) => liveClipIds.has(tile.clipId));
+    }
+    return next;
 }

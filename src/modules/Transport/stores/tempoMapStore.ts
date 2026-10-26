@@ -122,7 +122,11 @@ export const tempoMapStore = createStore<TempoMapStoreState>({
         hydrateMissing: () => create_empty_tempo_map_state(),
         writeMetadata: {
             capture: () => captureTempoWriteMetadata('tempoMap'),
-            reduce: ({ current, captured }) => [...(current ?? []), ...captured],
+            reduce: ({ current, captured }) => {
+                const pending = current ? current.slice() : [];
+                pending.push(...captured);
+                return pending;
+            },
         },
         mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
             if (

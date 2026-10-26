@@ -124,8 +124,9 @@ export function takeReKeySourceValuesMatch(
         to.some(
             (region) => !fromKeys.has(regionKey(region)) && kept.some((candidate) => regionsOverlap(candidate, region))
         )
-    )
+    ) {
         return false;
+    }
     return (
         reconcileTransitionBaseGaps(
             lane ?? { id: transition.laneId, trackId: transition.trackId, takes: [], activeCompRegions: [] },

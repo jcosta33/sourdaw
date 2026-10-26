@@ -23,8 +23,12 @@ function selectedSource(
     const take = lane.takes.find((candidate) => candidate.id === region.takeId);
     // A placed pass owns a physical origin and eligibility law; a region
     // programme must never become another clock when its playback rate changes.
-    if (take?.passAnchorSeconds !== undefined) return null;
-    if (region.audioSource) return region.audioSource;
+    if (take?.passAnchorSeconds !== undefined) {
+        return null;
+    }
+    if (region.audioSource) {
+        return region.audioSource;
+    }
     const clip = programme.find(
         (candidate) =>
             candidate.type === 'audio' &&
@@ -48,13 +52,22 @@ function baseOwner(clip: ResolvedClip, lane: TakeLane): CompAudioSourceOwnerSnap
         (candidate) =>
             candidate.clipId === clip.id && candidate.startBeat <= clip.startBeat && candidate.endBeat >= clip.endBeat
     );
-    return {
+    const owner: {
+        kind: 'base';
+        clipId: string;
+        startBeat: number;
+        endBeat: number;
+        audioSource?: CompAudioSourceOwnerSnapshot['audioSource'];
+    } = {
         kind: 'base',
         clipId: clip.id,
         startBeat: clip.startBeat,
         endBeat: clip.endBeat,
-        ...(tile ? { audioSource: tile.audioSource } : {}),
     };
+    if (tile) {
+        owner.audioSource = tile.audioSource;
+    }
+    return owner;
 }
 
 /** Capture actual old-law owners once; retained pieces inherit the same value and grid. */
@@ -66,7 +79,9 @@ export function prepareCompAudioSourcePatch(
     context: CompAudioSourceInputContext
 ): TakeLaneCompRegionPatch | null {
     const lane = state.lanes.find((candidate) => candidate.id === patch.laneId && candidate.trackId === patch.trackId);
-    if (!lane) return null;
+    if (!lane) {
+        return null;
+    }
     // Choosing an already selected interval is still a no-op, including a
     // canonical region whose entry is different from a freshly drawn region.
     if (
@@ -75,14 +90,21 @@ export function prepareCompAudioSourcePatch(
         patch.expected[0]!.takeId === patch.replacement[0]!.takeId &&
         patch.expected[0]!.startBeat === patch.startBeat &&
         patch.expected[0]!.endBeat === patch.endBeat
-    )
+    ) {
         return { ...patch, replacement: structuredClone(patch.expected) };
-    if (!clips.some((clip) => clip.type === 'audio')) return patch;
+    }
+    if (!clips.some((clip) => clip.type === 'audio')) {
+        return patch;
+    }
     const before = resolveCompingProgramme(patch.trackId, clips, state, timeline);
     const rawAfter = applyTakeLaneCompRegionPatch(state, patch);
-    if (!rawAfter) return null;
+    if (!rawAfter) {
+        return null;
+    }
     const afterLane = rawAfter.lanes.find((candidate) => candidate.id === lane.id);
-    if (!afterLane) return null;
+    if (!afterLane) {
+        return null;
+    }
     const after = resolveCompingProgramme(patch.trackId, clips, rawAfter, timeline);
     const replacement = patch.replacement.map((region) => {
         const source = selectedSource(region, afterLane, after, timeline);
@@ -90,18 +112,26 @@ export function prepareCompAudioSourcePatch(
     });
     const promotions: Omit<CompAudioSourcePromotionSnapshot, 'sourceInputs'>[] = [];
     for (const region of lane.activeCompRegions) {
-        if (region.audioSource || !intersects(region, patch)) continue;
+        if (region.audioSource || !intersects(region, patch)) {
+            continue;
+        }
         const source = selectedSource(region, lane, before, timeline);
-        if (!source) continue;
+        if (!source) {
+            continue;
+        }
         const expected: CompAudioSourceOwnerSnapshot = { kind: 'take', ...region };
         promotions.push({ expected, replacement: { ...expected, audioSource: source } });
     }
     const beforeBase = before.filter((clip) => isBase(clip, lane.activeCompRegions));
     for (const clip of beforeBase) {
-        if (!intersects(clip, patch)) continue;
+        if (!intersects(clip, patch)) {
+            continue;
+        }
         const expected = baseOwner(clip, lane);
         const source = expected.audioSource ?? snapshot(clip, timeline);
-        if (source) promotions.push({ expected, replacement: { ...expected, audioSource: source } });
+        if (source) {
+            promotions.push({ expected, replacement: { ...expected, audioSource: source } });
+        }
     }
     // Newly exposed base spans have no prior audible owner. Capture their
     // current base law once, leaving the old adjacent gap owners untouched.
@@ -114,7 +144,9 @@ export function prepareCompAudioSourcePatch(
             (candidate) => candidate.id === clip.id && intersects(candidate, { startBeat: start, endBeat: end })
         );
         const source = snapshot(clip, timeline);
-        if (!source) continue;
+        if (!source) {
+            continue;
+        }
         let cursor = start;
         for (const old of previous) {
             if (cursor < old.startBeat) {
@@ -141,19 +173,24 @@ export function prepareCompAudioSourcePatch(
     const authenticated: CompAudioSourcePromotionSnapshot[] = [];
     for (const promotion of promotions) {
         const sourceInputs = captureCompAudioSourceInputProof(lane, promotion.expected, context);
-        if (!sourceInputs) return null;
+        if (!sourceInputs) {
+            return null;
+        }
         authenticated.push({ ...promotion, sourceInputs });
     }
-    const prepared = {
-        ...patch,
-        replacement,
-        ...(promotions.length === 0 ? {} : { audioSourcePromotions: authenticated }),
-    };
+    const prepared = { ...patch, replacement };
+    if (promotions.length > 0) {
+        prepared.audioSourcePromotions = authenticated;
+    }
     const authorizations = captureCompAudioSourceAuthorizations(state, prepared, clips, timeline, context);
-    if (!authorizations) return null;
+    if (!authorizations) {
+        return null;
+    }
     const next = applyTakeLaneCompRegionPatch(state, prepared, context, authorizations);
     const nextLane = next?.lanes.find((candidate) => candidate.id === lane.id);
-    if (!nextLane) return null;
+    if (!nextLane) {
+        return null;
+    }
     if (promotions.some((delta) => delta.expected.kind === 'base')) {
         return {
             ...prepared,

@@ -156,7 +156,9 @@ function reconcileLaneTransition(
     const toRegions = direction === 'apply' ? transition.regionsAfter : transition.regionsBefore;
 
     const baseGaps = reconcileTransitionBaseGaps(lane, transition, direction);
-    if (!baseGaps) return null;
+    if (!baseGaps) {
+        return null;
+    }
     const takes = reconcileTransitionTakes(lane.takes, fromTakes, toTakes, requireLiveClipIds);
     const liveTakeIds = new Set(takes.map((take) => take.id));
     const removedTakeIds = new Set(lane.takes.filter((take) => !liveTakeIds.has(take.id)).map((take) => take.id));

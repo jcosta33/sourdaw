@@ -6,6 +6,31 @@ import { type ProjectClip, type ProjectTrack, type ProjectTrackAlternative } fro
 import { type HydratableProjectTrack } from '../helpers/isHydratableProjectData';
 
 function hydrateClip(clip: SerializedProjectClip): ProjectClip {
+    const audioTimeFields: Pick<
+        ProjectClip,
+        | 'audioOffsetSeconds'
+        | 'audioUnwrappedOffsetSeconds'
+        | 'audioLoopStartSeconds'
+        | 'audioLoopPassEntrySeconds'
+        | 'audioLoopPassOriginBeat'
+    > = {};
+    if (clip.type === 'audio') {
+        if (clip.audioOffsetSeconds !== undefined) {
+            audioTimeFields.audioOffsetSeconds = clip.audioOffsetSeconds;
+        }
+        if (clip.audioUnwrappedOffsetSeconds !== undefined) {
+            audioTimeFields.audioUnwrappedOffsetSeconds = clip.audioUnwrappedOffsetSeconds;
+        }
+        if (clip.audioLoopStartSeconds !== undefined) {
+            audioTimeFields.audioLoopStartSeconds = clip.audioLoopStartSeconds;
+        }
+        if (clip.audioLoopPassEntrySeconds !== undefined) {
+            audioTimeFields.audioLoopPassEntrySeconds = clip.audioLoopPassEntrySeconds;
+        }
+        if (clip.audioLoopPassOriginBeat !== undefined) {
+            audioTimeFields.audioLoopPassOriginBeat = clip.audioLoopPassOriginBeat;
+        }
+    }
     return {
         id: clip.id,
         trackId: clip.trackId,
@@ -17,21 +42,7 @@ function hydrateClip(clip: SerializedProjectClip): ProjectClip {
         fileId: clip.fileId,
         assetHash: clip.assetHash,
         audioOffsetBeats: clip.sampleStartBeat ?? clip.audioOffsetBeats,
-        ...(clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
-            ? { audioOffsetSeconds: clip.audioOffsetSeconds }
-            : {}),
-        ...(clip.type === 'audio' && clip.audioUnwrappedOffsetSeconds !== undefined
-            ? { audioUnwrappedOffsetSeconds: clip.audioUnwrappedOffsetSeconds }
-            : {}),
-        ...(clip.type === 'audio' && clip.audioLoopStartSeconds !== undefined
-            ? { audioLoopStartSeconds: clip.audioLoopStartSeconds }
-            : {}),
-        ...(clip.type === 'audio' && clip.audioLoopPassEntrySeconds !== undefined
-            ? { audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds }
-            : {}),
-        ...(clip.type === 'audio' && clip.audioLoopPassOriginBeat !== undefined
-            ? { audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat }
-            : {}),
+        ...audioTimeFields,
         midiOffsetBeats: clip.midiOffsetBeats,
         fadeInBeats: clip.fadeInBeats,
         fadeOutBeats: clip.fadeOutBeats,

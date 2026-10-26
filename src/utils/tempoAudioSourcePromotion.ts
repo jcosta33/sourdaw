@@ -72,6 +72,18 @@ export type TempoSourceOwnerWitness = {
 };
 type RawSources = { readonly tracks?: unknown; readonly takeLanes?: unknown };
 
+type TempoSourceLaneOwner = Exclude<TempoSourceOwner, { readonly kind: 'clip' }>;
+
+function sourceLaneField(owner: TempoSourceLaneOwner): 'takes' | 'activeCompRegions' | 'baseGapAudioSources' {
+    if (owner.kind === 'take') {
+        return 'takes';
+    }
+    if (owner.kind === 'region') {
+        return 'activeCompRegions';
+    }
+    return 'baseGapAudioSources';
+}
+
 function sourceRows(context: RawSources, owner: TempoSourceOwner): readonly unknown[] | null {
     if (owner.kind === 'clip') {
         if (!isRecord(context.tracks) || !Array.isArray(context.tracks.tracks)) {
@@ -102,8 +114,7 @@ function sourceRows(context: RawSources, owner: TempoSourceOwner): readonly unkn
     if (!isRecord(lane)) {
         return null;
     }
-    const field =
-        owner.kind === 'take' ? 'takes' : owner.kind === 'region' ? 'activeCompRegions' : 'baseGapAudioSources';
+    const field = sourceLaneField(owner);
     if (owner.kind === 'gap' && !Object.hasOwn(lane, field)) {
         return [];
     }
@@ -190,9 +201,11 @@ function replaceSourceOwner<Context extends RawSources>(
     if (old === undefined) {
         return null;
     }
-    const replacement: Record<string, unknown> = { ...old };
-    for (const field of fields) {
-        delete replacement[field];
+    const replacement: Record<string, unknown> = {};
+    for (const [field, value] of Object.entries(old ?? {})) {
+        if (!fields.includes(field)) {
+            replacement[field] = value;
+        }
     }
     if (target.present) {
         Object.assign(replacement, target.value);
@@ -200,7 +213,11 @@ function replaceSourceOwner<Context extends RawSources>(
     const existingIndex = rows.findIndex((row) => isSourceOwnerRow(row, owner));
     const nextRows = [...rows];
     if (existingIndex >= 0) {
-        nextRows.splice(existingIndex, 1, ...(target.present ? [replacement] : []));
+        if (target.present) {
+            nextRows.splice(existingIndex, 1, replacement);
+        } else {
+            nextRows.splice(existingIndex, 1);
+        }
     } else if (target.present) {
         // A re-key may remove this owner before another slot reads its old
         // programme. Reinsert only that captured interval in the same ordered
@@ -234,11 +251,12 @@ function replaceSourceOwner<Context extends RawSources>(
             }
             return {
                 ...track,
-                alternatives: track.alternatives.map((alternative: unknown) =>
-                    isRecord(alternative) && alternative.id === owner.alternativeId
-                        ? { ...alternative, clips: nextRows }
-                        : alternative
-                ),
+                alternatives: track.alternatives.map((alternative: unknown) => {
+                    if (isRecord(alternative) && alternative.id === owner.alternativeId) {
+                        return { ...alternative, clips: nextRows };
+                    }
+                    return alternative;
+                }),
             };
         });
         return { ...context, tracks: { ...slot, tracks } };
@@ -247,17 +265,17 @@ function replaceSourceOwner<Context extends RawSources>(
     if (!isRecord(slot) || !Array.isArray(slot.lanes)) {
         return null;
     }
-    const field =
-        owner.kind === 'take' ? 'takes' : owner.kind === 'region' ? 'activeCompRegions' : 'baseGapAudioSources';
+    const field = sourceLaneField(owner);
     return {
         ...context,
         takeLanes: {
             ...slot,
-            lanes: slot.lanes.map((lane: unknown) =>
-                isRecord(lane) && lane.id === owner.laneId && lane.trackId === owner.trackId
-                    ? { ...lane, [field]: nextRows }
-                    : lane
-            ),
+            lanes: slot.lanes.map((lane: unknown) => {
+                if (isRecord(lane) && lane.id === owner.laneId && lane.trackId === owner.trackId) {
+                    return { ...lane, [field]: nextRows };
+                }
+                return lane;
+            }),
         },
     };
 }
@@ -334,9 +352,10 @@ export function normalizeTempoSourceClockContext<Context extends RawClock>(
 ): Context | null {
     if (!path) {
         const tempo = readTempoSourceClockValue(context, target.tempoChangeId);
-        return tempo === target.expectedBpm || tempo === target.bpm
-            ? withRawTempo(context, target.tempoChangeId, target.expectedBpm)
-            : null;
+        if (tempo === target.expectedBpm || tempo === target.bpm) {
+            return withRawTempo(context, target.tempoChangeId, target.expectedBpm);
+        }
+        return null;
     }
     const values = new Map<string | null, number[]>();
     for (const transition of path.transitions) {
@@ -347,7 +366,9 @@ export function normalizeTempoSourceClockContext<Context extends RawClock>(
         if (prior && prior[prior.length - 1] !== transition.expectedBpm) {
             return null;
         }
-        values.set(transition.tempoChangeId, [...(prior ?? [transition.expectedBpm]), transition.bpm]);
+        const sequence = prior ? prior.slice() : [transition.expectedBpm];
+        sequence.push(transition.bpm);
+        values.set(transition.tempoChangeId, sequence);
     }
     if (
         path.before.length !== values.size ||

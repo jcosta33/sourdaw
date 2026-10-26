@@ -24,16 +24,27 @@ export function captureCompAudioSourceAuthorizations(
     context: CompAudioSourceInputContext
 ): readonly CompAudioSourceAuthorization[] | null {
     const lane = state.lanes.find((candidate) => candidate.id === patch.laneId && candidate.trackId === patch.trackId);
-    if (!lane) return null;
+    if (!lane) {
+        return null;
+    }
     const authorizations: CompAudioSourceAuthorization[] = [];
     for (const delta of patch.audioSourcePromotions ?? []) {
         const owner = delta.expected;
         const source = owner.audioSource ?? delta.replacement.audioSource;
-        if (!source || !compAudioSourceOwnerExists(lane, owner, delta.sourceInputs, context)) return null;
+        if (!source || !compAudioSourceOwnerExists(lane, owner, delta.sourceInputs, context)) {
+            return null;
+        }
         const take = owner.kind === 'take' ? lane.takes.find((candidate) => candidate.id === owner.takeId) : undefined;
-        const clipId = owner.kind === 'base' ? owner.clipId : take?.clipId;
+        let clipId: string | undefined;
+        if (owner.kind === 'base') {
+            clipId = owner.clipId;
+        } else {
+            clipId = take?.clipId;
+        }
         const clip = clips.find((candidate) => candidate.id === clipId && candidate.type === 'audio');
-        if (!clip || take?.passAnchorSeconds !== undefined) return null;
+        if (!clip || take?.passAnchorSeconds !== undefined) {
+            return null;
+        }
         const fragment =
             owner.kind === 'base'
                 ? resolveCompBaseGapWindow(clip, { startBeat: owner.startBeat, endBeat: owner.endBeat }, timeline)
@@ -59,16 +70,22 @@ export function captureCompAudioSourceAuthorizations(
                   );
         const currentSource = fragment ? captureResolvedAudioSourceSnapshot(fragment, timeline) : null;
         const sourceInputs = captureCompAudioSourceInputProof(lane, owner, context);
-        if (!sourceInputs) return null;
+        if (!sourceInputs) {
+            return null;
+        }
+        let operation: CompAudioSourceAuthorization['operation'];
+        if (!valuesEqual(currentSource, source)) {
+            operation = 'preserve';
+        } else if (delta.replacement.audioSource === undefined) {
+            operation = 'demote';
+        } else {
+            operation = 'promote';
+        }
         authorizations.push({
             owner: structuredClone(owner),
             source: structuredClone(source),
             sourceInputs,
-            operation: !valuesEqual(currentSource, source)
-                ? 'preserve'
-                : delta.replacement.audioSource === undefined
-                  ? 'demote'
-                  : 'promote',
+            operation,
         });
     }
     return authorizations;

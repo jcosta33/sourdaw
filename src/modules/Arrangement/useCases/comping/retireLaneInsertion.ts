@@ -54,14 +54,14 @@ export function retireLaneInsertion(lane: TakeLane): void {
         takes.length === landed.takes.length &&
         activeCompRegions.length === landed.activeCompRegions.length &&
         gaps?.length === landed.baseGapAudioSources?.length
-    )
+    ) {
         return;
+    }
     const lanes = [...state.lanes];
-    lanes[landedIndex] = {
-        ...landed,
-        takes,
-        activeCompRegions,
-        ...(gaps === undefined ? {} : { baseGapAudioSources: gaps }),
-    };
+    const next = { ...landed, takes, activeCompRegions };
+    if (gaps !== undefined) {
+        next.baseGapAudioSources = gaps;
+    }
+    lanes[landedIndex] = next;
     takeLaneStore.set({ lanes });
 }

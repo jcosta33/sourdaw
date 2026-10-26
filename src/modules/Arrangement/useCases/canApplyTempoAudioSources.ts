@@ -6,7 +6,7 @@ export function canApplyTempoAudioSources(
     input: Parameters<typeof prepareTempoAudioSourceWrite>[0],
     priorActions: readonly AppAction[] = []
 ): boolean {
-    if (priorActions.length) {
+    if (priorActions.length > 0) {
         const prefix = projectClipReplayPrefix(priorActions);
         if (!prefix?.tracks) {
             return false;

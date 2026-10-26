@@ -1,5 +1,7 @@
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
+import { type TakeLane } from '../../models/TakeLane';
+
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
@@ -63,18 +65,26 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
             // empty lane and insert only what the removal retired, so a captured
             // take the removal never touched — or a capture written before
             // `retiredTakeIds` existed — cannot ride back in with the whole clone.
-            const inserted = reconcileLane(
-                {
-                    id: lane.id,
-                    trackId: lane.trackId,
-                    ...(lane.automationLaneId === undefined ? {} : { automationLaneId: lane.automationLaneId }),
+            const laneId = lane.id;
+            const trackId = lane.trackId;
+            let emptyLane: TakeLane;
+            if (lane.automationLaneId !== undefined) {
+                emptyLane = {
+                    id: laneId,
+                    trackId,
+                    automationLaneId: lane.automationLaneId,
                     takes: [],
                     activeCompRegions: [],
-                },
-                lane,
-                residentTakeIds,
-                residentTiles
-            );
+                };
+            } else {
+                emptyLane = {
+                    id: laneId,
+                    trackId,
+                    takes: [],
+                    activeCompRegions: [],
+                };
+            }
+            const inserted = reconcileLane(emptyLane, lane, residentTakeIds, residentTiles);
             if (inserted) {
                 lanes.splice(Math.min(Math.max(laneIndex, 0), lanes.length), 0, inserted);
                 changed = true;

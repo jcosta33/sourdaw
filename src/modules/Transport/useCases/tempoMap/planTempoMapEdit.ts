@@ -125,17 +125,20 @@ export function planTempoMapEdit(input: {
     const beats = new Set(
         [...before, ...after].filter((row) => beforeIds.has(row.id) !== afterIds.has(row.id)).map((row) => row.beat)
     );
-    const plan = decodeTempoMapRowPlan({
+    const planInput: Record<string, unknown> = {
         operation: edit.type,
         before,
         after,
-        order: [...beats].map((beat) => ({
+        order: Array.from(beats, (beat) => ({
             beat,
             before: changes.filter((row) => row.beat === beat).map((row) => row.id),
             after: next.filter((row) => row.beat === beat).map((row) => row.id),
         })),
-        ...(collision ? { collision } : {}),
-    });
+    };
+    if (collision) {
+        planInput.collision = collision;
+    }
+    const plan = decodeTempoMapRowPlan(planInput);
     if (!plan) {
         return { status: 'rejected' };
     }

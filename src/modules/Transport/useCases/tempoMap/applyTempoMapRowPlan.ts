@@ -1,6 +1,6 @@
 import { decodeTempoMapRowPlan, type TempoMapRow } from '#/utils/tempoMapRowPlan';
 
-import { tempoMapRowPlanMatchesCurrent } from '../../models/tempoMapRowPlanMatchesCurrent';
+import { tempoMapRowPlanMatchesCurrent } from '../../models/TempoMapRowPlan';
 
 import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';
 

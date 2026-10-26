@@ -32,7 +32,9 @@ export function audioSourceAtBeat(clip: SourceClip, beat: number, timeline: Temp
         loopEnabled: clip.loopEnabled ?? false,
     });
     const source = captureAudioSourceState(clip, loop.loopLengthBeats, tempo);
-    if (!source) return null;
+    if (!source) {
+        return null;
+    }
     const segment = projectAudioLoopPassSegments({
         clip,
         loopLengthBeats: loop.loopLengthBeats,
@@ -42,13 +44,18 @@ export function audioSourceAtBeat(clip: SourceClip, beat: number, timeline: Temp
         tempoAtClipStart: tempo,
         secondsAtBeat: timeline.secondsAtBeat,
     })[0];
-    if (!segment) return null;
-    return {
+    if (!segment) {
+        return null;
+    }
+    const projectedSource = {
         ...source,
         audioOffsetSeconds: segment.sourceStartSeconds,
         // Unplaced take entry advances without rate; placed takes retain their own origin pair.
         audioUnwrappedOffsetSeconds:
             source.audioUnwrappedOffsetSeconds + timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(clip.startBeat),
-        ...(clip.loopEnabled ? { loopLength: loop.loopLengthBeats } : {}),
     };
+    if (clip.loopEnabled) {
+        return { ...projectedSource, loopLength: loop.loopLengthBeats };
+    }
+    return projectedSource;
 }

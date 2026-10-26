@@ -10,7 +10,7 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { isValidCompAudioSourcePromotions } from '../../stores/compAudioSourcePromotions';
 import { sanitizeTrackSnapshot } from '../../stores/trackStore';
-import { type Clip } from '../../models/Track';
+import { type Clip, type Track } from '../../models/Track';
 import { type CompAudioSourceInputContext } from '../../stores/compAudioSourceInputs';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import {
@@ -149,11 +149,15 @@ function captureRemovedCompRegionPatchFromState(
     input: { readonly trackId: string; readonly startBeat: number },
     sourcePlan = sourceInputsAfterPrefix(input.trackId)
 ): CompRegionIntervalPatch | null {
-    if (!sourcePlan || !Number.isFinite(input.startBeat) || input.startBeat < 0) return null;
+    if (!sourcePlan || !Number.isFinite(input.startBeat) || input.startBeat < 0) {
+        return null;
+    }
     const lanes = state.lanes.filter((lane) => lane.trackId === input.trackId);
     const lane = lanes.length === 1 ? lanes[0] : undefined;
     const region = lane?.activeCompRegions.find((candidate) => candidate.startBeat === input.startBeat);
-    if (!lane || !region || !lane.takes.some((take) => take.id === region.takeId)) return null;
+    if (!lane || !region || !lane.takes.some((take) => take.id === region.takeId)) {
+        return null;
+    }
     return prepareCompAudioSourcePatch(
         state,
         {
@@ -202,51 +206,71 @@ function isCompleteCompRegionIntervalPatch(value: unknown): value is CompRegionI
     if (typeof startBeat !== 'number' || typeof endBeat !== 'number') {
         return false;
     }
-    return (
-        typeof patch.laneId === 'string' &&
-        patch.laneId.length > 0 &&
-        typeof patch.trackId === 'string' &&
-        patch.trackId.length > 0 &&
-        typeof patch.startBeat === 'number' &&
-        typeof patch.endBeat === 'number' &&
-        isValidInterval(patch.startBeat, patch.endBeat) &&
-        Array.isArray(patch.expected) &&
-        Array.isArray(patch.replacement) &&
-        hasValidSnapshot(patch.expected, patch.startBeat, patch.endBeat) &&
-        hasValidSnapshot(patch.replacement, patch.startBeat, patch.endBeat) &&
-        (!('audioSourcePromotions' in patch) ||
-            isValidCompAudioSourcePromotions(patch.audioSourcePromotions, {
+    if (typeof patch.laneId !== 'string' || patch.laneId.length === 0) {
+        return false;
+    }
+    if (typeof patch.trackId !== 'string' || patch.trackId.length === 0) {
+        return false;
+    }
+    if (typeof patch.startBeat !== 'number' || typeof patch.endBeat !== 'number') {
+        return false;
+    }
+    if (!isValidInterval(patch.startBeat, patch.endBeat)) {
+        return false;
+    }
+    if (!Array.isArray(patch.expected) || !Array.isArray(patch.replacement)) {
+        return false;
+    }
+    const expectedSpans: readonly unknown[] = patch.expected;
+    const replacementSpans: readonly unknown[] = patch.replacement;
+    if (!hasValidSnapshot(expectedSpans, patch.startBeat, patch.endBeat)) {
+        return false;
+    }
+    if (!hasValidSnapshot(replacementSpans, patch.startBeat, patch.endBeat)) {
+        return false;
+    }
+    if ('audioSourcePromotions' in patch) {
+        const takeIds = new Set(
+            [...expectedSpans, ...replacementSpans].flatMap((span) => {
+                if (isRecord(span) && typeof span.takeId === 'string') {
+                    return [span.takeId];
+                }
+                return [];
+            })
+        );
+        const baseGapExposed = [expectedSpans, replacementSpans].some((spans) => {
+            const coveredLength = spans.reduce<number>((length, span) => {
+                if (isRecord(span) && typeof span.startBeat === 'number' && typeof span.endBeat === 'number') {
+                    return length + (span.endBeat - span.startBeat);
+                }
+                return length;
+            }, 0);
+            return coveredLength < endBeat - startBeat;
+        });
+        if (
+            !isValidCompAudioSourcePromotions(patch.audioSourcePromotions, {
                 startBeat: patch.startBeat,
                 endBeat: patch.endBeat,
-                takeIds: new Set(
-                    [...patch.expected, ...patch.replacement].flatMap((span) =>
-                        isRecord(span) && typeof span.takeId === 'string' ? [span.takeId] : []
-                    )
-                ),
-                baseGapExposed: [patch.expected, patch.replacement].some(
-                    (spans) =>
-                        spans.reduce(
-                            (length, span) =>
-                                length +
-                                (isRecord(span) &&
-                                typeof span.startBeat === 'number' &&
-                                typeof span.endBeat === 'number'
-                                    ? span.endBeat - span.startBeat
-                                    : 0),
-                            0
-                        ) <
-                        endBeat - startBeat
-                ),
-            })) &&
-        (!('baseGapAudioSourceFieldPresence' in patch) ||
-            (patch.baseGapAudioSourceFieldPresence !== null &&
-                typeof patch.baseGapAudioSourceFieldPresence === 'object' &&
-                Object.keys(patch.baseGapAudioSourceFieldPresence).length === 2 &&
-                'expected' in patch.baseGapAudioSourceFieldPresence &&
-                typeof patch.baseGapAudioSourceFieldPresence.expected === 'boolean' &&
-                'replacement' in patch.baseGapAudioSourceFieldPresence &&
-                typeof patch.baseGapAudioSourceFieldPresence.replacement === 'boolean'))
-    );
+                takeIds,
+                baseGapExposed,
+            })
+        ) {
+            return false;
+        }
+    }
+    if (
+        'baseGapAudioSourceFieldPresence' in patch &&
+        (patch.baseGapAudioSourceFieldPresence === null ||
+            typeof patch.baseGapAudioSourceFieldPresence !== 'object' ||
+            Object.keys(patch.baseGapAudioSourceFieldPresence).length !== 2 ||
+            !('expected' in patch.baseGapAudioSourceFieldPresence) ||
+            typeof patch.baseGapAudioSourceFieldPresence.expected !== 'boolean' ||
+            !('replacement' in patch.baseGapAudioSourceFieldPresence) ||
+            typeof patch.baseGapAudioSourceFieldPresence.replacement !== 'boolean')
+    ) {
+        return false;
+    }
+    return true;
 }
 
 function isCompleteSetCompRegionPayload(
@@ -317,20 +341,31 @@ function sourceInputsAfterPrefix(
     limit = context?.actionIndex ?? 0
 ): CompSourcePlan | null {
     const live = liveCompAudioSourceInputs();
-    let tracks = [...(getTrackStoreState()?.tracks ?? [])];
+    const currentTracks = getTrackStoreState()?.tracks;
+    let tracks: Track[] = [];
+    if (currentTracks !== undefined && currentTracks !== null) {
+        tracks = [...currentTracks];
+    }
     for (const action of context?.actions.slice(0, limit) ?? []) {
-        if (action.type === 'removeTrack') tracks = tracks.filter((track) => track.id !== action.payload.trackId);
-        if (action.type !== 'restoreTrack') continue;
+        if (action.type === 'removeTrack') {
+            tracks = tracks.filter((track) => track.id !== action.payload.trackId);
+        }
+        if (action.type !== 'restoreTrack') {
+            continue;
+        }
         const snapshot: unknown = action.payload.trackSnapshot;
-        if (!isRecord(snapshot) || !Array.isArray(snapshot.clips)) return null;
+        if (!isRecord(snapshot) || !Array.isArray(snapshot.clips)) {
+            return null;
+        }
         const restored = sanitizeTrackSnapshot({ tracks: [snapshot], selectedTrackId: null }).tracks;
         if (
             restored.length !== 1 ||
             restored[0]!.id !== action.payload.trackId ||
             restored[0]!.clips.length !== snapshot.clips.length ||
             tracks.some((track) => track.id === action.payload.trackId)
-        )
+        ) {
             return null;
+        }
         tracks = [...tracks, restored[0]!];
     }
     return {
@@ -398,14 +433,16 @@ function projectTakeLaneStateThroughActionPrefix(
                 patch = action.payload;
             }
         } else if (action.type === 'removeCompRegion') {
-            if (mode === 'capture')
+            if (mode === 'capture') {
                 patch = captureRemovedCompRegionPatchFromState(
                     state,
                     action.payload,
                     sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
                 );
-            else {
-                if (!isCompleteRemoveCompRegionPayload(action.payload)) return null;
+            } else {
+                if (!isCompleteRemoveCompRegionPayload(action.payload)) {
+                    return null;
+                }
                 patch = action.payload;
             }
         } else if (action.type === 'restoreCompRegionInterval') {
@@ -420,7 +457,9 @@ function projectTakeLaneStateThroughActionPrefix(
             return null;
         }
         const sourcePlan = sourceInputsAfterPrefix(patch.trackId, context, actionIndex);
-        if (!sourcePlan) return null;
+        if (!sourcePlan) {
+            return null;
+        }
         const authorizations = captureCompAudioSourceAuthorizations(
             state,
             patch,
@@ -428,7 +467,9 @@ function projectTakeLaneStateThroughActionPrefix(
             liveTempoTimeline,
             sourcePlan.inputs
         );
-        if (!authorizations) return null;
+        if (!authorizations) {
+            return null;
+        }
         const next = applyTakeLaneCompRegionPatch(state, patch, sourcePlan.inputs, authorizations);
         if (!next) {
             return null;
@@ -503,36 +544,58 @@ function mentionsSourceOwner(
     clipIds: ReadonlySet<string>,
     visited = new Set<object>()
 ): boolean {
-    if (!value || typeof value !== 'object' || visited.has(value)) return false;
+    if (!value || typeof value !== 'object' || visited.has(value)) {
+        return false;
+    }
     visited.add(value);
-    if (Array.isArray(value)) return value.some((entry) => mentionsSourceOwner(entry, trackId, clipIds, visited));
-    if ('trackId' in value && value.trackId === trackId) return true;
-    if ('sourceTrackId' in value && value.sourceTrackId === trackId) return true;
+    if (Array.isArray(value)) {
+        return value.some((entry) => mentionsSourceOwner(entry, trackId, clipIds, visited));
+    }
+    if ('trackId' in value && value.trackId === trackId) {
+        return true;
+    }
+    if ('sourceTrackId' in value && value.sourceTrackId === trackId) {
+        return true;
+    }
     for (const [key, entry] of Object.entries(value)) {
         if (
             ['clipId', 'clipAId', 'clipBId', 'sourceClipId', 'targetClipId'].includes(key) &&
             typeof entry === 'string' &&
             clipIds.has(entry)
-        )
+        ) {
             return true;
-        if (key === 'clipIds' && Array.isArray(entry) && entry.some((id) => typeof id === 'string' && clipIds.has(id)))
+        }
+        if (
+            key === 'clipIds' &&
+            Array.isArray(entry) &&
+            entry.some((id) => typeof id === 'string' && clipIds.has(id))
+        ) {
             return true;
-        if (mentionsSourceOwner(entry, trackId, clipIds, visited)) return true;
+        }
+        if (mentionsSourceOwner(entry, trackId, clipIds, visited)) {
+            return true;
+        }
     }
     return false;
 }
 
 function supportsSourceCapturePrefix(trackId: string, context: TakeLanePrefixContext | undefined): boolean {
-    if (!context) return true;
+    if (!context) {
+        return true;
+    }
     const prefix = context.actions.slice(0, context.actionIndex);
     const sourcePlan = sourceInputsAfterPrefix(trackId, context);
-    if (!sourcePlan) return false;
+    if (!sourcePlan) {
+        return false;
+    }
     const clips = sourcePlan.clips;
     const hasRestoredAudio = prefix.some(
         (action) =>
             action.type === 'restoreTrack' && action.payload.trackId === trackId && action.payload.trackKind === 'audio'
     );
-    if (!clips.some((clip) => clip.type === 'audio') && !hasRestoredAudio) return true;
+    if (!clips.some((clip) => clip.type === 'audio') && !hasRestoredAudio) {
+        return true;
+    }
     const ids = new Set(clips.map((clip) => clip.id));
     // No clock is reconstructed from a geometry-only replay projection. Such
     // promotion-dependent combinations refuse before any command publishes.
@@ -555,9 +618,10 @@ function captureCompRegionIntervalPatchAfterPrefix(
         return null;
     }
     const projected = projectTakeLaneStateThroughActionPrefix(state, context, 'capture');
-    return projected
-        ? captureCompRegionIntervalPatchFromState(projected, input, sourceInputsAfterPrefix(input.trackId, context))
-        : null;
+    if (!projected) {
+        return null;
+    }
+    return captureCompRegionIntervalPatchFromState(projected, input, sourceInputsAfterPrefix(input.trackId, context));
 }
 
 function captureRemovedCompRegionPatchAfterPrefix(
@@ -565,11 +629,14 @@ function captureRemovedCompRegionPatchAfterPrefix(
     context?: HandlerMaterializationContext
 ): CompRegionIntervalPatch | null {
     const state = takeLaneStore.value;
-    if (!state || !supportsSourceCapturePrefix(input.trackId, context)) return null;
+    if (!state || !supportsSourceCapturePrefix(input.trackId, context)) {
+        return null;
+    }
     const projected = projectTakeLaneStateThroughActionPrefix(state, context, 'capture');
-    return projected
-        ? captureRemovedCompRegionPatchFromState(projected, input, sourceInputsAfterPrefix(input.trackId, context))
-        : null;
+    if (!projected) {
+        return null;
+    }
+    return captureRemovedCompRegionPatchFromState(projected, input, sourceInputsAfterPrefix(input.trackId, context));
 }
 
 function intervalTakeOwnersAreLive(
@@ -578,9 +645,13 @@ function intervalTakeOwnersAreLive(
     context?: TakeLanePrefixContext
 ): boolean {
     const lane = state.lanes.find((candidate) => candidate.id === patch.laneId && candidate.trackId === patch.trackId);
-    if (!lane) return false;
+    if (!lane) {
+        return false;
+    }
     const sourcePlan = sourceInputsAfterPrefix(patch.trackId, context);
-    if (!sourcePlan) return false;
+    if (!sourcePlan) {
+        return false;
+    }
     return [...patch.expected, ...patch.replacement].every((span) => {
         const take = lane.takes.find((candidate) => candidate.id === span.takeId);
         return take !== undefined && sourcePlan.clips.some((clip) => clip.id === take.clipId);
@@ -605,7 +676,9 @@ function compRegionIntervalPatchApplies(patch: CompRegionIntervalPatch, context?
     }
     const state = projectTakeLaneStateThroughActionPrefix(authority, context, 'validate');
     const sourcePlan = sourceInputsAfterPrefix(patch.trackId, context);
-    if (!state || !sourcePlan || !intervalTakeOwnersAreLive(state, patch, context)) return false;
+    if (!state || !sourcePlan || !intervalTakeOwnersAreLive(state, patch, context)) {
+        return false;
+    }
     const authorizations = captureCompAudioSourceAuthorizations(
         state,
         patch,
@@ -629,7 +702,9 @@ function applyCompRegionIntervalPatch(patch: CompRegionIntervalPatch): 'written'
         return 'conflict';
     }
     const sourcePlan = sourceInputsAfterPrefix(patch.trackId);
-    if (!sourcePlan) return 'conflict';
+    if (!sourcePlan) {
+        return 'conflict';
+    }
     const sourceAuthorizations = captureCompAudioSourceAuthorizations(
         state,
         patch,
@@ -637,7 +712,9 @@ function applyCompRegionIntervalPatch(patch: CompRegionIntervalPatch): 'written'
         liveTempoTimeline,
         sourcePlan.inputs
     );
-    if (!sourceAuthorizations) return 'conflict';
+    if (!sourceAuthorizations) {
+        return 'conflict';
+    }
     const next = applyTakeLaneCompRegionPatch(state, patch, sourcePlan.inputs, sourceAuthorizations);
     if (!next) {
         return 'conflict';
@@ -652,33 +729,32 @@ function applyCompRegionIntervalPatch(patch: CompRegionIntervalPatch): 'written'
 }
 
 function reversePatch(patch: CompRegionIntervalPatch): CompRegionIntervalPatch {
-    return {
+    const reversed = {
         ...patch,
         expected: patch.replacement,
         replacement: patch.expected,
-        ...(patch.audioSourcePromotions === undefined
-            ? {}
-            : {
-                  audioSourcePromotions: patch.audioSourcePromotions.map((delta) => ({
-                      sourceInputs: delta.sourceInputs,
-                      expected: delta.replacement,
-                      replacement: delta.expected,
-                  })),
-              }),
-        ...(patch.baseGapAudioSourceFieldPresence === undefined
-            ? {}
-            : {
-                  baseGapAudioSourceFieldPresence: {
-                      expected: patch.baseGapAudioSourceFieldPresence.replacement,
-                      replacement: patch.baseGapAudioSourceFieldPresence.expected,
-                  },
-              }),
     };
+    if (patch.audioSourcePromotions !== undefined) {
+        reversed.audioSourcePromotions = patch.audioSourcePromotions.map((delta) => ({
+            sourceInputs: delta.sourceInputs,
+            expected: delta.replacement,
+            replacement: delta.expected,
+        }));
+    }
+    if (patch.baseGapAudioSourceFieldPresence !== undefined) {
+        reversed.baseGapAudioSourceFieldPresence = {
+            expected: patch.baseGapAudioSourceFieldPresence.replacement,
+            replacement: patch.baseGapAudioSourceFieldPresence.expected,
+        };
+    }
+    return reversed;
 }
 function patchFromSetPayload(
     payload: Extract<AppAction, { type: 'setCompRegion' }>['payload']
 ): CompRegionIntervalPatch | null {
-    if (!isCompleteSetCompRegionPayload(payload)) return null;
+    if (!isCompleteSetCompRegionPayload(payload)) {
+        return null;
+    }
     const { takeId: _takeId, ...patch } = payload;
     return patch;
 }
@@ -687,14 +763,17 @@ function isCompRegionSessionEntry(entry: HandlerSessionActionEntry): boolean {
         (entry.action.type !== 'setCompRegion' && entry.action.type !== 'removeCompRegion') ||
         entry.inverseAction?.type !== 'restoreCompRegionInterval' ||
         entry.redoAction?.type !== 'restoreCompRegionInterval'
-    )
+    ) {
         return false;
-    const patch =
-        entry.action.type === 'setCompRegion'
-            ? patchFromSetPayload(entry.action.payload)
-            : isCompleteRemoveCompRegionPayload(entry.action.payload)
-              ? entry.action.payload
-              : null;
+    }
+    let patch: CompRegionIntervalPatch | null;
+    if (entry.action.type === 'setCompRegion') {
+        patch = patchFromSetPayload(entry.action.payload);
+    } else if (isCompleteRemoveCompRegionPayload(entry.action.payload)) {
+        patch = entry.action.payload;
+    } else {
+        patch = null;
+    }
     return (
         patch !== null &&
         isCompleteRestoreCompRegionIntervalPayload(entry.inverseAction.payload) &&

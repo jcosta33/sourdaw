@@ -224,7 +224,10 @@ export function captureTempoAudioSourceWriteIntent(
         if (readTempoSourceClockValue(input.context, input.target.tempoChangeId) !== input.target.expectedBpm) {
             return null;
         }
-        law = { ...source, target: input.target, ...(input.clockPath ? { clockPath: input.clockPath } : {}) };
+        law = { ...source, target: input.target };
+        if (input.clockPath) {
+            law = { ...law, clockPath: input.clockPath };
+        }
     } else {
         afterClock = { ...input.context, ...input.rowClock.after };
         if (

@@ -14,17 +14,21 @@ export function relocateAudioSourceTimeFields(
     clip: Readonly<PhysicalAudioSourceTimeFields>,
     placementDeltaBeats: number
 ): PhysicalAudioSourceTimeFields {
-    return {
-        ...(clip.audioOffsetSeconds === undefined ? {} : { audioOffsetSeconds: clip.audioOffsetSeconds }),
-        ...(clip.audioUnwrappedOffsetSeconds === undefined
-            ? {}
-            : { audioUnwrappedOffsetSeconds: clip.audioUnwrappedOffsetSeconds }),
-        ...(clip.audioLoopStartSeconds === undefined ? {} : { audioLoopStartSeconds: clip.audioLoopStartSeconds }),
-        ...(clip.audioLoopPassEntrySeconds === undefined
-            ? {}
-            : { audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds }),
-        ...(clip.audioLoopPassOriginBeat === undefined
-            ? {}
-            : { audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat + placementDeltaBeats }),
-    };
+    const fields: PhysicalAudioSourceTimeFields = {};
+    if (clip.audioOffsetSeconds !== undefined) {
+        fields.audioOffsetSeconds = clip.audioOffsetSeconds;
+    }
+    if (clip.audioUnwrappedOffsetSeconds !== undefined) {
+        fields.audioUnwrappedOffsetSeconds = clip.audioUnwrappedOffsetSeconds;
+    }
+    if (clip.audioLoopStartSeconds !== undefined) {
+        fields.audioLoopStartSeconds = clip.audioLoopStartSeconds;
+    }
+    if (clip.audioLoopPassEntrySeconds !== undefined) {
+        fields.audioLoopPassEntrySeconds = clip.audioLoopPassEntrySeconds;
+    }
+    if (clip.audioLoopPassOriginBeat !== undefined) {
+        fields.audioLoopPassOriginBeat = clip.audioLoopPassOriginBeat + placementDeltaBeats;
+    }
+    return fields;
 }

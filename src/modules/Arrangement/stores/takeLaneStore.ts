@@ -194,12 +194,15 @@ function is_exact_comp_region(value: unknown): value is CompRegion {
 }
 
 function normalize_comp_region(region: CompRegion): CompRegion {
-    return {
+    const normalized: CompRegion = {
         startBeat: region.startBeat,
         endBeat: region.endBeat,
         takeId: region.takeId,
-        ...(region.audioSource ? { audioSource: structuredClone(region.audioSource) } : {}),
     };
+    if (region.audioSource) {
+        normalized.audioSource = structuredClone(region.audioSource);
+    }
+    return normalized;
 }
 
 type SanitizableTakeLane = {
@@ -232,34 +235,38 @@ function get_sanitizable_take_lane(value: unknown): SanitizableTakeLane | null {
         return null;
     }
 
-    if ('baseGapAudioSources' in value && !is_unknown_array(value.baseGapAudioSources)) return null;
+    if ('baseGapAudioSources' in value && !is_unknown_array(value.baseGapAudioSources)) {
+        return null;
+    }
 
     if ('automationLaneId' in value && typeof value.automationLaneId !== 'string') {
         return null;
     }
 
     if ('automationLaneId' in value && typeof value.automationLaneId === 'string') {
-        return {
+        const lane: SanitizableTakeLane = {
             id: value.id,
             trackId: value.trackId,
             automationLaneId: value.automationLaneId,
             takes: value.takes,
             activeCompRegions: value.activeCompRegions,
-            ...('baseGapAudioSources' in value && is_unknown_array(value.baseGapAudioSources)
-                ? { baseGapAudioSources: value.baseGapAudioSources }
-                : {}),
         };
+        if ('baseGapAudioSources' in value && is_unknown_array(value.baseGapAudioSources)) {
+            lane.baseGapAudioSources = value.baseGapAudioSources;
+        }
+        return lane;
     }
 
-    return {
+    const lane: SanitizableTakeLane = {
         id: value.id,
         trackId: value.trackId,
         takes: value.takes,
         activeCompRegions: value.activeCompRegions,
-        ...('baseGapAudioSources' in value && is_unknown_array(value.baseGapAudioSources)
-            ? { baseGapAudioSources: value.baseGapAudioSources }
-            : {}),
     };
+    if ('baseGapAudioSources' in value && is_unknown_array(value.baseGapAudioSources)) {
+        lane.baseGapAudioSources = value.baseGapAudioSources;
+    }
+    return lane;
 }
 
 function is_sanitizable_take_lane(value: SanitizableTakeLane | null): value is SanitizableTakeLane {
@@ -350,28 +357,34 @@ function normalize_take_lane(take_lane: SanitizableTakeLane): TakeLane {
     const retained: AudioSourceTile[] = [];
     for (const tile of baseGaps ?? []) {
         const previous = retained.at(-1);
-        if (!previous || previous.clipId !== tile.clipId || previous.endBeat <= tile.startBeat)
+        if (!previous || previous.clipId !== tile.clipId || previous.endBeat <= tile.startBeat) {
             retained.push(structuredClone(tile));
+        }
     }
-    const gapField = baseGaps === undefined ? {} : { baseGapAudioSources: retained };
     if (take_lane.automationLaneId !== undefined) {
-        return {
+        const lane: TakeLane = {
             id: take_lane.id,
             trackId: take_lane.trackId,
             automationLaneId: take_lane.automationLaneId,
             takes,
             activeCompRegions: active_comp_regions,
-            ...gapField,
         };
+        if (baseGaps !== undefined) {
+            lane.baseGapAudioSources = retained;
+        }
+        return lane;
     }
 
-    return {
+    const lane: TakeLane = {
         id: take_lane.id,
         trackId: take_lane.trackId,
         takes,
         activeCompRegions: active_comp_regions,
-        ...gapField,
     };
+    if (baseGaps !== undefined) {
+        lane.baseGapAudioSources = retained;
+    }
+    return lane;
 }
 
 function is_exact_take_lane_store_state(value: unknown): value is TakeLaneStoreState {

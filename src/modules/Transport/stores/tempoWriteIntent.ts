@@ -8,7 +8,7 @@ import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverag
 import { normalizeTempoSourceOwnerContext } from '#/utils/tempoAudioSourcePromotion';
 import { readTempoMapRows, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
 
-import { tempoMapRowPlanMatchesCurrent } from '../models/tempoMapRowPlanMatchesCurrent';
+import { tempoMapRowPlanMatchesCurrent } from '../models/TempoMapRowPlan';
 
 type Slot = 'transport' | 'tempoMap';
 type SourcePreservation = Extract<
@@ -80,10 +80,12 @@ export function captureTempoWriteMetadata(slot: Slot): readonly TempoClockWriteI
     if (!captured) {
         return null;
     }
-    const correctSlot =
-        'rowClock' in captured.intent
-            ? slot === 'tempoMap'
-            : (captured.intent.tempoChangeId === null) === (slot === 'transport');
+    let correctSlot: boolean;
+    if ('rowClock' in captured.intent) {
+        correctSlot = slot === 'tempoMap';
+    } else {
+        correctSlot = (captured.intent.tempoChangeId === null) === (slot === 'transport');
+    }
     if (captured.owner !== getCurrentAutomergeStorageMutationOwner() || !correctSlot) {
         throw new AutomergeStorageWriteConflictError('Tempo scalar intent belongs to another mutation owner or slot');
     }

@@ -64,24 +64,35 @@ export function planTakeRetirement(
         }
 
         changed = true;
-        retiredLanes.push({
+        const retiredLane: {
+            lane: RetiredTakeLaneSnapshot['lane'];
+            laneIndex: number;
+            retiredTakeIds: string[];
+            retiredBaseGapAudioSources?: AudioSourceTile[];
+        } = {
             lane: structuredClone(lane),
             laneIndex: index,
             retiredTakeIds: [...removedTakeIds],
-            ...(removedTiles.length === 0 ? {} : { retiredBaseGapAudioSources: structuredClone(removedTiles) }),
-        });
+        };
+        if (removedTiles.length > 0) {
+            retiredLane.retiredBaseGapAudioSources = structuredClone(removedTiles);
+        }
+        retiredLanes.push(retiredLane);
 
         const takes = lane.takes.filter((take) => !removedTakeIds.has(take.id));
         const gaps = lane.baseGapAudioSources?.filter((tile) => !removesTile(tile));
         if (takes.length === 0 && !gaps?.length && !options?.preservedLaneIds?.has(lane.id)) {
             continue;
         }
-        nextLanes.push({
+        const nextLane = {
             ...lane,
             takes,
-            ...(gaps === undefined ? {} : { baseGapAudioSources: gaps }),
             activeCompRegions: lane.activeCompRegions.filter((region) => !removedTakeIds.has(region.takeId)),
-        });
+        };
+        if (gaps !== undefined) {
+            nextLane.baseGapAudioSources = gaps;
+        }
+        nextLanes.push(nextLane);
     }
 
     return changed ? { lanes: nextLanes, retiredLanes } : null;

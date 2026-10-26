@@ -9,7 +9,9 @@ export const handleRemoveCompRegion = createHandler<'removeCompRegion'>({
         const { trackId, startBeat } = action.payload;
         action.payload = { trackId, startBeat };
         const patch = compRegionInterval.captureRemovePatchAfterPrefix(action.payload, context);
-        if (patch) action.payload = patch;
+        if (patch) {
+            action.payload = patch;
+        }
     },
     materializeCommandArgumentsAt: 'admission',
     validateMaterializedCommandArguments: compRegionInterval.isCompleteRemovePayload,
@@ -18,14 +20,16 @@ export const handleRemoveCompRegion = createHandler<'removeCompRegion'>({
         compRegionInterval.patchApplies(action.payload, context),
     isNoop: (action) =>
         compRegionInterval.isCompleteRemovePayload(action.payload) && compRegionInterval.patchIsNoop(action.payload),
-    execute: (action) => ({
-        status: compRegionInterval.isCompleteRemovePayload(action.payload)
-            ? compRegionInterval.applyPatch(action.payload)
-            : 'conflict',
-    }),
+    execute: (action) => {
+        if (!compRegionInterval.isCompleteRemovePayload(action.payload)) {
+            return { status: 'conflict' };
+        }
+        return { status: compRegionInterval.applyPatch(action.payload) };
+    },
     describe: (action) => {
-        if (!compRegionInterval.isCompleteRemovePayload(action.payload))
+        if (!compRegionInterval.isCompleteRemovePayload(action.payload)) {
             return { label: 'Remove comp region', inverseAction: null };
+        }
         return {
             label: 'Remove comp region',
             inverseAction: {

@@ -329,8 +329,9 @@ function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: 
         !Number.isFinite(tempo) ||
         tempo <= 0 ||
         tempo !== replacement.audioSourceTempoAtStart
-    )
+    ) {
         return false;
+    }
     const original = expected.rightClip === null ? expected : replacement;
     const split = expected.rightClip === null ? replacement : expected;
     if (
@@ -342,8 +343,9 @@ function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: 
         !isClipSnapshot(original.leftClip, original.leftClip.id, original.trackId) ||
         original.leftClip.type !== 'audio' ||
         !isRecord(split.leftClip)
-    )
+    ) {
         return false;
+    }
     const clip = original.leftClip;
     const loop = projectClipLoopExpansion({
         clipDurationBeats: clip.endBeat - clip.startBeat,
@@ -351,14 +353,17 @@ function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: 
         loopEnabled: clip.loopEnabled ?? false,
     });
     const source = captureAudioSourceState(clip, loop.loopLengthBeats, tempo);
-    if (!source) return false;
+    if (!source) {
+        return false;
+    }
     const promoted = {
         ...clip,
         ...source,
-        ...(clip.loopEnabled
-            ? { loopLength: loop.loopLengthBeats, loopOriginBeat: clip.loopOriginBeat ?? clip.startBeat }
-            : {}),
     };
+    if (clip.loopEnabled) {
+        promoted.loopLength = loop.loopLengthBeats;
+        promoted.loopOriginBeat = clip.loopOriginBeat ?? clip.startBeat;
+    }
     return valuesEqual(preservedFields(promoted), preservedFields(split.leftClip));
 }
 

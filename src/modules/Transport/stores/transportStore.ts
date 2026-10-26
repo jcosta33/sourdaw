@@ -397,7 +397,11 @@ export const transportStore = createStore<TransportState>({
         hydrateMissing: () => defaultTransportState,
         writeMetadata: {
             capture: () => captureTempoWriteMetadata('transport'),
-            reduce: ({ current, captured }) => [...(current ?? []), ...captured],
+            reduce: ({ current, captured }) => {
+                const pending = current ? current.slice() : [];
+                pending.push(...captured);
+                return pending;
+            },
         },
         mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
             if (metadata && !tempoWriteIntentsMatch(doc, metadata, 'transport')) {

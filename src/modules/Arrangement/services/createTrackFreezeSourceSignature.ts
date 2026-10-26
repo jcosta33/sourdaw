@@ -70,19 +70,16 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
         loopOriginBeat: clip.loopOriginBeat,
         loopEnabled: clip.loopEnabled ?? false,
     });
-    const sourceSignature =
-        clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
-            ? `:${canonicalJson({
-                  entry: clip.audioOffsetSeconds,
-                  ...(clip.loopEnabled
-                      ? {
-                            reset: clip.audioLoopStartSeconds ?? clip.audioOffsetSeconds,
-                            passEntry: clip.audioLoopPassEntrySeconds ?? clip.audioOffsetSeconds,
-                            passOrigin: clip.audioLoopPassOriginBeat ?? clip.startBeat,
-                        }
-                      : {}),
-              })}`
-            : '';
+    let sourceSignature = '';
+    if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+        const sourceFields: Record<string, number> = { entry: clip.audioOffsetSeconds };
+        if (clip.loopEnabled) {
+            sourceFields.reset = clip.audioLoopStartSeconds ?? clip.audioOffsetSeconds;
+            sourceFields.passEntry = clip.audioLoopPassEntrySeconds ?? clip.audioOffsetSeconds;
+            sourceFields.passOrigin = clip.audioLoopPassOriginBeat ?? clip.startBeat;
+        }
+        sourceSignature = `:${canonicalJson(sourceFields)}`;
+    }
     return (
         [
             clip.id,

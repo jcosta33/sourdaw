@@ -39,7 +39,7 @@ function defaultViewportWidth(): number {
 }
 
 function captureWaveformTimeline(tempo: number, changes: Parameters<typeof secondsBetweenBeats>[0]): TempoTimeline {
-    const capturedChanges = changes.map((change) => ({ ...change }));
+    const capturedChanges = structuredClone(changes);
     const projectSamples = createSamplePositionProjector({
         transport: { tempo },
         tempoMap: { changes: capturedChanges },

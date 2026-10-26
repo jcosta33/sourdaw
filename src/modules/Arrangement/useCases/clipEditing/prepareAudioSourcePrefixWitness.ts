@@ -69,7 +69,11 @@ const TAKE_SOURCE_FIELDS = [
 function addOwner(owners: Map<string, OwnerFields>, owner: TempoSourceOwner, fields: readonly string[]): void {
     const key = JSON.stringify(owner);
     const existing = owners.get(key);
-    owners.set(key, { owner, fields: new Set([...(existing?.fields ?? []), ...fields]) });
+    const ownerFields = new Set(existing?.fields);
+    for (const field of fields) {
+        ownerFields.add(field);
+    }
+    owners.set(key, { owner, fields: ownerFields });
 }
 
 function sourceContext(state: SourceState) {
@@ -77,12 +81,12 @@ function sourceContext(state: SourceState) {
 }
 
 function addSplitOwners(owners: Map<string, OwnerFields>, action: AppAction, before: State, after: State): void {
-    const pair =
-        action.type === 'splitClip'
-            ? preparedClipSplits.get(action)
-            : action.type === 'restoreClipSplitState'
-              ? { previous: action.payload.expected, next: action.payload.replacement }
-              : null;
+    let pair: Pick<NonNullable<ReturnType<typeof preparedClipSplits.get>>, 'previous' | 'next'> | null = null;
+    if (action.type === 'splitClip') {
+        pair = preparedClipSplits.get(action) ?? null;
+    } else if (action.type === 'restoreClipSplitState') {
+        pair = { previous: action.payload.expected, next: action.payload.replacement };
+    }
     if (!pair || pair.previous.leftClip.type !== 'audio') {
         return;
     }
@@ -112,7 +116,7 @@ function addSplitOwners(owners: Map<string, OwnerFields>, action: AppAction, bef
     for (const laneId of laneIds) {
         const oldLane = before.takeLanes.find((lane) => lane.id === laneId);
         const nextLane = after.takeLanes.find((lane) => lane.id === laneId);
-        const takes = new Map([...(oldLane?.takes ?? []), ...(nextLane?.takes ?? [])].map((take) => [take.id, take]));
+        const takes = new Map((oldLane?.takes ?? []).concat(nextLane?.takes ?? []).map((take) => [take.id, take]));
         for (const take of takes.values()) {
             const old = oldLane?.takes.find((row) => row.id === take.id);
             const next = nextLane?.takes.find((row) => row.id === take.id);
@@ -120,7 +124,7 @@ function addSplitOwners(owners: Map<string, OwnerFields>, action: AppAction, bef
                 addOwner(owners, { kind: 'take', trackId: track.id, laneId, takeId: take.id }, TAKE_SOURCE_FIELDS);
             }
         }
-        const regions = [...(oldLane?.activeCompRegions ?? []), ...(nextLane?.activeCompRegions ?? [])];
+        const regions = (oldLane?.activeCompRegions ?? []).concat(nextLane?.activeCompRegions ?? []);
         for (const region of regions) {
             const matches = (row: typeof region) =>
                 row.takeId === region.takeId && row.startBeat === region.startBeat && row.endBeat === region.endBeat;
@@ -144,7 +148,7 @@ function addSplitOwners(owners: Map<string, OwnerFields>, action: AppAction, bef
                 );
             }
         }
-        const gaps = [...(oldLane?.baseGapAudioSources ?? []), ...(nextLane?.baseGapAudioSources ?? [])];
+        const gaps = (oldLane?.baseGapAudioSources ?? []).concat(nextLane?.baseGapAudioSources ?? []);
         for (const gap of gaps) {
             const matches = (row: typeof gap) =>
                 row.clipId === gap.clipId && row.startBeat === gap.startBeat && row.endBeat === gap.endBeat;
@@ -248,7 +252,8 @@ function initialClock(input: Input): TempoSourceClock | null {
     }
     const actual = structuredClone({ tempo: transport.tempo, changes: tempoMapStore.value?.changes ?? [] });
     const reverse: TempoScalarTransition[] = [];
-    for (const action of [...(input.context?.actions.slice(0, input.context.actionIndex) ?? [])].reverse()) {
+    const priorActions = input.context?.actions.slice(0, input.context.actionIndex) ?? [];
+    for (const action of priorActions.reverse()) {
         if (action.type !== 'setTempo' && action.type !== 'restoreTempoEdit') {
             continue;
         }
@@ -317,9 +322,12 @@ export function prepareAudioSourcePrefixWitness(
         },
     };
     const index = input.context?.actionIndex ?? 0;
-    const actions = input.context
-        ? [...input.context.actions.slice(0, index), current, ...input.context.actions.slice(index + 1)]
-        : [current];
+    let actions: readonly AppAction[];
+    if (input.context) {
+        actions = [...input.context.actions.slice(0, index), current, ...input.context.actions.slice(index + 1)];
+    } else {
+        actions = [current];
+    }
     let state = projectClipReplayPrefix([], {
         tracks: sanitizeTrackSnapshot(plainTracks).tracks,
         takeLanes,

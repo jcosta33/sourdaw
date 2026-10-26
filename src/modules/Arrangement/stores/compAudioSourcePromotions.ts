@@ -59,7 +59,9 @@ function retainedTakeSourcesMatch(
     source: AudioSourceSnapshot,
     patch: SourcePatch
 ): boolean {
-    if (owner.kind !== 'take') return true;
+    if (owner.kind !== 'take') {
+        return true;
+    }
     return lane.activeCompRegions
         .filter((region) => region.takeId === owner.takeId && overlaps(region, owner) && !contains(patch, region))
         .every(
@@ -82,13 +84,18 @@ const overlaps = (a: Interval, b: Interval) => a.startBeat < b.endBeat && b.star
 const contains = (a: Interval, b: Interval) => a.startBeat <= b.startBeat && b.endBeat <= a.endBeat;
 
 function ownerRegion(owner: CompAudioSourceOwnerSnapshot): CompRegion | null {
-    if (owner.kind !== 'take') return null;
-    return {
+    if (owner.kind !== 'take') {
+        return null;
+    }
+    const region: CompRegion = {
         takeId: owner.takeId,
         startBeat: owner.startBeat,
         endBeat: owner.endBeat,
-        ...(owner.audioSource === undefined ? {} : { audioSource: owner.audioSource }),
     };
+    if (owner.audioSource !== undefined) {
+        region.audioSource = owner.audioSource;
+    }
+    return region;
 }
 
 function isOwner(value: unknown): value is CompAudioSourceOwnerSnapshot {
@@ -101,9 +108,15 @@ function isOwner(value: unknown): value is CompAudioSourceOwnerSnapshot {
         !Number.isFinite(value.endBeat) ||
         value.endBeat <= value.startBeat ||
         (Object.hasOwn(value, 'audioSource') && !isAudioSourceSnapshot(value.audioSource))
-    )
+    ) {
         return false;
-    const idKey = value.kind === 'take' ? 'takeId' : value.kind === 'base' ? 'clipId' : null;
+    }
+    let idKey: 'takeId' | 'clipId' | null = null;
+    if (value.kind === 'take') {
+        idKey = 'takeId';
+    } else if (value.kind === 'base') {
+        idKey = 'clipId';
+    }
     return (
         idKey !== null &&
         typeof value[idKey] === 'string' &&
@@ -116,7 +129,9 @@ export function isValidCompAudioSourcePromotions(
     value: unknown,
     interval: Interval & { readonly takeIds?: ReadonlySet<string>; readonly baseGapExposed?: boolean }
 ): value is readonly CompAudioSourcePromotionSnapshot[] {
-    if (!Array.isArray(value)) return false;
+    if (!Array.isArray(value)) {
+        return false;
+    }
     return value.every((delta, index) => {
         if (
             !isRecord(delta) ||
@@ -124,8 +139,9 @@ export function isValidCompAudioSourcePromotions(
             !isCompAudioSourceInputProof(delta.sourceInputs) ||
             !isOwner(delta.expected) ||
             !isOwner(delta.replacement)
-        )
+        ) {
             return false;
+        }
         const { expected, replacement } = delta;
         if (
             !valuesEqual({ ...expected, audioSource: undefined }, { ...replacement, audioSource: undefined }) ||
@@ -138,8 +154,9 @@ export function isValidCompAudioSourcePromotions(
             (expected.audioSource &&
                 replacement.audioSource &&
                 !valuesEqual(expected.audioSource, replacement.audioSource))
-        )
+        ) {
             return false;
+        }
         return value
             .slice(0, index)
             .every(
@@ -164,9 +181,11 @@ function coalesce(regions: readonly CompRegion[]): CompRegion[] {
             previous.endBeat === region.startBeat &&
             previous.takeId === region.takeId &&
             valuesEqual(previous.audioSource, region.audioSource)
-        )
+        ) {
             result[result.length - 1] = { ...previous, endBeat: region.endBeat };
-        else result.push(region);
+        } else {
+            result.push(region);
+        }
     }
     return result;
 }
@@ -188,10 +207,12 @@ export function compSelectionMatchesSources(
                 overlaps(delta.expected, span)
         );
         for (const delta of promotions) {
-            if (span.startBeat < delta.expected.startBeat && delta.expected.startBeat < span.endBeat)
+            if (span.startBeat < delta.expected.startBeat && delta.expected.startBeat < span.endBeat) {
                 cuts.add(delta.expected.startBeat);
-            if (span.startBeat < delta.expected.endBeat && delta.expected.endBeat < span.endBeat)
+            }
+            if (span.startBeat < delta.expected.endBeat && delta.expected.endBeat < span.endBeat) {
                 cuts.add(delta.expected.endBeat);
+            }
         }
         const edges = [...cuts].sort((a, b) => a - b);
         for (let index = 0; index < edges.length - 1; index++) {
@@ -214,15 +235,17 @@ export function compSelectionMatchesSources(
                 live &&
                 valuesEqual(live, ownerRegion(delta.expected)) &&
                 compAudioSourceInputsMatch(lane, delta.expected, delta.sourceInputs, context)
-            )
+            ) {
                 expected.push(part);
-            else if (
+            } else if (
                 live &&
                 contains(delta.expected, live) &&
                 valuesEqual(live.audioSource, delta.replacement.audioSource)
-            )
+            ) {
                 expected.push({ ...part, audioSource: delta.replacement.audioSource });
-            else return false;
+            } else {
+                return false;
+            }
         }
     }
     return valuesEqual(coalesce(expected), current);
@@ -232,12 +255,17 @@ function gaps(regions: readonly CompRegion[], interval: Interval): Interval[] {
     const result: Interval[] = [];
     let cursor = interval.startBeat;
     for (const region of regions) {
-        if (!overlaps(region, interval)) continue;
-        if (cursor < region.startBeat)
+        if (!overlaps(region, interval)) {
+            continue;
+        }
+        if (cursor < region.startBeat) {
             result.push({ startBeat: cursor, endBeat: Math.min(region.startBeat, interval.endBeat) });
+        }
         cursor = Math.max(cursor, Math.min(region.endBeat, interval.endBeat));
     }
-    if (cursor < interval.endBeat) result.push({ startBeat: cursor, endBeat: interval.endBeat });
+    if (cursor < interval.endBeat) {
+        result.push({ startBeat: cursor, endBeat: interval.endBeat });
+    }
     return result;
 }
 
@@ -257,7 +285,9 @@ function takeOwnerIsComplete(
     owner: CompAudioSourceOwnerSnapshot,
     patch: SourcePatch
 ): boolean {
-    if (owner.kind !== 'take') return false;
+    if (owner.kind !== 'take') {
+        return false;
+    }
     let cursor = owner.startBeat;
     for (const region of regions.filter((region) => overlaps(region, owner))) {
         if (
@@ -268,8 +298,9 @@ function takeOwnerIsComplete(
                 valuesEqual(region.audioSource, owner.audioSource) ||
                 (region.audioSource === undefined && contains(patch, region))
             )
-        )
+        ) {
             return false;
+        }
         cursor = region.endBeat;
     }
     return cursor === owner.endBeat;
@@ -289,10 +320,14 @@ export function applyCompAudioSourcePromotions(
     let tiles = before.baseGapAudioSources === undefined ? undefined : [...before.baseGapAudioSources];
     for (const delta of patch.audioSourcePromotions ?? []) {
         const owner = delta.expected;
-        if (context && !compAudioSourceOwnerExists(before, owner, delta.sourceInputs, context)) return null;
+        if (context && !compAudioSourceOwnerExists(before, owner, delta.sourceInputs, context)) {
+            return null;
+        }
         const inputsUnchanged = compAudioSourceInputsMatch(before, owner, delta.sourceInputs, context);
         const source = owner.audioSource ?? delta.replacement.audioSource;
-        if (!source || !retainedTakeSourcesMatch(before, owner, source, patch)) return null;
+        if (!source || !retainedTakeSourcesMatch(before, owner, source, patch)) {
+            return null;
+        }
         const canPromote = supportAuthorizationMatches(before, owner, source, context, authorizations, 'promote');
         const canDemote = supportAuthorizationMatches(before, owner, source, context, authorizations, 'demote');
         if (owner.kind === 'take') {
@@ -303,7 +338,9 @@ export function applyCompAudioSourcePromotions(
                 takeOwnerIsComplete(regions, owner, patch)
             ) {
                 const original = ownerRegion(delta.replacement);
-                if (!original) return null;
+                if (!original) {
+                    return null;
+                }
                 regions = [...regions.filter((region) => !overlaps(region, owner)), original].sort(
                     (a, b) => a.startBeat - b.startBeat
                 );
@@ -321,29 +358,36 @@ export function applyCompAudioSourcePromotions(
                         valuesEqual(region.audioSource, owner.audioSource)
                 ) &&
                 !canPromote
-            )
+            ) {
                 return null;
+            }
             regions = regions.map((region) => {
-                if (region.takeId !== owner.takeId || !contains(owner, region)) return region;
+                if (region.takeId !== owner.takeId || !contains(owner, region)) {
+                    return region;
+                }
                 if (
                     delta.replacement.audioSource !== undefined &&
                     originalIsLive &&
                     valuesEqual(region.audioSource, owner.audioSource)
-                )
+                ) {
                     return { ...region, audioSource: delta.replacement.audioSource };
+                }
                 if (
                     delta.replacement.audioSource === undefined &&
                     contains(patch, region) &&
                     region.audioSource === undefined
-                )
+                ) {
                     return { ...region, audioSource: source };
+                }
                 return region;
             });
             continue;
         }
         const oldTiles = before.baseGapAudioSources ?? [];
         const ownTiles = oldTiles.filter((tile) => tile.clipId === owner.clipId && overlaps(tile, owner));
-        if (ownTiles.some((tile) => !contains(patch, tile) && !valuesEqual(tile.audioSource, source))) return null;
+        if (ownTiles.some((tile) => !contains(patch, tile) && !valuesEqual(tile.audioSource, source))) {
+            return null;
+        }
         const implicitOriginal =
             owner.audioSource === undefined &&
             !before.activeCompRegions.some((region) => overlaps(region, owner)) &&
@@ -357,13 +401,16 @@ export function applyCompAudioSourcePromotions(
             startBeat: Math.max(owner.startBeat, patch.startBeat),
             endBeat: Math.min(owner.endBeat, patch.endBeat),
         };
-        if (ownTiles.some((tile) => overlaps(tile, query) && !valuesEqual(tile.audioSource, source))) return null;
+        if (ownTiles.some((tile) => overlaps(tile, query) && !valuesEqual(tile.audioSource, source))) {
+            return null;
+        }
         if (
             !implicitOriginal &&
             !originallyMasked &&
             gaps(before.activeCompRegions, query).some((gap) => !coveredBySource(oldTiles, owner.clipId, gap, source))
-        )
+        ) {
             return null;
+        }
         const newGaps = gaps(regions, owner);
         const hasUnknownSource = ownTiles.some((tile) => !valuesEqual(tile.audioSource, source));
         const complete =
@@ -380,8 +427,12 @@ export function applyCompAudioSourcePromotions(
                 retained.push(tile);
                 continue;
             }
-            if (tile.startBeat < owner.startBeat) retained.push({ ...tile, endBeat: owner.startBeat });
-            if (tile.endBeat > owner.endBeat) retained.push({ ...tile, startBeat: owner.endBeat });
+            if (tile.startBeat < owner.startBeat) {
+                retained.push({ ...tile, endBeat: owner.startBeat });
+            }
+            if (tile.endBeat > owner.endBeat) {
+                retained.push({ ...tile, startBeat: owner.endBeat });
+            }
         }
         if (!(delta.replacement.audioSource === undefined && inputsUnchanged && canDemote && complete)) {
             for (const gap of newGaps) {
@@ -394,10 +445,16 @@ export function applyCompAudioSourcePromotions(
                             contains(patch, part) ||
                             coveredBySource(oldTiles, owner.clipId, part, source)
                         )
-                    )
+                    ) {
                         continue;
-                    if (!contains(patch, part) && !coveredBySource(oldTiles, owner.clipId, part, source) && !canPromote)
+                    }
+                    if (
+                        !contains(patch, part) &&
+                        !coveredBySource(oldTiles, owner.clipId, part, source) &&
+                        !canPromote
+                    ) {
                         return null;
+                    }
                     retained.push({
                         clipId: owner.clipId,
                         startBeat: part.startBeat,
@@ -415,9 +472,11 @@ export function applyCompAudioSourcePromotions(
         if (
             tiles?.length ||
             (patch.baseGapAudioSourceFieldPresence?.replacement ?? before.baseGapAudioSources !== undefined)
-        )
+        ) {
             result.baseGapAudioSources = tiles ?? [];
-        else delete result.baseGapAudioSources;
+        } else {
+            delete result.baseGapAudioSources;
+        }
     }
     return result;
 }

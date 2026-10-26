@@ -78,11 +78,13 @@ function sourceOwner(
     if (!clipId || !isRecord(context.tracks) || !Array.isArray(context.tracks.tracks)) {
         return null;
     }
-    const track = context.tracks.tracks.find((candidate) => isRecord(candidate) && candidate.id === lane.trackId);
+    const track: unknown = context.tracks.tracks.find(
+        (candidate: unknown) => isRecord(candidate) && candidate.id === lane.trackId
+    );
     if (!isRecord(track) || !Array.isArray(track.clips)) {
         return null;
     }
-    const clip = track.clips.find((candidate) => isRecord(candidate) && candidate.id === clipId);
+    const clip: unknown = track.clips.find((candidate: unknown) => isRecord(candidate) && candidate.id === clipId);
     if (
         !isRecord(clip) ||
         clip.type !== 'audio' ||

@@ -18,10 +18,12 @@ type TakeLaneOwners = TakeLane;
 function restoreRetiredOwners(lanes: TakeLaneOwners[], captures: readonly RetiredTakeLaneSnapshot[]): void {
     for (const { lane, retiredTakeIds, retiredBaseGapAudioSources } of captures) {
         const targetIndex = lanes.findIndex((live) => live.id === lane.id || live.trackId === lane.trackId);
-        const target =
-            targetIndex === -1
-                ? { id: lane.id, trackId: lane.trackId, takes: [], activeCompRegions: [] }
-                : lanes[targetIndex]!;
+        let target: TakeLaneOwners;
+        if (targetIndex === -1) {
+            target = { id: lane.id, trackId: lane.trackId, takes: [], activeCompRegions: [] };
+        } else {
+            target = lanes[targetIndex]!;
+        }
         const reconciled = reconcileLane(target, lane, retiredTakeIds ?? [], retiredBaseGapAudioSources ?? []);
         if (!reconciled) {
             continue;

@@ -21,13 +21,15 @@ function isExactFacetPair(
     // The store decoder enforces exact takes and lawful, sorted comp regions.
     const takes: unknown = Reflect.get(value, takesKey);
     const activeCompRegions: unknown = Reflect.get(value, regionsKey);
-    const skeleton = {
+    const skeleton: Record<string, unknown> = {
         id: laneId,
         trackId,
         takes,
         activeCompRegions,
-        ...(Object.hasOwn(value, gapKey) ? { baseGapAudioSources: Reflect.get(value, gapKey) } : {}),
     };
+    if (Object.hasOwn(value, gapKey)) {
+        skeleton.baseGapAudioSources = Reflect.get(value, gapKey);
+    }
     return decodeExactTakeLaneSnapshots([skeleton]) !== null;
 }
 

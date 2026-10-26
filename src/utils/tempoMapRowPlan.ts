@@ -144,7 +144,11 @@ export function isTempoMapEdit(value: unknown): value is TempoMapEdit {
 }
 
 function exactData(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
-    if (!isRecord(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const prototype = Reflect.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
         return false;
     }
     return (
@@ -298,12 +302,14 @@ export function decodeTempoMapRowPlan(value: unknown): TempoMapRowPlan | null {
     } else if (Object.hasOwn(value, 'collision')) {
         return null;
     }
-    const plan: TempoMapRowPlan = {
+    let plan: TempoMapRowPlan = {
         operation: value.operation,
         before: value.before,
         after: value.after,
         order: value.order,
-        ...(collision ? { collision } : {}),
     };
+    if (collision) {
+        plan = { ...plan, collision };
+    }
     return coherentOperation(plan) && coherentOrder(plan) ? structuredClone(plan) : null;
 }

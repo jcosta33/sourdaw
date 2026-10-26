@@ -86,16 +86,21 @@ export function reconcileLane(
         return null;
     }
 
+    if (restoredTiles.length > 0) {
+        return {
+            ...live,
+            takes,
+            baseGapAudioSources: [...liveTiles, ...structuredClone(restoredTiles)].sort(
+                (a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat
+            ),
+            activeCompRegions: [...live.activeCompRegions, ...restoredRegions].sort(
+                (alpha, buffer) => alpha.startBeat - buffer.startBeat
+            ),
+        };
+    }
     return {
         ...live,
         takes,
-        ...(restoredTiles.length === 0
-            ? {}
-            : {
-                  baseGapAudioSources: [...liveTiles, ...structuredClone(restoredTiles)].sort(
-                      (a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat
-                  ),
-              }),
         activeCompRegions: [...live.activeCompRegions, ...restoredRegions].sort(
             (alpha, buffer) => alpha.startBeat - buffer.startBeat
         ),

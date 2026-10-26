@@ -144,17 +144,23 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
  * divergence on state no route produces.
  */
 function captureTakeSource(take: Take, clip: Clip | undefined, timeline: TempoTimeline): Take {
-    if (clip?.type !== 'audio') return take;
+    if (clip?.type !== 'audio') {
+        return take;
+    }
     const tempo = timeline.tempoAtBeat(clip.startBeat);
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
-        if (take.passOriginBeat !== undefined && take.passOriginSourceSeconds !== undefined) return take;
+        if (take.passOriginBeat !== undefined && take.passOriginSourceSeconds !== undefined) {
+            return take;
+        }
         return {
             ...take,
             passOriginBeat: clip.startBeat,
             passOriginSourceSeconds: resolveAudioUnwrappedOffsetSeconds(clip, tempo),
         };
     }
-    if (take.sourceOffsetBeats === undefined || take.sourceOffsetSeconds !== undefined) return take;
+    if (take.sourceOffsetBeats === undefined || take.sourceOffsetSeconds !== undefined) {
+        return take;
+    }
     return { ...take, sourceOffsetSeconds: (take.sourceOffsetBeats * 60) / tempo };
 }
 
@@ -175,18 +181,17 @@ function buildTakeFragments(
             // re-mints the same id.
             fragmentTakeId = `${take.id}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
         }
-        fragmentTakes.push({
+        const fragmentTake: Take = {
             ...take,
             id: fragmentTakeId,
             clipId: piece.targetClipId,
             startBeat: piece.startBeat,
             endBeat: piece.endBeat,
-            ...(take.passOriginBeat === undefined
-                ? {}
-                : {
-                      passOriginBeat: take.passOriginBeat + piece.startBeat - piece.preImageStartBeat,
-                  }),
-        });
+        };
+        if (take.passOriginBeat !== undefined) {
+            fragmentTake.passOriginBeat = take.passOriginBeat + piece.startBeat - piece.preImageStartBeat;
+        }
+        fragmentTakes.push(fragmentTake);
         fragments.push({
             takeId: fragmentTakeId,
             sourceStartBeat: piece.preImageStartBeat,
@@ -255,22 +260,19 @@ function mapRegionThroughFragments(region: CompRegion, fragments: readonly TakeF
             continue;
         }
         const delta = fragment.targetStartBeat - fragment.sourceStartBeat;
-        mapped.push({
-            ...region,
-            ...(region.audioSource
-                ? {
-                      audioSource: {
-                          ...region.audioSource,
-                          startBeat: region.audioSource.startBeat + delta,
-                          loopOriginBeat: region.audioSource.loopOriginBeat + delta,
-                          audioLoopPassOriginBeat: region.audioSource.audioLoopPassOriginBeat + delta,
-                      },
-                  }
-                : {}),
-            startBeat: mapBeatThroughWindow(overlapStart, fragment),
-            endBeat: mapBeatThroughWindow(overlapEnd, fragment),
-            takeId: fragment.takeId,
-        });
+        const mappedRegion: CompRegion = { ...region };
+        if (region.audioSource) {
+            mappedRegion.audioSource = {
+                ...region.audioSource,
+                startBeat: region.audioSource.startBeat + delta,
+                loopOriginBeat: region.audioSource.loopOriginBeat + delta,
+                audioLoopPassOriginBeat: region.audioSource.audioLoopPassOriginBeat + delta,
+            };
+        }
+        mappedRegion.startBeat = mapBeatThroughWindow(overlapStart, fragment);
+        mappedRegion.endBeat = mapBeatThroughWindow(overlapEnd, fragment);
+        mappedRegion.takeId = fragment.takeId;
+        mapped.push(mappedRegion);
     }
     return mapped;
 }
@@ -429,14 +431,20 @@ function mapLaneRegions(
 function captureRegionAudioSources(lane: TakeLane, input: CaptureTakeReKeyTransitionsInput) {
     const sources = new Map<CompRegion, AudioSourceSnapshot>();
     const clips = input.sourceClips?.filter((clip) => clip.trackId === lane.trackId) ?? [];
-    if (clips.length === 0) return sources;
+    if (clips.length === 0) {
+        return sources;
+    }
     const timeline = input.timeline ?? liveTempoTimeline;
     const resolved = resolveCompingProgramme(lane.trackId, clips, { lanes: [lane] }, timeline);
     const transformedIds = new Set(input.windowsByTrackId.get(lane.trackId)?.map((window) => window.sourceClipId));
     for (const region of lane.activeCompRegions) {
-        if (region.audioSource) continue;
+        if (region.audioSource) {
+            continue;
+        }
         const take = lane.takes.find((candidate) => candidate.id === region.takeId);
-        if (!take || take.passAnchorSeconds !== undefined || !transformedIds.has(take.clipId)) continue;
+        if (!take || take.passAnchorSeconds !== undefined || !transformedIds.has(take.clipId)) {
+            continue;
+        }
         const fragment = resolved.find(
             (clip) =>
                 clip.id === take.clipId &&
@@ -444,7 +452,9 @@ function captureRegionAudioSources(lane: TakeLane, input: CaptureTakeReKeyTransi
                 clip.startBeat >= region.startBeat &&
                 clip.endBeat <= region.endBeat
         );
-        if (!fragment) continue;
+        if (!fragment) {
+            continue;
+        }
         const loop = projectClipLoopExpansion({
             clipDurationBeats: fragment.endBeat - fragment.startBeat,
             configuredLoopLengthBeats: fragment.loopLength,
@@ -455,7 +465,9 @@ function captureRegionAudioSources(lane: TakeLane, input: CaptureTakeReKeyTransi
             loop.loopLengthBeats,
             timeline.tempoAtBeat(fragment.startBeat)
         );
-        if (snapshot) sources.set(region, snapshot);
+        if (snapshot) {
+            sources.set(region, snapshot);
+        }
     }
     return sources;
 }
@@ -466,7 +478,9 @@ function captureBaseGapSources(
     windows: readonly TakeReKeyClipWindow[]
 ): readonly AudioSourceTile[] | undefined {
     const clips = input.sourceClips?.filter((clip) => clip.trackId === lane.trackId) ?? [];
-    if (clips.length === 0) return lane.baseGapAudioSources;
+    if (clips.length === 0) {
+        return lane.baseGapAudioSources;
+    }
     const transformed = new Set(windows.map((window) => window.sourceClipId));
     const tiles = (lane.baseGapAudioSources ?? []).filter((tile) => !transformed.has(tile.clipId));
     const timeline = input.timeline ?? liveTempoTimeline;
@@ -477,8 +491,9 @@ function captureBaseGapSources(
             lane.activeCompRegions.some(
                 (region) => region.startBeat < fragment.endBeat && region.endBeat > fragment.startBeat
             )
-        )
+        ) {
             continue;
+        }
         const loop = projectClipLoopExpansion({
             clipDurationBeats: fragment.endBeat - fragment.startBeat,
             configuredLoopLengthBeats: fragment.loopLength,
@@ -489,13 +504,14 @@ function captureBaseGapSources(
             loop.loopLengthBeats,
             timeline.tempoAtBeat(fragment.startBeat)
         );
-        if (source)
+        if (source) {
             tiles.push({
                 clipId: fragment.id,
                 startBeat: fragment.startBeat,
                 endBeat: fragment.endBeat,
                 audioSource: source,
             });
+        }
     }
     const mapped: AudioSourceTile[] = [];
     for (const tile of tiles) {
@@ -504,10 +520,14 @@ function captureBaseGapSources(
             continue;
         }
         for (const window of windows) {
-            if (window.sourceClipId !== tile.clipId) continue;
+            if (window.sourceClipId !== tile.clipId) {
+                continue;
+            }
             const start = Math.max(tile.startBeat, window.sourceStartBeat);
             const end = Math.min(tile.endBeat, window.sourceEndBeat);
-            if (start >= end) continue;
+            if (start >= end) {
+                continue;
+            }
             const delta = window.targetStartBeat - window.sourceStartBeat;
             mapped.push({
                 clipId: window.targetClipId,
@@ -571,16 +591,30 @@ export function captureTakeReKeyTransitions(
         ) {
             continue;
         }
-        transitions.push({
+        const transition: {
+            laneId: string;
+            trackId: string;
+            takesBefore: Take[];
+            takesAfter: Take[];
+            regionsBefore: CompRegion[];
+            regionsAfter: CompRegion[];
+            baseGapAudioSourcesBefore?: readonly AudioSourceTile[];
+            baseGapAudioSourcesAfter?: readonly AudioSourceTile[];
+        } = {
             laneId: lane.id,
             trackId: lane.trackId,
             takesBefore: lane.takes,
             takesAfter: takeMapping.takesAfter,
             regionsBefore: regionMapping.regionsBefore,
             regionsAfter: regionMapping.regionsAfter,
-            ...(lane.baseGapAudioSources === undefined ? {} : { baseGapAudioSourcesBefore: lane.baseGapAudioSources }),
-            ...(baseGaps === undefined ? {} : { baseGapAudioSourcesAfter: baseGaps }),
-        });
+        };
+        if (lane.baseGapAudioSources !== undefined) {
+            transition.baseGapAudioSourcesBefore = lane.baseGapAudioSources;
+        }
+        if (baseGaps !== undefined) {
+            transition.baseGapAudioSourcesAfter = baseGaps;
+        }
+        transitions.push(transition);
     }
     return transitions;
 }

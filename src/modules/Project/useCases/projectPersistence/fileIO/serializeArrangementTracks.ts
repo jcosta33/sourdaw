@@ -42,18 +42,18 @@ function serializeClip(clip: Clip, notesByClipId?: NotesByClipId): ProjectClip {
     if (clip.type === 'audio' && !hasValidAudioSourceState(clip)) {
         throw new Error('Cannot serialize invalid audio source provenance');
     }
-    const canonicalSource =
-        clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
-            ? captureAudioSourceState(
-                  clip,
-                  projectClipLoopExpansion({
-                      clipDurationBeats: clip.endBeat - clip.startBeat,
-                      configuredLoopLengthBeats: clip.loopLength,
-                      loopEnabled: clip.loopEnabled ?? false,
-                  }).loopLengthBeats,
-                  0
-              )
-            : null;
+    let canonicalSource: ReturnType<typeof captureAudioSourceState> = null;
+    if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+        canonicalSource = captureAudioSourceState(
+            clip,
+            projectClipLoopExpansion({
+                clipDurationBeats: clip.endBeat - clip.startBeat,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            }).loopLengthBeats,
+            0
+        );
+    }
     return {
         id: clip.id,
         trackId: clip.trackId,

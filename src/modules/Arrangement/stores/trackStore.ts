@@ -884,7 +884,11 @@ export const trackStore = createStore<TrackStoreState>({
             projectCommittedLocalState: project_track_local_state,
             writeMetadata: {
                 capture: captureTempoAudioSourceTrackMetadata,
-                reduce: ({ current, captured }) => [...(current ?? []), ...captured],
+                reduce: ({ current, captured }) => {
+                    const pending = current ? current.slice() : [];
+                    pending.push(...captured);
+                    return pending;
+                },
             },
             mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
                 if (metadata?.some((intent) => !tempoAudioSourceTrackIntentMatches(intent, doc))) {

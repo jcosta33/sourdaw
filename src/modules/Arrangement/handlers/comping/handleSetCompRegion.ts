@@ -19,16 +19,23 @@ function getPatch(action: SetCompRegionAction) {
         audioSourcePromotions,
         baseGapAudioSourceFieldPresence,
     } = action.payload;
-    return {
-        laneId,
-        trackId,
-        startBeat,
-        endBeat,
-        expected,
-        replacement,
-        ...(audioSourcePromotions === undefined ? {} : { audioSourcePromotions }),
-        ...(baseGapAudioSourceFieldPresence === undefined ? {} : { baseGapAudioSourceFieldPresence }),
-    };
+    const patch: {
+        laneId: typeof laneId;
+        trackId: typeof trackId;
+        startBeat: typeof startBeat;
+        endBeat: typeof endBeat;
+        expected: typeof expected;
+        replacement: typeof replacement;
+        audioSourcePromotions?: typeof audioSourcePromotions;
+        baseGapAudioSourceFieldPresence?: typeof baseGapAudioSourceFieldPresence;
+    } = { laneId, trackId, startBeat, endBeat, expected, replacement };
+    if (audioSourcePromotions !== undefined) {
+        patch.audioSourcePromotions = audioSourcePromotions;
+    }
+    if (baseGapAudioSourceFieldPresence !== undefined) {
+        patch.baseGapAudioSourceFieldPresence = baseGapAudioSourceFieldPresence;
+    }
+    return patch;
 }
 
 export const handleSetCompRegion = createHandler<'setCompRegion'>({
@@ -47,10 +54,12 @@ export const handleSetCompRegion = createHandler<'setCompRegion'>({
         action.payload.laneId = patch.laneId;
         action.payload.expected = patch.expected;
         action.payload.replacement = patch.replacement;
-        if (patch.audioSourcePromotions !== undefined)
+        if (patch.audioSourcePromotions !== undefined) {
             action.payload.audioSourcePromotions = patch.audioSourcePromotions;
-        if (patch.baseGapAudioSourceFieldPresence !== undefined)
+        }
+        if (patch.baseGapAudioSourceFieldPresence !== undefined) {
             action.payload.baseGapAudioSourceFieldPresence = patch.baseGapAudioSourceFieldPresence;
+        }
     },
     materializeCommandArgumentsAt: 'admission',
     validateMaterializedCommandArguments: compRegionInterval.isCompleteSetPayload,
