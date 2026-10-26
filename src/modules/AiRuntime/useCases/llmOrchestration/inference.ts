@@ -101,6 +101,8 @@ type HostedTurnRequest = {
     messageDataCategories?: readonly AgentDataCategory[];
     /** Application-owned catalog admission from this loop, never read from provider text. */
     transientOnsetsDiscovered?: true;
+    /** The composed receipt text is complete before its bounded local rendering. */
+    localReceiptContextComplete?: boolean;
 };
 
 /**
@@ -524,6 +526,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
             try {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
+                }
+                if (backend === 'webllm' && hostedTurn?.localReceiptContextComplete === false) {
+                    throw createProviderAttemptAdmissionError(
+                        'Application tool receipts exceeded the bounded text context budget.'
+                    );
                 }
                 const strictHostedProposalWire = backend === 'cloud' && usesStrictCloudToolSchemas();
                 let providerTools = strictHostedProposalWire

@@ -195,6 +195,7 @@ describe('planner transient read contract', () => {
 // cursor/session logic, receipt serialization and revision checks below are production code.
 const provider = vi.hoisted(() => ({
     backend: 'cloud' as 'cloud' | 'webllm',
+    fallback: false,
     completion: vi.fn(),
     request: vi.fn(),
     sessions: [] as {
@@ -206,7 +207,9 @@ const provider = vi.hoisted(() => ({
         dispose: () => void;
     }[],
 }));
-vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({ getBackendChain: () => [provider.backend] }));
+vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
+    getBackendChain: () => (provider.fallback ? ['cloud', 'webllm'] : [provider.backend]),
+}));
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
 vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
     generateWebLlmCompletion: provider.completion,
@@ -323,6 +326,7 @@ beforeEach(() => {
     requestedClipId = CLIP_ID;
     onWorkerStarted = undefined;
     provider.backend = 'cloud';
+    provider.fallback = false;
     provider.sessions.length = 0;
     vi.stubGlobal('Worker', SourceWorker);
     if (!hasCrdtDoc('root')) createCrdtDoc('root');
@@ -651,13 +655,15 @@ describe('actual hosted planner, source owner and disposable read session', () =
         expect(settle).toHaveBeenCalledExactlyOnceWith({ renderJobs: 0, analyses: 1 });
     });
     it.each([
-        { backend: 'webllm' as const, total: 65 },
-        { backend: 'webllm' as const, total: 128 },
-        { backend: 'cloud' as const, total: 128 },
+        { backend: 'webllm' as const, total: 65, fallback: false },
+        { backend: 'webllm' as const, total: 128, fallback: false },
+        { backend: 'cloud' as const, total: 128, fallback: false },
+        { backend: 'cloud' as const, total: 128, fallback: true },
     ])(
-        'keeps full maximal $total-hit receipts with explicit text-carrier refusal and native history intact: $backend',
-        async ({ backend, total }) => {
+        'keeps full maximal $total-hit receipts with explicit text-carrier refusal and native history intact: $backend; fallback=$fallback',
+        async ({ backend, total, fallback }) => {
             provider.backend = backend;
+            provider.fallback = fallback;
             requestedClipId = 'c'.repeat(256);
             const state = trackStore.value!;
             const original = state.tracks[0]!;
@@ -686,7 +692,17 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 confidence: 0.10000000000000002,
             }));
             let firstCursor: string;
+            let fallbackEvidenceTruncated: boolean | undefined;
             provider.completion.mockImplementation(async (_system: string, message: string) => {
+                if (fallback) {
+                    const evidence = JSON.parse(
+                        message.split('relevant_evidence:\n')[1]?.split('\n\n')[0] ?? 'null'
+                    ) as {
+                        receipts: { summary: { truncated: boolean } }[];
+                    };
+                    fallbackEvidenceTruncated = evidence.receipts[0]?.summary.truncated;
+                    return JSON.stringify(answer(['r'.repeat(256), 's'.repeat(256)]));
+                }
                 const turn = provider.completion.mock.calls.length;
                 if (turn === 1)
                     return JSON.stringify([
@@ -728,6 +744,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
                     return [onsetCall('s'.repeat(256), firstCursor)];
                 }
                 expect((readReceipt('s'.repeat(256)).data as { hits: unknown[] }).hits).toHaveLength(total - 64);
+                if (fallback) throw new Error('Synthetic hosted transport failure before fallback');
                 return answer(['r'.repeat(256), 's'.repeat(256)]);
             };
             const before = {
@@ -737,7 +754,17 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 pcm: sourceChannels.map((channel) => new Float32Array(channel)),
             };
             const result = await run();
-            if (backend === 'webllm') {
+            if (fallback) {
+                expect({
+                    rejection: result.rejectionReason,
+                    localRequests: provider.completion.mock.calls.length,
+                    receivedTruncatedEvidence: fallbackEvidenceTruncated,
+                }).toEqual({
+                    rejection: expect.stringContaining('bounded text context budget'),
+                    localRequests: 0,
+                    receivedTruncatedEvidence: undefined,
+                });
+            } else if (backend === 'webllm') {
                 expect(result.rejectionReason).toContain(
                     'Application tool receipts exceeded the bounded text context budget.'
                 );

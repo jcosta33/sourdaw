@@ -833,6 +833,9 @@ const planPromptIntent = inject({ logger })(
                                 history,
                                 budgetNote,
                                 transientOnsetsDiscovered,
+                                localReceiptContextComplete:
+                                    receiptContext === null ||
+                                    receiptContext.length <= AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                                 // Measured deltas in the thread context are figures, which the
                                 // hosted request declares as the evidence category it admits.
                                 ...(initialPlanningContext.hostedThreadCarriesMeasurement
