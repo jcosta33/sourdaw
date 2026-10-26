@@ -534,6 +534,28 @@ describe('sanitize_take_lane_store_state', () => {
         expect(Object.is(sanitized.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat, -0)).toBe(true);
     });
 
+    it('refuses malformed present MIDI source instead of dropping its take or comp selection', () => {
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    midiSource: { sourceClipId: 'clip-1', rows: null },
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'pass-1' }],
+        };
+
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(() => sanitize_take_lane_store_state({ lanes: [lane] })).toThrow('Invalid frozen MIDI take source');
+    });
+
     it('should preserve a pass placement, a negative anchor included, and drop takes carrying a malformed one', () => {
         const take = (id: string, fields: Record<string, unknown>) => ({
             id,
