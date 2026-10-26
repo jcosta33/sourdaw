@@ -561,11 +561,21 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
     });
 
     it('admits physical and virtual notes before Stop while live input remains pending', async () => {
+        transportStore.set({
+            ...transportStore.value!,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 4,
+        });
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional MIDI clip');
         }
         flushAutomergeStorageWrites();
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        playheadClockRef.beat = 4.5;
+        playheadClockRef.audioTimeSeconds = 0.5;
         mocks.audioClock.currentTime = 0.5;
         Object.defineProperty(audioEngine.context, 'currentTime', {
             configurable: true,
@@ -589,16 +599,38 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         liveMidiGate.pending = worker.promise;
 
         const physical = handleWebMidiMessage({ data: new Uint8Array([0x90, 62, 111]), timeStamp: undefined });
+        playheadWrapCountRef.current = 1;
+        playheadClockRef.beat = 4.75;
+        playheadClockRef.audioTimeSeconds = 3;
+        mocks.audioClock.currentTime = 3;
         const virtual = triggerLiveNoteOn(2, 64, 99);
-        expect(activeRecordingRef.midiAdmissions.map((admitted) => admitted.note)).toEqual([62, 64]);
-        mocks.audioClock.currentTime = 1;
+        playheadWrapCountRef.current = 2;
+        playheadClockRef.beat = 5;
+        playheadClockRef.audioTimeSeconds = 5.5;
+        mocks.audioClock.currentTime = 5.5;
+        const physicalThird = handleWebMidiMessage({
+            data: new Uint8Array([0x93, 67, 88]),
+            timeStamp: undefined,
+        });
+        expect(activeRecordingRef.midiAdmissions.map((admitted) => [admitted.note, admitted.onsetSourceBeat])).toEqual([
+            [62, 0.5],
+            [64, 4.75],
+            [67, 9],
+        ]);
+        playheadClockRef.beat = 5.5;
+        playheadClockRef.audioTimeSeconds = 6;
+        mocks.audioClock.currentTime = 6;
 
         await stopActiveRecording();
         worker.resolve();
-        await Promise.all([physical, virtual]);
+        await Promise.all([physical, virtual, physicalThird]);
 
         const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
-        expect(notes.map((note) => note.pitch)).toEqual([62, 64]);
+        expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([
+            [62, 0.5],
+            [64, 4.75],
+            [67, 9],
+        ]);
         expect(committedEntryCount()).toBe(1);
         await undo();
         expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
