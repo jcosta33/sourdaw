@@ -3887,9 +3887,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             ...trackStore.value!,
             tracks: trackStore.value!.tracks.map((track) => ({
                 ...track,
-                clips: track.clips.map((clip) =>
-                    clip.id === 'clip-b' ? { ...clip, startBeat: 0, endBeat: 4 } : clip
-                ),
+                clips: track.clips.map((clip) => (clip.id === 'clip-b' ? { ...clip, startBeat: 0, endBeat: 4 } : clip)),
             })),
         });
         flushAutomergeStorageWrites();
@@ -3924,7 +3922,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(undoHistoryStore.value?.future).toHaveLength(0);
         await expectReplayRefused('undo');
         expect(clipOnTrack(TRACK_ID, 'clip-b')).toMatchObject({ startBeat: 0, endBeat: 4 });
-        expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-b')).toMatchObject({
+        expect(
+            getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.find((clip) => clip.id === 'clip-b')
+        ).toMatchObject({
             startBeat: 0,
             endBeat: 4,
         });
