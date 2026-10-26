@@ -22,7 +22,6 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { guardFailureReceiptPath } from '../prContract';
-import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     main,
     parseCliArgs,
@@ -37,6 +36,7 @@ import {
     startTimeExcuseSupervisor,
     storageRecoveryPorts,
 } from '../resourceGuard';
+import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     createGuardStorage,
     diskStorageFailure,
