@@ -1,0 +1,68 @@
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_ac723ce5909765 9,769-786,926-929
+  s_29d8df116c5b92::t_5bb55def134661 930-932
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_29d8df116c5b92::t_2732151d0c1052 1080-1081,1083-1096,1105-1107,1118
+  s_29d8df116c5b92::t_b14f36f6112246 1099-1104,1108-1117,1184
+  s_29d8df116c5b92::t_66a6bce6731abd 985-1079,1119-1123,1166,1172-1183,1185
+  s_29d8df116c5b92::t_4089cfecf69f92 1082,1097-1098
+  s_29d8df116c5b92::t_6cc70d45a0d45c 1186-1188
+src/modules/Setlist/useCases/setlist/__tests__/setlistTempoCommand.integration.spec.ts
+  s_29d8df116c5b92::t_8793acf13f1768 27,237,252,260,278,286,328,377-378,415,418
+  s_29d8df116c5b92::t_1bf237748ded77 3,46-52
+  s_29d8df116c5b92::t_65b810288c1919 334
+  s_29d8df116c5b92::t_3e550ffe56ad46 53
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_29d8df116c5b92::t_1bf237748ded77 104
+src/modules/Transport/useCases/tempoMap/__tests__/tempoMapCommands.integration.spec.ts
+  s_29d8df116c5b92::t_c80190eaf37bfa 39
+  s_29d8df116c5b92::t_60b4620f9b1a88 431,433-438
+src/modules/Arrangement/useCases/clipEditing/__tests__/projectClipReplayPrefix.spec.ts
+  s_29d8df116c5b92::t_1bf237748ded77 96
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_29d8df116c5b92::t_43f2a9243ef16d 1940-2021,2043,2055,2057,2063-2097,2166-2168,2225-2226
+  s_29d8df116c5b92::t_128d5b0d5edf8b 2028-2042,2044-2054,2056,2058-2061
+  s_29d8df116c5b92::t_7af4611a2915b0 2022-2027,2062,2169-2182,2184-2215,2217-2218,2220-2224
+src/modules/Arrangement/handlers/comping/__tests__/audioCompSourceInterval.integration.spec.ts
+  s_29d8df116c5b92::t_1e40f69bbee882 378
+src/modules/Setlist/useCases/setlist/__tests__/goToItem.spec.ts
+  s_29d8df116c5b92::t_1bf237748ded77 4,8-9,16
+src/utils/__tests__/tempoAudioSourcePromotion.spec.ts
+  s_29d8df116c5b92::t_1bf237748ded77 213
+src/modules/Transport/stores/transportStore.ts
+  s_29d8df116c5b92::t_746d720e01ee0a 399,407
+src/modules/Transport/stores/tempoMapStore.ts
+  s_29d8df116c5b92::t_746d720e01ee0a 124,132
+src/modules/Transport/handlers/transport/__tests__/tempoMapEditSource.integration.spec.ts
+  s_29d8df116c5b92::t_60b4620f9b1a88 636-638
+  s_29d8df116c5b92::t_1bf237748ded77 640
+src/modules/Arrangement/useCases/comping/reconcileTakeReKeySources.ts
+  s_29d8df116c5b92::t_8e4e09e5a03a3b 15,99
+  s_29d8df116c5b92::t_7a7ed324cbbb4c 8,124
+  s_29d8df116c5b92::t_2e2c06af44332f 118
+  s_29d8df116c5b92::t_062daf2125e86b 1,3,16,120-123,125-149,171
+  s_29d8df116c5b92::t_56c1a576c5719a 7,96-98,100-112,119,150-170,172-186
+  s_29d8df116c5b92::t_0b55f238855f05 113-117
+src/infra/store/storage/createAutomergeStorage.ts
+  s_29d8df116c5b92::t_746d720e01ee0a 87-102,154-165,1345,1565-1572,1616
+src/modules/Collaboration/useCases/__tests__/removeClipUndoCommit.integration.spec.ts
+  s_29d8df116c5b92::t_1bf237748ded77 375
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTakeReKey.spec.ts
+  s_29d8df116c5b92::t_8f8e840b3790ad 440-447,453,456-461
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ce535d85d15586dc2fcbd29aa3c8a5980cc3f51",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
