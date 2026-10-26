@@ -1,0 +1,38 @@
+crates/sourdaw-native/src/commands/graph.rs
+  s_26f70b851e8f7a::t_aaaa3ffc342f47 16226-16246
+  s_26f70b851e8f7a::t_c9ae31435fc307 16050-16051,16054-16099,16108-16115,16118-16135,16171-16225,16247-16248
+  s_26f70b851e8f7a::t_ba946bbfbd0058 16052-16053,16100-16107,16136-16137,16141-16142,16149-16170
+  s_26f70b851e8f7a::t_47250d7a3700a9 3782-3810,3812-3815
+  s_26f70b851e8f7a::t_7c8170a0f5223b 16116-16117,16138-16140,16143-16148
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_26f70b851e8f7a::t_47250d7a3700a9 138-141
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_26f70b851e8f7a::t_47250d7a3700a9 321-322,324,326
+  s_26f70b851e8f7a::t_ba946bbfbd0058 331-334,340-341,343-356
+  s_26f70b851e8f7a::t_482b6a84dacef6 342
+  s_59e31a5c6f3e31::t_fa209628f3a518 357-358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6e3a492a0c07aaed5d763d062b86ed228ae7f43",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
