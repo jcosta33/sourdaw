@@ -40,3 +40,18 @@ finite extremes, then overflow each row type separately with a finite displaceme
 owner refusal, handler `no-write`, and unchanged clip and all row types; exercise raw-document
 and history preservation through the real command wherever the fixture codec admits the input.
 Keep ordinary and zero captures, the configured-loop control and keyless replay behavior intact.
+
+## Legacy inverse admission after a coordinate-capture repair
+
+PR #5022 introduced the moving loop basis described above. PR #5578 captures the old
+offset for new trims, but historical trim inverses produced before that repair carry no
+`midiOffsetBeats`. A loop phase cannot recover the discarded quotient or the original row
+displacement. Replaying the opposite trim can therefore consume Undo while restoring the
+wrong offset and rows. Historical review prompts and model tiers are unverified.
+
+Produce the old inverse with the real historical Command handler, preserve its original
+document and session-history bytes, then hydrate through the current production reader.
+Require an unsafe looped MIDI inverse to leave the document, rows and pending history
+unchanged, with a warning. Keep audio, loop-off, safe zero-distance and modern captured
+Undo/Redo controls. Removing replay admission must fail the unsafe historical case;
+deleting a capture field from a modern fixture cannot establish historical compatibility.

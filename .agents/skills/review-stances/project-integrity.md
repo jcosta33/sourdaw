@@ -325,3 +325,18 @@ controls. Land one sibling before replacing the root and refuse another afterwar
 landed entry and exactly one settled gesture through Transport's public count consumed by
 Project's owed-save comparison. All-refused adds zero; downstream count filtering cannot prove
 that either Stop caller rejected registration.
+
+## Legacy inverse refusal must reach the history consumer
+
+The pre-#5578 trim handler records inverses without an offset capture. The current handler
+maps a domain `false` result to `no-write`, which Command treats as successful execution;
+relying on that writer refusal would still consume Undo. Refusal must reach the history
+consumer as a conflict. Historical review prompts and model tiers are unverified.
+
+Exercise genuine saved history through the real Undo consumer. Require the raw document,
+owning projections, past/future, tree cursor and settled session mirror to remain unchanged.
+Hold the actual snapshot transaction, change a compatible target into an unsafe looped
+MIDI target, then release it: admission must observe that resumed state before any write.
+Removing the post-wait admission must fail this case. A pre-wait check or a bare boolean
+refusal cannot carry the claim. For direct grouped replay, refuse an unproven prefix before
+any sibling writes; metadata-only and compatible-target controls remain separate.

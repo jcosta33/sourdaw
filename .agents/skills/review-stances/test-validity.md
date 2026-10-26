@@ -1350,3 +1350,18 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+## Historical replay fixtures must retain the real producer and reader
+
+PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
+that old saved inverses remain safe. Generate historical actions, document records and the
+witness-stamped session mirror with the untouched historical producer. Keep those bytes
+and hydrate them with the current production reader before invoking real Undo. A `.sdaw`
+file alone does not contain the session Undo mirror. Historical review prompts and model
+tiers are unverified; the missing proof joined historical production, current hydration and real Undo.
+
+Assert the actual pending entry, tree cursor and settled mirror alongside raw project
+contents. Reverting admission must consume the unsafe entry or alter its coordinates and
+fail the named case. Preserve independently produced compatible controls. Historical
+trim/slip handlers are singleton handlers, and hydration excludes internal restore
+prefixes; synthetic direct groups test defensive APIs, not supported saved grouped history.
