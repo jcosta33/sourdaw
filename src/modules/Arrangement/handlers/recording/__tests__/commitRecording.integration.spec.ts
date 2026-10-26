@@ -1,3 +1,4 @@
+import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -13,11 +14,15 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    DOC_PREFIX_ROOT,
+    captureProjectRootIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -152,7 +157,12 @@ describe('recording gesture commit (issue #4439)', () => {
         await expect(
             commitRecording(
                 { ...provisional, audioBufferId: 'rec-buffer-1', endBeat: 8 },
-                { provisionalStartBeat: 4, mediaOriginSeconds: 2, sourceContextOriginSeconds: 2, sourceDurationSeconds: 2 },
+                {
+                    provisionalStartBeat: 4,
+                    mediaOriginSeconds: 2,
+                    sourceContextOriginSeconds: 2,
+                    sourceDurationSeconds: 2,
+                },
                 { shouldExecute: () => false }
             )
         ).rejects.toThrow('recording commit refused: the project root moved');
@@ -165,6 +175,63 @@ describe('recording gesture commit (issue #4439)', () => {
                 history: undoHistoryStore.value,
             })
         ).toBe(before);
+    });
+
+    it('refuses a captured commit after its real snapshot wait when the root moves', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Pass 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        flushAutomergeStorageWrites();
+        const capturedRoot = captureProjectRootIdentity();
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const transaction = transactSnapshot(async () => {
+            started.resolve();
+            await release.promise;
+        });
+        await started.promise;
+
+        const committing = commitRecording(
+            { ...provisional, audioBufferId: 'rec-buffer-1', endBeat: 8 },
+            { provisionalStartBeat: 4, mediaOriginSeconds: 2, sourceContextOriginSeconds: 2, sourceDurationSeconds: 2 },
+            { shouldExecute: () => captureProjectRootIdentity() === capturedRoot }
+        );
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            release.resolve();
+            await transaction;
+            throw new Error('expected the recording root');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        const successor = JSON.stringify({
+            document: getCrdtDoc(DOC_PREFIX_ROOT),
+            tracks: trackStore.value,
+            lanes: takeLaneStore.value,
+            history: undoHistoryStore.value,
+        });
+
+        const refusal = expect(committing).rejects.toThrow('recording commit refused: the project root moved');
+        release.resolve();
+        await transaction;
+        await refusal;
+        expect(
+            JSON.stringify({
+                document: getCrdtDoc(DOC_PREFIX_ROOT),
+                tracks: trackStore.value,
+                lanes: takeLaneStore.value,
+                history: undoHistoryStore.value,
+            })
+        ).toBe(successor);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
     });
 
     it('removes the clip, its placement, and its take membership on one undo, and restores the same identities on redo', async () => {
