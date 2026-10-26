@@ -76,6 +76,19 @@ describe('clipSplitStateRestorable', () => {
         ).toBe(true);
     });
 
+    it('accepts a different in-range insertion slot for a composed split', () => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
+        const peer = ClipDummy.create({ id: 'peer', trackId: 'track-1' });
+        const expected = { ...snapshot(left), rightClipIndex: 2 };
+        const replacement = { ...expected, rightClip: right, rightClipIndex: 1 };
+        const state = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left, peer] })] };
+
+        expect(clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement }, state)).toBe(
+            true
+        );
+    });
+
     it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 3])(
         'refuses an invalid replacement insertion slot %s',
         (rightClipIndex) => {

@@ -55,9 +55,9 @@ function clipOwnershipMatches(
 /** Same precondition `replaceClipSplitTrackState` writes against, kept as the sole export of its
  *  own file (rather than a second export alongside the write) so a handler's `validate` can
  *  preflight a batch without performing the write that `replaceClipSplitTrackState` performs once
- *  the precondition holds. The remembered right-clip index remains paired across
- *  the snapshots; a deleted unrelated predecessor may shorten the live track,
- *  so insertion uses the live end while keeping the right fragment after its left. */
+ *  the precondition holds. A deleted unrelated predecessor may shorten the live
+ *  track; only a paired saved insertion index may extend past its current end.
+ *  In either case the right fragment must remain after its left. */
 export function clipSplitStateRestorable(
     { clipId, rightClipId, expected, replacement }: ClipSplitStateRestorableInput,
     state: { tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[] } | null = getTrackState()
@@ -66,7 +66,6 @@ export function clipSplitStateRestorable(
         expected.trackId !== replacement.trackId ||
         expected.leftClip.id !== clipId ||
         replacement.leftClip.id !== clipId ||
-        expected.rightClipIndex !== replacement.rightClipIndex ||
         (expected.rightClip !== null && expected.rightClip.id !== rightClipId) ||
         (replacement.rightClip !== null && replacement.rightClip.id !== rightClipId)
     ) {
@@ -85,6 +84,8 @@ export function clipSplitStateRestorable(
         if (
             !Number.isSafeInteger(replacement.rightClipIndex) ||
             replacement.rightClipIndex < 0 ||
+            (replacement.rightClipIndex > clipsAfterRemoval &&
+                replacement.rightClipIndex !== expected.rightClipIndex) ||
             Math.min(replacement.rightClipIndex, clipsAfterRemoval) <= leftClipIndex
         ) {
             return false;

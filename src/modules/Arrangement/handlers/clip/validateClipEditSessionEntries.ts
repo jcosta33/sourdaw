@@ -17,6 +17,8 @@ import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 
+import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
+
 function hasFiniteNumbers(value: unknown): boolean {
     if (typeof value === 'number') {
         return Number.isFinite(value);
@@ -277,16 +279,6 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
             pitchBendSnapshot: value.midiPitchBendSnapshot,
         }) !== null &&
         hasFiniteNumbers(value)
-    );
-}
-
-export function isRemoveClipSessionPayload(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        typeof value.clipId === 'string' &&
-        value.clipId.length > 0 &&
-        (!Object.hasOwn(value, 'ripple') || typeof value.ripple === 'boolean') &&
-        Object.keys(value).every((key) => key === 'clipId' || key === 'ripple')
     );
 }
 

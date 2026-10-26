@@ -33,7 +33,8 @@ import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips
 
 import { createdClipMidiCapture } from './createdClipMidiCapture';
 import { pairedInverseForRedo } from './takeRetirementRedo';
-import { isRemoveClipSessionEntry, isRemoveClipSessionPayload } from './validateClipEditSessionEntries';
+import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
+import { isRemoveClipSessionEntry } from './validateClipEditSessionEntries';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural
 // `ClipSnapshot` carried by the `restoreClip` inverse action payload.
