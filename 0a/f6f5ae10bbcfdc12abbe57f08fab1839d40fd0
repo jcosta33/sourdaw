@@ -1,0 +1,56 @@
+src/modules/Command/useCases/executeAppAction.ts
+  s_d99a62fe2de3a3::t_4bf97d7422cc86 40,180-184,245-247
+  s_29d8df116c5b92::t_4fc02a1bd819b4 248-249
+src/modules/Command/useCases/revertActionGroup.ts
+  s_d99a62fe2de3a3::t_4bf97d7422cc86 1-2,7,24,33,58-64
+  s_d99a62fe2de3a3::t_9e0d41031e06ef 65-67,73-82
+src/modules/Command/useCases/__tests__/fixtures/legacyMidiTrimReplay.md
+  s_d99a62fe2de3a3::t_32170f6b4bfc4b 1-33
+src/modules/Command/useCases/undo.ts
+  s_d99a62fe2de3a3::t_c49dbdec554ba1 88-89,92-93
+  s_d99a62fe2de3a3::t_4bf97d7422cc86 10,94
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_d99a62fe2de3a3::t_4bf97d7422cc86 7,70-72
+src/modules/Command/useCases/getLegacyTrimInverseReplayFailure.ts
+  s_d99a62fe2de3a3::t_3091be0bd1891a 37
+  s_d99a62fe2de3a3::t_e25b00270e06ff 1,5,14-16,36
+  s_d99a62fe2de3a3::t_4bf97d7422cc86 2-4,6-13,17-26,30-32,34-35,38-57
+  s_d99a62fe2de3a3::t_c49dbdec554ba1 27-29,33
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_d99a62fe2de3a3::t_85c77e04970889 350,403
+  s_d99a62fe2de3a3::t_06cc0f35995d47 432
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_d99a62fe2de3a3::t_85c77e04970889 124
+src/modules/Command/useCases/__tests__/legacyMidiTrimReplay.integration.spec.ts
+  s_d99a62fe2de3a3::t_2d12d3431e5a57 1-5,7-34,36-39,42-96,100-110,129-153,159-185,191-199,209-213,274,277-294,301-303,311-325
+  s_d99a62fe2de3a3::t_4150d336f7890b 111,116
+  s_d99a62fe2de3a3::t_a4bd0ef3fe3a1c 6,35,40-41,97-99,112-115,117-128,154-158,186-190,201-208,214-273,275-276,295-300,304-310
+  s_d99a62fe2de3a3::t_21ca3b5769bbf3 200
+  s_d99a62fe2de3a3::t_13138adae0fdaa 326-339
+src/modules/Command/useCases/__tests__/fixtures/legacyMidiTrimReplay.json
+  s_d99a62fe2de3a3::t_c0d746b6a2a703 1-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0af6f5ae10bbcfdc12abbe57f08fab1839d40fd0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
