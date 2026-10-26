@@ -16247,6 +16247,101 @@ mod tests {
     }
 
     #[test]
+    fn proof_product_wire_clamps_dither_bits_for_records_immediate_and_scheduled_writes() {
+        let samples = sample_pool();
+        for (raw, expected) in [
+            (8.0, 16.0),
+            (12.0, 16.0),
+            (16.0, 16.0),
+            (24.0, 24.0),
+            (32.0, 24.0),
+        ] {
+            let patch = json!({"dither_mode":1,"dither_bits":raw,"dyneq_band0_freq":800});
+            let values = serde_json::from_value(patch.clone()).unwrap();
+            // map_device uses this exact admission result to build the saved
+            // Proof body; inspecting it makes no claim about rendered PCM.
+            let record = proof_parameter_writes(&values, true, "d-proof").unwrap();
+            let mut registry = GraphRegistry::default();
+            let mapped_record = map_unbound_batch(
+                &batch(strip_with_device("d-proof", "proof", patch.clone())),
+                &mut registry,
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            let effect_id = registry.devices["d-proof"].native_effect_id;
+            let immediate = map_unbound_batch(
+                &batch(json!([{"kind":"set-device-parameters","trackId":"t1","deviceId":"d-proof","values":patch}])),
+                &mut registry.clone(),
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            let scheduled = map_unbound_batch(
+                &batch(json!([
+                    {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"dither_bits"},"write":{"shape":"step","value":raw,"time":0.5}},
+                    {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"dyneq_band0_freq"},"write":{"shape":"step","value":800,"time":0.5}}
+                ])),
+                &mut registry.clone(),
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+
+            assert!(mapped_record.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(id, PluginCore::Proof(_), None) if *id == effect_id
+            )));
+            assert_eq!(
+                record
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), *value))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("dither_bits", expected),
+                    ("dither_mode", 1.0),
+                    ("dyneq_band0_freq", 800.0)
+                ],
+                "saved product wire dither_bits={raw}"
+            );
+            assert_eq!(immediate.ops.len(), 3);
+            for (op, (name, expected_value)) in immediate.ops.iter().zip([
+                ("dither_bits", expected),
+                ("dither_mode", 1.0),
+                ("dyneq_band0_freq", 800.0),
+            ]) {
+                let parameter =
+                    DeviceParam::BuiltinNamed(builtin_named_parameter(name, "d-proof").unwrap());
+                assert!(
+                    matches!(
+                        op,
+                        GraphCommand::SetParam(id, param, value)
+                            if *id == effect_id && *param == parameter && *value == expected_value
+                    ),
+                    "immediate product wire {name} for dither_bits={raw}"
+                );
+            }
+            assert_eq!(scheduled.ops.len(), 2);
+            for (op, (name, expected_value)) in scheduled.ops.iter().zip([
+                ("dither_bits", f64::from(expected)),
+                ("dyneq_band0_freq", 800.0),
+            ]) {
+                let parameter = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+                    builtin_named_parameter(name, "d-proof").unwrap(),
+                ));
+                assert!(
+                    matches!(
+                        op,
+                        GraphCommand::AutomateDeviceParam { effect_id: id, param, value, at_frame: 24_000 }
+                            if *id == effect_id && *param == parameter && *value == expected_value
+                    ),
+                    "scheduled product wire {name} for dither_bits={raw}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn proof_registry_distinguishes_admitted_metadata_from_applied_targets() {
         let values = serde_json::from_value(
             json!({"target_mode":2,"target_lufs":-6,"bypass":1,"ab_bypass":1}),
