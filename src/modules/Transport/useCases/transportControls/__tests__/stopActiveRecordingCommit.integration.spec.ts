@@ -6,6 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { activeRecordingRef, takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import {
     admitRecordingMidiNoteOn,
     getArrangementHandlers,
@@ -565,6 +566,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         }
         flushAutomergeStorageWrites();
         mocks.audioClock.currentTime = 0.5;
+        expect(audioEngine.context.currentTime).toBe(0.5);
         expect(activeRecordingRef.current).toEqual([provisional.id]);
         expect(getTargetTrackId()).toBe(TRACK_ID);
         expect(takeOwnsRecordingRoot()).toBe(true);
