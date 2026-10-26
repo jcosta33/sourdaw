@@ -32,8 +32,8 @@ import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 
 import { createdClipMidiCapture } from './createdClipMidiCapture';
-import { pairedInverseForRedo } from './takeRetirementRedo';
 import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
+import { pairedInverseForRedo } from './takeRetirementRedo';
 import { isRemoveClipSessionEntry } from './validateClipEditSessionEntries';
 
 // Minimal structural clip shape used to widen a concrete Clip into the structural

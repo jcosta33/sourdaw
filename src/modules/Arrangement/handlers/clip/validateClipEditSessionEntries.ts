@@ -13,11 +13,11 @@ import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLane
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
+
 import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
-
-import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
 
 function hasFiniteNumbers(value: unknown): boolean {
     if (typeof value === 'number') {

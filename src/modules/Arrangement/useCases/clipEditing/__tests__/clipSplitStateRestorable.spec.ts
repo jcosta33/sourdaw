@@ -56,7 +56,7 @@ describe('clipSplitStateRestorable', () => {
         expect(clipSplitStateRestorable(payload, edited)).toBe(false);
     });
 
-    it('accepts an earlier unrelated deletion while preserving the owned fragments', () => {
+    it('accepts an earlier unrelated deletion but refuses an unpaired saved reinsertion slot', () => {
         const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
         const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
         const expected = { ...snapshot(left), rightClip: right, rightClipIndex: 2 };
@@ -67,13 +67,22 @@ describe('clipSplitStateRestorable', () => {
                 { clipId: 'left', rightClipId: 'right', expected, replacement: snapshot(left) },
                 state
             )
-        ).toBe(false);
+        ).toBe(true);
         expect(
             clipSplitStateRestorable(
                 { clipId: 'left', rightClipId: 'right', expected, replacement: { ...expected, rightClip: null } },
                 state
             )
         ).toBe(true);
+        expect(
+            clipSplitStateRestorable(
+                { clipId: 'left', rightClipId: 'right', expected, replacement: { ...expected, rightClipIndex: 3 } },
+                state
+            )
+        ).toBe(false);
+        expect(clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement: expected }, state)).toBe(
+            true
+        );
     });
 
     it('accepts a different in-range insertion slot for a composed split', () => {
