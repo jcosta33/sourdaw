@@ -36,6 +36,7 @@ const supersessionPaths = [
     'scripts/supersedePullRequest.ts',
     'scripts/supersedePullRequestGh.ts',
     'scripts/stackedLanes.ts',
+    'scripts/laneStackForkMarkers.ts',
     'scripts/findingLineage.ts',
     'scripts/pullRequestMutationLock.ts',
     'scripts/reviewRepair.ts',
