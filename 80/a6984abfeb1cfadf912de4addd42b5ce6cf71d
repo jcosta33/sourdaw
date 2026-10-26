@@ -1,0 +1,23 @@
+crates/daw-engine/src/lib.rs
+  s_26f70b851e8f7a::t_482e8cfd83c61e 157,315,381-382,401,408,424-425,428-444,978,1559
+  s_26f70b851e8f7a::t_043d31ab2b96af 156
+crates/daw-engine/src/audio_thread.rs
+  s_26f70b851e8f7a::t_2aa9453c18a767 845
+  s_26f70b851e8f7a::t_377704966fac8c 163,522,583-584,610,644,846,873,1020-1023,1318,1351,1408,1492,1565,1897,2047,2416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "80a6984abfeb1cfadf912de4addd42b5ce6cf71d",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
