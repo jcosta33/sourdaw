@@ -5,7 +5,7 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { maskQuotedTextContents, scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
 import { findAgentReferenceNameSpans } from './agentReference/findAgentReferenceNameSpans';
-import { findCoordinatedTrackLists, resolveWholeMember } from './agentReference/findCoordinatedTrackLists';
+import { findCoordinatedTrackLists } from './agentReference/findCoordinatedTrackLists';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { getPromptClauses } from './agentReference/groundingStrategies/getPromptClauses';
 import { isExplicitCommandClause } from './agentReference/groundingStrategies/isExplicitCommandClause';
@@ -16,6 +16,7 @@ import { normalizeAgentReferenceText } from './agentReference/normalizeAgentRefe
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { refinementCourtesy } from './agentReference/refinementCourtesy';
 import { resolveAgentReference } from './agentReference/resolveAgentReference';
+import { resolveWholeMember } from './agentReference/resolveWholeMember';
 import { resolveWorkflowTrackIds } from './agentReference/resolveWorkflowTrackIds';
 import { discoverMixRecipes } from './discoverMixRecipes';
 
