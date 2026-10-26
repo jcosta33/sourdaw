@@ -10,7 +10,6 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import {
     clearUndoHistory,
     commandBatchPreviewPort,
-    commandProjectDivergencePort,
     compileVersionedCommandBatchEnvelope,
     executeAppAction,
     getVersionedCommandBatchIdempotentReplay,
@@ -23,6 +22,7 @@ import {
     captureProjectRevision,
     createCommandRecoveryWorkspace,
     createCrdtDoc,
+    findAutomergeProjectConflicts,
     getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -50,7 +50,9 @@ import {
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 
 function requireRoot() {
-    const root = getCrdtDoc<Record<string, unknown>>('root');
+    const root = getCrdtDoc<Record<string, unknown> & { commandBatchIdempotency?: ReturnType<typeof peerCheckpoint> }>(
+        'root'
+    );
     if (!root) {
         throw new Error('Expected the project root');
     }
@@ -63,7 +65,10 @@ function rootProjectTruth(): unknown {
 }
 
 function captureConcurrentBranches() {
-    const base = requireRoot();
+    const base = change(clone(requireRoot()), (doc) => {
+        doc.commandBatchIdempotency = { records: [] };
+    });
+    replaceCrdtDocInLineage({ id: 'root', doc: base });
     const local = change(clone(base, { actor: '3333333333333333' }), (doc) => {
         doc.tempo = 120;
     });
@@ -96,13 +101,25 @@ function peerCheckpoint(idempotencyKey: string) {
 function synchronizeCheckpoints(branches: ReturnType<typeof captureConcurrentBranches>): void {
     const capturedTruth = rootProjectTruth();
     const local = change(branches.local, (doc) => {
-        doc.commandBatchIdempotency = peerCheckpoint('batch-peer-local');
+        if (!doc.commandBatchIdempotency) {
+            throw new Error('Expected the initialized command checkpoint');
+        }
+        doc.commandBatchIdempotency.records.push(...peerCheckpoint('batch-peer-local').records);
     });
     const remote = change(branches.remote, (doc) => {
-        doc.commandBatchIdempotency = peerCheckpoint('batch-peer-remote');
+        if (!doc.commandBatchIdempotency) {
+            throw new Error('Expected the initialized command checkpoint');
+        }
+        doc.commandBatchIdempotency.records.push(...peerCheckpoint('batch-peer-remote').records);
     });
     replaceCrdtDocInLineage({ id: 'root', doc: merge(local, remote) });
     expect(getHeads(requireRoot())).toHaveLength(2);
+    expect(
+        requireRoot()
+            .commandBatchIdempotency?.records.map((record) => record.idempotencyKey)
+            .toSorted()
+    ).toEqual(['batch-peer-local', 'batch-peer-remote']);
+    expect(findAutomergeProjectConflicts({ document: requireRoot() })).toEqual([]);
     expect(rootProjectTruth()).toEqual(capturedTruth);
 }
 
@@ -153,7 +170,6 @@ describe('confirmation after concurrent command checkpoints', () => {
         createCrdtDoc('owned');
         registerCrdtStorageRuntime();
         commandBatchPreviewPort.setRecoveryProvider(createCommandRecoveryWorkspace);
-        commandProjectDivergencePort.setProvider(null);
         chatStore.set({
             messages: [{ id: 'assistant-1', role: 'assistant', content: 'Awaiting confirmation', timestamp: 1 }],
             isGenerating: false,
