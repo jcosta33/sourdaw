@@ -25,7 +25,7 @@ import {
     replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { playheadClockRef, transportStore } from '#/modules/Transport/stores';
+import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
 import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
@@ -271,6 +271,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
         setTargetTrackId(TRACK_ID);
+        playheadWrapCountRef.current = 0;
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
         mocks.startPlayback.mockClear();
         mocks.notifyUser.mockClear();
