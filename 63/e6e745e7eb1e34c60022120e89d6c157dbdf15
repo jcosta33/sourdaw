@@ -1,0 +1,27 @@
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_d99a62fe2de3a3::t_695506b43a62c2 66,71-75
+src/modules/Command/useCases/undo.ts
+  s_d99a62fe2de3a3::t_695506b43a62c2 8,89,92-96
+src/modules/Command/useCases/revertActionGroup.ts
+  s_d99a62fe2de3a3::t_695506b43a62c2 6,30,33-37,82-85
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  s_d99a62fe2de3a3::t_661c296261b717 26,426-460,466
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_d99a62fe2de3a3::t_a6fba271f78a81 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63e6e745e7eb1e34c60022120e89d6c157dbdf15",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
