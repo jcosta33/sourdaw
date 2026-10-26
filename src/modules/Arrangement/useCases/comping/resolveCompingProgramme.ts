@@ -6,6 +6,7 @@ import {
 } from '#/utils/audioSourceTime';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import { compBaseGapWindows } from '#/utils/compBaseGapWindows';
 
 import { type TempoTimeline } from '../../models/TempoTimeline';
@@ -94,6 +95,9 @@ export function resolveCompingProgramme(
         // with the same beat as the window, so the source's region law holds
         // there unchanged.
         const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
+        if (take.midiSource !== undefined && !isFrozenMidiTakeSource(take.midiSource)) {
+            throw new Error('Invalid frozen MIDI take source');
+        }
         const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
         let audioSource: ReturnType<typeof audioSourceSnapshotAtBeat> | ReturnType<typeof audioTakeFragmentSource> =
             null;
@@ -122,6 +126,9 @@ export function resolveCompingProgramme(
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
             sourceStartBeat: media.sourceStartBeat,
+            ...(sourceClip.type === 'midi' && take.midiSource
+                ? { midiTakeSource: take.midiSource, midiTakeId: take.id }
+                : {}),
         });
     }
 
