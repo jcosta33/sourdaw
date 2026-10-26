@@ -3779,26 +3779,40 @@ fn map_command(
                     "write-device-parameter: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
-            if device.builtin() == Some(BuiltinEffectType::Proof) {
-                let StepWritePayload::Step { value, time } = write;
-                let at_frame =
-                    seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
-                let values = HashMap::from([(parameter_id.clone(), *value)]);
-                let writes = proof_parameter_writes(&values, false, device_id)?;
-                for (name, value) in writes {
-                    let effect_id = device.native_effect_id;
-                    budgets
-                        .charge_device_param(effect_id, at_frame)
-                        .map_err(|reason| format!("write-device-parameter: {reason}"))?;
-                    ops.push(GraphCommand::AutomateDeviceParam {
-                        effect_id,
-                        param: DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(name)),
-                        value: value as f64,
-                        at_frame,
-                    });
+            let normalized_proof_step = if device.builtin() == Some(BuiltinEffectType::Proof) {
+                let time = match write {
+                    DeviceParameterWritePayload::Step { time, .. }
+                    | DeviceParameterWritePayload::Hold { time } => time,
+                };
+                seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+                match write {
+                    DeviceParameterWritePayload::Step { value, time } => {
+                        let values = HashMap::from([(parameter_id.clone(), *value)]);
+                        let writes = proof_parameter_writes(&values, false, device_id)?;
+                        let Some((_, value)) = writes.first() else {
+                            return Ok(());
+                        };
+                        Some(DeviceParameterWritePayload::Step {
+                            value: f64::from(*value),
+                            time: *time,
+                        })
+                    }
+                    DeviceParameterWritePayload::Hold { .. } => {
+                        // Hold has no value to normalize. Metadata and graph bypass
+                        // have no DSP queue; every other canonical name shares the
+                        // typed target and cancellation route below.
+                        if proof_parameters::is_project_metadata(parameter_id)
+                            || parameter_id == "bypass"
+                        {
+                            return Ok(());
+                        }
+                        None
+                    }
                 }
-                return Ok(());
-            }
+            } else {
+                None
+            };
+            let write = normalized_proof_step.as_ref().unwrap_or(write);
             // The address a stamp carries is decided by what the device is, not
             // by the name it was written under: a built-in's parameters are the
             // vocabulary its own body answers to, and a hosted plugin's are the
@@ -16031,6 +16045,205 @@ mod tests {
             op,
             GraphCommand::AutomateDeviceParam { .. } | GraphCommand::SetParam(..)
         )));
+    }
+
+    #[test]
+    fn proof_registry_step_and_hold_share_exact_targets_and_queue_cancellation() {
+        use daw_engine::timeline::{DeviceParamEvent, DeviceParamQueue};
+
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-proof", "proof", json!({}))),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .unwrap();
+        let effect_id = registry.devices["d-proof"].native_effect_id;
+        let frequency = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+            builtin_named_parameter("eq_band0_freq", "d-proof").unwrap(),
+        ));
+        let ceiling = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+            builtin_named_parameter("lim_ceiling", "d-proof").unwrap(),
+        ));
+        let steps = batch(json!([
+            {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"eq_band0_freq"},"write":{"shape":"step","value":400,"time":0.25}},
+            {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"eq_band0_freq"},"write":{"shape":"step","value":800,"time":0.5}},
+            {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"lim_ceiling"},"write":{"shape":"step","value":-6,"time":0.75}}
+        ]));
+        let mapped = map_unbound_batch(&steps, &mut registry, &samples, 48_000.0).unwrap();
+        let writes = mapped
+            .ops
+            .iter()
+            .map(|op| match op {
+                GraphCommand::AutomateDeviceParam {
+                    effect_id: mapped_effect,
+                    param,
+                    value,
+                    at_frame,
+                } => {
+                    assert_eq!(*mapped_effect, effect_id);
+                    (*param, *value, *at_frame)
+                }
+                _ => panic!("Proof Step must map to an exact scheduled parameter"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            writes,
+            vec![
+                (frequency, 400.0, 12_000),
+                (frequency, 800.0, 24_000),
+                (ceiling, -6.0, 36_000),
+            ]
+        );
+        let mut engine_queue = DeviceParamQueue::new();
+        for (param, value, at_frame) in writes {
+            assert!(engine_queue.schedule(DeviceParamEvent {
+                param,
+                value,
+                at_frame,
+            }));
+        }
+        assert_eq!(
+            registry.device_param_pending[&effect_id]
+                .iter()
+                .map(|stamp| (stamp.param, stamp.at_frame))
+                .collect::<Vec<_>>(),
+            vec![(frequency, 12_000), (frequency, 24_000), (ceiling, 36_000)]
+        );
+
+        // Hold carries no value: cancel its tail while retaining earlier
+        // frequency and later ceiling, then admit the replacement separately.
+        let hold = device_hold("t1", "d-proof", "eq_band0_freq", 0.5);
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                hold,
+                {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"eq_band0_freq"},"write":{"shape":"step","value":1000,"time":0.625}}
+            ])),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .unwrap();
+        assert!(matches!(
+            mapped.ops.as_slice(),
+            [GraphCommand::HoldDeviceParam { effect_id: held_effect, param: held_param, at_frame: 24_000 },
+             GraphCommand::AutomateDeviceParam { effect_id: written_effect, param: written_param, value: 1000.0, at_frame: 30_000 }]
+                if *held_effect == effect_id && *written_effect == effect_id
+                    && *held_param == frequency && *written_param == frequency
+        ));
+        for op in &mapped.ops {
+            match op {
+                GraphCommand::HoldDeviceParam {
+                    param, at_frame, ..
+                } => {
+                    engine_queue.hold(*param, *at_frame);
+                }
+                GraphCommand::AutomateDeviceParam {
+                    param,
+                    value,
+                    at_frame,
+                    ..
+                } => {
+                    assert!(engine_queue.schedule(DeviceParamEvent {
+                        param: *param,
+                        value: *value,
+                        at_frame: *at_frame,
+                    }));
+                }
+                _ => panic!("expected the mapped Proof Hold or replacement Step"),
+            }
+        }
+        let mut due = Vec::new();
+        while let Some(event) = engine_queue.pop_due(36_000) {
+            due.push((event.param, event.value, event.at_frame));
+        }
+        assert_eq!(
+            due,
+            vec![
+                (frequency, 400.0, 12_000),
+                (frequency, 1000.0, 30_000),
+                (ceiling, -6.0, 36_000),
+            ],
+            "the mapped Hold must cancel the same tail in the real engine queue"
+        );
+        let retained = registry.device_param_pending[&effect_id]
+            .iter()
+            .map(|stamp| (stamp.param, stamp.at_frame))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            retained,
+            vec![(frequency, 12_000), (ceiling, 36_000), (frequency, 30_000)]
+        );
+
+        for (parameter, time) in [
+            ("unknown_proof", 0.5),
+            ("eq_band0_freq", -1.0),
+            ("eq_band0_freq", 1e20),
+        ] {
+            let before = registry.batches_sent;
+            let refused = batch(json!([
+                device_hold("t1", "d-proof", "eq_band0_freq", 0.0),
+                device_hold("t1", "d-proof", parameter, time)
+            ]));
+            assert!(map_unbound_batch(&refused, &mut registry, &samples, 48_000.0).is_err());
+            assert_eq!(registry.batches_sent, before);
+            assert_eq!(
+                registry.device_param_pending[&effect_id]
+                    .iter()
+                    .map(|stamp| (stamp.param, stamp.at_frame))
+                    .collect::<Vec<_>>(),
+                retained,
+                "a later invalid Hold must not publish the earlier cancellation"
+            );
+        }
+    }
+
+    #[test]
+    fn proof_registry_hold_ignores_metadata_and_graph_bypass_but_keeps_runtime_ab() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-proof", "proof", json!({}))),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .unwrap();
+        let effect_id = registry.devices["d-proof"].native_effect_id;
+        for parameter in ["target_mode", "target_lufs", "bypass"] {
+            let mapped = map_unbound_batch(
+                &batch(json!([device_hold("t1", "d-proof", parameter, 0.5)])),
+                &mut registry,
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            assert!(mapped.ops.is_empty(), "{parameter} has no DSP queue");
+            assert!(registry.device_param_pending.is_empty());
+        }
+        for parameter in ["ab_bypass", "dither_bits"] {
+            let mapped = map_unbound_batch(
+                &batch(json!([device_hold("t1", "d-proof", parameter, 0.5)])),
+                &mut registry,
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            let target = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+                builtin_named_parameter(parameter, "d-proof").unwrap(),
+            ));
+            assert!(matches!(
+                mapped.ops.as_slice(),
+                [GraphCommand::HoldDeviceParam { effect_id: held_effect, param, at_frame: 24_000 }]
+                    if *held_effect == effect_id && *param == target
+            ));
+            assert!(
+                registry.device_param_pending.is_empty(),
+                "Hold charges no slot"
+            );
+        }
     }
 
     #[test]
