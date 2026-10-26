@@ -312,6 +312,24 @@ describe('createNativeDspStrategy factory dispatch', () => {
         expect(setParam).toHaveBeenCalledWith('mix', 0.7);
     });
 
+    it('does not replay saved Proof A/B but keeps runtime A/B control available', async () => {
+        const setParam = vi.fn();
+        const seededProof = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        vi.mocked(creators.createProofNode).mockResolvedValueOnce(seededProof);
+
+        const strategy = await createNativeDspStrategy(ctx, {
+            type: 'proof',
+            parameterValues: { ab_bypass: 1, lim_ceiling: -6, input_gain: 3 },
+        } as never);
+
+        expect(setParam).toHaveBeenCalledWith('lim_ceiling', -6);
+        expect(setParam).toHaveBeenCalledWith('input_gain', 3);
+        expect(setParam).not.toHaveBeenCalledWith('ab_bypass', 1);
+
+        strategy.setParam('ab_bypass', 1);
+        expect(setParam).toHaveBeenLastCalledWith('ab_bypass', 1);
+    });
+
     it('seeds a grinder record neuralEnabled before engineMode whatever order the record was drawn in', async () => {
         // Both names write NeuralCapture's single engine_mode; replaying the
         // record in draw order let the boolean simplification overwrite the
