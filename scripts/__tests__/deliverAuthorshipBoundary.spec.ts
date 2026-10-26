@@ -11,7 +11,9 @@ function authorshipFixture() {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-landed-authorship-'));
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const key of Object.keys(env)) {
-        if (key.startsWith('GIT_')) delete env[key];
+        if (key.startsWith('GIT_')) {
+            delete env[key];
+        }
     }
     Object.assign(env, {
         GIT_CONFIG_GLOBAL: '/dev/null',
@@ -90,12 +92,16 @@ describe('landed authorship destination boundary', () => {
         (advanceMain) => {
             const f = authorshipFixture();
             try {
-                if (advanceMain) f.commit('B4');
+                if (advanceMain) {
+                    f.commit('B4');
+                }
                 const before = f.unrelated.map((sha) => f.git(['notes', '--ref=ai', 'list', sha]));
                 shellPort('jcosta33/sourdaw', f.shell).syncAuthorshipNotes?.(f.input);
                 const rewrite = f.invocations.find(({ args }) => args[0] === 'ci');
                 expect(rewrite).toBeDefined();
-                if (rewrite === undefined) throw new Error('expected an authorship rewrite');
+                if (rewrite === undefined) {
+                    throw new Error('expected an authorship rewrite');
+                }
                 const args = rewrite.args;
                 const boundary = args[args.indexOf('--base-sha') + 1];
                 expect(boundary).toBe(f.parent);
@@ -163,14 +169,22 @@ describe('landed authorship destination boundary', () => {
             try {
                 const tree = f.git(['rev-parse', 'HEAD^{tree}']);
                 let mergeCommitSha = f.input.mergeCommitSha;
-                if (state === 'unavailable squash') mergeCommitSha = '0'.repeat(40);
-                if (state === 'malformed squash') mergeCommitSha = 'invalid-squash';
-                if (state === 'noncommit squash') mergeCommitSha = f.git(['hash-object', '-w', '--stdin'], 'blob\n');
+                if (state === 'unavailable squash') {
+                    mergeCommitSha = '0'.repeat(40);
+                }
+                if (state === 'malformed squash') {
+                    mergeCommitSha = 'invalid-squash';
+                }
+                if (state === 'noncommit squash') {
+                    mergeCommitSha = f.git(['hash-object', '-w', '--stdin'], 'blob\n');
+                }
                 if (state === 'tagged squash') {
                     f.git(['-c', 'tag.gpgsign=false', 'tag', '-a', '-m', 'tag', 'not-squash', mergeCommitSha]);
                     mergeCommitSha = f.git(['rev-parse', 'refs/tags/not-squash']);
                 }
-                if (state === 'zero parents') mergeCommitSha = f.input.baseSha;
+                if (state === 'zero parents') {
+                    mergeCommitSha = f.input.baseSha;
+                }
                 if (state === 'multiple parents') {
                     mergeCommitSha = f.git(['commit-tree', tree, '-p', f.parent, '-p', f.input.headSha], 'M\n');
                 }
@@ -184,14 +198,14 @@ describe('landed authorship destination boundary', () => {
                         `tree ${tree}\nparent ${parent}\nauthor Fixture <fixture@example.com> 1 +0000\ncommitter Fixture <fixture@example.com> 1 +0000\n\ninvalid parent\n`
                     );
                 }
-                const shell =
-                    state === 'malformed parent'
-                        ? {
-                              ...f.shell,
-                              capture: (_command: string, args: string[]) =>
-                                  args[1] === '-t' ? 'commit' : `tree ${tree}\nparent invalid-parent\n\nmessage\n`,
-                          }
-                        : f.shell;
+                let shell = f.shell;
+                if (state === 'malformed parent') {
+                    shell = {
+                        ...f.shell,
+                        capture: (_command: string, args: string[]) =>
+                            args[1] === '-t' ? 'commit' : `tree ${tree}\nparent invalid-parent\n\nmessage\n`,
+                    };
+                }
                 expect(() =>
                     shellPort('jcosta33/sourdaw', shell).syncAuthorshipNotes?.({ ...f.input, mergeCommitSha })
                 ).not.toThrow();
