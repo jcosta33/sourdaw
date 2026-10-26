@@ -475,8 +475,6 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     currentTargetRef.current.trackId === enteredTarget.trackId &&
                     currentTargetRef.current.deviceId === enteredTarget.deviceId &&
                     currentTargetRef.current.paramId === enteredTarget.paramId &&
-                    modulationDragPreviewStore.value?.modulatorId === enteredTarget.modulatorId &&
-                    modulationDragPreviewStore.value?.projectAuthority === enteredTarget.sourceProjectAuthority &&
                     (modulationStore.value?.modulators.some(
                         (modulator) => modulator.id === enteredTarget.modulatorId && modulator.enabled
                     ) ??

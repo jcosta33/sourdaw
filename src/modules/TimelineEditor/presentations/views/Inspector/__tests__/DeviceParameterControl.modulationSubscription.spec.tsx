@@ -390,6 +390,29 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         expect(executeUserAppAction).not.toHaveBeenCalled();
     });
 
+    it('keeps an accepted drop valid after normal source drag cleanup, but rejects project replacement', () => {
+        act(() =>
+            modulationStore.set({
+                modulators: modulationStore.value!.modulators.map((mod) => ({ ...mod, mappings: [] })),
+            })
+        );
+        act(() => setDragPreview('mod-related'));
+
+        const view = render(<DeviceParameterControl param={param} device={device} trackId="track-1" />);
+        const target = screen.getByRole('region', { name: 'Modulation target for Gain' });
+        fireEvent.dragEnter(target);
+        fireEvent.drop(target);
+
+        const shouldExecute = vi.mocked(executeUserAppAction).mock.calls[0]![1] as { shouldExecute: () => boolean };
+        act(() => setDragPreview(null));
+        expect(modulationStore.value?.modulators.some((modulator) => modulator.id === 'mod-related')).toBe(true);
+        expect(shouldExecute.shouldExecute()).toBe(true);
+
+        mockProjectGeneration.value += 1;
+        expect(shouldExecute.shouldExecute()).toBe(false);
+        view.unmount();
+    });
+
     it('refuses a queued mapping after the source disappears or the control unmounts', () => {
         act(() =>
             modulationStore.set({
