@@ -3957,7 +3957,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             const right = clips.pop();
             if (!right || right.id !== 'clip-right') throw new Error('Expected appended split fragment');
             clips.splice(0, 1);
-            clips.splice(1, 0, createClipFixture('between', 16, 20), structuredClone(right));
+            clips.splice(1, 0, createClipFixture('between', 16, 20), { ...right });
         });
         const split = structuredClone(getCrdtDoc<PeerProject>('root'));
         expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a', 'between', 'clip-right', 'clip-b']);
