@@ -825,4 +825,12 @@ describe('collectBufferedClipSources', () => {
 
         expect(sources).toEqual([{ sourceId: 'take-1', buffer: first }]);
     });
+
+    it('carries the native lease without turning it into project correlation', () => {
+        expect(serializeAudioGraphCommandBatch({ schemaVersion: 1, timelineLease: 'lease-1', commands: [] })).toEqual({
+            schemaVersion: 1,
+            timelineLease: 'lease-1',
+            commands: [],
+        });
+    });
 });

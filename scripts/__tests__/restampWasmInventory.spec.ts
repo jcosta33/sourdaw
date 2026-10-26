@@ -80,6 +80,17 @@ function createFixture(omit?: 'surface' | 'snapshot'): string {
     return root;
 }
 
+/** A tree whose inventory already records exactly what the repository contract computes for it. */
+function createCurrentFixture(): string {
+    const root = createFixture();
+    const inventory: RecordedInventory = {
+        surfaces: [{ id: 'project-wasm', ...wasmReleaseInventoryContract(root, wasmArtifacts.readManifest()) }],
+        snapshots: [{ path: MANIFEST_SNAPSHOT_PATH, sha256: fileSha256(join(root, MANIFEST_SNAPSHOT_PATH)) }],
+    };
+    writeFileSync(join(root, RELEASE_INVENTORY_PATH), `${JSON.stringify(inventory, null, 4)}\n`, 'utf8');
+    return root;
+}
+
 function readFixtureInventory(root: string): RecordedInventory {
     return parseJsonWithUniqueKeys<RecordedInventory>(
         readFileSync(join(root, RELEASE_INVENTORY_PATH), 'utf8'),
@@ -147,12 +158,14 @@ describe('wasm restamp plan', () => {
         expect(plan?.surfaceFieldChanges).toHaveLength(Object.keys(expectedSurface).length);
     });
 
-    it('the command reports a current inventory on a fresh committed tree', () => {
-        const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], {
-            cwd: process.cwd(),
-            encoding: 'utf8',
-        });
+    it('the command reports a current inventory on a fixture tree and writes nothing', () => {
+        const root = createCurrentFixture();
+        const before = filesUnder(root);
+
+        const output = execFileSync('node', [RESTAMP_SCRIPT_PATH], { cwd: root, encoding: 'utf8' });
+
         expect(output).toContain('already current');
+        expect(filesUnder(root)).toEqual(before);
     });
 });
 

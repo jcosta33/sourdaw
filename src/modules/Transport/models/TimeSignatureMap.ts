@@ -201,6 +201,17 @@ export function getBarBeatAtPosition(
     const beatUnit = 4 / currentDenominator;
     const quarterNotesPerBar = currentNumerator * beatUnit;
     const remainingQuarters = position - currentBeat;
+    const metricalBeats = remainingQuarters / beatUnit;
+    const nearestBeat = Math.round(metricalBeats);
+    // Normalize the active grid only: a prior segment's partial bar and the
+    // exact point a meter change takes effect on must keep their meaning.
+    if (remainingQuarters >= 0 && Math.abs(metricalBeats - nearestBeat) <= GRID_EPSILON) {
+        return {
+            bar: bar + Math.floor(nearestBeat / currentNumerator),
+            beat: (nearestBeat % currentNumerator) + 1,
+            tick: 0,
+        };
+    }
     bar += Math.floor(remainingQuarters / quarterNotesPerBar);
     const quartersIntoBar = remainingQuarters % quarterNotesPerBar;
     const beatInBar = Math.floor(quartersIntoBar / beatUnit) + 1;

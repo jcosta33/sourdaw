@@ -1,3 +1,5 @@
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { type Clip } from '../stores/trackStore';
 
@@ -19,7 +21,16 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            // The pass count measures from the loop anchor, not the current
+            // placement: a start trim must not re-roll which passes sound
+            // (#4988). Unanchored clips anchor at their current start, which is
+            // exactly the pre-anchor reading — and a stale anchor from a past
+            // enable is inert while the loop is off.
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -29,7 +40,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
-            sourceStartBeat: context.startBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: context.startBeat,
+                loopOriginBeat: context.loopOriginBeat,
+                loopEnabled: context.loopEnabled ?? false,
+            }),
         }));
     }
 
@@ -53,8 +68,24 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             continue;
         }
 
+        // A comped take fragment's media basis is the take's own: `offsetAt`
+        // names what sounds at the region head in take coordinates, so the
+        // offset carried below enters that basis at relative 0 and the source
+        // clip's loop anchor has no meaning in it — the take's offset never
+        // accumulated the anchor's trim advance. Carried through, the
+        // loop-window readers derive advance = fragmentStart − anchor from the
+        // fragment and pull the read off the comped material onto an earlier
+        // pass's (#5198: a region one loop past the anchor read pass 1 at
+        // buffer 0 instead of pass 3 at buffer 4). The anchor is therefore
+        // stripped and the fragment reads the pre-anchor law — window opening
+        // at its own offset, exactly the placed media it read before anchoring
+        // existed. Gap fragments below keep the anchor: their offset advances
+        // with the same beat as the window, so the source's region law holds
+        // there unchanged.
+        const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
+        const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
         resolved.push({
-            ...withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart)),
+            ...takeFragmentBasis,
             startBeat: overlapStart,
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
@@ -94,7 +125,11 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
-                sourceStartBeat: clip.startBeat,
+                sourceStartBeat: resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }),
             });
         }
     }

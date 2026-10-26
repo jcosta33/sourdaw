@@ -32,6 +32,7 @@ export type TrustedGithubWriteCommand =
     | 'issue:reconcile'
     | 'lane:publish'
     | 'lane:sync-parent'
+    | 'pr:supersede'
     | 'review:accept'
     | 'review:publish'
     | 'review:publish:recover'
@@ -39,6 +40,7 @@ export type TrustedGithubWriteCommand =
     | 'review:confirm'
     | 'review:resolve'
     | 'review:shadow-status'
+    | 'pr:retire'
     | 'ruleset:harden';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
@@ -108,6 +110,8 @@ type SnapshotRunner = (
 function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefined): boolean {
     return (
         command === 'deliver' ||
+        command === 'pr:supersede' ||
+        command === 'pr:retire' ||
         command === 'review:accept' ||
         command === 'review:publish' ||
         command === 'review:publish:recover'
@@ -148,6 +152,19 @@ export function forwardTrustedSnapshotSignal(
 }
 
 export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
+    'pr:supersede': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/supersedePullRequest.ts',
+        'scripts/supersedePullRequestGh.ts',
+        'scripts/stackedLanes.ts',
+        'scripts/findingLineage.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/reviewRepair.ts',
+        'scripts/canonicalRecord.ts',
+        'scripts/evidenceSafety.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
@@ -222,6 +239,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewRepair.ts',
         'scripts/reviewRoundEscalation.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewApprovalLabel.ts',
         'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
@@ -239,7 +257,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/savedProjectStatePaths.ts',
         'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/reviewPublicationBinding.ts',
-        'scripts/reviewDossierSemanticAssessment.ts',
         'scripts/prepareReview.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/pullRequestMutationLock.ts',
@@ -256,6 +273,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewApprovalLabel.ts',
         'scripts/reconstructReviewRounds.ts',
         'scripts/reviewRepair.ts',
         'scripts/reviewRoundEscalation.ts',
@@ -276,7 +294,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/savedProjectStatePaths.ts',
         'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/reviewPublicationBinding.ts',
-        'scripts/reviewDossierSemanticAssessment.ts',
         'scripts/prepareReview.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/pullRequestMutationLock.ts',
@@ -298,6 +315,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewRepair.ts',
         'scripts/reviewRoundEscalation.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewApprovalLabel.ts',
         'scripts/pullRequestReviewState.ts',
         'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewDocumentParser.ts',
@@ -317,7 +335,6 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewPublicationRecoveryReceipt.ts',
         'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/reviewPublicationBinding.ts',
-        'scripts/reviewDossierSemanticAssessment.ts',
         'scripts/prepareReview.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/pullRequestMutationLock.ts',
@@ -363,12 +380,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
-    'review:resolve': [
-        'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/resolveThread.ts',
-        'scripts/githubAppIdentity.ts',
-        'scripts/prContract.ts',
-    ],
+    'review:resolve': ['scripts/trustedGithubWriteBootstrap.ts', 'scripts/resolveThread.ts', 'scripts/prContract.ts'],
     'review:shadow-status': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/reviewShadowStatus.ts',
@@ -382,9 +394,25 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'pr:retire': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/retirePullRequest.ts',
+        'scripts/retirementRecord.ts',
+        'scripts/supersedePullRequest.ts',
+        'scripts/supersedePullRequestGh.ts',
+        'scripts/stackedLanes.ts',
+        'scripts/findingLineage.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/reviewRepair.ts',
+        'scripts/evidenceSafety.ts',
+        'scripts/canonicalRecord.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 export const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
+    'pr:supersede': { path: 'scripts/supersedePullRequest.ts', runner: 'runSupersedePullRequestCli' },
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:claim': { path: 'scripts/claimTrackerIssue.ts', runner: 'runClaimTrackerIssueCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
@@ -398,6 +426,7 @@ export const commandEntries: Record<TrustedGithubWriteCommand, { path: string; r
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
     'review:shadow-status': { path: 'scripts/reviewShadowStatus.ts', runner: 'runReviewShadowStatusCli' },
     'ruleset:harden': { path: 'scripts/rulesetHardening.ts', runner: 'runRulesetHardeningCli' },
+    'pr:retire': { path: 'scripts/retirePullRequest.ts', runner: 'runRetirePullRequestCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -5847,6 +5876,15 @@ function carriedName(name: unknown): unknown {
     return NON_TEXT_NAME;
 }
 
+/**
+ * The snapshot's own module-type boundary (#5466). The copied closure is ES module source, as the
+ * repository's `"type": "module"` declares, but it lands under the temp directory, whose nearest
+ * package.json is whatever encloses it — the guard's typeless `{}` boundary in an agent session —
+ * so Node would reparse every module and warn on stderr. Only the type crosses; nothing else of the
+ * repository manifest does.
+ */
+export const TRUSTED_SNAPSHOT_PACKAGE_JSON = '{ "type": "module" }\n';
+
 export async function executeTrustedSnapshot(
     command: TrustedGithubWriteCommand,
     args: string[],
@@ -5855,6 +5893,11 @@ export async function executeTrustedSnapshot(
 ): Promise<number> {
     const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-write-'));
     try {
+        writeFileSync(join(snapshotRoot, 'package.json'), TRUSTED_SNAPSHOT_PACKAGE_JSON, {
+            encoding: 'utf8',
+            flag: 'wx',
+            mode: 0o600,
+        });
         for (const [path, source] of snapshot.sources) {
             if (!path.startsWith('scripts/') || posix.normalize(path) !== path || path.includes('..')) {
                 throw new Error(`invalid trusted snapshot path ${path}`);
@@ -6193,6 +6236,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'lane:sync-parent' ||
+        value === 'pr:supersede' ||
         value === 'review:accept' ||
         value === 'review:publish' ||
         value === 'review:publish:recover' ||
@@ -6200,12 +6244,13 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'review:confirm' ||
         value === 'review:resolve' ||
         value === 'review:shadow-status' ||
+        value === 'pr:retire' ||
         value === 'ruleset:harden'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|ruleset:harden> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:claim|issue:reconcile|lane:publish|lane:sync-parent|pr:supersede|review:accept|review:publish|review:publish:recover|review:repair|review:confirm|review:resolve|review:shadow-status|pr:retire|ruleset:harden> [args...]'
     );
 }
 

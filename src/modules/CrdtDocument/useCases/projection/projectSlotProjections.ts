@@ -1,3 +1,4 @@
+import { type StorageHydrateOptions } from '#/infra/store/storage/types';
 import {
     adjustmentLayerStore,
     gainEnvelopeStore,
@@ -24,7 +25,7 @@ import { hydrateYeastCrdtProjection } from '#/modules/Yeast/useCases';
 import { actionHistoryStore } from '../../stores/actionHistoryStore';
 
 type HydratableStore = {
-    hydrate: () => void;
+    hydrate: (options?: StorageHydrateOptions) => void;
 };
 
 /**
@@ -42,7 +43,7 @@ export type ProjectSlotProjection = {
     /** The store that owns this slot's read model. */
     readonly store: HydratableStore;
     /** The projection pass for this slot. Reads only; never writes the document. */
-    readonly hydrate: () => void;
+    readonly hydrate: (options?: StorageHydrateOptions) => void;
     /**
      * Document slots whose change must re-run this projection. Always contains
      * `slot`; a projection rebuilt from a sibling store also lists that store's
@@ -65,7 +66,7 @@ type SlotProjectionInput = {
      * cases to instantiate all eighteen store modules.
      */
     getStore: () => HydratableStore;
-    hydrate?: () => void;
+    hydrate?: (options?: StorageHydrateOptions) => void;
     triggerSlots?: readonly string[];
     derivedFromSiblingSlot?: boolean;
 };
@@ -77,7 +78,7 @@ function slotProjection(input: SlotProjectionInput): ProjectSlotProjection {
         get store(): HydratableStore {
             return getStore();
         },
-        hydrate: input.hydrate ?? (() => getStore().hydrate()),
+        hydrate: input.hydrate ?? ((options) => getStore().hydrate(options)),
         triggerSlots: input.triggerSlots ?? [slot],
         derivedFromSiblingSlot: input.derivedFromSiblingSlot ?? false,
     };

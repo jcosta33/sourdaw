@@ -15,7 +15,7 @@ const midi: MidiStoreState = {
         'clip-1': [{ id: 'cc-x', controller: 1, value: 64, beat: 0, channel: 0 }],
     },
     pitchBendByClipId: {
-        'clip-1': [{ id: 'pb-x', value: 8192, beat: 0, channel: 0 }],
+        'clip-1': [{ id: 'pb-x', value: 8191, beat: 0, channel: 0 }],
     },
 };
 
@@ -123,7 +123,7 @@ describe('hydrateProjectMidi', () => {
         const roundTripped = hydrateProjectMidi(serializeProjectMidi(midi));
         const pb = roundTripped.pitchBendByClipId['clip-1']?.[0];
 
-        expect(pb?.value).toBe(8192);
+        expect(pb?.value).toBe(8191);
         expect(pb?.beat).toBe(0);
         expect(pb?.channel).toBe(0);
     });

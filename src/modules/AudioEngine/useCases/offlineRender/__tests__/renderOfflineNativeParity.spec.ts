@@ -98,6 +98,7 @@ import {
     type AudioGraphWriteParameterCommand,
 } from '../../../models/AudioGraphBackend';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { serializeAudioGraphCommandBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommandBatch';
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -177,6 +178,7 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
 
 vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: {
+        readRuntimeMaterialPublication: () => undefined,
         get: (id: string) => mocks.audioBuffers.get(id),
         has: (id: string) => mocks.audioBuffers.has(id),
         set: () => undefined,
@@ -195,6 +197,15 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
 
 /** The napi surface the in-process transport drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
+    timelineSampleLifecycle: (request: unknown) => Promise<unknown>;
+    registerTimelineMaterial: (
+        lease: string,
+        sampleId: string,
+        version: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
     registerTimelineSample: (
         sampleId: string,
         sampleRate: number,
@@ -254,6 +265,16 @@ const capturedRenders: CapturedRender[] = [];
  */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
+        timelineSampleLifecycle: (request) => host.timelineSampleLifecycle(request),
+        registerTimelineMaterial: (input) =>
+            host.registerTimelineMaterial(
+                input.lease,
+                input.sampleId,
+                input.version,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            ),
         async registerTimelineSample(input) {
             return host.registerTimelineSample(
                 input.sampleId,
@@ -300,7 +321,7 @@ class StubAudioBuffer {
     readonly numberOfChannels: number;
     readonly sampleRate: number;
     readonly duration: number;
-    private readonly channels: Float32Array[];
+    private readonly channels: Float32Array<ArrayBuffer>[];
 
     constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
         this.length = options.length;
@@ -310,7 +331,7 @@ class StubAudioBuffer {
         this.channels = Array.from({ length: options.numberOfChannels }, () => new Float32Array(options.length));
     }
 
-    getChannelData(channel: number): Float32Array {
+    getChannelData(channel: number): Float32Array<ArrayBuffer> {
         const data = this.channels[channel];
         if (!data) {
             throw new Error(`StubAudioBuffer has no channel ${String(channel)}`);
@@ -318,7 +339,7 @@ class StubAudioBuffer {
         return data;
     }
 
-    copyToChannel(source: Float32Array, channel: number): void {
+    copyToChannel(source: Float32Array<ArrayBuffer>, channel: number): void {
         this.getChannelData(channel).set(source);
     }
 }
@@ -550,9 +571,37 @@ function fixtureRenderContext(busShape: BusShape = {}, audioTrackPan?: number): 
 }
 
 /** Distinct material per clip, so a cross-wired track cannot null by luck. */
-function fixtureMaterial(): { matA: HarnessAudioBuffer; matB: HarnessAudioBuffer } {
-    const matA = createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE });
-    const matB = createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE });
+function nativeAudioBuffer(material: HarnessAudioBuffer): AudioBuffer {
+    const channels = Array.from({ length: material.numberOfChannels }, (_, channelIndex) => {
+        const channel: Float32Array<ArrayBuffer> = new Float32Array(material.length);
+        channel.set(material.getChannelData(channelIndex));
+        return channel;
+    });
+    const getChannelData = (channelNumber: number): Float32Array<ArrayBuffer> => {
+        const channel = channels[channelNumber];
+        if (!channel) {
+            throw new Error(`Native fixture has no channel ${String(channelNumber)}`);
+        }
+        return channel;
+    };
+    return {
+        length: material.length,
+        sampleRate: material.sampleRate,
+        duration: material.duration,
+        numberOfChannels: material.numberOfChannels,
+        getChannelData,
+        copyFromChannel(destination, channelNumber, bufferOffset = 0) {
+            destination.set(getChannelData(channelNumber).subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel(source, channelNumber, bufferOffset = 0) {
+            getChannelData(channelNumber).set(source, bufferOffset);
+        },
+    };
+}
+
+function fixtureMaterial(): { matA: AudioBuffer; matB: AudioBuffer } {
+    const matA = nativeAudioBuffer(createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE }));
+    const matB = nativeAudioBuffer(createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE }));
     for (let channel = 0; channel < matB.numberOfChannels; channel++) {
         const data = matB.getChannelData(channel);
         const scale = channel === 0 ? -0.8 : 0.65;
@@ -568,9 +617,9 @@ function fixtureMaterial(): { matA: HarnessAudioBuffer; matB: HarnessAudioBuffer
  * (#3773). Both engines receive a single channel, so the pan law each applies
  * to it is what the parity leg measures.
  */
-function toMono(material: HarnessAudioBuffer): HarnessAudioBuffer {
+function toMono(material: HarnessAudioBuffer): AudioBuffer {
     const channel = material.getChannelData(0);
-    return { ...material, numberOfChannels: 1, getChannelData: () => channel };
+    return nativeAudioBuffer({ ...material, numberOfChannels: 1, getChannelData: () => channel });
 }
 
 // ── Running one leg ────────────────────────────────────────────────────────
@@ -731,7 +780,9 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         const { matA, matB } = fixtureMaterial();
         mocks.audioBuffers.clear();
         mocks.audioBuffers.set('mat-a', matA);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-a', matA);
         mocks.audioBuffers.set('mat-b', matB);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-b', matB);
         mocks.lanes.length = 0;
         mocks.lanes.push(...fixtureLanes());
         mocks.renderContext = fixtureRenderContext();
@@ -950,8 +1001,12 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         'renders mono clips panned $name the same way on both engines',
         async ({ name, storedPan }) => {
             const { matA, matB } = fixtureMaterial();
-            mocks.audioBuffers.set('mat-a', toMono(matA));
-            mocks.audioBuffers.set('mat-b', toMono(matB));
+            const monoA = toMono(matA);
+            mocks.audioBuffers.set('mat-a', monoA);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-a', monoA);
+            const monoB = toMono(matB);
+            mocks.audioBuffers.set('mat-b', monoB);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-b', monoB);
             mocks.lanes.length = 0;
             mocks.lanes.push(...fixtureLanes().filter((candidate) => candidate.parameterId !== 'pan'));
             mocks.renderContext = fixtureRenderContext({}, storedPan);
@@ -1031,23 +1086,44 @@ describe('renderOffline — native/web export parity (#2225)', () => {
                     ],
                 })
             );
-            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
-            await runLeg('native');
-            const [render] = capturedRenders;
-            if (!render) {
-                throw new Error('the native leg rendered nothing to compare against');
-            }
             const sparseEndSeconds = 0.1 * SECONDS_PER_BEAT;
             expect(sparseEndSeconds).toBeLessThan(AUTOMATION_WINDOW_SECONDS);
 
-            const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
             const host = requireNativeHost();
-            const fromExport = await host.renderGraphOffline(render.batch, render.frames, render.sampleRate);
-            const fromWriter = await host.renderGraphOffline(
-                withWriterAutomation(render, written),
-                render.frames,
-                render.sampleRate
-            );
+            const transport = inProcessNativeTransport(host);
+            const comparison: {
+                rendered?: Readonly<{
+                    render: CapturedRender;
+                    fromExport: Uint8Array;
+                    fromWriter: Uint8Array;
+                }>;
+            } = {};
+            mocks.probe.transport = {
+                ...transport,
+                async renderGraphOffline(input: Parameters<NativeGraphTransport['renderGraphOffline']>[0]) {
+                    // Both renders borrow the backend's admitted lease, before
+                    // renderOffline's finally disposes that backend.
+                    const fromExport = await transport.renderGraphOffline(input);
+                    const render: CapturedRender = {
+                        batch: input.batch,
+                        frames: input.frames,
+                        sampleRate: input.sampleRate,
+                    };
+                    const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
+                    const fromWriter = await host.renderGraphOffline(
+                        withWriterAutomation(render, written),
+                        render.frames,
+                        render.sampleRate
+                    );
+                    comparison.rendered = { render, fromExport, fromWriter };
+                    return fromExport;
+                },
+            };
+            await runLeg('native');
+            if (!comparison.rendered) {
+                throw new Error('the native leg rendered nothing to compare against');
+            }
+            const { render, fromExport, fromWriter } = comparison.rendered;
 
             const result = nullTest({
                 a: toRenderedBuffer(fromExport, render),

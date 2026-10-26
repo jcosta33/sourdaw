@@ -29,9 +29,10 @@ import {
 } from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
+import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
-import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import {
     offlinePpqEndpointProjectorState,
@@ -385,7 +386,7 @@ const APPLIED = { acceptance: 'accepted', application: 'applied', runtimeRevisio
  * observe about them is their *order* — a batch applied before its material is
  * a batch the native side refuses whole.
  */
-const transport: NativeGraphTransport = {
+const transport: NativeGraphTransport = withNativeTimelineMaterialTransport({
     applyGraphCommands: (input) => {
         mocks.wireCalls.push('apply');
         return mocks.applyGraphCommands(input);
@@ -400,7 +401,7 @@ const transport: NativeGraphTransport = {
     releaseLevainBank: () => Promise.reject(new Error('the live session stages no levain bank here')),
     renderGraphOffline: () => Promise.reject(new Error('the live session must not render offline')),
     mapGraphBatch: () => Promise.reject(new Error('the live session must not map batches')),
-};
+});
 
 function createTrack(overrides?: Partial<Track>): Track {
     return {
@@ -635,7 +636,7 @@ function attachReportedInstancesInStore(): void {
     });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     disarmNativeLiveAutomationWriter();
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
@@ -670,7 +671,8 @@ beforeEach(() => {
     retractEveryCrumbsEngineAttachment();
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
-    registeredNativeTimelineSampleIds.clear();
+    await nativeTimelineMaterialLeases.retire();
+    nativeTimelineMaterialLeases.ownSnapshot('sample-1', MATERIAL);
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;

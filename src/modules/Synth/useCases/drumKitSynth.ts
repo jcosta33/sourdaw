@@ -30,6 +30,11 @@ function findVoice(kit: DrumKit, pitch: number): DrumKit['voices'][number] | nul
     return null;
 }
 
+/**
+ * Schedule one hit of a factory kit as a builtin synth voice. The kit's linear
+ * `kitGain` multiplies the clip gain the voice's peak level already scales by,
+ * so it trims every hit by the same ratio.
+ */
 export function scheduleKitNote(
     ctx: BaseAudioContext,
     destination: AudioNode,
@@ -38,11 +43,22 @@ export function scheduleKitNote(
     startTime: number,
     duration: number,
     velocity: number,
-    clipGain: number = 1.0
+    clipGain: number,
+    kitGain: number
 ): OscillatorNode | null {
     const v = findVoice(kit, pitch);
     if (!v) {
         return null;
     }
-    return scheduleNote(ctx, destination, pitch, startTime, duration, velocity, v.params, undefined, clipGain);
+    return scheduleNote(
+        ctx,
+        destination,
+        pitch,
+        startTime,
+        duration,
+        velocity,
+        v.params,
+        undefined,
+        clipGain * kitGain
+    );
 }

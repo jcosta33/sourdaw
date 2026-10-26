@@ -9,6 +9,7 @@ type RunBranchLineageTransitionInput<TResult> = {
     apply: () => { nextState?: BranchStoreState; result: TResult };
     from: string;
     previousState: BranchStoreState;
+    stopTransportBeforeRollback?: () => Promise<void>;
     to: string;
 };
 
@@ -17,12 +18,14 @@ export function runBranchLineageTransition<TResult>({
     apply,
     from,
     previousState,
+    stopTransportBeforeRollback,
     to,
 }: RunBranchLineageTransitionInput<TResult>): Promise<TResult> {
     return runBranchTransition({
         affectedDocIds,
         apply,
         previousState,
+        stopTransportBeforeRollback,
         persistenceOperation: () => runCrdtPersistenceOperation({ type: 'root-lineage-transition', from, to }),
     });
 }

@@ -2274,6 +2274,65 @@ describe('track deletion releases the input monitor at Command commit', () => {
         }
     );
 
+    it('retires a hidden On owner after a committed selector change before its shared-input removal commits', async () => {
+        await startInputMonitoring('a', null);
+        await startInputMonitoring('b', null);
+        const oldCapture = inputMonitoringSession.captures.get(null);
+        expect(oldCapture).toBeDefined();
+        expect(connectedGains).toEqual(new Set([gains.get('a'), gains.get('b')]));
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            getArrangementHandlers().removeTrack.execute({ type: 'removeTrack', payload: { trackId: 'a' } })
+        );
+        if (transaction.status === 'threw') {
+            throw transaction.error;
+        }
+        try {
+            expect(liveTrackIds()).toEqual(['b']);
+            expect(docTrackIds()).toEqual(['a', 'b']);
+            expect(monitorOwners()).toEqual(['a', 'b']);
+            expect(inputMonitoringSession.trackKeys.get('a')).toBe(null);
+            expect(inputMonitoringSession.captures.get(null)).toBe(oldCapture);
+
+            engine.ensureTrackStrip.mockClear();
+            source.connect.mockClear();
+            source.disconnect.mockClear();
+            changeCommittedInput('replacement-input');
+
+            expect(
+                getCrdtDoc<{ tracks: { tracks: Array<{ id: string; inputId: string | null }> } }>(
+                    'root'
+                )?.tracks.tracks.find((track) => track.id === 'a')?.inputId
+            ).toBe('replacement-input');
+            expect(liveTrackIds()).toEqual(['b']);
+            expect(monitorOwners()).toEqual(['b']);
+            expect(inputMonitoringSession.trackKeys.has('a')).toBe(false);
+            expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(gains.get('a'));
+            expect(connectedGains).toEqual(new Set([gains.get('b')]));
+            expect(inputMonitoringSession.captures.get(null)).toBe(oldCapture);
+            expect(inputTrack.stop).not.toHaveBeenCalled();
+            expect(getUserMedia).toHaveBeenCalledOnce();
+            expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+            expect(source.connect).not.toHaveBeenCalled();
+
+            transaction.commit();
+        } finally {
+            transaction.abort();
+        }
+
+        expect(docTrackIds()).toEqual(['b']);
+        expect(liveTrackIds()).toEqual(['b']);
+        expect(monitorOwners()).toEqual(['b']);
+        expect(inputMonitoringSession.trackKeys.has('a')).toBe(false);
+        expect(inputMonitoringSession.captures.get(null)).toBe(oldCapture);
+        expect(connectedGains).toEqual(new Set([gains.get('b')]));
+        expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(gains.get('a'));
+        expect(source.connect).not.toHaveBeenCalled();
+        expect(inputTrack.stop).not.toHaveBeenCalled();
+        expect(getUserMedia).toHaveBeenCalledOnce();
+        expect(engine.ensureTrackStrip).not.toHaveBeenCalled();
+    });
+
     it.each([
         ['on', 'eligible'],
         ['on', 'off'],

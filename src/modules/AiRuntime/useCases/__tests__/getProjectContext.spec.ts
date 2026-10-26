@@ -553,6 +553,50 @@ describe('getProjectContext', () => {
         });
     });
 
+    it('carries the loop anchor into the model context only for an anchored clip', () => {
+        // The live AI context is the only place the model can read a clip's
+        // loop origin from (#5198): the note-window law it is told to follow
+        // opens at the anchor-derived floor, so an anchored clip must emit its
+        // loopOriginBeat and an unanchored one must not advertise one.
+        mocks.trackStoreValue.value = {
+            selectedTrackId: 't1',
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'Synth',
+                    kind: 'midi',
+                    muted: false,
+                    gain: 1,
+                    clips: [
+                        {
+                            id: 'c-trimmed',
+                            name: 'Trimmed loop',
+                            type: 'midi',
+                            startBeat: 2,
+                            endBeat: 10,
+                            loopEnabled: true,
+                            loopLength: 4,
+                            loopOriginBeat: 0,
+                            midiOffsetBeats: 2,
+                        },
+                        { id: 'c-plain', name: 'Plain', type: 'midi', startBeat: 0, endBeat: 4 },
+                    ],
+                    alternatives: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+        };
+
+        const context = getProjectContext();
+        const clips = context.tracks[0]?.clips ?? [];
+
+        expect(clips[0]?.loopOriginBeat).toBe(0);
+        // The context reaches the model as serialized JSON, so omission is
+        // what the model observes: no key, not an explicit `undefined`.
+        expect(JSON.stringify(clips[1])).not.toContain('"loopOriginBeat"');
+    });
+
     it('maps bounded sidechain routes and invalidates the cache when routing state changes', () => {
         mocks.sidechainStoreValue.value = {
             routes: [
