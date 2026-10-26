@@ -1,0 +1,25 @@
+scripts/__tests__/fixtures/atomicJsonMarker.cjs
+  s_26f70b851e8f7a::t_2357fb842c6dbc 1-13
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_26f70b851e8f7a::t_fcf5072cfc7e8c 4,6,11,18,61-62,141-173,1029-1030,1044,1046,1063,1156,1161,1176,1178,1192
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_26f70b851e8f7a::t_a8cfb5432748e2 1,5-16,29,43,59-80,87-88,90-96,98-105,112-118,311-516
+src/modules/Transport/useCases/transportControls/executePlayheadSeek.ts
+  s_26f70b851e8f7a::t_79f5e9eb141cf9 12,21-24,34-36,78-84,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4fe10ac00e516f6c1ff50efa79d7e6b536b6d77",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
