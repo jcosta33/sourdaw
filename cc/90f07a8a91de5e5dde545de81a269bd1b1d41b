@@ -1,0 +1,30 @@
+scripts/__tests__/fixtures/atomicJsonMarker.cjs
+  s_26f70b851e8f7a::t_540267cb0d0b92 7
+  s_26f70b851e8f7a::t_89391382469eb6 1-6,8-13
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_26f70b851e8f7a::t_0fa07669b8253a 11,1029
+  s_26f70b851e8f7a::t_c51551060e60c0 6,148-152
+  s_26f70b851e8f7a::t_3c31746b22a422 61-62,141-147,153-171
+  s_26f70b851e8f7a::t_d9a8ecfb663663 4
+  s_26f70b851e8f7a::t_535fdf964ba8b7 1030,1044,1046,1063,1156,1161,1176,1178,1192
+  s_26f70b851e8f7a::t_9daacea37d6cde 172-173
+  s_26f70b851e8f7a::t_f49eea33ba96a8 18
+evidence/agent-campaign/manifest.json
+  s_26f70b851e8f7a::t_a5069ac77d0007 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc90f07a8a91de5e5dde545de81a269bd1b1d41b",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
