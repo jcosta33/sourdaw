@@ -192,25 +192,24 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     // finished bake reopens showing "Baking Complete" with only Close Bakery,
     // and a failure greets the next session with its stale error box.
     useEffect(() => {
-        if (!open) {
-            return;
+        if (open) {
+            openSessionRef.current += 1;
+            setExporting(false);
+            setProgress(0);
+            setStatusText('');
+            setErrorText('');
+            return () => {
+                if (commitStartedRef.current) {
+                    return;
+                }
+                const cancellation = activeExportCancellationRef.current;
+                if (cancellation && !cancellation.signal.aborted) {
+                    cancelledRef.current = true;
+                    cancellation.abort();
+                    cancelExport();
+                }
+            };
         }
-        openSessionRef.current += 1;
-        setExporting(false);
-        setProgress(0);
-        setStatusText('');
-        setErrorText('');
-        return () => {
-            if (commitStartedRef.current) {
-                return;
-            }
-            const cancellation = activeExportCancellationRef.current;
-            if (cancellation && !cancellation.signal.aborted) {
-                cancelledRef.current = true;
-                cancellation.abort();
-                cancelExport();
-            }
-        };
     }, [open]);
 
     const loopAvailable = transport.loopEnd > transport.loopStart;
@@ -823,7 +822,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             } catch (cleanupError) {
                 const message = cleanupError instanceof Error ? cleanupError.message : 'Export cleanup failed.';
                 logger.error(new Error('Export cleanup failed', { cause: cleanupError }));
-                setErrorText(message);
+                if (currentSession()) {
+                    setErrorText(message);
+                }
             }
             // Always unlock the UI. On cancel, delay briefly so the status text is readable.
             if (currentSession() && endedCancelled()) {
@@ -832,7 +833,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // figure, and 100 would show the finished state. All uncommitted files were aborted.
                 setProgress(0);
                 setStatusText('Oven turned off.');
-                setTimeout(() => setExporting(false), 1500);
+                setTimeout(() => {
+                    if (currentSession()) {
+                        setExporting(false);
+                    }
+                }, 1500);
             } else if (currentSession()) {
                 // Success or error — both unblock the button immediately.
                 // progress===100 drives the "Close Bakery" button state; exporting===false re-enables export.

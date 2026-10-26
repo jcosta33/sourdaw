@@ -113,6 +113,40 @@ function createZipOutput(emitted: Uint8Array[], state: ArchiveDrainState): Zip {
     });
 }
 
+function createExportByteWriter(
+    input: BrowserExportInput,
+    writable: WritableExportFile,
+    entry: ZipPassThrough | undefined,
+    drainState: ArchiveDrainState,
+    centralBytes: number,
+    drain: () => Promise<void>,
+    isFileOpen: () => boolean
+): ExportByteWriter {
+    let entryBytes = 0;
+    return {
+        checkCancelled: input.checkCancelled,
+        async write(bytes) {
+            input.checkCancelled();
+            if (!isFileOpen() || bytes.length > MAX_CHUNK) {
+                throw new Error('Invalid streaming export chunk.');
+            }
+            entryBytes += bytes.length;
+            if (
+                entry &&
+                (entryBytes > ZIP32_MAX || drainState.archiveBytes + bytes.length + 16 + centralBytes > ZIP32_MAX)
+            ) {
+                throw new Error('Export exceeds ZIP32 size limits.');
+            }
+            if (entry) {
+                entry.push(bytes);
+                await drain();
+            } else {
+                await awaitSinkWrite(writable.write(bytes), input.signal);
+            }
+        },
+    };
+}
+
 /** Owns one transactional picker writable. No Blob or retained OPFS download is created. */
 export async function streamExportToBrowser(input: BrowserExportInput) {
     const writable = await openBrowserWritable(input);
@@ -169,30 +203,15 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
                 zip!.add(entry);
                 await drain();
             }
-            let entryBytes = 0;
-            const writer: ExportByteWriter = {
-                checkCancelled: input.checkCancelled,
-                async write(bytes) {
-                    input.checkCancelled();
-                    if (!fileOpen || bytes.length > MAX_CHUNK) {
-                        throw new Error('Invalid streaming export chunk.');
-                    }
-                    entryBytes += bytes.length;
-                    if (
-                        zip &&
-                        (entryBytes > ZIP32_MAX ||
-                            drainState.archiveBytes + bytes.length + 16 + centralBytes > ZIP32_MAX)
-                    ) {
-                        throw new Error('Export exceeds ZIP32 size limits.');
-                    }
-                    if (entry) {
-                        entry.push(bytes);
-                        await drain();
-                    } else {
-                        await awaitSinkWrite(writable.write(bytes), input.signal);
-                    }
-                },
-            };
+            const writer = createExportByteWriter(
+                input,
+                writable,
+                entry,
+                drainState,
+                centralBytes,
+                drain,
+                () => fileOpen
+            );
             return {
                 writer,
                 async finish() {

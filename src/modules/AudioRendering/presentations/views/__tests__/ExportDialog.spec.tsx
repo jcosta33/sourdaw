@@ -2416,6 +2416,112 @@ describe('ExportDialog', () => {
         }
     });
 
+    it('logs an older cleanup failure without replacing a reopened export failure', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const oldWrite = createDeferred<void>();
+        const oldAbort = createDeferred<void>();
+        const oldWritable = {
+            write: vi.fn(() => oldWrite.promise),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn(() => oldAbort.promise),
+        };
+        vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => oldWritable }));
+        const view = render(<ExportDialog open onClose={vi.fn()} />);
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(oldWritable.write).toHaveBeenCalledTimes(1));
+
+            view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+            await waitFor(() => expect(oldWritable.abort).toHaveBeenCalledTimes(1));
+
+            const freshWritable = {
+                write: vi.fn().mockRejectedValue(new Error('Fresh export failure')),
+                close: vi.fn().mockResolvedValue(undefined),
+                abort: vi.fn().mockResolvedValue(undefined),
+            };
+            vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => freshWritable }));
+            view.rerender(<ExportDialog open onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(screen.getByText('Fresh export failure')).toBeInTheDocument());
+
+            await act(async () => {
+                oldAbort.reject(new Error('Retired cleanup failure'));
+                await oldAbort.promise.catch(() => undefined);
+            });
+            await waitFor(() => {
+                expect(mocks.loggerError).toHaveBeenCalledWith(
+                    expect.objectContaining({ message: 'Export cleanup failed' })
+                );
+            });
+
+            expect(screen.getByText('Fresh export failure')).toBeInTheDocument();
+            expect(screen.queryByText('Retired cleanup failure')).not.toBeInTheDocument();
+        } finally {
+            oldWrite.resolve();
+            oldAbort.resolve();
+            view.unmount();
+            vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
+    it('does not let a cancelled older session unlock a reopened export at its timer deadline', async () => {
+        vi.useFakeTimers();
+        const oldRendering = createDeferred<AudioBuffer>();
+        const oldRenderStarted = createDeferred<void>();
+        mocks.renderOffline.mockImplementationOnce(() => {
+            oldRenderStarted.resolve();
+            return oldRendering.promise;
+        });
+        const view = render(<ExportDialog open onClose={vi.fn()} />);
+        const currentWrite = createDeferred<void>();
+        const currentWriteStarted = createDeferred<void>();
+        const currentWritable = {
+            write: vi.fn(() => {
+                currentWriteStarted.resolve();
+                return currentWrite.promise;
+            }),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
+            fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+            await act(async () => oldRenderStarted.promise);
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                oldRendering.reject(new Error('Export cancelled'));
+                await oldRendering.promise.catch(() => undefined);
+            });
+            await vi.waitFor(() => expect(screen.getByText('Oven turned off.')).toBeInTheDocument());
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+
+            view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+            vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => currentWritable }));
+            view.rerender(<ExportDialog open onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /whole loaf/i }));
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await act(async () => currentWriteStarted.promise);
+
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(1500);
+            });
+
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /start baking/i })).not.toBeInTheDocument();
+            expect(currentWritable.close).not.toHaveBeenCalled();
+        } finally {
+            currentWrite.resolve();
+            view.unmount();
+            vi.unstubAllGlobals();
+            vi.clearAllTimers();
+            vi.useRealTimers();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
     it('retires a pending browser destination when the dialog closes and reopens', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
         const destination = createDeferred<FileSystemFileHandle>();
