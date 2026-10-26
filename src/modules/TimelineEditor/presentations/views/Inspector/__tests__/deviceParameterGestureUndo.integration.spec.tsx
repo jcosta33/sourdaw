@@ -7,7 +7,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { useStore } from '#/infra/store/useStore';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, getPluginById } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, getPluginById, setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { audioEngine, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
@@ -855,6 +855,72 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 await snapshot;
             });
         }
+    });
+
+    it('preserves a newer same-key MIDI Touch writer when the old knob is cancelled', () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+
+        act(() => {
+            expect(setDeviceParameter(synth.id, 'detune', 65)).toBe(true);
+        });
+
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        expect(rawValues()?.detune).toBe(65);
+        expect(writes()).toEqual([25, 65]);
+        expect(knob()).toHaveAttribute('aria-valuenow', '65');
+        expect(depth()).toBe(0);
+    });
+
+    it('preserves a same-key new-project Touch writer when the old knob unmounts', async () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        const view = render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+
+        await act(async () => {
+            await activateProject();
+            automationUseCases.startAutomationRecording();
+            automationUseCases.recordAutomationValue('track-1', 'synth-1:detune', 65, 2);
+        });
+        view.unmount();
+
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        expect(rawValues()?.detune).toBe(5);
+        expect(writes()).toEqual([25]);
+        expect(depth()).toBe(0);
+    });
+
+    it('releases its unchanged Touch session after a later nonrecording runtime write', () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        const view = render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        updateDeviceParam('track-1', synth.id, 'detune', 65);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+
+        view.unmount();
+
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
+        expect(rawValues()?.detune).toBe(5);
+        expect(writes()).toEqual([25, 65]);
+        expect(depth()).toBe(0);
     });
 
     it('releases only the cancelled gesture Touch owner on unmount', () => {
