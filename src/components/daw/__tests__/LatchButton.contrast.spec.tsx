@@ -10,12 +10,15 @@ const tokens = readTokens();
 
 function readTokens(): ReadonlyMap<string, string> {
     const stylesheet = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8');
-    return new Map(
-        [...stylesheet.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/gu)].map(([, name, value]) => [
-            name ?? '',
-            value?.trim() ?? '',
-        ])
-    );
+    const entries = Array.from(stylesheet.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/gu), (match): [string, string] => {
+        const name = match[1];
+        const value = match[2];
+        if (name === undefined || value === undefined) {
+            throw new Error('Unreadable design token declaration');
+        }
+        return [name, value.trim()];
+    });
+    return new Map(entries);
 }
 
 function resolveToken(name: string, visited = new Set<string>()): string {
@@ -28,8 +31,12 @@ function resolveToken(name: string, visited = new Set<string>()): string {
     }
     const reference = /^var\((--[\w-]+)\)$/u.exec(value);
     if (reference !== null) {
+        const referencedName = reference[1];
+        if (referencedName === undefined) {
+            throw new Error(`Unreadable design token reference: ${value}`);
+        }
         visited.add(name);
-        return resolveToken(reference[1] ?? '', visited);
+        return resolveToken(referencedName, visited);
     }
     return value;
 }
@@ -56,7 +63,10 @@ function parseHex(value: string): readonly [number, number, number] {
     if (match === null) {
         throw new Error(`Unsupported contrast color: ${value}`);
     }
-    const hex = match[1] ?? '';
+    const hex = match[1];
+    if (hex === undefined) {
+        throw new Error(`Unreadable contrast color: ${value}`);
+    }
     return [
         Number.parseInt(hex.slice(0, 2), 16),
         Number.parseInt(hex.slice(2, 4), 16),
@@ -71,24 +81,44 @@ function colorAtStop(stop: string): readonly [number, number, number] {
         if (method !== 'in srgb' || mixParts.length !== 2) {
             throw new Error(`Unsupported gradient color mix: ${color}`);
         }
-        const first = /^(.+?)\s+(\d+(?:\.\d+)?)%$/u.exec(mixParts[0] ?? '');
-        const second = /^(.+?)(?:\s+(\d+(?:\.\d+)?)%)?$/u.exec(mixParts[1] ?? '');
+        const firstPart = mixParts[0];
+        const secondPart = mixParts[1];
+        if (firstPart === undefined || secondPart === undefined) {
+            throw new Error(`Unreadable gradient color mix: ${color}`);
+        }
+        const first = /^(.+?)\s+(\d+(?:\.\d+)?)%$/u.exec(firstPart);
+        const second = /^(.+?)(?:\s+(\d+(?:\.\d+)?)%)?$/u.exec(secondPart);
         if (first === null || second === null) {
             throw new Error(`Unreadable gradient color mix: ${color}`);
         }
-        const firstColor = colorAtStop(first[1] ?? '');
-        const secondColor = colorAtStop(second[1] ?? '');
-        const firstWeight = Number(first[2]) / 100;
+        const firstExpression = first[1];
+        const firstPercentage = first[2];
+        const secondExpression = second[1];
+        if (firstExpression === undefined || firstPercentage === undefined || secondExpression === undefined) {
+            throw new Error(`Unreadable gradient color mix: ${color}`);
+        }
+        const firstColor = colorAtStop(firstExpression);
+        const secondColor = colorAtStop(secondExpression);
+        const firstWeight = Number(firstPercentage) / 100;
         const secondWeight = second[2] === undefined ? 1 - firstWeight : Number(second[2]) / 100;
         const total = firstWeight + secondWeight;
-        const mixed = firstColor.map((channel, index) => {
-            const other = secondColor[index] ?? 0;
-            return (channel * firstWeight + other * secondWeight) / total;
-        });
-        return [mixed[0] ?? 0, mixed[1] ?? 0, mixed[2] ?? 0];
+        const [firstRed, firstGreen, firstBlue] = firstColor;
+        const [secondRed, secondGreen, secondBlue] = secondColor;
+        return [
+            (firstRed * firstWeight + secondRed * secondWeight) / total,
+            (firstGreen * firstWeight + secondGreen * secondWeight) / total,
+            (firstBlue * firstWeight + secondBlue * secondWeight) / total,
+        ];
     }
     const token = /^var\((--[\w-]+)\)$/u.exec(color);
-    return parseHex(token === null ? color : resolveToken(token[1] ?? ''));
+    if (token === null) {
+        return parseHex(color);
+    }
+    const tokenName = token[1];
+    if (tokenName === undefined) {
+        throw new Error(`Unreadable gradient token reference: ${color}`);
+    }
+    return parseHex(resolveToken(tokenName));
 }
 
 function activeGradientColors(background: string): readonly (readonly [number, number, number])[] {
@@ -96,7 +126,11 @@ function activeGradientColors(background: string): readonly (readonly [number, n
     if (gradient === null) {
         throw new Error(`Unexpected active LatchButton background: ${background}`);
     }
-    return splitTopLevel(gradient[1] ?? '').map((stop) => colorAtStop(stop));
+    const stops = gradient[1];
+    if (stops === undefined) {
+        throw new Error(`Unreadable active LatchButton gradient: ${background}`);
+    }
+    return splitTopLevel(stops).map((stop) => colorAtStop(stop));
 }
 
 function relativeLuminance([red, green, blue]: readonly [number, number, number]): number {
@@ -111,8 +145,11 @@ function contrastRatio(
     foreground: readonly [number, number, number],
     background: readonly [number, number, number]
 ): number {
-    const values = [relativeLuminance(foreground), relativeLuminance(background)].sort((left, right) => right - left);
-    return ((values[0] ?? 0) + 0.05) / ((values[1] ?? 0) + 0.05);
+    const foregroundLuminance = relativeLuminance(foreground);
+    const backgroundLuminance = relativeLuminance(background);
+    const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+    const darker = Math.min(foregroundLuminance, backgroundLuminance);
+    return (lighter + 0.05) / (darker + 0.05);
 }
 
 function renderedForegroundColor(label: string): readonly [number, number, number] {

@@ -20,12 +20,16 @@ class drove the record glow, but that glow was not the foreground text and did n
 contrast guarantee. The fix selects the existing `text-accent-red` foreground token and retains the
 record-colored glow.
 
-The exact palette change was introduced by commit
-`5aae4754d6926d3a3b847ef86bed4882bf77d98b`; the `LatchButton` red text mapping predates it at
-`d9c1c4ca43d400cebe9008c3e21bdc85ab97b136`. GitHub's REST commit-to-pull-request association for
-the palette commit returned no pull requests, so an introducing pull request or historical review
-stance cannot be established from this checkout. The missed probe was active foreground contrast
-against the component's declared gradient stops, separate from checking its state or glow styling.
+The earliest verified introduction of the failing `#c45040` value for
+`--color-state-record` is commit `eb278e9466eb3ce17438f61548ee096af1f269ae` in
+`src/styles/main.css`. It changed the prior `#FF4032` value to `#c45040`; the red text mapping in
+`LatchButton` already existed at `d9c1c4ca43d400cebe9008c3e21bdc85ab97b136`. Commit
+`5aae4754d6926d3a3b847ef86bed4882bf77d98b` later moved the same token value into `tokens.css`.
+GitHub's REST commit-to-pull-request association for the earliest verified palette commit returned
+no pull requests, so an introducing pull request or historical review stance cannot be established
+from this checkout. The missed probe was active foreground contrast against the component's
+declared gradient stops when the existing token changed, separate from checking its state or glow
+styling.
 
 The regression spec renders all five active variants, reads the foreground class and live token
 values, reads the active gradient from the rendered button, resolves its declared stops, and checks
