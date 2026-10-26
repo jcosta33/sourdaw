@@ -1,0 +1,35 @@
+src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts
+  s_3168504f6ce387::t_0a3a90202ea027 8-11,13-15,261-326
+  s_3168504f6ce387::t_ee8ed9443e5a64 1,12
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  s_3168504f6ce387::t_4e526cfd968493 2-12,13-24,26,28-53,57-63,65-68,73-84,102-104,109-110,115-117,124-173,174-234,236-253,310-345
+  s_3168504f6ce387::t_44e58040d1207a 85-101
+  s_3168504f6ce387::t_90b7bdbffe468a 235
+  s_3168504f6ce387::t_807965fdb64470 346-351
+  s_3168504f6ce387::t_c1d38854e872f5 25,118-122
+  s_3168504f6ce387::t_b5534a425d3723 54-56,69-72,105-108,111-114
+  s_3168504f6ce387::t_5808c2b59fc750 123
+  s_3168504f6ce387::t_9d17f6596c23fc 27,254-307
+  s_3168504f6ce387::t_cdab595d1422ed 308-309
+  s_3168504f6ce387::t_ee8ed9443e5a64 1,64
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringCommandCheckpoint.ts
+  s_3168504f6ce387::t_93bdfc9e8c9153 5,112-115,123-124,127-130
+src/modules/CrdtDocument/repositories/readChangesSinceHeads.ts
+  s_3168504f6ce387::t_93bdfc9e8c9153 8,12,17-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "603c4825e1c8f89fff5fb1e1bd9feacc34f158bc",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
