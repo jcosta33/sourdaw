@@ -16,7 +16,17 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
 }));
 
 function Control({ onEnterValue }: { onEnterValue: (value: number) => void }): React.ReactElement {
-    return <MasterGainControl value={0.8} onChange={vi.fn()} onEnterValue={onEnterValue} onResetToDefault={vi.fn()} />;
+    return (
+        <MasterGainControl
+            value={0.8}
+            onChange={vi.fn()}
+            onEnterValue={onEnterValue}
+            onResetToDefault={vi.fn()}
+            onCopyValue={vi.fn()}
+            onPasteValue={vi.fn()}
+            onInvalidatePendingValue={vi.fn()}
+        />
+    );
 }
 
 function openKeyboardEntry(key = 'ContextMenu'): void {

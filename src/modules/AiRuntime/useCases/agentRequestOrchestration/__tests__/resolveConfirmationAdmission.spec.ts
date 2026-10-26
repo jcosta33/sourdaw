@@ -60,6 +60,7 @@ vi.mock('../revalidateApprovedMatchSelectors', () => ({
     revalidateApprovedMatchSelectors: mocks.revalidateMatchSelectors,
 }));
 vi.mock('../../compileAgentRiskApproval', () => ({ compileAgentRiskApproval: mocks.compileApproval }));
+vi.mock('../../getProjectContext', () => ({ getProjectContext: vi.fn() }));
 vi.mock('../confirmationTerminalSettlement', () => ({
     confirmationTerminalSettlement: {
         failSectionRenderRetryProof: mocks.failRetryProof,

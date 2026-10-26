@@ -3,6 +3,7 @@ import { type AgentExecutionMode, type AgentTrustCeiling } from './AgentExecutio
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from './LlmOrchestrationTypes';
 import { type ProviderRequestTokenCeilingMethod } from './ModelProviderBudgetEstimate';
+import { type BoundRequestProtections } from './ProposalGroundingBasis';
 
 export const AGENT_RUN_SCHEMA_VERSION = 1 as const;
 
@@ -105,6 +106,8 @@ export type AgentRunBatchSchedule = {
     trustCeiling: AgentTrustCeiling | null;
     /** The provider proposal every batch is planned under, serialized; `null` when there was none. */
     serializedProviderProposal: string | null;
+    /** The request's protection owners as resolved when its first batch was admitted. */
+    requestProtections?: BoundRequestProtections;
     slices: AgentRunBatchScheduleSlice[];
 };
 
