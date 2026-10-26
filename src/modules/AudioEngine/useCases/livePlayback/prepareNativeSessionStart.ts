@@ -237,17 +237,18 @@ export function prepareNativeSessionStart(
     );
     const project = trackStore.value;
     const epoch = nativeLiveGraphSession.rearmEpoch;
-    const validateModelRoll = waitsForModels
-        ? () => {
-              if (
-                  trackStore.value !== project ||
-                  nativeLiveGraphSession.backend !== backend ||
-                  nativeLiveGraphSession.rearmEpoch !== epoch
-              ) {
-                  throw new Error('Native NAM project/session changed during material preparation');
-              }
-          }
-        : undefined;
+    let validateModelRoll: (() => void) | undefined;
+    if (waitsForModels) {
+        validateModelRoll = () => {
+            if (
+                trackStore.value !== project ||
+                nativeLiveGraphSession.backend !== backend ||
+                nativeLiveGraphSession.rearmEpoch !== epoch
+            ) {
+                throw new Error('Native NAM project/session changed during material preparation');
+            }
+        };
+    }
     return {
         outcome: 'prepared',
         topology,

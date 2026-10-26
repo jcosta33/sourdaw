@@ -1471,12 +1471,15 @@ describe('startNativeLiveGraphSession', () => {
             const release = { contextSeconds: null as number | null };
             const webAudioRollingSince = vi.fn(() => release.contextSeconds);
             mocks.contextSeconds = 10;
+            let joinTransport: Parameters<typeof startNativeLiveGraphSession>[0]['transport'];
+            if (join === 'rolling') {
+                joinTransport = { kind: 'rolling', anchoredAtContextSeconds: 10 };
+            } else {
+                joinTransport = { kind: 'held', webAudioRollingSince };
+            }
             const starting = startNativeLiveGraphSession({
                 positionSeconds: 2.5,
-                transport:
-                    join === 'rolling'
-                        ? { kind: 'rolling', anchoredAtContextSeconds: 10 }
-                        : { kind: 'held', webAudioRollingSince },
+                transport: joinTransport,
                 transportMaps: FLAT_MAPS,
                 sampleRate: SAMPLE_RATE,
                 monitor: 'audible',
