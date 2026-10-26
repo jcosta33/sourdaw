@@ -25,7 +25,17 @@ export const goToItem = inject({ eventBus: SetlistEventBus })(
 
             const isCurrent = (): boolean => {
                 const current = setlistStore.value;
-                return current?.items[current.currentIndex] === item;
+                const selectedItem = current?.items[current.currentIndex];
+                if (!selectedItem || selectedItem.id !== item.id) {
+                    return false;
+                }
+                return (
+                    selectedItem.bpm === item.bpm &&
+                    selectedItem.timeSignature?.numerator === item.timeSignature?.numerator &&
+                    selectedItem.timeSignature?.denominator === item.timeSignature?.denominator &&
+                    selectedItem.programChange?.channel === item.programChange?.channel &&
+                    selectedItem.programChange?.program === item.programChange?.program
+                );
             };
             await applySetlistItemTransport(item, isCurrent);
 

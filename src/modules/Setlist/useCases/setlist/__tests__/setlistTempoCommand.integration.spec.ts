@@ -25,7 +25,7 @@ import {
     mutateCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 import { setlistStore, type SetlistItem } from '#/modules/Setlist/stores';
-import { getSetlistHandlers, goToItem } from '#/modules/Setlist/useCases';
+import { getSetlistHandlers, goToItem, reorderSetlistItems, updateSetlistItem } from '#/modules/Setlist/useCases';
 import {
     defaultTransportState,
     playheadPositionRef,
@@ -329,6 +329,57 @@ describe('Setlist transport changes use guarded project actions', () => {
         expect(transportStore.value!.timeSignatureNumerator).toBe(3);
         expect(sourceEntrySeconds()).toBe(6);
         expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect(eventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it('keeps a held transition through selected song rename and reorder', async () => {
+        let releaseFirstTransition!: () => void;
+        let markFirstTransitionHeld!: () => void;
+        const held = new Promise<void>((resolve) => {
+            releaseFirstTransition = resolve;
+        });
+        const firstTransitionHeld = new Promise<void>((resolve) => {
+            markFirstTransitionHeld = resolve;
+        });
+        let holdNextTransition = true;
+        configureAutomergeStoragePort(
+            controlledStoragePort(async () => {
+                if (holdNextTransition) {
+                    holdNextTransition = false;
+                    markFirstTransitionHeld();
+                    await held;
+                }
+            })
+        );
+        setlistStore.set({
+            name: 'Set',
+            items: [song({ id: 'selected', name: 'Before rename' }), song({ id: 'other', bpm: 100 })],
+            currentIndex: -1,
+            autoAdvance: false,
+            countInBars: 1,
+        });
+
+        const navigation = goToItem(0);
+        await firstTransitionHeld;
+        updateSetlistItem('selected', { name: 'After rename' });
+        reorderSetlistItems(0, 1);
+        releaseFirstTransition();
+        await navigation;
+
+        expect(setlistStore.value.currentIndex).toBe(1);
+        expect(setlistStore.value.items[1]?.name).toBe('After rename');
+        projectAuthorityMatchesStores();
+        expect(transportStore.value!.tempo).toBe(160);
+        expect(transportStore.value!.timeSignatureNumerator).toBe(3);
+        expect(transportStore.value!.timeSignatureDenominator).toBe(4);
+        expect(sourceEntrySeconds()).toBe(6);
+        const projectHistory = undoHistoryStore.value?.past.filter(
+            (entry) =>
+                entry.kind === 'action' &&
+                (entry.action.type === 'setTempo' || entry.action.type === 'setTimeSignature')
+        );
+        expect(projectHistory).toHaveLength(2);
+        expect(new Set(projectHistory?.map((entry) => entry.groupId)).size).toBe(1);
         expect(eventBus.emit).not.toHaveBeenCalled();
     });
 
