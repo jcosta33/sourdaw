@@ -42,12 +42,18 @@ type SourceRead =
 function findSource(clipId: string) {
     const found = [];
     for (const track of trackStore.value?.tracks ?? []) {
+        const activeAlternativeId =
+            track.alternatives?.find((alternative) => alternative.id === track.activeAlternativeId)?.id ?? null;
         for (const clip of track.clips) {
             if (clip.id === clipId) {
-                found.push({ clip, trackId: track.id, alternativeId: null, activeAlternative: true });
+                found.push({ clip, trackId: track.id, alternativeId: activeAlternativeId, activeAlternative: true });
             }
         }
         for (const alternative of track.alternatives ?? []) {
+            // The active alternative keeps a snapshot; track.clips owns its current projection.
+            if (alternative.id === track.activeAlternativeId) {
+                continue;
+            }
             for (const clip of alternative.clips) {
                 if (clip.id === clipId) {
                     found.push({

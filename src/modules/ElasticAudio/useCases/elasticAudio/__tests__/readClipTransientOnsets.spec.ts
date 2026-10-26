@@ -122,6 +122,88 @@ describe('whole cached source transient read', () => {
         });
     });
 
+    it.each(['shared', 'copied'] as const)(
+        'reads the authoritative active projection beside its %s alternative snapshot',
+        async (snapshot) => {
+            const track = mocks.tracks[0]!;
+            track.alternatives = [
+                {
+                    id: track.activeAlternativeId,
+                    clips: snapshot === 'shared' ? track.clips : structuredClone(track.clips),
+                },
+            ];
+            const before = structuredClone(mocks.tracks);
+            mocks.cache.mockReturnValue(buffer([new Float32Array(2_048)]));
+
+            const result = await readClipTransientOnsets(request);
+
+            expect(result).toMatchObject({
+                status: 'complete',
+                identity: { trackId: track.id, alternativeId: track.activeAlternativeId, activeAlternative: true },
+            });
+            expect(mocks.worker).toHaveBeenCalledTimes(1);
+            expect(mocks.tracks).toEqual(before);
+        }
+    );
+
+    it('reads the live source when the active alternative snapshot still points at older media', async () => {
+        const track = mocks.tracks[0]!;
+        track.alternatives = [
+            { id: track.activeAlternativeId, clips: [{ id: 'clip-1', type: 'audio', audioBufferId: 'stale-media' }] },
+        ];
+        mocks.cache.mockReturnValue(buffer([new Float32Array(2_048)]));
+
+        expect(await readClipTransientOnsets(request)).toMatchObject({ status: 'complete' });
+        expect(mocks.cache.mock.calls.every(([id]) => id === 'private-file-path')).toBe(true);
+        expect(mocks.worker).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a clip present only in the stale active snapshot before touching the audio cache', async () => {
+        const track = mocks.tracks[0]!;
+        track.alternatives = [{ id: track.activeAlternativeId, clips: [...track.clips] }];
+        track.clips = [];
+        mocks.cache.mockReturnValue(buffer([new Float32Array(2_048)]));
+
+        expect(await readClipTransientOnsets(request)).toEqual({ status: 'failed', code: 'clip-not-found' });
+        expect(mocks.cache).not.toHaveBeenCalled();
+        expect(mocks.worker).not.toHaveBeenCalled();
+    });
+
+    it.each(['other-track-active', 'other-track-inactive', 'same-track-inactive', 'same-active-collection'] as const)(
+        'refuses a genuine %s duplicate even beside the expected active snapshot mirror',
+        async (owner) => {
+            const track = mocks.tracks[0]!;
+            const duplicate = structuredClone(track.clips);
+            track.alternatives = [{ id: track.activeAlternativeId, clips: [...track.clips] }];
+            if (owner === 'other-track-active') {
+                mocks.tracks.push({
+                    id: 'track-2',
+                    clips: duplicate,
+                    alternatives: [],
+                    activeAlternativeId: 'other-active',
+                });
+            }
+            if (owner === 'other-track-inactive') {
+                mocks.tracks.push({
+                    id: 'track-2',
+                    clips: [],
+                    alternatives: [{ id: 'inactive', clips: duplicate }],
+                    activeAlternativeId: 'other-active',
+                });
+            }
+            if (owner === 'same-track-inactive') {
+                track.alternatives.push({ id: 'inactive', clips: duplicate });
+            }
+            if (owner === 'same-active-collection') {
+                track.clips.push(...duplicate);
+            }
+
+            expect(await readClipTransientOnsets(request)).toEqual({ status: 'failed', code: 'duplicate-clip-id' });
+            expect(mocks.cache).not.toHaveBeenCalled();
+            expect(mocks.worker).not.toHaveBeenCalled();
+        }
+    );
+
     it.each(['missing', 'duplicate', 'midi', 'stale', 'project'] as const)(
         'refuses %s before the audio cache is touched',
         async (reason) => {
