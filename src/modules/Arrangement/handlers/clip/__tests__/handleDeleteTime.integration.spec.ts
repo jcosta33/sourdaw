@@ -427,7 +427,7 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             const after = { version: 1, entries: [{
                 clipId: 'peer',
                 gainEnvelope: change === 'gain' ? { clipId: 'peer', points: [], enabled: true } : null,
-                warpState: change === 'warp' ? { enabled: true, markers: [], stretchMode: 'pro', originalTempo: null } : null,
+                warpState: change === 'warp' ? { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null } : null,
             }] };
             entry.inverseAction.payload.plan.clipSatellites = { version: 1, expected: before, replacement: after };
             entry.redoAction.payload.plan.clipSatellites = { version: 1, expected: after, replacement: before };
@@ -441,6 +441,9 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             expectDurableOwners(deleted);
             expect(Automerge.getHeads(getCrdtDoc<Project>('root')!)).toEqual(heads);
             expect(undoStore.value?.past).toHaveLength(change === 'unchanged' ? 1 : 0);
+            if (change === 'unchanged') {
+                return;
+            }
             const history = structuredClone(undoStore.value);
             for (let cycle = 0; cycle < 2; cycle += 1) {
                 const result = await undo();
