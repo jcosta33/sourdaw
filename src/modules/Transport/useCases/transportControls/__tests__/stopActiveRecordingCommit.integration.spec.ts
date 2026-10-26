@@ -626,10 +626,10 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         await Promise.all([physical, virtual, physicalThird]);
 
         const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
-        expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([
-            [62, 0.5],
-            [64, 4.75],
-            [67, 9],
+        expect(notes.map((note) => [note.pitch, note.startBeat, note.duration])).toEqual([
+            [62, 0.5, 9],
+            [64, 4.75, 4.75],
+            [67, 9, 0.5],
         ]);
         expect(committedEntryCount()).toBe(1);
         await undo();
