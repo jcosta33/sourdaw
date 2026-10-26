@@ -26,6 +26,9 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { playheadClockRef, transportStore } from '#/modules/Transport/stores';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
+import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
 
 import { countSettledTakes } from '../countSettledTakes';
 import { finalizeAutomaticRecording } from '../finalizeAutomaticRecording';
@@ -256,6 +259,8 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({ tracks: [recordingTrack('midi')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
+        midiStore.set(structuredClone(defaultMidiStoreState));
+        activeNotes.clear();
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
         mocks.startPlayback.mockClear();
         mocks.notifyUser.mockClear();
@@ -272,6 +277,8 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         resetActionReplayAuthority();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
+        midiStore.set(structuredClone(defaultMidiStoreState));
+        activeNotes.clear();
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -466,6 +473,37 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         flushAutomergeStorageWrites();
         expect(clipIds()).toEqual([provisional.id]);
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisional.id }]);
+    });
+
+    it('seals a held MIDI note in the one Stop command before its key-up can arrive', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional MIDI clip');
+        }
+        flushAutomergeStorageWrites();
+        // The live handler registers this note before awaiting Yeast. The
+        // worker may still be held when the musician presses Stop.
+        activeNotes.set(createWebMidiNoteKey(1, 60), {
+            startTime: 0.5,
+            startBeat: 5,
+            channel: 1,
+            note: 60,
+            velocity: 100,
+            trackId: TRACK_ID,
+            instrumentTrackId: TRACK_ID,
+        });
+        mocks.audioClock.currentTime = 1;
+
+        await stopActiveRecording();
+
+        const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
+        expect(notes).toHaveLength(1);
+        expect(notes[0]).toMatchObject({ pitch: 60, velocity: 100 });
+        expect(committedEntryCount()).toBe(1);
+        await undo();
+        expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
+        await redo();
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
     });
 
     it('records the audio gesture entry before Stop resolves, so one undo removes the recorded result', async () => {
