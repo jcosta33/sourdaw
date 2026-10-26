@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -3734,7 +3734,7 @@ describe('health gates workflow contract', () => {
             expect(() => check(workflow)).not.toThrow();
             const duplicate = asRecord(structuredClone(workflow), `duplicate ${label}`);
             const step = stepNamed(jobAt(duplicate, 'rust'), 'Install ALSA development headers');
-            step.run = stringAt(step, 'run') + ALSA_INSTALL_COMMAND + '\n';
+            step.run = `${stringAt(step, 'run')}${ALSA_INSTALL_COMMAND}\n`;
             expect(() => check(duplicate)).toThrow('must run one bounded ALSA transaction and propagate its failure');
             const missingDeadline = asRecord(structuredClone(workflow), `missing deadline ${label}`);
             const missingStep = stepNamed(jobAt(missingDeadline, 'rust'), 'Install ALSA development headers');
@@ -4016,6 +4016,36 @@ describe('health gates workflow contract', () => {
             jobAt(softenedJob[wiring.workflow], suite)['continue-on-error'] = true;
             expect(() => assertJobGraph(softenedJob)).toThrow(`${suite} must not use job-level continue-on-error`);
         }
+    });
+
+    it('requires the real hosted installer systemd proof for tooling changes', () => {
+        const staticJob = jobAt(validationWorkflow, 'static');
+        const proof = stepNamed(staticJob, 'Hosted installer systemd proof');
+        expect(proof.run).toBe('pnpm test:run scripts/__tests__/hostedAptInstall.spec.ts --maxWorkers=2');
+        expect(recordAt(proof, 'env')).toEqual({ SOURDAW_SYSTEMD_TESTS: '1' });
+        expect(staticJob['runs-on']).toBe('ubuntu-latest');
+        const steps = jobSteps('validation.yml', 'static', staticJob);
+        expect(steps.findIndex((step) => step.name === 'Install dependencies')).toBeLessThan(
+            steps.findIndex((step) => step.name === 'Hosted installer systemd proof')
+        );
+        const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            PROFILE: 'tooling',
+            WEB: 'true',
+            BROWSER: 'false',
+        });
+        expect(scope.tooling).toBe('true');
+        expect(selectedPrValidationJobs(scope)).toContain('static');
+        expect(arrayAt(jobAt(validationWorkflow, 'validation-gate'), 'needs')).toContain('static');
+
+        const missing = cloneWorkflows('missing hosted installer proof');
+        removeStepNamed(jobAt(missing.validation, 'static'), 'Hosted installer systemd proof');
+        expect(() => assertStepInventory(missing)).toThrow('validation.yml job static steps drifted');
+        const conditional = cloneWorkflows('conditional hosted installer proof');
+        stepNamed(jobAt(conditional.validation, 'static'), 'Hosted installer systemd proof').if = 'false';
+        expect(() => assertUnconditionalSteps(conditional)).toThrow();
+        const softened = cloneWorkflows('softened hosted installer proof');
+        stepNamed(jobAt(softened.validation, 'static'), 'Hosted installer systemd proof')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softened)).toThrow();
     });
 
     it('runs release inventory on every pull request and nightly with full provenance history', () => {

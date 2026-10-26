@@ -712,6 +712,13 @@
             "run": "pnpm wasm:verify"
           },
           {
+            "name": "Hosted installer systemd proof",
+            "env": {
+              "SOURDAW_SYSTEMD_TESTS": "1"
+            },
+            "run": "pnpm test:run scripts/__tests__/hostedAptInstall.spec.ts --maxWorkers=2"
+          },
+          {
             "name": "App types",
             "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm typecheck"

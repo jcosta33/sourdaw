@@ -106,6 +106,11 @@ const STATIC_SUITE_STEPS = [
     'Agent delivery scripts',
     'Health gate infrastructure',
 ] as const;
+const VALIDATION_STATIC_SUITE_STEPS = [
+    STATIC_SUITE_STEPS[0],
+    'Hosted installer systemd proof',
+    ...STATIC_SUITE_STEPS.slice(1),
+] as const;
 const NIGHTLY_STATIC_SUITE_STEPS = STATIC_SUITE_STEPS;
 
 // Every job in every gate workflow, pinned to its exact ordered step names —
@@ -182,7 +187,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Retry changed-paths filter after a transient API failure',
             'Resolve scope',
         ],
-        static: [...SETUP_NODE, ...STATIC_SUITE_STEPS],
+        static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
