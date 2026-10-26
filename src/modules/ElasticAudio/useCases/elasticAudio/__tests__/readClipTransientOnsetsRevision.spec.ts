@@ -6,6 +6,7 @@ import {
     captureProjectRevision,
     createCrdtDoc,
     getCrdtDoc,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
@@ -83,7 +84,7 @@ describe('transient source revision authority', () => {
                 return { status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] };
             });
             const result = await readClipTransientOnsets({
-                projectRevision,
+                isProjectRevisionCurrent: () => projectRevisionMatchesLiveIgnoringCommandCheckpoint(projectRevision),
                 projectId: 'project-1',
                 clipId: 'clip-1',
                 sensitivity: 0.5,

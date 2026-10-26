@@ -1,16 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type readClipTransientOnsets } from '#/modules/ElasticAudio/useCases';
+
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { executeTransientOnsetRead } from '../executeTransientOnsetRead';
 
 const mocks = vi.hoisted(() => ({
-    readSource: vi.fn(),
+    readSource: vi.fn<typeof readClipTransientOnsets>(),
+    revisionMatches: vi.fn<(revision: string) => boolean>(),
     projectId: vi.fn(),
     limits: vi.fn(),
 }));
 
 vi.mock('#/modules/ElasticAudio/useCases', () => ({ readClipTransientOnsets: mocks.readSource }));
 vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: mocks.projectId }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatches,
+}));
 vi.mock('../../stores/agentResourceLimitsStore', () => ({ readAgentResourceLimits: mocks.limits }));
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
@@ -67,6 +73,7 @@ function session(input: { signal?: AbortSignal; admitted?: boolean } = {}) {
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.projectId.mockReturnValue(PROJECT_ID);
+    mocks.revisionMatches.mockReturnValue(true);
     mocks.limits.mockReturnValue(DEFAULT_AGENT_RESOURCE_LIMITS);
     mocks.readSource.mockResolvedValue(source());
 });
@@ -96,12 +103,27 @@ describe('one planning run transient onset read', () => {
                 clipId: 'clip-1',
                 sensitivity: 0.5,
                 projectId: PROJECT_ID,
-                projectRevision: PROJECT_REVISION,
+                isProjectRevisionCurrent: expect.any(Function),
                 maxSourceSeconds: 600,
                 maxChannelSamples: 10_000_000,
                 timeoutMs: 120_000,
             })
         );
+        reader.dispose();
+    });
+
+    it('binds source rechecks to the captured revision and reads current authority each time', async () => {
+        const reader = session();
+        await reader.execute(call());
+        const sourceInput = mocks.readSource.mock.calls[0]?.[0];
+        expect(sourceInput).toBeDefined();
+
+        expect(sourceInput!.isProjectRevisionCurrent()).toBe(true);
+        expect(mocks.revisionMatches).toHaveBeenLastCalledWith(PROJECT_REVISION);
+        mocks.revisionMatches.mockReturnValue(false);
+        expect(sourceInput!.isProjectRevisionCurrent()).toBe(false);
+        expect(mocks.revisionMatches).toHaveBeenLastCalledWith(PROJECT_REVISION);
+        expect(mocks.revisionMatches).toHaveBeenCalledTimes(2);
         reader.dispose();
     });
 

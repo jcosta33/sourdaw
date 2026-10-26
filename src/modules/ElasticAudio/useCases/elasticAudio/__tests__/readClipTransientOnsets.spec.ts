@@ -26,9 +26,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/AudioEngine/stores', () => ({ audioBufferCache: { get: mocks.cache } }));
 vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: () => mocks.projectId }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: () => mocks.current,
-}));
 vi.mock('../../../repositories/transientOnsetWorkerClient', () => ({ runTransientOnsetWorker: mocks.worker }));
 
 function buffer(channels: Float32Array[], sampleRate = 16_000) {
@@ -44,7 +41,7 @@ const request = {
     clipId: 'clip-1',
     sensitivity: 0.5,
     projectId: 'project-1',
-    projectRevision: 'revision',
+    isProjectRevisionCurrent: () => mocks.current,
     maxSourceSeconds: 600,
     maxChannelSamples: 10_000_000,
     timeoutMs: 30_000,

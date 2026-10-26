@@ -1,6 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 import { getSettledProjectId } from '#/modules/Project/stores';
 import { digest } from '#/utils/canonicalDigest';
 
@@ -74,7 +73,8 @@ export async function readClipTransientOnsets(input: {
     clipId: string;
     sensitivity: number;
     projectId: string;
-    projectRevision: string;
+    /** The planning caller owns the captured CRDT revision; this owner rechecks it around analysis. */
+    isProjectRevisionCurrent: () => boolean;
     maxSourceSeconds: number;
     maxChannelSamples: number;
     timeoutMs: number;
@@ -82,8 +82,7 @@ export async function readClipTransientOnsets(input: {
     onAnalysisStarted: () => void;
 }): Promise<SourceRead> {
     const revisionCurrent = (): boolean =>
-        getSettledProjectId() === input.projectId &&
-        projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.projectRevision);
+        getSettledProjectId() === input.projectId && input.isProjectRevisionCurrent();
     if (input.signal?.aborted) {
         return { status: 'failed', code: 'cancelled' };
     }

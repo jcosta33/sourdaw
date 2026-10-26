@@ -449,7 +449,7 @@ describe('mandatory planning tools', () => {
                     tools,
                     undefined,
                     REQUEST,
-                    (result) => providerResults.push(result),
+                    (result: ModelProviderResult) => providerResults.push(result),
                     undefined,
                     undefined,
                     AUTO_TOOL_CHOICE,

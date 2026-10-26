@@ -1,3 +1,4 @@
+import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 import { readClipTransientOnsets } from '#/modules/ElasticAudio/useCases';
 import { getSettledProjectId } from '#/modules/Project/stores';
 import { digest } from '#/utils/canonicalDigest';
@@ -146,7 +147,8 @@ export function executeTransientOnsetRead(input: {
                     clipId: parsed.clipId,
                     sensitivity: parsed.sensitivity,
                     projectId,
-                    projectRevision: input.projectRevision,
+                    isProjectRevisionCurrent: () =>
+                        projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.projectRevision),
                     maxSourceSeconds: Math.min(limits.measurementMeasuredSeconds, MAX_SOURCE_SECONDS),
                     maxChannelSamples: MAX_CHANNEL_SAMPLES,
                     timeoutMs: Math.min(limits.measurementWallClockMs, MAX_ANALYSIS_MS),
