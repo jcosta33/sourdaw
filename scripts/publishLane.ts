@@ -2087,7 +2087,11 @@ export function shellPort(
             if (pendingRef !== undefined && notesSha !== undefined) {
                 // Delivery refreshes refs/notes/ai from the remote. Pin this exact local history
                 // before either push so a refused optional upload remains recoverable afterwards.
-                spawnRun(executables.git, ['update-ref', pendingRef, notesSha], { cwd: lane, env: session.env });
+                spawnRun(
+                    executables.git,
+                    ['-c', `core.hooksPath=${disabledHooksPath}`, 'update-ref', pendingRef, notesSha],
+                    { cwd: lane, env: session.env }
+                );
             }
             const pushArgs = ['-c', `core.hooksPath=${disabledHooksPath}`, 'push', '--no-verify', GITHUB_HTTPS_REMOTE];
             spawnRun(

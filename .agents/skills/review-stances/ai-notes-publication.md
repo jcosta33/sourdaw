@@ -15,6 +15,14 @@ absent remote notes, a normal fast-forward, and a refused source push. A single-
 fixture does not observe lost peer data. Restoring the forced notes refspec must fail the preservation
 spec; swallowing a source rejection must fail the required-source spec.
 
+The token-bearing publisher must also isolate hooks for local ref mutations. `update-ref` can run
+`reference-transaction` from a lane-controlled hooks directory even when both pushes disable hooks.
+Seed real local notes before activating that hook, make it emit only a harmless marker when the fixture
+token is present, and prove publication does not create the marker while the exact source, notes, and
+pending ref still arrive. Removing the update-ref hook override must fail this case. PR #5709's first
+repair added the durable pin without carrying the existing push hook boundary to that new mutation;
+independent review caught the escape before merge.
+
 Escape: [#4271](https://github.com/jcosta33/sourdaw/pull/4271), commit
 `c5bfeda9bfeb68c934479536f3103221a853d940`, introduced the forced
 `+refs/notes/ai:refs/notes/ai` publication alongside a single-writer fixture. A later native title-only

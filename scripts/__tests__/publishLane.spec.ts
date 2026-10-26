@@ -947,47 +947,63 @@ describe('lane publish', () => {
         expect(cli).not.toMatch(/\bauthenticateRole\b/);
     });
 
-    it('does not run a lane-controlled pre-push hook in the token-bearing Git child', () => {
-        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-hooks-'));
-        const primary = join(fixtureRoot, 'primary');
-        const lane = join(fixtureRoot, 'lane');
-        const remote = join(fixtureRoot, 'remote.git');
-        const hookMarker = join(fixtureRoot, 'hook-token');
-        const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
-        let session: GhSession | undefined;
-        try {
-            initializeRepository(primary);
-            writeFileSync(join(primary, 'base.txt'), 'base\n');
-            fixtureGit(primary, ['add', 'base.txt']);
-            fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: hook fixture base']);
-            fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/hook-proof', lane]);
+    it.each(['pre-push', 'reference-transaction'])(
+        'does not run a lane-controlled %s hook in the token-bearing Git child',
+        (hookName) => {
+            const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-hooks-'));
+            const primary = join(fixtureRoot, 'primary');
+            const lane = join(fixtureRoot, 'lane');
+            const remote = join(fixtureRoot, 'remote.git');
+            const hookMarker = join(fixtureRoot, 'hook-token');
+            const systemGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+            let session: GhSession | undefined;
+            try {
+                initializeRepository(primary);
+                writeFileSync(join(primary, 'base.txt'), 'base\n');
+                fixtureGit(primary, ['add', 'base.txt']);
+                fixtureGit(primary, ['commit', '--no-gpg-sign', '-m', 'test: hook fixture base']);
+                fixtureGit(primary, ['worktree', 'add', '-b', 'agent/12/hook-proof', lane]);
 
-            mkdirSync(join(lane, '.githooks'));
-            const prePushHook = join(lane, '.githooks/pre-push');
-            writeFileSync(prePushHook, `#!/bin/sh\nprintf %s "$GH_TOKEN" > ${JSON.stringify(hookMarker)}\n`);
-            chmodSync(prePushHook, 0o700);
-            fixtureGit(lane, ['add', '.githooks/pre-push']);
-            fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', 'test: add hostile pre-push hook']);
-            fixtureGit(primary, ['config', 'core.hooksPath', '.githooks']);
+                mkdirSync(join(lane, '.githooks'));
+                const hook = join(lane, '.githooks', hookName);
+                writeFileSync(
+                    hook,
+                    `#!/bin/sh\nif [ -n "$GH_TOKEN" ]; then\n  printf '%s\\n' fixture-hook-ran > ${JSON.stringify(hookMarker)}\nfi\n`
+                );
+                chmodSync(hook, 0o700);
+                fixtureGit(lane, ['add', `.githooks/${hookName}`]);
+                fixtureGit(lane, ['commit', '--no-gpg-sign', '-m', `test: add hostile ${hookName} hook`]);
+                const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
+                // Activate the lane hook only after fixture commits and notes are complete.
+                fixtureGit(lane, ['notes', '--ref=ai', 'add', '-m', 'fixture authorship note', headSha]);
+                const notesSha = fixtureGit(lane, ['rev-parse', 'refs/notes/ai']);
+                fixtureGit(primary, ['config', 'core.hooksPath', '.githooks']);
 
-            execFileSync(systemGit, ['init', '--bare', remote], {
-                cwd: fixtureRoot,
-                env: fixtureGitEnv(),
-                encoding: 'utf8',
-            });
-            fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
-            const headSha = fixtureGit(lane, ['rev-parse', 'HEAD']);
-            session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
+                execFileSync(systemGit, ['init', '--bare', remote], {
+                    cwd: fixtureRoot,
+                    env: fixtureGitEnv(),
+                    encoding: 'utf8',
+                });
+                fixtureGit(primary, ['config', `url.${remote}.insteadOf`, GITHUB_HTTPS_REMOTE]);
+                session = createGhSession('ghs_hook_marker', { PATH: process.env.PATH });
 
-            shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(lane, 'agent/12/hook-proof', headSha);
+                expect(existsSync(hookMarker)).toBe(false);
+                shellPort(session, lane, primary, { git: systemGit, gh: 'gh' }).push(
+                    lane,
+                    'agent/12/hook-proof',
+                    headSha
+                );
 
-            expect(existsSync(hookMarker)).toBe(false);
-            expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/hook-proof'])).toBe(headSha);
-        } finally {
-            session?.dispose();
-            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+                expect(existsSync(hookMarker)).toBe(false);
+                expect(fixtureGit(remote, ['rev-parse', 'refs/heads/agent/12/hook-proof'])).toBe(headSha);
+                expect(fixtureGit(remote, ['rev-parse', 'refs/notes/ai'])).toBe(notesSha);
+                expect(fixtureGit(lane, ['rev-parse', `refs/agents/pending-ai-notes/${notesSha}`])).toBe(notesSha);
+            } finally {
+                session?.dispose();
+                rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            }
         }
-    });
+    );
 
     describe('AI notes publication', () => {
         function notesFixture() {
