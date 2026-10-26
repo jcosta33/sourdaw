@@ -69,7 +69,9 @@ export function computeAudioWaveformDrawSpan({
 
     return {
         startSample: Math.max(0, Math.floor(sourceStartSeconds * sampleRate)),
-        endSample: Math.max(0, Math.floor(sourceEndSeconds * sampleRate)),
+        // Peaks cover every PCM cell intersecting the half-open source span.
+        // A fractional end includes its last cell; an integer end excludes it.
+        endSample: Math.max(0, Math.min(bufferLengthSamples ?? Infinity, Math.ceil(sourceEndSeconds * sampleRate))),
         leadingSilenceBeats: audibleStartBeat - clipStartBeat,
         audibleTimelineBeats,
         sourceStartSeconds,
@@ -135,33 +137,45 @@ function visibleSourceWindow(
     viewportEndBeat: number,
     sampleRate: number
 ): AudioWaveformDrawSpan | null {
-    const audibleEndBeat = timeline.beatAtSeconds(
-        span.soundStartSongSeconds + (span.sourceEndSeconds - span.sourceStartSeconds) / span.stretchRatio
-    );
+    const soundEndSongSeconds =
+        span.soundStartSongSeconds + (span.sourceEndSeconds - span.sourceStartSeconds) / span.stretchRatio;
+    const boundedEndBeat = Math.min(iterationEndBeat, viewportEndBeat);
+    const boundedEndSongSeconds = timeline.secondsAtBeat(boundedEndBeat);
     const visibleStartBeat = Math.max(span.audibleStartBeat, viewportStartBeat);
-    const visibleEndBeat = Math.min(iterationEndBeat, audibleEndBeat, viewportEndBeat);
+    let visibleEndBeat = boundedEndBeat;
+    if (boundedEndSongSeconds > soundEndSongSeconds) {
+        visibleEndBeat = timeline.beatAtSeconds(soundEndSongSeconds);
+    }
     if (visibleEndBeat <= visibleStartBeat) {
         return null;
     }
 
-    const visibleStartSongSeconds = timeline.secondsAtBeat(visibleStartBeat);
-    const visibleEndSongSeconds = timeline.secondsAtBeat(visibleEndBeat);
-    const sourceStartSeconds = Math.max(
-        span.sourceStartSeconds,
-        Math.min(
-            span.sourceEndSeconds,
-            span.sourceStartSeconds + (visibleStartSongSeconds - span.soundStartSongSeconds) * span.stretchRatio
-        )
-    );
-    const sourceEndSeconds = Math.max(
-        sourceStartSeconds,
-        Math.min(
-            span.sourceEndSeconds,
-            span.sourceStartSeconds + (visibleEndSongSeconds - span.soundStartSongSeconds) * span.stretchRatio
-        )
-    );
+    // Uncropped source endpoints already belong to this span. An inverse and
+    // forward round trip can move one just below its exact PCM boundary.
+    let visibleStartSongSeconds = span.soundStartSongSeconds;
+    let sourceStartSeconds = span.sourceStartSeconds;
+    if (visibleStartBeat > span.audibleStartBeat) {
+        visibleStartSongSeconds = timeline.secondsAtBeat(visibleStartBeat);
+        sourceStartSeconds = Math.max(
+            span.sourceStartSeconds,
+            Math.min(
+                span.sourceEndSeconds,
+                span.sourceStartSeconds + (visibleStartSongSeconds - span.soundStartSongSeconds) * span.stretchRatio
+            )
+        );
+    }
+    let sourceEndSeconds = span.sourceEndSeconds;
+    if (boundedEndSongSeconds < soundEndSongSeconds) {
+        sourceEndSeconds = Math.max(
+            sourceStartSeconds,
+            Math.min(
+                span.sourceEndSeconds,
+                span.sourceStartSeconds + (boundedEndSongSeconds - span.soundStartSongSeconds) * span.stretchRatio
+            )
+        );
+    }
     const startSample = Math.max(span.startSample, Math.floor(sourceStartSeconds * sampleRate));
-    const endSample = Math.min(span.endSample, Math.floor(sourceEndSeconds * sampleRate));
+    const endSample = Math.min(span.endSample, Math.ceil(sourceEndSeconds * sampleRate));
     if (endSample <= startSample) {
         return null;
     }

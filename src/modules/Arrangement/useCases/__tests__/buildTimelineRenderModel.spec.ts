@@ -5,10 +5,6 @@ import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack } from '../../models/Track';
-import {
-    getAudioWaveformOccurrences,
-    getAudioWaveformPeakPositions,
-} from '../../presentations/renderers/audioWaveformSpan';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
@@ -169,7 +165,9 @@ describe('buildTimelineRenderModel', () => {
             stretchRatio: 2,
         });
         const timeline = model.sourceTimeline;
-        if (!timeline) throw new Error('Expected the captured source timeline');
+        if (!timeline) {
+            throw new Error('Expected the captured source timeline');
+        }
         expect(timeline.secondsAtBeat(5)).toBe(3);
         expect(timeline.beatAtSeconds(3)).toBe(5);
         // Neither mutating the former store array nor publishing its replacement may move this model.
@@ -191,7 +189,9 @@ describe('buildTimelineRenderModel', () => {
     it('keeps the captured flat base tempo when a later model uses a different one', () => {
         seedStores({ transport: { tempo: 120 } });
         const timeline = buildTimelineRenderModel().sourceTimeline;
-        if (!timeline) throw new Error('Expected the captured source timeline');
+        if (!timeline) {
+            throw new Error('Expected the captured source timeline');
+        }
         expect(timeline.secondsAtBeat(4)).toBe(2);
         expect(timeline.beatAtSeconds(2)).toBe(4);
 
@@ -457,27 +457,12 @@ function seedStores(overrides: {
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 800 });
 }
 
-function displayedAudioWindows(model: ReturnType<typeof buildTimelineRenderModel>, clipId: string, bufferSeconds = 20) {
-    const displayedClip = model.tracks[0]!.clips.find((item) => item.id === clipId)!;
-    const occurrences = getAudioWaveformOccurrences({
-        clip: displayedClip,
-        model,
-        sampleRate: 48_000,
-        bufferLength: bufferSeconds * 48_000,
-        maxBins: 600,
-    });
-    return occurrences.map((occurrence) => ({
-        samples: [occurrence.span.startSample, occurrence.span.endSample],
-        pixels: Array.from(
-            getAudioWaveformPeakPositions({
-                clip: displayedClip,
-                model,
-                occurrence,
-                binCount: 1,
-            }),
-            Math.round
-        ),
-    }));
+function programmeWindows(model: ReturnType<typeof buildTimelineRenderModel>, clipId: string) {
+    const displayed = model.tracks[0]!.clips.find((item) => item.id === clipId);
+    if (!displayed) {
+        throw new Error('Expected the emitted clip model');
+    }
+    return displayed.audioProgramme?.map((part) => [part.startBeat, part.endBeat, part.audioOffsetSeconds]);
 }
 
 describe('buildTimelineRenderModel — audible audio programme', () => {
@@ -534,15 +519,15 @@ describe('buildTimelineRenderModel — audible audio programme', () => {
         const model = buildTimelineRenderModel();
         const displayedClip = model.tracks[0]!.clips[0]!;
         expect([displayedClip.startBeat, displayedClip.endBeat]).toEqual([0, 8]);
-        // At 48 kHz the take enters at 2.5 s (120,000 samples). Its first
-        // four destination beats consume 5 source seconds at rate 2 across
-        // the tempo change; the second pass resets and consumes 4 seconds.
-        expect(
-            displayedAudioWindows(model, 'recording').filter(({ pixels }) => pixels[0]! >= 12 && pixels[1]! <= 84)
-        ).toEqual([
-            { samples: [120_000, 360_000], pixels: [12, 60] },
-            { samples: [120_000, 312_000], pixels: [60, 84] },
-        ]);
+        expect(displayedClip.audioProgramme?.find((part) => part.startBeat === 1)).toMatchObject({
+            startBeat: 1,
+            endBeat: 7,
+            audioOffsetSeconds: 2.5,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
     });
 
     it('draws a selected middle phrase and a retained source tile in the base gap', () => {
@@ -600,13 +585,13 @@ describe('buildTimelineRenderModel — audible audio programme', () => {
             },
         });
 
-        // The four windows read source [0,1), [2,3), [10,11), [3,4)
-        // seconds respectively; rectangle geometry remains the original [0,8).
-        expect(displayedAudioWindows(buildTimelineRenderModel(), 'recording')).toEqual([
-            { samples: [0, 48_000], pixels: [0, 24] },
-            { samples: [96_000, 144_000], pixels: [24, 48] },
-            { samples: [480_000, 528_000], pixels: [48, 72] },
-            { samples: [144_000, 192_000], pixels: [72, 96] },
+        const model = buildTimelineRenderModel();
+        expect([model.tracks[0]!.clips[0]!.startBeat, model.tracks[0]!.clips[0]!.endBeat]).toEqual([0, 8]);
+        expect(programmeWindows(model, 'recording')).toEqual([
+            [0, 2, 0],
+            [2, 4, 2],
+            [4, 6, 10],
+            [6, 8, 3],
         ]);
     });
 
@@ -653,11 +638,7 @@ describe('buildTimelineRenderModel — audible audio programme', () => {
             },
         });
 
-        // The pass first becomes eligible at beat 2. Source [2,3) s lasts
-        // only until beat 4; the rest of the [0,8) rectangle has no peaks.
-        expect(displayedAudioWindows(buildTimelineRenderModel(), 'recording')).toEqual([
-            { samples: [96_000, 144_000], pixels: [24, 48] },
-        ]);
+        expect(programmeWindows(buildTimelineRenderModel(), 'recording')).toEqual([[2, 4, 2]]);
     });
 
     it('preserves negative pre-roll and lets canonical zero override stale beat offsets', () => {
@@ -690,8 +671,11 @@ describe('buildTimelineRenderModel — audible audio programme', () => {
         });
 
         const model = buildTimelineRenderModel();
-        expect(displayedAudioWindows(model, 'preroll')).toEqual([{ samples: [0, 48_000], pixels: [24, 48] }]);
-        expect(displayedAudioWindows(model, 'zero')).toEqual([{ samples: [0, 96_000], pixels: [60, 108] }]);
+        expect(model.tracks[0]!.clips.map((part) => [part.startBeat, part.endBeat, part.audioOffsetSeconds])).toEqual([
+            [0, 4, -1],
+            [5, 9, 0],
+        ]);
+        expect(model.tracks[0]!.clips.every((part) => part.audioProgramme === undefined)).toBe(true);
     });
 
     it('invalidates only a changed comp projection while preserving the earlier model snapshot', () => {
@@ -725,7 +709,7 @@ describe('buildTimelineRenderModel — audible audio programme', () => {
         });
         const before = buildTimelineRenderModel();
         const beforeTracks = before.tracks;
-        expect(displayedAudioWindows(before, 'recording')).toEqual([{ samples: [48_000, 144_000], pixels: [0, 48] }]);
+        expect(programmeWindows(before, 'recording')).toEqual([[0, 4, 1]]);
 
         takeLaneStoreMock.value = {
             lanes: [
@@ -737,8 +721,8 @@ describe('buildTimelineRenderModel — audible audio programme', () => {
         };
         const after = buildTimelineRenderModel();
         expect(after.tracks).not.toBe(beforeTracks);
-        expect(displayedAudioWindows(after, 'recording')).toEqual([{ samples: [96_000, 192_000], pixels: [0, 48] }]);
-        expect(displayedAudioWindows(before, 'recording')).toEqual([{ samples: [48_000, 144_000], pixels: [0, 48] }]);
+        expect(programmeWindows(after, 'recording')).toEqual([[0, 4, 2]]);
+        expect(programmeWindows(before, 'recording')).toEqual([[0, 4, 1]]);
     });
 
     it('keeps the chosen source in step with a clip drag preview without moving its committed rectangle', () => {
@@ -787,9 +771,16 @@ describe('buildTimelineRenderModel — audible audio programme', () => {
 
         const preview = buildTimelineRenderModel();
         expect([preview.tracks[0]!.clips[0]!.startBeat, preview.tracks[0]!.clips[0]!.endBeat]).toEqual([10, 18]);
-        expect(
-            displayedAudioWindows(preview, 'recording').filter(({ pixels }) => pixels[0]! >= 144 && pixels[1]! <= 168)
-        ).toEqual([{ samples: [96_000, 144_000], pixels: [144, 168] }]);
+        expect(preview.tracks[0]!.clips[0]!.audioProgramme?.find((part) => part.startBeat === 12)).toMatchObject({
+            startBeat: 12,
+            endBeat: 14,
+            audioOffsetSeconds: 2,
+        });
+        expect(committed.tracks[0]!.clips[0]!.audioProgramme?.find((part) => part.startBeat === 2)).toMatchObject({
+            startBeat: 2,
+            endBeat: 4,
+            audioOffsetSeconds: 2,
+        });
         expect([committed.tracks[0]!.clips[0]!.startBeat, committed.tracks[0]!.clips[0]!.endBeat]).toEqual([0, 8]);
     });
 });
