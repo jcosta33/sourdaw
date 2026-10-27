@@ -946,38 +946,38 @@ describe('the live MIDI writer', () => {
         expect(sink.refusals()).toBe(0);
     });
 
-    it.each(['refused', 'thrown'])('retries a %s opening through the ordinary pump to release a deleted key', async (failure) => {
-        mocks.events = [
-            { time: 1, note: 60, isNoteOn: true },
-            { time: 3, note: 64, isNoteOn: true },
-            { time: 3.5, note: 64, isNoteOn: false },
-            { time: 15, note: 60, isNoteOn: false },
-        ];
-        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
-        nativeLiveGraphSession.loopEnabled = true;
-        const sink = persistentMidiSink();
-        await arm(0);
-        sink.render(0, 2);
-        mocks.events = mocks.events.filter((event) => event.note !== 60);
-        if (failure === 'refused') {
-            mocks.apply.mockResolvedValueOnce(REFUSED);
-        } else {
-            mocks.apply.mockRejectedValueOnce(new Error('opening bridge fault'));
+    it.each(['refused', 'thrown'])(
+        'retries a %s opening through the ordinary pump to release a deleted key',
+        async (failure) => {
+            mocks.events = [
+                { time: 1, note: 60, isNoteOn: true },
+                { time: 3, note: 64, isNoteOn: true },
+                { time: 3.5, note: 64, isNoteOn: false },
+                { time: 15, note: 60, isNoteOn: false },
+            ];
+            nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+            nativeLiveGraphSession.loopEnabled = true;
+            const sink = persistentMidiSink();
+            await arm(0);
+            sink.render(0, 2);
+            mocks.events = mocks.events.filter((event) => event.note !== 60);
+            if (failure === 'refused') {
+                mocks.apply.mockResolvedValueOnce(REFUSED);
+            } else {
+                mocks.apply.mockRejectedValueOnce(new Error('opening bridge fault'));
+            }
+            await arm(2);
+            expect(sink.sounding(60)).toBe(true);
+            expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(0);
+            expect(nativeLiveMidiWriter.pass?.targets[0]?.heldEventIndices).toEqual([]);
+            await pump(2);
+            expect(sink.sounding(60)).toBe(false);
+            expect(sink.releases).toEqual([60]);
+            sink.render(2, 4);
+            expect(sink.delivered).toEqual(eventIdentities([{ time: 1, note: 60, isNoteOn: true }, ...mocks.events]));
+            expect(sink.scheduledLate).toEqual([]);
         }
-        await arm(2);
-        expect(sink.sounding(60)).toBe(true);
-        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(0);
-        expect(nativeLiveMidiWriter.pass?.targets[0]?.heldEventIndices).toEqual([]);
-        await pump(2);
-        expect(sink.sounding(60)).toBe(false);
-        expect(sink.releases).toEqual([60]);
-        sink.render(2, 4);
-        expect(sink.delivered).toEqual(eventIdentities([
-            { time: 1, note: 60, isNoteOn: true },
-            ...mocks.events,
-        ]));
-        expect(sink.scheduledLate).toEqual([]);
-    });
+    );
 
     it('releases a long key when its target is abandoned before its distant off', async () => {
         mocks.events = [
