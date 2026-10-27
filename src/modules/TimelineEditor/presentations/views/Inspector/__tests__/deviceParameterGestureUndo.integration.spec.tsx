@@ -1012,6 +1012,46 @@ describe('Inspector continuous parameter gestures through real history', () => {
         }
     });
 
+    it.each(['release', 'unmount'] as const)(
+        'releases its Touch session after switching to Read before physical %s',
+        async (ending) => {
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            const view = render(<Control />);
+            beginKnob();
+            moveKnob(85);
+            expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+            act(() => {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map((track) => ({ ...track, automationMode: 'read' })),
+                });
+            });
+            const recordedSamples = recording.mock.calls.length;
+
+            if (ending === 'release') {
+                endKnob();
+                await expectCommitted('detune', 25, 1);
+            } else {
+                view.unmount();
+                expect(depth()).toBe(0);
+            }
+            act(() => {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map((track) => ({ ...track, automationMode: 'touch' })),
+                });
+            });
+
+            expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
+            expect(recording.mock.calls).toHaveLength(recordedSamples);
+        }
+    );
+
     it('preserves a newer same-key MIDI Touch writer when the old knob is cancelled', () => {
         trackStore.set({
             ...trackStore.value!,

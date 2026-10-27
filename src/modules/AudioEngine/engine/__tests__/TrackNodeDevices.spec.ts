@@ -1108,6 +1108,66 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(preview.isCurrent()).toBe(false);
         });
 
+        it.each(['generic', 'descriptor-owned'] as const)(
+            'preserves a later ownerless queued write when an obsolete %s preview cancels',
+            (route) => {
+                const queued = new Map<string, number>();
+                const deferred = installDeferredWasmDevice(
+                    route === 'descriptor-owned'
+                        ? {
+                              controller: { setParam: (name, value) => { queued.set(name, value); } },
+                              beforeLoaded: (node) => {
+                                  for (const [name, value] of queued) {
+                                      node.controller?.setParam(name, value);
+                                  }
+                              },
+                          }
+                        : {}
+                );
+                const track = new TrackNode('t1', makeDeps(ctx));
+                track.addDevice('wasm-1', 'levain');
+                const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+                withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                    track.updateParam('wasm-1', 'gain', 0.25)
+                );
+                track.updateParam('wasm-1', 'gain', 0.8);
+                const obsoleteCurrent = preview.isCurrent();
+                if (obsoleteCurrent) {
+                    track.updateParam('wasm-1', 'gain', 0.1);
+                }
+                preview.release();
+                const loaded = createLoadedDevice();
+                deferred.resolve(loaded.device);
+
+                expect(loaded.controller.setParam.mock.calls).toEqual([['gain', 0.8]]);
+                expect(obsoleteCurrent).toBe(false);
+                expect(preview.canCommit()).toBe(false);
+            }
+        );
+
+        it.each(['ownerless', 'owned'] as const)(
+            'refuses obsolete settlement after a later %s queued producer replaces its preview',
+            (producer) => {
+                installDeferredWasmDevice();
+                const track = new TrackNode('t1', makeDeps(ctx));
+                track.addDevice('wasm-1', 'levain');
+                const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+                withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                    track.updateParam('wasm-1', 'gain', 0.25)
+                );
+                const newer = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+                withDeviceParameterRuntimeWriteOwner(
+                    't1', 'wasm-1', 'gain', producer === 'owned' ? newer.owner : undefined,
+                    () => track.updateParam('wasm-1', 'gain', 0.8)
+                );
+
+                expect(preview.isCurrent()).toBe(false);
+                expect(preview.canCommit()).toBe(false);
+                preview.release();
+                expect(newer.canCommit()).toBe(producer === 'owned');
+            }
+        );
+
         it('retains cancellable pending ownership without displacing a current effective producer', () => {
             const deferred = installDeferredWasmDevice();
             const track = new TrackNode('t1', makeDeps(ctx));
