@@ -40,6 +40,24 @@ describe('setProofParam', () => {
         }));
     });
 
+    it.each([
+        ['unknown', 1],
+        ['target_lufs', -14],
+        ['chain_order_0', 4],
+        ['input_gain', NaN],
+        ['input_gain', Infinity],
+        ['input_gain', Number.MAX_VALUE],
+        ['eq_band0_type', 0.25],
+        ['eq_band0_type', 5],
+        ['eq_bypass', 2],
+        ['dither_mode', 3],
+        ['dither_bits', 17],
+    ] as const)('refuses %s=%s before engine or persistence', (name, value) => {
+        setProofParam({ deviceId: 'dev-1', name, value });
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(persistDeviceParam).not.toHaveBeenCalled();
+    });
+
     it('sends the param through the device door and persists it', () => {
         setProofParam({ deviceId: 'dev-1', name: 'lim_ceiling', value: -1.5 });
 
