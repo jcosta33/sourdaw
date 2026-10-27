@@ -8,7 +8,7 @@ import {
 import { useStore } from '#/infra/store/useStore';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getPluginById, setDeviceParameter } from '#/modules/Arrangement/useCases';
-import { audioEngine, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { audioEngine, isDeviceCarriedByNativeSession, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
@@ -33,6 +33,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
+import { applyAutomation } from '#/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
@@ -102,7 +103,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     updateMidiFxBypass: vi.fn(),
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
-    isDeviceCarriedByNativeSession: () => false,
+    isDeviceCarriedByNativeSession: vi.fn(() => false),
     sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
@@ -269,6 +270,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         engineWrites.length = 0;
         afterEngineWrite = null;
         vi.clearAllMocks();
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
         vi.spyOn(audioEngine, 'updateDeviceParam').mockImplementation(
             (trackId: string, deviceId: string, paramId: string, value: number) => {
                 engineWrites.push({ trackId, deviceId, paramId, value });
@@ -676,6 +678,76 @@ describe('Inspector continuous parameter gestures through real history', () => {
 
         expect(rawValues()?.detune).toBe(5);
         expect(writes()).toEqual([25, laterRuntimeValue]);
+        expect(depth()).toBe(0);
+    });
+
+    it.each([65, 25])('commits one edit without overtaking a newer runtime producer at %s', async (laterValue) => {
+        render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const snapshot = transactSnapshot(async () => {
+            entered.resolve();
+            await release.promise;
+        });
+        try {
+            await entered.promise;
+            endKnob();
+            updateDeviceParam('track-1', synth.id, 'detune', laterValue);
+            const beforeSettlement = writes();
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+            await expectCommitted('detune', 25, 1);
+            expect(writes()).toEqual(beforeSettlement);
+            await act(() => undo());
+            expect(rawValues()?.detune).toBe(5);
+            expect(writes().at(-1)).toBe(5);
+            await act(() => redo());
+            expect(rawValues()?.detune).toBe(25);
+            expect(writes().at(-1)).toBe(25);
+        } finally {
+            await act(async () => {
+                release.resolve();
+                await snapshot;
+            });
+        }
+    });
+
+    it('retains a carried Grinder fallback written by real Read automation when a preview unmounts', () => {
+        const grinder: Device = {
+            id: 'grinder-1',
+            name: 'Grinder',
+            type: 'grinder',
+            bypassed: false,
+            parameterValues: { gain: 5 },
+        };
+        trackStore.set({ ...trackStore.value!, tracks: [testTrack([grinder])] });
+        const view = render(<Control deviceId={grinder.id} paramId="gain" />);
+        const control = screen.getByRole('slider', { name: 'Gain' });
+        beginKnob(control);
+        moveKnob(85, control);
+        expect(writes(grinder.id).length).toBe(1);
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'grinder-gain',
+                    trackId: 'track-1',
+                    parameterId: 'grinder-1:gain',
+                    enabled: true,
+                    points: [{ id: 'gain-point', beat: 0, value: 8, curve: 'linear' }],
+                },
+            ],
+        });
+        vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
+        applyAutomation(0);
+        expect(writes(grinder.id).at(-1)).toBe(8);
+        const beforeUnmount = writes(grinder.id);
+        view.unmount();
+        expect(writes(grinder.id)).toEqual(beforeUnmount);
+        expect(rawValues(grinder.id)?.gain).toBe(5);
         expect(depth()).toBe(0);
     });
 
