@@ -144,7 +144,6 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
     let secondPage: Record<string, unknown> | undefined;
     const provider = await startScriptedToolProvider((request, turn) => {
         expect(turn).toBeLessThan(4);
-        const readTool = toolWith(request, ['clipId', 'sensitivity', 'cursor']);
         if (turn === 0)
             return [
                 {
@@ -154,6 +153,7 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
                 },
             ];
         if (turn === 1) {
+            const readTool = toolWith(request, ['clipId', 'sensitivity', 'cursor']);
             const catalog = receipt(request, 'onset-catalog');
             expect(catalog.category).toBe('analysis');
             expect(catalog.items).toEqual([
@@ -176,7 +176,7 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
             return [
                 {
                     id: 'onsets-2',
-                    name: readTool,
+                    name: toolWith(request, ['clipId', 'sensitivity', 'cursor']),
                     arguments: { clipId: imported.clips[0].id, cursor: firstPage.nextCursor },
                 },
             ];
@@ -203,12 +203,15 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
         const composer = page.getByTestId('chat-composer-input');
         await expect(composer).toBeVisible();
         await expect(composer).toBeEnabled();
+        await page.getByRole('combobox', { name: 'Agent execution mode' }).selectOption('apply');
         const before = await sourceState(page);
         await composer.fill(
             `Show source onset times and confidence for the audio clip "${imported.clips[0].name}". Do not create markers or edit the project.`
         );
         await composer.press('Enter');
-        await expect.poll(() => provider.requests.length, { timeout: 30_000 }).toBe(4);
+        await expect
+            .poll(() => ({ requests: provider.requests.length, failures: provider.failures }), { timeout: 30_000 })
+            .toEqual({ requests: 4, failures: [] });
         expect(provider.failures).toEqual([]);
         await expect(page.getByRole('log', { name: 'Chat conversation' })).toContainText(
             'The source-buffer onset pages report seconds and confidence without changing markers.'
