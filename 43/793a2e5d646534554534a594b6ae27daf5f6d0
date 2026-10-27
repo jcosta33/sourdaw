@@ -1,0 +1,107 @@
+.agents/skills/review-stances/README.md
+  s_29d8df116c5b92::t_8b9c78e9a825fe 43-44,46
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_19d15d175b771c 9-17,1456-1471
+.github/workflows/validation.yml
+  s_29d8df116c5b92::t_086ae7504d67d5 338-340
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_94e49e56ad3ad8 1211-1212
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_29d8df116c5b92::t_56a5980e9804ea 714-717
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_34534fbd279321 1996-2004,4667-4696
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_29d8df116c5b92::t_cce9a75f422939 39,2749-2974,4543-4547,4577-4586,5047-5052
+scripts/healthGateWorkflowContract.ts
+  s_29d8df116c5b92::t_347bd2299f02cc 109-113,190
+scripts/resourceGuard.ts
+  s_29d8df116c5b92::t_8f84943ca1e3c3 151-152,1179,1185-1186,1213-1215,1649-1650,1652,1701,1727,1729-1732,1818-1820
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_73973a606f0cd4 4026-4028,4030-4032,4034-4036,4046-4048
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_29d8df116c5b92::t_951ad916a461bb 670-673,680
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_29d8df116c5b92::t_c58fe901b8fc0d 201-230,259-265,276,280-281
+src/modules/Arrangement/handlers/clip/isClipSplitOrderSnapshot.ts
+  s_29d8df116c5b92::t_e4da4558797599 1-10
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_9c2dfcadf65bba 19,295
+src/modules/Arrangement/useCases/clipEditing/resolveClipSplitInsertionIndex.ts
+  s_29d8df116c5b92::t_f08d4180a9fd25 32
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_83ba41b771c8af 323-328
+src/modules/Transport/services/midiNoteBounds.ts
+  s_29d8df116c5b92::t_c0e3fdc2420709 1-30
+src/modules/Transport/services/midiSchedulerWindowGeometry.ts
+  s_29d8df116c5b92::t_cde2339067bfa2 1-64
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_d1db6046e71a46 103-110,124-130,155-172,185-193
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_3010f7e85169e0 3-6,8-10,14-15,52-56,307-314,319,329,399-401,483-489,593-597,682-686,757-761
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_4b0fa317fdc47d 94-101,205-211,227-249,253-261
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_29d8df116c5b92::t_85aaa6a6050bfa 44-50,95-98,136-144,196-197
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_29d8df116c5b92::t_2f6fdb5b69c6c3 91-97,148-151,188-196,249-250
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_29d8df116c5b92::t_26ffcf24b548ba 51-57,104-107,146-154,206-207
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_29d8df116c5b92::t_afcc0c719febf3 53-59,110-113,173-181,240-241
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_29d8df116c5b92::t_ed95230aaac47f 43-49,94-97,135-143,195-196
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_29d8df116c5b92::t_bd85f16accad5b 54-60,107-110,157-165,213-214
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_29d8df116c5b92::t_07f1daf8a9f2ae 162-168,215-218,252-260,305-306
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_29d8df116c5b92::t_dcf452553f6533 67-73,110-113,146-154,197-198
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_29d8df116c5b92::t_b7ecf61d216026 44-50,95-98,136-144,196-197
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_5bfe46b323738c 2-3,12,21-22,106-112
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_60e13afcda56d0 45,63-68,275-283,290,317,697-707,1611,1613,1615-1616,1622-1624,1635
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_29d8df116c5b92::t_ba0f4025be8c6b 43-45
+src/modules/Transport/useCases/scheduling/getScheduledMidiNoteIndex.ts
+  s_29d8df116c5b92::t_1079d8bbf1b350 1-42
+src/modules/Transport/useCases/scheduling/prepareInitialMidiWindow.ts
+  s_29d8df116c5b92::t_be5be3e3f7e701 1-63
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_29d8df116c5b92::t_cb1427a5f63022 1-580
+src/modules/Transport/useCases/scheduling/resolveMidiWindowClips.ts
+  s_29d8df116c5b92::t_d2e6c6c45f4f41 1-17
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_29d8df116c5b92::t_80bef81603ffe5 388-391
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_29d8df116c5b92::t_3b657a5e89420e 3,18,30,43-48,62,66,72,82-85
+src/modules/Transport/useCases/scheduling/schedulerCancellation.ts
+  s_29d8df116c5b92::t_47d4d223a6bca0 1-9
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_29d8df116c5b92::t_0580a67589158b 60-63,75-77,91-105,130-139
+src/modules/Transport/useCases/transportControls/__tests__/pauseStart.spec.ts
+  s_29d8df116c5b92::t_7b118f65e7d4ae 6-9,132
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_29d8df116c5b92::t_68b7d43983e05e 22,26,127,170-181,494-504
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_29d8df116c5b92::t_d5081a8c409de8 12,16-17
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_29d8df116c5b92::t_7204d594cc9913 4,9,16,31-43,71,89,134-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43793a2e5d646534554534a594b6ae27daf5f6d0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
