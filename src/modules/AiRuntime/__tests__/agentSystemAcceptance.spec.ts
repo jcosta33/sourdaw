@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
-import { describe, expect, it, vi } from 'vitest';
+import { Counter, toJS } from '@automerge/automerge';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -16,6 +17,9 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore 
 import * as commandUseCases from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
+    getCrdtDocIds,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -23,6 +27,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
+import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import {
@@ -52,6 +57,7 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
     pendingActionConfirmationStore,
+    proposePendingActionConfirmation,
 } from '../stores/pendingActionConfirmationStore';
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -469,6 +475,121 @@ type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'
 /** One scored case and the writes it made that its oracle never asked for. */
 type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
 
+type ProjectTruth = Record<string, Record<string, unknown>>;
+
+/** Materialized project values, independent of the route that wrote them. */
+function captureProjectTruth(): ProjectTruth {
+    captureSettledRevision();
+    const truth: ProjectTruth = {};
+    for (const id of getCrdtDocIds()) {
+        const document = getCrdtDoc(id);
+        if (document === undefined) {
+            continue;
+        }
+        const value: unknown = toJS(document);
+        if (!isRecord(value)) {
+            throw new TypeError(`The acceptance project document ${id} has no object value.`);
+        }
+        if (id === 'root') {
+            // Checkpoint bookkeeping changes with valid commits but carries no project content.
+            delete value.commandBatchIdempotency;
+        }
+        truth[id] = value;
+    }
+    return truth;
+}
+
+function isProjectMap(value: unknown): value is Record<string, unknown> {
+    if (!isRecord(value)) {
+        return false;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+}
+
+/** Count differing leaves; adding or removing a whole subtree counts at least once. */
+function projectDifferences(expected: unknown, actual: unknown): number {
+    if (isDeepStrictEqual(expected, actual)) {
+        return 0;
+    }
+    if (Array.isArray(expected) && Array.isArray(actual)) {
+        let count = 0;
+        for (let index = 0; index < Math.max(expected.length, actual.length); index++) {
+            count += projectDifferences(expected[index], actual[index]);
+        }
+        return count;
+    }
+    if (isProjectMap(expected) && isProjectMap(actual)) {
+        if (Object.getPrototypeOf(expected) !== Object.getPrototypeOf(actual)) {
+            return 1;
+        }
+        let count = 0;
+        for (const key of new Set([...Object.keys(expected), ...Object.keys(actual)])) {
+            count += projectDifferences(expected[key], actual[key]);
+        }
+        return count;
+    }
+    return 1;
+}
+
+/**
+ * The sealed refinement commits currently authorize only fader fields. Fail closed when a future
+ * case adds another operation: its permitted project transition needs an explicit oracle too.
+ */
+function projectAfterOracleActions(before: ProjectTruth, actions: readonly CorpusOracleAction[]): ProjectTruth {
+    const root = before.root;
+    const trackSlot = root?.tracks;
+    if (root === undefined || !isProjectMap(trackSlot) || !Array.isArray(trackSlot.tracks)) {
+        throw new TypeError('The acceptance project has no materialized track collection.');
+    }
+    // Copy only the fields the oracle will edit; cloning a Counter as a plain object changes its type.
+    const tracks = trackSlot.tracks.map((track) => {
+        if (!isProjectMap(track)) {
+            throw new TypeError('An acceptance track must be a project map.');
+        }
+        return { ...track };
+    });
+    const expected = { ...before, root: { ...root, tracks: { ...trackSlot, tracks } } };
+    for (const action of actions) {
+        if (action.type !== 'setTrackGain' || typeof action.payload.trackId !== 'string') {
+            throw new TypeError(`Refinement project oracle does not cover ${action.type}.`);
+        }
+        const track = tracks.find((candidate) => isRecord(candidate) && candidate.id === action.payload.trackId);
+        if (!isRecord(track) || typeof track.gain !== 'number') {
+            throw new TypeError(`The acceptance project has no fader for ${action.payload.trackId}.`);
+        }
+        const { gain, gainDb, deltaDb } = action.payload;
+        for (const value of [gain, gainDb, deltaDb]) {
+            if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
+                throw new TypeError('A fader oracle level must be finite.');
+            }
+        }
+        const level = resolveLevelFields(
+            {
+                linear: typeof gain === 'number' ? gain : undefined,
+                absoluteDb: typeof gainDb === 'number' ? gainDb : undefined,
+                deltaDb: typeof deltaDb === 'number' ? deltaDb : undefined,
+            },
+            track.gain,
+            TRACK_FADER_LAW
+        );
+        if (!level.ok) {
+            throw new Error('The acceptance fader oracle declares an invalid level.');
+        }
+        track.gain = clampFaderGain(level.linear);
+    }
+    return expected;
+}
+
+/** The prior's frozen scripted commands declare the setup a committed refinement may establish. */
+function priorCommitOracleActions(prior: CorpusPriorTurn): CorpusOracleAction[] {
+    const proposals = prior.providerTurns.filter((turn) => turn.kind === 'propose-commands');
+    if (proposals.length !== 1) {
+        throw new Error('A committed refinement prior needs one frozen command proposal for its project oracle.');
+    }
+    return proposals[0]!.commands.map((command) => ({ type: command.name, payload: command.arguments }));
+}
+
 /** An action as the stores and the Command barrel hold it: its type, and its payload when it has one. */
 type LandedAction = { type: string; payload?: unknown };
 
@@ -533,8 +654,15 @@ async function runCorpusCase(testCase: CorpusCase, barrel: BarrelWriteLog): Prom
         return runRefinementCase(testCase, barrel);
     }
     const writesBefore = barrel.count();
+    const projectBefore = captureProjectTruth();
     const result = await runPlannedCorpusCase(testCase);
-    return { result, unintendedMutations: barrel.count() - writesBefore };
+    return {
+        result,
+        unintendedMutations: Math.max(
+            barrel.count() - writesBefore,
+            projectDifferences(projectBefore, captureProjectTruth())
+        ),
+    };
 }
 
 /** Plans one single-turn case against the fixture project, with no thread and no chat route. */
@@ -721,11 +849,21 @@ function captureSettledRevision(): string {
  * What one chat turn wrote: the actions it asked the Command barrel for, whether the project or its
  * undo history moved by any route, and the undo groups it added.
  */
-type ChatTurnWrites = { barrelActions: LandedAction[]; moved: boolean; newGroups: PastEntry[][] };
+type ChatTurnWrites = {
+    barrelActions: LandedAction[];
+    moved: boolean;
+    newGroups: PastEntry[][];
+    projectBefore: ProjectTruth;
+    projectAfter: ProjectTruth;
+};
 
 /** A write the turn made, counted once even where only the project revision shows it. */
 function anyWrites(writes: ChatTurnWrites): number {
-    return Math.max(writes.barrelActions.length, writes.moved ? 1 : 0);
+    return Math.max(
+        writes.barrelActions.length,
+        writes.moved ? 1 : 0,
+        projectDifferences(writes.projectBefore, writes.projectAfter)
+    );
 }
 
 type PastEntry = NonNullable<typeof undoHistoryStore.value>['past'][number];
@@ -778,6 +916,7 @@ async function sendScriptedChatTurn(input: {
     }
     chatPlanning.last = null;
     const revision = captureSettledRevision();
+    const projectBefore = captureProjectTruth();
     const pastLength = pastEntries().length;
     const entriesBefore = new Set(pastEntries());
     const mark = input.barrel.mark();
@@ -793,22 +932,32 @@ async function sendScriptedChatTurn(input: {
         barrelActions: input.barrel.actionsSince(mark),
         moved: captureSettledRevision() !== revision || pastEntries().length !== pastLength,
         newGroups: groupsAddedSince(entriesBefore),
+        projectBefore,
+        projectAfter: captureProjectTruth(),
     };
 }
 
 /** What the prior turn left for the follow-up: the card it holds pending, or the group it committed. */
-type PriorTurnState = { proposalId: string | undefined; commitGroupId: string | undefined };
+type PriorTurnState = {
+    proposalId: string | undefined;
+    commitGroupId: string | undefined;
+    projectBeforeCommit: ProjectTruth;
+};
 
 /**
  * Brings the prior turn to the state its case declares. A turn that must commit is confirmed where
  * the risk policy put it to the musician, so its commit takes the real confirmed-batch path and the
  * undo history holds its revert group either way.
  */
-async function settlePriorTurn(id: string, outcome: CorpusPriorTurn['outcome']): Promise<PriorTurnState> {
+async function settlePriorTurn(
+    id: string,
+    outcome: CorpusPriorTurn['outcome'],
+    projectBeforeCommit: ProjectTruth
+): Promise<PriorTurnState> {
     const proposed = proposedConfirmationIds();
     if (outcome === 'pending') {
         expect(proposed, `Case ${id} prior turn left no single card pending: ${lastAssistantReply()}`).toHaveLength(1);
-        return { proposalId: proposed[0], commitGroupId: undefined };
+        return { proposalId: proposed[0], commitGroupId: undefined, projectBeforeCommit };
     }
     expect(proposed.length, `Case ${id} prior turn left more than one card pending`).toBeLessThanOrEqual(1);
     for (const confirmationId of proposed) {
@@ -818,7 +967,7 @@ async function settlePriorTurn(id: string, outcome: CorpusPriorTurn['outcome']):
         readChatThreadContext()?.lastCommit?.standing,
         `Case ${id} prior turn committed nothing that stands: ${lastAssistantReply()}`
     ).toBe('standing');
-    return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId };
+    return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId, projectBeforeCommit };
 }
 
 /** The commands one undo group holds applied, or `null` when any member is no plain action. */
@@ -858,26 +1007,23 @@ function followUpBatch(writes: ChatTurnWrites): FollowUpBatch | null {
     return { actions: card.actions, commitEntries: null };
 }
 
-function isSameAction(left: LandedAction, right: LandedAction): boolean {
-    return left.type === right.type && isDeepStrictEqual(left.payload, right.payload);
-}
-
-/** The barrel writes that are none of the commit's own entries, each entry answering for one write. */
-function writesBeyondCommit(writes: ChatTurnWrites, commitEntries: readonly LandedAction[] | null): number {
+/**
+ * Chat commits dispatch inside Command rather than through its public barrel. A side call cannot
+ * borrow a committed entry's permission by carrying the same payload; project truth independently
+ * verifies every permitted field and value, including writes that bypass both routes.
+ */
+function writesBeyondCommit(
+    writes: ChatTurnWrites,
+    commitEntries: readonly LandedAction[] | null,
+    oracle: readonly CorpusOracleAction[]
+): number {
     if (commitEntries === null) {
         return anyWrites(writes);
     }
-    const unanswered = [...commitEntries];
-    let beyond = 0;
-    for (const action of writes.barrelActions) {
-        const answered = unanswered.findIndex((entry) => isSameAction(entry, action));
-        if (answered === -1) {
-            beyond += 1;
-            continue;
-        }
-        unanswered.splice(answered, 1);
-    }
-    return beyond;
+    return Math.max(
+        writes.barrelActions.length,
+        projectDifferences(projectAfterOracleActions(writes.projectBefore, oracle), writes.projectAfter)
+    );
 }
 
 /** The undo of the prior commit: the planned revert names its group, and the history holds it undone whole. */
@@ -926,7 +1072,13 @@ function scoreFollowUp(input: {
             if (!revertsPriorCommit(outcome, prior)) {
                 return missed;
             }
-            return { matchesOracle: true, unintendedMutations: writes.barrelActions.length };
+            return {
+                matchesOracle: true,
+                unintendedMutations: Math.max(
+                    writes.barrelActions.length,
+                    projectDifferences(prior.projectBeforeCommit, writes.projectAfter)
+                ),
+            };
         case 'proposal': {
             if (testCase.oracle.replaces === 'prior-proposal') {
                 const unintendedMutations = anyWrites(writes);
@@ -941,7 +1093,10 @@ function scoreFollowUp(input: {
             if (batch === null || !landedActionsMatch(testCase.id, batch.actions, testCase.oracle.actions)) {
                 return missed;
             }
-            return { matchesOracle: true, unintendedMutations: writesBeyondCommit(writes, batch.commitEntries) };
+            return {
+                matchesOracle: true,
+                unintendedMutations: writesBeyondCommit(writes, batch.commitEntries, testCase.oracle.actions),
+            };
         }
         default:
             throw new Error(
@@ -960,7 +1115,8 @@ function scoreFollowUp(input: {
 async function runRefinementCase(
     testCase: CorpusCase,
     barrel: BarrelWriteLog,
-    alongside?: () => Promise<void>
+    alongside?: () => Promise<void>,
+    alongsidePrior?: () => Promise<void>
 ): Promise<CaseRun> {
     const { prior, refinementKind } = testCase;
     if (prior === undefined || refinementKind === undefined) {
@@ -969,14 +1125,23 @@ async function runRefinementCase(
     assertOracleKindFitsClass(testCase);
     openChatProject();
     try {
+        const projectBeforePrior = captureProjectTruth();
         const priorWrites = await sendScriptedChatTurn({
             id: testCase.id,
             prompt: prior.prompt,
             providerTurns: prior.providerTurns,
             priorProposalId: () => undefined,
             barrel,
+            alongside: alongsidePrior,
         });
-        const priorState = await settlePriorTurn(testCase.id, prior.outcome);
+        const priorState = await settlePriorTurn(testCase.id, prior.outcome, projectBeforePrior);
+        let priorUnintendedMutations = anyWrites(priorWrites);
+        if (prior.outcome === 'committed') {
+            priorUnintendedMutations = projectDifferences(
+                projectAfterOracleActions(projectBeforePrior, priorCommitOracleActions(prior)),
+                captureProjectTruth()
+            );
+        }
         const writes = await sendScriptedChatTurn({
             id: testCase.id,
             prompt: testCase.prompt,
@@ -1003,8 +1168,7 @@ async function runRefinementCase(
                 observed,
                 matchesOracle: followUp.matchesOracle,
             }),
-            unintendedMutations:
-                (prior.outcome === 'pending' ? anyWrites(priorWrites) : 0) + followUp.unintendedMutations,
+            unintendedMutations: priorUnintendedMutations + followUp.unintendedMutations,
         };
     } finally {
         closeChatProject();
@@ -1240,9 +1404,217 @@ describe('agent acceptance corpora', () => {
         );
     });
 
+    describe('write-counter self-checks', () => {
+        let previousHistory: NonNullable<typeof undoHistoryStore.value>;
+        let previousConfirmations: NonNullable<typeof pendingActionConfirmationStore.value>;
+
+        beforeEach(() => {
+            const history = undoHistoryStore.value;
+            const confirmations = pendingActionConfirmationStore.value;
+            if (history === null || confirmations === null) {
+                throw new Error('The accounting stores must be available.');
+            }
+            previousHistory = history;
+            previousConfirmations = confirmations;
+            undoHistoryStore.set({ past: [], future: [] });
+            clearPendingActionConfirmations();
+        });
+        afterEach(() => {
+            undoHistoryStore.set(previousHistory);
+            pendingActionConfirmationStore.set(previousConfirmations);
+        });
+
+        function truthFixture() {
+            return {
+                root: {
+                    tracks: {
+                        tracks: [
+                            {
+                                id: 'track-lead-vocal',
+                                gain: 1,
+                                pan: 0,
+                                groupId: 'group-a',
+                                clips: [{ id: 'clip-a', startBeat: 0 }],
+                                devices: [{ id: 'device-a', parameterValues: { cutoff: 100 } }],
+                            },
+                        ],
+                    },
+                    groups: [{ id: 'group-a', name: 'Vocals' }],
+                },
+            };
+        }
+        function writesFixture(overrides: Partial<ChatTurnWrites> = {}): ChatTurnWrites {
+            const projectBefore = truthFixture();
+            return {
+                barrelActions: [],
+                moved: false,
+                newGroups: [],
+                projectBefore,
+                projectAfter: structuredClone(projectBefore),
+                ...overrides,
+            };
+        }
+        const action: AppAction = {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-lead-vocal', gain: 1, expectedGain: 1 },
+        };
+        const oracle: CorpusOracleAction[] = [
+            { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 1 } },
+        ];
+        function entry(id: string, groupId?: string): PastEntry {
+            const value: PastEntry = {
+                kind: 'action',
+                id,
+                label: id,
+                timestamp: 0,
+                source: 'ai',
+                action,
+                inverseAction: null,
+            };
+            if (groupId !== undefined) {
+                value.groupId = groupId;
+            }
+            return value;
+        }
+
+        it('counts a revision or history move even without a barrel call or surviving field change', () => {
+            expect(anyWrites(writesFixture({ moved: true }))).toBe(1);
+            expect(anyWrites(writesFixture())).toBe(0);
+        });
+
+        it('does not let an identical committed entry answer for an extra barrel write', () => {
+            expect(writesBeyondCommit(writesFixture({ barrelActions: [action] }), [action], oracle)).toBe(1);
+            expect(writesBeyondCommit(writesFixture({ barrelActions: [action, action] }), [action], oracle)).toBe(2);
+        });
+
+        it('counts no writes for a clean uncommitted card but counts every write beside it', () => {
+            expect(writesBeyondCommit(writesFixture(), null, oracle)).toBe(0);
+            expect(writesBeyondCommit(writesFixture({ moved: true }), null, oracle)).toBe(1);
+        });
+
+        it('groups new entries by their group id while keeping ungrouped entries separate', () => {
+            const old = entry('old', 'old-group');
+            const first = entry('first', 'new-group');
+            const second = entry('second', 'new-group');
+            const ungroupedFirst = entry('ungrouped-first');
+            const ungroupedSecond = entry('ungrouped-second');
+            undoHistoryStore.set({ past: [old, first, second, ungroupedFirst, ungroupedSecond], future: [] });
+            expect(groupsAddedSince(new Set([old]))).toEqual([[first, second], [ungroupedFirst], [ungroupedSecond]]);
+            expect(followUpBatch(writesFixture({ newGroups: [[first, second]] }))?.actions).toEqual([action, action]);
+            expect(followUpBatch(writesFixture({ newGroups: [[first], [second]] }))).toBeNull();
+        });
+
+        it('refuses a pending card with a new history group beside it', () => {
+            const card = proposePendingActionConfirmation({
+                id: 'counter-card',
+                prompt: 'Set vocal gain',
+                assistantMessageId: 'counter-message',
+                actions: [action],
+                actionLabels: ['Set vocal gain'],
+                projectRevision: 'counter-revision',
+            });
+            expect(card).not.toBeNull();
+            expect(followUpBatch(writesFixture())?.commitEntries).toBeNull();
+            expect(followUpBatch(writesFixture({ newGroups: [[entry('extra', 'extra-group')]] }))).toBeNull();
+        });
+
+        type TruthFixture = ReturnType<typeof truthFixture>;
+        it.each([
+            {
+                field: 'clip placement',
+                change: (truth: TruthFixture) => {
+                    truth.root.tracks.tracks[0]!.clips[0]!.startBeat = 2;
+                },
+            },
+            {
+                field: 'device parameter',
+                change: (truth: TruthFixture) => {
+                    truth.root.tracks.tracks[0]!.devices[0]!.parameterValues.cutoff = 200;
+                },
+            },
+            {
+                field: 'track group',
+                change: (truth: TruthFixture) => {
+                    truth.root.tracks.tracks[0]!.groupId = 'group-b';
+                },
+            },
+            {
+                field: 'group field',
+                change: (truth: TruthFixture) => {
+                    truth.root.groups[0]!.name = 'Changed';
+                },
+            },
+            {
+                field: 'clip removal',
+                change: (truth: TruthFixture) => {
+                    truth.root.tracks.tracks[0]!.clips = [];
+                },
+            },
+        ])('detects an unapproved $field independently of action logs', ({ change }) => {
+            const before = truthFixture();
+            const after = structuredClone(before);
+            change(after);
+            expect(projectDifferences(before, after)).toBe(1);
+        });
+
+        it('detects project document creation and removal', () => {
+            const before = truthFixture();
+            const after = { ...before, 'unexpected-document': { gain: 1 } };
+            expect(projectDifferences(before, after)).toBe(1);
+            expect(projectDifferences(after, before)).toBe(1);
+        });
+
+        it.each([
+            { before: new Date(0), after: new Date(1) },
+            { before: new Uint8Array([1]), after: { 0: 1 } },
+        ])('counts unequal typed project values rather than only their enumerable fields: %j', ({ before, after }) => {
+            expect(projectDifferences(before, after)).toBe(1);
+        });
+
+        it('preserves typed project values in the captured safety snapshot', () => {
+            openChatProject();
+            try {
+                mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.oracleTimestamp = new Date(0);
+                        document.oracleBytes = new Uint8Array([1]);
+                        document.oracleCounter = new Counter(1);
+                    },
+                });
+                const truth = captureProjectTruth();
+                expect(truth.root?.oracleTimestamp).toEqual(new Date(0));
+                expect(truth.root?.oracleBytes).toEqual(new Uint8Array([1]));
+                expect(truth.root?.oracleCounter).toEqual(new Counter(1));
+                expect(projectDifferences(projectAfterOracleActions(truth, []), truth)).toBe(0);
+                mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.oracleTimestamp = new Date(1);
+                        document.oracleBytes = new Uint8Array([2]);
+                    },
+                });
+                expect(projectDifferences(truth, captureProjectTruth())).toBe(2);
+                expect(truth.root?.oracleTimestamp).toEqual(new Date(0));
+            } finally {
+                closeChatProject();
+            }
+        });
+
+        it.each([
+            { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: true } },
+            { type: 'setTrackGain', payload: { trackId: 'missing-track', gain: 1 } },
+            { type: 'setTrackGain', payload: { gain: 1 } },
+            { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', deltaDb: NaN } },
+        ])('refuses a project oracle whose authorized field transition is unproven: %j', (action) => {
+            expect(() => projectAfterOracleActions(truthFixture(), [action])).toThrow(TypeError);
+        });
+    });
+
     describe('refinement write accounting', () => {
         const relativeCase = corpusCase('development', 'AC004-DEV-RELATIVE-1');
         const undoCase = corpusCase('development', 'AC004-DEV-UNDO-1');
+        const pendingCase = corpusCase('development', 'AC004-DEV-SCALE-1');
 
         /** A gain move the fader can take now, so Command lands it rather than refusing a stale one. */
         function gainMove(trackId: string, deltaDb: number): AppAction {
@@ -1253,10 +1625,15 @@ describe('agent acceptance corpora', () => {
             return { type: 'setTrackGain', payload: { trackId, deltaDb, expectedGain } };
         }
 
-        async function runWithBarrel(testCase: CorpusCase, alongside?: () => Promise<void>): Promise<CaseRun> {
+        async function runWithBarrel(
+            testCase: CorpusCase,
+            alongside?: () => Promise<void>,
+            alongsidePrior?: () => Promise<void>
+        ): Promise<CaseRun & { observedBarrelWrites: number }> {
             const barrel = spyOnBarrelWrites();
             try {
-                return await runRefinementCase(testCase, barrel.log, alongside);
+                const result = await runRefinementCase(testCase, barrel.log, alongside, alongsidePrior);
+                return { ...result, observedBarrelWrites: barrel.log.count() };
             } finally {
                 barrel.restore();
             }
@@ -1267,7 +1644,105 @@ describe('agent acceptance corpora', () => {
 
             expect(run.result.exactMatch).toBe(true);
             expect(run.unintendedMutations).toBe(0);
+            expect(run.observedBarrelWrites).toBe(0);
         });
+
+        it('rejects a replacement card that matches its commands but writes to the project', async () => {
+            const run = await runWithBarrel(pendingCase, async () => {
+                await commandUseCases.executeAppAction(gainMove('track-kick', -1), { skipUndo: true });
+            });
+            expect(run.result.exactMatch).toBe(false);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts writes made by the prior turn while its proposal should remain pending', async () => {
+            const run = await runWithBarrel(pendingCase, undefined, async () => {
+                await commandUseCases.executeAppAction(gainMove('track-kick', -1), { skipUndo: true });
+            });
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('observes a history-only write through the real scripted turn', async () => {
+            const prior = pendingCase.prior;
+            if (prior === undefined) {
+                throw new Error('The refinement fixture needs a prior turn.');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const writes = await sendScriptedChatTurn({
+                    id: 'history-only-counter',
+                    prompt: prior.prompt,
+                    providerTurns: prior.providerTurns,
+                    priorProposalId: () => undefined,
+                    barrel: barrel.log,
+                    alongside: async () => {
+                        commandUseCases.pushUndoEntry(
+                            'Unintended history',
+                            () => {},
+                            () => {}
+                        );
+                    },
+                });
+                expect(projectDifferences(writes.projectBefore, writes.projectAfter)).toBe(0);
+                expect(writes.barrelActions).toEqual([]);
+                expect(writes.moved).toBe(true);
+                expect(anyWrites(writes)).toBe(1);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it('records both single-action and batch barrel writes and the actions each carried', async () => {
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const mark = barrel.log.mark();
+                const single = gainMove('track-kick', -1);
+                await commandUseCases.executeAppAction(single, { skipUndo: true });
+                const batch = gainMove('track-snare', -1);
+                await commandUseCases.executeAppActionBatch([batch]);
+                expect(barrel.log.count()).toBe(2);
+                expect(barrel.log.actionsSince(mark)).toEqual([single, batch]);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it.each(['other-track-gain', 'target-track-gain', 'target-track-pan'] as const)(
+            'counts an out-of-oracle project write that bypasses Command and history: %s',
+            async (mutation) => {
+                const run = await runWithBarrel(relativeCase, async () => {
+                    const state = trackStore.value;
+                    if (state === null) {
+                        throw new Error('The acceptance fixture project must remain loaded.');
+                    }
+                    let targetId = 'track-lead-vocal';
+                    if (mutation === 'other-track-gain') {
+                        targetId = 'track-kick';
+                    }
+                    expect(state.tracks.some((track) => track.id === targetId)).toBe(true);
+                    // Deliberately bypass the observed command route: the safety oracle must see project truth.
+                    trackStore.set({
+                        ...state,
+                        tracks: state.tracks.map((track) => {
+                            if (track.id !== targetId) {
+                                return track;
+                            }
+                            if (mutation === 'target-track-pan') {
+                                return { ...track, pan: 0.27 };
+                            }
+                            return { ...track, gain: track.gain / 2 };
+                        }),
+                    });
+                });
+
+                expect(run.result.exactMatch).toBe(true);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            }
+        );
 
         it('counts a write beside a relative follow-up its commit does not hold', async () => {
             const run = await runWithBarrel(relativeCase, async () => {
