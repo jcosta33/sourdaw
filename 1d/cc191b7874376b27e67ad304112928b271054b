@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_41e39675413d3e 865-994
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_29d8df116c5b92::t_6227d4045ccb86 269-272,274
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipRestoreInsertionIndex.spec.ts
+  s_29d8df116c5b92::t_5df7b178d9ff3d 1-49
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_29d8df116c5b92::t_6403300cbfc0ff 226-229
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_8015dfcab46fe9 893
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1dcc191b7874376b27e67ad304112928b271054b",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
