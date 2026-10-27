@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type MidiStoreState } from '../../../stores/midiStore';
-import { prepareClipMidiRowCoordinateShift } from '../prepareClipMidiRowCoordinateShift';
+import { isMidiRowCoordinateCapture, prepareClipMidiRowCoordinateShift } from '../prepareClipMidiRowCoordinateShift';
 
 const store = vi.hoisted(() => ({ value: null as MidiStoreState | null, set: vi.fn() }));
 vi.mock('../../../stores/midiStore', () => ({ midiStore: store }));
@@ -38,6 +38,7 @@ describe('MIDI owner coordinate shift preparation', () => {
     it('writes all three coordinate lanes together and restores their exact fractional figures', () => {
         const before = structuredClone(store.value);
         const forward = prepare(8);
+        expect(isMidiRowCoordinateCapture(JSON.parse(JSON.stringify(forward.capture)))).toBe(true);
         expect(store.set).not.toHaveBeenCalled();
         expect(forward.apply()).toBe(true);
         expect(store.set).toHaveBeenCalledTimes(1);
@@ -52,7 +53,7 @@ describe('MIDI owner coordinate shift preparation', () => {
         expect(forward.apply()).toBe(true);
         const current = rowsAt(8.1);
         current.notesByClipId.clip![0]!.velocity = 42;
-        current.notesByClipId.clip![0]!.expression = { pressure: [{ offsetBeats: 0, value: 0.5 }] };
+        current.notesByClipId.clip![0]!.expression = { pressure: [{ offsetBeats: 0.125, value: 0.5 }] };
         current.ccByClipId.clip = [];
         current.pitchBendByClipId.clip![0]!.beat = 9.25;
         current.pitchBendByClipId.clip!.push({ id: 'added', beat: 10.5, value: -1024, channel: 4 });
@@ -86,6 +87,7 @@ describe('MIDI owner coordinate shift preparation', () => {
     it.each([{}, { beatDelta: 8, coordinates: [{ kind: 'note', id: 'note', beforeBeat: 0.1, afterBeat: 99 }] }])(
         'refuses malformed persisted capture before any write',
         (restore) => {
+            expect(isMidiRowCoordinateCapture(restore)).toBe(false);
             expect(prepareClipMidiRowCoordinateShift({ clipId: 'clip', beatDelta: -8, restore }).status).toBe(
                 'refused'
             );

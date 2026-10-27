@@ -1,0 +1,490 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import * as storage from '#/infra/store/storage/createAutomergeStorage';
+import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
+import { defaultTrackState, trackStore, type Clip, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
+import {
+    captureDurableDocumentWitness,
+    clearActionHistory,
+    compactProject,
+    createCrdtDoc,
+    getCrdtDoc,
+    loadCrdtProject,
+    markActionHistoryEntryReverted,
+    mutateCrdtDoc,
+    projectCrdtToStores,
+    recordActionHistoryEntry,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+    sessionUndoWitnessStampPort,
+    transactSnapshot,
+} from '#/modules/CrdtDocument/useCases';
+import { defaultMidiStoreState, midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { type AppAction } from '#/utils/handlerContract';
+
+import { AppActionCommittedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
+import { clearHandlerRegistry } from '../../stores/handlerRegistry';
+import { undoStore } from '../../stores/undoStore';
+import { undoTreeStore } from '../../stores/undoTree';
+import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
+import { clearUndoHistory } from '../clearUndoHistory';
+import { executeAppAction } from '../executeAppAction';
+import { recordAction } from '../macro/recording/recordAction';
+import { reconcileSessionUndoForProject } from '../reconcileSessionUndoForProject';
+import { redo } from '../redo';
+import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
+import { stampSessionUndoWitness } from '../stampSessionUndoWitness';
+import { undo } from '../undo';
+import { rebuildTreeFromPast } from '../undoTree/rebuildTreeFromPast';
+
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+vi.mock('../macro/recording/recordAction', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../macro/recording/recordAction')>();
+    return { recordAction: vi.fn(original.recordAction) };
+});
+
+const SESSION_KEY = 'sourdaw-undo-session';
+const PROJECT_ID = 'exact-midi-row-replay';
+const CLIP_ID = 'phrase';
+let indexedDb: ReturnType<typeof installTransactionalIndexedDb>;
+let unsubscribe: () => void;
+
+function register(): void {
+    clearHandlerRegistry();
+    registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+    reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
+}
+
+function seed(loopLength?: number, type: 'audio' | 'midi' = 'midi', loopEnabled = true): void {
+    const clip: Clip = {
+        id: CLIP_ID,
+        trackId: 'keys',
+        name: 'Fractional phrase',
+        type,
+        startBeat: 0,
+        endBeat: 8,
+        midiOffsetBeats: 0,
+        audioOffsetBeats: 0,
+        loopEnabled,
+        loopOriginBeat: 0,
+        ...(loopLength === undefined ? {} : { loopLength }),
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '',
+        locked: false,
+        muted: false,
+    };
+    const track = createTrack({ id: 'keys', name: 'Keys', kind: type, withoutDefaultDevice: true });
+    trackStore.set({
+        ...defaultTrackState,
+        tracks: [{ ...track, clips: [clip, { ...clip, id: 'other', startBeat: 16, endBeat: 24 }] }],
+    });
+    midiStore.set({
+        ...defaultMidiStoreState,
+        notesByClipId: {
+            [CLIP_ID]: [{ id: 'note', startBeat: 0.1, pitch: 60, duration: 0.25, velocity: 100, probability: 0.4 }],
+        },
+        ccByClipId: { [CLIP_ID]: [{ id: 'cc', beat: 0.1, controller: 64, value: 127, channel: 2 }] },
+        pitchBendByClipId: { [CLIP_ID]: [{ id: 'bend', beat: 0.1, value: 1024, channel: 3 }] },
+    });
+    storage.flushAutomergeStorageWrites();
+}
+
+function slip(offset = -1): AppAction {
+    return { type: 'slipClipContent', payload: { clipId: CLIP_ID, clipType: 'midi', offset } };
+}
+function trim(newStartBeat = 2): AppAction {
+    return { type: 'trimClipStart', payload: { clipId: CLIP_ID, newStartBeat } };
+}
+function readClip(): Clip {
+    const clip = trackStore.value?.tracks[0]?.clips.find((candidate) => candidate.id === CLIP_ID);
+    if (!clip) throw new Error('Expected the phrase clip');
+    return clip;
+}
+function readRows() {
+    storage.flushAutomergeStorageWrites();
+    const raw = getCrdtDoc<{ midi: MidiStoreState }>('root')?.midi;
+    expect(raw).toEqual(midiStore.value);
+    return structuredClone(midiStore.value);
+}
+function beats(): number[] {
+    const rows = readRows();
+    return [
+        rows!.notesByClipId[CLIP_ID]![0]!.startBeat,
+        rows!.ccByClipId[CLIP_ID]![0]!.beat,
+        rows!.pitchBendByClipId[CLIP_ID]![0]!.beat,
+    ];
+}
+async function settleMirror(): Promise<void> {
+    storage.flushAutomergeStorageWrites();
+    stampSessionUndoWitness();
+    await vi.waitFor(() => {
+        expect(storage.countPendingAutomergeStorageWrites()).toBe(0);
+        const mirror = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? '{}');
+        expect(mirror.witness).toBe(captureDurableDocumentWitness());
+    });
+}
+async function saveAndReload(): Promise<void> {
+    await settleMirror();
+    const before = readRows();
+    const past = undoStore.value?.past.length;
+    const future = undoStore.value?.future.length;
+    await compactProject();
+    const mirror = sessionStorage.getItem(SESSION_KEY);
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    await expect(loadCrdtProject()).resolves.toBe(true);
+    projectCrdtToStores({ resetProjections: true });
+    sessionStorage.setItem(SESSION_KEY, mirror!);
+    register();
+    expect(undoStore.value?.past).toHaveLength(past!);
+    expect(undoStore.value?.future).toHaveLength(future!);
+    expect(readRows()).toEqual(before);
+    undoTreeStore.set({ enabled: true, tree: rebuildTreeFromPast(undoStore.value?.past ?? []) });
+    await settleMirror();
+}
+function snapshot() {
+    return {
+        raw: JSON.stringify(getCrdtDoc('root')),
+        tracks: structuredClone(trackStore.value),
+        midi: structuredClone(midiStore.value),
+        history: structuredClone(undoStore.value),
+        tree: structuredClone(undoTreeStore.value),
+        mirror: sessionStorage.getItem(SESSION_KEY),
+    };
+}
+function peerRows(change: (state: MidiStoreState) => void): void {
+    mutateCrdtDoc<{ midi: MidiStoreState }>({ id: 'root', changeFn: (document) => change(document.midi) });
+    projectCrdtToStores({ resetProjections: true });
+}
+
+describe('exact row captures through real Command history and persistence (#5695)', () => {
+    beforeAll(() => {
+        indexedDb = installTransactionalIndexedDb();
+        unsubscribe = actionHistoryStore.subscribe(() => undefined);
+        setActionHistoryMetadataPort({
+            record: recordActionHistoryEntry,
+            markReverted: markActionHistoryEntryReverted,
+            clear: clearActionHistory,
+        });
+        sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
+    });
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        clearUndoHistory();
+        clearHandlerRegistry();
+        sessionStorage.removeItem(SESSION_KEY);
+        resetCrdtProjectAuthority('exact MIDI row replay');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        await compactProject();
+        clearActionHistory();
+        register();
+    });
+    afterEach(async () => {
+        registerCrdtStorageRuntime();
+        await settleMirror();
+        clearUndoHistory();
+        clearHandlerRegistry();
+        removeCrdtDoc('root');
+        sessionStorage.removeItem(SESSION_KEY);
+    });
+    afterAll(async () => {
+        unsubscribe();
+        sessionUndoWitnessStampPort.setProvider(null);
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' }),
+            clear: () => undefined,
+        });
+        await indexedDb.dispose();
+    });
+
+    it.each([undefined, 4])(
+        'restores exact intermediate and terminal fractional figures with loopLength=%s',
+        async (loopLength) => {
+            seed(loopLength);
+            const initial = readRows();
+            const originalClip = structuredClone(readClip());
+            await executeAppAction(slip());
+            const lifted = readRows();
+            const liftedBeat = 0.1 + (loopLength ?? 8);
+            expect(beats()).toEqual([liftedBeat, liftedBeat, liftedBeat]);
+            await executeAppAction(trim());
+            const trimmed = readRows();
+            const trimmedClip = structuredClone(readClip());
+            expect(undoStore.value?.past).toHaveLength(2);
+            expect(undoStore.value?.past.every((entry) => entry.groupId === undefined)).toBe(true);
+            await saveAndReload();
+            for (let cycle = 0; cycle < 3; cycle += 1) {
+                await expect(undo()).resolves.toEqual({ headConsumed: true });
+                expect(readRows()).toEqual(lifted);
+                await expect(undo()).resolves.toEqual({ headConsumed: true });
+                expect(readRows()).toEqual(initial);
+                expect(readClip()).toEqual(originalClip);
+                await saveAndReload();
+                await redo();
+                expect(readRows()).toEqual(lifted);
+                await redo();
+                expect(readRows()).toEqual(trimmed);
+                expect(readClip()).toEqual(trimmedClip);
+            }
+            expect(notifyUser).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['slip', 'trim'] as const)(
+        'keeps peer additions, deletions, moves and properties before both directions of %s',
+        async (kind) => {
+            seed();
+            if (kind === 'trim') await executeAppAction(slip());
+            await executeAppAction(kind === 'slip' ? slip() : trim());
+            const beforeUndo = readRows()!;
+            const target = beforeUndo.notesByClipId[CLIP_ID]![0]!.startBeat;
+            peerRows((state) => {
+                state.notesByClipId[CLIP_ID]![0]!.velocity = 42;
+                state.notesByClipId[CLIP_ID]![0]!.expression = { pressure: [{ offsetBeats: 0.125, value: 0.5 }] };
+                state.notesByClipId[CLIP_ID]!.push({
+                    id: 'added-before-undo',
+                    startBeat: target + 1,
+                    pitch: 64,
+                    duration: 0.5,
+                    velocity: 80,
+                });
+                state.ccByClipId[CLIP_ID] = [];
+                state.pitchBendByClipId[CLIP_ID]![0]!.beat = target + 0.25;
+                state.pitchBendByClipId[CLIP_ID]![0]!.value = -2048;
+            });
+            const peerBeforeUndo = readRows();
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(midiStore.value?.notesByClipId[CLIP_ID]?.[0]).toMatchObject({
+                velocity: 42,
+                probability: 0.4,
+                expression: { pressure: [{ offsetBeats: 0.125, value: 0.5 }] },
+            });
+            expect(midiStore.value?.ccByClipId[CLIP_ID]).toEqual([]);
+            peerRows((state) => {
+                state.notesByClipId[CLIP_ID]!.push({
+                    id: 'added-before-redo',
+                    startBeat: 0.2,
+                    pitch: 67,
+                    duration: 0.5,
+                    velocity: 90,
+                });
+                state.pitchBendByClipId[CLIP_ID]![0]!.value = 3072;
+            });
+            const peerBeforeRedo = readRows();
+            await saveAndReload();
+            await redo();
+            const redone = readRows()!;
+            expect(redone.notesByClipId[CLIP_ID]?.slice(0, 2)).toEqual(peerBeforeUndo?.notesByClipId[CLIP_ID]);
+            expect(redone.ccByClipId[CLIP_ID]).toEqual([]);
+            expect(redone.pitchBendByClipId[CLIP_ID]?.[0]).toEqual({
+                ...peerBeforeUndo!.pitchBendByClipId[CLIP_ID]![0],
+                value: 3072,
+            });
+            await saveAndReload();
+            for (let cycle = 0; cycle < 3; cycle += 1) {
+                await expect(undo()).resolves.toEqual({ headConsumed: true });
+                expect(readRows()).toEqual(peerBeforeRedo);
+                await redo();
+                expect(readRows()).toEqual(redone);
+            }
+            expect(notifyUser).not.toHaveBeenCalled();
+        }
+    );
+
+    it('captures peer material admitted during the actual snapshot wait', async () => {
+        seed();
+        let entered!: () => void, release!: () => void, waiting!: () => void;
+        const began = new Promise<void>((resolve) => {
+            entered = resolve;
+        });
+        const held = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const atWait = new Promise<void>((resolve) => {
+            waiting = resolve;
+        });
+        const originalWait = storage.waitForAutomergeSnapshotTransaction;
+        const spy = vi.spyOn(storage, 'waitForAutomergeSnapshotTransaction').mockImplementation((transaction) => {
+            waiting();
+            return originalWait(transaction);
+        });
+        const peer = transactSnapshot(async (transaction) => {
+            entered();
+            await held;
+            mutateCrdtDoc<{ midi: MidiStoreState }>({
+                id: 'root',
+                snapshotTransaction: transaction,
+                changeFn: (doc) => {
+                    doc.midi.notesByClipId[CLIP_ID]!.push({
+                        id: 'admitted',
+                        startBeat: 0.1,
+                        pitch: 64,
+                        duration: 0.5,
+                        velocity: 80,
+                    });
+                },
+            });
+            projectCrdtToStores({ resetProjections: true });
+        });
+        await began;
+        try {
+            const pending = executeAppAction(slip());
+            await atWait;
+            release();
+            await peer;
+            await pending;
+            const entry = undoStore.value?.past.at(-1);
+            expect(
+                entry?.kind === 'action' &&
+                    entry.inverseAction?.type === 'slipClipContent' &&
+                    entry.inverseAction.payload.midiRowCoordinates?.coordinates.some(
+                        (row) => row.id === 'admitted' && row.beforeBeat === 0.1
+                    )
+            ).toBe(true);
+            await undo();
+            expect(midiStore.value?.notesByClipId[CLIP_ID]?.map((row) => row.startBeat)).toEqual([0.1, 0.1]);
+        } finally {
+            release();
+            spy.mockRestore();
+        }
+    });
+
+    it('restores capture metadata, document, projections, history, tree and mirror on a real failed storage commit', async () => {
+        seed();
+        await executeAppAction(slip());
+        peerRows((state) => {
+            state.notesByClipId[CLIP_ID]!.push({ id: 'peer', startBeat: 9.1, pitch: 64, duration: 0.5, velocity: 80 });
+        });
+        await settleMirror();
+        undoTreeStore.set({ enabled: true, tree: rebuildTreeFromPast(undoStore.value?.past ?? []) });
+        const before = snapshot();
+        storage.configureAutomergeStoragePort({
+            getDoc: (id) => getCrdtDoc<Record<string, unknown>>(id),
+            hasDoc: (id) => getCrdtDoc(id) !== undefined,
+            getSemanticMessage: () => undefined,
+            mutateDoc: () => {
+                throw new Error('injected pre-commit storage failure');
+            },
+        });
+        await expect(undo()).rejects.toThrow('injected pre-commit storage failure');
+        registerCrdtStorageRuntime();
+        await settleMirror();
+        expect(snapshot()).toEqual(before);
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        await redo();
+        expect(readRows()?.notesByClipId[CLIP_ID]?.[1]?.startBeat).toBe(9.1);
+    });
+
+    it('retains reciprocal captures matching the committed product after post-commit bookkeeping fails', async () => {
+        seed();
+        await executeAppAction(slip());
+        await undo();
+        peerRows((state) => {
+            state.notesByClipId[CLIP_ID]!.push({ id: 'peer', startBeat: 0.2, pitch: 64, duration: 0.5, velocity: 80 });
+        });
+        const peer = readRows();
+        vi.mocked(recordAction).mockImplementationOnce(() => {
+            throw new Error('injected post-commit macro failure');
+        });
+        await expect(redo()).rejects.toBeInstanceOf(AppActionCommittedError);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(readRows()).toEqual(peer);
+    });
+
+    it.each(['slip', 'trim'] as const)(
+        'refuses an unbound capture added to a fresh %s request before any write',
+        async (kind) => {
+            seed();
+            if (kind === 'trim') await executeAppAction(slip());
+            await executeAppAction(kind === 'slip' ? slip() : trim());
+            await settleMirror();
+            const entry = undoStore.value?.past.at(-1);
+            if (
+                entry?.kind !== 'action' ||
+                (entry.inverseAction?.type !== 'slipClipContent' && entry.inverseAction?.type !== 'trimClipStart')
+            )
+                throw new Error('Expected a coordinate inverse');
+            const forged = structuredClone(entry.inverseAction);
+            const before = snapshot();
+            await expect(executeAppAction(forged)).rejects.toBeInstanceOf(AppActionConflictError);
+            await settleMirror();
+            expect(snapshot()).toEqual(before);
+        }
+    );
+
+    it.each(['slip', 'trim'] as const)(
+        'refuses malformed bound %s capture without consuming or rewriting pending history',
+        async (kind) => {
+            seed();
+            if (kind === 'trim') await executeAppAction(slip());
+            await executeAppAction(kind === 'slip' ? slip() : trim());
+            const entry = undoStore.value?.past.at(-1);
+            if (
+                entry?.kind !== 'action' ||
+                (entry.inverseAction?.type !== 'slipClipContent' && entry.inverseAction?.type !== 'trimClipStart')
+            )
+                throw new Error('Expected a coordinate inverse');
+            const capture = entry.inverseAction.payload.midiRowCoordinates;
+            if (!capture) throw new Error('Expected an executed coordinate capture');
+            capture.coordinates[0]!.afterBeat = 99;
+            await settleMirror();
+            const before = snapshot();
+            await expect(undo({ stepOverConflicts: false })).resolves.toEqual({ headConsumed: false });
+            await settleMirror();
+            expect(snapshot()).toEqual(before);
+        }
+    );
+
+    it.each(['clip identity', 'redo request', 'opposite displacement', 'anchor'] as const)(
+        'excludes an incoherent saved pair with a changed %s',
+        async (broken) => {
+            seed();
+            await executeAppAction(slip());
+            await executeAppAction(trim());
+            await settleMirror();
+            const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY)!);
+            const entry = saved.past.at(-1);
+            if (broken === 'clip identity') entry.redoAction.payload.clipId = 'other';
+            if (broken === 'redo request') entry.redoAction.payload.newStartBeat = 3;
+            if (broken === 'opposite displacement') entry.redoAction.payload.midiRowCoordinates.beatDelta = 0;
+            if (broken === 'anchor') delete entry.inverseAction.payload.loopOriginBeat;
+            const before = readRows();
+            const rawBefore = JSON.stringify(getCrdtDoc('root'));
+            sessionStorage.setItem(SESSION_KEY, JSON.stringify(saved));
+            register();
+            expect(undoStore.value?.past).toEqual([]);
+            expect(readRows()).toEqual(before);
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(rawBefore);
+        }
+    );
+
+    it('refuses a replay whose live loop basis no longer matches its reciprocal displacement', async () => {
+        seed();
+        await executeAppAction(slip());
+        await undo();
+        mutateCrdtDoc<{ tracks: TrackStoreState }>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.tracks.tracks[0]!.clips[0]!.loopLength = 4;
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        await settleMirror();
+        const before = snapshot();
+        await redo();
+        await settleMirror();
+        expect(snapshot()).toEqual(before);
+    });
+});
