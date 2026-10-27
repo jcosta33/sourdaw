@@ -130,6 +130,7 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
     it.each(['foreign-take', 'retired-owner', 'published-id', 'root-moved'] as const)(
         'gives no deferred-source exemption to %s',
         (change) => {
+            expect(recordingPassTiming.ownedTakes(recordingId)).toBeDefined();
             if (change === 'foreign-take') {
                 takeLaneStore.set({
                     lanes: takeLaneStore.value!.lanes.map((lane) => ({
@@ -137,14 +138,26 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
                         takes: lane.takes.map((take) => ({ ...take, id: 'foreign-take' })),
                     })),
                 });
+                const takes = takeLaneStore.value!.lanes.flatMap((lane) => lane.takes);
+                const recordingTakes = takes.filter((take) => take.clipId === recordingId);
+                expect(recordingTakes.map((take) => take.id)).toEqual(['foreign-take']);
             } else if (change === 'retired-owner') {
                 recordingPassTiming.retire(recordingId);
+                expect(recordingPassTiming.ownedTakes(recordingId)).toBeUndefined();
             } else if (change === 'root-moved') {
+                const originalRoot = getCrdtDoc('root');
                 removeCrdtDoc('root');
                 createCrdtDoc('root');
+                expect(getCrdtDoc('root')).not.toBe(originalRoot);
+                expect(recordingPassTiming.ownedTakes(recordingId)).toBeUndefined();
             } else {
                 flushAutomergeStorageWrites();
-                recordingPassTiming.retire(recordingId);
+                expect(rawClips(recordingId)).toHaveLength(1);
+                const objectId = getObjectId(rawClips(recordingId)[0]);
+                // Beginning a new timing token cannot inherit a published ID.
+                recordingPassTiming.begin(recordingId, 10, () => null, true);
+                expect(getObjectId(rawClips(recordingId)[0])).toBe(objectId);
+                expect(recordingPassTiming.ownedTakes(recordingId)).toBeUndefined();
             }
             expect(prepare()?.clips.map((clip) => clip.clipId)).toContain(recordingId);
         }
@@ -233,6 +246,9 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
 
     it('rejects a recreated raw clip incarnation before source preflight', () => {
         flushAutomergeStorageWrites();
+        const before = structuredClone(recordingClip());
+        const objectId = getObjectId(rawClips(recordingId)[0]);
+        expect(objectId).toBeTypeOf('string');
         mutateCrdtDoc<{ tracks: { tracks: { clips: { id: string }[] }[] } }>({
             id: 'root',
             changeFn: (project) => {
@@ -241,6 +257,8 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
                 clips.splice(index, 1, { ...clips[index]!, id: recordingId });
             },
         });
+        expect(rawClips(recordingId)).toEqual([before]);
+        expect(getObjectId(rawClips(recordingId)[0])).not.toBe(objectId);
         expect(recordingPassTiming.ownedTakes(recordingId)).toBeUndefined();
         expect(prepare()?.clips.map((clip) => clip.clipId)).toContain(recordingId);
     });
