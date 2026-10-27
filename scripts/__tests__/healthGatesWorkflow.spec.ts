@@ -72,29 +72,11 @@ const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
-const BROWSER_DOWNLOAD_ATTEMPTS = 3;
-const ROOT_DEPENDENCY_CAP_MINUTES = 8;
-const USER_BROWSER_CAP_MINUTES = 3;
 const INSTALL_DRAIN_SECONDS = 15;
-// The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
-const INSTALL_BACKOFF_SECONDS = 5 + 10;
-// The hosted image's standalone Microsoft product feed answered `apt-get update`
-// with 403 and failed every attempt (#5359), so each root apt run reads the
-// runner's sources without it; the filter refuses rather than guesses.
+// Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const FILTERED_BROWSER_DEPENDENCY_INSTALL = `${APT_FEED_FILTER} --deadline 8m -- node_modules/.bin/playwright install-deps chromium`;
-// The root helper owns apt's full cgroup lifetime; the separate browser
-// download remains bounded by its existing user-side timeout.
-const ROOT_DEPENDENCY_INSTALL_COMMAND = `sudo env "PATH=$PATH" ${FILTERED_BROWSER_DEPENDENCY_INSTALL}`;
-const USER_BROWSER_INSTALL_COMMAND = `timeout --signal=KILL ${USER_BROWSER_CAP_MINUTES}m pnpm exec playwright install chromium`;
-// The job holds one root deadline and three independently bounded downloads.
-const BROWSER_INSTALL_WORST_CASE_SECONDS =
-    (ROOT_DEPENDENCY_CAP_MINUTES + BROWSER_DOWNLOAD_ATTEMPTS * USER_BROWSER_CAP_MINUTES) * 60 +
-    INSTALL_DRAIN_SECONDS +
-    INSTALL_BACKOFF_SECONDS;
-// What a retry loop ends with once its last attempt has failed: the exit that
-// fails the step. Without it three failed downloads fall out green.
-const BROWSER_INSTALL_FAILING_EXIT = 'if [ "$attempt" -eq 3 ]; then\n    exit 1\n  fi';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
+const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
 // manager deadline as the browser dependency install.
@@ -102,13 +84,6 @@ const ALSA_ATTEMPT_CAP_MINUTES = 8;
 const FILTERED_ALSA_INSTALL = `${APT_FEED_FILTER} --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
 const ALSA_INSTALL_COMMAND = `sudo env "PATH=$PATH" ${FILTERED_ALSA_INSTALL}`;
 const ALSA_INSTALL_WORST_CASE_SECONDS = ALSA_ATTEMPT_CAP_MINUTES * 60 + INSTALL_DRAIN_SECONDS;
-const HEAVY_E2E_INSTALL_STEP_MINUTES = 35;
-// Longest observed time of every step except the browser install, per job.
-const SMOKE_NON_INSTALL_SECONDS = 480;
-const E2E_SHARD_NON_INSTALL_SECONDS = 2040;
-// The derived minimum is a floor only; the declared limit is also a ceiling, so
-// raising a job toward GitHub's 360-minute default (an effectively unbounded
-// job) is a deliberate edit to these constants and not a silent workflow change.
 const SMOKE_JOB_MINUTES = 45;
 const E2E_JOB_MINUTES = 75;
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
@@ -814,50 +789,51 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
     }
 }
 
-function requiredBrowserInstallJobMinutes(nonInstallSeconds: number): number {
-    return Math.ceil((BROWSER_INSTALL_WORST_CASE_SECONDS + nonInstallSeconds) / 60);
-}
-
-// apt-get runs as root through sudo, where a timeout owned by the runner user
-// cannot signal it: the stalled apt would survive as an orphan holding its lock
-// and every later attempt would fail on it. The root half is therefore bounded
-// from the root side, and the user-side browser download separately.
-function assertBoundedBrowserInstall(
-    job: UnknownRecord,
-    label: string,
-    nonInstallSeconds: number,
-    declaredJobMinutes: number
-): void {
-    const installRun = stringAt(stepNamed(job, 'Install Playwright browsers'), 'run');
-    if (!installRun.includes('for attempt in 1 2 3')) {
-        throw new Error(`${label} must retry the user browser download against mirror outages`);
+function assertContainerBrowserRuntime(job: UnknownRecord, label: string, jobMinutes: number): void {
+    const lock = asRecord(
+        parseDocument(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).toJS(),
+        'lockfile'
+    );
+    const importer = recordAt(recordAt(lock, 'importers'), '.');
+    const version = stringAt(recordAt(recordAt(importer, 'devDependencies'), 'playwright'), 'version');
+    const image = `mcr.microsoft.com/playwright:v${version}-noble@${PLAYWRIGHT_IMAGE_DIGEST}`;
+    if (JSON.stringify(job.container) !== JSON.stringify({ image, options: '--init --ipc=host' })) {
+        throw new Error(`${label} must use the locked Playwright image and digest without extra container authority`);
     }
-    if (installRun.includes('--with-deps')) {
-        throw new Error(`${label} must not install system dependencies through the runner-user browser install`);
+    if (JSON.stringify(job.defaults) !== JSON.stringify({ run: { shell: 'bash' } })) {
+        throw new Error(`${label} must preserve bash in its container`);
     }
-    if (!installRun.includes(FILTERED_BROWSER_DEPENDENCY_INSTALL)) {
-        throw new Error(`${label} must run the root dependency install through the Microsoft apt feed filter`);
+    if (job['timeout-minutes'] !== jobMinutes) {
+        throw new Error(`${label} must keep its job limit at exactly ${jobMinutes} minutes`);
     }
+    const proof = stepNamed(job, BROWSER_RUNTIME_STEP);
+    if (proof.run !== `node scripts/verifyPlaywrightRuntime.ts ${version}` || proof['timeout-minutes'] !== 2) {
+        throw new Error(`${label} must launch and check the resolved browser within two minutes`);
+    }
+    const steps = arrayAt(job, 'steps').map((step) => asRecord(step, `${label} step`));
+    for (const step of steps) {
+        if (
+            typeof step.run === 'string' &&
+            /\bapt(?:-get)?\b|playwright\s+install|aptWithoutMicrosoftFeed|hostedAptInstall/.test(step.run)
+        ) {
+            throw new Error(`${label} must not acquire browser packages or binaries at runtime`);
+        }
+        if (step.shell !== undefined && step.shell !== 'bash') {
+            throw new Error(`${label} must preserve bash in its container`);
+        }
+    }
+    const run = stepNamed(job, label === 'the offline smoke job' ? 'Run offline smoke set' : 'Run shard');
     if (
-        !installRun.startsWith(`${ROOT_DEPENDENCY_INSTALL_COMMAND}\n`) ||
-        installRun.split(ROOT_DEPENDENCY_INSTALL_COMMAND).length !== 2
+        steps.indexOf(proof) !== steps.findIndex((step) => step.name === 'Install dependencies') + 1 ||
+        steps.indexOf(run) !== steps.indexOf(proof) + 1 ||
+        run.if !== undefined ||
+        run['continue-on-error'] !== undefined ||
+        proof.if !== undefined ||
+        proof['continue-on-error'] !== undefined
     ) {
-        throw new Error(`${label} must run one root dependency transaction before download retries`);
-    }
-    if (!installRun.includes(USER_BROWSER_INSTALL_COMMAND)) {
-        throw new Error(`${label} must bound the browser download with its own timeout`);
-    }
-    if (!installRun.includes(BROWSER_INSTALL_FAILING_EXIT)) {
-        throw new Error(`${label} must fail the step after the third failed install attempt`);
-    }
-    const timeoutMinutes = job['timeout-minutes'];
-    if (typeof timeoutMinutes !== 'number' || timeoutMinutes < requiredBrowserInstallJobMinutes(nonInstallSeconds)) {
         throw new Error(
-            `${label} must have a job limit that holds one root transaction, three browser downloads and its other steps`
+            `${label} must prove the runtime before running its browser tests without conditional admission`
         );
-    }
-    if (timeoutMinutes !== declaredJobMinutes) {
-        throw new Error(`${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`);
     }
 }
 
@@ -889,42 +865,14 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
-    assertBoundedBrowserInstall(smoke, 'the offline smoke job', SMOKE_NON_INSTALL_SECONDS, SMOKE_JOB_MINUTES);
+    assertContainerBrowserRuntime(smoke, 'the offline smoke job', SMOKE_JOB_MINUTES);
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
 }
 
 function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
-    const e2e = jobAt(candidate, 'e2e');
-    const install = stepNamed(e2e, 'Install Playwright browsers');
-    const run = stringAt(install, 'run');
-    const stepTimeoutMinutes = install['timeout-minutes'];
-    const jobTimeoutMinutes = e2e['timeout-minutes'];
-    if (
-        stepTimeoutMinutes !== HEAVY_E2E_INSTALL_STEP_MINUTES ||
-        typeof jobTimeoutMinutes !== 'number' ||
-        stepTimeoutMinutes >= jobTimeoutMinutes
-    ) {
-        throw new Error('the Playwright install step must be bounded below the E2E job limit');
-    }
-    assertBoundedBrowserInstall(e2e, 'the heavy E2E job', E2E_SHARD_NON_INSTALL_SECONDS, E2E_JOB_MINUTES);
-    if (!run.includes('sleep $((attempt * 5))') || !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')) {
-        throw new Error('the heavy E2E install must retry only browser downloads and fail after the third');
-    }
-    if (stepTimeoutMinutes * 60 <= BROWSER_INSTALL_WORST_CASE_SECONDS) {
-        throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
-    }
-    const steps = arrayAt(e2e, 'steps').map((step) => asRecord(step, 'heavy E2E step'));
-    const installIndex = steps.indexOf(install);
-    const runShard = stepNamed(e2e, 'Run shard');
-    if (
-        steps.indexOf(runShard) !== installIndex + 1 ||
-        runShard.if !== undefined ||
-        runShard['continue-on-error'] !== undefined
-    ) {
-        throw new Error('a failed Playwright install must prevent the heavy E2E shard from running');
-    }
+    assertContainerBrowserRuntime(jobAt(candidate, 'e2e'), 'the heavy E2E job', E2E_JOB_MINUTES);
 }
 
 function assertPullRequestSecretScan(candidate: UnknownRecord): void {
@@ -3702,35 +3650,46 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('runs one bounded root dependency transaction before retried browser downloads', () => {
+    it('uses the locked preinstalled runtime and rejects browser acquisition in every Linux browser job', () => {
         for (const [label, workflow, job] of [
             ['the offline smoke job', validationWorkflow, 'smoke'],
             ['the affected end-to-end job', heavyWorkflow, 'e2e'],
             ['the nightly end-to-end job', nightly, 'e2e'],
         ] as const) {
-            const nonInstallSeconds = job === 'smoke' ? SMOKE_NON_INSTALL_SECONDS : E2E_SHARD_NON_INSTALL_SECONDS;
-            const declaredJobMinutes = job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES;
+            const minutes = job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES;
             const check = (candidate: UnknownRecord) =>
-                assertBoundedBrowserInstall(jobAt(candidate, job), label, nonInstallSeconds, declaredJobMinutes);
+                assertContainerBrowserRuntime(jobAt(candidate, job), label, minutes);
             expect(() => check(workflow)).not.toThrow();
-            const mutated = asRecord(structuredClone(workflow), `duplicated root ${label}`);
-            const step = stepNamed(jobAt(mutated, job), 'Install Playwright browsers');
-            step.run = stringAt(step, 'run').replace(
-                'for attempt in 1 2 3; do',
-                `for attempt in 1 2 3; do\n  ${ROOT_DEPENDENCY_INSTALL_COMMAND}`
-            );
-            expect(() => check(mutated)).toThrow(
-                `${label} must run one root dependency transaction before download retries`
-            );
-            const unbounded = asRecord(structuredClone(workflow), `unbounded root ${label}`);
-            const unboundedStep = stepNamed(jobAt(unbounded, job), 'Install Playwright browsers');
-            unboundedStep.run = stringAt(unboundedStep, 'run').replace('--deadline 8m --', '--');
-            expect(() => check(unbounded)).toThrow(
-                `${label} must run the root dependency install through the Microsoft apt feed filter`
-            );
-            const tooShort = asRecord(structuredClone(workflow), `short limit ${label}`);
-            jobAt(tooShort, job)['timeout-minutes'] = requiredBrowserInstallJobMinutes(nonInstallSeconds) - 1;
-            expect(() => check(tooShort)).toThrow('must have a job limit that holds one root transaction');
+            for (const image of [
+                `mcr.microsoft.com/playwright:v1.62.0-noble@${PLAYWRIGHT_IMAGE_DIGEST}`,
+                'mcr.microsoft.com/playwright:v1.63.0-noble',
+                `mcr.microsoft.com/playwright:v1.63.0-noble@sha256:${'0'.repeat(64)}`,
+            ]) {
+                const mismatch = structuredClone(workflow);
+                recordAt(jobAt(mismatch, job), 'container').image = image;
+                expect(() => check(mismatch)).toThrow('must use the locked Playwright image and digest');
+            }
+            for (const command of [
+                'sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- node_modules/.bin/playwright install-deps chromium',
+                'pnpm exec playwright install chromium',
+                'apt-get install -y libnss3',
+            ]) {
+                const acquisition = structuredClone(workflow);
+                stepNamed(jobAt(acquisition, job), 'Install dependencies').run += `\n${command}`;
+                expect(() => check(acquisition)).toThrow('must not acquire browser packages or binaries at runtime');
+            }
+            const privileged = structuredClone(workflow);
+            recordAt(jobAt(privileged, job), 'container').options += ' --privileged';
+            expect(() => check(privileged)).toThrow('without extra container authority');
+            const wrongShell = structuredClone(workflow);
+            jobAt(wrongShell, job).defaults = { run: { shell: 'sh' } };
+            expect(() => check(wrongShell)).toThrow('must preserve bash');
+            const noLaunch = structuredClone(workflow);
+            stepNamed(jobAt(noLaunch, job), BROWSER_RUNTIME_STEP).run = 'pnpm exec playwright --version';
+            expect(() => check(noLaunch)).toThrow('must launch and check the resolved browser');
+            const conditional = structuredClone(workflow);
+            stepNamed(jobAt(conditional, job), BROWSER_RUNTIME_STEP).if = 'false';
+            expect(() => check(conditional)).toThrow('without conditional admission');
         }
     });
 
@@ -3758,10 +3717,7 @@ describe('health gates workflow contract', () => {
         expect(() => assertAptRoutesFiltered(workflowSet())).not.toThrow();
 
         const routes: ReadonlyArray<readonly [keyof WorkflowSet, string, string, string]> = [
-            ['heavy', 'heavy-gates.yml', 'e2e', 'Install Playwright browsers'],
-            ['validation', 'validation.yml', 'smoke', 'Install Playwright browsers'],
             ['validation', 'validation.yml', 'rust', 'Install ALSA development headers'],
-            ['nightly', 'nightly.yml', 'e2e', 'Install Playwright browsers'],
             ['nightly', 'nightly.yml', 'rust', 'Install ALSA development headers'],
             ['cargoDependencySeed', 'cargo-dependency-seed.yml', 'rust', 'Install ALSA development headers'],
             ['hostedQuantumMeasurement', 'quantum-measurements.yml', 'measure', 'Install Google Chrome'],
@@ -3787,31 +3743,6 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('fails every Linux browser install step after its third failed attempt', () => {
-        const installs = [
-            { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
-            { label: 'the affected end-to-end job', workflow: heavyWorkflow, job: 'e2e' },
-            { label: 'the nightly end-to-end job', workflow: nightly, job: 'e2e' },
-        ];
-
-        for (const { label, workflow, job } of installs) {
-            const clone = asRecord(structuredClone(workflow), `swallowed failure ${label}`);
-            const step = stepNamed(jobAt(clone, job), 'Install Playwright browsers');
-            step.run = stringAt(step, 'run').replace(
-                BROWSER_INSTALL_FAILING_EXIT,
-                'if [ "$attempt" -eq 3 ]; then\n    true\n  fi'
-            );
-            expect(() =>
-                assertBoundedBrowserInstall(
-                    jobAt(clone, job),
-                    label,
-                    job === 'smoke' ? SMOKE_NON_INSTALL_SECONDS : E2E_SHARD_NON_INSTALL_SECONDS,
-                    job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES
-                )
-            ).toThrow(`${label} must fail the step after the third failed install attempt`);
-        }
-    });
-
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
         expect(() => assertOfflineSmokeJob(validationWorkflow)).not.toThrow();
         expect(() => assertPullRequestSecretScan(validationWorkflow)).not.toThrow();
@@ -3826,13 +3757,6 @@ describe('health gates workflow contract', () => {
         jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
         expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
             'the offline smoke job must run on every pull-request run that touches the browser surface'
-        );
-
-        const unretriedInstall = asRecord(structuredClone(validationWorkflow), 'unretried install validationWorkflow');
-        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run =
-            'pnpm exec playwright install --with-deps chromium';
-        expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
-            'the offline smoke job must retry the user browser download against mirror outages'
         );
 
         const eventGatedDiffScan = asRecord(
@@ -3865,35 +3789,11 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('bounds a stalled heavy E2E browser install and keeps its retry failure fatal', () => {
-        const e2e = jobAt(heavyWorkflow, 'e2e');
-        const installRun = stringAt(stepNamed(e2e, 'Install Playwright browsers'), 'run');
+    it('requires the heavy browser runtime proof before its unchanged shard command', () => {
         expect(() => assertBoundedHeavyE2eInstall(heavyWorkflow)).not.toThrow();
-
-        const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
-        stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            USER_BROWSER_INSTALL_COMMAND,
-            'pnpm exec playwright install chromium'
-        );
-        expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
-            'the heavy E2E job must bound the browser download with its own timeout'
-        );
-
-        const unretriedInstall = cloneWorkflows('unretried heavy E2E browser install');
-        stepNamed(jobAt(unretriedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            'sleep $((attempt * 5))',
-            'sleep 0'
-        );
-        expect(() => assertBoundedHeavyE2eInstall(unretriedInstall.heavy)).toThrow(
-            'the heavy E2E install must retry only browser downloads and fail after the third'
-        );
-
-        const overlongInstall = cloneWorkflows('overlong heavy E2E browser install');
-        const overlongJob = jobAt(overlongInstall.heavy, 'e2e');
-        stepNamed(overlongJob, 'Install Playwright browsers')['timeout-minutes'] = overlongJob['timeout-minutes'];
-        expect(() => assertBoundedHeavyE2eInstall(overlongInstall.heavy)).toThrow(
-            'the Playwright install step must be bounded below the E2E job limit'
-        );
+        const bypassed = cloneWorkflows('bypassed heavy runtime proof');
+        stepNamed(jobAt(bypassed.heavy, 'e2e'), 'Run shard').if = 'always()';
+        expect(() => assertBoundedHeavyE2eInstall(bypassed.heavy)).toThrow('without conditional admission');
     });
 
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {

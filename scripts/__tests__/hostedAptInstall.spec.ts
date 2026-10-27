@@ -24,9 +24,6 @@ const helper = resolve('scripts/aptWithoutMicrosoftFeed.sh');
 const installer = resolve('scripts/__tests__/fixtures/hostedAptInstall/installer.py');
 const aptConfigStub = resolve('scripts/__tests__/fixtures/aptConfigStub/apt-config');
 const routes = [
-    ['validation.yml', 'Install Playwright browsers', '8m'],
-    ['heavy-gates.yml', 'Install Playwright browsers', '8m'],
-    ['nightly.yml', 'Install Playwright browsers', '8m'],
     ['validation.yml', 'Install ALSA development headers', '8m'],
     ['nightly.yml', 'Install ALSA development headers', '8m'],
     ['cargo-dependency-seed.yml', 'Install ALSA development headers', '8m'],

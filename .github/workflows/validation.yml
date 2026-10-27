@@ -589,6 +589,12 @@ jobs:
     # proof. The affected browser matrix runs separately in heavy-gates.yml.
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -613,41 +619,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Installing the browser library set shells out to apt-get, and a
-      # transient mirror outage (apt exiting 100) red this job and Gate on an
-      # otherwise-green head (#4085). Root package failures now stop the step.
-      #
-      # `--with-deps` would hide apt under a user-owned browser command. Keep
-      # apt in one root-owned cgroup and retry only the separate browser
-      # download under its existing timeout.
-      #
-      # Caps and what they cost, from 2026-09-20 to 2026-10-08 installs: the
-      # whole step took 45s at the 99th percentile until 2026-10-05, but a slow
-      # Ubuntu mirror stretched the apt phase to 523s on 2026-09-29 and 1252s on 2026-10-06,
-      # while the browser download never exceeded 56s. The 8m dependency cap
-      # therefore can fail the rare install that is slowly making progress
-      # (15 of about 4300); it is the price of failing a genuine stall, which prints
-      # nothing after `apt-get update` for an hour, within minutes.
-      #
-      # Every apt run reads the runner's sources except the image's standalone
-      # Microsoft product feed, which nothing here installs from and whose 403
-      # failed `apt-get update` on all three attempts (#5359); see
-      # scripts/aptWithoutMicrosoftFeed.sh. Any other apt failure stays fatal.
-      #
-      # The root dependency install runs once in an owned systemd cgroup.
-      # The separate user browser download may retry mirror failures.
-      - name: Install Playwright browsers
-        run: |
-          sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- node_modules/.bin/playwright install-deps chromium
-          for attempt in 1 2 3; do
-            if timeout --signal=KILL 3m pnpm exec playwright install chromium; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 5))
-          done
+      # The immutable image contains browsers and their OS libraries. Verify the
+      # resolved package can launch them without per-job apt or binary downloads.
+      - name: Verify preinstalled browser runtime
+        timeout-minutes: 2
+        run: node scripts/verifyPlaywrightRuntime.ts 1.63.0
 
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
