@@ -628,21 +628,7 @@ jobs:
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
       - name: Run offline smoke set
-        env:
-          DEBUG: pw:webserver
-        run: |
-          trace="$(mktemp)"
-          (while :; do date -u +%FT%TZ; if command -v ss >/dev/null; then ss -ltnp 'sport = :5173'; else grep -h ':1435 .* 0A ' /proc/net/tcp /proc/net/tcp6 || true; fi; sleep 0.25; done) > "$trace" 2>&1 &
-          monitor=$!
-          trap 'kill "$monitor" 2>/dev/null || true; wait "$monitor" 2>/dev/null || true' EXIT
-          trap 'exit 143' TERM
-          status=0
-          pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0 || status=$?
-          if [ "$status" -ne 0 ]; then
-            node -e "require('node:dns').lookup('localhost', {all:true}, console.log)" || true
-            cat "$trace" || true
-          fi
-          exit "$status"
+        run: pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0
 
   build:
     name: Production build

@@ -71,19 +71,7 @@ const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
 const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
-const SMOKE_COMMAND = `trace="$(mktemp)"
-(while :; do date -u +%FT%TZ; if command -v ss >/dev/null; then ss -ltnp 'sport = :5173'; else grep -h ':1435 .* 0A ' /proc/net/tcp /proc/net/tcp6 || true; fi; sleep 0.25; done) > "$trace" 2>&1 &
-monitor=$!
-trap 'kill "$monitor" 2>/dev/null || true; wait "$monitor" 2>/dev/null || true' EXIT
-trap 'exit 143' TERM
-status=0
-pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0 || status=$?
-if [ "$status" -ne 0 ]; then
-  node -e "require('node:dns').lookup('localhost', {all:true}, console.log)" || true
-  cat "$trace" || true
-fi
-exit "$status"
-`;
+const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
