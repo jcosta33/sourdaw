@@ -1,3 +1,4 @@
+import { isValidTakePlacement } from '#/modules/Arrangement/stores';
 import { isChordTrackState, isGrooveTemplateState, isValidMidiNoteExpression } from '#/modules/MIDI/stores';
 
 import { isProductionBrief } from '../../../models/ProductionBrief';
@@ -664,7 +665,8 @@ function isTake(value: unknown): boolean {
         isRecord(value) &&
         hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&
         hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
-        typeof value.selected === 'boolean'
+        typeof value.selected === 'boolean' &&
+        isValidTakePlacement(value)
     );
 }
 
