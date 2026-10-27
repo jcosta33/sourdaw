@@ -4,6 +4,7 @@ import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { resolveEligibleDeviceWriteTarget } from '../../stores/resolveEligibleDeviceWriteTarget';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 
@@ -106,11 +107,15 @@ export function restoreDevice(
             throw postCommitFailure;
         }
         const committedState = getTrackState();
+        const target = resolveEligibleDeviceWriteTarget(device.id);
         const committedTrack = committedState?.tracks.find((candidate) => candidate.id === trackId);
+        const committedDevice = committedTrack?.devices.find((candidate) => candidate.id === device.id);
         if (
             !committedState ||
+            target.status !== 'eligible' ||
+            target.trackId !== trackId ||
             !committedTrack ||
-            !committedTrack.devices.some((candidate) => candidate.id === device.id) ||
+            !committedDevice ||
             !shouldCreateLiveTrackStrip(committedTrack)
         ) {
             return;
@@ -132,21 +137,27 @@ export function restoreDevice(
                         throw failure;
                     }
                 }
-                if (device.type === 'external-plugin' && device.externalInstanceId && device.externalPluginId) {
+                // Other inverses in this transaction may have changed the restored
+                // controls or plugin state after the removal snapshot was inserted.
+                if (
+                    committedDevice.type === 'external-plugin' &&
+                    committedDevice.externalInstanceId &&
+                    committedDevice.externalPluginId
+                ) {
                     void activateExternalPlugin({
-                        pluginId: device.externalPluginId,
-                        instanceId: device.externalInstanceId,
-                        stateChunk: device.externalStateChunk,
-                        onLatencyMs: (latency) => reportLatency(device.id, latency),
+                        pluginId: committedDevice.externalPluginId,
+                        instanceId: committedDevice.externalInstanceId,
+                        stateChunk: committedDevice.externalStateChunk,
+                        onLatencyMs: (latency) => reportLatency(committedDevice.id, latency),
                     });
                 }
                 for (const [parameterId, value] of orderDeviceParametersForReplay(
-                    device.type,
-                    device.parameterValues
+                    committedDevice.type,
+                    committedDevice.parameterValues
                 )) {
-                    updateDeviceParam(trackId, device.id, parameterId, value);
+                    updateDeviceParam(trackId, committedDevice.id, parameterId, value);
                 }
-                updateDeviceBypass(trackId, device.id, device.bypassed);
+                updateDeviceBypass(trackId, committedDevice.id, committedDevice.bypassed);
             } else {
                 projectExactTrack(trackId);
             }

@@ -230,4 +230,52 @@ describe('device edits on an imported track before first Play', () => {
         expect(importedTrack().devices).toEqual([]);
         expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([]);
     });
+
+    it('restores the committed EQ controls when undo also reverses an earlier edit in the removal group', async () => {
+        await importMidiFile(new File([], 'small.mid'), { shouldContinue: () => true });
+        const track = importedTrack();
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: track.devices[0]!.id } });
+        await executeAppAction({
+            type: 'addDevice',
+            payload: { trackId: track.id, deviceType: 'builtin-eq', deviceId: 'grouped-eq' },
+        });
+        const original = structuredClone(importedTrack().devices.find((device) => device.id === 'grouped-eq'));
+        expect(original?.parameterValues['eq-mid-freq']).toBe(1000);
+        clearUndoHistory();
+        await executeAppAction(
+            { type: 'setDeviceParameter', payload: { deviceId: 'grouped-eq', paramId: 'eq-mid-freq', value: 2400 } },
+            { groupId: 'edit-and-remove-eq' }
+        );
+        await executeAppAction(
+            { type: 'removeDevice', payload: { deviceId: 'grouped-eq' } },
+            { groupId: 'edit-and-remove-eq' }
+        );
+        expect(importedTrack().devices.some((device) => device.id === 'grouped-eq')).toBe(false);
+        const parameters = vi.spyOn(audioEngine, 'updateDeviceParam');
+
+        await undo();
+
+        expect(importedTrack().devices.find((device) => device.id === 'grouped-eq')).toEqual(original);
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes.map((device) => device.deviceId)).toContain(
+            'grouped-eq'
+        );
+        const frequencyWrites = parameters.mock.calls.filter(
+            ([trackId, deviceId, parameterId]) =>
+                trackId === track.id && deviceId === 'grouped-eq' && parameterId === 'eq-mid-freq'
+        );
+        expect(frequencyWrites.length).toBeGreaterThan(0);
+        expect(frequencyWrites.at(-1)?.[3]).toBe(1000);
+        expect(frequencyWrites.every(([, , , value]) => value === 1000)).toBe(true);
+        const restoredNode = audioEngine
+            .getTrackStrip(track.id)
+            ?.deviceNodes.find((device) => device.deviceId === 'grouped-eq');
+        expect(restoredNode?.nodes[1]).toHaveProperty('frequency.value', 1000);
+
+        await redo();
+        expect(importedTrack().devices.some((device) => device.id === 'grouped-eq')).toBe(false);
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes.map((device) => device.deviceId)).not.toContain(
+            'grouped-eq'
+        );
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
 });
