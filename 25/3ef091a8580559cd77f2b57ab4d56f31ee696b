@@ -1,0 +1,59 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_b3201877f50e8a::t_41d5cadf58a9c4 4,83-84,327
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_b3201877f50e8a::t_dcec2b4e424034 3-10,110,116-117,131,133-138
+src/modules/Arrangement/useCases/__tests__/importMidiFile.spec.ts
+  s_29d8df116c5b92::t_5bb634940e26e1 5,84,86,147-149
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteNotes.spec.ts
+  s_29d8df116c5b92::t_c8a3204da73b0c 4,11-12,21,152
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  s_b3201877f50e8a::t_386dbd1f45bade 16,153,502
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_3168504f6ce387::t_e17cc7b04d2280 12,115-221,223-232,664-668
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_29d8df116c5b92::t_7ceab2c76af75e 30
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_29d8df116c5b92::t_16bfc8bda54d3f 25
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiReleaseOwnership.spec.ts
+  s_29d8df116c5b92::t_1875792a427e0e 1,36,55-58,63-66,444-445
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  s_29d8df116c5b92::t_433802a9b2cdeb 18
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_29d8df116c5b92::t_c01e246e294851 75
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  s_29d8df116c5b92::t_01de60ffe02e62 41
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  s_29d8df116c5b92::t_f6304818fa1fb3 35-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "253ef091a8580559cd77f2b57ab4d56f31ee696b",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
