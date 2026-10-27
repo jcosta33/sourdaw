@@ -899,7 +899,9 @@ function assertIndependentClockReferenceControls(): void {
     ).toBeGreaterThan(RECORDING_RENDER_QUANTUM_FRAMES);
 }
 
-test('keeps real punch-loop PCM through comp, undo, export and reopen', async (_fixtures, testInfo: TestInfo) => {
+test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
+    browserName: _browserName,
+}, testInfo: TestInfo) => {
     assertIndependentClockReferenceControls();
     test.setTimeout(240_000);
     const baseURL = testInfo.project.use.baseURL;
@@ -1260,7 +1262,9 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async (_
     }
 });
 
-test('keeps a live take when Pause is immediately followed by New Project', async (_fixtures, testInfo: TestInfo) => {
+test('keeps a live take when Pause is immediately followed by New Project', async ({
+    browserName: _browserName,
+}, testInfo: TestInfo) => {
     test.setTimeout(180_000);
     const projectName = 'Punch immediate Pause replacement';
     const baseURL = testInfo.project.use.baseURL;
