@@ -1,0 +1,23 @@
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_b3201877f50e8a::t_6f4acdf6c45d35 6,139-141
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/grinderOfflineTargetAdmission.integration.spec.ts
+  s_b3201877f50e8a::t_cdc26a48d342ac 91-92
+src/modules/AudioEngine/services/compileRuntimeDeviceControl.ts
+  s_b3201877f50e8a::t_6f4acdf6c45d35 20,54-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b4c221f942c31631aa343d62cdd71ba8b13365e",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
