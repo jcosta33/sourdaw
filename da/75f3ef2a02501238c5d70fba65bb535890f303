@@ -1,0 +1,25 @@
+src/modules/AudioEngine/stores/__tests__/aiPreviewHandoffOwnership.spec.tsx
+  s_3168504f6ce387::t_7905861eb91305 39,48-49,60-63,74,177-179,181-187
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_3168504f6ce387::t_978b31916548f1 26-33,587,610-612,617-631
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_3168504f6ce387::t_978b31916548f1 47,56-57,68-71,82,216-218,220-226
+evidence/agent-campaign/manifest.json
+  s_3168504f6ce387::t_d781c139670e4a 627
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da75f3ef2a02501238c5d70fba65bb535890f303",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
