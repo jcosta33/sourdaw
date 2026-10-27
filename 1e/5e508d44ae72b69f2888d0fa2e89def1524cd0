@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_3168504f6ce387::t_2d5c5a704a1112 300-304,306-310,662-665
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_3168504f6ce387::t_9819f59f442158 3,112-116,120,127,2206-2237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e5e508d44ae72b69f2888d0fa2e89def1524cd0",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
