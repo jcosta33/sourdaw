@@ -1,0 +1,39 @@
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_29d8df116c5b92::t_610afc4e34994c 3-4,25,32,350,397-409,657-661,671,694-698,710,730,737-741,746-749,769-773,782
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_9481862a6886a9 314-315
+  s_29d8df116c5b92::t_4fc6a0d11428cd 3-4,25-26,258-289,298-302,330
+  s_29d8df116c5b92::t_f1bfde3631c9a3 303,316,331
+src/utils/hasExactAudioSourceFields.ts
+  s_29d8df116c5b92::t_94369d15bcde45 1-16
+  s_29d8df116c5b92::t_7497d2af835de2 17-18
+src/modules/Arrangement/useCases/clipEditing/prepareAudioClipCutFields.ts
+  s_29d8df116c5b92::t_3afffc928fc830 10,15-17
+  s_29d8df116c5b92::t_610afc4e34994c 24
+  s_29d8df116c5b92::t_94369d15bcde45 1-9,11-14,18-23,25-28
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_29d8df116c5b92::t_94369d15bcde45 3,16,308,927,955-958,970,980-984,1008,1018,1040-1043,1045,1067-1070,1093,1316,1344-1346,1658-1660
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_29d8df116c5b92::t_b349a32d0dc859 518-530,535-544,547,554-563,576-580,589-593,595,597-601,606-608,610-611,613-616
+  s_29d8df116c5b92::t_9481862a6886a9 624-625,640
+  s_29d8df116c5b92::t_9b0fd6f492158a 531-534,545-546,548-553,564-575,581-588,594,596,602-605,609,612,617-623
+src/utils/__tests__/hasExactAudioSourceFields.spec.ts
+  s_29d8df116c5b92::t_9481862a6886a9 1-27
+  s_29d8df116c5b92::t_e8b98664be7935 28-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3124dab08326da1aa57312c5fcd9c85d1019a32f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
