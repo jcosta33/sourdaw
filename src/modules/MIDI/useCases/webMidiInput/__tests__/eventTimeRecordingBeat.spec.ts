@@ -32,6 +32,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: () => false,
     startFaustNote: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
