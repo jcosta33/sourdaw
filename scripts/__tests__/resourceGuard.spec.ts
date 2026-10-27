@@ -1018,6 +1018,18 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
         { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 5.5 * 1024 ** 3 },
@@ -1122,6 +1134,17 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             expect(e2eResult.code).toBe(0);
             expect(e2eResult.maxRssBytes).toBe(5.5 * 1024 ** 3);
 
+            const execResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(execResult.code).toBe(0);
+            expect(execResult.maxRssBytes).toBe(4608 * 1024 ** 2);
+
             const otherResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
                 args: ['other'],
@@ -1144,6 +1167,18 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             });
             expect(explicitResult.code).toBe(0);
             expect(explicitResult.maxRssBytes).toBe(5 * 1024 ** 3);
+
+            const explicitExecResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                maxRssBytes: 2048 * 1024 ** 2,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(explicitExecResult.code).toBe(0);
+            expect(explicitExecResult.maxRssBytes).toBe(2048 * 1024 ** 2);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
