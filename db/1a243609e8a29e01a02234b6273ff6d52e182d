@@ -1,0 +1,133 @@
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_369e307720df7c 1211-1212
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_29d8df116c5b92::t_4031aeb6c55023 1,10,13-14,18-19,306-311
+.agents/skills/review-stances/audio-source-time.md
+  s_29d8df116c5b92::t_a531fe968ff6e4 66-115
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_29d8df116c5b92::t_9bbecbb16e6ad2 455-457,1992-1993
+src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
+  s_29d8df116c5b92::t_ec09c3a698b667 1,902-1040
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_29d8df116c5b92::t_0eb88033b9cb92 175-206,216,221,715
+src/modules/AiRuntime/useCases/__tests__/compilePendingActionCommandEnvelopes.spec.ts
+  s_29d8df116c5b92::t_a8d5a637e1d02e 9,182-204
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_caf2b5db77b6ed 786-995,1925
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_29d8df116c5b92::t_f7eb1e0697fc49 55,559-579,631-640,647,1530,1534-1538
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_29d8df116c5b92::t_67de014a5bea84 419,428,475
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_d9a83bd8c557dc 13-14,166,338-348,379-404
+src/modules/Arrangement/handlers/comping/__tests__/audioCompSourceInterval.integration.spec.ts
+  s_29d8df116c5b92::t_b0ae7332c15506 5,10-11,42-47,52,58,738-744,793-799
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_29d8df116c5b92::t_dc3a697f284f6a 44-50
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_29d8df116c5b92::t_a9b011d91e030a 12,162-167,184-191,237-240,263,269-272,274
+src/modules/Arrangement/presentations/helpers/__tests__/handleCutToolUndo.spec.ts
+  s_29d8df116c5b92::t_e2c6798f8c1624 5,13,40
+src/modules/Arrangement/presentations/renderers/__tests__/audioWaveformSpan.spec.ts
+  s_29d8df116c5b92::t_e471049c4930ec 16-17,22
+src/modules/Arrangement/presentations/renderers/audioWaveformSpan.ts
+  s_29d8df116c5b92::t_104a80d3a00869 247
+src/modules/Arrangement/stores/__tests__/takeLaneSourcePrefixProjection.spec.ts
+  s_29d8df116c5b92::t_4b572d3d4974c8 78-97
+src/modules/Arrangement/stores/projectAudioSourcePrefixTracks.ts
+  s_29d8df116c5b92::t_32179acf94701c 27
+src/modules/Arrangement/stores/tempoAudioSourceWriteIntent.ts
+  s_29d8df116c5b92::t_ee44970ae1e33f 5-8,20,54,174-190,340-345,350
+src/modules/Arrangement/useCases/__tests__/prepareTempoAudioSources.recording.spec.ts
+  s_29d8df116c5b92::t_0b53f2555cd6b0 1-237
+src/modules/Arrangement/useCases/applyTempoAudioSources.ts
+  s_29d8df116c5b92::t_719a81a28bc5c1 1-2,4,8-9,12-13,56-89
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipRestoreInsertionIndex.spec.ts
+  s_29d8df116c5b92::t_ebd3b4bb4905b8 1-49
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_29d8df116c5b92::t_f0102ca27ad386 653-659,666-668
+src/modules/Arrangement/useCases/clipEditing/__tests__/projectClipReplayPrefix.spec.ts
+  s_29d8df116c5b92::t_a714c65f51f5ca 46-95
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_29d8df116c5b92::t_fbae35d28ddb43 3,25,32,397-410,707,777
+src/modules/Arrangement/useCases/clipEditing/isClipRestoreOrderSnapshot.ts
+  s_29d8df116c5b92::t_3ebe3a956b1569 1-25
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_29d8df116c5b92::t_9e2e7e0761ceb6 16,27-28,30,33-35,39-41,92-99,319-524,554-555,558
+src/modules/Arrangement/useCases/clipEditing/resolveClipRestoreInsertionIndex.ts
+  s_29d8df116c5b92::t_a29e465a8c5041 1-52
+src/modules/Arrangement/useCases/comping/captureCompAudioSourceAuthorizations.ts
+  s_29d8df116c5b92::t_35c0919b229ed9 14-15,48-72
+src/modules/Arrangement/useCases/comping/captureCurrentTempoAudioSources.ts
+  s_29d8df116c5b92::t_30b544562421e6 1-28
+src/modules/Arrangement/useCases/comping/captureDeferredTempoRecordings.ts
+  s_29d8df116c5b92::t_0ea4f6f45332aa 1-236
+src/modules/Arrangement/useCases/comping/prepareTempoAudioSourceWrite.ts
+  s_29d8df116c5b92::t_3c1177cd69237c 4,15-17,27-31,46,55-87,89-96
+src/modules/Arrangement/useCases/prepareTempoAudioSources.ts
+  s_29d8df116c5b92::t_4e84c2cce5c295 2-3,7-8,17,19
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_29d8df116c5b92::t_5fc7d711b238e8 1-9,11,22-23,44-65,87-90,92-94,108-141,373,380,389
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_29d8df116c5b92::t_3a4fa1e0b77e94 1,40,149-174
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_2fe18758f23a6c 6,261,265-267,278,280-287,944-951,953
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_29d8df116c5b92::t_96b2fb70b981f1 740
+src/modules/AudioEngine/useCases/offlineRender/__tests__/legacyAudioCutSource.integration.spec.ts
+  s_29d8df116c5b92::t_f4182d0a398688 1-252
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_29d8df116c5b92::t_8aba37fecea0c3 226-229
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_dde14fe1389c04 1068
+src/modules/Setlist/useCases/setlist/__tests__/setlistTempoCommand.integration.spec.ts
+  s_29d8df116c5b92::t_67d52e06f8782b 7,136-145,152,227,234
+src/modules/Transport/handlers/transport/__tests__/tempoSourcePrefix.integration.spec.ts
+  s_29d8df116c5b92::t_e4ce7e201e4f71 137,246,293,296-300,341-345,347-348,404-409
+src/modules/Transport/handlers/transport/handleSetTempo.ts
+  s_29d8df116c5b92::t_29c4a3bf813ffd 5,8,76-82
+src/modules/Transport/stores/tempoWriteIntent.ts
+  s_29d8df116c5b92::t_8f4834568da393 5-8,10,22,132-135
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_82bca6effab95d 14,68-69,72,122,125-126,150,297-301,317-319,333,347-348,367,427-489,577-578,615-616,620,625-640
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_21a51d475dc6a6 14-15,72
+src/modules/Transport/useCases/playheadScheduler/schedulerLookAheadBeats.ts
+  s_29d8df116c5b92::t_9c2c106e70f32e 1-6
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_36f455cfae0ab8 64,675,727-730
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_29d8df116c5b92::t_6beae66711a0a4 77-78,93-94
+src/modules/Transport/useCases/transportControls/__tests__/recordStartSetupFailure.spec.ts
+  s_29d8df116c5b92::t_a809eded762e97 1-256
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_29d8df116c5b92::t_48e65a0ce916e2 71-75
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_29d8df116c5b92::t_0a97643936d20c 29-30,183
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_29d8df116c5b92::t_6a6547e2a6e478 12-16,21-24,43-48,50-51,78-79
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_29d8df116c5b92::t_89a506bd4b62df 560-569,579-604,606-612
+src/utils/__tests__/tempoAudioSourcePromotion.spec.ts
+  s_29d8df116c5b92::t_5d9ede6d1d3927 117-130,219
+src/utils/deferredTempoRecordingSources.ts
+  s_29d8df116c5b92::t_3c2d4eb751c4a1 1-42
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_49b9e6cbb9704a 1365-1366
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db1a243609e8a29e01a02234b6273ff6d52e182d",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
