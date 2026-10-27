@@ -85,8 +85,9 @@ function splitProtectedReferenceList(reference: string): ReferenceListParse {
     return { complete: true, references };
 }
 
-function getProtectedReferenceTexts(prompt: string): ProtectedReferenceParse {
+function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
+    const clips = context.tracks.flatMap((track) => track.clips);
     const references: ProtectedReferenceParse['references'] = [];
     let complete = !emptyProtectionPattern.test(quoteScan.maskedText);
     const completeVerbStarts = new Set<number>();
@@ -127,8 +128,15 @@ function getProtectedReferenceTexts(prompt: string): ProtectedReferenceParse {
         ) {
             continue;
         }
+        const reference = prompt.slice(slot.start, slot.end);
+        if (
+            !isAggregateControlReference(reference) &&
+            resolveProtectedClipIds(reference, clips, context).length === 0
+        ) {
+            continue;
+        }
         completeVerbStarts.add(range.start);
-        addReference(prompt.slice(slot.start, slot.end));
+        addReference(reference);
     }
 
     complete &&= !hasDanglingProtectionClause(quoteScan.maskedText, completeVerbStarts);
@@ -219,7 +227,7 @@ function isAggregateControlReference(reference: string): boolean {
 
 export function getExplicitClipProtection(prompt: string, context: ProjectContext): ExplicitClipProtection {
     const clips = context.tracks.flatMap((track) => track.clips);
-    const parsedReferences = getProtectedReferenceTexts(prompt);
+    const parsedReferences = getProtectedReferenceTexts(prompt, context);
     const protectedIds = new Set<string>();
 
     let complete = parsedReferences.complete;

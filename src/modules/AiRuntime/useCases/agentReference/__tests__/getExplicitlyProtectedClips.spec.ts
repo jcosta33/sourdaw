@@ -88,6 +88,14 @@ function getProtectedClips(prompt: string, projectContext = context) {
 }
 
 describe('getExplicitlyProtectedClips', () => {
+    it.each([
+        'add an EQ to every audio track but leave the vocal alone',
+        'turn down the drums by 3 dB but leave Bass Verse alone',
+    ])('leaves an ordinary restriction to target authority when it names no clip in %s', (prompt) => {
+        const project = { ...context, tracks: [createTrack('track-drums', 'Drums', [])] };
+        expect(getExplicitClipProtection(prompt, project)).toEqual({ clips: [], complete: true });
+    });
+
     it.each(['Overall Level', 'Overall level'])(
         'fully reads a closed unbound aggregate control %s without inventing a clip',
         (quality) => {
