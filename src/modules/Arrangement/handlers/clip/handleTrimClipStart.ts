@@ -20,6 +20,17 @@ type LegacyTrim = {
 };
 const preparedLegacyRedos = new WeakMap<object, LegacyTrim | null>();
 
+function isHistoricTrimRedo(
+    action: Extract<AppAction, { type: 'trimClipStart' }>,
+    inverse: AppAction | null | undefined
+): boolean {
+    return (
+        inverse?.type === 'trimClipStart' &&
+        inverse.payload.clipId === action.payload.clipId &&
+        !Object.hasOwn(inverse.payload, 'midiOffsetBeats')
+    );
+}
+
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     canReportConflict: true,
     validateSessionEntry: audioClipStartTrimState.isSessionEntry,
@@ -83,11 +94,7 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
         preparedAudioTrims.delete(alpha);
         preparedLegacyRedos.delete(alpha);
         const replay = context?.recordedRedo;
-        const inverse = replay?.inverseAction;
-        const historicRedo =
-            inverse?.type === 'trimClipStart' &&
-            inverse.payload.clipId === alpha.payload.clipId &&
-            !Object.hasOwn(inverse.payload, 'midiOffsetBeats');
+        const historicRedo = isHistoricTrimRedo(alpha, replay?.inverseAction);
         if (historicRedo) {
             // Mark refusal too: a retired entry or missing owner must never fall
             // through to the indistinguishable fresh forward action.
