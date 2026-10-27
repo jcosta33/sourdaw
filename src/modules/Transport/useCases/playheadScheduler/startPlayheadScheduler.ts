@@ -40,6 +40,7 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import type { LiveYeastIteration } from '../scheduling/processLiveYeastTrackBlock';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../transportControls/recordingLifecycle';
@@ -270,7 +271,7 @@ export function startPlayheadScheduler(
             schedulerSession.generation === schedulerGeneration &&
             transportStore.value?.isPlaying === true &&
             (!initialEmissionPending || (preparedMidi?.isCurrent() ?? preparedInitial?.isCurrent()) === true),
-        yeastRouteLineage: preparedInitial?.yeastRouteLineage ?? new Map(),
+        yeastRouteLineage: preparedInitial?.yeastRouteLineage ?? new Map<string, LiveYeastIteration>(),
     };
 
     startAutomationRecording();
