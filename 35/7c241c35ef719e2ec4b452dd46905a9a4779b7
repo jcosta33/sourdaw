@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_737caa852889a0 82
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_4e01b75fb54421 1790-1791
+  s_29d8df116c5b92::t_737caa852889a0 142,330,1687
+  s_29d8df116c5b92::t_d778c03a303a80 3,146,206,1539-1540,1542,1618-1619,1629-1630,1632-1633,1726-1727,1729
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "357c241c35ef719e2ec4b452dd46905a9a4779b7",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
