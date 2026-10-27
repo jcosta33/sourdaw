@@ -88,6 +88,56 @@ function getProtectedClips(prompt: string, projectContext = context) {
 }
 
 describe('getExplicitlyProtectedClips', () => {
+    it.each(['Overall Level', 'Overall level'])(
+        'fully reads a closed unbound aggregate control %s without inventing a clip',
+        (quality) => {
+            expect(getExplicitClipProtection(`keep the ${quality} the same`, context)).toEqual({
+                clips: [],
+                complete: true,
+            });
+        }
+    );
+
+    it.each(['Overall', 'Overall Level'])(
+        'keeps the actual clip %s protected before interpreting aggregate control wording',
+        (name) => {
+            const clip = createClip('clip-overall', name);
+            const project = { ...context, tracks: [createTrack('track-drums', 'Drums', [clip])] };
+            expect(getExplicitClipProtection('keep the Overall Level the same', project)).toEqual({
+                clips: [{ id: clip.id, name }],
+                complete: true,
+            });
+        }
+    );
+
+    it.each([
+        'keep the "Overall Level" the same',
+        'keep "the" Overall Level the same',
+        'keep the Overall clip the same',
+        'keep the Overall Level and Missing clip the same',
+        'keep the Overall Level the same; keep the Missing clip unchanged',
+        'keep the Overall Level the same with the Missing clip',
+        'keep the Overall Level the same; keep the fader of "Ghost" the same',
+        'keep the Overall Level the same; keep unchanged',
+    ])('retains an incomplete protection beside aggregate wording in %s', (prompt) => {
+        expect(getExplicitClipProtection(prompt, context).complete).toBe(false);
+    });
+
+    it.each(['keep “Bass Verse” the same', 'keep Bass Verse as is', "leave Drummer's Cut alone"])(
+        'uses the shared closed grammar without losing a clip name in %s',
+        (prompt) => {
+            expect(getExplicitClipProtection(prompt, context)).toEqual({
+                clips: [
+                    {
+                        id: prompt.includes('Drummer') ? apostrophe.id : bassVerse.id,
+                        name: prompt.includes('Drummer') ? apostrophe.name : bassVerse.name,
+                    },
+                ],
+                complete: true,
+            });
+        }
+    );
+
     it.each([
         ['leave Bass Verse unchanged', bassVerse],
         ['leaving "Bass Verse" unchanged', bassVerse],

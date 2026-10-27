@@ -3,6 +3,8 @@ import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuot
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
+import { protectionSlots } from './readProtectionSlots';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
@@ -27,6 +29,7 @@ const exclusionPattern = new RegExp(
 );
 const emptyProtectionPattern = new RegExp(String.raw`\b${protectionVerb}\s+unchanged\b`, 'iu');
 const protectionVerbPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'iu');
+const protectionClauseStartPattern = new RegExp(String.raw`^${protectionVerb}\b`, 'iu');
 const allProtectionVerbsPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'giu');
 const exclusionVerbPattern = /\b(?:excluding|except)\b/giu;
 const protectionClauseBoundaryPattern = new RegExp(protectionClauseBoundary, 'giu');
@@ -88,6 +91,14 @@ function getProtectedReferenceTexts(prompt: string): ProtectedReferenceParse {
     let complete = !emptyProtectionPattern.test(quoteScan.maskedText);
     const completeVerbStarts = new Set<number>();
     const completeExclusionStarts = new Set<number>();
+    const addReference = (reference: string) => {
+        const parsed = splitProtectedReferenceList(reference);
+        complete &&= parsed.complete;
+        const whole = reference.trim();
+        if (whole.length > 0) {
+            references.push({ whole, members: parsed.references });
+        }
+    };
 
     for (const match of [
         ...quoteScan.maskedText.matchAll(protectionPattern),
@@ -103,12 +114,21 @@ function getProtectedReferenceTexts(prompt: string): ProtectedReferenceParse {
         }
         const referenceOffset = match[0].indexOf(match[1]);
         const reference = prompt.slice(match.index + referenceOffset, match.index + referenceOffset + match[1].length);
-        const parsed = splitProtectedReferenceList(reference);
-        complete &&= parsed.complete;
-        const trimmedWholeReference = reference.trim();
-        if (trimmedWholeReference.length > 0) {
-            references.push({ whole: trimmedWholeReference, members: parsed.references });
+        addReference(reference);
+    }
+
+    for (const slot of protectionSlots.read(quoteScan.maskedText)) {
+        const range = slot.completeRange;
+        if (
+            range === null ||
+            !slot.strict ||
+            completeVerbStarts.has(range.start) ||
+            !protectionClauseStartPattern.test(quoteScan.maskedText.slice(range.start))
+        ) {
+            continue;
         }
+        completeVerbStarts.add(range.start);
+        addReference(prompt.slice(slot.start, slot.end));
     }
 
     complete &&= !hasDanglingProtectionClause(quoteScan.maskedText, completeVerbStarts);
@@ -181,6 +201,22 @@ function isTrackOnlyReference(reference: string, context: ProjectContext): boole
     );
 }
 
+function isAggregateControlReference(reference: string): boolean {
+    const masked = scanPromptQuotedText(reference).maskedText;
+    const tokens = protectionObjectForms
+        .readTokens(reference, masked, { start: 0, end: reference.length })
+        .filter((token) => token.quoted || !CONNECTIVE_WORDS.has(token.lower));
+    const owner = tokens.slice(0, -1);
+    const control = tokens.at(-1);
+    return (
+        control !== undefined &&
+        !tokens.some((token) => token.quoted) &&
+        protectionObjectForms.isControl(control.lower) &&
+        owner.length > 0 &&
+        owner.every((token) => CONVENTIONAL_WORDS.has(token.lower))
+    );
+}
+
 export function getExplicitClipProtection(prompt: string, context: ProjectContext): ExplicitClipProtection {
     const clips = context.tracks.flatMap((track) => track.clips);
     const parsedReferences = getProtectedReferenceTexts(prompt);
@@ -209,9 +245,10 @@ export function getExplicitClipProtection(prompt: string, context: ProjectContex
         const resolvedMembers = members.map((member) => ({
             ids: resolveProtectedClipIds(member, clips, context),
             trackOnly: isTrackOnlyReference(member, context),
+            aggregateControl: isAggregateControlReference(member),
         }));
         for (const member of resolvedMembers) {
-            complete &&= member.ids.length > 0 || member.trackOnly;
+            complete &&= member.ids.length > 0 || member.trackOnly || member.aggregateControl;
             for (const clipId of member.ids) {
                 protectedIds.add(clipId);
             }
