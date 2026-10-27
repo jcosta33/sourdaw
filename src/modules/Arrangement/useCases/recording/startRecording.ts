@@ -109,14 +109,17 @@ function stageRecording(
         // Take labels count per lane, the way the scheduler's wrap path mints
         // them, so takes on different lanes never share or duplicate labels.
         const takeNum = (getTakeLaneForTrack(track.id)?.takes.length ?? 0) + 1;
-        stageRecordingTake({
+        const takeInput: Parameters<typeof stageRecordingTake>[0] = {
             trackId: track.id,
             clipId,
             name: `Take ${takeNum}`,
             startBeat: trackRecordBeat,
             endBeat: trackRecordBeat,
-            ...(track.kind === 'midi' ? { recordingPassIndex: 0 } : {}),
-        });
+        };
+        if (track.kind === 'midi') {
+            takeInput.recordingPassIndex = 0;
+        }
+        stageRecordingTake(takeInput);
     }
 
     if (newClips.length > 0) {

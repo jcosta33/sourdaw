@@ -133,20 +133,37 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
     return windowsByClipId;
 }
 
-/**
- * One take's surviving pieces as fragment takes and the region-mapping view of
- * the same split. The leftmost fragment keeps the take's id — the split
- * convention — so regions naming it keep resolving. A take mints at most one
- * id: its clip contributes at most two windows (its own surviving fragment and
- * the re-keyed right one) and a window at most one piece, so the second piece
- * is the only mint, over a base id the source take's id makes unique. Deriving
- * it from the take id and the deleted span keeps a replayed redo re-minting
- * the same id, exactly like the clip identities it replays. Uniqueness rests
- * on take ids being unique — true for every lane an app route mints, but not
- * enforced by the store's sanitize: two takes sharing an id on corrupt
- * hydrated state would mint colliding fragment ids here, an accepted
- * divergence on state no route produces.
- */
+function captureMidiTakeSource(
+    take: Take,
+    siblingTakes: readonly Take[],
+    clip: Clip,
+    input: CaptureTakeReKeyTransitionsInput
+): Take {
+    if (take.midiSource !== undefined) {
+        if (!isFrozenMidiTakeSource(take.midiSource)) {
+            throw new Error('MIDI take source is malformed');
+        }
+        return take;
+    }
+    const rows = input.sourceMidiByClipId?.get(clip.id);
+    const state = rows === undefined ? getMidiStoreState() : null;
+    const sourceRows = rows ?? (state ? snapshotMidiClipData(state, clip.id) : null);
+    if (!sourceRows) {
+        throw new Error('MIDI take source is unavailable');
+    }
+    const midiSource = prepareMidiTakeSourceCapture({
+        clip,
+        take,
+        siblingTakes,
+        rows: sourceRows,
+        timeline: input.timeline ?? liveTempoTimeline,
+    });
+    if (!midiSource) {
+        throw new Error('MIDI take source cannot be captured');
+    }
+    return { ...take, midiSource };
+}
+
 function captureTakeSource(
     take: Take,
     siblingTakes: readonly Take[],
@@ -154,29 +171,7 @@ function captureTakeSource(
     input: CaptureTakeReKeyTransitionsInput
 ): Take {
     if (clip?.type === 'midi') {
-        if (take.midiSource !== undefined) {
-            if (!isFrozenMidiTakeSource(take.midiSource)) {
-                throw new Error('MIDI take source is malformed');
-            }
-            return take;
-        }
-        const rows = input.sourceMidiByClipId?.get(clip.id);
-        const state = rows === undefined ? getMidiStoreState() : null;
-        const sourceRows = rows ?? (state ? snapshotMidiClipData(state, clip.id) : null);
-        if (!sourceRows) {
-            throw new Error('MIDI take source is unavailable');
-        }
-        const midiSource = prepareMidiTakeSourceCapture({
-            clip,
-            take,
-            siblingTakes,
-            rows: sourceRows,
-            timeline: input.timeline ?? liveTempoTimeline,
-        });
-        if (!midiSource) {
-            throw new Error('MIDI take source cannot be captured');
-        }
-        return { ...take, midiSource };
+        return captureMidiTakeSource(take, siblingTakes, clip, input);
     }
     if (clip?.type !== 'audio') {
         return take;
@@ -199,6 +194,20 @@ function captureTakeSource(
     return { ...take, sourceOffsetSeconds: (take.sourceOffsetBeats * 60) / tempo };
 }
 
+/**
+ * One take's surviving pieces as fragment takes and the region-mapping view of
+ * the same split. The leftmost fragment keeps the take's id — the split
+ * convention — so regions naming it keep resolving. A take mints at most one
+ * id: its clip contributes at most two windows (its own surviving fragment and
+ * the re-keyed right one) and a window at most one piece, so the second piece
+ * is the only mint, over a base id the source take's id makes unique. Deriving
+ * it from the take id and the deleted span keeps a replayed redo re-minting
+ * the same id, exactly like the clip identities it replays. Uniqueness rests
+ * on take ids being unique — true for every lane an app route mints, but not
+ * enforced by the store's sanitize: two takes sharing an id on corrupt
+ * hydrated state would mint colliding fragment ids here, an accepted
+ * divergence on state no route produces.
+ */
 function buildTakeFragments(
     take: Take,
     pieces: readonly MappedPiece[],
