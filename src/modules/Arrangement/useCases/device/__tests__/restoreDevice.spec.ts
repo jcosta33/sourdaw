@@ -157,7 +157,9 @@ describe('restoreDevice', () => {
             { trackId: track.id, deviceSnapshot: snapshot, deviceIndex: 0 },
             { deferRuntimeEffects: true }
         );
-        if (outcome === 'conflict') throw new Error('Expected deferred restore result');
+        if (outcome === 'conflict') {
+            throw new Error('Expected deferred restore result');
+        }
         const committedDevice = {
             ...snapshot,
             bypassed: true,
@@ -202,7 +204,9 @@ describe('restoreDevice', () => {
             { trackId: track.id, deviceSnapshot: snapshot, deviceIndex: 0 },
             { deferRuntimeEffects: true }
         );
-        if (outcome === 'conflict') throw new Error('Expected deferred restore result');
+        if (outcome === 'conflict') {
+            throw new Error('Expected deferred restore result');
+        }
         mocks.resolveEligibleDeviceWriteTarget.mockReturnValue(target);
 
         outcome.afterCommit();
@@ -229,7 +233,9 @@ describe('restoreDevice', () => {
             { trackId: track.id, deviceSnapshot: snapshot, deviceIndex: 0 },
             { deferRuntimeEffects: true }
         );
-        if (outcome === 'conflict') throw new Error('Expected deferred restore result');
+        if (outcome === 'conflict') {
+            throw new Error('Expected deferred restore result');
+        }
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({
             acceptance: 'rejected',
             application: 'not-applied',

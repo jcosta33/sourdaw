@@ -48,13 +48,17 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
                 !currentDeviceIds?.includes(candidate.deviceId)
         ).length;
         const insertionIndex = action.payload.deviceIndex - missingEarlierSiblingCount;
+        const restoreOptions: Parameters<typeof restoreDevice>[1] = { deferRuntimeEffects: true };
+        if (context) {
+            restoreOptions.batchContext = context;
+        }
         const outcome = restoreDevice(
             {
                 trackId: action.payload.trackId,
                 deviceSnapshot: action.payload.deviceSnapshot,
                 deviceIndex: insertionIndex,
             },
-            { deferRuntimeEffects: true, ...(context ? { batchContext: context } : {}) }
+            restoreOptions
         );
         if (outcome === 'conflict') {
             return { status: 'conflict' };
