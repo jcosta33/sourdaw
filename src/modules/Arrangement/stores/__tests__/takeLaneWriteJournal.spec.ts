@@ -106,6 +106,9 @@ describe('takeLaneWriteJournal', () => {
         expect(replay.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value.map((note) => note.velocity)).toEqual([
             70, 111,
         ]);
+        const conflicting = structuredClone(before);
+        conflicting.lanes[0]!.takes[0]!.midiSource.rows.notes.value[0]!.velocity = 112;
+        expect(replayTakeLaneWriteJournal(conflicting, journal).status).toBe('conflict');
     });
 
     it('moves a frozen MIDI source phase without replacing a peer-edited sibling row', () => {

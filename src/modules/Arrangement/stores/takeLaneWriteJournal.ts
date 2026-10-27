@@ -2,6 +2,7 @@ import {
     AutomergeStorageWriteConflictError,
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import {
     type CompAudioSourcePromotionSnapshot,
     type CompAudioSourceFieldPresenceSnapshot,
@@ -105,6 +106,27 @@ type TakeFieldOperation =
           readonly takeId: string;
           readonly expected: number;
           readonly replacement: number;
+      }
+    | {
+          readonly kind: 'take-midi-source-note-row';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: MidiTakeSource['rows']['notes']['value'][number];
+          readonly replacement: MidiTakeSource['rows']['notes']['value'][number];
+      }
+    | {
+          readonly kind: 'take-midi-source-cc-row';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: MidiTakeSource['rows']['controlChanges']['value'][number];
+          readonly replacement: MidiTakeSource['rows']['controlChanges']['value'][number];
+      }
+    | {
+          readonly kind: 'take-midi-source-bend-row';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: MidiTakeSource['rows']['pitchBends']['value'][number];
+          readonly replacement: MidiTakeSource['rows']['pitchBends']['value'][number];
       };
 
 export type TakeLaneWriteOperation =
@@ -227,6 +249,66 @@ function previousIdentity<Item extends { readonly id: string }>(items: readonly 
     return index > 0 ? (items[index - 1]?.id ?? null) : null;
 }
 
+function changedMidiRows<Row extends { readonly id: string }>(
+    before: readonly Row[],
+    next: readonly Row[],
+    operation: (expected: Row, replacement: Row) => TakeFieldOperation
+): TakeFieldOperation[] | null {
+    if (before.length !== next.length || before.some((row, index) => row.id !== next[index]?.id)) {
+        return null;
+    }
+    return before.flatMap((row, index) => {
+        const replacement = next[index]!;
+        return valuesEqual(row, replacement) ? [] : [operation(cloneValue(row), cloneValue(replacement))];
+    });
+}
+
+function captureMidiSourceRowOperations(
+    laneId: string,
+    takeId: string,
+    before: MidiTakeSource,
+    next: MidiTakeSource
+): TakeFieldOperation[] | null {
+    if (!valuesEqual({ ...before, rows: null }, { ...next, rows: null })) {
+        return null;
+    }
+    const beforeRows = before.rows;
+    const nextRows = next.rows;
+    if (
+        beforeRows.notes.present !== nextRows.notes.present ||
+        beforeRows.controlChanges.present !== nextRows.controlChanges.present ||
+        beforeRows.pitchBends.present !== nextRows.pitchBends.present
+    ) {
+        return null;
+    }
+    const notes = changedMidiRows(beforeRows.notes.value, nextRows.notes.value, (expected, replacement) => ({
+        kind: 'take-midi-source-note-row',
+        laneId,
+        takeId,
+        expected,
+        replacement,
+    }));
+    const controllers = changedMidiRows(
+        beforeRows.controlChanges.value,
+        nextRows.controlChanges.value,
+        (expected, replacement) => ({
+            kind: 'take-midi-source-cc-row',
+            laneId,
+            takeId,
+            expected,
+            replacement,
+        })
+    );
+    const bends = changedMidiRows(beforeRows.pitchBends.value, nextRows.pitchBends.value, (expected, replacement) => ({
+        kind: 'take-midi-source-bend-row',
+        laneId,
+        takeId,
+        expected,
+        replacement,
+    }));
+    return notes && controllers && bends ? [...notes, ...controllers, ...bends] : null;
+}
+
 function captureTakeFieldOperations(laneId: string, before: Take, next: Take): TakeFieldOperation[] {
     const operations: TakeFieldOperation[] = [];
     for (const field of ['clipId', 'name'] as const) {
@@ -300,6 +382,24 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
                 expected: beforeMidiSource.value.phaseHeadBeat,
                 replacement: nextMidiSource.value.phaseHeadBeat,
             });
+        } else if (beforeMidiSource.present && nextMidiSource.present) {
+            const rowOperations = captureMidiSourceRowOperations(
+                laneId,
+                before.id,
+                beforeMidiSource.value,
+                nextMidiSource.value
+            );
+            if (rowOperations) {
+                operations.push(...rowOperations);
+            } else {
+                operations.push({
+                    kind: 'take-midi-source-field',
+                    laneId,
+                    takeId: before.id,
+                    expected: beforeMidiSource,
+                    replacement: nextMidiSource,
+                });
+            }
         } else {
             operations.push({
                 kind: 'take-midi-source-field',
@@ -562,6 +662,21 @@ function replaceLane(state: TakeLaneStoreValue, replacement: TakeLane): TakeLane
     return { lanes: state.lanes.map((lane) => (lane.id === replacement.id ? replacement : lane)) };
 }
 
+function replaceCapturedMidiRow<Row extends { readonly id: string }>(
+    rows: readonly Row[],
+    expected: Row,
+    replacement: Row
+): Row[] | null {
+    if (expected.id !== replacement.id) {
+        return null;
+    }
+    const index = rows.findIndex((row) => row.id === expected.id);
+    if (index < 0 || !valuesEqual(rows[index], expected)) {
+        return null;
+    }
+    return rows.map((row, rowIndex) => (rowIndex === index ? cloneValue(replacement) : row));
+}
+
 function applyTakeFieldOperation(
     state: TakeLaneStoreValue,
     lane: TakeLane,
@@ -600,6 +715,52 @@ function applyTakeFieldOperation(
         } else {
             delete replacementTake.midiSource;
         }
+    } else if (operation.kind === 'take-midi-source-note-row') {
+        const source = take.midiSource;
+        if (!source || !source.rows.notes.present) {
+            return undefined;
+        }
+        const value = replaceCapturedMidiRow(source.rows.notes.value, operation.expected, operation.replacement);
+        if (!value) {
+            return undefined;
+        }
+        const midiSource = { ...source, rows: { ...source.rows, notes: { present: true as const, value } } };
+        if (!isFrozenMidiTakeSource(midiSource)) {
+            return undefined;
+        }
+        replacementTake = { ...take, midiSource };
+    } else if (operation.kind === 'take-midi-source-cc-row') {
+        const source = take.midiSource;
+        if (!source || !source.rows.controlChanges.present) {
+            return undefined;
+        }
+        const value = replaceCapturedMidiRow(
+            source.rows.controlChanges.value,
+            operation.expected,
+            operation.replacement
+        );
+        if (!value) {
+            return undefined;
+        }
+        const midiSource = { ...source, rows: { ...source.rows, controlChanges: { present: true as const, value } } };
+        if (!isFrozenMidiTakeSource(midiSource)) {
+            return undefined;
+        }
+        replacementTake = { ...take, midiSource };
+    } else if (operation.kind === 'take-midi-source-bend-row') {
+        const source = take.midiSource;
+        if (!source || !source.rows.pitchBends.present) {
+            return undefined;
+        }
+        const value = replaceCapturedMidiRow(source.rows.pitchBends.value, operation.expected, operation.replacement);
+        if (!value) {
+            return undefined;
+        }
+        const midiSource = { ...source, rows: { ...source.rows, pitchBends: { present: true as const, value } } };
+        if (!isFrozenMidiTakeSource(midiSource)) {
+            return undefined;
+        }
+        replacementTake = { ...take, midiSource };
     } else if (operation.kind === 'take-selected-field') {
         if (take.selected !== operation.expected) {
             return undefined;
