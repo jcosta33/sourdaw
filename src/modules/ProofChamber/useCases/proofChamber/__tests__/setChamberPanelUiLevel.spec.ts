@@ -11,6 +11,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    captureProjectIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -27,7 +28,7 @@ import { hydrateChamberDisclosureFromProject } from '../hydrateChamberDisclosure
 import { registerChamberInstance } from '../registerChamberInstance';
 import { setChamberPanelUiLevel } from '../setChamberPanelUiLevel';
 
-import type { TrackStoreState } from '#/modules/Arrangement/stores';
+import type { Device, TrackStoreState } from '#/modules/Arrangement/stores';
 
 function tracksWithTwoChamberDevices() {
     return sanitizeTrackSnapshot({
@@ -64,7 +65,29 @@ function rawProjectState(deviceId: string) {
         .find((device) => device.id === deviceId)?.deviceState;
 }
 
-async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => TrackStoreState): Promise<void> {
+function rawProjectTracks() {
+    const document = getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root');
+    if (!document) {
+        throw new Error('Missing project document');
+    }
+    return Automerge.toJS(document).tracks.tracks;
+}
+
+function conflictingDevice(type: string, version: number): Device {
+    return {
+        id: 'a',
+        name: 'Conflicting device',
+        type,
+        bypassed: true,
+        parameterValues: { mix: 0.73 },
+        deviceState: { version, data: { disclosureTier: 'shape', unknown: { retain: ['all', 7] } } },
+    };
+}
+
+async function requestDuringSnapshotEdit(
+    edit: (state: TrackStoreState) => TrackStoreState | void,
+    onEdited?: () => void
+): Promise<void> {
     let allowEdit!: () => void;
     let releaseTransaction!: () => void;
     let markStarted!: () => void;
@@ -85,7 +108,10 @@ async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => Track
         markStarted();
         await editAllowed;
         const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
-            trackStore.set(edit(trackStore.value!));
+            const editedState = edit(trackStore.value!);
+            if (editedState) {
+                trackStore.set(editedState);
+            }
         });
         storageTransaction.commit();
         markEdited();
@@ -95,9 +121,13 @@ async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => Track
     const request = setChamberPanelUiLevel('a', 5);
     allowEdit();
     await edited;
-    releaseTransaction();
-    await transaction;
-    await request;
+    try {
+        onEdited?.();
+    } finally {
+        releaseTransaction();
+        await transaction;
+        await request;
+    }
 }
 
 describe('setChamberPanelUiLevel project path', () => {
@@ -223,6 +253,90 @@ describe('setChamberPanelUiLevel project path', () => {
         expect(projectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
     });
 
+    it.each([
+        { type: 'dutch-oven', version: 1, location: 'same track' },
+        { type: 'dutch-oven', version: 99, location: 'another track' },
+        { type: 'builtin-eq', version: 1, location: 'same track' },
+        { type: 'builtin-eq', version: 99, location: 'another track' },
+    ])('refuses a preexisting same-ID $type version $version on $location', async ({ type, version, location }) => {
+        const tracks = tracksWithTwoChamberDevices();
+        const owner = tracks[0];
+        if (!owner) {
+            throw new Error('Missing fixture track');
+        }
+        const duplicate = conflictingDevice(type, version);
+        if (location === 'same track') {
+            owner.devices.push(duplicate);
+        } else {
+            tracks.push({ ...owner, id: 'track-2', devices: [duplicate] });
+        }
+        trackStore.set({ ...defaultTrackState, tracks });
+        flushAutomergeStorageWrites();
+        const before = rawProjectTracks();
+        const sessionBefore = chamberStore.value;
+
+        await setChamberPanelUiLevel('a', 5);
+
+        expect(rawProjectTracks()).toEqual(before);
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(chamberStore.value).toBe(sessionBefore);
+    });
+
+    it('does not write a layout to a unique device of another type', async () => {
+        const tracks = tracksWithTwoChamberDevices();
+        const device = tracks[0]?.devices[0];
+        if (!device) {
+            throw new Error('Missing fixture device');
+        }
+        device.type = 'builtin-eq';
+        trackStore.set({ ...defaultTrackState, tracks });
+        flushAutomergeStorageWrites();
+        const before = rawProjectTracks();
+        const sessionBefore = chamberStore.value;
+
+        await setChamberPanelUiLevel('a', 5);
+
+        expect(rawProjectTracks()).toEqual(before);
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(chamberStore.value).toBe(sessionBefore);
+    });
+
+    it.each(['dutch-oven', 'builtin-eq'])(
+        'refuses a same-ID %s introduced while the original device awaits admission',
+        async (type) => {
+            const original = trackStore.value?.tracks[0]?.devices[0];
+            const sessionBefore = chamberStore.value;
+            let before: ReturnType<typeof rawProjectTracks> | undefined;
+            await requestDuringSnapshotEdit(
+                (state) => ({
+                    ...state,
+                    tracks: state.tracks.map((track) => ({
+                        ...track,
+                        devices: [...track.devices, conflictingDevice(type, 99)],
+                    })),
+                }),
+                () => {
+                    const owner = trackStore.value?.tracks[0];
+                    if (!owner || !original) {
+                        throw new Error('Missing fixture device');
+                    }
+                    // Commit reprojects every device. Keep the unchanged addressed
+                    // object so the duplicate alone must refuse deferred admission.
+                    expect(owner.devices[0]).toEqual(original);
+                    owner.devices[0] = original;
+                    expect(trackStore.value?.tracks[0]?.devices[0]).toBe(original);
+                    before = rawProjectTracks();
+                }
+            );
+
+            expect(before).toBeDefined();
+            expect(rawProjectTracks()).toEqual(before);
+            expect(trackStore.value?.tracks).toEqual(before);
+            expect(chamberStore.value).toBe(sessionBefore);
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+        }
+    );
+
     it('leaves project and visible tier unchanged when the command admission refuses', async () => {
         agentProjectRepairStateStore.set({
             audioGraphValid: false,
@@ -323,6 +437,28 @@ describe('setChamberPanelUiLevel project path', () => {
 
         expect(rawProjectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
         expect(projectState('a')).toEqual(rawProjectState('a'));
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+    });
+
+    it('refuses an authority-only transition that retains the original device object and contents', async () => {
+        const original = trackStore.value?.tracks[0]?.devices[0];
+        const identity = captureProjectIdentity();
+        const before = rawProjectTracks();
+        const sessionBefore = chamberStore.value;
+        await requestDuringSnapshotEdit(
+            () => {
+                createCrdtDoc('branch_disclosure_authority');
+            },
+            () => {
+                expect(captureProjectIdentity()).not.toBe(identity);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toBe(original);
+                expect(rawProjectTracks()).toEqual(before);
+            }
+        );
+
+        expect(rawProjectTracks()).toEqual(before);
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(chamberStore.value).toBe(sessionBefore);
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
     });
 });

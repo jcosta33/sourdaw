@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
@@ -7,19 +7,36 @@ import { effectDisclosureTierFromLevel } from '#/utils/UI/effectDisclosureTier';
 
 const latestChoiceByDevice = new WeakMap<object, symbol>();
 
+type ChamberDeviceTarget = { owner: Track; device: Device };
+
+function resolveUniqueChamberDevice(deviceId: string): ChamberDeviceTarget | undefined {
+    let target: ChamberDeviceTarget | undefined;
+    for (const track of trackStore.value?.tracks ?? []) {
+        for (const device of track.devices) {
+            if (device.id !== deviceId) {
+                continue;
+            }
+            // The project action addresses every device with this ID, regardless of type.
+            if (target || device.type !== 'dutch-oven') {
+                return;
+            }
+            target = { owner: track, device };
+        }
+    }
+    return target;
+}
+
 /**
  * Request one addressed device's disclosure choice in project truth. The panel
  * follows the project projection; this void action's resolution is not proof of
  * a write, so this function never changes the session state optimistically.
  */
 export async function setChamberPanelUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): Promise<void> {
-    const owner = trackStore.value?.tracks.find((track) =>
-        track.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'dutch-oven')
-    );
-    const device = owner?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'dutch-oven');
-    if (!owner || !device) {
+    const target = resolveUniqueChamberDevice(deviceId);
+    if (!target) {
         return;
     }
+    const { owner, device } = target;
     const prior = device.deviceState;
     if (prior && prior.version !== 1) {
         notifyUser(
@@ -46,9 +63,8 @@ export async function setChamberPanelUiLevel(deviceId: string, level: 1 | 2 | 3 
                 if (latestChoiceByDevice.get(device) !== choice) {
                     return false;
                 }
-                const currentDevice = trackStore.value?.tracks
-                    .find((track) => track.id === owner.id)
-                    ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'dutch-oven');
+                const currentTarget = resolveUniqueChamberDevice(deviceId);
+                const currentDevice = currentTarget?.owner.id === owner.id ? currentTarget.device : undefined;
                 if (
                     captureProjectIdentity() === projectIdentity &&
                     currentDevice === device &&
