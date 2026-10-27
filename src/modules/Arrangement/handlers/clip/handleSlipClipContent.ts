@@ -37,7 +37,8 @@ function captureAudioSlip(action: SlipAction): AudioClipSlipCapture | null {
 }
 
 export const handleSlipClipContent = createHandler<'slipClipContent'>({
-    canReportConflict: true,
+    // Historic MIDI restoration is unguarded, so the public union cannot be a
+    // safe conflict-step target. Modern audio inverses use restoreAudioClipSlip.
     validateSessionEntry: audioClipSlipState.isSessionEntry,
     execute: (action) => {
         if (action.payload.clipType === 'audio') {

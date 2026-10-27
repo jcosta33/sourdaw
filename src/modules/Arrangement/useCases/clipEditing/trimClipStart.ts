@@ -1,6 +1,7 @@
 import { midiStore } from '#/modules/MIDI/stores';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 import { loopOriginEntry, resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -71,6 +72,16 @@ function hasFiniteRestoredMidiCoordinates(clip: Clip, newStartBeat: number, rest
     );
 }
 
+function requiresAudioSourceTrim(clip: Clip, restoredAnchor: number | null | undefined): boolean {
+    // An old anchor-bearing inverse captured beat coordinates only. Keep its
+    // absent source tuple absent so earlier whole-track captures still match.
+    // Present malformed modern fields must still reach strict source validation.
+    return (
+        clip.type === 'audio' &&
+        (restoredAnchor === undefined || Object.hasOwn(clip, 'audioOffsetSeconds') || !hasExactAudioSourceFields(clip))
+    );
+}
+
 /**
  * Trims a clip's start. `anchorBeat` is the restore leg's exact-anchor form
  * (#5198): a recorded inverse carries the pre-action anchor state so BOTH
@@ -114,7 +125,11 @@ export function trimClipStart(
             if (target && newStartBeat >= target.clip.endBeat) {
                 return false;
             }
-            if (target?.clip.type === 'audio' && !prepareAudioClipStartTrim(target.clip, newStartBeat)) {
+            if (
+                target &&
+                requiresAudioSourceTrim(target.clip, restoreAnchorBeat) &&
+                !prepareAudioClipStartTrim(target.clip, newStartBeat)
+            ) {
                 return false;
             }
             // Finite captures can overflow when deriving or applying their row
@@ -133,7 +148,7 @@ export function trimClipStart(
     }
 
     return updateClip(clipId, (context) => {
-        if (context.type === 'audio') {
+        if (requiresAudioSourceTrim(context, restoreAnchorBeat)) {
             const trimmed = prepareAudioClipStartTrim(context, newStartBeat);
             if (!trimmed || restoreAnchorBeat === undefined) {
                 return trimmed ?? context;
