@@ -1,0 +1,21 @@
+scripts/__tests__/e2eDevServer.spec.ts
+  s_567a084d0540c4::t_ff6ba8ae88e126 33,35,38-40,44-46,49,52-54,57
+scripts/e2eDevServer.ts
+  s_567a084d0540c4::t_f50b9d0242e98c 23-25,41-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5e32b8c7224b121cb30798b0b97f9a5b987ec07",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
