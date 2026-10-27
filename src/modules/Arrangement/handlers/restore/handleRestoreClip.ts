@@ -266,8 +266,12 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
                 undoRippleDelete(input);
             } else {
                 updateTrack(trackId, (time) => {
+                    const insertionIndex = resolveClipRestoreInsertionIndex(time.clips, alpha.payload);
+                    if (insertionIndex === null) {
+                        throw new Error('Clip restore placement changed before publication');
+                    }
                     const clips = [...time.clips];
-                    clips.splice(clipIndex, 0, clipSnapshot);
+                    clips.splice(insertionIndex, 0, clipSnapshot);
                     return { ...time, clips };
                 });
                 restoreTakesForClip(retiredTakeLanes ?? []);
