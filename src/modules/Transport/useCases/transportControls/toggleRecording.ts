@@ -209,7 +209,7 @@ function commitResolvedCapture(input: {
                     'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
                     'warning'
                 );
-                return;
+                return undefined;
             }
             return commitRecording(recordedClip, capture, { shouldExecute: stillOwnsCaptureRoot }).catch(
                 (error: unknown) => {
