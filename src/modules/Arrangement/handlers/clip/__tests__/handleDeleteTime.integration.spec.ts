@@ -424,16 +424,31 @@ describe('Delete Time take ownership through Command and CRDT', () => {
     });
 
     it.each([
-        ['whole', 2, 4],
-        ['right survivor', 3, 8],
-        ['partial left', 0, 3],
-        ['spanning', 0, 8],
-        ['shifted', 6, 8],
+        ['whole', 2, 4, false],
+        ['right survivor', 3, 8, false],
+        ['partial left', 0, 3, false],
+        ['spanning', 0, 8, false],
+        ['shifted', 6, 8, false],
+        ['canonical right survivor', 3, 8, true],
     ] as const)(
         'keeps saved Delete Time %s satellites replayable after binary reopen',
-        async (_effect, startBeat, endBeat) => {
+        async (_effect, startBeat, endBeat, canonical) => {
             hydrateProductionContracts();
             arrangeComp(startBeat, endBeat);
+            if (canonical) {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) => ({
+                            ...clip,
+                            audioOffsetBeats: 7,
+                            audioOffsetSeconds: 0.25,
+                            audioUnwrappedOffsetSeconds: 0.25,
+                        })),
+                    })),
+                });
+            }
             takeLaneStore.set({ lanes: [] });
             midiStore.set(defaultMidiStoreState);
             automationStore.set({ lanes: [] });
@@ -456,6 +471,15 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             const original = durableOwners();
             await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 4 } });
             const deleted = durableOwners();
+            if (canonical) {
+                expect(deleted.tracks.tracks[0]?.clips).toHaveLength(1);
+                expect(deleted.tracks.tracks[0]?.clips[0]).toMatchObject({
+                    startBeat: 2,
+                    endBeat: 6,
+                    audioOffsetSeconds: 0.75,
+                    audioUnwrappedOffsetSeconds: 0.75,
+                });
+            }
             await vi.waitFor(() =>
                 expect(
                     (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past
