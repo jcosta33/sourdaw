@@ -1,0 +1,23 @@
+.agents/skills/review-stances/audio-source-time.md
+  s_29d8df116c5b92::t_d7da96b27965ac 89-115
+src/infra/store/storage/__tests__/reconcileCrdtSlot.spec.ts
+  s_29d8df116c5b92::t_4a4764dbe53e9a 1008-1017
+src/infra/store/storage/reconcileCrdtSlot.ts
+  s_29d8df116c5b92::t_ae8116f4e66517 175-206,216,221,715
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47c5b7d04ad30f0999877259140961459b84fe04",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
