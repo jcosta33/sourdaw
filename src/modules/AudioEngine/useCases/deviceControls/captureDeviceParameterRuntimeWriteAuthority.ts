@@ -3,7 +3,8 @@ import {
     pendingDeviceParameterRuntimeWriteOwners,
     deviceParameterRuntimeWriteSequences,
 } from '../../stores/deviceParameterRuntimeWriteOwners';
-import { deviceParameterRuntimeWriteParameterId } from './setDeviceParameterRuntimeWriteOwner';
+
+import { deviceParameterRuntimeWriteParameterId } from './deviceParameterRuntimeWriteParameterId';
 
 /**
  * Web controller receipts distinguish effective, pending and refused writes.

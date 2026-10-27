@@ -2,10 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
-import { captureDeviceParameterRuntimeWriteAuthority } from '../../useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority';
-import { withDeviceParameterRuntimeWriteOwner } from '../../useCases/deviceControls/setDeviceParameterRuntimeWriteOwner';
-
 import { type BuiltinDeviceNode, type SendNode } from '../../models/AudioEngineState';
+import { captureDeviceParameterRuntimeWriteAuthority } from '../../useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority';
+import { withDeviceParameterRuntimeWriteOwner } from '../../useCases/deviceControls/withDeviceParameterRuntimeWriteOwner';
 import { createDeviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeDeps } from '../TrackNode';
 

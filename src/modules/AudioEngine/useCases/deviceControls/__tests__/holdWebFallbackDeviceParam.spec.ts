@@ -15,9 +15,9 @@ import { clampDeviceParamWrite, trackStore, type Device, type Track } from '#/mo
 
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { sendNativeDeviceParameters } from '../../livePlayback/sendNativeDeviceParameters';
-import { holdWebFallbackDeviceParam } from '../holdWebFallbackDeviceParam';
 import { captureDeviceParameterRuntimeWriteAuthority } from '../captureDeviceParameterRuntimeWriteAuthority';
-import { captureDeviceParameterRuntimeWriteReceipt } from '../setDeviceParameterRuntimeWriteOwner';
+import { captureDeviceParameterRuntimeWriteReceipt } from '../captureDeviceParameterRuntimeWriteReceipt';
+import { holdWebFallbackDeviceParam } from '../holdWebFallbackDeviceParam';
 import { updateDeviceParam } from '../updateDeviceParam';
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({

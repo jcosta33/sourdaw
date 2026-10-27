@@ -4,7 +4,7 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 
 import { deviceTypeOnStrip } from './deviceTypeOnStrip';
-import { withDeviceParameterRuntimeWriteOwner } from './setDeviceParameterRuntimeWriteOwner';
+import { withDeviceParameterRuntimeWriteOwner } from './withDeviceParameterRuntimeWriteOwner';
 
 /**
  * Keep a carried built-in's Web Audio node on the automation curve without

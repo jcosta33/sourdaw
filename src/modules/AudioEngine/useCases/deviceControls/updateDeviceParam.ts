@@ -3,7 +3,7 @@ import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
-import { withDeviceParameterRuntimeWriteOwner } from './setDeviceParameterRuntimeWriteOwner';
+import { withDeviceParameterRuntimeWriteOwner } from './withDeviceParameterRuntimeWriteOwner';
 import { writeNativeBuiltinParameters } from './writeNativeBuiltinParameters';
 
 /**

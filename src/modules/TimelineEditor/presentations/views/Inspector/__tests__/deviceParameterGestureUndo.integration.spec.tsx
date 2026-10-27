@@ -1,12 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { useStore } from '#/infra/store/useStore';
-import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getPluginById, setDeviceParameter } from '#/modules/Arrangement/useCases';
 import {
@@ -785,7 +785,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
                     trackId: 'track-1',
                     parameterId: 'grinder-1:gain',
                     enabled: true,
-                    points: [{ id: 'gain-point', beat: 0, value: 8, curve: 'linear' }],
+                    points: [{ id: 'gain-point', beat: 0, value: 8, curve: 'linear', tension: 0 }],
                 },
             ],
         });

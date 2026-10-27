@@ -4,7 +4,7 @@ import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
-import { captureDeviceParameterRuntimeWriteReceipt } from '../useCases/deviceControls/setDeviceParameterRuntimeWriteOwner';
+import { captureDeviceParameterRuntimeWriteReceipt } from '../useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
