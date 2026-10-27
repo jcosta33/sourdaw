@@ -13,31 +13,31 @@ import {
     type ClipSnapshot,
     type ClipStateSnapshot,
 } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 import {
     projectTempoSourceClock,
     isTempoAudioSourcePromotion,
     tempoSourcePromotionsEqual,
     type TempoSourceClock,
 } from '#/utils/tempoAudioSourcePromotion';
-import { valuesEqual } from '#/utils/structuralEquality';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 
-import { type Clip, type Track, sanitizeTrackSnapshot } from '../../stores/trackStore';
-import { takeLaneStore } from '../../stores/takeLaneStore';
-import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { projectTempoAudioSources } from '../../stores/tempoAudioSources';
-import { captureTempoAudioSources } from '../comping/captureTempoAudioSources';
-import { projectedTakeLaneOwners } from '../comping/projectedTakeLaneOwners';
-import { preparedClipSplits } from './preparedClipSplit';
+import { type Clip, type Track, sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { buildDuplicateClipInput } from '../clip/buildDuplicateClipInput';
 import { isClipDropCompatible } from '../clip/isClipDropCompatible';
+import { captureCurrentTempoAudioSources } from '../comping/captureCurrentTempoAudioSources';
+import { projectedTakeLaneOwners } from '../comping/projectedTakeLaneOwners';
+import { reKeyedTakeLaneOwnersMatchStore } from '../comping/reKeyedTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { planRippleDelete } from '../rippleDelete/planRippleDelete';
-import { clipSplitStateRestorable } from './clipSplitStateRestorable';
-import { reKeyedTakeLaneOwnersMatchStore } from '../comping/reKeyedTakeLaneOwnersMatchStore';
 
+import { clipSplitStateRestorable } from './clipSplitStateRestorable';
+import { preparedClipSplits } from './preparedClipSplit';
 import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
 
 type LocatedClip = { owningTrackId: string; clip: ClipSnapshot & Pick<Clip, 'loopOriginBeat'> };
@@ -88,12 +88,14 @@ function capturedClip(snapshot: ClipStateSnapshot): Clip {
         clip.overrides = overrides ? structuredClone(overrides) : undefined;
     }
     if (Object.hasOwn(snapshot, 'kneadState')) {
-        clip.kneadState = kneadState
-            ? {
-                  ...kneadState,
-                  blobs: kneadState.blobs.map((blob) => ({ ...blob, pitchCurveCents: [...blob.pitchCurveCents] })),
-              }
-            : undefined;
+        if (kneadState) {
+            clip.kneadState = {
+                ...kneadState,
+                blobs: kneadState.blobs.map((blob) => ({ ...blob, pitchCurveCents: [...blob.pitchCurveCents] })),
+            };
+        } else {
+            clip.kneadState = undefined;
+        }
     }
     return clip;
 }
@@ -313,6 +315,205 @@ function hasUnprojectedAudioSourceWrite(action: AppAction, state: ShiftedOwnerSt
     }
 }
 
+function projectTempoAction(
+    state: ShiftedOwnerState,
+    action: Extract<AppAction, { type: 'setTempo' | 'restoreTempoEdit' }>
+): ShiftedOwnerState | null {
+    const { tempoChangeId, expectedBpm, bpm, audioSourcePromotion } = action.payload;
+    if (
+        !state.tracks ||
+        tempoChangeId === undefined ||
+        expectedBpm === undefined ||
+        !isTempoAudioSourcePromotion(audioSourcePromotion)
+    ) {
+        return null;
+    }
+    if (action.type === 'setTempo' && bpm === expectedBpm) {
+        return state;
+    }
+    const nextClock = projectTempoSourceClock(state.clock, [{ tempoChangeId, expectedBpm, bpm }]);
+    if (!nextClock) {
+        return null;
+    }
+    const direction = action.type === 'restoreTempoEdit' ? action.payload.sourceDirection : 'promote';
+    const projected = projectTempoAudioSources(state.tracks, state.takeLanes, audioSourcePromotion, direction);
+    if (!projected) {
+        return null;
+    }
+    const originalTimeline = direction === 'promote' ? state.timeline : capturedTimeline(nextClock);
+    const recaptured = captureCurrentTempoAudioSources(
+        direction === 'promote' ? state.tracks : projected.tracks,
+        direction === 'promote' ? state.takeLanes : projected.lanes,
+        originalTimeline
+    );
+    if (!recaptured || !tempoSourcePromotionsEqual(recaptured, audioSourcePromotion)) {
+        return null;
+    }
+    return {
+        ...state,
+        tracks: projected.tracks,
+        takeLanes: projected.lanes,
+        clips: projected.tracks.flatMap((track) => track.clips.map((clip) => ({ owningTrackId: track.id, clip }))),
+        clock: nextClock,
+        timeline: capturedTimeline(nextClock),
+    };
+}
+
+function projectPreparedSplit(
+    state: ShiftedOwnerState,
+    action: Extract<AppAction, { type: 'splitClip' }>
+): ShiftedOwnerState | null {
+    const prepared = preparedClipSplits.get(action);
+    if (!prepared) {
+        return null;
+    }
+    const owner = state.clips.find((candidate) => candidate.clip.id === action.payload.clipId);
+    if (
+        !owner ||
+        owner.owningTrackId !== prepared.previous.trackId ||
+        !valuesEqual(owner.clip, prepared.previous.leftClip)
+    ) {
+        return null;
+    }
+    const split = projectSplitRestore(state, {
+        clipId: action.payload.clipId,
+        rightClipId: prepared.rightClipId,
+        expected: prepared.previous,
+        replacement: prepared.next,
+    });
+    if (!split) {
+        return null;
+    }
+    return { ...split, takeLanes: projectedTakeLaneOwners([action], split.takeLanes) };
+}
+
+function projectSplitReplay(
+    state: ShiftedOwnerState,
+    action: Extract<AppAction, { type: 'restoreClipSplitState' }>
+): ShiftedOwnerState | null {
+    if (
+        !state.tracks ||
+        !clipSplitStateRestorable(action.payload, { tracks: state.tracks }) ||
+        !reKeyedTakeLaneOwnersMatchStore(
+            action.payload.reKeyedTakeLanes ?? [],
+            action.payload.replacement.rightClip ? 'apply' : 'restore',
+            [],
+            state.takeLanes
+        )
+    ) {
+        return null;
+    }
+    const restored = projectSplitRestore(state, action.payload);
+    if (!restored) {
+        return null;
+    }
+    return { ...restored, takeLanes: projectedTakeLaneOwners([action], restored.takeLanes) };
+}
+
+function projectClipRestore(
+    state: ShiftedOwnerState,
+    action: Extract<AppAction, { type: 'restoreClip' }>,
+    trackIds: readonly string[]
+): ShiftedOwnerState | null {
+    const { trackId, clipIndex, clipSnapshot, ripplePlan } = action.payload;
+    if (state.tracks) {
+        if (isExactClipSnapshot(clipSnapshot, action.payload.clipId, trackId)) {
+            state = {
+                ...state,
+                tracks: state.tracks.map((track) => {
+                    if (track.id !== trackId) {
+                        return track;
+                    }
+                    return { ...track, clips: [...track.clips, capturedClip(clipSnapshot)] };
+                }),
+            };
+        } else {
+            // The restore payload carries only clip geometry. Keep the exact
+            // geometry projection below, but stop claiming a complete Clip model.
+            state = { ...state, tracks: null };
+        }
+    }
+    const removedClips = ripplePlan?.removedClips ?? [clipSnapshot];
+    const liveClipIds = new Set(state.clips.map((owner) => owner.clip.id));
+    if (removedClips.some((clip) => liveClipIds.has(clip.id))) {
+        return null;
+    }
+    if (!ripplePlan) {
+        return { ...state, clips: insertRestoredClips(state.clips, trackId, clipIndex, [clipSnapshot], trackIds) };
+    }
+    if (!isExactAutomationLaneSnapshots(ripplePlan.clipAutomationLanes)) {
+        return null;
+    }
+    const shifts = new Map(ripplePlan.shiftedClips.map((shift) => [shift.clipId, shift]));
+    const clips = state.clips.map((owner) => {
+        const shift = shifts.get(owner.clip.id);
+        if (!shift || owner.owningTrackId !== trackId) {
+            return owner;
+        }
+        return {
+            ...owner,
+            clip: {
+                ...owner.clip,
+                startBeat: shift.origStartBeat,
+                endBeat: shift.origEndBeat,
+                ...shiftLoopOriginEntry(owner.clip, shift.origStartBeat - owner.clip.startBeat),
+            },
+        };
+    });
+    const shiftedLanes = state.lanes.map((lane) => {
+        const shift = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);
+        if (!shift || shift.automationDelta === 0) {
+            return lane;
+        }
+        return {
+            ...lane,
+            points: lane.points
+                .map((point) => ({ ...point, beat: Math.max(0, point.beat - shift.automationDelta) }))
+                .sort((left, right) => left.beat - right.beat),
+        };
+    });
+    const liveIds = new Set(shiftedLanes.map((lane) => lane.id));
+    if (ripplePlan.clipAutomationLanes.some((lane) => liveIds.has(lane.id))) {
+        return null;
+    }
+    return {
+        ...state,
+        clips: insertRestoredClips(clips, trackId, clipIndex, ripplePlan.removedClips, trackIds),
+        lanes: [...shiftedLanes, ...ripplePlan.clipAutomationLanes],
+    };
+}
+
+function projectClipAction(
+    state: ShiftedOwnerState,
+    action: AppAction,
+    trackIds: readonly string[]
+): ShiftedOwnerState | null {
+    if (hasUnprojectedAudioSourceWrite(action, state)) {
+        // Geometry-only guards cannot claim a complete source model.
+        state = { ...state, tracks: null };
+    }
+    state = { ...state, tracks: tracksWithProjectedClips(state) };
+    switch (action.type) {
+        case 'setTempo':
+        case 'restoreTempoEdit':
+            return projectTempoAction(state, action);
+        case 'splitClip':
+            return projectPreparedSplit(state, action);
+        case 'duplicateClipAt':
+            return projectDuplicate(state, action.payload);
+        case 'discardDuplicatedClip':
+            return projectDiscard(state, action.payload.clipId);
+        case 'removeClip':
+            return projectRemoval(state, action.payload.clipId, action.payload.ripple);
+        case 'restoreClipSplitState':
+            return projectSplitReplay(state, action);
+        case 'restoreClip':
+            return projectClipRestore(state, action, trackIds);
+        default:
+            return state;
+    }
+}
+
 /** Exactly the geometry and automation clip removal and `undoRippleDelete` write, in group order.
  * Restored lanes matter even when that earlier removal did not ripple: a later
  * inverse may shift the clip the earlier inverse just brought back. */
@@ -342,196 +543,11 @@ export function projectClipReplayPrefix(
         timeline: capturedTimeline(clock),
     };
     for (const action of priorActions) {
-        if (hasUnprojectedAudioSourceWrite(action, state)) {
-            // Older replay guards consume geometry/automation only. Keep that
-            // view, while source-aware owners require a complete track view.
-            state = { ...state, tracks: null };
-        }
-        state = { ...state, tracks: tracksWithProjectedClips(state) };
-        if (action.type === 'setTempo' || action.type === 'restoreTempoEdit') {
-            const { tempoChangeId, expectedBpm, bpm, audioSourcePromotion } = action.payload;
-            if (
-                !state.tracks ||
-                tempoChangeId === undefined ||
-                expectedBpm === undefined ||
-                !isTempoAudioSourcePromotion(audioSourcePromotion)
-            ) {
-                return null;
-            }
-            if (action.type === 'setTempo' && bpm === expectedBpm) {
-                continue;
-            }
-            const nextClock = projectTempoSourceClock(state.clock, [{ tempoChangeId, expectedBpm, bpm }]);
-            if (!nextClock) {
-                return null;
-            }
-            const direction = action.type === 'restoreTempoEdit' ? action.payload.sourceDirection : 'promote';
-            const projected = projectTempoAudioSources(state.tracks, state.takeLanes, audioSourcePromotion, direction);
-            if (!projected) {
-                return null;
-            }
-            const originalTimeline = direction === 'promote' ? state.timeline : capturedTimeline(nextClock);
-            const recaptured = captureTempoAudioSources(
-                direction === 'promote' ? state.tracks : projected.tracks,
-                direction === 'promote' ? state.takeLanes : projected.lanes,
-                originalTimeline
-            );
-            if (!recaptured || !tempoSourcePromotionsEqual(recaptured, audioSourcePromotion)) {
-                return null;
-            }
-            state = {
-                ...state,
-                tracks: projected.tracks,
-                takeLanes: projected.lanes,
-                clips: projected.tracks.flatMap((track) =>
-                    track.clips.map((clip) => ({ owningTrackId: track.id, clip }))
-                ),
-                clock: nextClock,
-                timeline: capturedTimeline(nextClock),
-            };
-            continue;
-        }
-        if (action.type === 'splitClip') {
-            const prepared = preparedClipSplits.get(action);
-            if (!prepared) {
-                return null;
-            }
-            const owner = state.clips.find((candidate) => candidate.clip.id === action.payload.clipId);
-            if (
-                !owner ||
-                owner.owningTrackId !== prepared.previous.trackId ||
-                !valuesEqual(owner.clip, prepared.previous.leftClip)
-            ) {
-                return null;
-            }
-            const split = projectSplitRestore(state, {
-                clipId: action.payload.clipId,
-                rightClipId: prepared.rightClipId,
-                expected: prepared.previous,
-                replacement: prepared.next,
-            });
-            if (!split) {
-                return null;
-            }
-            state = split;
-            state = { ...state, takeLanes: projectedTakeLaneOwners([action], state.takeLanes) };
-            continue;
-        }
-        if (action.type === 'duplicateClipAt') {
-            const duplicate = projectDuplicate(state, action.payload);
-            if (!duplicate) {
-                return null;
-            }
-            state = duplicate;
-            continue;
-        }
-        if (action.type === 'discardDuplicatedClip') {
-            const discard = projectDiscard(state, action.payload.clipId);
-            if (!discard) {
-                return null;
-            }
-            state = discard;
-            continue;
-        }
-        if (action.type === 'removeClip') {
-            const removal = projectRemoval(state, action.payload.clipId, action.payload.ripple);
-            if (!removal) {
-                return null;
-            }
-            state = removal;
-            continue;
-        }
-        if (action.type === 'restoreClipSplitState') {
-            if (
-                !state.tracks ||
-                !clipSplitStateRestorable(action.payload, { tracks: state.tracks }) ||
-                !reKeyedTakeLaneOwnersMatchStore(
-                    action.payload.reKeyedTakeLanes ?? [],
-                    action.payload.replacement.rightClip ? 'apply' : 'restore',
-                    [],
-                    state.takeLanes
-                )
-            ) {
-                return null;
-            }
-            const restored = projectSplitRestore(state, action.payload);
-            if (!restored) {
-                return null;
-            }
-            state = restored;
-            state = { ...state, takeLanes: projectedTakeLaneOwners([action], state.takeLanes) };
-            continue;
-        }
-        if (action.type !== 'restoreClip') {
-            continue;
-        }
-        const { trackId, clipIndex, clipSnapshot, ripplePlan } = action.payload;
-        if (state.tracks) {
-            if (isExactClipSnapshot(clipSnapshot, action.payload.clipId, trackId)) {
-                state = {
-                    ...state,
-                    tracks: state.tracks.map((track) => {
-                        if (track.id !== trackId) {
-                            return track;
-                        }
-                        return { ...track, clips: [...track.clips, capturedClip(clipSnapshot)] };
-                    }),
-                };
-            } else {
-                // The restore payload carries only clip geometry. Keep the exact
-                // geometry projection below, but stop claiming a complete Clip model.
-                state = { ...state, tracks: null };
-            }
-        }
-        const removedClips = ripplePlan?.removedClips ?? [clipSnapshot];
-        const liveClipIds = new Set(state.clips.map((owner) => owner.clip.id));
-        if (removedClips.some((clip) => liveClipIds.has(clip.id))) {
+        const next = projectClipAction(state, action, trackIds);
+        if (!next) {
             return null;
         }
-        if (!ripplePlan) {
-            state = { ...state, clips: insertRestoredClips(state.clips, trackId, clipIndex, [clipSnapshot], trackIds) };
-            continue;
-        }
-        if (!isExactAutomationLaneSnapshots(ripplePlan.clipAutomationLanes)) {
-            return null;
-        }
-        const shifts = new Map(ripplePlan.shiftedClips.map((shift) => [shift.clipId, shift]));
-        const clips = state.clips.map((owner) => {
-            const shift = shifts.get(owner.clip.id);
-            if (!shift || owner.owningTrackId !== trackId) {
-                return owner;
-            }
-            return {
-                ...owner,
-                clip: {
-                    ...owner.clip,
-                    startBeat: shift.origStartBeat,
-                    endBeat: shift.origEndBeat,
-                    ...shiftLoopOriginEntry(owner.clip, shift.origStartBeat - owner.clip.startBeat),
-                },
-            };
-        });
-        const shiftedLanes = state.lanes.map((lane) => {
-            const shift = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);
-            if (!shift || shift.automationDelta === 0) {
-                return lane;
-            }
-            return {
-                ...lane,
-                points: lane.points
-                    .map((point) => ({ ...point, beat: Math.max(0, point.beat - shift.automationDelta) }))
-                    .sort((left, right) => left.beat - right.beat),
-            };
-        });
-        const liveIds = new Set(shiftedLanes.map((lane) => lane.id));
-        if (ripplePlan.clipAutomationLanes.some((lane) => liveIds.has(lane.id))) {
-            return null;
-        }
-        state = {
-            ...state,
-            clips: insertRestoredClips(clips, trackId, clipIndex, ripplePlan.removedClips, trackIds),
-            lanes: [...shiftedLanes, ...ripplePlan.clipAutomationLanes],
-        };
+        state = next;
     }
     return { ...state, tracks: tracksWithProjectedClips(state) };
 }

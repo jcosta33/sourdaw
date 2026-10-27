@@ -1,3 +1,4 @@
+import { runWithAutomergeStorageTransaction } from '#/infra/store/storage/createAutomergeStorage';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
@@ -36,7 +37,7 @@ function trackRecordingBeat(kind: Track['kind'], recordBeat: number, audioClock?
  * `audioClock` retains an audible audio entry as one beat/context pair while
  * MIDI continues to use `atBeat` on its scheduling clock.
  */
-export function startRecording(
+function stageRecording(
     atBeat?: number,
     firstPassClock?: () => number | null,
     audioClock?: AudioRecordingClock | null
@@ -137,4 +138,30 @@ export function startRecording(
     }
 
     return newClips;
+}
+
+/** Provisional clip/take birth is one owned publication, without history. The
+ * recorder's later terminal still creates the gesture's sole undoable entry. */
+export function startRecording(
+    atBeat?: number,
+    firstPassClock?: () => number | null,
+    audioClock?: AudioRecordingClock | null
+): Clip[] {
+    const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+        stageRecording(atBeat, firstPassClock, audioClock)
+    );
+    if (transaction.status === 'threw') {
+        throw transaction.error;
+    }
+    try {
+        transaction.commit();
+        return transaction.value;
+    } catch (error) {
+        for (const clip of transaction.value) {
+            recordingPassTiming.retire(clip.id);
+        }
+        activeRecordingRef.current = [];
+        activeRecordingRef.capturedRootIdentity = null;
+        throw error;
+    }
 }

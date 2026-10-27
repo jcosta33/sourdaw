@@ -1,5 +1,14 @@
-import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
+import { getObjectId, view } from '@automerge/automerge';
+
+import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    captureProjectRootIdentity,
+    getCrdtDoc,
+    subscribeToCrdtChanges,
+    readOwnedProjectPublications,
+} from '#/modules/CrdtDocument/useCases';
 import { playheadClockRef, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { placeTakeOnClipMedia, type Take } from '../../models/TakeLane';
 import { liveTempoTimeline } from '../liveTempoTimeline';
@@ -10,6 +19,8 @@ type PassStart =
     { contextSeconds: number; endContextSeconds: number } | { songSeconds: number; endSongSeconds: number };
 type RecordingPassTiming = {
     rootIdentity: string;
+    rawClipObjectId: string | null | undefined;
+    stopOwnershipObservation: () => void;
     pendingNative: boolean;
     ownedTakeIds: Set<string>;
     originalTakeId: string | null;
@@ -30,7 +41,28 @@ const recordingPassTimings = new Map<string, RecordingPassTiming>();
 
 function currentRecordingPassTiming(clipId: string): RecordingPassTiming | undefined {
     const timing = recordingPassTimings.get(clipId);
-    return timing?.rootIdentity === captureProjectRootIdentity() ? timing : undefined;
+    return timing?.rootIdentity === captureProjectRootIdentity() && timing.rawClipObjectId !== null
+        ? timing
+        : undefined;
+}
+
+function recordingClipObjectId(clipId: string, document = getCrdtDoc('root')): string | undefined | null {
+    const tracks = document && isRecord(document.tracks) ? document.tracks.tracks : [];
+    if (!Array.isArray(tracks)) {
+        return null;
+    }
+    const rows: unknown[] = [];
+    for (const track of tracks) {
+        if (isRecord(track) && Array.isArray(track.clips)) {
+            const clips: readonly unknown[] = track.clips;
+            rows.push(...clips);
+        }
+    }
+    const clips = rows.filter((clip) => isRecord(clip) && clip.id === clipId);
+    if (clips.length === 0) {
+        return undefined;
+    }
+    return clips.length === 1 ? getObjectId(clips[0]) : null;
 }
 
 function beginRecordingPassTiming(
@@ -52,8 +84,14 @@ function beginRecordingPassTiming(
             firstPassClock?.() ??
             playheadClockRef.audioTimeSeconds + recordPointSeconds - seconds(playheadClockRef.beat);
     }
-    recordingPassTimings.set(clipId, {
+    retireRecordingPassTiming(clipId);
+    const publicationOwner = getCurrentAutomergeStorageMutationOwner();
+    const publicationBaseline = publicationOwner ? readOwnedProjectPublications(publicationOwner).length : 0;
+    const timing: RecordingPassTiming = {
         rootIdentity: captureProjectRootIdentity(),
+        // A freshly minted recording cannot inherit an already published row.
+        rawClipObjectId: recordingClipObjectId(clipId) === undefined ? undefined : null,
+        stopOwnershipObservation: () => undefined,
         pendingNative,
         ownedTakeIds: new Set(),
         originalTakeId: null,
@@ -67,6 +105,40 @@ function beginRecordingPassTiming(
         ending: null,
         nextPassStartBeat: null,
         starts: new Map(),
+    };
+    recordingPassTimings.set(clipId, timing);
+    timing.stopOwnershipObservation = subscribeToCrdtChanges(() => {
+        if (timing.rootIdentity !== captureProjectRootIdentity() || timing.rawClipObjectId === null) {
+            timing.rawClipObjectId = null;
+            timing.stopOwnershipObservation();
+            return;
+        }
+        const objectId = recordingClipObjectId(clipId);
+        if (timing.rawClipObjectId === undefined && objectId !== undefined) {
+            const document = getCrdtDoc('root');
+            let publications: ReturnType<typeof readOwnedProjectPublications> = [];
+            if (publicationOwner) {
+                publications = readOwnedProjectPublications(publicationOwner).slice(publicationBaseline);
+            }
+            const ownsBirth =
+                document &&
+                publications.some((publication) => {
+                    if (publication.docId !== 'root') {
+                        return false;
+                    }
+                    try {
+                        return recordingClipObjectId(clipId, view(document, [...publication.heads])) === objectId;
+                    } catch {
+                        return false;
+                    }
+                });
+            timing.rawClipObjectId = ownsBirth ? objectId : null;
+        } else if (objectId !== timing.rawClipObjectId) {
+            timing.rawClipObjectId = null;
+        }
+        if (timing.rawClipObjectId === null) {
+            timing.stopOwnershipObservation();
+        }
     });
 }
 
@@ -298,13 +370,14 @@ function finalRecordingPass(clipId: string, availableEndContextSeconds: number) 
 }
 
 function retireRecordingPassTiming(clipId: string): void {
+    recordingPassTimings.get(clipId)?.stopOwnershipObservation();
     recordingPassTimings.delete(clipId);
 }
 
 export const recordingPassTiming = {
     isCurrent: (clipId: string, kind: 'audio' | 'midi'): boolean => {
         const timing = recordingPassTimings.get(clipId);
-        return timing ? timing.rootIdentity === captureProjectRootIdentity() : kind === 'midi';
+        return timing ? currentRecordingPassTiming(clipId) !== undefined : kind === 'midi';
     },
     begin: beginRecordingPassTiming,
     stage: stageRecordingPassTiming,
@@ -313,7 +386,7 @@ export const recordingPassTiming = {
     retire: retireRecordingPassTiming,
     retireIfOwner: (clipId: string, owner: RecordingPassTiming | undefined): void => {
         if (owner && recordingPassTimings.get(clipId) === owner) {
-            recordingPassTimings.delete(clipId);
+            retireRecordingPassTiming(clipId);
         }
     },
     finish: finishRecordingPass,

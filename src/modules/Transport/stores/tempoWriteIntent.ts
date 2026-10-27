@@ -2,8 +2,12 @@ import {
     AutomergeStorageWriteConflictError,
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { isRecord } from '#/utils/structuralEquality';
+import {
+    withoutDeferredTempoRecordingSources,
+    type DeferredTempoRecordingSources,
+} from '#/utils/deferredTempoRecordingSources';
 import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
 import { normalizeTempoSourceOwnerContext, type TempoSourceOwnerWitness } from '#/utils/tempoAudioSourcePromotion';
 import { readTempoMapRows, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
@@ -15,6 +19,7 @@ type SourcePreservation = {
     readonly promotion: TempoAudioSourcePromotionSnapshot;
     readonly direction: 'promote' | 'restore';
     readonly ownerWitness: TempoSourceOwnerWitness;
+    readonly deferredRecordingSources?: DeferredTempoRecordingSources;
 };
 export type TempoWriteIntent = {
     readonly tempoChangeId: string | null;
@@ -124,7 +129,10 @@ export function tempoWriteIntentsMatch(
     const current = new Map<string | null, number>();
     for (const intent of metadata) {
         const sourceContext = normalizeTempoSourceOwnerContext(document, intent.sourcePreservation?.ownerWitness);
-        if (!sourceContext || !tempoAudioSourceCoverageMatches(sourceContext, intent.sourcePreservation?.promotion)) {
+        const coverage =
+            sourceContext &&
+            withoutDeferredTempoRecordingSources(sourceContext, intent.sourcePreservation?.deferredRecordingSources);
+        if (!coverage || !tempoAudioSourceCoverageMatches(coverage, intent.sourcePreservation?.promotion)) {
             return false;
         }
         if ('rowClock' in intent) {
