@@ -18,13 +18,34 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { takeLaneStore, type Device, type Track } from '#/modules/Arrangement/stores';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { takeLaneStore, trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
+import { stageRecordingTake, startRecording, stopRecording } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, macroStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppAction,
+    registerProductionCommandHandlers,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     createGrooveMidiEventProjector,
     resolveMidiNoteArticulationId,
     shouldPlayMidiEvent,
 } from '#/modules/MIDI/useCases';
+import { defaultTransportState, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 
 import {
     type OfflineMidiEventProjector,
@@ -180,6 +201,169 @@ function levainTrack(clips: Track['clips']): Track {
 }
 
 describe('projectLiveMidiProgramme', () => {
+    it('closes the open final pass on its recorded source phase and emits only that pass after comp selection', async () => {
+        const trackId = 'track-midi';
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('MIDI final-pass playback');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' as const }),
+            clear: () => undefined,
+        });
+        registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        trackStore.set({
+            tracks: [createTrack({ id: trackId, armed: true })],
+            selectedTrackId: trackId,
+            ghostClips: [],
+        });
+        takeLaneStore.set({ lanes: [] });
+        try {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: true,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 8,
+            });
+            const [clip] = startRecording(8);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            for (const pass of [0, 1] as const) {
+                stageRecordingTake({
+                    trackId,
+                    clipId: clip.id,
+                    name: `Completed pass ${pass}`,
+                    startBeat: 8,
+                    endBeat: 12,
+                    sourceOffsetBeats: pass * 4,
+                    recordingPassIndex: pass,
+                });
+            }
+            const open = takeLaneStore.value!.lanes[0]!.takes.find((take) => take.name === 'Take 1')!;
+            expect(open).toMatchObject({ recordingPassIndex: 2, startBeat: 8 });
+            expect(open).not.toHaveProperty('sourceOffsetBeats');
+
+            transportStore.set({ ...transportStore.value!, isPlaying: true });
+            playheadWrapCountRef.current = 2;
+            await stopRecording(9.5);
+            transportStore.set({ ...transportStore.value!, isPlaying: false });
+            playheadWrapCountRef.current = 0;
+            flushAutomergeStorageWrites();
+            const final = takeLaneStore.value!.lanes[0]!.takes.find((take) => take.name === 'Take 1')!;
+            expect(final).toMatchObject({ recordingPassIndex: 2, sourceOffsetBeats: 8, endBeat: 9.5 });
+            // Recorded note rows use unwrapped media beats beyond the clip's visual loop span.
+            midiStore.set({
+                ...midiStore.value!,
+                notesByClipId: {
+                    ...midiStore.value!.notesByClipId,
+                    [clip.id]: [
+                        {
+                            id: 'pass-0',
+                            pitch: 60,
+                            startBeat: 0.5,
+                            duration: 0.25,
+                            velocity: 100,
+                            recordingPassIndex: 0,
+                        },
+                        {
+                            id: 'pass-1',
+                            pitch: 62,
+                            startBeat: 4.5,
+                            duration: 0.25,
+                            velocity: 100,
+                            recordingPassIndex: 1,
+                        },
+                        {
+                            id: 'pass-2',
+                            pitch: 64,
+                            startBeat: 8.5,
+                            duration: 0.25,
+                            velocity: 100,
+                            recordingPassIndex: 2,
+                        },
+                    ],
+                },
+            });
+            await executeAppAction({
+                type: 'setCompRegion',
+                payload: { trackId, takeId: final.id, startBeat: 8, endBeat: final.endBeat },
+            });
+            flushAutomergeStorageWrites();
+            const track = trackStore.value?.tracks[0];
+            if (!track || !midiStore.value) {
+                throw new Error('Expected a committed MIDI track and note store');
+            }
+            const sampleRate = 48_000;
+            const projectPpqEndpoints = ({ startPpq, endPpq }: { startPpq: number; endPpq: number }) => {
+                const startSamples = Math.round(startPpq * 0.5 * sampleRate);
+                const endSamples = Math.round(endPpq * 0.5 * sampleRate);
+                return {
+                    startSamples,
+                    endSamples,
+                    durationSamples: endSamples - startSamples,
+                    startSeconds: startSamples / sampleRate,
+                    endSeconds: endSamples / sampleRate,
+                    durationSeconds: (endSamples - startSamples) / sampleRate,
+                };
+            };
+            const programme = projectLiveMidiProgramme({
+                stripTracks: [
+                    {
+                        ...track,
+                        devices: [
+                            {
+                                id: 'instrument',
+                                name: 'Harness Tone',
+                                type: 'external-plugin',
+                                externalInstanceId: 'instance',
+                                bypassed: false,
+                                parameterValues: {},
+                            },
+                        ],
+                    },
+                ],
+                attachedInstanceIds: new Set(['instance']),
+                bakedStripIds: new Set(),
+                carriedStripIds: new Set([trackId]),
+                notesByClipId: midiStore.value.notesByClipId,
+                probabilitySeed: midiStore.value.probabilitySeed,
+                defaultTempo: 120,
+                sampleRate,
+                changes: [],
+                projectPpqEndpoints,
+                projectMidiEvents: createGrooveMidiEventProjector(),
+                selectProbability: shouldPlayMidiEvent,
+                projectChordPitch: null,
+                resolveArticulationId: null,
+                span: { startSeconds: 4, endSeconds: 6 },
+            });
+            expect(
+                programme.targets.flatMap(({ events }) =>
+                    events.filter((event) => event.isNoteOn).map((event) => event.note)
+                )
+            ).toEqual([64]);
+        } finally {
+            transportStore.set(defaultTransportState);
+            playheadWrapCountRef.current = 0;
+            clearUndoHistory();
+            resetActionReplayAuthority();
+            clearHandlerRegistry();
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+            takeLaneStore.set({ lanes: [] });
+            flushAutomergeStorageWrites();
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+        }
+    });
+
     it('sounds only selected frozen source rows on each original pass occurrence', () => {
         const before = takeLaneStore.value;
         const clip = midiClip({ id: 'original', trackId: 'midi-1', endBeat: 10 });

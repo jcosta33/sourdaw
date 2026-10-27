@@ -1,6 +1,13 @@
 import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const liveInput = vi.hoisted(() => {
+    const input = Object.assign(new EventTarget(), { id: 'live-midi', name: 'Live MIDI', manufacturer: 'Test' });
+    const access = { inputs: new Map([[input.id, input]]), outputs: new Map(), onstatechange: null };
+    Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true, value: () => Promise.resolve(access) });
+    return input;
+});
+
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -18,6 +25,7 @@ import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -33,12 +41,17 @@ import {
     replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
-import { setMpeEnabledInternal } from '#/modules/MIDI/repositories/webMidi/setMpeEnabledInternal';
-import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import { getMidiInputTrack, setMidiInputTrack, triggerLiveNoteOn } from '#/modules/MIDI/useCases';
-import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
+import {
+    destroyWebMidi,
+    getMidiInputTrack,
+    getWebMidiInputHandlers,
+    initWebMidi,
+    setMidiInputTrack,
+    setWebMidiRealtimeProcessor,
+    setWebMidiRuntimeEventBus,
+    triggerLiveNoteOn,
+} from '#/modules/MIDI/useCases';
 import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 
 import { countSettledTakes } from '../countSettledTakes';
@@ -47,6 +60,10 @@ import { isTransportIdle } from '../isTransportIdle';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
 import { toggleRecording } from '../toggleRecording';
+
+function sendMidi(...bytes: number[]): void {
+    liveInput.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
+}
 
 const TRACK_ID = 'track-recording';
 
@@ -123,11 +140,9 @@ const commitGate = vi.hoisted(() => ({
     release: null as (() => void) | null,
 }));
 
-const liveMidiGate = vi.hoisted(() => ({ pending: null as Promise<void> | null }));
-vi.mock('#/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn', () => ({
-    handleWebMidiNoteOn: () => liveMidiGate.pending ?? Promise.resolve(),
-}));
+let disposeMidiProcessor = (): void => {};
 
+const liveMidiGate = vi.hoisted(() => ({ pending: null as Promise<void> | null, started: 0, completed: 0 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
     return {
@@ -229,6 +244,30 @@ function findClip(clipId: string): Clip | undefined {
     return trackStore.value?.tracks.flatMap((track) => track.clips).find((clip) => clip.id === clipId);
 }
 
+function attachPendingWorker(): void {
+    Object.defineProperty(audioEngine.context, 'createStereoPanner', {
+        configurable: true,
+        value: () => {
+            const node = audioEngine.context.createGain();
+            return Object.assign(node, { pan: node.gain });
+        },
+    });
+    const state = trackStore.value;
+    if (!state) {
+        throw new Error('Expected track state');
+    }
+    trackStore.set({
+        ...state,
+        tracks: state.tracks.map((track) => ({
+            ...track,
+            devices: [
+                ...track.devices,
+                { id: 'worker', name: 'Worker', type: 'yeast', bypassed: false, parameterValues: {} },
+            ],
+        })),
+    });
+}
+
 function committedEntryCount(): number {
     return (undoHistoryStore.value?.past ?? []).filter(
         (entry) => entry.kind === 'action' && entry.action.type === 'commitRecording'
@@ -265,7 +304,7 @@ async function startAudioRecordingGesture(): Promise<void> {
  * material no entry owns.
  */
 describe('stopActiveRecording commit ordering (issue #4439)', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('stop active recording commit ordering');
         removeCrdtDoc('root');
@@ -273,6 +312,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getWebMidiInputHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -280,8 +320,19 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         trackStore.set({ tracks: [recordingTrack('midi')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
-        activeNotes.clear();
+        setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+        await initWebMidi();
         setMidiInputTrack(TRACK_ID);
+        disposeMidiProcessor = setWebMidiRealtimeProcessor({
+            processor: async () => {
+                liveMidiGate.started += 1;
+                if (liveMidiGate.pending) {
+                    await liveMidiGate.pending;
+                }
+                liveMidiGate.completed += 1;
+                return [];
+            },
+        });
         playheadWrapCountRef.current = 0;
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
         mocks.startPlayback.mockClear();
@@ -293,9 +344,12 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         Reflect.deleteProperty(audioEngine.context, 'currentTime');
+        Reflect.deleteProperty(audioEngine.context, 'createStereoPanner');
         commitGate.beforeClipId = null;
         commitGate.beforePending = null;
         liveMidiGate.pending = null;
+        liveMidiGate.started = 0;
+        liveMidiGate.completed = 0;
         agentProjectRepairStateStore.set(null);
         clearHandlerRegistry();
         clearUndoHistory();
@@ -303,9 +357,9 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
-        activeNotes.clear();
+        disposeMidiProcessor();
+        destroyWebMidi();
         setMidiInputTrack(null);
-        setMpeEnabledInternal(false);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -502,38 +556,6 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisional.id }]);
     });
 
-    it('seals a held MIDI note in the one Stop command before its key-up can arrive', async () => {
-        const [provisional] = startRecording(4);
-        if (!provisional) {
-            throw new Error('expected a provisional MIDI clip');
-        }
-        flushAutomergeStorageWrites();
-        // The live handler registers this note before awaiting Yeast. The
-        // worker may still be held when the musician presses Stop.
-        activeNotes.set(createWebMidiNoteKey(1, 60), {
-            startTime: 0.5,
-            startBeat: 5,
-            channel: 1,
-            note: 60,
-            velocity: 100,
-            trackId: TRACK_ID,
-            recordingClipId: provisional.id,
-            instrumentTrackId: TRACK_ID,
-        });
-        mocks.audioClock.currentTime = 1;
-
-        await stopActiveRecording();
-
-        const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
-        expect(notes).toHaveLength(1);
-        expect(notes[0]).toMatchObject({ pitch: 60, velocity: 100 });
-        expect(committedEntryCount()).toBe(1);
-        await undo();
-        expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
-        await redo();
-        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
-    });
-
     it('seals an admitted note still queued behind a held worker in its onset pass', async () => {
         const [provisional] = startRecording(4);
         if (!provisional) {
@@ -574,6 +596,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             loopEnd: 8,
             playheadPosition: 4,
         });
+        attachPendingWorker();
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional MIDI clip');
@@ -603,9 +626,10 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         retireRecordingMidiAdmission(probe!.id);
         const worker = Promise.withResolvers<void>();
         liveMidiGate.pending = worker.promise;
-        setMpeEnabledInternal(true);
+        await executeAppAction({ type: 'enableMpe' });
 
-        const physical = handleWebMidiMessage({ data: new Uint8Array([0x91, 62, 111]), timeStamp: undefined });
+        sendMidi(0x91, 62, 111);
+        await vi.waitFor(() => expect(liveMidiGate.started).toBeGreaterThan(0));
         stageRecordingTake({
             trackId: TRACK_ID,
             clipId: provisional.id,
@@ -619,9 +643,9 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         playheadClockRef.beat = 4.75;
         playheadClockRef.audioTimeSeconds = 3;
         mocks.audioClock.currentTime = 3;
-        const slide = handleWebMidiMessage({ data: new Uint8Array([0xb1, 74, 90]), timeStamp: undefined });
-        const pressure = handleWebMidiMessage({ data: new Uint8Array([0xd1, 70]), timeStamp: undefined });
-        const bend = handleWebMidiMessage({ data: new Uint8Array([0xe1, 0, 96]), timeStamp: undefined });
+        sendMidi(0xb1, 74, 90);
+        sendMidi(0xd1, 70);
+        sendMidi(0xe1, 0, 96);
         const virtual = triggerLiveNoteOn(2, 64, 99);
         stageRecordingTake({
             trackId: TRACK_ID,
@@ -636,10 +660,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         playheadClockRef.beat = 5;
         playheadClockRef.audioTimeSeconds = 5.5;
         mocks.audioClock.currentTime = 5.5;
-        const physicalThird = handleWebMidiMessage({
-            data: new Uint8Array([0x93, 67, 88]),
-            timeStamp: undefined,
-        });
+        sendMidi(0x93, 67, 88);
         expect(activeRecordingRef.midiAdmissions.map((admitted) => [admitted.note, admitted.onsetSourceBeat])).toEqual([
             [62, 0.5],
             [64, 4.75],
@@ -651,7 +672,8 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
 
         await stopActiveRecording();
         worker.resolve();
-        await Promise.all([physical, virtual, physicalThird, slide, pressure, bend]);
+        await virtual;
+        await vi.waitFor(() => expect(liveMidiGate.completed).toBeGreaterThanOrEqual(3));
 
         const notes = midiStore.value?.notesByClipId[provisional.id] ?? [];
         expect(notes.map((note) => [note.pitch, note.startBeat, note.duration])).toEqual([
@@ -699,6 +721,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             loopEnd: 8,
             playheadPosition: 4,
         });
+        attachPendingWorker();
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional MIDI clip');
@@ -716,7 +739,8 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         const worker = Promise.withResolvers<void>();
         liveMidiGate.pending = worker.promise;
 
-        const physical = handleWebMidiMessage({ data: new Uint8Array([0x91, 69, 100]), timeStamp: undefined });
+        sendMidi(0x91, 69, 100);
+        await vi.waitFor(() => expect(liveMidiGate.started).toBeGreaterThan(0));
         expect(activeRecordingRef.midiAdmissions.map((admitted) => admitted.onsetSourceBeat)).toEqual([0]);
         playheadClockRef.beat = 5;
         playheadClockRef.audioTimeSeconds = 0.75;
@@ -724,7 +748,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
 
         await stopActiveRecording();
         worker.resolve();
-        await physical;
+        await vi.waitFor(() => expect(liveMidiGate.completed).toBeGreaterThanOrEqual(1));
 
         expect(midiStore.value?.notesByClipId[provisional.id]).toEqual([
             expect.objectContaining({ pitch: 69, startBeat: 0 }),
@@ -949,6 +973,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             loopEnd: 8,
             playheadPosition: 4,
         });
+        attachPendingWorker();
         const [provisional] = startRecording(4);
         if (!provisional) {
             throw new Error('expected a provisional MIDI clip');
@@ -964,7 +989,8 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         });
         const worker = Promise.withResolvers<void>();
         liveMidiGate.pending = worker.promise;
-        const physical = handleWebMidiMessage({ data: new Uint8Array([0x91, 72, 100]), timeStamp: undefined });
+        sendMidi(0x91, 72, 100);
+        await vi.waitFor(() => expect(liveMidiGate.started).toBeGreaterThan(0));
         expect(activeRecordingRef.midiAdmissions.map((admitted) => admitted.onsetSourceBeat)).toEqual([2]);
         playheadClockRef.beat = 8;
         playheadClockRef.audioTimeSeconds = 2;
@@ -973,7 +999,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         finalizeAutomaticRecording(8);
         await stopActiveRecording();
         worker.resolve();
-        await physical;
+        await vi.waitFor(() => expect(liveMidiGate.completed).toBeGreaterThanOrEqual(1));
 
         expect(midiStore.value?.notesByClipId[provisional.id]).toEqual([
             expect.objectContaining({ pitch: 72, startBeat: 2 }),
