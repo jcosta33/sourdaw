@@ -1,0 +1,39 @@
+.agents/skills/review-stances/session-lifecycle.md
+  s_29d8df116c5b92::t_e2559d162573fb 390-409
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  s_29d8df116c5b92::t_a096e725f084d8 102,143,152,181-183,187,210,221,237,377,380-384,409,421-424,426-431,454-574
+src/modules/AudioEngine/useCases/livePlayback/applyMidiBatch.ts
+  s_b3201877f50e8a::t_b0e90bd8536e59 10-15
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveMidiWriter.ts
+  s_b3201877f50e8a::t_c085ecc8a852bf 58,145-147,211,284,287
+src/modules/AudioEngine/useCases/livePlayback/loopMidiWindowBatch.ts
+  s_b3201877f50e8a::t_e1f7e4078b6cf4 2,4,47,91,236-238,240,248,256-263,312-317
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveMidiWriterState.ts
+  s_b3201877f50e8a::t_207b8a641cfd49 27,75,81,85,142
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveMidiWriter.ts
+  s_b3201877f50e8a::t_63cc0bfef5eaae 12-15,17-18,24,48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "37d12f362024673e78037e23474bde355a8c34cc",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
