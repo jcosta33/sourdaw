@@ -1,0 +1,35 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_b3201877f50e8a::t_a3a8b8c8d212e7 1,1137-1274,1319-1343,1360,1365
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_b3201877f50e8a::t_c02ecdb92859e2 1,5-142,187-211,228,233
+public/wasm/manifest.json
+  s_b3201877f50e8a::t_12721a1d4e1421 12,16-18,21,40,43-46,48-49
+public/wasm/scoring/scoring.d.ts
+  s_b3201877f50e8a::t_6515ec63a2ae73 1,5-1046,1098-1175,1184-1191,1197,1218-1454,1459
+public/wasm/scoring/scoring.js
+  s_b3201877f50e8a::t_4bb6babf4b0332 3-2243,2440-2634,2644-2653,2682-2686,2703-2735,2739-2756,2766-2773,2778-2785,2794-2800,2838-2843,2879-2880
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_b3201877f50e8a::t_15668a65fefbfc 1,6,27-263,268
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_b3201877f50e8a::t_cba9a3557c8143 1,1137-1274,1319-1343,1360,1365
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_b3201877f50e8a::t_3b9dc9a1fa7b49 1,5-1046,1098-1175,1184-1191,1197,1218-1454,1459
+src/modules/AudioEngine/wasm/scoring.js
+  s_b3201877f50e8a::t_6fe57ee95aac74 180-2420,2617-2811,2821-2830,2859-2863,2880-2912,2916-2933,2943-2950,2955-2962,2971-2977,3015-3020,3056-3057
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6fbed11d1ea80b936a30250e70163fe334778211",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

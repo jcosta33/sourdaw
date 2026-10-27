@@ -1,0 +1,26 @@
+crates/daw-dsp/src/grinder/nam/lstm.rs
+  s_b3201877f50e8a::t_4fa5dbc7dfc1a3 153-157
+.agents/skills/review-stances/test-validity.md
+  s_b3201877f50e8a::t_f1f4e675e6d82b 9-20
+.agents/skills/review-stances/correctness.md
+  s_b3201877f50e8a::t_4fa5dbc7dfc1a3 34-43
+crates/daw-dsp/tests/grinder_zero_width_lstm_rejection.rs
+  s_b3201877f50e8a::t_4fa5dbc7dfc1a3 64,69-73,76
+  s_b3201877f50e8a::t_6efb7a409905b7 74-75,104-105,111,125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ede882f7ad140f2a2e3393dbc3e67390886414cb",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

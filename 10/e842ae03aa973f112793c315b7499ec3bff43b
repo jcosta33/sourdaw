@@ -1,0 +1,31 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_b3201877f50e8a::t_3682dc9fe739a9 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_b3201877f50e8a::t_844cef49cec287 1
+public/wasm/manifest.json
+  s_b3201877f50e8a::t_cda89fea527db7 12,17-18,21,40,43-46,48-49
+public/wasm/scoring/scoring.d.ts
+  s_b3201877f50e8a::t_2271f4bf8b0735 1,69
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_b3201877f50e8a::t_1d00ea763ae912 1,6
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_b3201877f50e8a::t_d2e9ee46c41d3e 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_b3201877f50e8a::t_79a3909771dad8 1,69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "10e842ae03aa973f112793c315b7499ec3bff43b",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

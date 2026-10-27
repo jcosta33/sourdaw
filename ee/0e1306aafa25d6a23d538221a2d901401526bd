@@ -1,0 +1,33 @@
+crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs
+  s_b3201877f50e8a::t_af318d526352ca 7-13,20-26,28-34,41-47,55-61,63-69,76-82,91-94,100-103
+crates/daw-dsp/tests/shared_pitch_contract.rs
+  s_b3201877f50e8a::t_1430a95bce275e 27-30,35-39,41-55,57-66,73-82,112-118,120-131,136-145,186-189,192-195
+crates/daw-dsp/tests/shared_pitch_rt.rs
+  s_b3201877f50e8a::t_d211b3136d5934 58-61,65-72
+crates/daw-dsp/tests/support/pitch_baseline/engine.rs
+  s_b3201877f50e8a::t_0c51c35efcbb90 9
+crates/daw-dsp/tests/support/pitch_baseline/mod.rs
+  s_b3201877f50e8a::t_de966464feccae 6-8
+crates/scoring/src/yin.rs
+  s_b3201877f50e8a::t_0543ada934be10 2-4
+crates/scoring/tests/shared_pitch_contract.rs
+  s_b3201877f50e8a::t_4d03a6395fd83d 10-12,21-28,50-53,56-65,67-70,83-87,121-128,133-136,138-149
+crates/scoring/tests/support/pitch_baseline/poly.rs
+  s_b3201877f50e8a::t_df0e1ae157d06c 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee0e1306aafa25d6a23d538221a2d901401526bd",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

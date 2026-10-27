@@ -1,0 +1,24 @@
+tests/e2e/grinderStackedLstmAdmission.spec.ts
+  s_b3201877f50e8a::t_0bdfe5be49a178 1-160
+  s_b3201877f50e8a::t_550857e0aef337 161-178
+crates/daw-dsp/tests/grinder_stacked_lstm_rejection.rs
+  s_b3201877f50e8a::t_67997374b10b28 3-13,34,51,59-80,83,88-103,105-106
+src/modules/Grinder/useCases/__tests__/importGrinderNeuralModels.spec.ts
+  s_b3201877f50e8a::t_b18c2aeff0bfda 185-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af9207bf612e0c72487f75124a76b2a050571984",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

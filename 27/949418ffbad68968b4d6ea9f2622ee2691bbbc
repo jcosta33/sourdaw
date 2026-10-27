@@ -1,0 +1,19 @@
+tests/e2e/grinderOfflineNumericParity.spec.ts
+  s_b3201877f50e8a::t_57a9267eb0b903 108-111,118,186-197,212-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "27949418ffbad68968b4d6ea9f2622ee2691bbbc",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

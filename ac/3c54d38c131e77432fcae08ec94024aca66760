@@ -1,0 +1,58 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_b3201877f50e8a::t_7adb29fd63bbee 188-189,286-287,579,772-774,800-805
+  s_b3201877f50e8a::t_34fac0cbd2e5ab 806
+src/modules/Levain/useCases/configureLevainDeviceStateProjectAccess.ts
+  s_b3201877f50e8a::t_b915e01b41a784 1-9
+src/modules/Levain/stores/levainDeviceStateProjectAccess.ts
+  s_b3201877f50e8a::t_b915e01b41a784 1-15
+src/modules/Levain/useCases/__tests__/commitLevainDeviceState.spec.ts
+  s_b3201877f50e8a::t_9ac956d47ec630 1,31,35-36,62
+  s_59e31a5c6f3e31::t_1443e9a5827c62 63
+src/app/initLevainDeviceStateProjectAccess.ts
+  s_b3201877f50e8a::t_b915e01b41a784 1-24
+src/app/bootstrap.ts
+  s_b3201877f50e8a::t_b915e01b41a784 234,663
+src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts
+  s_b3201877f50e8a::t_7adb29fd63bbee 92,110,113,138-141
+  s_b3201877f50e8a::t_9ac956d47ec630 25,34,283-285,291,299,321
+  s_b3201877f50e8a::t_dadec94cde3048 279-280,282,287-290,292-295,297-298,712,762-765,790-796,821-847,849-875
+  s_b3201877f50e8a::t_f7e969fdbf7bca 204-207,213,225-237,312-313,784-789,797-820,848,876-877
+  s_b3201877f50e8a::t_fa63384c589e52 111,116-122,124-127,129-134,147-149,286,296,688
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_b3201877f50e8a::t_9ac956d47ec630 19,114-115,128
+src/modules/Levain/useCases/index.ts
+  s_b3201877f50e8a::t_b915e01b41a784 3
+src/modules/Levain/useCases/__tests__/coordinateLevainDeviceState.spec.ts
+  s_b3201877f50e8a::t_9ac956d47ec630 1,3,13-15,17-20,67-80
+  s_b3201877f50e8a::t_f2984562c0f533 181-255
+src/modules/Levain/useCases/coordinateLevainDeviceState.ts
+  s_b3201877f50e8a::t_b915e01b41a784 6-7,9,19-22,41-44,47-61,67-95,98-103,113-114,156-160
+src/app/__tests__/initLevainDeviceStateProjectAccess.spec.ts
+  s_b3201877f50e8a::t_dadec94cde3048 1-123
+src/modules/Levain/useCases/__tests__/reconcileLevainDeviceStatesFromProject.spec.ts
+  s_b3201877f50e8a::t_9ac956d47ec630 7,59,91-92,106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac3c54d38c131e77432fcae08ec94024aca66760",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

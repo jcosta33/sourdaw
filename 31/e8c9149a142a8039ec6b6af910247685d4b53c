@@ -1,0 +1,19 @@
+scripts/__tests__/viteUpgradeReset.spec.ts
+  s_567a084d0540c4::t_b99b77e1107e24 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31e8c9149a142a8039ec6b6af910247685d4b53c",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

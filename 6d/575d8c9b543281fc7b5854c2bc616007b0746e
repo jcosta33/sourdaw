@@ -1,0 +1,27 @@
+tests/e2e/grinderStackedLstmAdmission.spec.ts
+  s_b3201877f50e8a::t_95b641eec460d3 151
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_b3201877f50e8a::t_7a0a7347d5a6a3 1,1181-1196,1319-1373
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_b3201877f50e8a::t_b44e6f925f74dc 1,49-64,187-241
+public/wasm/manifest.json
+  s_b3201877f50e8a::t_0d561043bc4418 12,16-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_b3201877f50e8a::t_d98a3ae7011f20 1,1181-1196,1319-1373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6d575d8c9b543281fc7b5854c2bc616007b0746e",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

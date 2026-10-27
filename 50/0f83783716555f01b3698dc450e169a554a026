@@ -1,0 +1,25 @@
+crates/scoring/tests/shared_pitch_contract.rs
+  s_b3201877f50e8a::t_8e2f6d814452b4 1-2
+crates/daw-dsp/tests/shared_pitch_rt.rs
+  s_b3201877f50e8a::t_8e2f6d814452b4 1
+crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs
+  s_b3201877f50e8a::t_8e2f6d814452b4 1
+crates/daw-dsp/tests/shared_pitch_contract.rs
+  s_b3201877f50e8a::t_8e2f6d814452b4 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "500f83783716555f01b3698dc450e169a554a026",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
