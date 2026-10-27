@@ -73,6 +73,15 @@ function takeAhead(
         }
         const additions = groupWithReleases(slot, group, selected);
         if (selected.size + additions.length > MIDI_NOTE_STORE_CAPACITY) {
+            const required = groupWithReleases(slot, group, new Set()).length;
+            if (required > MIDI_NOTE_STORE_CAPACITY && !slot.saturationReported) {
+                slot.saturationReported = true;
+                logger.warn(
+                    `[AudioEngine] plugin "${slot.deviceName}" on "${slot.trackName}" cannot schedule ` +
+                        `${required} MIDI entries including reserved releases for one frame group; ` +
+                        `the engine store holds ${MIDI_NOTE_STORE_CAPACITY}`
+                );
+            }
             return false;
         }
         for (const index of additions) {
