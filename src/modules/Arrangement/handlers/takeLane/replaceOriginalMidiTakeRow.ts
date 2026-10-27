@@ -9,7 +9,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { compRegionInterval } from '../../useCases/comping/compRegionInterval';
-import { prepareOriginalMidiTakeRowReplacement } from '../../useCases/comping/replaceOriginalMidiTakeRow';
+import { prepareOriginalMidiTakeRowReplacement } from '../../useCases/comping/prepareOriginalMidiTakeRowReplacement';
 
 type RowAction = Extract<AppAction, { type: 'replaceOriginalMidiTakeRow' }>;
 
@@ -40,13 +40,15 @@ function reverse(payload: OriginalMidiTakeRowReplacementPayload): OriginalMidiTa
                 replacementSlotPresent: payload.expectedSlotPresent,
             };
     }
+    throw new Error('Unsupported frozen MIDI row kind');
 }
 
 function applies(action: RowAction, context?: HandlerValidationContext): boolean {
     const state = takeLaneStore.value;
-    const projected = context
-        ? compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context)
-        : state;
+    let projected = state;
+    if (context) {
+        projected = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context);
+    }
     return prepareOriginalMidiTakeRowReplacement(action.payload, projected) !== null;
 }
 

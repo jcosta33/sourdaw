@@ -23,9 +23,9 @@ import {
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { Row, Stack } from '#/components/layout';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
-import { logger } from '#/infra/logger/appLogger';
 import { takeLaneStore, trackStore, type Clip } from '#/modules/Arrangement/stores';
 import { CANVAS_EDITOR_COMMAND_EVENT, isCanvasEditorCommandRequest } from '#/modules/CommandInterface/useCases';
 import { midiStore, stepRecordStore, type MidiNote, type MidiStoreState } from '#/modules/MIDI/stores';
@@ -43,6 +43,7 @@ import { DEFAULT_NOTE_VELOCITY, HIGH_RESOLUTION_MAX, MAX_MIDI_DATA_7BIT, PITCH_B
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
+import { editPianoRollTakeNote } from '../../helpers/editPianoRollTakeNote';
 import { getMpeExpressionLanesForDeviceTypes } from '../../helpers/mpeAvailability';
 import { areOpenedClipNotesEqual } from '../../helpers/openedClipNotesEquality';
 import {
@@ -53,10 +54,9 @@ import {
     getVisiblePitches,
     getPianoRollExtentBeats,
 } from '../../helpers/pianoRollConstants';
+import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
-import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
-import { editPianoRollTakeNote } from '../../helpers/editPianoRollTakeNote';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
 import { PianoRollContextMenu } from './PianoRollContextMenu';

@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { getRecordingMidiAdmission, retireRecordingMidiAdmission } from '#/modules/Arrangement/useCases';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { readBeatAtSamples } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
@@ -13,8 +13,9 @@ import { type RealtimeMidiEvent } from '../../repositories/webMidi/realtimeMidiP
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
-import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { createRecordedAdmittedMidiNote } from './createRecordedAdmittedMidiNote';
 import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
+import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { releaseKeyInRemovedYeastRack } from './releaseKeyInRemovedYeastRack';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -22,7 +23,6 @@ import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInp
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
 import { resolveRecordingPlacement } from './resolveRecordingPlacement';
-import { createRecordedAdmittedMidiNote } from './sealHeldRecordedMidiNotes';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
@@ -381,10 +381,8 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             }
         }
 
-        const admission = noteData.recordingAdmissionId
-            ? getRecordingMidiAdmission(noteData.recordingAdmissionId)
-            : undefined;
         if (noteData.recordingAdmissionId) {
+            const admission = getRecordingMidiAdmission(noteData.recordingAdmissionId);
             if (!admission || !isRecordingOnArmedTrack(deps, targetTrackId)) {
                 return;
             }
