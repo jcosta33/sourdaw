@@ -1,6 +1,7 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
+import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
 
 type ResolveChannelBendClipsInput = {
     trackId: string;
@@ -25,6 +26,9 @@ export function resolveChannelBendClips({
     pitchBendByClipId,
 }: ResolveChannelBendClipsInput) {
     return resolvePlayedMidiClips(trackId, clips).flatMap((clip) => {
+        if (clip.midiTakeSource) {
+            return resolveFrozenMidiControllerPasses(clip).filter((pass) => pass.pitchBends.length > 0);
+        }
         const pitchBends = pitchBendByClipId[clip.id];
         if (!pitchBends || pitchBends.length === 0) {
             return [];

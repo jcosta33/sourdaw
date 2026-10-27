@@ -368,9 +368,11 @@ function makeMidi(): NonNullable<MidiStoreState> {
 
 type RunScheduleInput = {
     withYeast?: boolean;
+    withStoredControl?: boolean;
     withToaster?: boolean;
     followChordTrack?: boolean;
     loopLengthBeats?: number;
+    clipEndBeat?: number;
     includeSecondClip?: boolean;
     emptyNotes?: boolean;
     /** The clip has no note list at all, as a clip derived from a controller-only one does. */
@@ -396,9 +398,11 @@ type RunScheduleInput = {
 
 async function runSchedule({
     withYeast = false,
+    withStoredControl = false,
     withToaster = false,
     followChordTrack = false,
     loopLengthBeats,
+    clipEndBeat,
     includeSecondClip = false,
     emptyNotes = false,
     noNoteList = false,
@@ -417,6 +421,9 @@ async function runSchedule({
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
+    if (clipEndBeat !== undefined) {
+        track.clips[0]!.endBeat = clipEndBeat;
+    }
     track.followChordTrack = followChordTrack;
     if (automationMode !== undefined) {
         track.automationMode = automationMode;
@@ -475,6 +482,9 @@ async function runSchedule({
         midi.notesByClipId['clip-2'] = [{ id: 'note-2', pitch: 64, startBeat: 1, duration: 1, velocity: 90 }];
     }
     const entry = makeInstrumentEntry();
+    if (withStoredControl) {
+        entry.strategy.controlChange = vi.fn();
+    }
     if (withToaster) {
         entry.deviceType = 'toaster';
     }
@@ -506,6 +516,7 @@ async function runSchedule({
             projectChordPitch: mocks.projectChordPitch,
             evaluateAutomationValue: mocks.evaluateAutomationValue,
             resolveArticulationId: mocks.resolveArticulationId,
+            ...(withStoredControl ? { projectClipControllers: projectClipControllerEvents } : {}),
         },
         pendingWorkletEvents,
         allTracks: [track],
@@ -788,6 +799,57 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 absoluteOccurrenceIndex: 0,
             })
         );
+    });
+
+    it('renders selected frozen pedal moves from their original source coordinates on two passes', async () => {
+        mocks.takeLaneValue.value = {
+            lanes: [
+                {
+                    id: 'lane-midi',
+                    trackId: 'track-inst',
+                    takes: [
+                        {
+                            id: 'selected',
+                            clipId: 'clip-1',
+                            name: 'Selected',
+                            startBeat: 0,
+                            endBeat: 8,
+                            selected: true,
+                            sourceOffsetBeats: 5,
+                            midiSource: {
+                                sourceClipId: 'clip-1',
+                                sourceEntryBeat: 5,
+                                sourceEndBeat: 9,
+                                phaseHeadBeat: 0,
+                                passLengthBeats: 4,
+                                rows: {
+                                    notes: { present: true, value: [] },
+                                    controlChanges: {
+                                        present: true,
+                                        value: [{ id: 'pedal', controller: 64, value: 127, beat: 5.25, channel: 0 }],
+                                    },
+                                    pitchBends: { present: true, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'selected' }],
+                },
+            ],
+        };
+
+        const events = await runSchedule({ withStoredControl: true, clipEndBeat: 8 });
+
+        expect(
+            events.filter(isPendingControlWorkletEvent).map(({ time, controller, value }) => ({
+                time,
+                controller,
+                value,
+            }))
+        ).toEqual([
+            { time: 0.125, controller: 64, value: 127 },
+            { time: 2.125, controller: 64, value: 127 },
+        ]);
     });
 
     it('projects the same canonical Levain articulation into full-mix worklet events without changing note clocks', async () => {

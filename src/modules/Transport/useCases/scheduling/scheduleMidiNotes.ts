@@ -67,6 +67,7 @@ import { relocateHeldNoteExpression } from './relocateHeldNoteExpression';
 import { resolveChannelBendClips } from './resolveChannelBendClips';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
 import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
 import { restoreStoredControllers } from './restoreStoredControllers';
@@ -1738,6 +1739,24 @@ export async function scheduleMidiNotes(
                     sampleFrameAtBeat: sampleFrameAtBeatOnTrack(track.id),
                     queue: posts,
                 });
+            }
+            if (storedControllerTarget && frozenSource) {
+                for (const pass of resolveFrozenMidiControllerPasses(clip)) {
+                    if (pass.controlChanges.length === 0) {
+                        continue;
+                    }
+                    scheduleStoredControllers({
+                        trackId: track.id,
+                        device: storedControllerTarget.device,
+                        node: storedControllerTarget.node,
+                        controlChanges: pass.controlChanges,
+                        clip: pass.clip,
+                        fromBeat,
+                        toBeat,
+                        sampleFrameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+                        queue: posts,
+                    });
+                }
             }
 
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
