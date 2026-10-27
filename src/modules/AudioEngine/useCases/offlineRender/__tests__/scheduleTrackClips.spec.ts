@@ -723,6 +723,73 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.shouldPlayMidiEvent.mockImplementation(({ probabilityPercent }) => probabilityPercent > 0);
     });
 
+    it('renders selected frozen source instead of ordinary rows through direct and Yeast routes', async () => {
+        mocks.takeLaneValue.value = {
+            lanes: [
+                {
+                    id: 'lane-midi',
+                    trackId: 'track-inst',
+                    takes: [
+                        {
+                            id: 'selected',
+                            clipId: 'clip-1',
+                            name: 'Selected',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            sourceOffsetBeats: 5,
+                            midiSource: {
+                                sourceClipId: 'clip-1',
+                                sourceEntryBeat: 5,
+                                sourceEndBeat: 9,
+                                phaseHeadBeat: 0,
+                                passLengthBeats: 4,
+                                rows: {
+                                    notes: {
+                                        present: true,
+                                        value: [
+                                            {
+                                                id: 'selected-row',
+                                                pitch: 67,
+                                                startBeat: 5.5,
+                                                duration: 1,
+                                                velocity: 100,
+                                            },
+                                        ],
+                                    },
+                                    controlChanges: { present: false, value: [] },
+                                    pitchBends: { present: false, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected' }],
+                },
+            ],
+        };
+
+        const direct = await runSchedule();
+        const yeast = await runSchedule({ withYeast: true });
+
+        expect(
+            voiceEvents(direct)
+                .filter((event) => event.type === 'on')
+                .map((event) => [event.pitch, event.time])
+        ).toEqual([[67, 0.25]]);
+        expect(
+            voiceEvents(yeast)
+                .filter((event) => event.type === 'on')
+                .map((event) => [event.pitch, event.time])
+        ).toEqual([[67, 0.25]]);
+        expect(mocks.shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: 'clip-1',
+                eventId: 'selected-row',
+                absoluteOccurrenceIndex: 0,
+            })
+        );
+    });
+
     it('projects the same canonical Levain articulation into full-mix worklet events without changing note clocks', async () => {
         const offlineCtx = makeOfflineCtx();
         const track = makeMidiTrack();
