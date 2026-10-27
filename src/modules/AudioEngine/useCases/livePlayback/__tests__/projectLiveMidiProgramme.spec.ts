@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { type Device, type Track } from '#/modules/Arrangement/stores';
+import { takeLaneStore, type Device, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     createGrooveMidiEventProjector,
@@ -180,6 +180,44 @@ function levainTrack(clips: Track['clips']): Track {
 }
 
 describe('projectLiveMidiProgramme', () => {
+    it('sounds only selected frozen source rows on each original pass occurrence', () => {
+        const before = takeLaneStore.value;
+        const clip = midiClip({ id: 'original', trackId: 'midi-1', endBeat: 10 });
+        takeLaneStore.set({
+            lanes: [{
+                id: 'lane-midi',
+                trackId: 'midi-1',
+                takes: [{
+                    id: 'selected', clipId: 'original', name: 'Selected', startBeat: 0, endBeat: 10,
+                    selected: true, sourceOffsetBeats: 5,
+                    midiSource: {
+                        sourceClipId: 'original', sourceEntryBeat: 5, sourceEndBeat: 9,
+                        phaseHeadBeat: 0, passLengthBeats: 4,
+                        rows: {
+                            notes: { present: true, value: [note({ id: 'selected-row', pitch: 60, startBeat: 5.5 })] },
+                            controlChanges: { present: false, value: [] },
+                            pitchBends: { present: false, value: [] },
+                        },
+                    },
+                }],
+                activeCompRegions: [{ startBeat: 0, endBeat: 10, takeId: 'selected' }],
+            }],
+        });
+        try {
+            const programme = projectProgramme({
+                stripTracks: [voicedTrack([clip])],
+                notesByClipId: { original: [note({ id: 'other-pass', pitch: 72, startBeat: 9.5 })] },
+                projectMidiEvents: createGrooveMidiEventProjector(),
+                span: { startSeconds: 0, endSeconds: 6 },
+            });
+
+            expect(programme.targets[0]?.events.filter((event) => event.isNoteOn).map((event) => [event.note, event.time])).toEqual([
+                [60, seconds(0.5)], [60, seconds(4.5)], [60, seconds(8.5)],
+            ]);
+        } finally {
+            takeLaneStore.set(before ?? { lanes: [] });
+        }
+    });
     it('addresses a voiced strip’s notes to its attached instrument as on/off pairs', () => {
         const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
         const programme = projectProgramme({
