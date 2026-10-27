@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, type Device } from '#/modules/Arrangement/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
@@ -7,19 +7,34 @@ import { effectDisclosureTierFromLevel } from '#/utils/UI/effectDisclosureTier';
 
 const latestChoiceByDevice = new WeakMap<object, symbol>();
 
+function findUniqueGrinderDevice(deviceId: string): { trackId: string; device: Device } | undefined {
+    let match: { trackId: string; device: Device } | undefined;
+    for (const track of trackStore.value?.tracks ?? []) {
+        for (const device of track.devices) {
+            if (device.id !== deviceId) {
+                continue;
+            }
+            // The generic state action addresses every device with this id, regardless of type or track.
+            if (match) {
+                return undefined;
+            }
+            match = { trackId: track.id, device };
+        }
+    }
+    return match?.device.type === 'grinder' ? match : undefined;
+}
+
 /**
  * Request one addressed device's disclosure choice in project truth. The panel
  * follows the project projection; this void action's resolution is not proof of
  * a write, so this function never changes the session state optimistically.
  */
 export async function setGrinderPanelUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): Promise<void> {
-    const owner = trackStore.value?.tracks.find((track) =>
-        track.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'grinder')
-    );
-    const device = owner?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'grinder');
-    if (!owner || !device) {
+    const addressedDevice = findUniqueGrinderDevice(deviceId);
+    if (!addressedDevice) {
         return;
     }
+    const { trackId, device } = addressedDevice;
     const prior = device.deviceState;
     if (prior && prior.version !== 1) {
         notifyUser('This Grinder control layout was saved by a newer version and cannot be changed here.', 'warning');
@@ -43,13 +58,12 @@ export async function setGrinderPanelUiLevel(deviceId: string, level: 1 | 2 | 3 
                 if (latestChoiceByDevice.get(device) !== choice) {
                     return false;
                 }
-                const currentDevice = trackStore.value?.tracks
-                    .find((track) => track.id === owner.id)
-                    ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'grinder');
+                const currentDevice = findUniqueGrinderDevice(deviceId);
                 if (
                     captureProjectIdentity() === projectIdentity &&
-                    currentDevice === device &&
-                    canonicalJson(currentDevice) === capturedDevice
+                    currentDevice?.trackId === trackId &&
+                    currentDevice.device === device &&
+                    canonicalJson(currentDevice.device) === capturedDevice
                 ) {
                     return true;
                 }

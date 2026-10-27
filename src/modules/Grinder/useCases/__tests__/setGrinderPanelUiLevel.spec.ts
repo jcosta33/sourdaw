@@ -11,6 +11,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
+    captureProjectIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -64,6 +65,29 @@ function rawProjectState(deviceId: string) {
         .find((device) => device.id === deviceId)?.deviceState;
 }
 
+function rawProjectTracks() {
+    return getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks;
+}
+
+function withDuplicateDevice(state: TrackStoreState, type: string, separateTrack: boolean): TrackStoreState {
+    const track = state.tracks[0];
+    const device = track?.devices[0];
+    if (!track || !device) {
+        throw new Error('Missing fixture device');
+    }
+    const duplicate = {
+        ...device,
+        type,
+        name: 'Other device with the same id',
+        parameterValues: { untouched: 17 },
+        deviceState: { version: 99, data: { future: 'preserve duplicate state' } },
+    };
+    if (separateTrack) {
+        return { ...state, tracks: [...state.tracks, { ...track, id: 'track-2', devices: [duplicate] }] };
+    }
+    return { ...state, tracks: [{ ...track, devices: [...track.devices, duplicate] }] };
+}
+
 async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => TrackStoreState): Promise<void> {
     let allowEdit!: () => void;
     let releaseTransaction!: () => void;
@@ -100,6 +124,30 @@ async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => Track
     await request;
 }
 
+async function requestDuringSnapshotAdmission(edit: () => void): Promise<void> {
+    let markStarted!: () => void;
+    let releaseTransaction!: () => void;
+    const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+        releaseTransaction = resolve;
+    });
+    const transaction = transactSnapshot(async () => {
+        markStarted();
+        await release;
+    });
+    await started;
+    const request = setGrinderPanelUiLevel('a', 5);
+    try {
+        edit();
+    } finally {
+        releaseTransaction();
+        await transaction;
+        await request;
+    }
+}
+
 describe('setGrinderPanelUiLevel project path', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -121,6 +169,7 @@ describe('setGrinderPanelUiLevel project path', () => {
         trackStore.set({ ...defaultTrackState, tracks: [] });
         flushAutomergeStorageWrites();
         removeCrdtDoc('root');
+        removeCrdtDoc('disclosure-authority-change');
         configureAutomergeStoragePort(null);
     });
 
@@ -210,6 +259,65 @@ describe('setGrinderPanelUiLevel project path', () => {
         await setGrinderPanelUiLevel('missing', 5);
         expect(projectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
     });
+
+    it('does not write a unique device of another type', async () => {
+        const tracks = tracksWithTwoGrinderDevices();
+        const device = tracks[0]?.devices[0];
+        if (!device) {
+            throw new Error('Missing fixture device');
+        }
+        device.type = 'compressor';
+        trackStore.set({ ...defaultTrackState, tracks });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(tracks);
+
+        await setGrinderPanelUiLevel('a', 5);
+
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(rawProjectTracks()).toEqual(before);
+    });
+
+    it.each([
+        { type: 'grinder', separateTrack: false },
+        { type: 'grinder', separateTrack: true },
+        { type: 'compressor', separateTrack: false },
+        { type: 'compressor', separateTrack: true },
+    ])('refuses an existing $type id duplicate with separateTrack=$separateTrack', async ({ type, separateTrack }) => {
+        const state = withDuplicateDevice(trackStore.value!, type, separateTrack);
+        trackStore.set(state);
+        flushAutomergeStorageWrites();
+        const before = structuredClone(state.tracks);
+
+        await setGrinderPanelUiLevel('a', 5);
+
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(rawProjectTracks()).toEqual(before);
+    });
+
+    it.each([
+        { type: 'grinder', separateTrack: false },
+        { type: 'grinder', separateTrack: true },
+        { type: 'compressor', separateTrack: false },
+        { type: 'compressor', separateTrack: true },
+    ])(
+        'refuses a $type id duplicate introduced during snapshot admission with separateTrack=$separateTrack',
+        async ({ type, separateTrack }) => {
+            const capturedDevice = trackStore.value?.tracks[0]?.devices[0];
+            let expectedTracks: TrackStoreState['tracks'] = [];
+            await requestDuringSnapshotAdmission(() => {
+                const next = withDuplicateDevice(trackStore.value!, type, separateTrack);
+                trackStore.set(next);
+                expect(trackStore.value?.tracks[0]?.devices[0]).toBe(capturedDevice);
+                expectedTracks = structuredClone(next.tracks);
+            });
+
+            expect(trackStore.value?.tracks[0]?.devices[0]).toBe(capturedDevice);
+            flushAutomergeStorageWrites();
+            expect(trackStore.value?.tracks).toEqual(expectedTracks);
+            expect(rawProjectTracks()).toEqual(expectedTracks);
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+        }
+    );
 
     it('leaves project and visible tier unchanged when the command admission refuses', async () => {
         agentProjectRepairStateStore.set({
@@ -311,6 +419,22 @@ describe('setGrinderPanelUiLevel project path', () => {
 
         expect(rawProjectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
         expect(projectState('a')).toEqual(rawProjectState('a'));
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+    });
+
+    it('refuses a pending choice after only project authority changes, retaining the captured device object', async () => {
+        const capturedDevice = trackStore.value?.tracks[0]?.devices[0];
+        const before = structuredClone(trackStore.value?.tracks);
+        const identity = captureProjectIdentity();
+        await requestDuringSnapshotAdmission(() => {
+            createCrdtDoc('disclosure-authority-change');
+            expect(captureProjectIdentity()).not.toBe(identity);
+            expect(trackStore.value?.tracks[0]?.devices[0]).toBe(capturedDevice);
+        });
+
+        expect(trackStore.value?.tracks[0]?.devices[0]).toBe(capturedDevice);
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(rawProjectTracks()).toEqual(before);
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
     });
 });
