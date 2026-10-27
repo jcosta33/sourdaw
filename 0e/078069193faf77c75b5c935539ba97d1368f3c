@@ -1,0 +1,39 @@
+src/modules/Arrangement/models/ResolvedClip.ts
+  s_29d8df116c5b92::t_073213f8f1faaa 11
+src/modules/Arrangement/useCases/comping/resolveCompingProgramme.ts
+  s_29d8df116c5b92::t_073213f8f1faaa 130-134
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_29d8df116c5b92::t_073213f8f1faaa 25,346-350
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_29d8df116c5b92::t_12421b8e746d0b 984,1778
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_29d8df116c5b92::t_12421b8e746d0b 79,873,1099
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_29d8df116c5b92::t_7c3156f8a42ae0 752,763-770,777
+src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts
+  s_29d8df116c5b92::t_073213f8f1faaa 11-12,38,45,71-76
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_29d8df116c5b92::t_7c3156f8a42ae0 200,210-213
+  s_29d8df116c5b92::t_305578713650b1 214-224
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_29d8df116c5b92::t_12421b8e746d0b 298
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_29d8df116c5b92::t_7c3156f8a42ae0 1020,1030-1033
+  s_29d8df116c5b92::t_a3bccbb8f96d39 1034-1047,1086,1096-1113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e078069193faf77c75b5c935539ba97d1368f3c",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
