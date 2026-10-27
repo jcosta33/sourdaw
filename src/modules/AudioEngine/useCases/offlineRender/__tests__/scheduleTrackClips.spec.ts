@@ -2186,7 +2186,7 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         const bends = (arrivals: Arrivals) =>
             arrivals.expression.map(({ sampleFrame, bendSemitones }) => ({ sampleFrame, bendSemitones }));
 
-        it('renders a selected take bend at the recorded RPN depth instead of the ordinary bend lane', async () => {
+        it('renders a selected take bend at the RPN depth declared before its window instead of the ordinary bend lane', async () => {
             mocks.takeLaneValue.value = {
                 lanes: [
                     {
@@ -2224,9 +2224,12 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
                                         controlChanges: {
                                             present: true,
                                             value: [
-                                                { id: 'rpn-msb', controller: 101, value: 0, beat: 5, channel: 3 },
-                                                { id: 'rpn-lsb', controller: 100, value: 0, beat: 5, channel: 3 },
-                                                { id: 'range', controller: 6, value: 12, beat: 5, channel: 3 },
+                                                { id: 'rpn-msb', controller: 101, value: 0, beat: 4, channel: 3 },
+                                                { id: 'rpn-lsb', controller: 100, value: 0, beat: 4, channel: 3 },
+                                                { id: 'range', controller: 6, value: 12, beat: 4, channel: 3 },
+                                                { id: 'cents', controller: 38, value: 0, beat: 4, channel: 3 },
+                                                { id: 'null-msb', controller: 101, value: 127, beat: 4, channel: 3 },
+                                                { id: 'null-lsb', controller: 100, value: 127, beat: 4, channel: 3 },
                                             ],
                                         },
                                         pitchBends: {

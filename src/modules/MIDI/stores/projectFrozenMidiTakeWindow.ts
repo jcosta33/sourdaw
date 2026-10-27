@@ -1,5 +1,9 @@
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../models/MidiNote';
 import { projectMidiClipWindow } from '../services/projectMidiClipWindow';
+import {
+    isRegisteredParameterController,
+    reconcileRegisteredParameterMessages,
+} from '../services/registeredParameterState';
 
 import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
 import { selectMidiNotesForRecordingPass } from './selectMidiNotesForRecordingPass';
@@ -29,10 +33,30 @@ function isFiniteBeat(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+/** Recreate the state at a frozen fragment's head in message order, before its own rows play. */
+function registeredStateBeforeWindow(
+    source: FrozenMidiTakeSource,
+    absoluteOccurrenceIndex: number,
+    sourceStartBeat: number,
+    timelineStartBeat: number
+): MidiCC[] {
+    const before = source.rows.controlChanges.value
+        .filter((row) => row.beat < sourceStartBeat && isRegisteredParameterController(row.controller))
+        .toSorted((first, second) => first.beat - second.beat);
+    const messages = reconcileRegisteredParameterMessages({ current: [], target: before });
+    return messages.map((message, index) => ({
+        ...message,
+        id: `frozen-rpn:${JSON.stringify([source.sourceClipId, absoluteOccurrenceIndex, sourceStartBeat, index])}`,
+        beat: timelineStartBeat,
+    }));
+}
+
 /**
- * One original pass occurrence in one timeline window. The existing MIDI
- * window projection clips notes and expression and carries controllers at a
- * fragment head; this call never makes a second stored row with the same id.
+ * One original pass occurrence in one timeline window. The MIDI window
+ * projection clips notes and expression and carries ordinary controllers;
+ * registered-parameter messages before the head are declared as one coherent
+ * state, since the last value of each controller cannot reproduce an RPN.
+ * This call never writes a second stored row with the same id.
  */
 export function projectFrozenMidiTakeWindow({
     source,
@@ -86,6 +110,14 @@ export function projectFrozenMidiTakeWindow({
         controlChanges: source.rows.controlChanges.value,
         pitchBends: source.rows.pitchBends.value,
         window,
+        carriesRegisteredParameterLanes: false,
     });
-    return { ...empty, ...projected };
+    return {
+        ...empty,
+        ...projected,
+        controlChanges: [
+            ...registeredStateBeforeWindow(source, absoluteOccurrenceIndex, visibleSourceStartBeat, visibleStartBeat),
+            ...projected.controlChanges,
+        ],
+    };
 }

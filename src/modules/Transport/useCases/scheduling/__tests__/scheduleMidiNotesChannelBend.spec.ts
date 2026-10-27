@@ -232,6 +232,42 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         vi.mocked(getCompensationDelay).mockReturnValue(0);
     });
 
+    it('plays a selected frozen pass at the range declared before its source window and closed by Null RPN', async () => {
+        stripFor(GRAND_BOULE);
+        const controls = [
+            controller('rpn-msb', 0, 101, 0),
+            controller('rpn-lsb', 0, 100, 0),
+            controller('range', 0, 6, 12),
+            controller('cents', 0, 38, 0),
+            controller('null-msb', 0, 101, 127),
+            controller('null-lsb', 0, 100, 127),
+        ];
+        const frozenSource = {
+            sourceClipId: 'clip-1',
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: [{ ...note('selected', 4, 3), recordingPassIndex: 1 }] },
+                controlChanges: { present: true, value: controls },
+                pitchBends: { present: true, value: [bend('out', 4.5, 8191)] },
+            },
+        };
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ endBeat: 4, midiTakeSource: frozenSource, midiTakeRecordingPassIndex: 1 }),
+            ]),
+        });
+
+        await play(0, 4);
+
+        expect(appliedBend()).toEqual([
+            { sampleFrame: 0, pitchBend: undefined, bendRangeSemitones: undefined },
+            { sampleFrame: 0.5 * FRAMES_PER_BEAT, pitchBend: 8191, bendRangeSemitones: 12 },
+        ]);
+    });
+
     it.each([FERMENTER, LEVAIN, GRAND_BOULE])(
         'bends a sounding $type note at the frames a note at the bend beats gets, through the live input surface',
         async (instrument) => {
