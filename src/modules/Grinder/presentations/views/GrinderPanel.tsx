@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 
 import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
 
+import { DawEffectDisclosure } from '#/components/daw/DawEffectDisclosure';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
@@ -14,7 +15,20 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+import { canonicalJson } from '#/utils/canonicalDigest';
+import {
+    effectDisclosureLevel,
+    effectDisclosureTierFromLevel,
+    type EffectDisclosureTier,
+    isEffectDisclosureStageVisible,
+} from '#/utils/UI/effectDisclosureTier';
 
+import {
+    GRINDER_SECTION_TIERS,
+    grinderDisclosureLevelFromState,
+    grinderVisibleSection,
+} from '../../models/GrinderDisclosure';
 import {
     GRINDER_CAB_LIBRARY,
     GRINDER_NEURAL_LIBRARY,
@@ -54,6 +68,7 @@ import { hydrateGrinderPatchFromProject } from '../../useCases/hydrateGrinderPat
 import { importGrinderNeuralModels } from '../../useCases/importGrinderNeuralModels';
 import { removeGrinderNeuralModel } from '../../useCases/removeGrinderNeuralModel';
 import { restoreGrinderNeuralLibrary } from '../../useCases/restoreGrinderNeuralLibrary';
+import { setGrinderPanelUiLevel } from '../../useCases/setGrinderPanelUiLevel';
 import { ImportedNeuralLibraryCard } from '../components/ImportedNeuralLibraryCard';
 
 const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: typeof Sparkles }> = [
@@ -65,14 +80,22 @@ const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: t
     { id: 'lab', label: 'Lab', icon: Sparkles },
 ];
 
-function selectProjectParameterValues(state: TrackStoreState | null, deviceId: string): Record<string, number> | null {
-    for (const track of state?.tracks ?? []) {
-        const device = track.devices.find((candidate) => candidate.id === deviceId);
-        if (device) {
-            return device.parameterValues;
-        }
-    }
-    return null;
+function selectProjectParameterSnapshot(state: TrackStoreState | null, deviceId: string): string {
+    const tracks = state?.tracks ?? [];
+    const targets = tracks.flatMap((track) =>
+        track.devices
+            .filter((device) => device.id === deviceId)
+            .map((device) => ({
+                owner: track.id,
+                kind: track.kind,
+                ownerCount: tracks.filter((candidate) => candidate.id === track.id).length,
+                type: device.type,
+                parameters: device.parameterValues,
+            }))
+    );
+    // Metadata-only writes must not replay the audio patch. Keep project and
+    // eligibility changes visible even when their parameter values are equal.
+    return canonicalJson({ project: captureProjectIdentity(), targets });
 }
 
 const ENGINE_MODES: ReadonlyArray<{ id: GrinderEngineMode; label: string; description: string }> = [
@@ -1085,26 +1108,37 @@ function BrowserRail({
     );
 }
 
-function SectionTabs({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
+function SectionTabs({
+    deviceId,
+    patch,
+    tier,
+}: {
+    deviceId: string;
+    patch: GrinderPatch;
+    tier: EffectDisclosureTier;
+}): ReactElement {
     return (
-        <Row align="stretch" wrap gap={1.5}>
-            {SECTION_TABS.map((tab) => {
-                const Icon = tab.icon;
-                const active = patch.uiSection === tab.id;
-                return (
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        key={tab.id}
-                        type="button"
-                        className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}
-                        onClick={() => replaceGrinderPatchLocally(deviceId, { ...patch, uiSection: tab.id })}
-                    >
-                        <Icon className="size-3.5" />
-                        <span>{tab.label}</span>
-                    </Button>
-                );
-            })}
+        <Row align="stretch" wrap gap={1.5} role="group" aria-label="Grinder sections">
+            {SECTION_TABS.filter((tab) => isEffectDisclosureStageVisible(tier, GRINDER_SECTION_TIERS[tab.id])).map(
+                (tab) => {
+                    const Icon = tab.icon;
+                    const active = patch.uiSection === tab.id;
+                    return (
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            key={tab.id}
+                            type="button"
+                            aria-pressed={active}
+                            className={`grinder-tab ${active ? 'grinder-tab-active' : ''}`}
+                            onClick={() => replaceGrinderPatchLocally(deviceId, { ...patch, uiSection: tab.id })}
+                        >
+                            <Icon className="size-3.5" />
+                            <span>{tab.label}</span>
+                        </Button>
+                    );
+                }
+            )}
         </Row>
     );
 }
@@ -1933,6 +1967,19 @@ function ControlDeck({
 
     return (
         <Row align="stretch" wrap gap={3}>
+            {(['gain', 'master', 'bass', 'mid', 'treble'] as const).map((param) => (
+                <GrinderKnob
+                    key={param}
+                    deviceId={deviceId}
+                    value={patch[param]}
+                    param={param}
+                    label={param.charAt(0).toUpperCase() + param.slice(1)}
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    defaultValue={5}
+                />
+            ))}
             <Stack gap={2} className="grinder-window min-w-[250px] px-3 py-3">
                 <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                     Current preset
@@ -1982,8 +2029,8 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                 </div>
                 <div className="text-[26px] font-semibold text-white/92">{patch.name}</div>
                 <div className="max-w-[36rem] text-[14px] leading-6 text-white/54">
-                    This is the loaded rig view. Grab a preset on the left, then hop into Amp, Drive, Cab, Neural, or
-                    Lab when you want to get more specific.
+                    Grab a preset on the left and shape its basic tone below. Raise the control detail to reveal the
+                    amp, pedal chain, cabinet, captures, and engine controls.
                 </div>
                 <Grid cols={3} gap={2}>
                     <GrinderTelemetryMeter
@@ -2087,17 +2134,24 @@ function StatusStrip({ deviceId }: { deviceId: string }): ReactElement {
 
 export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(grinderStore, {});
-    const projectParameterValues = useStoreSelector(trackStore, (state) =>
-        selectProjectParameterValues(state, deviceId)
+    const projectParameterSnapshot = useStoreSelector(trackStore, (state) =>
+        selectProjectParameterSnapshot(state, deviceId)
     );
     const state: GrinderState = allInstances?.[deviceId] ?? getGrinderState(deviceId);
     const patch = state.patch;
+    const level = useStoreSelector(trackStore, (project) => {
+        const device = project?.tracks
+            .flatMap((track) => track.devices)
+            .find((candidate) => candidate.id === deviceId && candidate.type === 'grinder');
+        return grinderDisclosureLevelFromState(device?.deviceState);
+    });
+    const tier = effectDisclosureTierFromLevel(level);
+    const section = grinderVisibleSection(patch.uiSection, tier);
+    const visiblePatch = section === patch.uiSection ? patch : { ...patch, uiSection: section };
 
     useEffect(() => {
-        if (projectParameterValues) {
-            hydrateGrinderPatchFromProject(deviceId);
-        }
-    }, [deviceId, projectParameterValues]);
+        hydrateGrinderPatchFromProject(deviceId);
+    }, [deviceId, projectParameterSnapshot]);
 
     function replacePatch(next: GrinderPatch): void {
         loadGrinderPatchWithAudio(deviceId, next);
@@ -2108,15 +2162,19 @@ export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement =
             <Row align="stretch" grow gap={3} className="min-h-[420px]">
                 <BrowserRail deviceId={deviceId} patch={patch} replacePatch={replacePatch} />
                 <Stack as="section" grow gap={3} className="overflow-y-auto pr-1">
-                    <SectionTabs deviceId={deviceId} patch={patch} />
+                    <DawEffectDisclosure
+                        tier={tier}
+                        onChange={(next) => void setGrinderPanelUiLevel(deviceId, effectDisclosureLevel(next))}
+                    />
+                    <SectionTabs deviceId={deviceId} patch={visiblePatch} tier={tier} />
                     <div className="min-h-[280px] shrink-0 overflow-hidden">
-                        <HeroStage deviceId={deviceId} patch={patch} />
+                        <HeroStage deviceId={deviceId} patch={visiblePatch} />
                     </div>
                     <div className="shrink-0 rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.032),rgba(255,255,255,0.012))] p-3 shadow-[var(--shadow-elevation-raised)]">
                         <div className="mb-2 text-dense uppercase tracking-[0.28em] text-[var(--color-accent-amber)]">
                             Control deck
                         </div>
-                        <ControlDeck deviceId={deviceId} patch={patch} replacePatch={replacePatch} />
+                        <ControlDeck deviceId={deviceId} patch={visiblePatch} replacePatch={replacePatch} />
                     </div>
                 </Stack>
             </Row>
