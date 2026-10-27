@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/__tests__/prepareTempoAudioSources.recording.spec.ts
+  s_29d8df116c5b92::t_0b65eb47eb06dd 133,141-143,146,148,151-152,155-160,249-251,260-261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4c0691cab46a552cc7b98f8401311b4e0b9b267",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
