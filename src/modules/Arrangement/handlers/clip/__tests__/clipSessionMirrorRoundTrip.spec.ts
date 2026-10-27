@@ -4023,11 +4023,17 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         );
         if (legacy) {
             const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-            if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) throw new Error('Expected saved split');
+            if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) {
+                throw new Error('Expected saved split');
+            }
             for (const action of [saved.past[0].inverseAction, saved.past[0].redoAction]) {
-                if (!isRecord(action) || !isRecord(action.payload)) throw new Error('Expected saved split payload');
+                if (!isRecord(action) || !isRecord(action.payload)) {
+                    throw new Error('Expected saved split payload');
+                }
                 for (const snapshot of [action.payload.expected, action.payload.replacement]) {
-                    if (!isRecord(snapshot)) throw new Error('Expected saved split snapshot');
+                    if (!isRecord(snapshot)) {
+                        throw new Error('Expected saved split snapshot');
+                    }
                     delete snapshot.rightClipOrder;
                 }
             }
@@ -4037,7 +4043,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         syncPeerProject((project) => {
             const clips = project.tracks.tracks[0]!.clips;
             const right = clips.pop();
-            if (!right || right.id !== 'clip-right') throw new Error('Expected appended split fragment');
+            if (!right || right.id !== 'clip-right') {
+                throw new Error('Expected appended split fragment');
+            }
             clips.splice(0, 1);
             clips.splice(1, 0, createClipFixture('between', 16, 20), { ...right });
         });

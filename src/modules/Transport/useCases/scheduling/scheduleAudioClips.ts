@@ -385,10 +385,10 @@ export function scheduleAudioClips(
                     // emission may sound; when its due instant is still ahead
                     // of the source's own start, the source begins there
                     // instead, holding the window's content.
-                    let floorStartTime =
-                        initialSchedulingAnchor === undefined
-                            ? segmentStartTime
-                            : Math.max(segmentStartTime, initialSchedulingAnchor + compensation);
+                    let floorStartTime = segmentStartTime;
+                    if (initialSchedulingAnchor !== undefined) {
+                        floorStartTime = Math.max(floorStartTime, initialSchedulingAnchor + compensation);
+                    }
                     if (floorsToWindowStart && fromBeat > segmentStartBeat) {
                         floorStartTime = Math.max(floorStartTime, beatToAudioTime(fromBeat));
                     }

@@ -40,8 +40,10 @@ A reviewer holds no author tree. It reads the head with `git show <sha>:<path>` 
 
 Create a worktree only when a probe must edit code and run it. Reading the head does not need one. Add it with `git worktree add --detach` at the bundle's head SHA. Path: `.agents/review-worktrees/<pr>-<head>-<draw>/`. That directory is gitignored. Do not put it under `.agents/worktrees/`. Do not check out the lane branch. Detached HEAD is required because Git will not check the lane branch out twice, and a second checkout would move the author's branch. Give the worktree its own install before running a probe: from the already-installed primary checkout, run
 
+Choose `<estimated-mib>` above the latest observed guarded install peak.
+
 ```
-pnpm guard --profile focused --max-rss-mib 2048 -- pnpm --dir <absolute-probe> install --frozen-lockfile --ignore-scripts
+pnpm guard --profile focused --max-rss-mib <estimated-mib> -- pnpm --dir <absolute-probe> install --frozen-lockfile --ignore-scripts
 ```
 
 The first `pnpm` invocation in an empty probe can bootstrap dependencies before its own `guard` script starts. Do not invoke the probe's own `pnpm guard` before this initial install. Run the install through the primary's installed guard, then run every probe from the worktree against its private install; for example:
