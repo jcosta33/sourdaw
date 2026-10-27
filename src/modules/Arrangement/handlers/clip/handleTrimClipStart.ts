@@ -13,13 +13,18 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
         if (!rowReplay.canExecute(action)) {
             return { status: 'conflict' };
         }
-        const clip = getTrackStoreState()
-            ?.tracks.flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === action.payload.clipId);
-        const capturesMidi =
-            clip?.type === 'midi' ||
-            action.payload.midiOffsetBeats !== undefined ||
-            action.payload.midiRowCoordinates !== undefined;
+        let capturesMidi =
+            action.payload.midiOffsetBeats !== undefined || action.payload.midiRowCoordinates !== undefined;
+        if (!capturesMidi) {
+            try {
+                const clip = getTrackStoreState()
+                    ?.tracks.flatMap((track) => track.clips)
+                    .find((candidate) => candidate.id === action.payload.clipId);
+                capturesMidi = clip?.type === 'midi';
+            } catch {
+                return { status: 'no-write' };
+            }
+        }
         if (!capturesMidi) {
             return toHandlerExecutionResult(
                 trimClipStart(
