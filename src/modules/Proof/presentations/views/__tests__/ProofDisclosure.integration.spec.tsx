@@ -128,6 +128,17 @@ describe('Proof cumulative disclosure in project truth', () => {
         expect(screen.getByRole('region', { name: 'Play controls' })).toBeVisible();
     });
 
+    it('re-projects the saved choice after a module-cache reset while the panel stays mounted', async () => {
+        render(<ProofPanel deviceId="a" />);
+        await selectTier('lab');
+        // Project loading resets this cache independently of project truth
+        // (resetModuleStoresToDefault); a retained panel must read the saved tier.
+        act(() => proofStore.set({}));
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: 'lab' })).toHaveAttribute('aria-pressed', 'true')
+        );
+    });
+
     it('projects a legacy numeric choice without replacing sound or meter values', () => {
         const instance = getProofState('a');
         render(<ProofPanel deviceId="a" />);

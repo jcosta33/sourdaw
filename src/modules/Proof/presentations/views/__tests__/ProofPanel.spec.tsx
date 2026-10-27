@@ -1099,6 +1099,9 @@ describe('ProofPanel', () => {
         expect(knobs.length).toBeGreaterThan(10);
         const firstKnob = knobs[6];
         const secondKnob = knobs[10];
+        if (!firstKnob || !secondKnob) {
+            throw new Error('Expected both EQ gesture controls');
+        }
 
         fireEvent.pointerDown(firstKnob, { button: 0, pointerId: 41, clientY: 100 });
         fireEvent.pointerMove(firstKnob, { pointerId: 41, clientY: 80 });

@@ -401,8 +401,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         return device ? proofDisclosureLevelFromState(device.deviceState) : null;
     });
     useEffect(() => {
-        hydrateProofDisclosureFromProject(deviceId);
-    }, [deviceId, projectLevel]);
+        if (projectLevel !== null && projectLevel !== uiLevel) {
+            hydrateProofDisclosureFromProject(deviceId);
+        }
+    }, [deviceId, projectLevel, uiLevel]);
 
     const patchSnapshot = getProofPatchSnapshot(patch);
     const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
