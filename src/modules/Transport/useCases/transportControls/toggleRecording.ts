@@ -281,6 +281,30 @@ function retireFailedManualRecording({
     );
 }
 
+function handleManualRecordingCommitFailure(
+    error: unknown,
+    recordedClipId: string,
+    stillOwnsCaptureRoot: () => boolean
+): 'refused' | undefined {
+    logger.error(new Error('Recording commit failed', { cause: error }));
+    if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
+        notifyUser(
+            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+            'warning'
+        );
+        return 'refused';
+    }
+    // A commit can reject after the root was replaced. Its cleanup must not
+    // discard the successor's same-id clip.
+    if (stillOwnsCaptureRoot()) {
+        discardRecording(recordedClipId);
+        notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+    } else {
+        notifyUser('Recording failed — the take was not kept on this branch.', 'error');
+    }
+    return undefined;
+}
+
 function completeManualRecording(input: ManualRecordingTerminalInput): void {
     const {
         result,
@@ -407,24 +431,9 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
                         sourceDurationSeconds: buffer.duration,
                     },
                     { shouldExecute: stillOwnsCaptureRoot }
-                ).catch((error: unknown) => {
-                    logger.error(new Error('Recording commit failed', { cause: error }));
-                    if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
-                        notifyUser(
-                            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
-                            'warning'
-                        );
-                        return 'refused';
-                    }
-                    // A commit can reject after the root was replaced. Its
-                    // cleanup must not discard the successor's same-id clip.
-                    if (stillOwnsCaptureRoot()) {
-                        discardRecording(recordedClip.id);
-                        notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
-                    } else {
-                        notifyUser('Recording failed — the take was not kept on this branch.', 'error');
-                    }
-                })
+                ).catch((error: unknown) =>
+                    handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
+                )
             )
         );
     }
