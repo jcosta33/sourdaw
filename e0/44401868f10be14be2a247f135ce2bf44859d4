@@ -1,0 +1,23 @@
+src/modules/Proof/useCases/__tests__/setProofPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_0ce2a93cbe3f0e 29,66-97,262-309,312,327-334,426-427,429,433
+  s_59e31a5c6f3e31::t_238cac932248bb 310-311,313,316-317,319,324
+  s_59e31a5c6f3e31::t_55da99b9c4aa8c 98-101,132,157,314-315,318,320-323,325-326,431-432
+src/modules/Proof/useCases/setProofPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_55da99b9c4aa8c 8-9,12-27,34-35,38,62,65-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e044401868f10be14be2a247f135ce2bf44859d4",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
