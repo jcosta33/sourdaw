@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { handleSetDeviceParameter } from '#/modules/Arrangement/handlers/device/handleSetDeviceParameter';
-import { createTrack } from '#/modules/Arrangement/models/Track';
-import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores/trackStore';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 
@@ -42,7 +41,7 @@ describe('saved Grinder parameter admission into the offline control target', ()
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
-        registerHandlerMap({ setDeviceParameter: handleSetDeviceParameter });
+        registerHandlerMap({ setDeviceParameter: getArrangementHandlers().setDeviceParameter });
         clearUndoHistory();
         resetGrinderProcessorCalls();
         vi.stubGlobal('currentFrame', 0);
