@@ -1,0 +1,23 @@
+src/modules/Grinder/models/GrinderDisclosure.ts
+  s_59e31a5c6f3e31::t_d5ac98a53cc26b 13,22-25,38
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_59e31a5c6f3e31::t_8cfa81c555e8c9 28,1122,1295-1351,1432,1978
+src/modules/Grinder/useCases/__tests__/setGrinderPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_9196c3e2cf749c 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73edba20f3ff4403dbef64538c2be41641f3ae46",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
