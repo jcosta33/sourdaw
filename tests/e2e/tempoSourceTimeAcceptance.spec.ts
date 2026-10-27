@@ -535,15 +535,23 @@ function expectExportEnd(pcm: ReturnType<typeof pcm24Wav>, bodyFrame: number): v
     }
 }
 
-async function saveAndReopen(page: Page, info: TestInfo, expected: Snapshot): Promise<Page> {
-    await palette(page, 'Save Project');
-    await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0, { timeout: STEP_TIMEOUT });
-    await expect
-        .poll(async () => {
-            const saved = await readSnapshot(page);
-            return saved.mirror.witness === saved.witness;
-        })
-        .toBe(true);
+async function readProjectOwner(page: Page) {
+    return page.evaluate(async () => {
+        const [{ projectStore }, { captureDurableDocumentWitness }] = await Promise.all([
+            import('/src/modules/Project/stores/projectStore.ts'),
+            import('/src/modules/CrdtDocument/useCases/index.ts'),
+        ]);
+        const mirror = JSON.parse(sessionStorage.getItem('sourdaw-undo-session') ?? '{}');
+        return {
+            projectId: projectStore.value?.projectId,
+            witness: captureDurableDocumentWitness(),
+            mirrorProjectId: mirror.projectId,
+            mirrorWitness: mirror.witness,
+        };
+    });
+}
+
+async function reopenProject(page: Page, projectId: string): Promise<Page> {
     const context = page.context();
     await page.close();
     const fresh = await context.newPage();
@@ -565,7 +573,7 @@ async function saveAndReopen(page: Page, info: TestInfo, expected: Snapshot): Pr
             if (!state || state.loading) return 'pending';
             if (state.initialized) return state.projectId === projectId ? 'saved-active' : 'wrong-active';
             return 'launch-ready';
-        }, expected.projectId);
+        }, projectId);
     await expect.poll(mode, { timeout: STEP_TIMEOUT }).toMatch(/^(saved-active|launch-ready)$/);
     if ((await mode()) === 'launch-ready') {
         await wait_for_launch_first_paint(fresh);
@@ -574,6 +582,20 @@ async function saveAndReopen(page: Page, info: TestInfo, expected: Snapshot): Pr
         await recent.click();
     }
     await wait_for_workspace_ready(fresh);
+    await expect.poll(async () => (await readProjectOwner(fresh)).projectId).toBe(projectId);
+    return fresh;
+}
+
+async function saveAndReopen(page: Page, info: TestInfo, expected: Snapshot): Promise<Page> {
+    await palette(page, 'Save Project');
+    await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0, { timeout: STEP_TIMEOUT });
+    await expect
+        .poll(async () => {
+            const saved = await readSnapshot(page);
+            return saved.mirror.witness === saved.witness;
+        })
+        .toBe(true);
+    const fresh = await reopenProject(page, expected.projectId);
     await expect.poll(async () => (await readSnapshot(fresh)).projectId).toBe(expected.projectId);
     const reopened = await readSnapshot(fresh);
     expect(reopened.raw).toEqual(expected.raw);
@@ -592,15 +614,32 @@ async function saveAndReopen(page: Page, info: TestInfo, expected: Snapshot): Pr
 }
 
 test('keeps the selected source frame through tempo edits, comp, playback, export and saved replay', async ({
-    page,
+    page: initialPage,
 }, info) => {
     test.setTimeout(480_000);
+    let page = initialPage;
     await installPlaybackObserver(page);
     await setupWorkspace(page);
     await launch_new_project(page);
     await page.getByRole('button', { name: 'Untitled Project' }).click();
     await page.locator('input:focus').fill(PROJECT_NAME);
     await page.locator('input:focus').press('Enter');
+    // New-project switching deliberately clears session ownership. Establish
+    // the supported boot owner before recording the Source edits under test.
+    const initialOwner = await readProjectOwner(page);
+    if (!initialOwner.projectId) throw new Error('The new project has no canonical identity');
+    await palette(page, 'Save Project');
+    await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0, { timeout: STEP_TIMEOUT });
+    page = await reopenProject(page, initialOwner.projectId);
+    await expect.poll(async () => {
+        const owner = await readProjectOwner(page);
+        return owner.projectId === initialOwner.projectId && owner.mirrorProjectId === owner.projectId &&
+            owner.mirrorWitness === owner.witness;
+    }, { message: 'Source edits require the actual booted project and session owner' }).toBe(true);
+    await info.attach('initial-boot-project-owner', {
+        body: JSON.stringify(await readProjectOwner(page), null, 2),
+        contentType: 'application/json',
+    });
     await palette(page, 'Add Audio Track');
     await expect(trackRow(page)).toBeVisible();
     await trackRow(page).click({ button: 'right', position: { x: 8, y: 8 } });
