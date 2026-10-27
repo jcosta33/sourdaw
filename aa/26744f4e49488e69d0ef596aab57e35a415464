@@ -1,0 +1,73 @@
+src/modules/Arrangement/useCases/clipboard/copyPianoRollNotes.ts
+  s_29d8df116c5b92::t_a91d647676ac76 1-14
+src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts
+  s_29d8df116c5b92::t_7b3b469d3fc8ba 22,189
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_29d8df116c5b92::t_af1e748e41cc32 269
+src/modules/TimelineEditor/presentations/helpers/applyPianoRollTakeMenuAction.ts
+  s_29d8df116c5b92::t_13f443965cd78a 1,8-22,25-56,58-60,62-64,66,69,73-75,77-82,91,93-94,96-97,99-103,118-122,125,131-144,146-161,163-199
+  s_29d8df116c5b92::t_2718aecbd87beb 2-7,23-24,57,61,70-72,123-124,126-130
+  s_29d8df116c5b92::t_7b3b469d3fc8ba 65,67-68,76,83-90,92,95,98
+  s_29d8df116c5b92::t_e8dc4fe6c25544 145,162
+  s_29d8df116c5b92::t_4754cb74cbee8d 104-117
+  s_29d8df116c5b92::t_277b14c55be513 200-203
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_29d8df116c5b92::t_af1e748e41cc32 286,299,312
+src/modules/Arrangement/useCases/comping/__tests__/replaceOriginalMidiTakeRow.spec.ts
+  s_29d8df116c5b92::t_84922ca45554cf 92-130
+  s_29d8df116c5b92::t_7a210f711a98d1 131-162
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_29d8df116c5b92::t_d98b15e2994803 455,459-460
+src/modules/Arrangement/useCases/index.ts
+  s_29d8df116c5b92::t_a91d647676ac76 113
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectMidiNoteMenuTransform.spec.ts
+  s_29d8df116c5b92::t_9a07d5e3fb66a2 1-13,16-18
+  s_29d8df116c5b92::t_ce4388bb655be8 14-15
+  s_29d8df116c5b92::t_f794e491a34267 19-22
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_29d8df116c5b92::t_4d1fcf072b9be7 181-187,196-197,199-200,233,245-247,264-267,294-297,326-329
+  s_29d8df116c5b92::t_e426d27f9c1a07 135-156,158-168,198,220-230,234-237,242-244,572-575,642
+  s_29d8df116c5b92::t_d98b15e2994803 111,114
+  s_29d8df116c5b92::t_cde39649ec02a7 29,121
+  s_29d8df116c5b92::t_aadd4eb36f5d5b 33-39,112,115-120,123-127,132-134
+  s_29d8df116c5b92::t_8f1c6f67e1c81e 352-355,385-388,401-404,426-429,445-448,464-467,483-486,508-514,571,576-577,641,643-644
+  s_29d8df116c5b92::t_51fdc7adeff7e7 128-130,238-241
+src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNoteMenuTransform.ts
+  s_29d8df116c5b92::t_c9a8ee2ad517dd 1-72
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_29d8df116c5b92::t_af1e748e41cc32 147,203
+  s_29d8df116c5b92::t_588ecaf64dab11 20,69-72,253-257,259-260,262-277,279-281,286,292,297,302,307
+  s_29d8df116c5b92::t_9e6a08c432a418 6,78,133,166,168-169,176-178,183,221,223,230,247,301
+  s_29d8df116c5b92::t_2a60c1730ab96b 170-175,224-229,231-246,248-252,278
+  s_29d8df116c5b92::t_d5eee3c35d5a72 282-285,287-291,293-296,298-300,303-306,308
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.ts
+  s_29d8df116c5b92::t_0232b6d37de6ec 87-94,104-136,141-157,504-509,516-539,541-552,611-623,630-633,635-640,645-650,659-672,677-679,682-683,692-694
+  s_29d8df116c5b92::t_a57f02c9154ea7 555-566,574,583-587,598-601,605-606
+  s_29d8df116c5b92::t_f06d456350ce08 13,38,82-86,95-103,137-140,158
+  s_29d8df116c5b92::t_91db3b6c4a813f 567-573,575-582,588-597,602-604,609,624-629
+  s_29d8df116c5b92::t_039a24f32247d6 501-503,510-515,540,553-554,607-608,610,634,641-644,651-658,673-676,680-681,684-691,695-698
+  s_29d8df116c5b92::t_be5b3a783ebe27 159
+src/modules/Arrangement/useCases/comping/replaceOriginalMidiTakeRow.ts
+  s_29d8df116c5b92::t_da02cea44fcf31 72,76
+  s_29d8df116c5b92::t_0d5153ac2bb0ac 64-70,77
+  s_29d8df116c5b92::t_45dd5c523a2c9c 71
+src/modules/MIDI/useCases/index.ts
+  s_29d8df116c5b92::t_c9a8ee2ad517dd 62
+  s_29d8df116c5b92::t_95702d3eba751f 63-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa26744f4e49488e69d0ef596aab57e35a415464",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
