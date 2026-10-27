@@ -187,7 +187,10 @@ function editChain(
         // position, immediately, rather than left to the next play.
         const isSwapped = !isNew && swappedIds.has(device.id) && projected.includes(device.id);
         const unchanged = !isNew && !isSwapped;
-        if (unchanged) {
+        // An earlier grouped step can already have mirrored the same final
+        // chain. The engine's readback discharges that insert, not a second add.
+        const alreadyInserted = isNew && projected.includes(device.id);
+        if (unchanged || alreadyInserted) {
             continue;
         }
         if (isSwapped) {
@@ -264,6 +267,14 @@ function planMirror(input: MirrorDeviceChainDeltaInput, nativeChain: readonly st
     // second `projectDeviceForNativeBody` pass over every survivor for no
     // reason — the answer cannot differ between the two callers.
     const swapped = swappedDevices(input.before.devices, input.after.devices);
+    const afterIds = idsOf(input.after.devices);
+    const alreadyMirrored =
+        swapped.length === 0 &&
+        nativeChain.length === afterIds.length &&
+        nativeChain.every((deviceId, index) => deviceId === afterIds[index]);
+    if (alreadyMirrored) {
+        return { commands: [], changedDeviceNames: [] };
+    }
     return {
         commands: reordered ? rebuildChain(input.after, nativeChain) : editChain(input, nativeChain, swapped),
         // Empty for a pure reorder, which is what makes the notice name the

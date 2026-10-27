@@ -242,6 +242,26 @@ describe('mirrorDeviceChainDelta', () => {
         expect(nativeLiveGraphSession.nativeChainByStripId.get('audio-1')).toEqual(['eq', 'comp', 'knead']);
     });
 
+    it('discharges an insertion an earlier grouped step already placed in the reported native chain', async () => {
+        const result = await mirrorDeviceChainDelta({
+            before: track([device('eq')]),
+            after: track([device('eq'), device('comp')]),
+        });
+
+        expect(result).toEqual({ outcome: 'skipped', reason: 'nothing to mirror' });
+        expect(apply).not.toHaveBeenCalled();
+    });
+
+    it('does not rebuild a reorder an earlier grouped step already placed in the reported native order', async () => {
+        const result = await mirrorDeviceChainDelta({
+            before: track([device('comp'), device('eq')]),
+            after: track([device('eq'), device('comp')]),
+        });
+
+        expect(result).toEqual({ outcome: 'skipped', reason: 'nothing to mirror' });
+        expect(apply).not.toHaveBeenCalled();
+    });
+
     /**
      * The whole point of counting the index against the engine's chain. The
      * project chain is [eq, degraded, comp, knead] and the engine holds

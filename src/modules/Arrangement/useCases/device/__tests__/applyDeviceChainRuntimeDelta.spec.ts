@@ -303,7 +303,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
         expect(result).toEqual({
             acceptance: 'superseded',
             application: 'discharged',
-            reason: 'Live runtime already matches the authoritative final device chain for track audio-1',
+            reason: 'Live Web Audio already matches the authoritative final device chain for track audio-1',
         });
         expect(mocks.matchesRuntimeDeviceChainTopology).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -372,6 +372,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
     it('mirrors the same snapshots onto the native carrier once Web Audio applied the delta', () => {
         const track = seedTrack();
         const after = { ...track, devices: [] };
+        trackStore.set({ tracks: [after], selectedTrackId: track.id, ghostClips: [] });
 
         applyDeviceChainRuntimeDelta({ before: track, after, operation: 'remove-device' });
 
@@ -386,6 +387,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
      */
     it('mirrors nothing when the runtime rejected the delta', () => {
         const track = seedTrack();
+        trackStore.set({ tracks: [{ ...track, devices: [] }], selectedTrackId: track.id, ghostClips: [] });
         mocks.applyRuntimeGraphDelta.mockReturnValue({
             acceptance: 'rejected',
             application: 'not-applied',
@@ -405,6 +407,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
     // before it, and only the repair can say which chain to mirror.
     it('mirrors nothing when the runtime needs reconciling', () => {
         const track = seedTrack();
+        trackStore.set({ tracks: [{ ...track, devices: [] }], selectedTrackId: track.id, ghostClips: [] });
         mocks.applyRuntimeGraphDelta.mockReturnValue({
             acceptance: 'accepted',
             application: 'needs-reconcile',
@@ -438,9 +441,27 @@ describe('applyDeviceChainRuntimeDelta', () => {
         expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
     });
 
-    // Discharged: nothing was submitted because the live chain already equals
-    // the authoritative target, so there is no change to carry anywhere.
-    it('mirrors nothing for a step the live runtime had already discharged', () => {
+    it.each(['duplicate owner', 'diverged project'])(
+        'does not mirror an accepted result without proven %s authority',
+        (state) => {
+            const before = seedTrack();
+            const after = { ...before, devices: [] };
+            trackStore.set({
+                tracks: state === 'duplicate owner' ? [after, after] : [before],
+                selectedTrackId: before.id,
+                ghostClips: [],
+            });
+            mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(true);
+
+            applyDeviceChainRuntimeDelta({ before, after, operation: 'remove-device' });
+
+            expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
+        }
+    );
+
+    // A persistent-node match proves only Web Audio. The native carrier still
+    // has to apply or explicitly defer the full project chain.
+    it('mirrors final project truth for a step Web Audio had already discharged', () => {
         const before = seedTrack();
         before.devices = [];
         const firstDevice = {
@@ -477,7 +498,10 @@ describe('applyDeviceChainRuntimeDelta', () => {
             },
         });
 
-        expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
+        expect(mocks.mirrorDeviceChainDelta).toHaveBeenCalledWith({
+            before,
+            after: expect.objectContaining({ devices: [firstDevice, secondDevice] }),
+        });
     });
 
     /**
@@ -532,6 +556,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
      */
     it('returns the runtime result without waiting for a mirror that rejects', async () => {
         const track = seedTrack();
+        trackStore.set({ tracks: [{ ...track, devices: [] }], selectedTrackId: track.id, ghostClips: [] });
         mocks.mirrorDeviceChainDelta.mockRejectedValue(new Error('unreadable native answer'));
 
         const result = applyDeviceChainRuntimeDelta({
