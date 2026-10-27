@@ -178,7 +178,14 @@ function spanningReleaseIndices(
     position: number,
     sampleRate: number
 ): Set<number> {
-    const releases = new Set(opening ? slot.loopOpeningNoteOffIndices : []);
+    const releases = new Set(
+        opening
+            ? slot.loopOpeningNoteOffIndices?.filter((index) => {
+                  const event = slot.events[index];
+                  return event !== undefined && Math.round(event.time * sampleRate) >= position;
+              })
+            : []
+    );
     for (const index of held) {
         const event = slot.events[index];
         const partner = slot.loopNotePartners?.[index];
