@@ -27,9 +27,12 @@ type OfflineSequencerMidiEventProjectionInput<Event extends OfflineMidiProjectab
 type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> =
     OfflineClipMidiEventProjectionInput<Event> | OfflineSequencerMidiEventProjectionInput<Event>;
 
+/** An event as one clip pass plays it; `beatsIntoNote` is how far into the event a cut segment begins. */
+export type OfflineProjectedMidiEvent<Event> = Event & { beatsIntoNote?: number };
+
 export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEvent>(
     input: OfflineMidiEventProjectionInput<Event>
-) => readonly Event[];
+) => readonly OfflineProjectedMidiEvent<Event>[];
 
 export type OfflineMidiEventProjectorFactory = () => OfflineMidiEventProjector;
 

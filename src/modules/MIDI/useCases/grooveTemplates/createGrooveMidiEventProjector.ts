@@ -4,7 +4,7 @@ import {
     type GrooveTemplateState,
 } from '../../stores/grooveTemplateStore';
 
-import { getGrooveProjection } from './getGrooveProjection';
+import { getGrooveProjection, type ProjectedSegment } from './getGrooveProjection';
 
 type GrooveMidiEvent = { id: string; startBeat: number; duration: number; velocity: number };
 type GrooveClipMidiEventProjectionInput<Event extends GrooveMidiEvent> = {
@@ -26,7 +26,7 @@ type GrooveSequencerMidiEventProjectionInput<Event extends GrooveMidiEvent> = {
 };
 type GrooveMidiEventProjector = <Event extends GrooveMidiEvent>(
     input: GrooveClipMidiEventProjectionInput<Event> | GrooveSequencerMidiEventProjectionInput<Event>
-) => readonly Event[];
+) => readonly ProjectedSegment<Event>[];
 
 export function createGrooveMidiEventProjector(
     state: GrooveTemplateState | null = grooveTemplateStore.value

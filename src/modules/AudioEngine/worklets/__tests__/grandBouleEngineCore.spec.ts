@@ -127,6 +127,47 @@ describe('the Grand Boule frame queue', () => {
         });
     });
 
+    it('drops the expression changes queued ahead of a held note when the device panics', () => {
+        const { calls, instance } = createRecordingInstance();
+        const queue = createGrandBouleFrameQueue();
+        const block = { startFrame: 0, endFrame: 128 };
+
+        receive(instance, queue, { type: 'noteOn', midiNote: 60, velocity: 1, sampleFrame: 64 }, block);
+        for (const sampleFrame of [5_000, 9_000]) {
+            receive(
+                instance,
+                queue,
+                {
+                    type: 'noteExpression',
+                    midiNote: 60,
+                    channel: 0,
+                    bendSemitones: 2,
+                    pressure: 0,
+                    slide: 0,
+                    sampleFrame,
+                },
+                block
+            );
+        }
+        queue.drain(instance, 0, 128);
+        const queuedAtStop = queue.size();
+
+        receive(instance, queue, { type: 'allNotesOff' }, block);
+        queue.drain(instance, 4_872, 10_000);
+
+        // A recorded bend is posted with its note, seconds ahead of the playhead.
+        // Stop has to take it as it takes the release, or the bend of a note that
+        // was silenced would apply to the next voice at that pitch.
+        expect({ queuedAtStop, queuedAfterStop: queue.size(), calls }).toEqual({
+            queuedAtStop: 2,
+            queuedAfterStop: 0,
+            calls: [
+                { method: 'push_note_on', args: [60, 1, 0, 64] },
+                { method: 'all_notes_off', args: [] },
+            ],
+        });
+    });
+
     it('preserves a scheduled parameter when panic discards pending notes', () => {
         const { calls, instance } = createRecordingInstance();
         const queue = createGrandBouleFrameQueue();

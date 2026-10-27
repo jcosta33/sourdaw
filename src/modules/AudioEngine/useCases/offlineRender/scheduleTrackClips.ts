@@ -44,6 +44,7 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 import { getDefaultBendRangeSemitones } from '../noteExpression/getDefaultBendRangeSemitones';
+import { projectNoteExpressionCurves } from '../noteExpression/projectNoteExpressionCurves';
 
 import { type captureOfflineSchedulingInput } from './captureOfflineSchedulingInput';
 import { MIXER_AUTOMATION_PARAMETER_IDS, YIELD_EVERY_N_NOTES } from './constants';
@@ -453,6 +454,11 @@ export async function scheduleTrackClips({
         slide?: number;
         pitchBend?: number;
         pitchBendRangeSemitones?: number;
+        /** The note's projected start, from which its recorded expression curves are placed. */
+        startBeat: number;
+        /** How far into the note `startBeat` is when a clip cut took its head off; the curves count from the note's start. */
+        beatsIntoNote?: number;
+        expression?: NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
         clipGain: number;
     };
     /** The clamped MPE a note carries, in the wire units project truth stores. */
@@ -473,6 +479,8 @@ export async function scheduleTrackClips({
         channel?: number;
         /** Present on a note-on whose note recorded per-note expression. */
         mpe?: ScheduledMpe;
+        /** The note's recorded curve changes after its note-on, in time order. */
+        expressionChanges?: { time: number; mpe: ScheduledMpe }[];
     };
 
     function clampOptional(value: number | undefined, minimum: number, maximum: number): number | undefined {
@@ -560,6 +568,17 @@ export async function scheduleTrackClips({
         });
     }
 
+    // Where the render places a beat, exactly as a note's own start is placed.
+    function secondsAtBeat(beat: number, toasterPadIndex: number): number {
+        const { startSamples } = projectNoteEndpoints(beat, beat, toasterPadIndex);
+        return Math.max(0, startSamples / offlineCtx.sampleRate + compensationDelay - regionStartSec);
+    }
+
+    // The frame `schedulePendingSuspends` addresses an event at a given time to.
+    function frameAtSeconds(seconds: number): number {
+        return Math.floor(seconds * offlineCtx.sampleRate);
+    }
+
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         // A bypassed receiver plays nothing, as it does live; no note is handed
         // to an instrument, so none is counted either.
@@ -600,6 +619,18 @@ export async function scheduleTrackClips({
                 // the same one. Matching that here is what keeps a bounce from
                 // releasing every voice at a pitch when the session releases one.
                 const noteChannel = note.channel ?? 0;
+                // The curves change the note after its note-on, placed as the
+                // note's own start and release are and by the same projection
+                // live playback uses. A pad has no voice to bend.
+                const curves = isToaster
+                    ? undefined
+                    : projectNoteExpressionCurves({
+                          note,
+                          startBeat: note.startBeat,
+                          beatsIntoNote: note.beatsIntoNote,
+                          releaseFrame: frameAtSeconds(endTime),
+                          frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
+                      });
                 workletEvents.push({
                     time: startTime,
                     type: 'on',
@@ -611,7 +642,11 @@ export async function scheduleTrackClips({
                     channel: noteChannel,
                     // Toaster addresses pads rather than note instances, so it
                     // has no voice for expression to reach.
-                    mpe: isToaster ? undefined : resolveScheduledMpe(note),
+                    mpe: isToaster ? undefined : (curves?.atStart ?? resolveScheduledMpe(note)),
+                    expressionChanges: curves?.changes.map((change) => ({
+                        time: secondsAtBeat(change.beat, toasterPadIndex),
+                        mpe: change.expression,
+                    })),
                 });
                 if (!isToaster) {
                     workletEvents.push({
@@ -694,9 +729,9 @@ export async function scheduleTrackClips({
             if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
-            const sourceNotes = midi.notesByClipId[clip.id];
+            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
             const clipVisualLength = clip.endBeat - clip.startBeat;
-            if (!sourceNotes || clipVisualLength <= 0) {
+            if (clipVisualLength <= 0) {
                 continue;
             }
             const loopProjection = projectClipLoopExpansion({
@@ -802,10 +837,8 @@ export async function scheduleTrackClips({
         });
 
         if (clip.type === 'midi') {
-            const sourceNotes = midi.notesByClipId[clip.id];
-            if (!sourceNotes) {
-                continue;
-            }
+            // A clip with no note list plays no notes; its stored controllers still play.
+            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
             const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
@@ -902,6 +935,9 @@ export async function scheduleTrackClips({
                         slide: note.slide,
                         pitchBend: note.pitchBend,
                         pitchBendRangeSemitones: note.pitchBendRangeSemitones,
+                        startBeat: note.startBeat,
+                        beatsIntoNote: note.beatsIntoNote,
+                        expression: note.expression,
                         clipGain: clip.gain,
                     };
                 });
@@ -990,29 +1026,36 @@ export async function scheduleTrackClips({
             }
             pendingWorkletEvents.push(pendingEvent);
 
-            if (event.type !== 'on' || !event.mpe || !dispatchExpression) {
+            if (event.type !== 'on' || !dispatchExpression) {
                 continue;
             }
             // Live playback posts the note-on and then this, at one sample
             // frame, so the worklet applies it to the voice that note-on just
-            // started. The recorded bend depth — the MPE member default when the
-            // note predates RPN 0 decoding — is the range it was performed
-            // under, and `normalizeNoteExpression` owns the conversion to
-            // engine units for both paths.
-            const { bendSemitones, pressure, slide } = normalizeNoteExpression(
-                event.mpe,
-                event.mpe.pitchBendRangeSemitones
-            );
-            pendingWorkletEvents.push({
-                time: event.time,
-                type: 'expression',
-                pitch: event.pitch,
-                channel: event.channel ?? 0,
-                dispatch: dispatchExpression,
-                bendSemitones,
-                pressure,
-                slide,
-            });
+            // started; the note's curve changes follow at their own times. The
+            // recorded bend depth — the MPE member default when the note
+            // predates RPN 0 decoding — is the range it was performed under,
+            // and `normalizeNoteExpression` owns the conversion to engine
+            // units for both paths.
+            const updates: NonNullable<WorkletMidiEvent['expressionChanges']> = [];
+            if (event.mpe) {
+                updates.push({ time: event.time, mpe: event.mpe });
+            }
+            if (event.expressionChanges) {
+                updates.push(...event.expressionChanges);
+            }
+            for (const { time, mpe } of updates) {
+                const { bendSemitones, pressure, slide } = normalizeNoteExpression(mpe, mpe.pitchBendRangeSemitones);
+                pendingWorkletEvents.push({
+                    time,
+                    type: 'expression',
+                    pitch: event.pitch,
+                    channel: event.channel ?? 0,
+                    dispatch: dispatchExpression,
+                    bendSemitones,
+                    pressure,
+                    slide,
+                });
+            }
         }
     }
 }

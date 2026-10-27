@@ -16,6 +16,9 @@ import { projectSlotProjections } from './projectSlotProjections';
  *
  * A full project load resets projections first so local default writes used to
  * clear transient module state cannot rebase over the newly loaded authority.
+ * Any other projection re-reads the project already open, so each store keeps
+ * the runtime fields it never persists: a collaborator's change must not stop
+ * the local transport.
  */
 type ProjectCrdtToStoresInput = {
     resetProjections?: boolean;
@@ -31,6 +34,6 @@ export function projectCrdtToStores({ resetProjections = false }: ProjectCrdtToS
         return;
     }
     for (const projection of projectSlotProjections) {
-        projection.hydrate();
+        projection.hydrate({ keepLocalRuntimeState: !resetProjections });
     }
 }

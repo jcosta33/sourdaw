@@ -8,18 +8,15 @@ import {
     type ReviewReconstruction,
 } from '../reconstructReviewRounds.ts';
 import {
-    REVIEW_ROUND_ESCALATION_THRESHOLD,
-    REVIEW_ROUND_WARNING_THRESHOLD,
+    REVIEW_ROUND_FREEZE_THRESHOLD,
+    assertReviewRoundsBelowFreeze,
     countReviewerRequestChangesRounds,
-    gateReviewRoundEscalation,
-    logReviewRoundEscalationAtThreshold,
-    parseReviewReassessment,
+    logReviewRoundFreezeAtThreshold,
+    reviewRoundFreezeFlag,
 } from '../reviewRoundEscalation.ts';
 
 const HEAD = 'a'.repeat(40);
-const BASE = 'b'.repeat(40);
 const PR = 42;
-const BUNDLE = `/repo/.agents/review-bundles/${PR}-${HEAD}`;
 
 function reviewerReview(id: number, commitId: string, state: string): PublicReview {
     return { id, state, commitId, actorNodeId: REVIEWER_BOT_NODE_ID, body: 'round' };
@@ -30,31 +27,6 @@ function reconstruction(
     comments: readonly PublicReviewComment[] = []
 ): ReviewReconstruction {
     return reconstructReviewRounds(PR, { state: 'OPEN', head: HEAD }, reviews, comments);
-}
-
-function reassessment(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-        format: 'reassessment-v1',
-        pr: PR,
-        headSha: HEAD,
-        baseSha: BASE,
-        roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
-        threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-        action: 'continue',
-        reason: 're-scoped the change and re-dispatched the remaining stances',
-        ...overrides,
-    };
-}
-
-function gate(observedCount: number, value: unknown): ReturnType<typeof gateReviewRoundEscalation> {
-    return gateReviewRoundEscalation({
-        observedCount,
-        pr: PR,
-        headSha: HEAD,
-        baseSha: BASE,
-        bundle: BUNDLE,
-        reassessment: value === undefined ? { present: false } : { present: true, value },
-    });
 }
 
 describe('countReviewerRequestChangesRounds', () => {
@@ -87,121 +59,35 @@ describe('countReviewerRequestChangesRounds', () => {
     });
 });
 
-describe('parseReviewReassessment', () => {
-    it('round-trips a valid reassessment', () => {
-        expect(parseReviewReassessment(reassessment())).toEqual({
-            format: 'reassessment-v1',
-            pr: PR,
-            headSha: HEAD,
-            baseSha: BASE,
-            roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD,
-            threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-            action: 'continue',
-            reason: 're-scoped the change and re-dispatched the remaining stances',
-        });
+describe('assertReviewRoundsBelowFreeze', () => {
+    it('pins the freeze at five reviewer request-changes rounds', () => {
+        expect(REVIEW_ROUND_FREEZE_THRESHOLD).toBe(5);
     });
 
-    it('refuses a wrong format', () => {
-        expect(() => parseReviewReassessment(reassessment({ format: 'reassessment-v2' }))).toThrow(
-            /format must be reassessment-v1/
-        );
+    it.each([0, REVIEW_ROUND_FREEZE_THRESHOLD - 1])('admits a fresh publication after %s rounds', (rounds) => {
+        expect(() => assertReviewRoundsBelowFreeze(PR, rounds)).not.toThrow();
     });
 
-    it('refuses a threshold that disagrees with the constant', () => {
-        expect(() => parseReviewReassessment(reassessment({ threshold: 2 }))).toThrow(
-            /threshold 2 does not match the escalation threshold 3/
-        );
-    });
-
-    it('refuses an unknown action and names the allowed actions', () => {
-        expect(() => parseReviewReassessment(reassessment({ action: 'rebase' }))).toThrow(
-            /action must be one of split, respec, continue/
-        );
-    });
-
-    it('refuses a blank reason', () => {
-        expect(() => parseReviewReassessment(reassessment({ reason: '   ' }))).toThrow(
-            /reason must be a non-blank string/
-        );
-    });
-
-    it('refuses a credential-shaped reason', () => {
-        expect(() => parseReviewReassessment(reassessment({ reason: `ghp_${'A'.repeat(24)}` }))).toThrow(
-            /reason value at index 0 contains a GitHub token/
-        );
-    });
-
-    it('refuses a non-object value', () => {
-        expect(() => parseReviewReassessment('reassessment-v1')).toThrow(/must be an object/);
-    });
-});
-
-describe('gateReviewRoundEscalation', () => {
-    it('requires nothing below the threshold, even without a reassessment file', () => {
-        expect(gate(REVIEW_ROUND_ESCALATION_THRESHOLD - 1, undefined)).toBeUndefined();
-    });
-
-    it('returns the parsed reassessment when the threshold is met and the file binds exactly', () => {
-        expect(gate(REVIEW_ROUND_ESCALATION_THRESHOLD, reassessment())).toEqual(
-            parseReviewReassessment(reassessment())
-        );
-    });
-
-    it('refuses a missing file above the threshold, naming the observed count, threshold, path and actions', () => {
-        expect(() => gate(REVIEW_ROUND_ESCALATION_THRESHOLD, undefined)).toThrow(
-            new RegExp(
-                `observed ${REVIEW_ROUND_ESCALATION_THRESHOLD} reviewer request-changes rounds.*threshold ${REVIEW_ROUND_ESCALATION_THRESHOLD}.*${BUNDLE}/reassessment.json.*split, respec, continue`
-            )
-        );
-    });
-
-    it.each([
-        ['pr', { pr: PR + 1 }, /pr 43 does not match pull request 42/],
-        ['headSha', { headSha: 'c'.repeat(40) }, /headSha c{40} does not match the live head a{40}/],
-        ['baseSha', { baseSha: 'd'.repeat(40) }, /baseSha d{40} does not match the bundle baseSha b{40}/],
-        [
-            'roundsObserved',
-            { roundsObserved: REVIEW_ROUND_ESCALATION_THRESHOLD - 1 },
-            /roundsObserved 2 does not match the observed 3/,
-        ],
-    ])('refuses a rebound %s above the threshold', (_label, overrides, message) => {
-        expect(() => gate(REVIEW_ROUND_ESCALATION_THRESHOLD, reassessment(overrides))).toThrow(message);
-    });
-
-    it('refuses an unknown action above the threshold', () => {
-        expect(() => gate(REVIEW_ROUND_ESCALATION_THRESHOLD, reassessment({ action: 'rebase' }))).toThrow(
-            /action must be one of split, respec, continue/
-        );
-    });
-
-    it('refuses an unsafe reason above the threshold', () => {
-        expect(() =>
-            gate(REVIEW_ROUND_ESCALATION_THRESHOLD, reassessment({ reason: `ghp_${'A'.repeat(24)}` }))
-        ).toThrow(/reason value at index 0 contains a GitHub token/);
-    });
-
-    it.each([REVIEW_ROUND_WARNING_THRESHOLD - 1, REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
-        'requires a matching reassessment after %s request-changes rounds',
+    it.each([REVIEW_ROUND_FREEZE_THRESHOLD, REVIEW_ROUND_FREEZE_THRESHOLD + 3])(
+        'refuses after %s rounds, telling the operator to respin and supersede',
         (rounds) => {
-            expect(gate(rounds, reassessment({ roundsObserved: rounds }))).toEqual(
-                parseReviewReassessment(reassessment({ roundsObserved: rounds }))
-            );
-            expect(() => gate(rounds, undefined)).toThrow(/review round escalation/);
-            expect(() => gate(rounds, reassessment({ roundsObserved: rounds - 1 }))).toThrow(
-                /does not match the observed/
+            expect(() => assertReviewRoundsBelowFreeze(PR, rounds)).toThrow(
+                `review round freeze: PR #${PR} has taken ${rounds} reviewer request-changes rounds, at or above the freeze threshold ${REVIEW_ROUND_FREEZE_THRESHOLD}; ` +
+                    'no further reviewer publication is admitted. Respin the change as one consolidated fresh pull request, ' +
+                    `then close this one with pnpm pr:supersede ${PR} once the replacement merges`
             );
         }
     );
 });
 
-describe('logReviewRoundEscalationAtThreshold', () => {
+describe('logReviewRoundFreezeAtThreshold', () => {
     function loggedReviews(count: number): PublicReview[] {
         return Array.from({ length: count }, (_, index) => reviewerReview(index + 1, HEAD, 'CHANGES_REQUESTED'));
     }
 
     function messagesFor(count: number): string[] {
         const messages: string[] = [];
-        logReviewRoundEscalationAtThreshold(
+        logReviewRoundFreezeAtThreshold(
             PR,
             HEAD,
             () => loggedReviews(count),
@@ -211,26 +97,29 @@ describe('logReviewRoundEscalationAtThreshold', () => {
         return messages;
     }
 
-    it('logs only escalation below the warning threshold', () => {
-        expect(messagesFor(REVIEW_ROUND_WARNING_THRESHOLD - 1)).toEqual([
-            expect.stringContaining('review-round-escalation:'),
-        ]);
+    it('logs nothing below the freeze', () => {
+        expect(messagesFor(REVIEW_ROUND_FREEZE_THRESHOLD - 1)).toEqual([]);
     });
 
-    it.each([REVIEW_ROUND_WARNING_THRESHOLD, REVIEW_ROUND_WARNING_THRESHOLD + 1])(
-        'warns at %s rounds without suggesting a freeze',
+    it.each([REVIEW_ROUND_FREEZE_THRESHOLD, REVIEW_ROUND_FREEZE_THRESHOLD + 1])(
+        'flags the freeze at %s rounds',
         (rounds) => {
-            expect(messagesFor(rounds)).toEqual([
-                expect.stringContaining(
-                    `review-round-warning:${PR}:request-changes=${rounds}:threshold=${REVIEW_ROUND_WARNING_THRESHOLD}`
-                ),
-                expect.stringContaining('review-round-escalation:'),
-            ]);
-            expect(messagesFor(rounds)[0]).toContain('make sure you know what you are doing');
+            expect(messagesFor(rounds)).toEqual([reviewRoundFreezeFlag(PR, rounds)]);
+            expect(messagesFor(rounds)[0]).toBe(`review-round-freeze:${PR}:request-changes=${rounds}:threshold=5`);
         }
     );
 
-    it('logs nothing below the escalation threshold', () => {
-        expect(messagesFor(REVIEW_ROUND_ESCALATION_THRESHOLD - 1)).toEqual([]);
+    it('swallows an unreadable history instead of refusing the repair', () => {
+        const messages: string[] = [];
+        logReviewRoundFreezeAtThreshold(
+            PR,
+            HEAD,
+            () => {
+                throw new Error('unreadable');
+            },
+            () => [],
+            (message) => messages.push(message)
+        );
+        expect(messages).toEqual([]);
     });
 });

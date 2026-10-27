@@ -105,6 +105,10 @@ async function waitForClose(child: ChildProcess, timeoutMs = 2_000): Promise<num
     ]);
 }
 
+// Each real guarded command ends in a storage file proof that can spend its whole
+// five-second deadline retaking catalogs on a busy host.
+const GUARDED_CASE_TIMEOUT_MS = 20_000;
+
 describe('resource admission', () => {
     it('serializes admission updates', () => {
         const root = fixtureRoot('collision');
@@ -387,7 +391,7 @@ describe('process table sampling', () => {
     });
 });
 
-describe('resource enforcement', () => {
+describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it('rechecks capacity before spawning', async () => {
         let samples = 0;
         const result = await runIsolatedGuardedCommand({
@@ -876,7 +880,7 @@ describe('resource CLI', () => {
     });
 });
 
-describe('default budgets', () => {
+describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
         { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
         {
@@ -1176,7 +1180,7 @@ describe('pnpm modules preflight', () => {
     });
 });
 
-describe('guard failure stop enforcement', () => {
+describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     function fakeResult(overrides: Partial<GuardedCommandResult> = {}): GuardedCommandResult {
         return {
             code: 0,
@@ -1432,6 +1436,37 @@ describe('guard failure stop enforcement', () => {
                 );
                 clearGuardFailureReceipt(repoRoot, laneName);
             }
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a pressure result raised before the command started without stopping the lane', async () => {
+        const repoRoot = fixtureRoot('lane-admission-pressure');
+        const laneName = 'agent-103-admission';
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/103/admission',
+            headSha: '5555555555555555555555555555555555555555',
+            worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+        };
+        mkdirSync(lane.worktreePath, { recursive: true });
+        const errors: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () =>
+                    fakeResult({ code: null, reason: 'pressure', refusedBeforeStart: true, durationMs: 0 }),
+                log: () => undefined,
+                error: (msg) => errors.push(msg),
+            });
+
+            expect(code).toBe(1);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+            expect(errors.join('\n')).not.toContain('lane is stopped');
         } finally {
             rmSync(repoRoot, { recursive: true, force: true });
         }

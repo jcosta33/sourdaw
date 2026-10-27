@@ -98,6 +98,8 @@ function make_dependencies(
             velocity: 100,
         }),
         appendRecordedMidiNote: () => {},
+        bufferRecordedMidiCC: () => {},
+        bufferRecordedMidiPitchBend: () => {},
         getSynthParamsForTrack: () => ({ release: 0.3 }),
         processRealtimeMidiInput: async () => [],
         stepRecordNoteOff: () => {},

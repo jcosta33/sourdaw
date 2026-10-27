@@ -138,6 +138,8 @@ const {
     nativeBankKeyForLevainDeviceStateMock,
     acquireLevainNativeBankMock,
     getLevainEngineParameterNameMock,
+    buildLevainZoneTablesMock,
+    configureLevainZoneTableBuilderMock,
     initBranchStateMock,
     initGrandBouleDocumentReconciliationMock,
     recoverInterruptedAgentRunsMock,
@@ -235,6 +237,10 @@ const {
         getLevainEngineParameterNameMock: vi.fn<(input: { paramId: string }) => string | null>(({ paramId }) =>
             paramId === 'masterGain' ? 'master_gain' : null
         ),
+        // Distinguishable from the shared noop: the Levain builder wiring
+        // assertion pins this exact reference.
+        buildLevainZoneTablesMock: vi.fn(),
+        configureLevainZoneTableBuilderMock: vi.fn(),
         initBranchStateMock: vi.fn(),
         initGrandBouleDocumentReconciliationMock: vi.fn(),
         recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
@@ -382,6 +388,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    buildLevainZoneTables: buildLevainZoneTablesMock,
     updateDeviceParam: noop,
     // Same reason as `compileLoadPresetActions` above: the real Toaster barrel
     // brings its subscriber and note-release paths into this spec's graph.
@@ -561,6 +568,7 @@ vi.mock('#/modules/Knead/useCases', () => ({
 vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
+    configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
     initLevainDeviceStatePersistence: () => noop,
     reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
@@ -1068,6 +1076,17 @@ describe('bootstrap', () => {
         expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
             collectDurableOwnedAudioBufferIdsMock
         );
+    });
+
+    /**
+     * Levain loads every bank's zone tables through a builder it is handed, not
+     * one it imports, and the composition root is the only place that can hand
+     * it AudioEngine's Worker-backed `buildLevainZoneTables`. Pinned by
+     * reference: dropping the registration leaves every bank load rejecting
+     * with "builder is not configured".
+     */
+    it("wires the Levain zone table builder to AudioEngine's off-render-thread build", () => {
+        expect(configureLevainZoneTableBuilderMock).toHaveBeenCalledExactlyOnceWith(buildLevainZoneTablesMock);
     });
 
     /**
