@@ -34,12 +34,10 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
-import { getTargetTrackId } from '#/modules/MIDI/repositories/webMidi/getTargetTrackId';
 import { setMpeEnabledInternal } from '#/modules/MIDI/repositories/webMidi/setMpeEnabledInternal';
-import { setTargetTrackId } from '#/modules/MIDI/repositories/webMidi/setTargetTrackId';
 import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import { triggerLiveNoteOn } from '#/modules/MIDI/useCases/triggerLiveNoteOn';
+import { getMidiInputTrack, setMidiInputTrack, triggerLiveNoteOn } from '#/modules/MIDI/useCases';
 import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
 import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 
@@ -283,7 +281,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
-        setTargetTrackId(TRACK_ID);
+        setMidiInputTrack(TRACK_ID);
         playheadWrapCountRef.current = 0;
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
         mocks.startPlayback.mockClear();
@@ -306,7 +304,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
-        setTargetTrackId(null);
+        setMidiInputTrack(null);
         setMpeEnabledInternal(false);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
@@ -591,7 +589,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         });
         expect(audioEngine.context.currentTime).toBe(0.5);
         expect(activeRecordingRef.current).toEqual([provisional.id]);
-        expect(getTargetTrackId()).toBe(TRACK_ID);
+        expect(getMidiInputTrack()).toBe(TRACK_ID);
         expect(takeOwnsRecordingRoot()).toBe(true);
         const probe = admitRecordingMidiNoteOn({
             trackId: TRACK_ID,

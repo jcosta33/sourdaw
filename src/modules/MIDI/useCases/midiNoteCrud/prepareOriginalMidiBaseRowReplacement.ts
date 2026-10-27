@@ -4,21 +4,24 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { type MidiStoreState } from '../../stores/midiStore';
 import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
 
+function isValidReplacement(payload: OriginalMidiBaseRowReplacementPayload): boolean {
+    return (
+        Boolean(payload.clipId) &&
+        Boolean(payload.rowId) &&
+        (payload.expected !== null || payload.replacement !== null) &&
+        (payload.expected === null ||
+            (payload.expected.id === payload.rowId && isMidiNoteSnapshot([payload.expected]))) &&
+        (payload.replacement === null ||
+            (payload.replacement.id === payload.rowId && isMidiNoteSnapshot([payload.replacement])))
+    );
+}
+
 /** Replace only the witnessed original row, leaving peer rows in their current order and state. */
 export function prepareOriginalMidiBaseRowReplacement(
     payload: OriginalMidiBaseRowReplacementPayload,
     state: MidiStoreState | null
 ): MidiStoreState | null {
-    if (
-        !state ||
-        !payload.clipId ||
-        !payload.rowId ||
-        (payload.expected === null && payload.replacement === null) ||
-        (payload.expected !== null && payload.expected.id !== payload.rowId) ||
-        (payload.replacement !== null && payload.replacement.id !== payload.rowId) ||
-        (payload.expected !== null && !isMidiNoteSnapshot([payload.expected])) ||
-        (payload.replacement !== null && !isMidiNoteSnapshot([payload.replacement]))
-    ) {
+    if (!state || !isValidReplacement(payload)) {
         return null;
     }
     const present = Object.hasOwn(state.notesByClipId, payload.clipId);

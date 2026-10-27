@@ -70,4 +70,5 @@ export function projectMidiNoteMenuTransform(notes: readonly MidiNote[], transfo
             }));
         }
     }
+    throw new Error('Unknown MIDI note transform');
 }

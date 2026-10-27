@@ -16,9 +16,9 @@ import {
     useState,
 } from 'react';
 
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
-import { logger } from '#/infra/logger/appLogger';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { stepRecordStore } from '#/modules/MIDI/stores';
 import {
@@ -53,7 +53,6 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../helpers/editPianoRollTakeNote';
-import { type PianoRollTakeNotes } from '../helpers/projectPianoRollTakeNotes';
 import {
     ROW_HEIGHT,
     RULER_HEIGHT,
@@ -62,6 +61,7 @@ import {
     INITIAL_DRAG_STATE,
     getVisiblePitches,
 } from '../helpers/pianoRollConstants';
+import { type PianoRollTakeNotes } from '../helpers/projectPianoRollTakeNotes';
 
 /**
  * Build ownership maps from primary + secondary clip notes.
