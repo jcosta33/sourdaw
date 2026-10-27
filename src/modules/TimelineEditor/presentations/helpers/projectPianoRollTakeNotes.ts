@@ -19,6 +19,7 @@ export type FrozenPianoRollNoteOwner = {
     readonly laneId: string;
     readonly takeId: string;
     readonly sourceClipId: string;
+    readonly sourceEntryBeat: number;
     readonly row: OriginalNote;
     readonly occurrenceIndex: number;
     readonly displayedStartBeat: number;
@@ -185,6 +186,7 @@ export function projectPianoRollTakeNotes(
                     laneId: region.laneId,
                     takeId: region.takeId,
                     sourceClipId: region.sourceClipId,
+                    sourceEntryBeat: source.sourceEntryBeat,
                     row: original,
                     occurrenceIndex,
                     displayedStartBeat,

@@ -266,6 +266,7 @@ describe('NotePropertyLane', () => {
                             laneId: 'lane',
                             takeId: 'selected',
                             sourceClipId: 'source',
+                            sourceEntryBeat: 5,
                             row: sourceRow,
                             occurrenceIndex: 0,
                             displayedStartBeat: 2,

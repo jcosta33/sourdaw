@@ -61,13 +61,20 @@ function notePassIdentityMatches(
     ) {
         return false;
     }
-    const row = replacement ?? expected;
-    if (!row) {
+    if (expected) {
+        return (
+            !Object.hasOwn(expected, 'recordingPassIndex') ||
+            (typeof expected.recordingPassIndex === 'number' &&
+                Number.isSafeInteger(expected.recordingPassIndex) &&
+                expected.recordingPassIndex >= 0)
+        );
+    }
+    if (!replacement) {
         return false;
     }
     return (
-        row.recordingPassIndex === takePassIndex &&
-        Object.hasOwn(row, 'recordingPassIndex') === (takePassIndex !== undefined)
+        replacement.recordingPassIndex === takePassIndex &&
+        Object.hasOwn(replacement, 'recordingPassIndex') === (takePassIndex !== undefined)
     );
 }
 

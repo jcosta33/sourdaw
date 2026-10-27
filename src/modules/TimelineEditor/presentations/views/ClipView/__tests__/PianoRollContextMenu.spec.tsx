@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import { executeAppActionBatch, executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
     getNotesForClip,
     humanizeNotes,
@@ -17,6 +17,7 @@ import {
 } from '#/modules/MIDI/useCases';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 vi.mock('#/components/daw/DawContextMenuSurface', () => ({
     DawContextMenuSurface: ({
@@ -65,12 +66,16 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
     useContextMenuDismiss: vi.fn(),
 }));
 
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
 vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
 
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
-    executeAppActionBatch: vi.fn(),
+    executeAppActionBatch: vi.fn().mockResolvedValue({ status: 'committed', actions: [] }),
     pushUndoEntry: vi.fn(),
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -125,7 +130,7 @@ describe('PianoRollContextMenu', () => {
         expect(screen.getByText('Select All')).toBeInTheDocument();
     });
 
-    it('deletes a selected frozen occurrence through its original row action without changing the base clip', () => {
+    it('deletes a selected frozen occurrence through its original row action without changing the base clip', async () => {
         const original = { id: 'original', pitch: 60, startBeat: 5.5, duration: 1, velocity: 90 };
         const display = { ...original, id: 'view-first', startBeat: 0.5 };
         const projection = {
@@ -139,6 +144,7 @@ describe('PianoRollContextMenu', () => {
                         laneId: 'lane',
                         takeId: 'selected',
                         sourceClipId: 'source',
+                        sourceEntryBeat: 5,
                         row: original,
                         occurrenceIndex: 0,
                         displayedStartBeat: 0.5,
@@ -157,17 +163,24 @@ describe('PianoRollContextMenu', () => {
                 takeProjection={projection}
             />
         );
-        expect(screen.queryByText('Cut')).not.toBeInTheDocument();
+        expect(screen.getByText('Cut')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Delete Selected'));
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'replaceOriginalMidiTakeRow',
-            payload: expect.objectContaining({ rowId: original.id, expected: original, replacement: null }),
-        });
+        await waitFor(() =>
+            expect(executeAppActionBatch).toHaveBeenCalledWith(
+                [
+                    {
+                        type: 'replaceOriginalMidiTakeRow',
+                        payload: expect.objectContaining({ rowId: original.id, expected: original, replacement: null }),
+                    },
+                ],
+                expect.objectContaining({ groupLabel: 'Delete MIDI take notes' })
+            )
+        );
         expect(removeMidiNote).not.toHaveBeenCalled();
         expect(pushUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('deletes repeated views of one base row once when the selection also contains a frozen row', () => {
+    it('deletes repeated views of one base row once when the selection also contains a frozen row', async () => {
         const base = { id: 'base-original', pitch: 64, startBeat: 0, duration: 4, velocity: 80 };
         const first = { ...base, id: 'base-gap-first', duration: 1 };
         const second = { ...base, id: 'base-gap-second', startBeat: 2, duration: 1 };
@@ -187,6 +200,7 @@ describe('PianoRollContextMenu', () => {
                                 laneId: 'lane',
                                 takeId: 'take',
                                 sourceClipId: 'source',
+                                sourceEntryBeat: 5,
                                 row: frozen,
                                 occurrenceIndex: 0,
                                 displayedStartBeat: 1,
@@ -204,12 +218,94 @@ describe('PianoRollContextMenu', () => {
             />
         );
         fireEvent.click(screen.getByText('Delete Selected'));
-        expect(removeMidiNote).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(removeMidiNote).toHaveBeenCalledTimes(1));
         expect(removeMidiNote).toHaveBeenCalledWith('clip-1', base.id);
+        expect(executeAppActionBatch).toHaveBeenCalledWith(
+            [
+                {
+                    type: 'replaceOriginalMidiTakeRow',
+                    payload: expect.objectContaining({ rowId: frozen.id, replacement: null }),
+                },
+            ],
+            expect.objectContaining({ groupLabel: 'Delete MIDI take notes' })
+        );
+    });
+
+    it('keeps a base-only selection on its existing transform route even when the menu opens over a selected region', () => {
+        const base = { id: 'base-row', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
+        renderWithTooltip(
+            <PianoRollContextMenu
+                {...defaultProps}
+                notes={[base]}
+                selectedNoteIds={new Set([base.id])}
+                takeProjection={{
+                    notes: [],
+                    baseNotes: [base],
+                    ownersByViewId: new Map(),
+                    baseOwnersByViewId: new Map(),
+                    coveredWindows: [{ startBeat: 3, endBeat: 5 }],
+                    insertOwnerAtBeat: () => ({
+                        laneId: 'lane',
+                        takeId: 'take',
+                        sourceClipId: 'source',
+                        sourceBeat: 5,
+                        slotPresent: true,
+                    }),
+                }}
+            />
+        );
+        fireEvent.click(screen.getByText('+1'));
         expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'replaceOriginalMidiTakeRow',
-            payload: expect.objectContaining({ rowId: frozen.id, replacement: null }),
+            type: 'transposeNotes',
+            payload: { clipId: 'clip-1', semitones: 1, noteIds: [base.id] },
         });
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
+    });
+
+    it('refuses a mixed base and frozen transform before either owner is changed', () => {
+        const frozen = { id: 'frozen-view', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
+        const base = { id: 'base-view', pitch: 64, startBeat: 2, duration: 1, velocity: 80 };
+        renderWithTooltip(
+            <PianoRollContextMenu
+                {...defaultProps}
+                notes={[frozen, base]}
+                selectedNoteIds={new Set([frozen.id, base.id])}
+                takeProjection={{
+                    notes: [frozen],
+                    baseNotes: [base],
+                    ownersByViewId: new Map([
+                        [
+                            frozen.id,
+                            {
+                                laneId: 'lane',
+                                takeId: 'take',
+                                sourceClipId: 'source',
+                                sourceEntryBeat: 5,
+                                row: { ...frozen, id: 'original', startBeat: 6 },
+                                occurrenceIndex: 0,
+                                displayedStartBeat: 1,
+                                displayedDuration: 1,
+                            },
+                        ],
+                    ]),
+                    baseOwnersByViewId: new Map([
+                        [
+                            base.id,
+                            { row: { ...base, id: 'base-original' }, displayedStartBeat: 2, displayedDuration: 1 },
+                        ],
+                    ]),
+                    coveredWindows: [{ startBeat: 1, endBeat: 2 }],
+                    insertOwnerAtBeat: () => null,
+                }}
+            />
+        );
+        fireEvent.click(screen.getByText('+1'));
+        expect(executeAppActionBatch).not.toHaveBeenCalled();
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Select notes from one take or the base clip for this transform.',
+            'warning'
+        );
     });
 
     it('should render Select All button', () => {

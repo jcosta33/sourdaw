@@ -452,11 +452,12 @@ export const PianoRoll = ({
     // registry `AutomationLane` gates its lanes on.
     const mpeExpressionLanes = getMpeExpressionLanesForDeviceTypes(trackDeviceTypes);
     const primaryTakeProjection = takeProjections.get(clipId);
+    const hasFrozenContextSelection = [...selectedNoteIds].some((id) => primaryTakeProjection?.ownersByViewId.has(id));
     const contextUsesFrozenRows = Boolean(
         ctxMenu &&
         primaryTakeProjection &&
-        ([...selectedNoteIds].some((id) => primaryTakeProjection.ownersByViewId.has(id)) ||
-            primaryTakeProjection.insertOwnerAtBeat(ctxMenu.beat) !== null)
+        (hasFrozenContextSelection ||
+            (selectedNoteIds.size === 0 && primaryTakeProjection.insertOwnerAtBeat(ctxMenu.beat) !== null))
     );
     const contextSelectedNoteIds = contextUsesFrozenRows
         ? selectedNoteIds
