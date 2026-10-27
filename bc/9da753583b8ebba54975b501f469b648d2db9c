@@ -1,0 +1,64 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  s_29d8df116c5b92::t_56b056991eab9d 8,101-104,130-133,220
+  s_29d8df116c5b92::t_f426772a7d1cb4 215-219,221
+src/modules/AiRuntime/useCases/__tests__/compilePendingActionCommandEnvelopes.spec.ts
+  s_29d8df116c5b92::t_ca93c1d02bd7e6 8-10,182-199,273
+src/modules/Arrangement/handlers/clip/__tests__/compRegionSplitTakeReKey.integration.spec.ts
+  s_29d8df116c5b92::t_a589f240797e43 119-130,193-194,228-229,269-271
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_29d8df116c5b92::t_efcbb8968512e0 191,476,517-519
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_29d8df116c5b92::t_5943849740ce53 5,36,43
+src/modules/Arrangement/presentations/helpers/__tests__/handleCutToolUndo.spec.ts
+  s_29d8df116c5b92::t_aa6cd4614af958 1-11,21,33-57,90-91,100,118,141,160,162-163,166,168,175-176,224,233,262,265
+src/modules/Arrangement/presentations/renderers/__tests__/audioWaveformSpan.spec.ts
+  s_29d8df116c5b92::t_06dc5860213c34 30-54
+src/modules/Arrangement/presentations/renderers/audioWaveformSpan.ts
+  s_29d8df116c5b92::t_f298f5b0298797 74-80
+src/modules/Arrangement/stores/__tests__/projectAudioSourcePrefixTracks.spec.ts
+  s_29d8df116c5b92::t_15fc930548bdd1 7,13,15-24,30-31,33-34,39,41-44,71,76,88-90,118
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_29d8df116c5b92::t_4143d0cb9120de 538
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_29d8df116c5b92::t_60d44b95754885 25-36,1308-1309,1447-1448,1509-1510,1540-1541,1670,1692-1697
+src/modules/Arrangement/useCases/comping/__tests__/compRegionInterval.spec.ts
+  s_29d8df116c5b92::t_d6fc02958797ed 6,9,21-30,48,77,226
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  s_29d8df116c5b92::t_34a494b93ca3a3 239
+src/modules/Arrangement/useCases/comping/compRegionInterval.ts
+  s_29d8df116c5b92::t_7f7c8162c2e790 332,349,399-401,588
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_29d8df116c5b92::t_5a27cce54e372e 362-377,379-398,400,402-408
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_29d8df116c5b92::t_7e4d1a59c6b4de 624-627,708-709
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_29d8df116c5b92::t_7afe125472c6ad 164-166
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_29d8df116c5b92::t_262613aa48d076 63,163,200,277-280,335
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_29d8df116c5b92::t_f7f3614fd9f18e 29-85
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/legacyVersionTimelineSnapshot.integration.spec.ts
+  s_29d8df116c5b92::t_c3f42e66d15ea9 29,255,303-322,328-343,369
+src/modules/Setlist/useCases/setlist/__tests__/advanceSetlistItemEnd.spec.ts
+  s_29d8df116c5b92::t_f059a4eba8bac0 25-26,32
+src/modules/Transport/handlers/transport/tempoAudioSourceEdit.ts
+  s_29d8df116c5b92::t_4e3e5d5475cb22 6-10,29,32
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_e5f06074c62b93 3426-3429
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc9da753583b8ebba54975b501f469b648d2db9c",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
