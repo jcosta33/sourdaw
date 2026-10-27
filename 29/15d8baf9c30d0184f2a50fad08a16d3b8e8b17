@@ -1,0 +1,38 @@
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_29d8df116c5b92::t_0c338a86a9a763 13-16,19-22,37-42,44-45,72-73
+  s_29d8df116c5b92::t_6b4a667058de9e 12
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalBranchWitness.integration.spec.ts
+  s_29d8df116c5b92::t_5a4b9823e7580f 42-46
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_29d8df116c5b92::t_0c338a86a9a763 14,158
+  s_29d8df116c5b92::t_3fe6f9d7315b48 13
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_29d8df116c5b92::t_0c338a86a9a763 338-347,370
+  s_29d8df116c5b92::t_3fe6f9d7315b48 353-369,371-376
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_29d8df116c5b92::t_732ac1011f8371 50-54
+src/modules/Transport/useCases/transportControls/__tests__/recordStartSetupFailure.spec.ts
+  s_29d8df116c5b92::t_e80ea0aeed0fb4 161-176
+  s_29d8df116c5b92::t_3ab89a3f0fcdfc 53
+  s_29d8df116c5b92::t_56fe5018be27b1 28,33,205-206,208-212,216-220
+  s_29d8df116c5b92::t_2fbf782e3ae6be 130-160,177-204,223
+  s_29d8df116c5b92::t_7001da5fa7f55d 207,221-222
+  s_29d8df116c5b92::t_3fe6f9d7315b48 213-215
+  s_29d8df116c5b92::t_e43f860a8a8bfa 21,98-99,103-104,121-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2915d8baf9c30d0184f2a50fad08a16d3b8e8b17",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
