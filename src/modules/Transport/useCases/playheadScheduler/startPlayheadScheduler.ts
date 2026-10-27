@@ -42,7 +42,7 @@ import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
-import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 import { commitRecoveredAudioRecording } from '../transportControls/commitRecoveredAudioRecording';
 import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
@@ -54,15 +54,18 @@ import { beatAtSecondsFromAnchor } from './beatAtSecondsFromAnchor';
 import { createNativeRecordingPassClock } from './createNativeRecordingPassClock';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
 import { nativeRecordingEntry } from './nativeRecordingEntry';
-import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
-import { schedulerSession, stopActiveSources } from './schedulerSession';
-import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 import { type PreparedInitialBrowserPlayback } from './prepareInitialBrowserPlayback';
 import {
     INITIAL_HIGH_WATER_OFFSET_BEATS,
     projectLoopSeamWindow,
     SCHEDULE_AHEAD_SECONDS,
 } from './projectLoopSeamWindow';
+import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
+import { schedulerSession, stopActiveSources } from './schedulerSession';
+import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
+
+import type { LiveYeastIteration } from '../scheduling/processLiveYeastTrackBlock';
+import type { SchedulerCancellation } from '../scheduling/schedulerCancellation';
 
 function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
     return `${state.isLooping ? 1 : 0}:${state.loopStart}:${state.loopEnd}`;
@@ -270,13 +273,22 @@ function stageLoopWrapTakes(
     }
 }
 
+export function startPlayheadScheduler(): void;
+export function startPlayheadScheduler(
+    preparedInitial: PreparedInitialBrowserPlayback,
+    onRoll?: (contextSeconds: number, beat: number) => void
+): Promise<boolean>;
+export function startPlayheadScheduler(
+    preparedInitial?: PreparedInitialBrowserPlayback,
+    onRoll?: (contextSeconds: number, beat: number) => void
+): void | Promise<boolean>;
 export function startPlayheadScheduler(
     preparedInitial?: PreparedInitialBrowserPlayback,
     onRoll?: (contextSeconds: number, beat: number) => void
 ): void | Promise<boolean> {
     const state = transportStore.value;
     if (!state) {
-        return;
+        return undefined;
     }
 
     if (
@@ -303,7 +315,7 @@ export function startPlayheadScheduler(
             schedulerSession.generation === schedulerGeneration &&
             transportStore.value?.isPlaying === true &&
             (!initialEmissionPending || (preparedMidi?.isCurrent() ?? preparedInitial?.isCurrent()) === true),
-        yeastRouteLineage: preparedInitial?.yeastRouteLineage ?? new Map(),
+        yeastRouteLineage: preparedInitial?.yeastRouteLineage ?? new Map<string, LiveYeastIteration>(),
     };
 
     startAutomationRecording();
@@ -683,17 +695,17 @@ export function startPlayheadScheduler(
         // consecutive ticks — advancing the discontinuity epoch and panicking
         // the rack many times per physical wrap. Such regions keep the old
         // post-crossing wrap: exactly one discontinuity per boundary.
-        const projectedSeam =
-            initial && preparedInitial
-                ? preparedInitial.seam
-                : projectLoopSeamWindow(
-                      current,
-                      changes,
-                      schedulerSession.accumulatedPosition,
-                      newPosition,
-                      lookAheadBeats,
-                      now
-                  );
+        let projectedSeam = preparedInitial?.seam ?? null;
+        if (!initial || !preparedInitial) {
+            projectedSeam = projectLoopSeamWindow(
+                current,
+                changes,
+                schedulerSession.accumulatedPosition,
+                newPosition,
+                lookAheadBeats,
+                now
+            );
+        }
 
         if (insideLoopRegion && newPosition >= current.loopEnd) {
             // Late wrap: the playhead itself crossed loopEnd this tick. Only
@@ -1597,19 +1609,20 @@ export function startPlayheadScheduler(
             });
             schedulerSession.worker = worker;
         }
-        worker.onmessage = (event: MessageEvent<unknown>) => {
+        worker.onmessage = (event: MessageEvent) => {
             const receivedAtMs = highResolutionEpochMs();
+            const message: unknown = event.data;
             if (
-                !isSchedulerWorkerTick(event.data, receivedAtMs) ||
-                event.data.generation !== schedulerGeneration ||
+                !isSchedulerWorkerTick(message, receivedAtMs) ||
+                message.generation !== schedulerGeneration ||
                 schedulerSession.generation !== schedulerGeneration
             ) {
                 return;
             }
             schedulerTimingDiagnostics.recordTickMessage(
-                event.data.sequence,
-                event.data.scheduledAtMs,
-                event.data.sentAtMs,
+                message.sequence,
+                message.scheduledAtMs,
+                message.sentAtMs,
                 receivedAtMs
             );
             tick().catch((error: unknown) => {
@@ -1620,7 +1633,7 @@ export function startPlayheadScheduler(
     }
     if (!preparedInitial) {
         startWorker();
-        return;
+        return undefined;
     }
     const cancelInitialEmission = () => {
         if (preparedInitial.ownsSession()) {

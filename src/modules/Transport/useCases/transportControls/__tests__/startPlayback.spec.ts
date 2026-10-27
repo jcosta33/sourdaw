@@ -19,10 +19,11 @@ import { ensureTrackStrips } from '../../ensureTrackStrips';
 // `vi.fn` wrapper exists so one case can stand the claim's own wrap-count zero
 // down and isolate the epoch write's; `mockReset` hands the real one back.
 import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
+import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
-import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { startPlayback } from '../startPlayback';
+import { stopPlayback } from '../stopPlayback';
 
 const { timeSignatureMapStore } = vi.hoisted(
     (): { timeSignatureMapStore: { value: { changes: unknown[] } | null } } => ({
@@ -64,7 +65,6 @@ vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'playback-root' }));
 vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('../../playheadScheduler/claimSchedulerSession', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../playheadScheduler/claimSchedulerSession')>();
@@ -124,6 +124,7 @@ describe('startPlayback', () => {
             }),
         }));
         vi.mocked(ensureTrackStrips).mockClear();
+        vi.mocked(stopPlayback).mockClear();
         // Back to the real retirement: only the one isolation case overrides it.
         vi.mocked(claimSchedulerSession).mockReset();
     });
@@ -164,6 +165,18 @@ describe('startPlayback', () => {
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('suspended'), 'warning');
         });
+    });
+
+    it('reports a synchronous preparation failure to a gesture caller', async () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false });
+        vi.mocked(ensureTrackStrips).mockImplementationOnce(() => {
+            throw new Error('strip unavailable');
+        });
+
+        await expect(startPlayback()).resolves.toBeUndefined();
+
+        expect(updateTransportState).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Playback'), 'error');
     });
 
     it('awaits browser admission and passes the recording anchor callback to its owner', async () => {
@@ -476,6 +489,17 @@ describe('startPlayback', () => {
 
             await drainHold();
             expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
+        it('stops the admitted roll when native scheduler startup fails', async () => {
+            vi.mocked(startPlayheadScheduler).mockImplementationOnce(() => {
+                throw new Error('worker unavailable');
+            });
+
+            await expect(startPlayback()).resolves.toBeUndefined();
+
+            expect(stopPlayback).toHaveBeenCalledOnce();
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Playback'), 'error');
         });
 
         it('leaves the transport alone when the play it was holding for has already ended', async () => {

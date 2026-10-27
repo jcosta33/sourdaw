@@ -40,7 +40,10 @@ import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
-import { prepareInitialMidiWindow, scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
+import { prepareInitialMidiWindow } from '../prepareInitialMidiWindow';
+import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+import type { SchedulerCancellation } from '../schedulerCancellation';
 
 /** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());

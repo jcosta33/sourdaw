@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { defaultTransportState } from '../../../models/TransportState';
-import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
-import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
-import { schedulerSession } from '../schedulerSession';
-import { startPlayback } from '../../transportControls/startPlayback';
-import { stopPlayback } from '../../transportControls/stopPlayback';
-import { playheadClockRef } from '../../../stores/playheadClockRef';
-import { captureGestureBeat } from '../../../stores/captureGestureBeat';
-import { setGestureClockSource } from '../../../stores/gestureClockSource';
-import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
 import { startRecording } from '#/modules/Arrangement/useCases';
 import { startAudioRecording } from '#/modules/AudioEngine/useCases';
+import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { captureGestureBeat } from '../../../stores/captureGestureBeat';
+import { setGestureClockSource } from '../../../stores/gestureClockSource';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
+import { startPlayback } from '../../transportControls/startPlayback';
+import { stopPlayback } from '../../transportControls/stopPlayback';
+import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
+import { schedulerSession } from '../schedulerSession';
 
 /** The actual browser start, MIDI/audio producers and tempo law run together.
  * Only engine calls, external Yeast work and foreign stores are controlled. */
@@ -48,6 +49,11 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: 
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    appendClipToTrack: vi.fn(),
+    clipSelectionStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn(),
+    updateClipInStore: vi.fn(() => false),
+
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -298,11 +304,19 @@ function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[numbe
         fadeOutBeats: 0,
         gain: 1,
     };
+    const plainClips: Array<ReturnType<typeof midiClip> | NonNullable<typeof recordingClip>> = [midiClip('plain-midi')];
+    const audioClips: Array<typeof audio | NonNullable<typeof recordingClip>> = [audio];
+    if (recordingClip?.trackId === 'plain-track') {
+        plainClips.push(recordingClip);
+    }
+    if (recordingClip?.trackId === 'audio-track') {
+        audioClips.push(recordingClip);
+    }
     return [
         {
             ...midiTrack('plain-track', 'plain-midi', false),
             armed: recordingClip?.trackId === 'plain-track',
-            clips: [midiClip('plain-midi'), ...(recordingClip?.trackId === 'plain-track' ? [recordingClip] : [])],
+            clips: plainClips,
         },
         midiTrack('yeast-track', 'yeast-midi', true),
         {
@@ -312,7 +326,7 @@ function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[numbe
             devices: [],
             muted: false,
             sends: [],
-            clips: [audio, ...(recordingClip?.trackId === 'audio-track' ? [recordingClip] : [])],
+            clips: audioClips,
             freezeState: { status: 'unfrozen' },
         },
     ];
@@ -382,7 +396,9 @@ describe('initial browser playback window', () => {
                     workers.push(this);
                 }
                 postMessage(data: { type: string; generation?: number }): void {
-                    if (data.type === 'start') this.generation = data.generation ?? 0;
+                    if (data.type === 'start') {
+                        this.generation = data.generation ?? 0;
+                    }
                 }
                 terminate = vi.fn();
                 addEventListener = vi.fn();
@@ -464,9 +480,13 @@ describe('initial browser playback window', () => {
             deliverWorkerTick();
             try {
                 await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
-                if (change === 'stop') await stopPlayback();
-                else if (change === 'project switch') projectRoot.current = 'replacement-root';
-                else transportStoreState.value = null;
+                if (change === 'stop') {
+                    await stopPlayback();
+                } else if (change === 'project switch') {
+                    projectRoot.current = 'replacement-root';
+                } else {
+                    transportStoreState.value = null;
+                }
                 ctxTime.now = 10;
                 ready.resolve();
                 await playback;
@@ -570,8 +590,11 @@ describe('initial browser playback window', () => {
             const playback = startPlayback();
             try {
                 await vi.waitFor(() => expect(yeastPanic).toHaveBeenCalled());
-                if (change === 'stop') await stopPlayback();
-                else projectRoot.current = 'replacement-root';
+                if (change === 'stop') {
+                    await stopPlayback();
+                } else {
+                    projectRoot.current = 'replacement-root';
+                }
                 ctxTime.now = 10;
                 ready.resolve();
                 await playback;
@@ -656,8 +679,11 @@ describe('initial browser playback window', () => {
         async (change) => {
             let stopped: Promise<void> | undefined;
             await startPlayback(() => {
-                if (change === 'stop') stopped = stopPlayback();
-                else projectRoot.current = 'replacement-root';
+                if (change === 'stop') {
+                    stopped = stopPlayback();
+                } else {
+                    projectRoot.current = 'replacement-root';
+                }
             });
             await stopped;
             expect(notes).toEqual([]);
@@ -728,8 +754,11 @@ describe('initial browser playback window', () => {
                 expect(sources).toHaveLength(0);
                 expect(onRoll).not.toHaveBeenCalled();
                 expect(playheadClockRef.audioTimeSeconds).toBe(0);
-                if (outcome === 'stop') await stopPlayback();
-                else if (outcome === 'project switch') projectRoot.current = 'replacement-root';
+                if (outcome === 'stop') {
+                    await stopPlayback();
+                } else if (outcome === 'project switch') {
+                    projectRoot.current = 'replacement-root';
+                }
                 ctxTime.now = 10;
                 ready.resolve(true);
                 await playback;
