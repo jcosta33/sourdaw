@@ -681,6 +681,7 @@ export const PianoRoll = ({
                     menu={ctxMenu}
                     clipId={clipId}
                     notes={notes}
+                    takeProjection={takeProjections.get(clipId)}
                     selectedNoteIds={selectedNoteIds}
                     onClose={() => setCtxMenu(null)}
                     onSelectAll={() => setSelectedNoteIds(new Set(notes.map((node) => node.id)))}

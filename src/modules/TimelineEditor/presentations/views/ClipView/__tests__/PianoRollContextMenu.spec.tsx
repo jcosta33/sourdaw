@@ -125,6 +125,46 @@ describe('PianoRollContextMenu', () => {
         expect(screen.getByText('Select All')).toBeInTheDocument();
     });
 
+    it('deletes a selected frozen occurrence through its original row action without changing the base clip', () => {
+        const original = { id: 'original', pitch: 60, startBeat: 5.5, duration: 1, velocity: 90 };
+        const display = { ...original, id: 'view-first', startBeat: 0.5 };
+        const projection = {
+            notes: [display],
+            ownersByViewId: new Map([
+                [
+                    display.id,
+                    {
+                        laneId: 'lane',
+                        takeId: 'selected',
+                        sourceClipId: 'source',
+                        row: original,
+                        occurrenceIndex: 0,
+                        displayedStartBeat: 0.5,
+                        displayedDuration: 1,
+                    },
+                ],
+            ]),
+            coveredWindows: [{ startBeat: 0, endBeat: 4 }],
+            insertOwnerAtBeat: () => null,
+        };
+        renderWithTooltip(
+            <PianoRollContextMenu
+                {...defaultProps}
+                notes={[display]}
+                selectedNoteIds={new Set([display.id])}
+                takeProjection={projection}
+            />
+        );
+        expect(screen.queryByText('Cut')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByText('Delete Selected'));
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'replaceOriginalMidiTakeRow',
+            payload: expect.objectContaining({ rowId: original.id, expected: original, replacement: null }),
+        });
+        expect(removeMidiNote).not.toHaveBeenCalled();
+        expect(pushUndoEntry).not.toHaveBeenCalled();
+    });
+
     it('should render Select All button', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
         expect(screen.getByText('Select All')).toBeInTheDocument();

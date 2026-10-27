@@ -29,6 +29,8 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
+import { editPianoRollTakeNote } from '../../helpers/editPianoRollTakeNote';
+import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
 
@@ -49,6 +51,7 @@ type PianoRollContextMenuProps = {
     onClose: () => void;
     onSelectAll: () => void;
     onClearSelection: () => void;
+    takeProjection?: PianoRollTakeNotes;
 };
 
 export const PianoRollContextMenu = ({
@@ -59,6 +62,7 @@ export const PianoRollContextMenu = ({
     onClose,
     onSelectAll,
     onClearSelection,
+    takeProjection,
 }: PianoRollContextMenuProps): ReactElement => {
     const ref = useRef<HTMLDivElement>(null);
     useContextMenuDismiss(ref, onClose);
@@ -96,6 +100,71 @@ export const PianoRollContextMenu = ({
             payload: { clipId, grooveId: grooveTemplateId, amount: 0.5 },
         });
     };
+
+    if (
+        takeProjection &&
+        ([...selectedNoteIds].some((id) => takeProjection.ownersByViewId.has(id)) ||
+            takeProjection.insertOwnerAtBeat(menu.beat) !== null)
+    ) {
+        const deleteSelected = (): void => {
+            const frozenRows = new Set<string>();
+            const baseIds: string[] = [];
+            for (const note of notes) {
+                if (!selectedNoteIds.has(note.id)) {
+                    continue;
+                }
+                const owner = takeProjection.ownersByViewId.get(note.id);
+                if (!owner) {
+                    baseIds.push(note.id);
+                    continue;
+                }
+                const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
+                if (!frozenRows.has(key)) {
+                    frozenRows.add(key);
+                    void editPianoRollTakeNote(takeProjection, note.id, null).catch((error) =>
+                        logger.warn('Could not delete selected MIDI take row', error)
+                    );
+                }
+            }
+            if (baseIds.length > 0) {
+                const before = snapshotClipNotes(clipId);
+                for (const id of baseIds) {
+                    removeMidiNote(clipId, id);
+                }
+                const after = snapshotClipNotes(clipId);
+                pushUndoEntry(
+                    `Delete ${baseIds.length} note${baseIds.length > 1 ? 's' : ''}`,
+                    () => setNotesForClip(clipId, before),
+                    () => setNotesForClip(clipId, after)
+                );
+            }
+            onClearSelection();
+        };
+        return (
+            <DawContextMenuSurface
+                onClose={onClose}
+                ref={ref}
+                x={menu.x}
+                y={menu.y}
+                className="min-w-[170px]"
+                role="menu"
+            >
+                <DawMenuButton role="menuitem" shortcut="⌘A" onClick={act(onSelectAll)}>
+                    Select All
+                </DawMenuButton>
+                <DawMenuSeparator className="border-border/50" />
+                <DawMenuButton
+                    role="menuitem"
+                    tone="danger"
+                    shortcut="⌫"
+                    disabled={selectedNoteIds.size === 0}
+                    onClick={act(deleteSelected)}
+                >
+                    Delete Selected
+                </DawMenuButton>
+            </DawContextMenuSurface>
+        );
+    }
 
     return (
         <DawContextMenuSurface onClose={onClose} ref={ref} x={menu.x} y={menu.y} className="min-w-[170px]" role="menu">
