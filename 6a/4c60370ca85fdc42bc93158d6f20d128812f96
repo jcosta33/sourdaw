@@ -1,0 +1,20 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/projectFrozenMidiTakeWindow.spec.ts
+  s_29d8df116c5b92::t_c0639cd85ab510 95-122,132
+  s_29d8df116c5b92::t_cd2ebd70cf4b8e 123-131,133-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a4c60370ca85fdc42bc93158d6f20d128812f96",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
