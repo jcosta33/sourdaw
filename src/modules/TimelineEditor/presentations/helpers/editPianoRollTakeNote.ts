@@ -20,27 +20,22 @@ export async function editPianoRollTakeNote(
         return false;
     }
     const expected = owner.row;
-    const startBeat =
-        change?.startBeat === undefined
-            ? expected.startBeat
-            : expected.startBeat + change.startBeat - owner.displayedStartBeat;
-    const duration =
-        change?.duration === undefined
-            ? expected.duration
-            : expected.duration + change.duration - owner.displayedDuration;
-    const resized =
-        change?.duration === undefined || (startBeat === expected.startBeat && duration === expected.duration)
-            ? expected
-            : sliceMidiTakeNoteForEdit(expected, { fromOffset: startBeat - expected.startBeat, duration });
-    const replacement =
-        change === null
-            ? null
-            : {
-                  ...resized,
-                  ...change,
-                  startBeat,
-                  duration,
-              };
+    let startBeat = expected.startBeat;
+    let duration = expected.duration;
+    if (change?.startBeat !== undefined) {
+        startBeat += change.startBeat - owner.displayedStartBeat;
+    }
+    if (change?.duration !== undefined) {
+        duration += change.duration - owner.displayedDuration;
+    }
+    let resized = expected;
+    if (change?.duration !== undefined && (startBeat !== expected.startBeat || duration !== expected.duration)) {
+        resized = sliceMidiTakeNoteForEdit(expected, { fromOffset: startBeat - expected.startBeat, duration });
+    }
+    let replacement: MidiNote | null = null;
+    if (change !== null) {
+        replacement = { ...resized, ...change, startBeat, duration };
+    }
     await executeUserAppAction({
         type: 'replaceOriginalMidiTakeRow',
         payload: {
@@ -70,6 +65,10 @@ export async function insertPianoRollTakeNote(
     }
     const id = crypto.randomUUID();
     const { recordingPassIndex: _previousPass, ...fields } = note;
+    const replacement: MidiNote = { ...fields, id, startBeat: owner.sourceBeat };
+    if (owner.recordingPassIndex !== undefined) {
+        replacement.recordingPassIndex = owner.recordingPassIndex;
+    }
     await executeUserAppAction({
         type: 'replaceOriginalMidiTakeRow',
         payload: {
@@ -79,12 +78,7 @@ export async function insertPianoRollTakeNote(
             rowId: id,
             rowKind: 'note',
             expected: null,
-            replacement: {
-                ...fields,
-                id,
-                startBeat: owner.sourceBeat,
-                ...(owner.recordingPassIndex === undefined ? {} : { recordingPassIndex: owner.recordingPassIndex }),
-            },
+            replacement,
             expectedSlotPresent: owner.slotPresent,
             replacementSlotPresent: true,
         },

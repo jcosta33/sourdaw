@@ -181,16 +181,17 @@ function admitMemberExpression(
     if (!admitted) {
         return;
     }
-    admitRecordingMidiExpression({
+    const expression: Parameters<typeof admitRecordingMidiExpression>[0] = {
         channel,
         dimension,
         value,
         audioTime: timeStamp.audioTime,
         position: captureCompensatedRecordingPosition(admitted.trackId, timeStamp.audioTime),
-        ...(dimension === 'pitchBend'
-            ? { bendRangeSemitones: resolveBendRangeSemitones({ channel, mpeEnabled: true }) }
-            : {}),
-    });
+    };
+    if (dimension === 'pitchBend') {
+        expression.bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled: true });
+    }
+    admitRecordingMidiExpression(expression);
 }
 
 /** Completion of accepted work, when that message had to wait in a queue. */
@@ -221,24 +222,31 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                     });
                 }
             }
-            const admission =
-                message.velocity > 0 && trackId
-                    ? admitRecordingMidiNoteOn({
-                          trackId,
-                          channel,
-                          note: message.note,
-                          velocity: message.velocity,
-                          audioTime: timeStamp.audioTime,
-                          position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
-                          initialExpression: captureRecordingMemberExpression(channel),
-                      })
-                    : null;
-            const admittedTime = {
+            let admission: ReturnType<typeof admitRecordingMidiNoteOn> = null;
+            if (message.velocity > 0 && trackId) {
+                admission = admitRecordingMidiNoteOn({
+                    trackId,
+                    channel,
+                    note: message.note,
+                    velocity: message.velocity,
+                    audioTime: timeStamp.audioTime,
+                    position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
+                    initialExpression: captureRecordingMemberExpression(channel),
+                });
+            }
+            const admittedTime: {
+                audioTime: number;
+                recordingBeat: number;
+                recordingPassIndex: number;
+                recordingAdmissionId?: string;
+            } = {
                 ...timeStamp,
                 recordingBeat: position.beat,
                 recordingPassIndex: position.passIndex,
-                ...(admission ? { recordingAdmissionId: admission.id } : {}),
             };
+            if (admission) {
+                admittedTime.recordingAdmissionId = admission.id;
+            }
             // The wheels it is struck under are those at arrival: bends admitted
             // while it waits in the queue move the note at their own frame.
             const admittedWheels = captureAdmittedWheels(channel);

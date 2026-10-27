@@ -81,8 +81,10 @@ export function admitRecordingMidiNoteOn(input: {
         onsetAudioTime: input.audioTime,
         onsetSourceBeat,
         onsetPassIndex,
-        ...(input.initialExpression ? { initialExpression: { ...input.initialExpression } } : {}),
     };
+    if (input.initialExpression) {
+        admitted.initialExpression = Object.assign({}, input.initialExpression);
+    }
     activeRecordingRef.midiAdmissions.push(admitted);
     return admitted;
 }
@@ -107,13 +109,16 @@ export function admitRecordingMidiExpression(input: {
         return;
     }
     const changes = admitted.expressionChanges ?? [];
-    changes.push({
+    const change: NonNullable<RecordingMidiAdmission['expressionChanges']>[number] = {
         dimension: input.dimension,
         value: input.value,
         audioTime: input.audioTime,
         sourceBeat: sourcePosition,
-        ...(input.bendRangeSemitones === undefined ? {} : { bendRangeSemitones: input.bendRangeSemitones }),
-    });
+    };
+    if (input.bendRangeSemitones !== undefined) {
+        change.bendRangeSemitones = input.bendRangeSemitones;
+    }
+    changes.push(change);
     if (changes.length > 4096) {
         changes.splice(1, 1);
     }

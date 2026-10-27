@@ -117,10 +117,10 @@ function editedSourceRow(owner: FrozenPianoRollNoteOwner, transformed: MidiNote)
     const row = owner.row;
     const startBeat = owner.sourceEntryBeat + transformed.startBeat;
     const duration = transformed.duration;
-    const resized =
-        duration === row.duration
-            ? row
-            : sliceMidiTakeNoteForEdit(row, { fromOffset: startBeat - row.startBeat, duration });
+    let resized = row;
+    if (duration !== row.duration) {
+        resized = sliceMidiTakeNoteForEdit(row, { fromOffset: startBeat - row.startBeat, duration });
+    }
     return { ...resized, startBeat, duration, pitch: transformed.pitch, velocity: transformed.velocity };
 }
 
@@ -156,13 +156,13 @@ export async function transformPianoRollTakeNotes(
         if (!output) {
             return false;
         }
-        const resized =
-            output.duration === row.duration
-                ? row
-                : sliceMidiTakeNoteForEdit(row, {
-                      fromOffset: output.startBeat - row.startBeat,
-                      duration: output.duration,
-                  });
+        let resized = row;
+        if (output.duration !== row.duration) {
+            resized = sliceMidiTakeNoteForEdit(row, {
+                fromOffset: output.startBeat - row.startBeat,
+                duration: output.duration,
+            });
+        }
         actions.push(
             baseRowAction(clipId, row, {
                 ...resized,
@@ -281,6 +281,10 @@ async function insertOccurrences(
                 action.type === 'replaceOriginalMidiTakeRow' && action.payload.sourceClipId === owner.sourceClipId
         );
         const { id: _viewId, startBeat: _viewBeat, recordingPassIndex: _previousPass, ...fields } = note;
+        const replacement: MidiNote = { ...fields, id, startBeat: owner.sourceBeat };
+        if (owner.recordingPassIndex !== undefined) {
+            replacement.recordingPassIndex = owner.recordingPassIndex;
+        }
         actions.push({
             type: 'replaceOriginalMidiTakeRow',
             payload: {
@@ -290,12 +294,7 @@ async function insertOccurrences(
                 rowId: id,
                 rowKind: 'note',
                 expected: null,
-                replacement: {
-                    ...fields,
-                    id,
-                    startBeat: owner.sourceBeat,
-                    ...(owner.recordingPassIndex === undefined ? {} : { recordingPassIndex: owner.recordingPassIndex }),
-                },
+                replacement,
                 expectedSlotPresent: sourceAlreadyInserted ? true : owner.slotPresent,
                 replacementSlotPresent: true,
             },

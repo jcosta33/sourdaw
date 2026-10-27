@@ -19,10 +19,9 @@ export function captureRecordingMemberExpression(channel: number):
     if (!member) {
         return undefined;
     }
-    return {
-        ...member,
-        ...(member.pitchBend === undefined
-            ? {}
-            : { pitchBendRangeSemitones: resolveBendRangeSemitones({ channel, mpeEnabled: true }) }),
-    };
+    const captured: NonNullable<ReturnType<typeof captureRecordingMemberExpression>> = Object.assign({}, member);
+    if (member.pitchBend !== undefined) {
+        captured.pitchBendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled: true });
+    }
+    return captured;
 }

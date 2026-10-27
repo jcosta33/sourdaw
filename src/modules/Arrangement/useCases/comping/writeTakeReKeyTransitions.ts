@@ -112,13 +112,11 @@ function reconcileTransitionTakes(
                 valuesEqual(source.midiSource.rows, target.midiSource.rows)
                     ? liveTake.midiSource.rows
                     : undefined;
-            reconciled.push({
-                ...target,
-                selected: liveTake.selected,
-                ...(peerRows && target.midiSource
-                    ? { midiSource: { ...target.midiSource, rows: structuredClone(peerRows) } }
-                    : {}),
-            });
+            const reconciledTake = { ...target, selected: liveTake.selected };
+            if (peerRows && target.midiSource) {
+                reconciledTake.midiSource = { ...target.midiSource, rows: structuredClone(peerRows) };
+            }
+            reconciled.push(reconciledTake);
             continue;
         }
         reconciled.push(liveTake);

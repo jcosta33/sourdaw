@@ -23,22 +23,30 @@ export function triggerLiveNoteOn(channel: number, note: number, velocity: numbe
     const audioTime = audioEngine.context.currentTime;
     const position = captureEventPositionAt({ audioTime });
     const trackId = getTargetTrackId();
-    const admission =
-        velocity > 0 && trackId
-            ? admitRecordingMidiNoteOn({
-                  trackId,
-                  channel,
-                  note,
-                  velocity,
-                  audioTime,
-                  position: captureCompensatedRecordingPosition(trackId, audioTime),
-                  initialExpression: captureRecordingMemberExpression(channel),
-              })
-            : null;
-    return handleWebMidiNoteOn(channel, note, velocity, {
+    let admission: ReturnType<typeof admitRecordingMidiNoteOn> = null;
+    if (velocity > 0 && trackId) {
+        admission = admitRecordingMidiNoteOn({
+            trackId,
+            channel,
+            note,
+            velocity,
+            audioTime,
+            position: captureCompensatedRecordingPosition(trackId, audioTime),
+            initialExpression: captureRecordingMemberExpression(channel),
+        });
+    }
+    const time: {
+        audioTime: number;
+        recordingBeat: number;
+        recordingPassIndex: number;
+        recordingAdmissionId?: string;
+    } = {
         audioTime,
         recordingBeat: position.beat,
         recordingPassIndex: position.passIndex,
-        ...(admission ? { recordingAdmissionId: admission.id } : {}),
-    });
+    };
+    if (admission) {
+        time.recordingAdmissionId = admission.id;
+    }
+    return handleWebMidiNoteOn(channel, note, velocity, time);
 }

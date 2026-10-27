@@ -69,7 +69,6 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
             startBeat: input.startBeat,
             endBeat: input.endBeat,
             sourceOffsetBeats: input.sourceOffsetBeats,
-            ...(input.recordingPassIndex === undefined ? {} : { recordingPassIndex: input.recordingPassIndex }),
         };
     } else {
         const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
@@ -82,7 +81,6 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
             take = {
                 ...replacement,
                 endBeat: input.endBeat,
-                ...(input.recordingPassIndex === undefined ? {} : { recordingPassIndex: input.recordingPassIndex }),
             };
         } else {
             take = createTake(
@@ -96,6 +94,9 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
                 take.recordingPassIndex = input.recordingPassIndex;
             }
         }
+    }
+    if (input.recordingPassIndex !== undefined) {
+        take.recordingPassIndex = input.recordingPassIndex;
     }
     recordingPassTiming.ownTake(input.clipId, take.id);
     recordingPassTiming.stage(take, input.passEndContextSeconds, input.plannedPassEnd);
@@ -114,14 +115,17 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
                 return existing;
             }
             if (!replacement) {
-                const takes = existing.takes.map((candidate) =>
-                    input.recordingPassIndex !== undefined &&
-                    input.sourceOffsetBeats !== undefined &&
-                    candidate.clipId === input.clipId &&
-                    candidate.sourceOffsetBeats === undefined
-                        ? { ...candidate, recordingPassIndex: input.recordingPassIndex + 1 }
-                        : candidate
-                );
+                const takes = existing.takes.map((candidate) => {
+                    if (
+                        input.recordingPassIndex !== undefined &&
+                        input.sourceOffsetBeats !== undefined &&
+                        candidate.clipId === input.clipId &&
+                        candidate.sourceOffsetBeats === undefined
+                    ) {
+                        return { ...candidate, recordingPassIndex: input.recordingPassIndex + 1 };
+                    }
+                    return candidate;
+                });
                 return { ...existing, takes: [...takes, take] };
             }
             return {

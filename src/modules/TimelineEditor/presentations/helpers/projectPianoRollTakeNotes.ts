@@ -76,19 +76,20 @@ function selectedRegions(clip: ClipPlacement, trackId: string, laneState: TakeLa
         }
         const startBeat = Math.max(clip.startBeat, region.startBeat);
         const endBeat = Math.min(clip.endBeat, region.endBeat);
-        return startBeat < endBeat
-            ? [
-                  {
-                      laneId: lane.id,
-                      takeId: take.id,
-                      sourceClipId: take.midiSource.sourceClipId,
-                      startBeat,
-                      endBeat,
-                      source: take.midiSource,
-                      recordingPassIndex: take.recordingPassIndex,
-                  },
-              ]
-            : [];
+        if (startBeat >= endBeat) {
+            return [];
+        }
+        return [
+            {
+                laneId: lane.id,
+                takeId: take.id,
+                sourceClipId: take.midiSource.sourceClipId,
+                startBeat,
+                endBeat,
+                source: take.midiSource,
+                recordingPassIndex: take.recordingPassIndex,
+            },
+        ];
     });
 }
 
