@@ -282,6 +282,25 @@ describe('setProofPanelUiLevel project path', () => {
         expect(getProofState('a').patch).toBe(patch);
     });
 
+    it('leaves a standalone wrong-kind device with supported metadata unchanged', async () => {
+        const tracks = tracksWithTwoProofDevices();
+        const device = tracks[0]?.devices[0];
+        if (!device) {
+            throw new Error('Missing fixture device');
+        }
+        device.type = 'eq';
+        device.deviceState = { version: 1, data: { unrelated: 'retain' } };
+        trackStore.set({ ...defaultTrackState, tracks });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value!.tracks);
+
+        await setProofPanelUiLevel('a', 5);
+
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(rawProjectTracks()).toEqual(before);
+        expect(getProofState('a').uiLevel).toBe(1);
+    });
+
     it('leaves a standalone wrong-kind device and its future metadata unchanged', async () => {
         const tracks = tracksWithTwoProofDevices();
         const device = tracks[0]?.devices[0];
