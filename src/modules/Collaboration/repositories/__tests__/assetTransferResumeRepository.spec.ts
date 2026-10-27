@@ -166,6 +166,36 @@ describe('temporary asset journal transactions', () => {
         }
     );
 
+    it('bounds cursor work when corrupt fractional keys crowd one geometry slot', async () => {
+        const repository = createAssetTransferResumeRepository(OWNER);
+        const metadata = await repository.begin(manifest, 'writer');
+        const fractions = Array.from({ length: 64 }, (_, offset) => ({
+            ownerId: OWNER,
+            hash: HASH,
+            generation: metadata.generation,
+            index: (offset + 1) / 100,
+            data: new Uint8Array([offset]),
+            digest: DIGEST,
+        }));
+        const valid = {
+            ownerId: OWNER,
+            hash: HASH,
+            generation: metadata.generation,
+            index: 1,
+            data: new Uint8Array(MIN_ASSET_CHUNK_SIZE).fill(9),
+            digest: DIGEST,
+        };
+        await writeRows(metadata, [...fractions, valid]);
+        const journal = await repository.claim(HASH, 'reader');
+        const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+
+        const restored = await collectChunks(journal);
+
+        expect(restored.map((chunk) => chunk.index)).toEqual([1]);
+        expect(Array.from(restored[0]!.data)).toEqual(Array.from(valid.data));
+        expect(cursor.mock.calls.length).toBeLessThanOrEqual(manifest.chunkCount);
+    });
+
     it('rolls back geometry range retirement when runtime authority is revoked before commit', async () => {
         const repository = createAssetTransferResumeRepository(OWNER);
         const metadata = await repository.begin(manifest, 'original-writer');
