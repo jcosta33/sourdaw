@@ -35,12 +35,12 @@ export function getLegacyTrimInverseReplayFailure(actions: readonly AppAction[])
         if (!actions.slice(0, index).every(preservesTrimCoordinates)) {
             return 'An earlier inverse cannot prove the legacy trim coordinates';
         }
-        if (clip.type !== 'midi' || clip.loopEnabled !== true) {
+        if (clip.type !== 'midi') {
             continue;
         }
-        // Even a zero-distance trim can wrap an unnormalized old offset and
-        // move every row. Today's phase cannot authenticate those prior figures.
-        return 'The legacy MIDI trim has no captured offset for this loop';
+        // Today's loop mode and phase cannot authenticate the old coordinates:
+        // a peer may disable looping after the trim already wrapped every row.
+        return 'The legacy MIDI trim has no captured offset';
     }
     return null;
 }

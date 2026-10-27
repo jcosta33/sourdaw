@@ -30,9 +30,13 @@ entry counts come from the actual saved mirror, never the setup action count.
 A normalized current phase does not authenticate the pre-trim offset, even
 when the start did not move. Both historical zero-distance looped MIDI cases
 therefore require conservative refusal with pending history and every raw
-coordinate unchanged. Current trims capture the prior offset, including zero
+coordinate unchanged. The current loop mode cannot authenticate the original
+mode either: a peer may disable looping after the old trim displaced its rows.
+All legacy MIDI trim inverses without an offset capture therefore refuse,
+including the independently produced loop-disabled control. Current trims
+capture the prior offset, including zero
 and an unnormalized whole-loop offset, so their Undo and Redo restore exact
-stored coordinates. Audio and loop-disabled historical entries retain replay.
+stored coordinates. Historical audio entries retain replay.
 
 Historical source hashes (SHA-256):
 

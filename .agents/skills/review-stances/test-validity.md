@@ -1400,6 +1400,20 @@ The normalized zero-distance control is also a conservative refusal, not proof t
 the current phase identifies the old offset. Keep real current captures of zero and
 a whole-loop offset and compare raw owner coordinates through Undo and Redo.
 
+Current loop mode cannot stand in for historical mode. Load the authentic looping
+fixture, disable looping through a peer mutation and real projection, then require
+visible refusal with all peer state and pending history intact. The original loop-off
+MIDI fixture is also a conservative refusal; genuine audio remains the replay control.
+When broader refusal makes a former post-wait or prefix test reject from its starting
+state, replace that test with an eligible audio target. Hold the actual snapshot wait,
+remove the target through public CRDT mutation and projection, and capture the peer
+snapshot before releasing the transaction. Moving admission before the wait must
+consume history and fail the case. In a synthetic direct unit, a callback prefix that
+removes the audio target must remain uncalled: removing only its early guard must fail
+full state preservation even though later admission still throws the same error class.
+Snapshot all action payloads, history IDs and tree entries while retaining callback
+function identity; do not drop callback members or attempt to structured-clone them.
+
 ### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
 
 PR #5274 (`40baa0716b`) introduced fail-closed file-inspection diagnostics; PR #5365 (`75b10ca71b`)

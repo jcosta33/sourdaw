@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import {
     countPendingAutomergeStorageWrites,
     flushAutomergeStorageWrites,
@@ -30,6 +31,8 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { AppActionConflictError } from '../../errors/AppActionExecutionError';
+import { type UndoEntry } from '../../models/UndoEntry';
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';
 import { undoTreeStore } from '../../stores/undoTree';
@@ -37,6 +40,7 @@ import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeActionGroupUndo } from '../executeActionGroupUndo';
 import { executeAppAction } from '../executeAppAction';
+import { pushUndoEntry } from '../pushUndoEntry';
 import { reconcileSessionUndoForProject } from '../reconcileSessionUndoForProject';
 import { redo } from '../redo';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
@@ -135,13 +139,34 @@ async function tagDirectReplayUnit(): Promise<void> {
     await settleMirror();
 }
 
+function snapshotEntry(entry: UndoEntry): UndoEntry {
+    if (entry.kind === 'action') {
+        return structuredClone(entry);
+    }
+    const { undo, redo, ...state } = entry;
+    return { ...structuredClone(state), undo, redo };
+}
+
 function snapshot() {
+    const history = undoStore.value;
+    const tree = undoTreeStore.value;
     return {
         root: JSON.stringify(getCrdtDoc('root')),
         tracks: structuredClone(trackStore.value),
         midi: structuredClone(midiStore.value),
-        history: structuredClone(undoStore.value),
-        tree: structuredClone(undoTreeStore.value),
+        history: history && { past: history.past.map(snapshotEntry), future: history.future.map(snapshotEntry) },
+        tree: tree && {
+            ...tree,
+            tree: {
+                ...tree.tree,
+                nodes: Object.fromEntries(
+                    Object.entries(tree.tree.nodes).map(([id, { entry, ...node }]) => [
+                        id,
+                        { ...structuredClone(node), entry: snapshotEntry(entry) },
+                    ])
+                ),
+            },
+        },
         mirror: sessionStorage.getItem(SESSION_KEY),
     };
 }
@@ -163,6 +188,15 @@ function readCoordinates() {
         tracks: trackStore.value,
         midi: midiStore.value,
     });
+}
+
+function removeTargetFromDocument(doc: { tracks: TrackStoreState }): void {
+    const clips = doc.tracks.tracks[0]?.clips;
+    const index = clips?.findIndex((clip) => clip.id === CLIP_ID) ?? -1;
+    if (!clips || index < 0) {
+        throw new Error('Expected the peer removal target');
+    }
+    clips.splice(index, 1);
 }
 
 describe('authentic pre-capture trim history replay (#5696)', () => {
@@ -229,8 +263,8 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
         expect(notifyUser).toHaveBeenCalledWith('Cannot undo "Trim clip start": project state has changed', 'warning');
     });
 
-    it.each(['audio', 'loop-off'])('keeps a compatible naturally produced legacy inverse working: %s', async (name) => {
-        await loadFixture(name);
+    it('keeps a naturally produced legacy audio inverse working', async () => {
+        await loadFixture('audio');
         const peer = structuredClone(midiStore.value?.notesByClipId['peer-clip']);
         await expect(undo()).resolves.toEqual({ headConsumed: true });
         expect(readClip().startBeat).toBe(0);
@@ -238,6 +272,49 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
         await redo();
         expect(readClip().startBeat).toBe(2);
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('conservatively refuses a saved loop-disabled MIDI inverse without its captured offset', async () => {
+        await loadFixture('loop-off');
+        expect(readClip()).toMatchObject({ startBeat: 2, loopEnabled: false });
+        const before = snapshot();
+        await expect(undo()).resolves.toEqual({ headConsumed: false });
+        await settleMirror();
+        expect(snapshot()).toEqual(before);
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Cannot undo "Trim clip start": project state has changed',
+            'warning'
+        );
+    });
+
+    it('refuses the saved looping MIDI inverse after a peer disables looping', async () => {
+        await loadFixture();
+        mutateCrdtDoc<{ tracks: TrackStoreState }>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.tracks.tracks[0]!.clips[0]!.loopEnabled = false;
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        await settleMirror();
+        expect(readClip()).toMatchObject({ startBeat: 2, midiOffsetBeats: 3, loopEnabled: false });
+        const before = snapshot();
+        const result = await undo();
+        await settleMirror();
+        expect(
+            result,
+            JSON.stringify({
+                result,
+                clip: readClip(),
+                warnings: vi.mocked(notifyUser).mock.calls,
+                history: undoStore.value,
+            })
+        ).toEqual({ headConsumed: false });
+        expect(snapshot()).toEqual(before);
+        expect(notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Cannot undo "Trim clip start": project state has changed',
+            'warning'
+        );
     });
 
     it.each(['zero', 'unnormalized-zero'])(
@@ -317,13 +394,34 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
     );
 
     it('refuses an unprovable coordinate-changing prefix in a direct non-atomic unit', async () => {
-        await loadFixture();
+        await loadFixture('audio');
         await executeAppAction({ type: 'setClipLoop', payload: { clipId: CLIP_ID, enabled: false } });
         await tagDirectReplayUnit();
         const before = snapshot();
         await expect(revertActionGroup('direct-replay-unit')).rejects.toThrow('earlier inverse');
         await settleMirror();
         expect(snapshot()).toEqual(before);
+    });
+
+    it('refuses a synthetic direct audio replay unit before its callback prefix can remove the target', async () => {
+        await loadFixture('audio');
+        const removeTarget = vi.fn(() => {
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                changeFn: removeTargetFromDocument,
+            });
+            projectCrdtToStores({ resetProjections: true });
+        });
+        const restoreTarget = vi.fn();
+        pushUndoEntry('Synthetic peer removal', removeTarget, restoreTarget);
+        await tagDirectReplayUnit();
+        const before = snapshot();
+
+        await expect(revertActionGroup('direct-replay-unit')).rejects.toBeInstanceOf(AppActionConflictError);
+        await settleMirror();
+        expect(snapshot()).toEqual(before);
+        expect(removeTarget).not.toHaveBeenCalled();
+        expect(undoStore.value?.past.at(-1)).toMatchObject({ undo: removeTarget, redo: restoreTarget });
     });
 
     it('keeps a compatible exposed non-atomic unit working without widening singleton batch support', async () => {
@@ -384,38 +482,60 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('rechecks legacy admission after the real snapshot wait before the inverse can write', async () => {
-        await loadFixture('loop-off');
+    it('rechecks legacy audio admission after peer removal during the real snapshot wait', async () => {
+        await loadFixture('audio');
         let enter!: () => void;
+        let reachedWait!: () => void;
         let release!: () => void;
+        let afterPeer: ReturnType<typeof snapshot> | undefined;
         const entered = new Promise<void>((resolve) => {
             enter = resolve;
         });
         const held = new Promise<void>((resolve) => {
             release = resolve;
         });
+        const waiting = new Promise<void>((resolve) => {
+            reachedWait = resolve;
+        });
+        const waitForSnapshot = automergeStorage.waitForAutomergeSnapshotTransaction;
+        const waitSpy = vi
+            .spyOn(automergeStorage, 'waitForAutomergeSnapshotTransaction')
+            .mockImplementation((transaction) => {
+                reachedWait();
+                return waitForSnapshot(transaction);
+            });
         const snapshotTransaction = transactSnapshot(async (transaction) => {
             enter();
             await held;
             mutateCrdtDoc<{ tracks: TrackStoreState }>({
                 id: 'root',
                 snapshotTransaction: transaction,
-                changeFn: (doc) => {
-                    doc.tracks.tracks[0]!.clips[0]!.loopEnabled = true;
-                },
+                changeFn: removeTargetFromDocument,
             });
             projectCrdtToStores({ resetProjections: true });
+            await settleMirror();
+            afterPeer = snapshot();
         });
         await entered;
-        const pendingUndo = undo();
-        release();
-        await snapshotTransaction;
-        const documentAfterPeer = JSON.stringify(getCrdtDoc('root'));
-        const historyBefore = structuredClone(undoStore.value);
-        await expect(pendingUndo).resolves.toEqual({ headConsumed: false });
-        await settleMirror();
-        expect(JSON.stringify(getCrdtDoc('root'))).toBe(documentAfterPeer);
-        expect(undoStore.value).toEqual(historyBefore);
-        expect(readClip()).toMatchObject({ startBeat: 2, loopEnabled: true });
+        try {
+            const pendingUndo = undo();
+            await waiting;
+            release();
+            await snapshotTransaction;
+            await expect(pendingUndo).resolves.toEqual({ headConsumed: false });
+            await settleMirror();
+            expect(afterPeer).toBeDefined();
+            expect(snapshot()).toEqual(afterPeer);
+            expect(trackStore.value?.tracks.flatMap((track) => track.clips).some((clip) => clip.id === CLIP_ID)).toBe(
+                false
+            );
+            expect(notifyUser).toHaveBeenCalledExactlyOnceWith(
+                'Cannot undo "Trim clip start": project state has changed',
+                'warning'
+            );
+        } finally {
+            release();
+            waitSpy.mockRestore();
+        }
     });
 });

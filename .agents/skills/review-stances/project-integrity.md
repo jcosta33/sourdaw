@@ -335,8 +335,9 @@ consumer as a conflict. Historical review prompts and model tiers are unverified
 
 Exercise genuine saved history through the real Undo consumer. Require the raw document,
 owning projections, past/future, tree cursor and settled session mirror to remain unchanged.
-Hold the actual snapshot transaction, change a compatible target into an unsafe looped
-MIDI target, then release it: admission must observe that resumed state before any write.
+Hold the actual snapshot transaction, remove an eligible legacy audio target through
+public CRDT mutation and projection, then release it: admission must observe that
+resumed state before any write or history consumption.
 Removing the post-wait admission must fail this case. A pre-wait check or a bare boolean
 refusal cannot carry the claim. For direct grouped replay, refuse an unproven prefix before
 any sibling writes; metadata-only and compatible-target controls remain separate.
@@ -349,3 +350,14 @@ the entry still pending, all raw rows and peer content unchanged. A normalized
 zero-distance legacy entry also lacks that authentication. Pair these refusals with
 current capture-bearing zero-distance Undo/Redo restoring exact raw owner coordinates,
 including captured zero; no historical graph reconstruction is required for admission.
+
+Current loop-disabled mode does not authenticate the mode when the historical trim
+ran. Disable looping through a peer edit on the genuine saved looping case and require
+refusal without consuming history or changing that peer state. Missing-capture MIDI
+inverses refuse regardless of current mode; genuine saved audio remains replayable.
+
+Broader MIDI refusal must not make earlier timing and prefix tests vacuous. Use an
+eligible audio target for the held-snapshot removal above and for a synthetic direct
+revert unit whose newest callback would remove that target. The early callback guard
+must refuse before invoking the callback, preserving raw project, full history and tree.
+Retain callback identity when snapshotting history rather than cloning its functions.
