@@ -1,0 +1,19 @@
+.agents/skills/review-stances/e2e-server-provenance.md
+  s_567a084d0540c4::t_48347704ca5eec 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0b9cc02304412a9858babeb40e37d344c800059",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
