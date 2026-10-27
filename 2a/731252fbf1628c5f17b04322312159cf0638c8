@@ -1,0 +1,31 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_59e31a5c6f3e31::t_218dcf575a6217 3-6,8-10,14-15
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_59e31a5c6f3e31::t_e070ddc344344a 2-3
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_59e31a5c6f3e31::t_45cb94c0d65316 56-60
+src/modules/Transport/useCases/transportControls/__tests__/pauseStart.spec.ts
+  s_59e31a5c6f3e31::t_008421fbc205c9 6-8
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_59e31a5c6f3e31::t_226e68fb3e4d59 13,22
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_59e31a5c6f3e31::t_527101e210e43d 6,12,16-17
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_59e31a5c6f3e31::t_6adabd35a3c98f 4,9,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a731252fbf1628c5f17b04322312159cf0638c8",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
