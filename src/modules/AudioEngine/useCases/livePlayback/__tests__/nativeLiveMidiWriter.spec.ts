@@ -952,6 +952,8 @@ describe('the live MIDI writer', () => {
         async (failure) => {
             mocks.events = [
                 { time: 1, note: 60, isNoteOn: true },
+                { time: 1.5, note: 62, isNoteOn: true },
+                { time: 2.125, note: 62, isNoteOn: false },
                 { time: 3, note: 64, isNoteOn: true },
                 { time: 3.5, note: 64, isNoteOn: false },
                 { time: 15, note: 60, isNoteOn: false },
@@ -971,10 +973,11 @@ describe('the live MIDI writer', () => {
             expect(sink.sounding(60)).toBe(true);
             expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(0);
             expect(nativeLiveMidiWriter.pass?.targets[0]?.heldEventIndices).toEqual([]);
-            await pump(2);
+            sink.render(2, 2.25);
+            await pump(2.25);
             expect(sink.sounding(60)).toBe(false);
-            expect(sink.releases).toEqual([60]);
-            sink.render(2, 4);
+            expect(sink.releases).toEqual([62, 60]);
+            sink.render(2.25, 4);
             expect(sink.delivered).toEqual(eventIdentities([{ time: 1, note: 60, isNoteOn: true }, ...mocks.events]));
             expect(sink.scheduledLate).toEqual([]);
         }
