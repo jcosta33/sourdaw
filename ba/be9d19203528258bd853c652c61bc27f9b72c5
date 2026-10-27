@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/takeLane/__tests__/replaceOriginalMidiTakeRow.integration.spec.ts
+  s_29d8df116c5b92::t_92fc96d4ff53da 119-125,213,226,330,343
+  s_29d8df116c5b92::t_f91d182d1eb121 260-265,283,292,302-303,308-309,312-313,318-320,329,344-346,361-364,390-395
+  s_29d8df116c5b92::t_9e042345572cd3 4,25-30,266-282,284-291,293-301,304-307,310-311,314-317,321-328,331-342,347-360,365-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "babe9d19203528258bd853c652c61bc27f9b72c5",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
