@@ -1,8 +1,4 @@
-type AudioPreviewIntent = {
-    signal: AbortSignal;
-    isCurrent: () => boolean;
-    release: () => void;
-};
+import { type AudioPreviewIntent } from '../../models/AudioPreviewIntent';
 
 /**
  * Main-thread intent ownership only. A current intent may prepare audio; starting it also requires
