@@ -74,6 +74,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: vi.fn(),
     resolveClipsWithComping: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    prepareRecoveredRecording: vi.fn(),
 
     getTrackStoreState: vi.fn(() => ({ tracks: [{ id: 'record-track', kind: 'audio', armed: true }] })),
     startRecording: vi.fn(() => []),
@@ -88,6 +90,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: mockPanicYeast }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mockStopActiveRecording }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     advanceNoteExpression: vi.fn(),
     applyNoteExpression: vi.fn(),
     createBufferSource: vi.fn(),

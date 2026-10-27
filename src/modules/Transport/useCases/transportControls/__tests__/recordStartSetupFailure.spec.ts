@@ -41,6 +41,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: fixture.logError, 
 vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: fixture.activeRecordingRef,
     getTrackEligibility: () => ({ acceptsRecording: true }),
+    trackStore: { getState: () => ({}) },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     admitRecordingCaptureClock: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: () => true,
     commitRecording: fixture.commitRecording,
     discardRecording: fixture.discardRecording,
+    prepareRecoveredRecording: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
@@ -68,6 +70,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     stopAudioRecording: fixture.stopAudioRecording,
     cacheAudioBuffer: vi.fn(),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     scheduleClick: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({

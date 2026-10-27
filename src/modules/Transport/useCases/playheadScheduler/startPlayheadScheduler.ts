@@ -723,10 +723,10 @@ export function startPlayheadScheduler(
             // A loop edit that retired an unsounded seam starts its new region
             // at the edit instant. Its reprojected position cannot make a
             // boundary sound before the edit that created that region.
-            const seamAudioTime =
-                capturedEditBoundary === null
-                    ? now + secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo)
-                    : now;
+            let seamAudioTime = now;
+            if (capturedEditBoundary === null) {
+                seamAudioTime += secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
+            }
             // #4784 — the wrap the device read maps back across for one
             // compensation window: for that long the audio a compensated track
             // is fed is still this dying pass's tail.
