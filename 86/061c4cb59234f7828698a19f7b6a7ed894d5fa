@@ -1,0 +1,36 @@
+src/modules/Project/useCases/__tests__/importSclFile.dirty.integration.spec.ts
+  s_26f70b851e8f7a::t_40aae0f937f341 1-15,17-79,83-95,249
+  s_26f70b851e8f7a::t_81bbffd4c0c10d 16,96-196,220-248
+  s_26f70b851e8f7a::t_7eaeadb2dcacc0 80-82
+  s_26f70b851e8f7a::t_12c7f98fbfaf31 197-219
+src/modules/Project/useCases/importSclFile.ts
+  s_26f70b851e8f7a::t_9f72219f70087f 8,67
+  s_26f70b851e8f7a::t_eb5d5fce1a9dbd 68-70
+src/modules/Project/useCases/__tests__/importSclFile.browser.spec.ts
+  s_26f70b851e8f7a::t_9f72219f70087f 138-148,196-201,203
+src/modules/Project/useCases/__tests__/importSclFile.nativeReadOrder.spec.ts
+  s_26f70b851e8f7a::t_9f72219f70087f 124-133,172-181
+src/modules/Project/useCases/__tests__/importSclFile.spec.ts
+  s_26f70b851e8f7a::t_9f72219f70087f 197-198,205-208
+  s_26f70b851e8f7a::t_84be4f32c40220 209
+src/modules/Project/useCases/__tests__/importSclFile.nativeWire.spec.ts
+  s_26f70b851e8f7a::t_9f72219f70087f 99-100,104-108,111
+.agents/skills/review-stances/async-file-imports.md
+  s_26f70b851e8f7a::t_13576d4978da31 20-25,37-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86061c4cb59234f7828698a19f7b6a7ed894d5fa",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

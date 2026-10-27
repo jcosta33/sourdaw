@@ -1,0 +1,27 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesChannelBend.spec.ts
+  s_29d8df116c5b92::t_707e874bd0c973 235-270
+src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts
+  s_29d8df116c5b92::t_d28914076a539f 52-53,55-56
+  s_29d8df116c5b92::t_ed2bc4f1cc4838 3-6,36-50,113,115-120
+  s_29d8df116c5b92::t_cb0861a9549b54 51,57-59,121-122
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_29d8df116c5b92::t_6ed022c2601278 2189,2227-2232
+src/modules/MIDI/useCases/midiClipData/__tests__/projectFrozenMidiTakeWindow.spec.ts
+  s_29d8df116c5b92::t_83c76f28acfe41 3-5,7,10-19,49-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8fc772bf691e01815c88a48cfe36739658e051f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
