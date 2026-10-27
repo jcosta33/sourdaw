@@ -9,6 +9,7 @@ import {
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
@@ -111,7 +112,124 @@ function createDivergedTempoMapAction(actionType: TempoMapConflictActionType): A
     return action;
 }
 
+let midiPreviousLanes: typeof takeLaneStore.value = null;
+
+function createDivergedMidiRowAction(kind: 'base' | 'take'): AppAction {
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    const original = { id: 'midi-row', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
+    const changed = { ...original, pitch: 70 };
+    const replacement = { ...original, pitch: 61 };
+    let action: AppAction;
+    if (kind === 'base') {
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [createTrack({ id: 'midi-track', name: 'MIDI', kind: 'midi' })],
+        });
+        if (
+            !addClip({ id: 'midi-clip', trackId: 'midi-track', startBeat: 0, endBeat: 4, name: 'MIDI', type: 'midi' })
+        ) {
+            throw new Error('Expected writable MIDI clip');
+        }
+        midiStore.set({ notesByClipId: { 'midi-clip': [original] }, ccByClipId: {}, pitchBendByClipId: {} });
+        action = {
+            type: 'replaceOriginalMidiBaseRow',
+            payload: {
+                clipId: 'midi-clip',
+                rowId: original.id,
+                expected: original,
+                replacement,
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
+            },
+        };
+    } else {
+        midiPreviousLanes = structuredClone(takeLaneStore.value);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'midi-lane',
+                    trackId: 'midi-track',
+                    activeCompRegions: [],
+                    takes: [
+                        {
+                            id: 'midi-take',
+                            clipId: 'midi-clip',
+                            name: 'MIDI',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            midiSource: {
+                                sourceClipId: 'midi-clip',
+                                sourceEntryBeat: 0,
+                                sourceEndBeat: 4,
+                                phaseHeadBeat: 0,
+                                passLengthBeats: 4,
+                                rows: {
+                                    notes: { present: true, value: [original] },
+                                    controlChanges: { present: false, value: [] },
+                                    pitchBends: { present: false, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+        action = {
+            type: 'replaceOriginalMidiTakeRow',
+            payload: {
+                laneId: 'midi-lane',
+                takeId: 'midi-take',
+                sourceClipId: 'midi-clip',
+                rowId: original.id,
+                rowKind: 'note',
+                expected: original,
+                replacement,
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
+            },
+        };
+    }
+    const handler = getCommandHandler(action);
+    if (!handler?.validate?.(action, { actions: [action], actionIndex: 0 })) {
+        throw new Error('Expected MIDI row action to validate before peer edit');
+    }
+    if (kind === 'base') {
+        midiStore.set({ notesByClipId: { 'midi-clip': [changed] }, ccByClipId: {}, pitchBendByClipId: {} });
+    } else {
+        const state = takeLaneStore.value;
+        if (!state) throw new Error('Expected MIDI take lane');
+        takeLaneStore.set({
+            lanes: state.lanes.map((lane) => ({
+                ...lane,
+                takes: lane.takes.map((take) => {
+                    if (!take.midiSource) return take;
+                    return {
+                        ...take,
+                        midiSource: {
+                            ...take.midiSource,
+                            rows: { ...take.midiSource.rows, notes: { present: true, value: [changed] } },
+                        },
+                    };
+                }),
+            })),
+        });
+    }
+    return action;
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    {
+        title: 'replaceOriginalMidiBaseRow refuses a peer-edited row',
+        actionType: 'replaceOriginalMidiBaseRow',
+        createDivergedAction: () => createDivergedMidiRowAction('base'),
+    },
+    {
+        title: 'replaceOriginalMidiTakeRow refuses a peer-edited frozen row',
+        actionType: 'replaceOriginalMidiTakeRow',
+        createDivergedAction: () => createDivergedMidiRowAction('take'),
+    },
     {
         title: 'setTempo refuses a changed pinned scalar before source capture',
         actionType: 'setTempo',
@@ -543,6 +661,11 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
     afterEach(() => {
         removeCrdtDoc('root');
         resetLiveYeastRack();
+        if (midiPreviousLanes) {
+            takeLaneStore.set(midiPreviousLanes);
+            flushAutomergeStorageWrites();
+            midiPreviousLanes = null;
+        }
         automationStore.set({ lanes: [] });
         clearHandlerRegistry();
     });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
@@ -33,6 +33,7 @@ const otherStrip = vi.hoisted(() => ({
 const applyNoteExpression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    writeNativeBuiltinParameters: vi.fn(),
     audioEngine: {
         context: clock,
         ensureTrackStrip: (trackId: string) => (trackId === 'track-2' ? otherStrip : strip),
@@ -51,12 +52,18 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({ getTargetTrackId: () => target.value }));
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({ getMpeEnabled: () => true }));
 
-const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
-const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
+const noteOnModule = await import('../handleWebMidiNoteOn');
+const noteOffModule = await import('../handleWebMidiNoteOff');
+const { handleWebMidiNoteOn } = noteOnModule;
+const { handleWebMidiNoteOff } = noteOffModule;
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 const { resetMidiState } = await import('../../../repositories/webMidi/lifecycle/resetMidiState');
 
 describe('live Yeast release ownership across input reset', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     beforeEach(() => {
         resetMidiState({
             getCurrentTime: () => clock.currentTime,
@@ -434,8 +441,8 @@ describe('live Yeast release ownership across input reset', () => {
         };
         const release = handleWebMidiNoteOff._factory(deps);
         const strike = handleWebMidiNoteOn._factory({ ...deps, handleWebMidiNoteOff: release });
-        vi.doMock('../handleWebMidiNoteOn', () => ({ handleWebMidiNoteOn: strike }));
-        vi.doMock('../handleWebMidiNoteOff', () => ({ handleWebMidiNoteOff: release }));
+        vi.spyOn(noteOnModule, 'handleWebMidiNoteOn').mockImplementation(strike);
+        vi.spyOn(noteOffModule, 'handleWebMidiNoteOff').mockImplementation(release);
         const { handleWebMidiMessage } = await import('../handleWebMidiMessage');
         const send = (bytes: number[]) => handleWebMidiMessage({ data: new Uint8Array(bytes), timeStamp: undefined });
 

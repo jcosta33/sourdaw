@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
-import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
+import { midiClipSplitStateMatches } from '#/modules/MIDI/useCases';
 import {
     type ClipSplitActionSnapshot,
     type ClipStateSnapshot,
@@ -80,7 +80,8 @@ import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
 const mockedRestorable = vi.mocked(clipSplitStateRestorable);
 const mockedReplaceTrackState = vi.mocked(replaceClipSplitTrackState);
 const mockedMidiMatches = vi.mocked(midiClipSplitStateMatches);
-const mockedRestoreMidi = vi.mocked(restoreMidiClipSplitState);
+const actualMidiUseCases = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+const mockedRestoreMidi = vi.spyOn(actualMidiUseCases, 'restoreMidiClipSplitState');
 const mockedSatellitesMatch = vi.mocked(clipSatelliteEntriesMatchSnapshot);
 const mockedWriteSatellite = vi.mocked(writeClipSatelliteEntry);
 const mockedLaneTransitionMatches = vi.mocked(clipAutomationLaneTransitionMatchesStore);
@@ -323,6 +324,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         );
 
         expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestoreMidi).toHaveBeenCalledTimes(1);
         expect(mockedWriteSatellite).not.toHaveBeenCalled();
     });
 

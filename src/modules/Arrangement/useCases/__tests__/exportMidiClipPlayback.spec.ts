@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import * as downloadFile from '#/utils/downloadFile';
+
+import {
+    defaultGrooveTemplateState,
+    defaultMidiStoreState,
+    grooveTemplateStore,
+    midiStore,
+} from '#/modules/MIDI/stores';
 import {
     assignGrooveTemplate,
     createGrooveTemplate,
@@ -18,17 +25,7 @@ const SUSTAIN_PEDAL = 64;
 
 const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
-    getMidiStoreState: vi.fn(),
     downloadBlob: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    getMidiStoreState: mocks.getMidiStoreState,
-}));
-
-vi.mock('#/utils/downloadFile', () => ({
-    downloadBlob: mocks.downloadBlob,
 }));
 
 vi.mock('../getAllTracks', () => ({
@@ -110,12 +107,14 @@ function exportClip(clip: ClipFixture, notes: NoteFixture[], controlChanges: Con
     mocks.getAllTracks.mockReturnValue([
         { id: 't1', name: 'Keys', clips: [{ id: 'clip', name: 'Clip', type: 'midi', ...clip }] },
     ]);
-    mocks.getMidiStoreState.mockReturnValue({
+    midiStore.set({
         notesByClipId: { clip: notes },
         ccByClipId: { clip: controlChanges },
         pitchBendByClipId: {},
     });
     exportMidiClip('clip');
+    expect(mocks.getAllTracks).toHaveBeenCalled();
+    expect(mocks.downloadBlob).toHaveBeenCalled();
     return readExportedEvents();
 }
 
@@ -129,7 +128,14 @@ function ticks(events: FileEvent[], kind: FileEvent['kind']): number[] {
 
 describe('exportMidiClip writes what the clip plays', () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         vi.clearAllMocks();
+        vi.spyOn(downloadFile, 'downloadBlob').mockImplementation(mocks.downloadBlob);
+    });
+
+    afterEach(() => {
+        midiStore.set(structuredClone(defaultMidiStoreState));
+        vi.restoreAllMocks();
     });
 
     it('repeats a one-beat loop across a four-beat clip, note and controller on every pass', () => {

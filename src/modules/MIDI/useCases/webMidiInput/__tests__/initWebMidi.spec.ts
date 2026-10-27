@@ -72,6 +72,7 @@ vi.mock('#/infra/di/Container', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    persistDeviceParam: vi.fn(),
     activeRecordingRef: { current: [] },
     getTrackEligibility: vi.fn(),
     readMusicalRangeInputs: vi.fn(() => []),
