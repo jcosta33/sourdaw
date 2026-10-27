@@ -6,6 +6,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
+comparison, Undo-history, corpus-floor, later-case schema and prompt-separation checks could be
+removed without failing their acceptance cases (#5648). A changed fixture digest failed regardless
+of the guard's behavior, so it did not establish a semantic probe. Exact historical private review
+prompts and tiers are unavailable.
+
+Feed each actual validation helper a deliberately violating row while satisfying its other
+preconditions. Include a wrong or unexpected supersedes value, each missing Undo-history witness,
+a deficient refinement kind, a malformed later case and held-out reuse of a development prior
+prompt. Drop each guard separately and run the acceptance spec without the manifest spec; its
+named negative case must fail. Give the product examples distinct multi-entry groups and absolute
+as well as relative continuations, with an intervening musician edit, so a plausible wrong replay
+or baseline cannot keep the release score green. Preserve the existing outcomes and thresholds.
+
 ### 2026-10-27 — action-call spies missed extra project writes (refinement accounting introduced by PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write accounting

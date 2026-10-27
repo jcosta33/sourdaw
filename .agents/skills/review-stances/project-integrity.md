@@ -1,5 +1,20 @@
 # Lesson library: project integrity
 
+## 2026-10-27 — single-entry priors could not distinguish partial or wrong-group Undo (PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) used single-entry prior groups and
+relative committed values for its sealed refinement examples. They could not expose replaying
+only part of a group, choosing the latest musician group instead of the named AI group, or taking
+an absolute continuation from the live fader (#5648). These are gaps in acceptance evidence;
+no historical private reviewer prompt or tier is established.
+
+Exercise a group spanning multiple tracks and a group containing gain plus mute. Add an unrelated
+musician edit in a later group. Revert the named AI group and require every AI-owned change to revert, both Undo
+history witnesses to agree, and the unrelated edit to survive. Exercise multi-command retargeting
+and an absolute continuation after the live fader has moved, with frozen expectations derived from
+the committed value. Undoing one inverse, selecting the newest group or substituting the live value
+must each fail the acceptance assertions without relying on a manifest mismatch.
+
 ## 2026-10-27 — a matching commit did not prove that only its fields changed (PR #5646 refinement escape)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) introduced refinement bookkeeping
