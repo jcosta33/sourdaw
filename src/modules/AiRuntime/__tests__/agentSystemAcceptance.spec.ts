@@ -505,24 +505,30 @@ function captureProjectTruth(): ProjectTruth {
 }
 
 /** Capture applied CRDT content without settling from inside a repository notification. */
-async function observeProjectChanges<T>(run: () => Promise<T>): Promise<{ result: T; transitions: ProjectTruth[] }> {
+async function observeProjectChanges<T>(
+    run: () => Promise<T>,
+    materialize: () => ProjectTruth = materializeProjectTruth
+): Promise<{ result: T; transitions: ProjectTruth[] }> {
     const transitions: ProjectTruth[] = [];
-    let failure: unknown;
+    let failure: Error | undefined;
     const unsubscribe = subscribeToCrdtChanges(() => {
         try {
-            transitions.push(materializeProjectTruth());
+            transitions.push(materialize());
         } catch (error) {
-            failure ??= error;
+            failure ??= error instanceof Error ? error : new Error('Project truth capture failed.', { cause: error });
         }
     });
+    let result: T;
     try {
-        const result = await run();
+        result = await run();
         captureSettledRevision();
-        return { result, transitions };
     } finally {
         unsubscribe();
-        if (failure !== undefined) throw failure;
     }
+    if (failure !== undefined) {
+        throw failure;
+    }
+    return { result, transitions };
 }
 
 /** Every applied state must match one oracle-authorized prefix. */
@@ -534,7 +540,9 @@ function transitionDifferences(transitions: readonly ProjectTruth[], allowed: re
         const counts = remaining.map((state) => projectDifferences(state, transition));
         const nearest = Math.min(...counts);
         differences = Math.max(differences, nearest);
-        if (nearest === 0) earliest += counts.indexOf(0);
+        if (nearest === 0) {
+            earliest += counts.indexOf(0);
+        }
     }
     return differences;
 }
@@ -556,7 +564,9 @@ function undoPrefixes(
     for (let index = actions.length - 1; index >= 0; index--) {
         const prior = committedPrefixes[index];
         const action = actions[index];
-        if (prior === undefined || action === undefined) throw new Error('Missing undo oracle prefix.');
+        if (prior === undefined || action === undefined) {
+            throw new Error('Missing undo oracle prefix.');
+        }
         current = projectAfterOracleUndo(prior, current, [action]);
         states.push(current);
     }
@@ -658,8 +668,9 @@ function projectAfterOracleUndo(
     if (!isProjectMap(trackSlot) || !Array.isArray(trackSlot.tracks)) {
         throw new TypeError('The acceptance project has no materialized track collection.');
     }
+    const tracks = trackSlot.tracks;
     const inverses = actions.map((action) => {
-        const track = trackSlot.tracks.find(
+        const track = tracks.find(
             (candidate: unknown) => isProjectMap(candidate) && candidate.id === action.payload.trackId
         );
         if (!isProjectMap(track) || typeof track.gain !== 'number') {
@@ -1697,6 +1708,47 @@ describe('agent acceptance corpora', () => {
             expect(projectDifferences(before, after)).toBe(1);
         });
 
+        it('surfaces capture failures, preserves run failures and unsubscribes', async () => {
+            openChatProject();
+            let captures = 0;
+            const captureFailure = new Error('capture failure');
+            const capture = () => {
+                captures++;
+                throw captureFailure;
+            };
+            let writes = 0;
+            const write = () =>
+                mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.observerProbe = ++writes;
+                    },
+                });
+            try {
+                await expect(
+                    observeProjectChanges(async () => {
+                        write();
+                    }, capture)
+                ).rejects.toBe(captureFailure);
+                const afterCapture = captures;
+                write();
+                expect(captures).toBe(afterCapture);
+                const runFailure = new Error('run failure');
+                await expect(
+                    observeProjectChanges(async () => {
+                        write();
+                        throw runFailure;
+                    }, capture)
+                ).rejects.toBe(runFailure);
+                const afterRun = captures;
+                expect(afterRun).toBeGreaterThan(afterCapture);
+                write();
+                expect(captures).toBe(afterRun);
+            } finally {
+                closeChatProject();
+            }
+        });
+
         it('accepts each authorized commit and undo prefix without admitting another field', () => {
             const before = truthFixture();
             const actions: CorpusOracleAction[] = [
@@ -1705,7 +1757,9 @@ describe('agent acceptance corpora', () => {
             ];
             const commits = commitPrefixes(before, actions);
             const committed = commits.at(-1);
-            if (committed === undefined) throw new Error('Missing commit');
+            if (committed === undefined) {
+                throw new Error('Missing commit');
+            }
             const undos = undoPrefixes(before, committed, actions);
             expect(transitionDifferences(commits, commits)).toBe(0);
             expect(transitionDifferences(undos, undos)).toBe(0);
@@ -1786,9 +1840,13 @@ describe('agent acceptance corpora', () => {
 
         async function persistKickPanAndRestore(): Promise<void> {
             const state = trackStore.value;
-            if (state === null) throw new Error('Missing project');
+            if (state === null) {
+                throw new Error('Missing project');
+            }
             const kick = state.tracks.find((track) => track.id === 'track-kick');
-            if (kick === undefined) throw new Error('Missing kick');
+            if (kick === undefined) {
+                throw new Error('Missing kick');
+            }
             const before = captureSettledRevision();
             trackStore.set({
                 ...state,
@@ -1796,7 +1854,9 @@ describe('agent acceptance corpora', () => {
             });
             const changed = captureSettledRevision();
             const updated = trackStore.value;
-            if (updated === null) throw new Error('Missing project');
+            if (updated === null) {
+                throw new Error('Missing project');
+            }
             trackStore.set({
                 ...updated,
                 tracks: updated.tracks.map((track) => (track.id === kick.id ? { ...track, pan: kick.pan } : track)),
@@ -1823,7 +1883,9 @@ describe('agent acceptance corpora', () => {
 
         it('counts persisted restored writes beside single-turn planning', async () => {
             const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
-            if (testCase === undefined) throw new Error('Missing single-turn case');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
             openChatProject();
             const barrel = spyOnBarrelWrites();
             try {
@@ -1967,10 +2029,14 @@ describe('agent acceptance corpora', () => {
         it('counts committed prior writes even when they restore the original value', async () => {
             const run = await runWithBarrel(undoCase, undefined, async () => {
                 const original = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
-                if (original === undefined) throw new Error('Missing kick gain');
+                if (original === undefined) {
+                    throw new Error('Missing kick gain');
+                }
                 await commandUseCases.executeAppAction(gainMove('track-kick', -1), { skipUndo: true });
                 const expectedGain = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
-                if (expectedGain === undefined) throw new Error('Missing kick gain');
+                if (expectedGain === undefined) {
+                    throw new Error('Missing kick gain');
+                }
                 await commandUseCases.executeAppAction(
                     { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: original, expectedGain } },
                     { skipUndo: true }
@@ -1989,7 +2055,9 @@ describe('agent acceptance corpora', () => {
                 undefined,
                 async () => {
                     const state = trackStore.value;
-                    if (state === null) throw new Error('Missing project');
+                    if (state === null) {
+                        throw new Error('Missing project');
+                    }
                     trackStore.set({
                         ...state,
                         tracks: state.tracks.map((track) =>
@@ -2005,7 +2073,9 @@ describe('agent acceptance corpora', () => {
         it('counts a bypass write beside undo', async () => {
             const run = await runWithBarrel(undoCase, async () => {
                 const state = trackStore.value;
-                if (state === null) throw new Error('Missing project');
+                if (state === null) {
+                    throw new Error('Missing project');
+                }
                 trackStore.set({
                     ...state,
                     tracks: state.tracks.map((track) => (track.id === 'track-kick' ? { ...track, pan: 0.27 } : track)),
