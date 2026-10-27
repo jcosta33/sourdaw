@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -196,6 +197,151 @@ function synchronizedProgressFixture() {
     f.setObservation({ ...f.observation(), parent: { ...f.observation().parent, headSha: progressed } });
     return { f, original, progressed, ancestry, merges, result, receipt };
 }
+
+function runNativeLogProbe(contents: string, scenario: string): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-native-log-read-'));
+    const path = join(root, 'branch-log');
+    writeFileSync(path, contents);
+    // Native built-in bindings bypass Vitest module mocks. Isolate interposition in a Node process.
+    const probe = `
+        import fs from 'node:fs';
+        import assert from 'node:assert/strict';
+        import { syncBuiltinESMExports } from 'node:module';
+        const path = process.argv[1];
+        const byteLimit = 1024 * 1024;
+        const original = { open: fs.openSync, read: fs.readSync, readFile: fs.readFileSync };
+        let descriptor;
+        let tracking = false;
+        let bytesRead = 0;
+        let beforePathRead = () => {};
+        let afterOpen = () => {};
+        let afterRead = () => {};
+        fs.openSync = (...args) => {
+            const opened = original.open(...args);
+            if (tracking && args[0] === path && descriptor === undefined) {
+                descriptor = opened;
+                afterOpen();
+            }
+            return opened;
+        };
+        fs.readSync = (...args) => {
+            const count = original.read(...args);
+            if (tracking && args[0] === descriptor) {
+                assert.ok(args[1].byteLength <= byteLimit + 1);
+                bytesRead += count;
+                afterRead();
+            }
+            return count;
+        };
+        fs.readFileSync = (...args) => {
+            if (tracking && args[0] === path) beforePathRead();
+            return original.readFile(...args);
+        };
+        syncBuiltinESMExports();
+        const { historicalAdmissionShellPort } = await import(${JSON.stringify(pathToFileURL(join(process.cwd(), 'scripts/syncParentLane.ts')).href)});
+        const port = historicalAdmissionShellPort({
+            lane: ${JSON.stringify(root)},
+            primaryRoot: ${JSON.stringify(root)},
+            branch: ${JSON.stringify(childBranch)},
+            gitPath: 'git', ghPath: 'gh', localEnv: {},
+            session: { configDir: ${JSON.stringify(join(root, 'session'))}, env: {}, dispose: () => {} },
+            capture: (_command, args) => {
+                assert.deepEqual(args, ['rev-parse', '--path-format=absolute', '--git-path',
+                    ${JSON.stringify(`logs/refs/heads/${childBranch}`)}]);
+                return path;
+            },
+        }, { childPullRequest: 5438, parentPullRequest: 5425, expectedHead: ${JSON.stringify(child)} });
+        const readLog = () => {
+            tracking = true;
+            try { return port.childLog(); } finally { tracking = false; }
+        };
+        const assertClosed = () => {
+            assert.equal(typeof descriptor, 'number');
+            assert.throws(() => fs.fstatSync(descriptor), { code: 'EBADF' });
+        };
+        ${scenario}
+    `;
+    execFileSync(process.execPath, ['--input-type=module', '--eval', probe, path], { stdio: 'pipe' });
+}
+
+describe('native historical reflog byte bound', () => {
+    const byteLimit = 1024 * 1024;
+
+    it('refuses a log growing beyond the bound between inspection and EOF', () => {
+        runNativeLogProbe(
+            reflog([[anchor, 1792620751]]),
+            `
+                const initialSize = fs.statSync(path).size;
+                const grow = () => fs.appendFileSync(path, Buffer.alloc(byteLimit + 1 - initialSize, 'x'));
+                beforePathRead = () => { beforePathRead = () => {}; grow(); };
+                afterRead = () => { if (bytesRead === initialSize) grow(); };
+                assert.throws(() => readLog(), /native branch history exceeds admission bound/);
+                assert.equal(bytesRead, byteLimit + 1);
+                assertClosed();
+            `
+        );
+    });
+
+    it.each([0, byteLimit - 1, byteLimit])('returns exactly %i bytes including multibyte UTF-8', (size) => {
+        const contents = 'é'.repeat(Math.floor(size / 2)) + 'x'.repeat(size % 2);
+        runNativeLogProbe(
+            contents,
+            `
+                assert.equal(readLog(), original.readFile(path, 'utf8'));
+                assert.equal(bytesRead, ${size});
+                assertClosed();
+            `
+        );
+    });
+
+    it('refuses oversized multibyte input by bytes and closes the descriptor', () => {
+        runNativeLogProbe(
+            'é'.repeat(byteLimit / 2 + 1),
+            `
+                assert.throws(() => readLog(), /native branch history exceeds admission bound/);
+                assert.equal(bytesRead, byteLimit + 1);
+                assertClosed();
+            `
+        );
+    });
+
+    it('keeps one opened identity when its path is replaced and closes on success', () => {
+        runNativeLogProbe(
+            reflog([[anchor, 1792620751]]),
+            `
+                const contents = original.readFile(path, 'utf8');
+                afterOpen = () => {
+                    fs.renameSync(path, path + '.original');
+                    fs.writeFileSync(path, Buffer.alloc(byteLimit + 1, 'x'));
+                };
+                assert.equal(readLog(), contents);
+                assert.equal(original.readFile(path).byteLength, byteLimit + 1);
+                assertClosed();
+            `
+        );
+    });
+
+    it('closes the descriptor when reading fails', () => {
+        runNativeLogProbe(
+            'unreadable native history',
+            `
+                afterRead = () => { throw new Error('native read failure'); };
+                assert.throws(() => readLog(), /native read failure/);
+                assertClosed();
+            `
+        );
+    });
+
+    it('fails closed for a missing native reflog', () => {
+        runNativeLogProbe(
+            '',
+            `
+                fs.renameSync(path, path + '.absent');
+                assert.throws(() => readLog(), { code: 'ENOENT' });
+            `
+        );
+    });
+});
 
 describe('historical stack native admission', () => {
     it('replays when two matching resumes both observed the missing marker', () => {

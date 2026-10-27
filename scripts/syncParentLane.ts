@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { linkSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, linkSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -322,10 +322,26 @@ export function historicalAdmissionShellPort(
     };
     const nativeLog = (ref: string) => {
         const path = local(['rev-parse', '--path-format=absolute', '--git-path', `logs/refs/heads/${ref}`]);
-        if (statSync(path).size > 1024 * 1024) {
-            fail('native branch history exceeds admission bound');
+        const descriptor = openSync(path, 'r');
+        try {
+            const byteLimit = 1024 * 1024;
+            // The extra byte detects growth without trusting a separate path or size observation.
+            const contents = Buffer.alloc(byteLimit + 1);
+            let size = 0;
+            while (size < contents.length) {
+                const bytesRead = readSync(descriptor, contents, size, contents.length - size, size);
+                if (bytesRead === 0) {
+                    break;
+                }
+                size += bytesRead;
+            }
+            if (size > byteLimit) {
+                fail('native branch history exceeds admission bound');
+            }
+            return contents.subarray(0, size).toString('utf8');
+        } finally {
+            closeSync(descriptor);
         }
-        return readFileSync(path, 'utf8');
     };
     const readDescriptor = () => readLaneStack(primaryRoot, branch);
     return {
