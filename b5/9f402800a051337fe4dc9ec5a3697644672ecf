@@ -1,0 +1,41 @@
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_225835a7a9727b 1211-1212
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_09680add290cb3 785-994,1924
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  s_29d8df116c5b92::t_28260f1b5b59ed 419,428,475
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_d70d9d887251e8 11,268
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_29d8df116c5b92::t_a52461e17ba705 12,162-167,184-191,237-240,263,269-272,274
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipRestoreInsertionIndex.spec.ts
+  s_29d8df116c5b92::t_76f6a884071f46 1-49
+src/modules/Arrangement/useCases/clipEditing/isClipRestoreOrderSnapshot.ts
+  s_29d8df116c5b92::t_fee5099a7f04be 1-25
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_29d8df116c5b92::t_61f25351f10f35 11,187-248,295-296,299
+src/modules/Arrangement/useCases/clipEditing/resolveClipRestoreInsertionIndex.ts
+  s_29d8df116c5b92::t_0a5f2e02971c47 1-52
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_29d8df116c5b92::t_acfe1db9812ce5 226-229
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_c072049f13dfe3 894
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_705ca54b546476 1182-1183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b59f402800a051337fe4dc9ec5a3697644672ecf",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
