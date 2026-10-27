@@ -1,8 +1,8 @@
+import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
-
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
