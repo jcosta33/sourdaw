@@ -100,6 +100,14 @@ vi.mock('../../models/TempoMap', () => ({
     secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    updateClipInStore: vi.fn(() => false),
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: harness.track_store,
     takeLaneStore: { value: { lanes: [] } },
     // The loop-wrap take path and the #5517 ownership guard read which clips
@@ -113,6 +121,13 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
             : null,
     observeRecordingPassEntry: vi.fn(),
     prepareRecoveredRecording: vi.fn(),
+    resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        })),
     discardRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -137,6 +152,20 @@ vi.mock('../transportControls/panicYeastRuntime', () => ({
     panicYeastRuntime: harness.panic_yeast_runtime,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
+    shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
+        if (probabilityPercent <= 0) return false;
+        if (probabilityPercent >= 100) return true;
+        throw new Error('This scheduler fixture requires deterministic note probability');
+    },
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
@@ -149,6 +178,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         read: () => ({ carrier: 'browser' as const }),
     })),
     ensureCachedAudioBuffersDurable: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
     advanceNoteExpression: vi.fn(),
     cacheAudioBuffer: harness.cache_audio_buffer,
     getTrackStrip: vi.fn(),

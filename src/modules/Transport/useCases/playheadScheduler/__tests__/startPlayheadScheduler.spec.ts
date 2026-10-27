@@ -90,12 +90,15 @@ const audioEngineMocks = {
 };
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
-vi.mock('#/modules/MIDI/useCases', () => ({
-    isOverdubLanding: () => false,
-    countSettledOverdubPasses: () => 0,
-    waitForOverdubLanding: () => Promise.resolve(),
-}));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    updateClipInStore: vi.fn(() => false),
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -199,6 +202,13 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         activeRecordingRefState.current = [];
         return arrangementMocks.stopRecording(...args);
     },
+    resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        })),
     addTakeLane: (...args: unknown[]) => (arrangementMocks.addTakeLane as (...a: unknown[]) => unknown)(...args),
     addTake: (...args: unknown[]) => (arrangementMocks.addTake as (...a: unknown[]) => unknown)(...args),
     stageRecordingTake: (...args: unknown[]) =>
@@ -214,9 +224,37 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
+    shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
+        if (probabilityPercent <= 0) return false;
+        if (probabilityPercent >= 100) return true;
+        throw new Error('This scheduler fixture requires deterministic note probability');
+    },
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
     // A held note that survived would still have a change due, so a test that expects none sees it.
     advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
         timeline,
