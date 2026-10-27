@@ -1,4 +1,7 @@
 import { type MeasuredPreview } from './MeasuredPreview';
+import { type AdoptedRecipe } from './AdoptedRecipe';
+
+export { type AdoptedRecipe } from './AdoptedRecipe';
 
 /**
  * One command an application compiler lowered into the batch: its own key, the emitting step, the
@@ -22,13 +25,6 @@ export type RetainedCommandSet = {
     callId: string;
     revision: string;
     commands: readonly RetainedCommand[];
-};
-
-/** Which recipe a batch adopted and what it was adopted for: the provenance an approval shows. */
-export type AdoptedRecipe = {
-    recipeId: string;
-    title: string;
-    targetId: string;
 };
 
 /**

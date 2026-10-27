@@ -1,4 +1,4 @@
-import { type AdoptedRecipe } from './RetainedCompilation';
+import { type AdoptedRecipe } from './AdoptedRecipe';
 
 /** One objective figure as an agent measurement reports it: read from the audio, or why it could not be. */
 export type MeasuredMetricEntry =

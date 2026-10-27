@@ -79,6 +79,7 @@ describe('generateAnthropicToolCalls', () => {
             toolSchemas: [tool],
             maxOutputTokens: 8192,
             directive: AUTO_TOOL_CHOICE,
+            signal: new AbortController().signal,
         });
         const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
         if (request === undefined) {
