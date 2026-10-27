@@ -4,7 +4,6 @@ import {
     createAutomergeStorage,
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
-    hasValidAudioPassOrigin,
     hasValidAudioSourceTiles,
     isAudioSourceSnapshot,
     isAudioSourceTile,
@@ -83,13 +82,6 @@ function get_lane_values(value: unknown): unknown[] | null {
     return value.lanes;
 }
 
-function hasValidTakeOffsets(value: object): boolean {
-    return (
-        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
-        (!('sourceOffsetSeconds' in value) || is_finite_non_negative_number(value.sourceOffsetSeconds))
-    );
-}
-
 function is_valid_take(value: unknown): value is Take {
     return (
         value !== null &&
@@ -107,37 +99,7 @@ function is_valid_take(value: unknown): value is Take {
         value.endBeat >= value.startBeat &&
         'selected' in value &&
         typeof value.selected === 'boolean' &&
-        // A take without the field reads at its clip's origin; a take with a
-        // malformed one is dropped whole, like any other malformed take field.
-        isValidTakePlacement(value) &&
-        hasValidTakeOffsets(value) &&
-        is_valid_pass_placement(value) &&
-        hasValidAudioPassOrigin(value)
-    );
-}
-
-/**
- * A placed pass carries its anchor and its depth together, and only beside the
- * media depth that marks it a pass. A pass recorded ahead of its media sounds
- * before the media begins, so its anchor may be negative; its material lies
- * inside the recording, so its depth may not. A saved exclusive source end
- * must leave material beyond that depth.
- */
-function is_valid_pass_placement(value: object): boolean {
-    const hasAnchor = 'passAnchorSeconds' in value;
-    const hasDepth = 'passDepthSeconds' in value;
-    if (!hasAnchor && !hasDepth) {
-        return !('passSourceEndSeconds' in value);
-    }
-    return (
-        hasAnchor &&
-        hasDepth &&
-        'sourceOffsetBeats' in value &&
-        (typeof value.passAnchorSeconds === 'number' && Number.isFinite(value.passAnchorSeconds)) &&
-        is_finite_non_negative_number(value.passDepthSeconds) &&
-        (!('passSourceEndSeconds' in value) ||
-            (is_finite_non_negative_number(value.passSourceEndSeconds) &&
-                value.passSourceEndSeconds > value.passDepthSeconds))
+        isValidTakePlacement(value)
     );
 }
 

@@ -667,3 +667,14 @@ placement with a negative anchor: the selected takes and their comp regions
 must survive real hydration unchanged, including an active saved arrangement's
 top-level fallback. Reverting placement admission must fail the rejection cases;
 a sanitizer-only assertion cannot establish safe file admission.
+
+## Recovery owner results must reach the continuation (PR #4496)
+
+PR #4496 (`b88383cb221f`) added the strip-ready result check before input
+monitoring rearm. The import roundtrip's void strip mock then threw inside
+recovery and was caught as a restoration failure while the spec stayed green.
+The missed integrity observable was the continuation after successful graph
+restoration; private review prompts and tiers are unavailable. Require owner
+mocks to satisfy the live callable result contract, and inspect logged recovery
+failures before using a passing import spec as proof. See test-validity's stale
+owner-result escape for the discriminating mock contract.

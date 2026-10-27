@@ -281,6 +281,18 @@ describe('project take admission and hydration', () => {
                 take,
                 { ...take, id: 'offset-only', sourceOffsetBeats: 0 },
                 { ...take, id: 'placed', sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 },
+                { ...take, id: 'canonical-zero', sourceOffsetBeats: 8, sourceOffsetSeconds: 0 },
+                {
+                    ...take,
+                    id: 'canonical-pass',
+                    sourceOffsetBeats: 4,
+                    sourceOffsetSeconds: 0.5,
+                    passAnchorSeconds: -2,
+                    passDepthSeconds: 2,
+                    passSourceEndSeconds: 4,
+                    passOriginBeat: 0,
+                    passOriginSourceSeconds: -1,
+                },
             ];
             const takeLanes = {
                 lanes: [

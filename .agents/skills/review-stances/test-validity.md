@@ -1545,3 +1545,14 @@ complete placed passes, including negative finite anchors, and assert exact
 selected-take and comp-region retention after real owner hydration. Removing only
 placement admission must redden the rejection case; testing a store sanitizer
 alone cannot observe the file admission gap.
+
+## Escape: recovery tests swallowed a stale owner result (PR #4496)
+
+PR #4496 (`b88383cb221f`) made project recovery read `ensureTrackStrips().status`,
+but the import roundtrip spec retained a void mock. Its recovery cases stayed
+green while logging `Cannot read properties of undefined (reading 'status')` and
+skipping the successful restoration continuation. The missed test-validity input
+was a real caller consuming an owner's changed result; private reviewer prompts
+and tiers are unavailable. Type the mock from the exported callable and return
+its complete ready result, so result-contract drift cannot masquerade as tested
+recovery. Read unexpected logged errors even when every assertion passes.
