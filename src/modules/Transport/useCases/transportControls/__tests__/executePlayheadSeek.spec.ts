@@ -57,6 +57,10 @@ vi.mock('../../playheadScheduler/advanceSchedulerDiscontinuityEpoch', () => ({
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({ startPlayheadScheduler: mockStartScheduler }));
 vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({ stopPlayheadScheduler: mockStopScheduler }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    readMusicalRange: vi.fn(),
+    readMusicalRangeInputs: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
+
     trackStore: { value: null, subscribe: vi.fn(() => () => {}) },
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'missing' })
@@ -71,6 +75,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     updateClipInStore: vi.fn(),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    getSynthParamsForTrack: vi.fn(),
+    resolveClipsWithComping: vi.fn(),
+
     getTrackStoreState: vi.fn(() => ({ tracks: [{ id: 'record-track', kind: 'audio', armed: true }] })),
     startRecording: vi.fn(() => []),
     discardRecording: vi.fn(),
@@ -84,6 +91,21 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: mockPanicYeast }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mockStopActiveRecording }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    advanceNoteExpression: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    createBufferSource: vi.fn(),
+    ensureTrackStrip: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getCurrentTime: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getDrumKitByIndex: vi.fn(),
+    getNoteExpressionDimensions: vi.fn(),
+    getTrackStrip: vi.fn(),
+    registerScheduledSource: vi.fn(),
+    relocateNoteExpression: vi.fn(),
+    scheduleFaustNote: vi.fn(),
+    startNoteExpression: vi.fn(),
+
     audioEngine: {
         setTransportInfo: mockSetTransportInfo,
     },
@@ -108,6 +130,16 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     analyzePitchForClip: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    getChordAtBeat: vi.fn(),
+    projectChannelBend: vi.fn(),
+    projectClipControllerEvents: vi.fn(),
+    projectClipControllerRestore: vi.fn(),
+    projectClipMidiEvents: vi.fn(),
+    projectCommittedGroove: vi.fn(),
+    resolveMidiNoteArticulationId: vi.fn(),
+    shouldPlayMidiEvent: vi.fn(),
+    transposeForChordTrack: vi.fn(),
+
     resetMidiState: mockResetMidiState,
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,

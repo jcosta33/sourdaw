@@ -36,7 +36,8 @@ export function scheduleFrozenTrack(
      * dying pass's tail past the seam, and an unfloored mid-buffer join would
      * layer the incoming pass's pre-window content underneath it.
      */
-    windowStartBeat: number | null
+    windowStartBeat: number | null,
+    initialSchedulingAnchor?: number
 ): boolean {
     if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
@@ -74,7 +75,7 @@ export function scheduleFrozenTrack(
     // drifting against the un-frozen tracks around it the moment a tempo change
     // sat between the playhead and the track's first clip.
     const startTime =
-        getCurrentTime() +
+        (initialSchedulingAnchor ?? getCurrentTime()) +
         secondsBetweenBeats(changes, accumulatedPosition, trackStartBeat, defaultTempo) +
         compensation;
     const now = getCurrentTime();
@@ -85,10 +86,15 @@ export function scheduleFrozenTrack(
     // that beat must not sound — the earliest content is the window's first
     // beat, held until its due instant. A floor at or before the buffer's own
     // start changes nothing.
-    let floorSeconds = startTime;
+    let floorSeconds =
+        initialSchedulingAnchor === undefined ? startTime : Math.max(startTime, initialSchedulingAnchor + compensation);
     if (windowStartBeat !== null && windowStartBeat > trackStartBeat) {
-        floorSeconds =
-            now + secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) + compensation;
+        floorSeconds = Math.max(
+            floorSeconds,
+            (initialSchedulingAnchor ?? now) +
+                secondsBetweenBeats(changes, accumulatedPosition, windowStartBeat, defaultTempo) +
+                compensation
+        );
     }
     const audibleStartSeconds = Math.max(startTime, floorSeconds);
     const skipSeconds = audibleStartSeconds - startTime;

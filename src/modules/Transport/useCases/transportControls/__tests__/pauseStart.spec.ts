@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { defaultTransportState } from '../../../models/TransportState';
+import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { pausePlayback } from '../pausePlayback';
 import { startPlayback } from '../startPlayback';
+
+import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 
 const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn<() => Record<string, unknown>>(),
     updateTransportState: vi.fn<(...args: unknown[]) => void>(),
     stopPlayheadScheduler: vi.fn<() => void>(),
-    startPlayheadScheduler: vi.fn<() => void>(),
+    startPlayheadScheduler: vi.fn<typeof startPlayheadScheduler>(),
     stopAllScheduled: vi.fn<() => void>(),
     resetMidiState: vi.fn<() => void>(),
     resumeEngine: vi.fn<() => void>(),
@@ -35,6 +40,8 @@ vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
 vi.mock('#/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: mocks.startPlayheadScheduler,
 }));
+vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
+vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('#/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: mocks.stopPlayheadScheduler,
 }));
@@ -55,6 +62,21 @@ describe('Pause/Start Playback', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.playheadPositionRef.current = 0;
+        mocks.startPlayheadScheduler.mockImplementation((prepared) => (prepared ? Promise.resolve(true) : undefined));
+        vi.mocked(prepareInitialBrowserPlayback).mockImplementation((generation) => ({
+            generation,
+            epoch: schedulerSession.discontinuityEpoch,
+            seam: null,
+            ownsSession: () => true,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+            prepareMidiWindows: async () => ({
+                isCurrent: () => true,
+                midiWindow: () => {
+                    throw new Error('This spec controls the scheduler admission boundary');
+                },
+            }),
+        }));
     });
 
     describe('pausePlayback', () => {
@@ -107,11 +129,23 @@ describe('Pause/Start Playback', () => {
     });
 
     describe('startPlayback', () => {
+        let state = defaultTransportState;
+        beforeEach(() => {
+            state = { ...defaultTransportState, preRollEnabled: false };
+            mocks.getTransportState.mockImplementation(() => state);
+            mocks.updateTransportState.mockImplementation((patch) => {
+                if (typeof patch !== 'object' || patch === null) {
+                    throw new Error('Expected a transport patch');
+                }
+                state = { ...state, ...patch };
+            });
+        });
         it('resumes engine, ensures strips, and starts scheduler', async () => {
-            mocks.getTransportState.mockReturnValue({
+            state = {
+                ...state,
                 playheadPosition: 10,
                 preRollEnabled: false,
-            });
+            };
 
             startPlayback();
 
@@ -125,7 +159,8 @@ describe('Pause/Start Playback', () => {
         });
 
         it('calculates pre-roll position if enabled', async () => {
-            mocks.getTransportState.mockReturnValue({
+            state = {
+                ...state,
                 playheadPosition: 16,
                 preRollEnabled: true,
                 preRollBars: 2,
@@ -133,7 +168,7 @@ describe('Pause/Start Playback', () => {
                 // Pre-roll now measures whole bars, so the bar length needs both
                 // halves of the meter — a 4/4 bar is four quarter notes.
                 timeSignatureDenominator: 4,
-            });
+            };
 
             startPlayback();
 
