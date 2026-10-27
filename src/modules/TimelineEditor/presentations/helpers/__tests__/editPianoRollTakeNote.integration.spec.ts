@@ -671,6 +671,14 @@ describe('selected piano roll Command callbacks', () => {
             false,
         ]);
         expect(await undo()).toEqual({ headConsumed: true });
+        await redo();
+        expect(rows()?.map((takeRows) => takeRows?.some((note) => note.id === original.id))).toEqual([
+            false,
+            false,
+            false,
+            false,
+        ]);
+        expect(await undo()).toEqual({ headConsumed: true });
 
         fireEvent.click(screen.getByText('Paste'));
         await waitFor(() => expect(rows()?.map((takeRows) => takeRows?.length)).toEqual([4, 4, 2, 2]));
@@ -683,6 +691,9 @@ describe('selected piano roll Command callbacks', () => {
         expect(pastedSecond?.startBeat).toBeCloseTo(9.9);
         expect(rows()?.[1]?.find((note) => note.id === pastedFirst?.id)).toEqual(pastedFirst);
         expect(rows()?.[3]?.find((note) => note.id === pastedSecond?.id)).toEqual(pastedSecond);
+        expect(await undo()).toEqual({ headConsumed: true });
+        await redo();
+        expect(rows()?.map((takeRows) => takeRows?.length)).toEqual([4, 4, 2, 2]);
         expect(await undo()).toEqual({ headConsumed: true });
 
         cleanup();
