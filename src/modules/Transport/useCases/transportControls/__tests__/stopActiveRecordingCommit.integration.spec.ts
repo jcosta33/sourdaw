@@ -6,7 +6,6 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { activeRecordingRef, takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
 import {
     admitRecordingMidiNoteOn,
     getArrangementHandlers,
@@ -15,6 +14,7 @@ import {
     startRecording,
     takeOwnsRecordingRoot,
 } from '#/modules/Arrangement/useCases';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -33,15 +33,15 @@ import {
     replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
-import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { createWebMidiNoteKey } from '#/modules/MIDI/models/WebMidiTypes';
-import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
-import { setTargetTrackId } from '#/modules/MIDI/repositories/webMidi/setTargetTrackId';
 import { getTargetTrackId } from '#/modules/MIDI/repositories/webMidi/getTargetTrackId';
 import { setMpeEnabledInternal } from '#/modules/MIDI/repositories/webMidi/setMpeEnabledInternal';
-import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
+import { setTargetTrackId } from '#/modules/MIDI/repositories/webMidi/setTargetTrackId';
+import { activeNotes } from '#/modules/MIDI/repositories/webMidi/state';
+import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { triggerLiveNoteOn } from '#/modules/MIDI/useCases/triggerLiveNoteOn';
+import { handleWebMidiMessage } from '#/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage';
+import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 
 import { countSettledTakes } from '../countSettledTakes';
 import { finalizeAutomaticRecording } from '../finalizeAutomaticRecording';
@@ -662,10 +662,20 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             [67, 9, 0.5],
         ]);
         expect(notes.map((note) => note.recordingPassIndex)).toEqual([0, 1, 2]);
-        expect(
-            takeLaneStore.value?.lanes[0]?.takes.map((take) => [take.sourceOffsetBeats, take.recordingPassIndex])
-        ).toEqual([
-            [undefined, 2],
+        const recordedTakes = () => {
+            const laneTakes = (takeLaneStore.value?.lanes ?? []).flatMap((lane) => lane.takes);
+            const clipTakes = laneTakes.filter((take) => take.clipId === provisional.id);
+            return clipTakes.map((take) => ({
+                id: take.id,
+                startBeat: take.startBeat,
+                endBeat: take.endBeat,
+                sourceOffsetBeats: take.sourceOffsetBeats,
+                recordingPassIndex: take.recordingPassIndex,
+            }));
+        };
+        const sealedTakes = recordedTakes();
+        expect(sealedTakes.map((take) => [take.sourceOffsetBeats, take.recordingPassIndex])).toEqual([
+            [8, 2],
             [0, 0],
             [4, 1],
         ]);
@@ -677,8 +687,10 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(committedEntryCount()).toBe(1);
         await undo();
         expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
+        expect(recordedTakes()).toEqual([]);
         await redo();
         expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+        expect(recordedTakes()).toEqual(sealedTakes);
     });
 
     it('seals a latency-compensated physical onset at its heard pass beat while its worker is held', async () => {
