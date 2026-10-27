@@ -1,5 +1,5 @@
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type ActionUndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
@@ -45,6 +45,22 @@ function findEntry(replayAction: AppAction): ActionUndoEntry | undefined {
         (candidate) => candidate.kind === 'action' && (candidate.redoAction ?? candidate.action) === replayAction
     );
     return entry?.kind === 'action' ? entry : undefined;
+}
+
+/** Capture the same exact pending entry used by inverse reconciliation, before any dispatch wait. */
+export function captureRecordedRedoContext(action: AppAction): HandlerValidationContext['recordedRedo'] {
+    const entry = findEntry(action);
+    if (!entry) {
+        return undefined;
+    }
+    const inverseAction = entry.inverseAction;
+    return {
+        inverseAction,
+        isCurrent: () =>
+            undoStore.value?.future.includes(entry) === true &&
+            (entry.redoAction ?? entry.action) === action &&
+            entry.inverseAction === inverseAction,
+    };
 }
 
 function publicationIsCurrent(publication: Publication, actions: readonly AppAction[]): boolean {

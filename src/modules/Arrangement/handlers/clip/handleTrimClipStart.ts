@@ -1,20 +1,55 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type Clip } from '../../models/Track';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { audioClipTrimOwner } from '../../useCases/clipEditing/audioClipTrimOwner';
 import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
+import { prepareLegacyAudioClipStartTrim } from '../../useCases/clipEditing/prepareLegacyAudioClipStartTrim';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 type AudioTrimCapture = Extract<AppAction, { type: 'restoreAudioClipStartTrim' }>['payload'];
 const preparedAudioTrims = new WeakMap<object, AudioTrimCapture>();
+type LegacyTrim = {
+    before: Clip;
+    after: Clip;
+    clock: ReturnType<typeof audioClipStartTrimState.captureClock>;
+    isCurrent: () => boolean;
+};
+const preparedLegacyRedos = new WeakMap<object, LegacyTrim | null>();
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     canReportConflict: true,
     validateSessionEntry: audioClipStartTrimState.isSessionEntry,
     execute: (alpha) => {
+        if (preparedLegacyRedos.has(alpha)) {
+            const legacy = preparedLegacyRedos.get(alpha);
+            if (!legacy || !legacy.isCurrent() || !audioClipTrimOwner.matches(legacy.before, legacy.clock)) {
+                return { status: 'conflict' };
+            }
+            const proof = audioClipTrimOwner.captureCommitValidation(legacy.before, legacy.after, legacy.clock);
+            if (!proof) {
+                return { status: 'conflict' };
+            }
+            if (!trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat, legacy.after.loopOriginBeat ?? null)) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            return {
+                status: 'written',
+                commitValidation: {
+                    ...proof,
+                    beforeCommit: () => {
+                        if (!legacy.isCurrent()) {
+                            return 'Historic trim Redo entry changed';
+                        }
+                        return proof.beforeCommit();
+                    },
+                },
+            };
+        }
         const audio = preparedAudioTrims.get(alpha);
         if (audio) {
             // The same live owner and clock that supplied the description must
@@ -43,8 +78,21 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
             )
         );
     },
-    describe: (alpha) => {
+    describe: (alpha, context?: HandlerValidationContext) => {
         const label = 'Trim clip start';
+        preparedAudioTrims.delete(alpha);
+        preparedLegacyRedos.delete(alpha);
+        const replay = context?.recordedRedo;
+        const inverse = replay?.inverseAction;
+        const historicRedo =
+            inverse?.type === 'trimClipStart' &&
+            inverse.payload.clipId === alpha.payload.clipId &&
+            !Object.hasOwn(inverse.payload, 'midiOffsetBeats');
+        if (historicRedo) {
+            // Mark refusal too: a retired entry or missing owner must never fall
+            // through to the indistinguishable fresh forward action.
+            preparedLegacyRedos.set(alpha, null);
+        }
         try {
             const state = getTrackStoreState();
             const clip = state?.tracks
@@ -54,8 +102,30 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                 return { label, inverseAction: null };
             }
 
+            if (historicRedo && clip.type === 'audio' && replay) {
+                const before = structuredClone(clip);
+                const after = prepareLegacyAudioClipStartTrim(
+                    before,
+                    alpha.payload.newStartBeat,
+                    alpha.payload.loopOriginBeat
+                );
+                if (!replay.isCurrent() || !after) {
+                    return { label, inverseAction: null };
+                }
+                preparedLegacyRedos.set(alpha, {
+                    before,
+                    after,
+                    clock: audioClipStartTrimState.captureClock(),
+                    isCurrent: replay.isCurrent,
+                });
+            } else {
+                // MIDI history keeps its original offset/row restoration route.
+                preparedLegacyRedos.delete(alpha);
+            }
+
             if (
                 clip.type === 'audio' &&
+                !historicRedo &&
                 !Object.hasOwn(alpha.payload, 'loopOriginBeat') &&
                 !Object.hasOwn(alpha.payload, 'midiOffsetBeats')
             ) {

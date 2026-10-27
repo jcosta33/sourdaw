@@ -286,6 +286,37 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
         }
     });
 
+    it('preserves the genuine historic audio tuple through the grouped Redo dispatcher', async () => {
+        await loadFixture('audio');
+        const capturedClip = structuredClone(readClip());
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        const history = undoStore.value;
+        if (!history) {
+            throw new Error('Expected the genuine pending Redo entry');
+        }
+        // Exercise the exposed grouped dispatcher with the genuine action;
+        // this does not claim the historic singleton producer persisted groups.
+        undoStore.set({ ...history, future: history.future.map((entry) => ({ ...entry, groupId: 'redo-unit' })) });
+        await redo();
+        await settleMirror();
+        expect(readClip()).toEqual(capturedClip);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('does not grant historic dispatch to a fresh clone of the pending forward action', async () => {
+        await loadFixture('audio');
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        const entry = undoStore.value?.future[0];
+        if (entry?.kind !== 'action') {
+            throw new Error('Expected the genuine pending Redo entry');
+        }
+        await executeAppAction(structuredClone(entry.action), { skipUndo: true });
+        await settleMirror();
+        expect(readClip().audioOffsetSeconds).toBe(1);
+        expect(readClip().audioUnwrappedOffsetSeconds).toBe(1);
+        expect(readClip().loopLength).toBe(8);
+    });
+
     it('conservatively refuses a saved loop-disabled MIDI inverse without its captured offset', async () => {
         await loadFixture('loop-off');
         expect(readClip()).toMatchObject({ startBeat: 2, loopEnabled: false });

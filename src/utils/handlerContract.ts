@@ -3441,6 +3441,11 @@ export type HandlerExecutionResult = {
 export type HandlerValidationContext = {
     readonly actions: readonly AppAction[];
     readonly actionIndex: number;
+    /** Command-owned pending history identity, never an action argument or persisted capability. */
+    readonly recordedRedo?: {
+        readonly inverseAction: AppAction | null;
+        readonly isCurrent: () => boolean;
+    };
     /** Exact execution cancellation signal for long-running handler-owned follow-up work. */
     readonly signal?: AbortSignal;
     /** Caller-scoped telemetry for actual deferred work starts and for render receipts; never persisted as project truth. */
