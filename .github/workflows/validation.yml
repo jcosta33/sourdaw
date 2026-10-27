@@ -335,6 +335,9 @@ jobs:
       - name: Artifact freshness
         run: pnpm wasm:verify
 
+      - name: Campaign fixture freshness
+        run: pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2
+
       - name: App types
         if: needs.decide.outputs.tooling != 'true'
         run: pnpm typecheck

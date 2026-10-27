@@ -13,6 +13,7 @@ import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLane
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import { isClipSplitOrderSnapshot } from './isClipSplitOrderSnapshot';
 import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
 
 import type { TakeLane } from '../../models/TakeLane';
@@ -388,13 +389,7 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
         typeof value.rightClipIndex === 'number' &&
         Number.isSafeInteger(value.rightClipIndex) &&
         value.rightClipIndex >= 0 &&
-        (value.rightClipOrder === undefined ||
-            (Array.isArray(value.rightClipOrder) &&
-                value.rightClipOrder.every((id) => typeof id === 'string' && id.length > 0) &&
-                new Set(value.rightClipOrder).size === value.rightClipOrder.length &&
-                (value.rightClipOrder.length === 0 ||
-                    (value.rightClipOrder.indexOf(clipId) >= 0 &&
-                        value.rightClipOrder.indexOf(rightClipId) > value.rightClipOrder.indexOf(clipId))))) &&
+        isClipSplitOrderSnapshot(value.rightClipOrder, clipId, rightClipId) &&
         isExactMidiClipDataActionSnapshot(value.sourceMidi) &&
         isExactMidiClipDataActionSnapshot(value.rightMidi) &&
         hasFiniteNumbers(value)

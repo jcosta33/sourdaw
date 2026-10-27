@@ -29,7 +29,7 @@ export function resolveClipSplitInsertionIndex(
     if (
         new Set(order).size !== order.length ||
         order.some((id) => typeof id !== 'string' || id.length === 0) ||
-        order.indexOf(clipId) < 0 ||
+        !order.includes(clipId) ||
         rightIndex <= order.indexOf(clipId)
     ) {
         return null;
