@@ -1441,6 +1441,37 @@ describe('guard failure stop enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS },
         }
     });
 
+    it('refuses a pressure result raised before the command started without stopping the lane', async () => {
+        const repoRoot = fixtureRoot('lane-admission-pressure');
+        const laneName = 'agent-103-admission';
+        const lane: DetectedLane = {
+            primaryRoot: repoRoot,
+            laneName,
+            branch: 'agent/103/admission',
+            headSha: '5555555555555555555555555555555555555555',
+            worktreePath: join(repoRoot, '.agents', 'worktrees', laneName),
+        };
+        mkdirSync(lane.worktreePath, { recursive: true });
+        const errors: string[] = [];
+
+        try {
+            const code = await runGuardCli(['--', 'pnpm', 'test:run', 'test.spec.ts'], {
+                cwd: lane.worktreePath,
+                detectLane: () => lane,
+                runCommand: async () =>
+                    fakeResult({ code: null, reason: 'pressure', refusedBeforeStart: true, durationMs: 0 }),
+                log: () => undefined,
+                error: (msg) => errors.push(msg),
+            });
+
+            expect(code).toBe(1);
+            expect(readGuardFailureReceipt(repoRoot, laneName)).toBeUndefined();
+            expect(errors.join('\n')).not.toContain('lane is stopped');
+        } finally {
+            rmSync(repoRoot, { recursive: true, force: true });
+        }
+    });
+
     it('refuses verification when active receipt matches current headSha', async () => {
         const repoRoot = fixtureRoot('lane-refuse');
         const laneName = 'agent-102-stopped';

@@ -1,9 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+import { recordedControllerTakeState } from '../../../repositories/webMidi/recordedControllerTakeState';
+import { bufferRecordedMidiCC } from '../../recordedControllerTake/bufferRecordedMidiCC';
+import { bufferRecordedMidiPitchBend } from '../../recordedControllerTake/bufferRecordedMidiPitchBend';
 
 const mpe_enabled = vi.hoisted(() => ({ value: true }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
+const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
@@ -18,7 +24,7 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {
-        context: { currentTime: 2, sampleRate: 48000 },
+        context: audio_clock,
     },
     applyNoteExpression: apply_note_expression,
     getDefaultBendRangeSemitones: () => 48,
@@ -57,6 +63,11 @@ function make_dependencies(
 ): HandleWebMidiPitchBendDependencies {
     return {
         getSynthParamsForTrack: () => ({ detune: 5 }),
+        getTransportStoreValue: () => ({ isRecording: false, overdubEnabled: false, isLooping: false, tempo: 120 }),
+        getTrackStoreState: () => ({ tracks: [], selectedTrackId: null }),
+        getCompensationDelay: () => 0,
+        bufferRecordedMidiCC,
+        bufferRecordedMidiPitchBend,
         ...overrides,
     };
 }
@@ -408,5 +419,148 @@ describe('handleWebMidiPitchBend', () => {
         expect(() => fn(0, 127, 127)).not.toThrow();
         // The note WITH an osc is still retuned.
         expect(set_target).toHaveBeenCalledTimes(1);
+    });
+
+    describe('recording into the take', () => {
+        const RECORDING_CLIP_ID = 'clip-rec';
+
+        const recording_dependencies = (
+            overrides: Partial<HandleWebMidiPitchBendDependencies> = {}
+        ): HandleWebMidiPitchBendDependencies =>
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            armed: true,
+                            devices: [],
+                            clips: [
+                                { id: RECORDING_CLIP_ID, type: 'midi', startBeat: 4, endBeat: 12, midiOffsetBeats: 0 },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({
+                    isRecording: true,
+                    overdubEnabled: false,
+                    isLooping: false,
+                    tempo: 120,
+                }),
+                getCompensationDelay: () => 0,
+                bufferRecordedMidiCC,
+                bufferRecordedMidiPitchBend,
+                ...overrides,
+            });
+
+        /** An event admitted at a timeline beat, as the dispatcher stamps a recording take's events. */
+        const at_beat = (recordingBeat: number) => ({ audioTime: 2, recordingBeat });
+
+        const recorded_rows = () =>
+            (recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? []).map(
+                ({ value, beat, channel }) => ({ value, beat, channel })
+            );
+
+        beforeEach(() => {
+            audio_clock.baseLatency = 0;
+            audio_clock.outputLatency = 0;
+            tempoMapStore.set({ changes: [] });
+            recordedControllerTakeState.buffers.clear();
+        });
+
+        afterEach(() => {
+            audio_clock.baseLatency = 0;
+            audio_clock.outputLatency = 0;
+            tempoMapStore.set({ changes: [] });
+        });
+
+        it('records a non-MPE bend as the signed wire delta at its clip-relative beat', () => {
+            mpe_enabled.value = false;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            // Full bend up is wire position 16383 (lsb 127, msb 127); the centre is 8192 (lsb 0, msb 64).
+            fn(0, 127, 127, at_beat(6));
+            fn(0, 0, 64, at_beat(7));
+
+            expect(recorded_rows()).toEqual([
+                { value: 8191, beat: 2, channel: 0 },
+                { value: 0, beat: 3, channel: 0 },
+            ]);
+        });
+
+        it('records a full bend down as -8192 on the channel it arrived on', () => {
+            mpe_enabled.value = false;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            fn(5, 0, 0, at_beat(6));
+
+            expect(recorded_rows()).toEqual([{ value: -8192, beat: 2, channel: 5 }]);
+        });
+
+        it('records nothing while the transport is not recording', () => {
+            mpe_enabled.value = false;
+            const fn = handleWebMidiPitchBend._factory(
+                recording_dependencies({
+                    getTransportStoreValue: () => ({
+                        isRecording: false,
+                        overdubEnabled: false,
+                        isLooping: false,
+                        tempo: 120,
+                    }),
+                })
+            );
+
+            fn(0, 127, 127, at_beat(6));
+
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
+        });
+
+        it('keeps an MPE member-channel bend as per-note data and records the master channel bend', () => {
+            mpe_enabled.value = true;
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies());
+
+            fn(2, 0, 96, at_beat(6));
+
+            expect(recordedControllerTakeState.buffers.size).toBe(0);
+            expect(activeNotes.get(key)?.pitchBend).toBe(4096);
+
+            fn(0, 0, 96, at_beat(6));
+
+            expect(recorded_rows()).toEqual([{ value: 4096, beat: 2, channel: 0 }]);
+        });
+
+        // The controller route shares the placement helper, so a bend row that
+        // skipped it would still agree with the flat-tempo cases above. The beat
+        // is derived by hand from the map: beats 0-4 run at 120 BPM (2 s) and
+        // beats 4-6 at 60 BPM (2 s), so the event at beat 6 sits at 4 s; the
+        // 0.375 s of latency (0.25 output + 0.125 track) rewinds it to 3.625 s,
+        // 1.625 s past beat 4 at one beat per second: beat 5.625 on the timeline
+        // and 1.625 in a clip starting at beat 4.
+        it('files a bend at the heard instant across latency and a tempo change', () => {
+            mpe_enabled.value = false;
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-1', beat: 4, tempo: 60, curve: 'instant' },
+                ],
+            });
+            audio_clock.outputLatency = 0.25;
+            const fn = handleWebMidiPitchBend._factory(recording_dependencies({ getCompensationDelay: () => 0.125 }));
+
+            fn(0, 127, 127, at_beat(6));
+
+            expect(recorded_rows()).toHaveLength(1);
+            expect(recorded_rows()[0]?.beat).toBeCloseTo(1.625, 9);
+        });
     });
 });

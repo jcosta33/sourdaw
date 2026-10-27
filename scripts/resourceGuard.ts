@@ -32,6 +32,7 @@ import {
     readGuardFailureReceipt,
     type GuardFailureReceipt,
 } from './prContract.ts';
+import { areTransientProofReasons } from './resourceGuardProofReasons.ts';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -39,6 +40,7 @@ import {
     storageReferenceState,
     sameUserProcessIds,
     parseLsofCensus,
+    readStorageOwner,
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
     DISK_RESERVE_ENV,
@@ -102,6 +104,15 @@ export type GuardedCommandResult = {
     peakRssBytes: number;
     maxRssBytes: number;
     durationMs: number;
+    // Set when the command's process tree was proved exited but the storage census could not prove
+    // its storage free: the storage is kept and a later guarded run reclaims it once provable.
+    retainedStorage?: { path: string; reason: string };
+    // The census that left storage retained as a leak, recorded in the guard-failure receipt.
+    census?: string;
+    // Set when disk pressure refused the command before it started and the guard storage was
+    // released: nothing ran and nothing leaked, so the refusal is not a lane-stopping guard failure.
+    // Held storage is a leak and keeps its receipt.
+    refusedBeforeStart?: true;
 };
 
 type GuardedCommandInput = {
@@ -125,6 +136,8 @@ type GuardedCommandInput = {
     diskReserveBytes?: number;
     diskSampler?: (path: string) => number | undefined;
     storageFactory?: typeof createGuardStorage;
+    // Test seam for the census host (file-use proof, identity probes).
+    storageHost?: Partial<StorageRecoveryHost>;
 };
 
 const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number }> = {
@@ -1798,6 +1811,19 @@ function resolveDiskReserveBytes(value: number | undefined, env: NodeJS.ProcessE
     return bytes;
 }
 
+// A directory whose owner record cannot be read is skipped by every later recovery, so it never reclaims.
+function describeCensus(verdict: string | undefined, reasons: readonly string[]): string {
+    return [verdict ?? 'unobserved', ...reasons].join(' ');
+}
+
+function storageRecordReadable(path: string, token: string): boolean {
+    try {
+        return readStorageOwner(path, token) !== undefined;
+    } catch {
+        return false;
+    }
+}
+
 export async function runGuardedCommand(input: GuardedCommandInput): Promise<GuardedCommandResult> {
     const profile = profiles[input.profile];
     const cwd = input.cwd ?? process.cwd();
@@ -1892,12 +1918,40 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         };
     }
     let storageEvidenceReported = false;
-    const storagePorts = storageRecoveryPorts((reason) => {
-        if (!storageEvidenceReported) {
-            output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
-            storageEvidenceReported = true;
+    // The last census verdict and its diagnostics, kept per sessionState call so the final release
+    // attempt can tell a proved holder or a stable obstruction from a transient lost proof.
+    const storageProof: {
+        verdict: 'alive' | 'dead' | 'unknown' | undefined;
+        reasons: string[];
+        // The first census of this run that proved a holder or hit a stable obstruction. A later,
+        // weaker census never clears it: the holder may still be running.
+        obstruction: string | undefined;
+    } = { verdict: undefined, reasons: [], obstruction: undefined };
+    const storagePorts = storageRecoveryPorts(
+        (reason) => {
+            storageProof.reasons.push(reason);
+            if (!storageEvidenceReported) {
+                output.append(Buffer.from(`\nguard storage file-use proof unavailable: ${reason}\n`));
+                storageEvidenceReported = true;
+            }
+        },
+        { ...storageRecoveryHost, ...input.storageHost }
+    );
+    const censusSessionState = storagePorts.sessionState;
+    // localReleaseAllowed reads ports.sessionState at call time, so replacing it observes both paths.
+    storagePorts.sessionState = (...args) => {
+        storageProof.reasons = [];
+        storageProof.verdict = undefined;
+        const verdict = censusSessionState(...args);
+        storageProof.verdict = verdict;
+        const [owner] = args;
+        const stable =
+            verdict === 'alive' || (verdict === 'unknown' && !areTransientProofReasons(storageProof.reasons));
+        if (owner.token === processToken && stable) {
+            storageProof.obstruction ??= describeCensus(verdict, storageProof.reasons);
         }
-    });
+        return verdict;
+    };
     let storage: ReturnType<typeof createGuardStorage>;
     try {
         const supervisorStart = processStartedAt(process.pid);
@@ -1925,7 +1979,8 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     };
     const retainedStorageDiagnostic = '; guard storage retained: ownership or process-tree exit unproved';
     const systemVolume = platform() === 'win32' ? parse(process.env.SystemRoot ?? process.execPath).root : '/';
-    const diskPaths = [storage.tempDirectory, cwd, systemVolume];
+    // Only the system volume freezes the machine when it fills; other volumes carry no reserve.
+    const diskPaths = [systemVolume];
     const admissionDiskFailure = diskStorageFailure(diskPaths, diskReserveBytes, input.diskSampler);
     if (admissionDiskFailure !== undefined) {
         const removed = await releaseBeforeSpawn();
@@ -1933,6 +1988,7 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
             code: null,
             signal: null,
             reason: admissionDiskFailure.reason,
+            ...(admissionDiskFailure.reason === 'pressure' && removed ? { refusedBeforeStart: true as const } : {}),
             output: `${admissionDiskFailure.message}${removed ? '' : retainedStorageDiagnostic}`,
             omittedBytes: 0,
             peakRssBytes: 0,
@@ -1982,13 +2038,21 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
     // Setup-error containment may await tree exit before the caller awaits this promise.
     void childCompletion.catch(() => undefined);
     let storageRemoved = false;
+    let treeExitProved = false;
+    let releaseThrew = false;
     const cleanupStorage = async (): Promise<boolean> => {
         if (storageRemoved) {
             return true;
         }
         const treeStopped =
             child.pid === undefined || (await waitForProcessTreeExit(child.pid, tracked, processToken, 2_000));
-        const removed = await storage.release(treeStopped).catch(() => false);
+        treeExitProved = treeStopped;
+        storageProof.verdict = undefined;
+        storageProof.reasons = [];
+        const removed = await storage.release(treeStopped).catch(() => {
+            releaseThrew = true;
+            return false;
+        });
         if (ownedSession && treeStopped) {
             session.release();
         }
@@ -2196,17 +2260,41 @@ export async function runGuardedCommand(input: GuardedCommandInput): Promise<Gua
         }
         throw completion.error;
     }
+    // A tree that exited with only the storage census unproved is a verdict about the census, not
+    // the command: keeping the storage is the safe outcome and a later guarded run reclaims it.
+    let retainedStorage: GuardedCommandResult['retainedStorage'];
+    let census: string | undefined;
     if (!storageRemoved) {
-        output.append(
-            Buffer.from('\nguard storage retained: process-tree exit or storage ownership could not be proved\n')
-        );
-        reason ??= 'leak';
+        // Only a census that lost its proof for a transient reason is the census's fault. A proved
+        // holder, a stable obstruction, an unreadable record or a throwing release would never
+        // reclaim, so they stay a leak.
+        const transientlyUnproved =
+            treeExitProved &&
+            reason !== 'leak' &&
+            !releaseThrew &&
+            storageProof.obstruction === undefined &&
+            storageProof.verdict === 'unknown' &&
+            areTransientProofReasons(storageProof.reasons) &&
+            storageRecordReadable(storage.payloadPath(), processToken);
+        if (transientlyUnproved) {
+            retainedStorage = { path: storage.payloadPath(), reason: storageProof.reasons.join('; ') };
+        } else {
+            census = storageProof.obstruction ?? describeCensus(storageProof.verdict, storageProof.reasons);
+            output.append(
+                Buffer.from(
+                    `\nguard storage retained: process-tree exit or storage ownership could not be proved\nguard storage final census: ${census}\n`
+                )
+            );
+            reason ??= 'leak';
+        }
     }
     const tail = output.result();
     return {
         ...completion.result,
         signal: interruptedSignal ?? completion.result.signal,
         reason,
+        retainedStorage,
+        census,
         ...tail,
         peakRssBytes,
         maxRssBytes,
@@ -2218,11 +2306,18 @@ export function emitGuardedResult(label: string, result: GuardedCommandResult, s
     const peakMiB = Math.ceil(result.peakRssBytes / 1024 ** 2);
     const durationSeconds = (result.durationMs / 1000).toFixed(1);
     const succeeded = result.code === 0 && result.reason === undefined;
+    const retainedWarning =
+        result.retainedStorage === undefined
+            ? undefined
+            : `${label}: warning: guard storage retained, not proved free (${result.retainedStorage.reason}): ${result.retainedStorage.path}`;
     if (succeeded) {
         if (showSuccessOutput && result.output !== '') {
             console.log(result.output);
         }
         console.log(`${label}: OK (${durationSeconds}s, peak ${peakMiB} MiB)`);
+        if (retainedWarning !== undefined) {
+            console.warn(retainedWarning);
+        }
         return 0;
     }
 
@@ -2239,6 +2334,9 @@ export function emitGuardedResult(label: string, result: GuardedCommandResult, s
     }
     if (result.output !== '') {
         console.error(result.output);
+    }
+    if (retainedWarning !== undefined) {
+        console.error(retainedWarning);
     }
     if (result.reason === 'signal') {
         return result.signal === 'SIGINT' ? 130 : 143;
@@ -2880,7 +2978,7 @@ export async function main(
                 log(`guard: recovery lint target '${replacement.oldTarget}' -> '${replacement.newTarget}'`);
             }
             log(
-                `guard: executing recovery for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}')`
+                `guard: executing recovery for lane ${lane.laneName} (${receipt.reason} at ${receipt.headSha.slice(0, 9)} during '${receipt.command} ${receipt.args.join(' ')}'${receipt.census === undefined ? '' : `; census: ${receipt.census}`})`
             );
             const result = await runCommand({
                 command: receipt.command,
@@ -2927,6 +3025,7 @@ export async function main(
                         headSha: lane.headSha,
                         failedAt: new Date().toISOString(),
                         reason: result.reason,
+                        census: result.census,
                         peakRssBytes: result.peakRssBytes,
                         maxRssBytes: result.maxRssBytes,
                         durationMs: result.durationMs,
@@ -2999,7 +3098,7 @@ export async function main(
                         return 1;
                     }
                 }
-            } else if (isGuardFailureReason(result.reason)) {
+            } else if (isGuardFailureReason(result.reason) && result.refusedBeforeStart !== true) {
                 writeGuardFailureReceipt(lane.primaryRoot, {
                     version: 1,
                     lane: lane.laneName,
@@ -3007,6 +3106,7 @@ export async function main(
                     headSha: lane.headSha,
                     failedAt: new Date().toISOString(),
                     reason: result.reason,
+                    census: result.census,
                     command: input.command,
                     args: input.args,
                     cwd: commandCwd,

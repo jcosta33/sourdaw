@@ -20,6 +20,7 @@ vi.mock('../../repositories/sampleLoader/resolveSampleBasePath', () => ({
 import { loadInstrumentFromManifest } from '../../repositories/sampleLoader/loadInstrumentFromManifest';
 import { setSampleLoadError, setSampleLoadProgress } from '../../stores/levainStore';
 import { autoLoadLevainSamples } from '../autoLoadSamples';
+import { configureLevainZoneTableBuilder } from '../configureLevainZoneTableBuilder';
 
 describe('autoLoadLevainSamples', () => {
     beforeEach(() => {
@@ -55,6 +56,26 @@ describe('autoLoadLevainSamples', () => {
         });
         expect(loadCall[0].onProgress).toEqual(expect.any(Function));
         expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
+    });
+
+    it('hands the loader the configured zone table builder, so no route builds tables on the render thread', async () => {
+        const tables = { lut: new Uint32Array([0, 1]), arena: new Uint32Array([0]) };
+        const builder = vi.fn(() => Promise.resolve(tables));
+        const request = { zones: [], numArticulations: 1, numMics: 1 };
+        configureLevainZoneTableBuilder(builder);
+
+        try {
+            await autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1');
+
+            const loadCall = vi.mocked(loadInstrumentFromManifest).mock.calls[0];
+            if (!loadCall) {
+                throw new Error('Expected one Levain manifest load');
+            }
+            await expect(loadCall[0].buildZoneTables(request)).resolves.toBe(tables);
+            expect(builder).toHaveBeenCalledExactlyOnceWith(request, undefined);
+        } finally {
+            configureLevainZoneTableBuilder(null);
+        }
     });
 
     describe('the 300ms completion-clear and its abort guard', () => {

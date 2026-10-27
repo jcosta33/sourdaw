@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
@@ -11,7 +12,7 @@ import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
-import { resolveInputEventTime } from './resolveInputEventTime';
+import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 
 /**
  * Serial tail for note events.
@@ -138,6 +139,18 @@ function dispatchExpressionHandler(channel: number, handler: () => void): Promis
     return queued;
 }
 
+/**
+ * Pins a recording take's controller event to the beat of its own arrival, as
+ * a note-on is pinned, so a queue wait cannot move it. Only a recording
+ * transport needs the beat; any other skips the capture.
+ */
+function admitControllerTime(timeStamp: CapturedInputEventTime): CapturedInputEventTime {
+    if (transportStore.value?.isRecording !== true) {
+        return timeStamp;
+    }
+    return { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
+}
+
 /** Completion of accepted work, when that message had to wait in a queue. */
 export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> | void {
     const message = parseWebMidiMessage(event);
@@ -168,18 +181,22 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 },
                 admittedRelease(channel, message.note)
             );
-        case 'cc':
+        case 'cc': {
+            const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {
-                handleWebMidiCC(channel, message.cc, message.value, timeStamp);
+                handleWebMidiCC(channel, message.cc, message.value, admittedTime);
             });
+        }
         case 'channelPressure':
             return dispatchExpressionHandler(channel, () =>
                 handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
             );
-        case 'pitchBend':
+        case 'pitchBend': {
+            const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {
-                handleWebMidiPitchBend(channel, message.lsb, message.msb, timeStamp);
+                handleWebMidiPitchBend(channel, message.lsb, message.msb, admittedTime);
             });
+        }
     }
     return undefined;
 }

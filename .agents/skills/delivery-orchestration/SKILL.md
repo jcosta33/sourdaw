@@ -99,25 +99,34 @@ The delivery sequence, in order:
 1. `lane:publish` — push the lane and open or update the PR (mechanics below).
    It pushes without `--force` and refuses uncommitted changes: the publishing
    session commits the work itself with a conventional subject first.
-2. Wait for `Gate` on the head, then `review:prepare <pr>` — write the bundle
-   (below) and dispatch blind reviewers against it under the root Review rules.
+2. Wait for the cheap `PR checks` run on the head (pushes no longer run `Gate`),
+   then `review:prepare <pr>` — write the bundle (below) and dispatch blind
+   reviewers against it under the root Review rules.
    A head that conflicts with its base gets no GitHub merge ref, so no
-   `pull_request` workflow run is created and `Gate` can never appear: waiting
+   `pull_request` workflow run is created and no check can ever appear: waiting
    on it waits forever. When `lane:publish` reports a conflicted head, read
    `gh pr view <pr> --json mergeable` and resolve the reported paths with a
    push before waiting; an `UNKNOWN` answer is GitHub still computing, so check
    it again rather than treating it as a conflict.
-3. Validate every finding, write `review.json` (and `discarded.json` for
-   discards), then `review:publish <pr>` — post validated blockers as the
-   reviewer App BEFORE dispatching any repair.
+3. Validate every finding, write `review.json` with the round's `draws` (and
+   any `discarded`), then `review:publish <pr>` — post validated blockers as
+   the reviewer App BEFORE dispatching any repair.
 4. After the author pushes a fixed head, `review:repair` records the repair per
    thread and leaves the thread open; let the reviewer confirm it with
    `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
 5. On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the
-   current head records the delivery authorization in the head's dossier.
-6. The author runs `deliver <pr>` through the protected primary checkout's
-   package route — it squash-merges as the author App after the reviewer APPROVE
-   (below). Lane files are data, never executable delivery code.
+   current head records the delivery authorization in the head's dossier, and
+   `review:publish` then re-applies the `ci:approved` label as the reviewer App,
+   after its publication lock is released; a failed label write exits nonzero
+   naming the pull request, and a plain re-run replays the review and retries it.
+   That label event alone starts the heavy checks and `Gate`, so CI capacity is
+   spent once per approved head; `REQUEST_CHANGES` removes the label. Re-running
+   `review:publish` on the same head replays the review and re-applies the label,
+   which restarts a `Gate` that a later label event failed or cancelled.
+6. Wait for the approval-triggered `Gate`, then the author runs `deliver <pr>`
+   through the protected primary checkout's package route — it squash-merges as
+   the author App after the reviewer APPROVE (below) and a green `Gate`. Lane
+   files are data, never executable delivery code.
 
 `review:accept <pr>` remains only for legacy pre-policy heads: a plan-carrying
 bundle whose dossier already carries the reviewer-recorded delivery authorization
@@ -213,85 +222,71 @@ caller files only while the bound base name and merge-base context match; a
 populated legacy bundle without base identity cannot be reused. Unrelated
 movement of the base tip is allowed when that context is unchanged.
 
-The caller writes `stances.json` into that bundle in two phases. Before dispatch,
-use `format: "stances-admission-v1"`, the risk plan's `pr`/`headSha`/`baseSha`, and
-at least three unique task-risk entries in `stances`, each with `stance` and
-`admittedBy` naming the failure mode. As each draw reports, add it to that
-entry's `draws`: `{ reviewerModel, baselineProbe: { spec, mutation, observed,
-result } }`, plus `exhaustion` when the corresponding dossier draw has it.
-The probe strings are bounded, trimmed, single-line and evidence-safe.
-`result` is `mutation-detected`, `still-green`, or `not-run`; only
-`mutation-detected` admits a fresh reviewer POST. Every completed dossier
-`(stance, reviewerModel)` pair needs exactly one matching probe, with no extra
-pair. A `native-security`, `realtime-audio`, or `undo` plan needs at least one
-completed `strongest` dossier draw on any recorded stance. The gate checks
-caller evidence structure, while the orchestrator verifies its truth and
-independence. Published exact replay and recovered binding keep their prior
-caller-record rules. The file sits alongside the
-later `dossier.json`, `review.json`, `discarded.json`, and `acceptance.json`.
-
 `risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
 it is bound to, the change's `riskClasses`, the `requiredStances` those classes
 earn, and the `triggers` that fired. It is derived from the same path
-classification as `review-size.json`, so the stances and the printed size
-summary cannot disagree. The plan is an input to the caller's stance
-enumeration, never a stance requirement: the dispatched stances are the
-reviewer's task-derived judgement, recorded in `stances.json`. Classes union
-when several fire, and no class may require a stance it did not earn: that is
-the proportionality rule, and `code-craft` is required only by `ordinary`.
+classification as `review-size.json`, so the plan and the printed size summary
+cannot disagree. Classes union when several fire, no class earns a stance
+outside its own entry, and parsing recomputes the union from `riskClasses`, so a
+hand-edited plan can neither widen nor narrow its own review. The earned stances
+name risk surfaces to weigh; the dispatched stances are the orchestrator's
+task-derived judgement.
 
-- `small` (no specialist surface, handwritten change within the small-change
-  budget) — correctness, test-validity.
-- `ordinary` (no specialist surface, over that budget) — correctness,
-  code-craft, module-boundaries, test-validity.
-- `test-only` — test-validity.
-- `cross-domain` — correctness, module-boundaries, test-validity.
-- `realtime-audio` — correctness, realtime-audio, test-validity.
-- `native-security` — correctness, security-platform, test-validity.
-- `undo` — correctness, project-integrity-undo, test-validity.
+| Class                                                                                       | Earns                                                     | Draw floor         |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------ |
+| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1                  |
+| `test-only` (every path a test)                                                             | test-validity                                             | 1                  |
+| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2                  |
+| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3                  |
+| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3                  |
+| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3                  |
+| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3, one `strongest` |
+| `native-security`                                                                           | correctness, security-platform, test-validity             | 3, one `strongest` |
+| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3, one `strongest` |
 
-Parsing recomputes the stance union from `riskClasses`, so a hand-edited plan
-can neither widen nor narrow its own review.
+Every `.github/` path classifies as handwritten whatever its name, so it never
+plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
+lockfiles and rebuilt wasm artifacts — earn the `realtime-audio`,
+`native-security`, and `undo` classes of the tree they sit in, but never count
+toward the size budget. The Cargo workspace root `Cargo.lock` and `Cargo.toml`
+earn both `realtime-audio` and `native-security`. The Rust toolchain files under
+either name, the JavaScript dependency manifests, the native addon build, the
+desktop packaging files and entitlements, the fuse, preload and Electron runtime
+scripts, and the review tooling that admits CI or feeds the bundle earn
+`native-security`; worklet sources under `public/audio/worklets/` and their
+generators earn `realtime-audio`. A generated-only change plans `small`. A plan
+of several classes needs three distinct stances, or every stance its classes
+earn when they earn fewer, plus one `strongest` draw when any of them is a
+specialist class.
 
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
-base context. Fresh reviewer publication also carries the head-bound dossier and
-refuses before any remote write when the plan or dossier is missing, malformed,
-or rebound from the head/base/pr it must bind; when the caller input omits
-`assessmentImpact` or carries a value outside the four tokens; when its recorded
-impact contradicts the round's own limitations or accepted findings; when a
-persisted record's claimed publication does not stand live and exact on this
-head, reported as that failure and never as a missing field;
-when the bundle carries
-`stances.json` and the dossier's `stances` entries do not correspond to that
-record as sets of stance names — every draw names a recorded stance and every
-recorded stance carries at least one draw, so several draws on one stance share
-its single entry; when
-its accepted findings do not match the document's comments
-one-to-one; or when its recommendation disagrees with the document's event. It
-then persists the canonical record, `format: 'dossier-v1'`: an append-only event
-chain (`stance-completed`, `finding-accepted`, `finding-discarded`) whose records
-carry `sequence`, `previousDigest`, and `digest`, plus `headDigest` and a
-`dossierDigest` over the header identity, evidence, limitations, recommendation,
-and assessment impact.
-Re-publication of the same head replays that persisted record unchanged rather
-than minting a second one.
+base context. For a plan-carrying bundle it derives the canonical record from
+`review.json` and the plan, persists it as `dossier.json` before the POST, and
+refuses before any remote write when the plan is missing, malformed, or rebound
+from the head/base/pr it must bind; when `review.json` carries no `draws`; when
+the draws miss the floor above; or when a value is unsafe. The record is
+`format: 'dossier-v1'`: an append-only event chain (`stance-completed` per draw,
+`finding-accepted` per inline comment) whose records carry `sequence`,
+`previousDigest`, and `digest`, plus `headDigest` and a `dossierDigest` over the
+header identity, the approval evidence, and the recommendation. Re-publication of
+a head whose record binds its publication replays it unchanged; reviewer
+diversity and the freeze are not re-run for that replay, which posts nothing. A
+pre-ADR-0054 bundle whose `review.json` has no `draws` falls back to an
+unpublished record it already holds. `stances.json`, `discarded.json`,
+`reassessment.json`, and a caller-written `dossier.json` are ignored with one
+log line, and `semantic-ci.json` is information only.
 
-`review:prepare` logs `review-round-escalation:<pr>:request-changes=<n>:threshold=<t>`
-reconstructed from the pull request's public review history; once `<n>` reaches the
-escalation threshold it also names the bundle's `reassessment.json` as the action
-required before the next publication. At five rounds and beyond, preparation, publication,
-and repair log a nonblocking `review-round-warning:<pr>:request-changes=<n>:threshold=<t>`
-asking the agent to review the churn and remaining findings. The thresholds are the
-constants `REVIEW_ROUND_ESCALATION_THRESHOLD` and `REVIEW_ROUND_WARNING_THRESHOLD` in
-`scripts/reviewRoundEscalation.ts`. At or above the escalation threshold, a fresh
-reviewer publication refuses before any remote write until the caller
-writes `reassessment.json` beside `dossier.json`, `format: 'reassessment-v1'`, carrying
-`pr`, `headSha`, `baseSha`, `roundsObserved`, `threshold`, `action` of
-`split` | `respec` | `continue`, and a single-line, trimmed, bounded, evidence-safe
-`reason`. The consumed reassessment is recorded as one addition-only
-`review-reassessed` dossier event; `review:repair` logs the same flag and is never
-blocked, so unresolved threads always stay resolvable.
+`review:prepare` logs
+`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` from the pull
+request's public review history on every run; `review:repair` logs it only at
+or above the threshold. At `REVIEW_ROUND_FREEZE_THRESHOLD` (five
+reviewer `REQUEST_CHANGES` rounds, `scripts/reviewRoundEscalation.ts`) the pull
+request is frozen: `review:publish` refuses every fresh reviewer publication,
+approve or request changes, before any remote write, and names the way out —
+respin the change as one consolidated pull request, then close the frozen one
+with `pr:supersede` once the replacement merges. `review:repair` and
+`review:confirm` stay open.
 
 Legacy tolerance: a bundle with no `risk-plan.json` predates this contract and
 publishes exactly as before.
@@ -306,9 +301,8 @@ harness, model, and invocation are the dispatching session's choice. When only t
 author's model is available, the same-model review still publishes: `review.json`
 carries `modelExhaustion` (one line naming what made every other model unavailable)
 and the published body names the reviewer model, so the deviation is recorded rather
-than silently accepted. A draw on an authoring model records its own exhaustion; a
-document-level whole-round `modelExhaustion` covers every draw; per-draw exhaustion
-excuses the document-level field in a mixed round.
+than silently accepted. A draw on an authoring model is covered by the same
+`modelExhaustion`, and the body names that draw's model too.
 
 ## Review document formats
 
@@ -327,110 +321,34 @@ Request changes when this head must not merge, and post every blocking comment
 with that review. The summary is a short pointer to those comments, not a
 report.
 
-### Dossier input and discard record
+### Round record in review.json
 
-The orchestrator writes the caller-authored `dossier.json` beside `review.json`
-and `discarded.json`, in input form `format: 'dossier-input-v1'`: the same
-`pr`/`headSha`/`baseSha`, one completed `stances` entry per dispatched draw — the
-names the bundle's `stances.json` records, plan menu ids or free-form risk names
-alike; one stance may carry several draws with distinct reviewer models — each
-with its `reviewerModel`, `modelTier` of
-`economy`/`standard`/`strongest`, and `outcome` of
-`blocker-found`/`clean`, its `exhaustion` when that draw fell back to an
-authoring model (one line naming what made every other model unavailable for
-that draw), the bounded `evidence` claims, `limitations`, and the required
-`assessmentImpact`. The accepted findings are not declared there: they are the
-review document's own inline comments. `discarded.json` is the orchestrator's
-discard record and is
-now actually read: an array of `{ finding, stance, reason }`, one entry per
-discarded candidate, each with a one-line reason.
+`review.json` is the only caller document. Beside its review fields it carries
+`draws`, one `{ stance, reviewerModel, tier, outcome }` per completed blind draw —
+several draws on one stance with distinct models count once toward the floor —
+with `tier` `economy`/`standard`/`strongest` and `outcome` `clean`/`findings`,
+and optional `discarded`, one `{ finding, reason }` per discarded candidate. The
+fields are exact; an unknown tier or outcome, a repeated stance-and-model pair,
+or an extra field is refused. Discards are shape-checked and never posted or
+recorded. The accepted findings are the document's own inline comments.
 
-`assessmentImpact` records how the round's advisory semantic assessment
-influenced it, one token chosen honestly by the orchestrator for the round:
-`finding-led` only when the round carries an accepted finding the assessment
-surfaced, `stance-changed` only when it changed the dispatched stance
-enumeration, `limitation-only` when it produced a disclosed limitation without
-changing the round, and `none` when it had no effect. It records influence,
-never agreement: it is not a verdict, an approval, or merge authority. Any other
-value, a missing value, or a non-string is refused with the field and the four
-tokens named, and a spec pins the vocabulary to exactly those four. The record
-decides two of the tokens: `limitation-only` is refused when the round discloses
-no limitation and `finding-led` when it accepts no finding. `none` and
-`stance-changed` are the orchestrator's attestation, which the record cannot
-decide for or against. The caller input always carries the field. The bundle's
-own persisted record for the head may omit it — that is the shape every
-pre-field dossier on disk has — so re-publishing one keeps working; a persisted
-record that records a publication is not trusted on that claim alone, because
-the `review-published` event is the caller's, so the named review must stand
-live and exact or the publication is refused for that failure, never as a
-missing field. It is folded into the canonical record beside
-`recommendation` and covered by `dossierDigest`, so two records differing only
-in it have different digests, and records persisted before the field existed
-keep replaying byte-identically.
+Every draw, discard, and approval-claim value must be single-line, trimmed and
+bounded, and is refused when it carries a credential-shaped value, a private-key
+header, a JWT, a bearer token, or raw session-transcript markers. Private
+reviewer prose belongs nowhere in the record.
 
-A fired signal may be answered with a typed outcome instead of the literal
-citation token: the optional `signalDispositions` list carries one entry per
-fired signal — the signal's `ruleId` and `path`, a `disposition` of
-`confirmed-and-fixed`, `confirmed-existing`, `false-positive`,
-`insufficient-evidence`, or `not-investigated`, and an optional bounded
-single-line `artifact` reference — an issue number or URL, a reviewer finding,
-a repair commit, or a regression test path. Every disposition disposes of the
-signal it names, so a round records what it found without agreeing with the
-assessment, and the literal token keeps working. An entry matches by that exact
-rule-and-path pair rather than by the space-joined citation text, and a
-free-text citation disposes wherever it names the signal — trailing
-punctuation never blocks it — unless another fired signal's longer citation
-contains that occurrence, wherever inside it the token sits, so a longer fired
-path's token never disposes a shorter one. The read is structural: an
-unknown token, an entry naming a signal the delivered record did not fire, two
-entries for one signal, or any entry when the record delivered nothing
-(`no-assessment`) is refused; no disposition requires a posted comment or an
-issue. The list is folded into the canonical record beside `assessmentImpact`
-and covered by `dossierDigest`, and a record persisted before it existed keeps
-replaying byte-identically.
-
-When the bundle's `semantic-ci.json` records a delivered assessment that withheld
-any scope entry or left any question unresolved, `review:publish` refuses a fresh
-publication unless the dossier cites the assessment or declares it ignored.
-Citing it is a `limitation` naming the assessment's artifact identity or one of
-the paths it withheld — the round's own text, never a non-`none` impact token by
-itself. Declaring it ignored is
-`assessmentImpact: none` with an `assessmentIgnoredReason`: one bounded,
-single-line, evidence-safe reason the orchestrator records for why the
-assessment had no effect. A `none` with no reason is refused naming
-`assessmentIgnoredReason` and the withheld figure; a reason beside a non-`none`
-token is refused naming `assessmentIgnoredReason` and the token it contradicts.
-The reason is folded into the canonical
-record beside `assessmentImpact` and covered by `dossierDigest`, so the
-acknowledgement is bound to what was accepted; records persisted before it
-existed keep replaying byte-identically. It records an acknowledgement, never
-agreement, and confers no verdict, approval or merge authority — ADR 0047 still
-governs. When the record instead shows `no-assessment` — CI ran and delivered
-nothing for the head — `review:publish` refuses `assessmentImpact: none`
-outright, with or without a reason, and requires a limitation citing the
-record's own reason as the token `semantic-ci <reason>` (for example
-`semantic-ci red-check`), regardless of impact. A bundle with no
-`semantic-ci.json` file at all — a historical bundle prepared before
-`review:prepare` wrote the record — still carries no such requirement; a
-bundle whose manifest records generating that file but carries no such file on
-disk is refused instead of read as undelivered.
-
-Dossier evidence, limitations, and approval-claim values must be single-line,
-trimmed and bounded, and are refused when they carry a credential-shaped value,
-a private-key header, a JWT, a bearer token, or raw session-transcript markers.
-Private reviewer prose belongs nowhere in the record.
-
-Readers of historical review and acceptance documents are unchanged, and
-`review:accept` takes no dossier.
+Records persisted under earlier contracts — with per-draw `exhaustion`,
+discards, `assessmentImpact`, `assessmentIgnoredReason`, `signalDispositions`,
+or `review-reassessed` events — keep verifying byte-identically and replaying;
+fresh publications write none of those fields. Readers of historical review and
+acceptance documents are unchanged, and `review:accept` takes no dossier.
 
 ### Publication binding, replay, and reconstruction
 
 After the review POST lands, `review:publish` appends `review-published` (the
 landed review id) and one `finding-published` per posted comment (its public
 comment id, matched to the document positionally after a path/line/side check)
-to the head's dossier; when the escalation gate consumed a reassessment it also
-appends one `review-reassessed` event recording its observed count, threshold,
-action and reason in that same write; a bundle dossier that already records its publication
+to the head's dossier; a bundle dossier that already records its publication
 replays — the exact same review must stand live: actor, head, state, body, and
 comments — instead of re-posting, and a recorded publication that no longer
 stands exact fails closed before any write. `review:accept` refuses a
