@@ -45,6 +45,9 @@ export function createRecordedAdmittedMidiNote(
         Math.max(durationBeats, 0.0625),
         admitted.velocity
     );
+    if (admitted.onsetPassIndex !== undefined) {
+        note.recordingPassIndex = admitted.onsetPassIndex;
+    }
     if (!admitted.initialExpression && !admitted.expressionChanges?.length) {
         return note;
     }

@@ -7,10 +7,15 @@ import { takeOwnsRecordingRoot } from './takeOwnsRecordingRoot';
 
 type EventPosition = { beat: number; passIndex: number };
 
+function recordingPassIndex(position: EventPosition): number | null {
+    const pass = position.passIndex - activeRecordingRef.startWrapCount;
+    return Number.isSafeInteger(pass) && pass >= 0 ? pass : null;
+}
+
 /** One admitted event's unwrapped position in the clip opened by this recording. */
 function sourceBeat(clipStartBeat: number, position: EventPosition): number | null {
-    const pass = position.passIndex - activeRecordingRef.startWrapCount;
-    if (!Number.isFinite(position.beat) || !Number.isSafeInteger(pass) || pass < 0) {
+    const pass = recordingPassIndex(position);
+    if (!Number.isFinite(position.beat) || pass === null) {
         return null;
     }
     if (pass === 0) {
@@ -62,6 +67,10 @@ export function admitRecordingMidiNoteOn(input: {
     if (onsetSourceBeat === null) {
         return null;
     }
+    const onsetPassIndex = recordingPassIndex(input.position);
+    if (onsetPassIndex === null) {
+        return null;
+    }
     const admitted: RecordingMidiAdmission = {
         id: crypto.randomUUID(),
         clipId: clip.id,
@@ -71,6 +80,7 @@ export function admitRecordingMidiNoteOn(input: {
         velocity: input.velocity,
         onsetAudioTime: input.audioTime,
         onsetSourceBeat,
+        onsetPassIndex,
         ...(input.initialExpression ? { initialExpression: { ...input.initialExpression } } : {}),
     };
     activeRecordingRef.midiAdmissions.push(admitted);

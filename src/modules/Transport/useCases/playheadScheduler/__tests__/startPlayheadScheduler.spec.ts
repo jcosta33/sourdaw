@@ -939,6 +939,7 @@ describe('startPlayheadScheduler', () => {
             endBeat: 4,
             sourceOffsetBeats: 0,
             passEndContextSeconds: expect.closeTo(0.15, 10),
+            recordingPassIndex: 0,
         });
     });
 

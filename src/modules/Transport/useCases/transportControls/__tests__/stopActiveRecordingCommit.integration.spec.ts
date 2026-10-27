@@ -11,6 +11,7 @@ import {
     admitRecordingMidiNoteOn,
     getArrangementHandlers,
     retireRecordingMidiAdmission,
+    stageRecordingTake,
     startRecording,
     takeOwnsRecordingRoot,
 } from '#/modules/Arrangement/useCases';
@@ -603,6 +604,15 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         setMpeEnabledInternal(true);
 
         const physical = handleWebMidiMessage({ data: new Uint8Array([0x91, 62, 111]), timeStamp: undefined });
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Take 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+        });
         playheadWrapCountRef.current = 1;
         playheadClockRef.beat = 4.75;
         playheadClockRef.audioTimeSeconds = 3;
@@ -611,6 +621,15 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         const pressure = handleWebMidiMessage({ data: new Uint8Array([0xd1, 70]), timeStamp: undefined });
         const bend = handleWebMidiMessage({ data: new Uint8Array([0xe1, 0, 96]), timeStamp: undefined });
         const virtual = triggerLiveNoteOn(2, 64, 99);
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Take 3',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 4,
+            recordingPassIndex: 1,
+        });
         playheadWrapCountRef.current = 2;
         playheadClockRef.beat = 5;
         playheadClockRef.audioTimeSeconds = 5.5;
@@ -637,6 +656,14 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             [62, 0.5, 9],
             [64, 4.75, 4.75],
             [67, 9, 0.5],
+        ]);
+        expect(notes.map((note) => note.recordingPassIndex)).toEqual([0, 1, 2]);
+        expect(
+            takeLaneStore.value?.lanes[0]?.takes.map((take) => [take.sourceOffsetBeats, take.recordingPassIndex])
+        ).toEqual([
+            [undefined, 2],
+            [0, 0],
+            [4, 1],
         ]);
         expect(notes[0]?.expression).toMatchObject({
             slide: [{ offsetBeats: 4.25, value: 90 }],

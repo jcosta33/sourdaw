@@ -114,6 +114,7 @@ export function startRecording(
             name: `Take ${takeNum}`,
             startBeat: trackRecordBeat,
             endBeat: trackRecordBeat,
+            ...(track.kind === 'midi' ? { recordingPassIndex: 0 } : {}),
         });
     }
 

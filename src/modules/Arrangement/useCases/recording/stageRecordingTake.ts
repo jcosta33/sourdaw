@@ -11,6 +11,7 @@ type StageRecordingTakeInput = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
+    recordingPassIndex?: number;
     /** Reuse this recording's still-open audio take when its final lap closes. */
     provisionalTakeId?: string;
     /** Physical seam ending this recorded pass, on the capture clock. */
@@ -35,6 +36,12 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
     const track = getTrackState()?.tracks.find((candidate) => candidate.id === input.trackId);
     if (!track || !recordingPassTiming.isCurrent(input.clipId, track.kind === 'midi' ? 'midi' : 'audio')) {
         return;
+    }
+    if (
+        input.recordingPassIndex !== undefined &&
+        (!Number.isSafeInteger(input.recordingPassIndex) || input.recordingPassIndex < 0)
+    ) {
+        throw new Error('Invalid MIDI recording pass identity');
     }
     const state = takeLaneStore.value;
     if (!state) {
@@ -62,6 +69,7 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
             startBeat: input.startBeat,
             endBeat: input.endBeat,
             sourceOffsetBeats: input.sourceOffsetBeats,
+            ...(input.recordingPassIndex === undefined ? {} : { recordingPassIndex: input.recordingPassIndex }),
         };
     } else {
         const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
@@ -71,7 +79,11 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
             );
         }
         if (replacement) {
-            take = { ...replacement, endBeat: input.endBeat };
+            take = {
+                ...replacement,
+                endBeat: input.endBeat,
+                ...(input.recordingPassIndex === undefined ? {} : { recordingPassIndex: input.recordingPassIndex }),
+            };
         } else {
             take = createTake(
                 input.clipId,
@@ -80,6 +92,9 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
                 input.endBeat,
                 input.sourceOffsetBeats
             );
+            if (input.recordingPassIndex !== undefined) {
+                take.recordingPassIndex = input.recordingPassIndex;
+            }
         }
     }
     recordingPassTiming.ownTake(input.clipId, take.id);
@@ -99,7 +114,15 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
                 return existing;
             }
             if (!replacement) {
-                return { ...existing, takes: [...existing.takes, take] };
+                const takes = existing.takes.map((candidate) =>
+                    input.recordingPassIndex !== undefined &&
+                    input.sourceOffsetBeats !== undefined &&
+                    candidate.clipId === input.clipId &&
+                    candidate.sourceOffsetBeats === undefined
+                        ? { ...candidate, recordingPassIndex: input.recordingPassIndex + 1 }
+                        : candidate
+                );
+                return { ...existing, takes: [...takes, take] };
             }
             return {
                 ...existing,

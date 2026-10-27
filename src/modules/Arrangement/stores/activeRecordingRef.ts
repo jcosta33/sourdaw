@@ -18,6 +18,8 @@ export type RecordingMidiAdmission = {
     velocity: number;
     onsetAudioTime: number;
     onsetSourceBeat: number;
+    /** Pass relative to this recording's first seam, captured with the onset. */
+    onsetPassIndex?: number;
     releaseAudioTime?: number;
     releaseSourceBeat?: number;
     initialExpression?: {

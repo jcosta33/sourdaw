@@ -262,6 +262,7 @@ function stageLoopWrapTakes(
             startBeat: current.loopStart,
             endBeat: boundary.endBeat ?? current.loopEnd,
             sourceOffsetBeats,
+            ...(track.kind === 'midi' ? { recordingPassIndex: passIndex } : {}),
             plannedPassEnd: boundary.planned,
             nextPassStartBeat: boundary.nextPassStartBeat,
             passEndContextSeconds,
