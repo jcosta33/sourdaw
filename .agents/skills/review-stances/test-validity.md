@@ -1390,6 +1390,16 @@ fail the named case. Preserve independently produced compatible controls. Histor
 trim/slip handlers are singleton handlers, and hydration excludes internal restore
 prefixes; synthetic direct groups test defensive APIs, not supported saved grouped history.
 
+Derive hydrated entry counts from the saved mirror: the historical producer may run
+setup commands without retaining them in that mirror. Admit the genuine trim and its
+keyless inverse unconditionally before checking refusal. A zero-distance regression
+must include an unnormalized offset produced with looping off, then enable a loop and
+trim at the same start. Preserve its exact saved bytes and require the old reader's
+consumed history, absent warning and displaced raw rows to fail the new refusal oracle.
+The normalized zero-distance control is also a conservative refusal, not proof that
+the current phase identifies the old offset. Keep real current captures of zero and
+a whole-loop offset and compare raw owner coordinates through Undo and Redo.
+
 ### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
 
 PR #5274 (`40baa0716b`) introduced fail-closed file-inspection diagnostics; PR #5365 (`75b10ca71b`)

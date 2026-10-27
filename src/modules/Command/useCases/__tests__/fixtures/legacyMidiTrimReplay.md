@@ -14,9 +14,25 @@ through the current persistence and production hydration paths.
 
 The JSON fixture uses base64 only as a lossless transport for the exported
 document bytes. The session mirror strings and action payloads are unchanged.
-The five cases cover duration-derived and configured loops, loop-off MIDI,
-audio, and zero-distance trim. A session undo mirror is separate from a `.sdaw`
-document; opening a `.sdaw` alone does not supply these history entries.
+The cases cover duration-derived and configured loops, loop-off MIDI,
+audio, and zero-distance trims from normalized and unnormalized offsets.
+A session undo mirror is separate from a `.sdaw` document; opening a `.sdaw`
+alone does not supply these history entries.
+
+The `unnormalized-zero` case slips to offset 8 while looping is off, enables
+an eight-beat loop, then trims at the unchanged start. That forward trim wraps
+offset 8 to 0 and translates notes 0/1/2/3 to -8/-7/-6/-5, with controller
+and pitch-bend beats moving from 0 to -8. Its original document bytes and
+mirror were exported by the same historical revision. The saved mirror
+retains only the trim entry although all listed setup commands ran. Hydrated
+entry counts come from the actual saved mirror, never the setup action count.
+
+A normalized current phase does not authenticate the pre-trim offset, even
+when the start did not move. Both historical zero-distance looped MIDI cases
+therefore require conservative refusal with pending history and every raw
+coordinate unchanged. Current trims capture the prior offset, including zero
+and an unnormalized whole-loop offset, so their Undo and Redo restore exact
+stored coordinates. Audio and loop-disabled historical entries retain replay.
 
 Historical source hashes (SHA-256):
 

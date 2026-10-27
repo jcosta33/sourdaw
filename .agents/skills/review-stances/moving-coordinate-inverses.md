@@ -52,6 +52,12 @@ wrong offset and rows. Historical review prompts and model tiers are unverified.
 Produce the old inverse with the real historical Command handler, preserve its original
 document and session-history bytes, then hydrate through the current production reader.
 Require an unsafe looped MIDI inverse to leave the document, rows and pending history
-unchanged, with a warning. Keep audio, loop-off, safe zero-distance and modern captured
-Undo/Redo controls. Removing replay admission must fail the unsafe historical case;
+unchanged, with a warning. Zero distance is not proof of preservation: slip to an
+unnormalized whole-loop offset while looping is off, enable looping, then trim at the
+unchanged start. The forward trim can normalize the offset and translate every row;
+its present normalized phase cannot authenticate the original figures. Refuse both
+normalized and unnormalized legacy zero-distance inverses without a capture. Keep
+audio, loop-off and current capture-bearing zero-distance Undo/Redo controls, including
+zero captures and whole-loop captures. Removing replay admission must fail the unsafe
+historical case;
 deleting a capture field from a modern fixture cannot establish historical compatibility.

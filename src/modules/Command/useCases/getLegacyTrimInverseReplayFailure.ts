@@ -1,5 +1,4 @@
 import { resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 import { type AppAction } from '#/utils/handlerContract';
 
 function preservesTrimCoordinates(action: AppAction): boolean {
@@ -39,19 +38,9 @@ export function getLegacyTrimInverseReplayFailure(actions: readonly AppAction[])
         if (clip.type !== 'midi' || clip.loopEnabled !== true) {
             continue;
         }
-        const restoredStart = Math.max(0, action.payload.newStartBeat);
-        const offset = clip.midiOffsetBeats ?? 0;
-        const unchangedOffset = resolveLoopedOffsetBeats({
-            offsetBeats: offset,
-            loopEnabled: true,
-            clipDurationBeats: clip.endBeat - clip.startBeat,
-            configuredLoopLengthBeats: clip.loopLength,
-        });
-        // A loop wrap discarded its quotient. Without the old capture, today's
-        // phase cannot identify the offset or row displacement the inverse owes.
-        if (restoredStart !== clip.startBeat || !Object.is(offset, unchangedOffset)) {
-            return 'The legacy MIDI trim has no captured offset for this loop';
-        }
+        // Even a zero-distance trim can wrap an unnormalized old offset and
+        // move every row. Today's phase cannot authenticate those prior figures.
+        return 'The legacy MIDI trim has no captured offset for this loop';
     }
     return null;
 }

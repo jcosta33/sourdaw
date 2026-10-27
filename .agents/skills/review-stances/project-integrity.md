@@ -340,3 +340,12 @@ MIDI target, then release it: admission must observe that resumed state before a
 Removing the post-wait admission must fail this case. A pre-wait check or a bare boolean
 refusal cannot carry the claim. For direct grouped replay, refuse an unproven prefix before
 any sibling writes; metadata-only and compatible-target controls remain separate.
+
+A legacy looped MIDI trim at an unchanged start can still have normalized an old
+whole-loop offset and translated notes, controllers and bends. Its current phase
+cannot establish its previous raw coordinates. Exercise a genuine saved sequence that
+slips with looping off, enables a loop, then trims at the unchanged start. Require visible refusal with
+the entry still pending, all raw rows and peer content unchanged. A normalized
+zero-distance legacy entry also lacks that authentication. Pair these refusals with
+current capture-bearing zero-distance Undo/Redo restoring exact raw owner coordinates,
+including captured zero; no historical graph reconstruction is required for admission.
