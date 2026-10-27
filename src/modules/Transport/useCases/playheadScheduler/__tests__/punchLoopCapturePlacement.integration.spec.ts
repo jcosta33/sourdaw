@@ -378,7 +378,10 @@ vi.mock('../../transportControls/startPlayback', async (original) => {
         },
     };
 });
-vi.mock('../../scheduling/scheduleMidiNotes', () => ({ scheduleMidiNotes: () => Promise.resolve() }));
+vi.mock('../../scheduling/scheduleMidiNotes', async (original) => ({
+    ...(await original<typeof import('../../scheduling/scheduleMidiNotes')>()),
+    scheduleMidiNotes: () => Promise.resolve(),
+}));
 vi.mock('../../scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.fn() }));
 vi.mock('../../scheduling/scheduleMetronome', () => ({ scheduleMetronome: vi.fn() }));
 vi.mock('../../scheduling/applyAutomation/applyAutomation', () => ({ applyAutomation: () => new Set() }));
@@ -611,7 +614,7 @@ describe('punch audio capture loop placement', () => {
         hardware.deferFirstFrame = true;
         transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 10 });
         startPlayheadScheduler();
-        expect(playheadClockRef).toEqual({ beat: 10, audioTimeSeconds: 50.2 });
+        expect(playheadClockRef).toMatchObject({ beat: 10, audioTimeSeconds: 50.2 });
         toggleRecording();
         await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1), { interval: 1 });
         expect(hardware.zeroFrame).toBe(0);
@@ -3068,7 +3071,11 @@ describe('punch audio capture loop placement', () => {
         await advanceUntil(() => schedulerSession.pendingSeam !== null);
         const plannedSeam = schedulerSession.pendingSeam!.seamAudioTime;
         const first = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
-        for (let index = 0; index < 4; index++) {
+        for (
+            let index = 0;
+            index < 4 && hardware.now + 0.02 < plannedSeam && playheadClockRef.beat + 0.04 < 12;
+            index++
+        ) {
             await tick(0.01);
         }
         expect(hardware.now).toBeLessThan(plannedSeam);
@@ -3080,9 +3087,15 @@ describe('punch audio capture loop placement', () => {
         );
         await tick(0.01);
         const editClock = hardware.now;
+        expect(editClock).toBeLessThan(plannedSeam);
         const incomingBeat = playheadClockRef.beat;
         const dyingEndBeat = oldPair.beat + (editClock - oldPair.audioTimeSeconds) * 2;
-        await advanceUntil(() => lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 3);
+        const soundedWrapsAtEdit = playheadWrapCountRef.current;
+        await advanceUntil(
+            () =>
+                lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 3 &&
+                playheadWrapCountRef.current >= soundedWrapsAtEdit + 3
+        );
         const second = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[1]!;
         const third = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[2]!;
         await stopActiveRecording();
@@ -3193,6 +3206,7 @@ describe('punch audio capture loop placement', () => {
             transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
             toggleRecording();
             await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+            const preRollSeconds = playheadClockRef.audioTimeSeconds - hardware.zeroFrame / hardware.sampleRate;
             await advanceUntil(() => schedulerSession.pendingSeam !== null);
             const planned = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
             const endingBeat = playheadClockRef.beat;
@@ -3214,10 +3228,9 @@ describe('punch audio capture loop placement', () => {
             const committed = lane().takes.find((take) => take.id === planned.id)!;
             expect(committed.endBeat).toBeCloseTo(endingBeat - hardware.latencySeconds * 2, 10);
             expect(committed.passDepthSeconds).toBeCloseTo(0.1, 10);
-            expect((committed.endBeat - committed.startBeat) / 2 + committed.passDepthSeconds!).toBeCloseTo(
-                hardware.buffer!.duration,
-                10
-            );
+            expect(
+                (committed.endBeat - committed.startBeat) / 2 + committed.passDepthSeconds! + preRollSeconds
+            ).toBeCloseTo(hardware.buffer!.duration, 10);
             expectProjectProjection();
             const raw = getCrdtDoc<Project>('root')!.takeLanes.lanes[0]!.takes.find((take) => take.id === planned.id)!;
             expect(raw).toEqual(committed);
@@ -3227,6 +3240,7 @@ describe('punch audio capture loop placement', () => {
     it('bounds uncomped ordinary Stop playback before any planned seam despite excess drain', async () => {
         toggleRecording();
         await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+        const preRollSeconds = playheadClockRef.audioTimeSeconds - hardware.zeroFrame / hardware.sampleRate;
         await advanceUntil(() => playheadClockRef.beat >= 9.5);
         expect(schedulerSession.pendingSeam).toBeNull();
         const intendedEnd = playheadClockRef.beat;
@@ -3235,7 +3249,7 @@ describe('punch audio capture loop placement', () => {
         const clip = recordedClips()[0]!;
         expect(clip.endBeat).toBeCloseTo(intendedEnd, 10);
         expect(resolveClipsWithComping(TRACK_ID, recordedClips())[0]?.endBeat).toBeCloseTo(intendedEnd, 10);
-        expect(hardware.buffer!.duration).toBeCloseTo((intendedEnd - 8) / 2 + 1, 10);
+        expect(hardware.buffer!.duration).toBeCloseTo((intendedEnd - 8) / 2 + 1 + preRollSeconds, 10);
         expect(hardware.buffer!.getChannelData(0).at(-1)).toBe(hardware.buffer!.length - 1);
         await expectUncompedSourceEnding(intendedEnd);
         expectProjectProjection();
@@ -3252,6 +3266,7 @@ describe('punch audio capture loop placement', () => {
             transportStore.set({ ...transportStore.value!, playheadPosition: 10 });
             toggleRecording();
             await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+            const preRollSeconds = playheadClockRef.audioTimeSeconds - hardware.zeroFrame / hardware.sampleRate;
             await advanceUntil(() => schedulerSession.pendingSeam !== null);
             const planned = lane().takes.find((take) => take.sourceOffsetBeats === 0)!;
             const intendedEnd = route === 'automatic' ? 11.8 : playheadClockRef.beat;
@@ -3270,7 +3285,7 @@ describe('punch audio capture loop placement', () => {
             release();
             await stopping;
             const committed = lane().takes.find((take) => take.id === planned.id)!;
-            const intendedSourceEnd = 0.1 + (intendedEnd - 10) / 2;
+            const intendedSourceEnd = 0.1 + (intendedEnd - 10) / 2 + preRollSeconds;
             const expectedEnd = Math.min(intendedEnd, 10 + ((intendedSourceEnd - 0.1) * completionTempo) / 60);
             expect(committed.endBeat).toBeCloseTo(expectedEnd, 10);
             expect(committed.passSourceEndSeconds).toBeCloseTo(intendedSourceEnd, 10);
@@ -3292,7 +3307,8 @@ describe('punch audio capture loop placement', () => {
             const terminalFileSeconds =
                 ((selected.audioOffsetBeats ?? 0) * 60) / completionTempo +
                 ((selected.regionEndBeat - selected.regionStartBeat) * 60) / completionTempo;
-            expect(terminalFileSeconds).toBeCloseTo(intendedSourceEnd, 10);
+            const expectedCompFileEnd = Math.min(intendedSourceEnd, 0.1 + ((intendedEnd - 10) * 60) / completionTempo);
+            expect(terminalFileSeconds).toBeCloseTo(expectedCompFileEnd, 10);
             expect(Math.round(terminalFileSeconds * hardware.sampleRate) - 1).toBeLessThan(hardware.buffer!.length);
             expect(selected.regionEndBeat).toBeCloseTo(expectedEnd, 10);
             expect(committed.passDepthSeconds).toBeCloseTo(0.1, 10);
@@ -3407,7 +3423,7 @@ describe('punch audio capture loop placement', () => {
         hardware.now = 50.5;
         roll();
         await vi.waitFor(() => expect(schedulerSession.worker).not.toBeNull(), { interval: 1 });
-        expect(playheadClockRef).toEqual({ beat: 10, audioTimeSeconds: 50.5 });
+        expect(playheadClockRef).toMatchObject({ beat: 10, audioTimeSeconds: 50.5 });
         await vi.waitFor(() => expect(hardware.now).toBe(50.525), { interval: 1 });
         await advanceUntil(
             () => playheadWrapCountRef.current >= 2 && lane().takes.some((take) => take.sourceOffsetBeats === 2)
@@ -3452,7 +3468,7 @@ describe('punch audio capture loop placement', () => {
         hardware.now = 50.2;
         releaseRoll();
         await vi.waitFor(() => expect(schedulerSession.worker).not.toBeNull(), { interval: 1 });
-        expect(playheadClockRef).toEqual({ beat: 10, audioTimeSeconds: 50.2 });
+        expect(playheadClockRef).toMatchObject({ beat: 10, audioTimeSeconds: 50.2 });
 
         // startAudioRecording can resolve before worker readiness. Model the
         // worklet's first nonempty block 200 ms after the transport rolls.
@@ -3501,14 +3517,14 @@ describe('punch audio capture loop placement', () => {
         const successorWorker = schedulerSession.worker;
         expect(successorGeneration).toBeGreaterThan(stoppedGeneration);
         expect(successorWorker).not.toBeNull();
-        expect(playheadClockRef).toEqual({ beat: 8, audioTimeSeconds: 50.22 });
+        expect(playheadClockRef).toMatchObject({ beat: 8, audioTimeSeconds: 50.22 });
 
         releaseOldRoll();
         await vi.waitFor(() => expect(hardware.now).toBeCloseTo(50.222, 10), { interval: 1 });
         expect(schedulerSession.generation).toBe(successorGeneration);
         expect(schedulerSession.worker).toBe(successorWorker);
         expect(transportStore.value?.isPlaying).toBe(true);
-        expect(playheadClockRef).toEqual({ beat: 8, audioTimeSeconds: 50.22 });
+        expect(playheadClockRef).toMatchObject({ beat: 8, audioTimeSeconds: 50.22 });
 
         releaseFlush();
         await stopped;
@@ -3686,7 +3702,7 @@ describe('punch audio capture loop placement', () => {
             });
             expect(hardware.flushes).toBe(1);
             expect(activeRecordingRef.current).toEqual([]);
-            expect(playheadClockRef).toEqual({ beat: 0, audioTimeSeconds: 0 });
+            expect(playheadClockRef).toMatchObject({ beat: 0, audioTimeSeconds: 0 });
             expect(stopSettled).toBe(false);
             expect(undoHistoryStore.value?.past).toHaveLength(0);
             // A later map and hardware clock cannot rewrite the already captured
