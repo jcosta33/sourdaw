@@ -504,7 +504,6 @@ export function startPlayheadScheduler(
         }
 
         const currentTempo = getTempoAtBeat(changes, schedulerSession.accumulatedPosition, current.tempo);
-        const beatsPerSecond = currentTempo / 60;
         // Advance through the tempo map, not at the tick-start tempo (#4658).
         // `beatAtSecondsFromAnchor` inverts `secondsBetweenBeats` over this
         // tick's elapsed span, so a tick crossing a tempo change moves the
