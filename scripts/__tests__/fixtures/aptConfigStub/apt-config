@@ -4,6 +4,11 @@
 # APT_CONFIG names unless FAKE_APT_IGNORES_APT_CONFIG=true stands in for a
 # later apt.conf.d entry that overrides it.
 set -euo pipefail
+if [ "${1:-}" = dump ]; then
+  [ "$#" -eq 4 ] && [ "$2" = Acquire::Retries ] && [ "$3" = Acquire::http::Timeout ] && [ "$4" = Acquire::https::Timeout ] || exit 64
+  # The private fixture configures no acquisition overrides.
+  exit 0
+fi
 [ "${1:-}" = shell ] || { printf 'apt-config stub answers only shell\n' >&2; exit 64; }
 shift
 list=$FAKE_APT_SOURCE_LIST

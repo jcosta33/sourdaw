@@ -257,6 +257,13 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
         expect(probe.status, probe.stderr).toBe(0);
     });
 
+    it('reports installer progress before terminal without replaying earlier output', () => {
+        const probe = spawnSync('/usr/bin/python3', ['scripts/__tests__/fixtures/hostedAptInstall/progress.py'], {
+            encoding: 'utf8',
+        });
+        expect(probe.status, probe.stderr).toBe(0);
+    });
+
     it('fixture acknowledges a separate-session unpack before accepting finish', async () => {
         const f = fixture();
         const child = spawn('/usr/bin/python3', [installer, f.root, 'wait'], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -385,6 +392,8 @@ describe.skipIf(process.env.SOURDAW_SYSTEMD_TESTS !== '1')('real systemd fake pa
         try {
             await observed(f, 'unpack-start');
             await observed(f, 'parent-exit');
+            await outputValue(run, /(fixture unpack acknowledged)/);
+            expect(run.output()).toMatch(/phase=installer-output elapsed-seconds=[0-9.]+/);
             expect(run.child.exitCode).toBeNull();
             control(f, 'F');
             const result = await run.result;

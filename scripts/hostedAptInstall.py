@@ -115,13 +115,23 @@ def version_ok():
         return False
 
 
-def report_log(path):
+def report_log(path, started_at, position=0, final=False):
     try:
-        output = path.read_text()
+        with path.open("rb") as stream:
+            stream.seek(position)
+            output = stream.read()
     except OSError as error:
         raise Unproven(f"installer output unavailable: {error}") from error
+    if not final:
+        output = output[:output.rfind(b"\n") + 1]
     if output:
-        sys.stderr.write(output)
+        print(
+            f"aptWithoutMicrosoftFeed: phase=installer-output elapsed-seconds={time.monotonic() - started_at:.3f}",
+            file=sys.stderr, flush=True,
+        )
+        sys.stderr.write(output.decode("utf-8", errors="replace"))
+        sys.stderr.flush()
+    return position + len(output)
 
 
 def run(deadline, work, status_file, payload):
@@ -143,6 +153,19 @@ def run(deadline, work, status_file, payload):
         raise Unproven("hosted mode requires root Linux with cgroup v2")
     if not version_ok():
         raise Unproven("hosted mode requires systemd 255 or newer")
+
+    policy = command(
+        "apt-config", "dump", "Acquire::Retries", "Acquire::http::Timeout", "Acquire::https::Timeout",
+        env=environment,
+    )
+    if policy.returncode:
+        raise Unproven("effective apt acquisition policy unavailable")
+    print(
+        "aptWithoutMicrosoftFeed: acquisition policy overrides (absent keys use installed APT defaults)",
+        file=sys.stderr, flush=True,
+    )
+    sys.stderr.write(policy.stdout)
+    sys.stderr.flush()
 
     unit = f"sourdaw-apt-{uuid.uuid4()}.service"
     description = f"Sourdaw hosted apt {unit}"
@@ -172,11 +195,15 @@ def run(deadline, work, status_file, payload):
     kill_sent = False
     deadline_seconds = int(deadline[:-1]) * {"s": 1, "m": 60, "h": 3600}[deadline[-1]]
     observation_limit = started_at + deadline_seconds + STOP_GRACE_SECONDS + 30
+    log_position = 0
     while True:
         if time.monotonic() >= observation_limit:
             raise Unproven("owned unit did not reach a drained terminal state by its bounded observation limit")
         fields = observe(unit, description, invocation)
         invocation = fields["InvocationID"]
+        # Emit progress while the bound invocation is live; terminal-only replay
+        # gives every apt phase the same timestamp and hides where time went.
+        log_position = report_log(log, started_at, log_position)
         if cancelled and term_sent_at is None:
             observe(unit, description, invocation)
             manager("kill", "--kill-whom=all", "--signal=TERM", unit)
@@ -193,7 +220,7 @@ def run(deadline, work, status_file, payload):
             kill_sent = True
         time.sleep(POLL_SECONDS)
 
-    report_log(log)
+    report_log(log, started_at, log_position, final=True)
     result = fields.get("Result", "")
     code = fields.get("ExecMainCode", "")
     main_status = fields.get("ExecMainStatus", "")

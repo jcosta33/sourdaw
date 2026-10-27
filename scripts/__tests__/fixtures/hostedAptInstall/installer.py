@@ -41,6 +41,7 @@ os.close(write_ready)
 if os.read(read_ready, 1) != b"R":
     sys.exit(70)
 os.close(read_ready)
+print("fixture unpack acknowledged", flush=True)
 event("parent-ready", child=child.pid)
 if mode == "early-exit":
     event("parent-exit")
