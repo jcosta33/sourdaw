@@ -103,6 +103,9 @@ vi.mock('../../models/TempoMap', () => ({
     secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
     adjustmentLayerStore: { value: null },
     gainEnvelopeStore: { value: null },
     getTrackEligibility: vi.fn(),
