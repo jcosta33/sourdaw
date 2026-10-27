@@ -65,3 +65,30 @@ Preserve audio and current capture-bearing zero-distance Undo/Redo controls, inc
 zero captures and whole-loop captures. Removing replay admission must fail the unsafe
 historical case; deleting a capture field from a modern fixture cannot establish
 historical compatibility.
+
+## Fractional row coordinates and reciprocal history captures
+
+PR #5495 (`0f1e87dc8`) introduced the slip's arithmetic row-lift inverse; PR #5578
+(`e930f16eb`) retained arithmetic translation when restoring trim offsets. Integer
+fixtures established the displacement law but missed floating-point loss: `0.1 + 8 - 8`
+is not the stored `0.1`. The original reviewer prompts and tiers are unverified.
+
+Require exact raw note, controller and pitch-bend figures through the real Command
+boundary on both configured and duration-derived loops. Capture each executed translation
+by row identity. Restore a saved number only while its current coordinate still equals
+the captured post-value; translate current peer-moved and added rows, retain their current
+properties, and never recreate deleted rows. Plan every lane and finite displacement before
+either owner writes. A refused replay must conflict without consuming history.
+
+Undo must refresh the actual redo capture and Redo the actual inverse capture, including
+peer edits before either direction. Persist and hydrate from both past and future, then
+repeat the cycle. JSON does not preserve object aliases: independently serialized captures
+need an owner-validated pair relationship. Replay's discarded description must not detach
+that relationship. Failed commit compensation and owner abort rollback must preserve the
+prior document, projections, history, tree and mirror; committed bookkeeping errors retain
+the capture matching the committed product.
+
+Mutate the exact-restoration branch, actual-counterpart refresh, hydration pair binding,
+and abort metadata restoration independently. The corresponding connected fractional,
+peer-edit, saved-history and failed-commit cases must fail. A pure planner round trip or
+an integer-only fixture cannot establish any of those runtime obligations.

@@ -3,17 +3,47 @@ import { createHandler } from '#/utils/createHandler';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
+
+const rowReplay = createMidiRowCoordinateReplay('trimClipStart');
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
-    execute: (alpha) => {
-        return toHandlerExecutionResult(
-            trimClipStart(
-                alpha.payload.clipId,
-                alpha.payload.newStartBeat,
-                alpha.payload.loopOriginBeat,
-                alpha.payload.midiOffsetBeats
-            )
+    execute: (action) => {
+        if (!rowReplay.canExecute(action)) return { status: 'conflict' };
+        const clip = getTrackStoreState()
+            ?.tracks.flatMap((track) => track.clips)
+            .find((candidate) => candidate.id === action.payload.clipId);
+        const capturesMidi =
+            clip?.type === 'midi' ||
+            action.payload.midiOffsetBeats !== undefined ||
+            action.payload.midiRowCoordinates !== undefined;
+        if (!capturesMidi) {
+            return toHandlerExecutionResult(
+                trimClipStart(
+                    action.payload.clipId,
+                    action.payload.newStartBeat,
+                    action.payload.loopOriginBeat,
+                    action.payload.midiOffsetBeats
+                )
+            );
+        }
+        const coordinates: NonNullable<Parameters<typeof trimClipStart>[4]> = {
+            restore: action.payload.midiRowCoordinates,
+        };
+        const didWrite = trimClipStart(
+            action.payload.clipId,
+            action.payload.newStartBeat,
+            action.payload.loopOriginBeat,
+            action.payload.midiOffsetBeats,
+            coordinates
         );
+        if (!didWrite) {
+            return coordinates.refused || action.payload.midiRowCoordinates !== undefined
+                ? { status: 'conflict' }
+                : { status: 'no-write' };
+        }
+        if (coordinates.capture) rowReplay.recordApplied(action, coordinates.capture);
+        return { status: 'written' };
     },
     describe: (alpha) => {
         const label = 'Trim clip start';
@@ -52,16 +82,22 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                 // through the wrap law.
                 inversePayload.midiOffsetBeats = clip.midiOffsetBeats ?? 0;
             }
-            return {
-                label,
-                inverseAction: {
-                    type: 'trimClipStart',
-                    payload: inversePayload,
-                },
-            };
+            const inverseAction = { type: 'trimClipStart' as const, payload: inversePayload };
+            if (clip.type === 'midi') {
+                return {
+                    label,
+                    ...rowReplay.describe(alpha, inverseAction, {
+                        type: 'trimClipStart',
+                        payload: { ...alpha.payload },
+                    }),
+                };
+            }
+            return { label, inverseAction };
         } catch {
             return { label, inverseAction: null };
         }
     },
+    prepareAbort: rowReplay.prepareAbort,
+    validateSessionEntry: rowReplay.validateSessionEntry,
     undoable: true,
 });

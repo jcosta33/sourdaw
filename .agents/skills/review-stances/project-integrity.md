@@ -361,3 +361,14 @@ eligible audio target for the held-snapshot removal above and for a synthetic di
 revert unit whose newest callback would remove that target. The early callback guard
 must refuse before invoking the callback, preserving raw project, full history and tree.
 Retain callback identity when snapshotting history rather than cloning its functions.
+
+## Coordinate captures remain history data across both replay directions
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+A capture that works before saving proves nothing about the admitted session pair.
+Hydrate actual production history from both past and future, preserve peer row membership
+and properties, and require exact raw coordinates through repeated replay. Refuse malformed
+or incoherent pairs before binding metadata or writing product state. Inject a pre-commit
+storage failure after handler execution and compare document, projections, both captures,
+history, tree and mirror; a successful product rollback cannot excuse changed replay data.

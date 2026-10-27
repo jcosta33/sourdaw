@@ -34,10 +34,12 @@ import { undoTreeStore } from '../../stores/undoTree';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
+import { getActionReplayStatus } from '../getActionReplayStatus';
 import { recordAction } from '../macro/recording/recordAction';
 import { reconcileSessionUndoForProject } from '../reconcileSessionUndoForProject';
 import { redo } from '../redo';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
+import { revertAction } from '../revertAction';
 import { stampSessionUndoWitness } from '../stampSessionUndoWitness';
 import { undo } from '../undo';
 import { rebuildTreeFromPast } from '../undoTree/rebuildTreeFromPast';
@@ -486,5 +488,78 @@ describe('exact row captures through real Command history and persistence (#5695
         await redo();
         await settleMirror();
         expect(snapshot()).toEqual(before);
+    });
+
+    it('keeps aliased capability reversions coherent when both original entries replay with peers and reload', async () => {
+        seed();
+        const initial = readRows();
+        await executeAppAction(slip());
+        const originalEntry = undoStore.value?.past.at(-1);
+        const id = actionHistoryStore.value?.entries.at(-1)?.id;
+        if (!id || originalEntry?.kind !== 'action') throw new Error('Expected a recorded action capability');
+        expect(getActionReplayStatus(id)).toEqual({ status: 'ready' });
+        await expect(revertAction(id)).resolves.toEqual({ status: 'executed' });
+        expect(getActionReplayStatus(id)).toEqual({ status: 'unavailable' });
+        expect(actionHistoryStore.value?.entries.find((entry) => entry.id === id)?.reverted).toBe(true);
+        const reversion = undoStore.value?.past.at(-1);
+        if (reversion?.kind !== 'action') throw new Error('Expected an undoable reversion');
+        expect(reversion.action).toBe(originalEntry.inverseAction);
+        expect(readRows()).toEqual(initial);
+        await undo();
+        await undo();
+        expect(readRows()).toEqual(initial);
+        peerRows((state) => {
+            state.notesByClipId[CLIP_ID]!.push({ id: 'peer', startBeat: 0.2, pitch: 64, duration: 0.5, velocity: 80 });
+        });
+        const peer = readRows();
+        await redo();
+        const beforeCounter = readRows();
+        expect(beforeCounter?.notesByClipId[CLIP_ID]?.[1]?.startBeat).toBe(0.2 + 8);
+        await redo();
+        // This row did not exist when this counteraction captured its inverse.
+        // It receives the current semantic translation, not another entry's capture.
+        const afterCounter = structuredClone(peer)!;
+        afterCounter.notesByClipId[CLIP_ID]![1]!.startBeat = 0.2 + 8 - 8;
+        expect(readRows()).toEqual(afterCounter);
+        expect(undoStore.value?.past).toHaveLength(2);
+        expect(actionHistoryStore.value?.entries.find((entry) => entry.id === id)?.reverted).toBe(true);
+        await saveAndReload();
+        expect(getActionReplayStatus(id)).toEqual({ status: 'unavailable' });
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            await undo();
+            expect(readRows()).toEqual(beforeCounter);
+            await undo();
+            expect(readRows()).toEqual(peer);
+            await saveAndReload();
+            await redo();
+            expect(readRows()).toEqual(beforeCounter);
+            await redo();
+            expect(readRows()).toEqual(afterCounter);
+            await saveAndReload();
+        }
+    });
+
+    it('aborts a partial owner write and retains actual history captures when the clip setter throws', async () => {
+        seed();
+        await executeAppAction(slip());
+        await settleMirror();
+        const before = snapshot();
+        let partialMidi: ReturnType<typeof readRows> | undefined;
+        const setter = vi.spyOn(trackStore, 'set').mockImplementationOnce(() => {
+            partialMidi = structuredClone(midiStore.value);
+            throw new Error('injected clip setter failure after MIDI preparation applied');
+        });
+        try {
+            await expect(undo()).rejects.toThrow('injected clip setter failure');
+        } finally {
+            setter.mockRestore();
+        }
+        expect(partialMidi).toBeDefined();
+        expect(partialMidi).not.toEqual(before.midi);
+        await settleMirror();
+        expect(snapshot()).toEqual(before);
+        await undo();
+        await redo();
+        expect(readRows()).toEqual(before.midi);
     });
 });

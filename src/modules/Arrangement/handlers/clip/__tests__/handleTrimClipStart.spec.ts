@@ -3,8 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleTrimClipStart } from '../handleTrimClipStart';
 
 const mocks = vi.hoisted(() => ({
-    trimClipStart: vi.fn(),
-    getTrackStoreState: vi.fn<() => { tracks: { id: string; clips: { id: string; startBeat: number }[] }[] } | null>(),
+    trimClipStart: vi.fn<typeof import('../../../useCases/clipEditing/trimClipStart').trimClipStart>(),
+    getTrackStoreState: vi.fn<
+        () => {
+            tracks: {
+                id: string;
+                clips: { id: string; startBeat: number; type?: 'audio' | 'midi'; midiOffsetBeats?: number }[];
+            }[];
+        } | null
+    >(),
 }));
 
 vi.mock('../../../useCases/clipEditing/trimClipStart', () => ({
@@ -18,6 +25,7 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
 describe('handleTrimClipStart', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.trimClipStart.mockReset();
         mocks.getTrackStoreState.mockReturnValue(null);
     });
 
@@ -57,5 +65,55 @@ describe('handleTrimClipStart', () => {
 
     it('is undoable', () => {
         expect(handleTrimClipStart.undoable).toBe(true);
+    });
+
+    it('preserves a fresh refusal as no-write', () => {
+        mocks.trimClipStart.mockReturnValue(false);
+        expect(
+            handleTrimClipStart.execute({ type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2 } })
+        ).toEqual({ status: 'no-write' });
+    });
+
+    it('records the actual MIDI owner capture and forwards it through the real inverse', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'cm', startBeat: 0, type: 'midi', midiOffsetBeats: 7 }] }],
+        });
+        const action = { type: 'trimClipStart' as const, payload: { clipId: 'cm', newStartBeat: 2 } };
+        const description = handleTrimClipStart.describe(action);
+        const capture = {
+            beatDelta: -6,
+            coordinates: [{ kind: 'note' as const, id: 'note', beforeBeat: 8.1, afterBeat: 2.0999999999999996 }],
+        };
+        mocks.trimClipStart.mockImplementationOnce((_id, _start, _anchor, _offset, coordinates) => {
+            if (!coordinates) throw new Error('Expected MIDI coordinate capture output');
+            coordinates.capture = capture;
+            return true;
+        });
+        expect(handleTrimClipStart.execute(action)).toEqual({ status: 'written' });
+        expect(mocks.trimClipStart).toHaveBeenCalledWith('cm', 2, undefined, undefined, {
+            restore: undefined,
+            capture,
+        });
+        expect(description.inverseAction).toMatchObject({
+            payload: { newStartBeat: 0, midiOffsetBeats: 7, midiRowCoordinates: capture },
+        });
+        if (description.inverseAction?.type !== 'trimClipStart') throw new Error('Expected a trim inverse');
+        mocks.trimClipStart.mockReturnValueOnce(true);
+        expect(handleTrimClipStart.execute(description.inverseAction)).toEqual({ status: 'written' });
+        expect(mocks.trimClipStart).toHaveBeenLastCalledWith('cm', 0, null, 7, { restore: capture });
+    });
+
+    it.each([false, true])('distinguishes a fresh MIDI no-write from unsafe coordinate refusal: %s', (refused) => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'cm', startBeat: 0, type: 'midi' }] }],
+        });
+        mocks.trimClipStart.mockImplementationOnce((_id, _start, _anchor, _offset, coordinates) => {
+            if (!coordinates) throw new Error('Expected MIDI coordinate preflight output');
+            if (refused) coordinates.refused = true;
+            return false;
+        });
+        expect(
+            handleTrimClipStart.execute({ type: 'trimClipStart', payload: { clipId: 'cm', newStartBeat: 2 } })
+        ).toEqual({ status: refused ? 'conflict' : 'no-write' });
     });
 });
