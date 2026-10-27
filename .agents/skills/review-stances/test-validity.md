@@ -1446,3 +1446,9 @@ whole/scoped/parent inspection failures. Require retained storage and a stable, 
 on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
 or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
 or add inspection diagnostics to the warning-success allowlist.
+
+### 2026-10-27 — a held wrapper did not exercise the recording action wait (issue #5517)
+
+PR #5373 (`eecc1c5a8457`) and PR #5658 (`71e358df7415`) retained useful callback/Stop guard tests, but holding a mocked commit wrapper before invoking the real commit does not exercise root replacement after the real action has already entered its snapshot wait. Both PRs explicitly scoped the remaining audio windows out. Exact historical reviewer prompts and tiers are unknown.
+
+Drive actual manual and scheduler-registered audio callbacks into real commitRecording and executeAppAction. A forwarding waiter spy may expose entry, but must return the actual unresolved wait. Hold a real active transaction that has not reserved root; prove one wait entry, no entry yet, in-flight lifecycle and unresolved wait before public replacement and release. Assert raw CRDT, projections, takes, durable action history, undo stacks/tree and the actual mirror against the successor snapshot. Internal recording commands can be omitted from that mirror, so do not invent session contracts or require mirror entry counts. A targeted post-wait guard mutation on a committed head must redden the unchanged owning spec; pair same-root successful completion and guarded stale callback/failure/catch cases. Queue proof establishes authority and history, not physical audio, full fork persistence or browser UI acceptance.
