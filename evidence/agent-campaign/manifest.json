@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "5403c2fcf212e0b4b2fe76bf8cb5fdde06d52b86d2f0c5f0cef3821709c22e00"
+        "digest": "2c8ffcddf96cefb34375da84008cf59fcbab96ad2b194cee8b2573b5538b1c5f"
     },
     "census": {
-        "digest": "fab967ce35ead06daa75511f79664e42a0bc84674d23f8c20fe256def7e32e06"
+        "digest": "1b87d2c386437df22d458af6f94bffdff7e27a6d42c86812cbfdc8075e82644a"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
@@ -211,7 +211,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts",
-                    "digest": "03e4db7e87e0cb50cb6901c347f6fc5b05f38677c2ad31084e045ba4672661b0"
+                    "digest": "ddc4b9c5352ad043914f5f6728f3fb4943756285d6dfa26ca0fb2dcd2eb77838"
                 }
             ]
         },
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "3f59586a87b7240b86158248347479690c6b5e0b729969dd83cada2c1dc44c71"
+                    "digest": "8417e6ae95672a4a5e09d0d39bbf7f5cde23c738ab24a4428d8aa9b01e40e53c"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
