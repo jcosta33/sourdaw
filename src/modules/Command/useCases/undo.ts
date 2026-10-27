@@ -5,8 +5,9 @@ import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeActionGroupUndo, type UndoOutcome } from './executeActionGroupUndo';
-import { executeAppAction } from './executeAppAction';
+import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
 import { getCommandHandler } from './getCommandHandler';
+import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
@@ -84,10 +85,15 @@ async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Pr
     }
 
     try {
-        await runExecuteAppAction(normalizeLegacyLoopAnchorInverse(entry.inverseAction), {
+        const inverseAction = normalizeLegacyLoopAnchorInverse(entry.inverseAction);
+        const options: ExecuteAppActionOptions = {
             skipUndo: true,
             skipMacroRecording: true,
-        });
+        };
+        if (inverseAction.type === 'trimClipStart' && inverseAction.payload.midiOffsetBeats === undefined) {
+            options.authorizeFirstHandler = () => getLegacyTrimInverseReplayFailure([inverseAction]);
+        }
+        await runExecuteAppAction(inverseAction, options);
         return { status: 'undone' };
     } catch (error) {
         if (error instanceof AppActionConflictError) {

@@ -121,7 +121,7 @@ describe('revertActionGroup', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
             { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, authorizeFirstHandler: expect.any(Function) }
         );
     });
 

@@ -39,6 +39,7 @@ import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
 export type ExecuteAppActionOptions = ExecuteOptions & {
+    authorizeFirstHandler?: () => string | null;
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
 };
@@ -178,6 +179,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     return;
                 }
 
+                const authorizationFailure = options?.authorizeFirstHandler?.() ?? null;
+                if (authorizationFailure) {
+                    throw new AppActionConflictError(action.type, authorizationFailure);
+                }
+
                 const command = options?.commandEnvelope
                     ? { action, envelope: options.commandEnvelope }
                     : createExecutionCommandEnvelope({
@@ -237,6 +243,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return;
+            }
+
+            const authorizationFailure = options?.authorizeFirstHandler?.() ?? null;
+            if (authorizationFailure) {
+                throw new AppActionConflictError(action.type, authorizationFailure);
             }
 
             // The repair action itself is the one admitted route through this
