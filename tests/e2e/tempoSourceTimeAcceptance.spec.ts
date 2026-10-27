@@ -552,18 +552,17 @@ async function readProjectOwner(page: Page) {
 }
 
 async function reopenProject(page: Page, projectId: string): Promise<Page> {
-    const context = page.context();
-    await page.close();
-    const fresh = await context.newPage();
+    // The supported session mirror belongs to this tab. Reload discards app
+    // globals and hydrates IndexedDB while preserving the browser's sessionStorage.
+    const fresh = page;
     await enable_direct_e2e_viewport(fresh);
     await fresh.addInitScript((dismissed) => {
         localStorage.setItem('wd:onboarding-completed', '1');
         localStorage.setItem('sourdaw-alpha-notice-dismissed', dismissed);
         localStorage.setItem('wd:first-load-hint-shown', '1');
     }, stringify(true));
-    await installPlaybackObserver(fresh);
     const boot = attach_first_paint_console(fresh);
-    const response = await fresh.goto('/');
+    const response = await fresh.reload();
     expect(decodeURIComponent(response?.headers()['x-sourdaw-root'] ?? '')).toBe(ROOT);
     await wait_for_console_marker(boot, CAPABILITIES_MARKER, 30_000);
     const mode = async () =>
