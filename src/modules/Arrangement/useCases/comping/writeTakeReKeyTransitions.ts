@@ -29,6 +29,22 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
     );
 }
 
+function reconcileModifiedTake(target: Take, source: Take | undefined, liveTake: Take): Take {
+    const peerRows =
+        source?.midiSource &&
+        target.midiSource &&
+        liveTake.midiSource &&
+        source.midiSource.sourceClipId === liveTake.midiSource.sourceClipId &&
+        valuesEqual(source.midiSource.rows, target.midiSource.rows)
+            ? liveTake.midiSource.rows
+            : undefined;
+    const reconciledTake = { ...target, selected: liveTake.selected };
+    if (peerRows && target.midiSource) {
+        reconciledTake.midiSource = { ...target.midiSource, rows: structuredClone(peerRows) };
+    }
+    return reconciledTake;
+}
+
 /**
  * The takes facet of one lane, reconciled toward the transition's target side.
  *
@@ -103,20 +119,7 @@ function reconcileTransitionTakes(
             continue;
         }
         if (modifiedIds.has(target.id)) {
-            const source = fromById.get(target.id);
-            const peerRows =
-                source?.midiSource &&
-                target.midiSource &&
-                liveTake.midiSource &&
-                source.midiSource.sourceClipId === liveTake.midiSource.sourceClipId &&
-                valuesEqual(source.midiSource.rows, target.midiSource.rows)
-                    ? liveTake.midiSource.rows
-                    : undefined;
-            const reconciledTake = { ...target, selected: liveTake.selected };
-            if (peerRows && target.midiSource) {
-                reconciledTake.midiSource = { ...target.midiSource, rows: structuredClone(peerRows) };
-            }
-            reconciled.push(reconciledTake);
+            reconciled.push(reconcileModifiedTake(target, fromById.get(target.id), liveTake));
             continue;
         }
         reconciled.push(liveTake);

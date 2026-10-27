@@ -7,28 +7,28 @@ import {
     findOpenRecordingMidiMemberAdmission,
 } from '#/modules/Arrangement/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { PITCH_BEND_CENTER } from '#/utils/midiData';
 
 import { CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
 import { createWebMidiNoteKey, MPE_SLIDE_CC, type WebMidiInputMessage } from '../../models/WebMidiTypes';
-import { PITCH_BEND_CENTER } from '#/utils/midiData';
 import { admitPitchBend } from '../../repositories/webMidi/admitPitchBend';
 import { admitResetAllControllers } from '../../repositories/webMidi/admitResetAllControllers';
 import { captureAdmittedWheels } from '../../repositories/webMidi/captureAdmittedWheels';
+import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
-import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
-import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 
-import { captureEventBeatAt, captureEventPositionAt } from './captureEventBeat';
 import { captureCompensatedRecordingPosition } from './captureCompensatedRecordingPosition';
+import { captureEventBeatAt, captureEventPositionAt } from './captureEventBeat';
 import { captureRecordingMemberExpression } from './captureRecordingMemberExpression';
-import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
 
 /**

@@ -1,4 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
+import {
+    AutomergeStorageWriteConflictError,
+    createAutomergeStorage,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import {
     hasValidAudioPassOrigin,
@@ -8,10 +12,6 @@ import {
     type AudioSourceTile,
     type AudioSourceSnapshot,
 } from '#/utils/audioSourceTime';
-import {
-    AutomergeStorageWriteConflictError,
-    createAutomergeStorage,
-} from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
@@ -88,6 +88,16 @@ function get_lane_values(value: unknown): unknown[] | null {
     return value.lanes;
 }
 
+function hasValidMidiTakeFields(value: object): boolean {
+    return (
+        (!('recordingPassIndex' in value) ||
+            (typeof value.recordingPassIndex === 'number' &&
+                Number.isSafeInteger(value.recordingPassIndex) &&
+                value.recordingPassIndex >= 0)) &&
+        (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
+    );
+}
+
 function is_valid_take(value: unknown): value is Take {
     return (
         value !== null &&
@@ -111,11 +121,7 @@ function is_valid_take(value: unknown): value is Take {
         (!('sourceOffsetSeconds' in value) || is_finite_non_negative_number(value.sourceOffsetSeconds)) &&
         is_valid_pass_placement(value) &&
         hasValidAudioPassOrigin(value) &&
-        (!('recordingPassIndex' in value) ||
-            (typeof value.recordingPassIndex === 'number' &&
-                Number.isSafeInteger(value.recordingPassIndex) &&
-                value.recordingPassIndex >= 0)) &&
-        (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
+        hasValidMidiTakeFields(value)
     );
 }
 
@@ -257,26 +263,15 @@ function get_sanitizable_take_lane(value: unknown): SanitizableTakeLane | null {
         return null;
     }
 
-    if ('automationLaneId' in value && typeof value.automationLaneId === 'string') {
-        const lane: SanitizableTakeLane = {
-            id: value.id,
-            trackId: value.trackId,
-            automationLaneId: value.automationLaneId,
-            takes: value.takes,
-            activeCompRegions: value.activeCompRegions,
-        };
-        if ('baseGapAudioSources' in value && is_unknown_array(value.baseGapAudioSources)) {
-            lane.baseGapAudioSources = value.baseGapAudioSources;
-        }
-        return lane;
-    }
-
     const lane: SanitizableTakeLane = {
         id: value.id,
         trackId: value.trackId,
         takes: value.takes,
         activeCompRegions: value.activeCompRegions,
     };
+    if ('automationLaneId' in value && typeof value.automationLaneId === 'string') {
+        lane.automationLaneId = value.automationLaneId;
+    }
     if ('baseGapAudioSources' in value && is_unknown_array(value.baseGapAudioSources)) {
         lane.baseGapAudioSources = value.baseGapAudioSources;
     }
