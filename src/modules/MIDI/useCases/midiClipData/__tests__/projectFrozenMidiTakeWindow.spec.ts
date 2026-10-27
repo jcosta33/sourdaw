@@ -92,6 +92,48 @@ describe('frozen MIDI take window', () => {
         expect(projected?.absoluteOccurrenceIndex).toBe(1);
     });
 
+    it('does not retrigger a held previous-pass note in the selected later pass', () => {
+        const selected = {
+            ...source(),
+            sourceEntryBeat: 9,
+            sourceEndBeat: 13,
+            rows: {
+                ...source().rows,
+                notes: {
+                    present: true as const,
+                    value: [
+                        {
+                            id: 'held-previous',
+                            pitch: 60,
+                            startBeat: 8.75,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 0,
+                        },
+                        {
+                            id: 'selected-onset',
+                            pitch: 64,
+                            startBeat: 9.5,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 1,
+                        },
+                    ],
+                },
+            },
+        };
+        const projected = projectFrozenMidiTakeWindow({
+            source: selected,
+            recordingPassIndex: 1,
+            absoluteOccurrenceIndex: 0,
+            fromBeat: 0,
+            toBeat: 4,
+        });
+        expect(projected?.notes.map((note) => [note.id, note.recordingPassIndex, note.startBeat])).toEqual([
+            ['selected-onset', 1, 0.5],
+        ]);
+    });
+
     it('treats present empty rows as empty and refuses a partial modern capture', () => {
         const original = source();
         const empty = { ...original, rows: { ...original.rows, notes: { present: true, value: [] } } };
