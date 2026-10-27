@@ -47,7 +47,7 @@ const TARGET = { trackId: 'midi-1', deviceId: 'd1' } as const;
 
 const mocks = vi.hoisted(() => ({
     /** What every read of the programme answers, as the arm would receive it. */
-    events: [] as { time: number; note: number; isNoteOn?: boolean; noteOnTime?: number }[],
+    events: [] as { time: number; note: number; channel?: number; isNoteOn?: boolean; noteOnTime?: number }[],
     exclusions: [] as { stripId: string; reason: string }[],
     /** The targets the programme reports, reassignable per test to move a sink between arms. */
     targets: [] as { trackId: string; deviceId: string }[],
@@ -79,7 +79,7 @@ vi.mock('../readLiveMidiProgramme', () => ({
                     time: entry.time,
                     note: entry.note,
                     velocity: 100,
-                    channel: 0,
+                    channel: entry.channel ?? 0,
                     isNoteOn: entry.isNoteOn ?? true,
                 })),
         })),
@@ -126,6 +126,19 @@ function pairedLane(
         { time: start + ((index + 0.2) * duration) / count, note: 60 + (index % 12), isNoteOn: true },
         { time: start + ((index + 0.6) * duration) / count, note: 60 + (index % 12), isNoteOn: false },
     ]).flat();
+}
+
+/** Distinct valid MIDI keys share an attack frame and each reserve their real release. */
+function simultaneousPairedLane(count: number, onset: number, release: number): AudioGraphMidiNoteEvent[] {
+    return Array.from({ length: count }, (_unused, index) => {
+        const key = { note: index % 128, channel: Math.floor(index / 128), velocity: 100 };
+        return [
+            { ...key, time: onset, isNoteOn: true },
+            { ...key, time: release, isNoteOn: false },
+        ];
+    })
+        .flat()
+        .sort((left, right) => left.time - right.time);
 }
 
 function eventIdentities(events: readonly { time: number; note: number; isNoteOn?: boolean }[]): string[] {
@@ -1035,6 +1048,57 @@ describe('the live MIDI writer', () => {
         await arm(0);
         expect(scheduledIn(0)).toEqual([]);
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('same frame'));
+    });
+
+    it('reports intrinsically oversized paired frame groups once per target without scheduling a prefix', async () => {
+        mocks.events = simultaneousPairedLane(1025, 0.5, 1.5);
+        mocks.targets = [TARGET, { trackId: 'midi-2', deviceId: 'd2' }];
+        await arm(0);
+        expect(scheduledIn(0)).toEqual([]);
+        expect(mocks.warn).toHaveBeenCalledTimes(2);
+        for (const [warning] of mocks.warn.mock.calls) {
+            expect(warning).toContain('2050 MIDI entries including reserved releases');
+        }
+        await pump(0);
+        await pump(0);
+        expect(batches().flatMap((_batch, index) => scheduledIn(index))).toEqual([]);
+        expect(mocks.warn).toHaveBeenCalledTimes(2);
+    });
+
+    it('admits the exact store boundary of simultaneous attacks and their real releases', async () => {
+        mocks.events = simultaneousPairedLane(1024, 0.5, 1.5);
+        await arm(0);
+        expect(scheduledIn(0)).toHaveLength(MIDI_NOTE_STORE_CAPACITY);
+        expect(scheduledIn(0).filter((event) => event.isNoteOn)).toHaveLength(1024);
+        expect(scheduledIn(0).filter((event) => !event.isNoteOn)).toHaveLength(1024);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(MIDI_NOTE_STORE_CAPACITY);
+        await pump(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('defers an independently representable paired group without warning until earlier residents can clear', async () => {
+        mocks.events = [
+            { time: 0.1, note: 127, channel: 15, isNoteOn: true },
+            { time: 0.2, note: 127, channel: 15, isNoteOn: false },
+            ...simultaneousPairedLane(1024, 0.5, 1.5),
+        ];
+        await arm(0);
+        expect(scheduledIn(0)).toHaveLength(2);
+        expect(mocks.warn).not.toHaveBeenCalled();
+        await pump(0.3);
+        expect(scheduledIn(1)).toHaveLength(MIDI_NOTE_STORE_CAPACITY);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('defers a representable paired group outside the horizon without a saturation warning', async () => {
+        mocks.events = simultaneousPairedLane(1024, 5, 6);
+        await arm(0);
+        expect(scheduledIn(0)).toEqual([]);
+        expect(mocks.warn).not.toHaveBeenCalled();
+        await pump(2);
+        expect(scheduledIn(1)).toHaveLength(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
     });
 
     // A locate moves the playhead out of the window this pass filled, and the
