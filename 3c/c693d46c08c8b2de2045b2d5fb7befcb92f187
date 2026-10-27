@@ -1,0 +1,30 @@
+src/modules/MIDI/useCases/webMidiInput/sealHeldRecordedMidiNotes.ts
+  s_29d8df116c5b92::t_15442320c24826 118-126
+  s_29d8df116c5b92::t_b70c3d6a8dd130 36-43
+src/modules/Arrangement/useCases/comping/replaceOriginalMidiTakeRow.ts
+  s_29d8df116c5b92::t_b70c3d6a8dd130 39-46,106
+  s_29d8df116c5b92::t_15442320c24826 99,103-104
+  s_29d8df116c5b92::t_b72325b9faa0a7 105
+src/modules/MIDI/useCases/index.ts
+  s_29d8df116c5b92::t_b70c3d6a8dd130 62-63
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_29d8df116c5b92::t_15442320c24826 227-228,465,617-619
+  s_29d8df116c5b92::t_b70c3d6a8dd130 620-631
+  s_29d8df116c5b92::t_8839fb0a2ec1c0 632
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3cc693d46c08c8b2de2045b2d5fb7befcb92f187",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
