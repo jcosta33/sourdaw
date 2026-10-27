@@ -1,0 +1,25 @@
+src/modules/MIDI/AGENTS.md
+  s_26f70b851e8f7a::t_0a3f57eb591bc0 25
+src/modules/MIDI/services/registeredParameterState.ts
+  s_26f70b851e8f7a::t_f26c9cff72f5c8 487-490
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_26f70b851e8f7a::t_129a8fad307d82 33-82,122-124,126,128,130,132,176-183,185,188,190,193,217,220,223,225,228
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_26f70b851e8f7a::t_16cc002bf293ae 5,46,49-60,62-63,362,386,547-549,579,584,950,1001-1005,1029-1030,1041,1045,1048,1065,1084,1087,1106,1111,1123-1184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d67efa8b0656b310ed3f06a9a219935d9d4afcb",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
