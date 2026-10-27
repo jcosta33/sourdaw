@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../../models/ProjectContext';
 import { getExplicitClipProtection } from '../getExplicitlyProtectedClips';
+import { resolveAgentReference } from '../resolveAgentReference';
 
 function createTrack(id: string, name: string, clips: ProjectContextTrack['clips']): ProjectContextTrack {
     return {
@@ -88,6 +89,45 @@ function getProtectedClips(prompt: string, projectContext = context) {
 }
 
 describe('getExplicitlyProtectedClips', () => {
+    it('retains the exact clip candidate beside a same-name track in an aggregate protection', () => {
+        const clip = createClip('clip-overall-level', 'Overall Level');
+        const project = {
+            ...context,
+            tracks: [
+                createTrack('track-drums', 'Drums', [clip]),
+                createTrack('track-overall-level', 'Overall Level', []),
+            ],
+        };
+        expect(
+            resolveAgentReference({
+                prompt: 'the Overall Level',
+                assertedId: clip.id,
+                capability: 'clip',
+                context: project,
+            })
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+            candidates: [{ id: clip.id, name: clip.name, evidence: ['exact-name'] }],
+        });
+        expect(getExplicitClipProtection('keep the Overall Level the same', project)).toEqual({
+            clips: [{ id: clip.id, name: clip.name }],
+            complete: true,
+        });
+    });
+
+    it('does not borrow the same-name clip for an explicitly track-only fader protection', () => {
+        const clip = createClip('clip-overall-level', 'Overall Level');
+        const project = {
+            ...context,
+            tracks: [
+                createTrack('track-drums', 'Drums', [clip]),
+                createTrack('track-overall-level', 'Overall Level', []),
+            ],
+        };
+        expect(getExplicitClipProtection('keep the fader of "Overall Level" the same', project).clips).toEqual([]);
+    });
+
     it.each([
         'add an EQ to every audio track but leave the vocal alone',
         'turn down the drums by 3 dB but leave Bass Verse alone',

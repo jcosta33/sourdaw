@@ -1882,6 +1882,67 @@ describe('complete protection owners at every grounding boundary', () => {
         expect(groundGainList(allowed, [drums], context, true).status).toBe('grounded');
     });
 
+    it('carries both same-name track and clip protections through compiled grounding', () => {
+        const clip = {
+            id: 'clip-overall-level',
+            name: 'Overall Level',
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 8,
+            noteCount: 0,
+            locked: false,
+        };
+        const overall = createTrack({ id: 'track-overall-level', name: 'Overall Level' });
+        const context = {
+            ...projectContext,
+            tracks: [createTrack({ id: drums.id, name: drums.name, clips: [clip] }), overall],
+        };
+        const prompt = 'turn the Drums down 3 dB; keep the Overall Level the same';
+        expect(bridgeCompiledGainList(prompt, [drums], context)).toMatchObject({
+            actions: [gainAction(drums.id, { deltaDb: -3 })],
+            rejections: [],
+        });
+        const result = groundGainList(prompt, [drums], context, true);
+        expect(result).toMatchObject({
+            status: 'grounded',
+            actions: [groundedGainAction(drums, { deltaDb: -3 })],
+            protectionFacts: {
+                protectedUnchanged: expect.arrayContaining([
+                    { id: overall.id, name: overall.name },
+                    { id: clip.id, name: clip.name },
+                ]),
+            },
+        });
+        for (const protection of [
+            'keep the "Overall Level" track the same',
+            'keep the fader of "Overall Level" the same',
+        ]) {
+            const qualifiedPrompt = `turn the Drums down 3 dB; ${protection}`;
+            expect(groundGainList(qualifiedPrompt, [drums], context, true)).toMatchObject({
+                status: 'rejected',
+                rejectionReason:
+                    'Provider action rejected: <batch>: Transform compilation includes a protected or unresolved target',
+            });
+            const qualified = groundGainList(qualifiedPrompt, [drums], context);
+            expect(qualified.status).toBe('grounded');
+            if (qualified.status !== 'grounded') {
+                throw new Error('Expected the qualified restriction to leave the Drums gain eligible.');
+            }
+            expect(qualified.protectionFacts.protectedUnchanged).not.toContainEqual({ id: clip.id, name: clip.name });
+            if (protection.includes('fader')) {
+                expect(qualified.protectionFacts.protectedControls).toContainEqual({
+                    trackId: overall.id,
+                    operations: ['setTrackGain'],
+                });
+            } else {
+                expect(qualified.protectionFacts.protectedUnchanged).toContainEqual({
+                    id: overall.id,
+                    name: overall.name,
+                });
+            }
+        }
+    });
+
     it.each(['Overall', 'Overall Level'])(
         'carries the actual %s clip protection beside the numeric Drums change',
         (name) => {

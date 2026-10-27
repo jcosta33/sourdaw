@@ -188,6 +188,14 @@ function resolveProtectedClipIds(reference: string, clips: readonly ProjectClip[
             resolvedIds.add(result.id);
             continue;
         }
+        // Execution needs qualification for a track/clip name collision; an aggregate protection keeps both.
+        if (result.reason === 'ungrounded-target' && isAggregateControlReference(reference)) {
+            for (const candidate of result.candidates) {
+                if (clipIds.has(candidate.id) && candidate.evidence.includes('exact-name')) {
+                    resolvedIds.add(candidate.id);
+                }
+            }
+        }
         const candidateIds = result.reason === 'ambiguous-target' ? (result.candidateIds ?? []) : [];
         for (const candidateId of candidateIds) {
             if (clipIds.has(candidateId)) {
