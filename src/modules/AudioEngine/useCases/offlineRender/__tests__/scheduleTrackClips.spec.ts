@@ -2172,6 +2172,73 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         const bends = (arrivals: Arrivals) =>
             arrivals.expression.map(({ sampleFrame, bendSemitones }) => ({ sampleFrame, bendSemitones }));
 
+        it('renders a selected take bend at the recorded RPN depth instead of the ordinary bend lane', async () => {
+            mocks.takeLaneValue.value = {
+                lanes: [
+                    {
+                        id: 'lane-midi',
+                        trackId: 'track-inst',
+                        takes: [
+                            {
+                                id: 'selected',
+                                clipId: 'clip-1',
+                                name: 'Selected',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: true,
+                                sourceOffsetBeats: 5,
+                                midiSource: {
+                                    sourceClipId: 'clip-1',
+                                    sourceEntryBeat: 5,
+                                    sourceEndBeat: 9,
+                                    phaseHeadBeat: 0,
+                                    passLengthBeats: 4,
+                                    rows: {
+                                        notes: {
+                                            present: true,
+                                            value: [
+                                                {
+                                                    id: 'selected-note',
+                                                    pitch: 60,
+                                                    startBeat: 5.5,
+                                                    duration: 1,
+                                                    velocity: 100,
+                                                    channel: 3,
+                                                },
+                                            ],
+                                        },
+                                        controlChanges: {
+                                            present: true,
+                                            value: [
+                                                { id: 'rpn-msb', controller: 101, value: 0, beat: 5, channel: 3 },
+                                                { id: 'rpn-lsb', controller: 100, value: 0, beat: 5, channel: 3 },
+                                                { id: 'range', controller: 6, value: 12, beat: 5, channel: 3 },
+                                            ],
+                                        },
+                                        pitchBends: {
+                                            present: true,
+                                            value: [{ id: 'selected-bend', value: 4096, beat: 5.75, channel: 3 }],
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected' }],
+                    },
+                ],
+            };
+
+            const arrivals = await dispatchOneNote(
+                {},
+                {
+                    lanes: { bends: [bendRow('ordinary', 0.75, -8192, 3)] },
+                }
+            );
+
+            expect(arrivals.noteOn[0]?.sampleFrame).toBe(12_000);
+            expect(bends(arrivals)).toEqual([{ sampleFrame: 18_000, bendSemitones: 6 }]);
+        });
+
         // The live scheduler's case: scheduleMidiNotesChannelBend.spec.ts, "bends a sounding fermenter note at the
         // frames a note at the bend beats gets": the same clip offset, the same tempo change, the same frames.
         it('hands a sounding note each move at the frame a note at that beat gets, across a clip offset and a tempo change', async () => {
