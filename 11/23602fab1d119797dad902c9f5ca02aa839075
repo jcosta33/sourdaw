@@ -1,0 +1,74 @@
+src/modules/Arrangement/presentations/renderers/audioWaveformSpan.ts
+  s_29d8df116c5b92::t_d7409512dc8f0f 74-80
+src/modules/AiRuntime/useCases/__tests__/compilePendingActionCommandEnvelopes.spec.ts
+  s_29d8df116c5b92::t_61b0b08da8454e 8-10,182-195
+  s_29d8df116c5b92::t_639a236e687a39 196-199,273
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_29d8df116c5b92::t_d7409512dc8f0f 191
+  s_29d8df116c5b92::t_61b0b08da8454e 476,517
+  s_29d8df116c5b92::t_3169d64be5d55d 518-519
+src/modules/Transport/handlers/transport/tempoAudioSourceEdit.ts
+  s_29d8df116c5b92::t_d7409512dc8f0f 6-10,29,32
+src/modules/Arrangement/presentations/renderers/__tests__/audioWaveformSpan.spec.ts
+  s_29d8df116c5b92::t_ecba2b4e7934a9 30-54
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_29d8df116c5b92::t_fbb071e442ce36 25-36,1308-1309,1383-1384,1445-1446,1476-1477,1606,1628
+  s_29d8df116c5b92::t_331bb5857b2f2a 1629-1633
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_29d8df116c5b92::t_e64cd73194f343 29-85
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  s_29d8df116c5b92::t_61b0b08da8454e 239
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_29d8df116c5b92::t_3879085fa1cabc 509
+src/modules/Arrangement/useCases/comping/compRegionInterval.ts
+  s_29d8df116c5b92::t_ecba2b4e7934a9 332,349,399
+  s_29d8df116c5b92::t_deb889c3d13a3c 400-401,588
+src/modules/Arrangement/useCases/comping/__tests__/compRegionInterval.spec.ts
+  s_29d8df116c5b92::t_61b0b08da8454e 6,9,21-30,48,77,226
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_d7409512dc8f0f 3426-3429
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/legacyVersionTimelineSnapshot.integration.spec.ts
+  s_29d8df116c5b92::t_226e75e25b76c1 303-321,328-343
+  s_29d8df116c5b92::t_4733b12b6fdee0 29
+  s_29d8df116c5b92::t_19d15cbad366bb 255,322,369
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_29d8df116c5b92::t_19d15cbad366bb 163,200,277-278,280
+  s_29d8df116c5b92::t_4733b12b6fdee0 63,279
+  s_29d8df116c5b92::t_8a8f381594c107 335
+src/modules/Arrangement/presentations/helpers/__tests__/handleCutToolUndo.spec.ts
+  s_29d8df116c5b92::t_fb13d270fdb81a 1-4,11,21,33-57,90
+  s_29d8df116c5b92::t_21c606665138ff 5-10,91,100,118,141,160,162-163,166,168,175-176,224,233,262,265
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_29d8df116c5b92::t_d7409512dc8f0f 624-627,708-709
+src/modules/Arrangement/stores/__tests__/projectAudioSourcePrefixTracks.spec.ts
+  s_29d8df116c5b92::t_3879085fa1cabc 7,13,15-24,30-31,33-34,39,41-44,71,76,88-90,118
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_29d8df116c5b92::t_e64cd73194f343 164-166
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_29d8df116c5b92::t_ecba2b4e7934a9 5,36,43
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_29d8df116c5b92::t_ecba2b4e7934a9 362-377,379-398,400,402-405
+  s_29d8df116c5b92::t_a05db58afe38d9 406-408
+src/modules/Arrangement/handlers/clip/__tests__/compRegionSplitTakeReKey.integration.spec.ts
+  s_29d8df116c5b92::t_fbb071e442ce36 119-130,193-194,228-229,269-271
+src/modules/Setlist/useCases/setlist/__tests__/advanceSetlistItemEnd.spec.ts
+  s_29d8df116c5b92::t_e64cd73194f343 25-26,32
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  s_29d8df116c5b92::t_3acbd780cd1600 8,99,125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1123602fab1d119797dad902c9f5ca02aa839075",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
