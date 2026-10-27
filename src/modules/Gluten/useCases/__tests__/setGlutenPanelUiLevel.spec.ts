@@ -80,11 +80,15 @@ function withDuplicateDevice(state: TrackStoreState, device: Device, sameTrack: 
     if (!firstTrack) {
         throw new Error('Missing fixture track');
     }
+    let tracks: TrackStoreState['tracks'];
+    if (sameTrack) {
+        tracks = [{ ...firstTrack, devices: [...firstTrack.devices, device] }, ...state.tracks.slice(1)];
+    } else {
+        tracks = [...state.tracks, { ...firstTrack, id: 'track-2', devices: [device] }];
+    }
     return {
         ...state,
-        tracks: sameTrack
-            ? [{ ...firstTrack, devices: [...firstTrack.devices, device] }, ...state.tracks.slice(1)]
-            : [...state.tracks, { ...firstTrack, id: 'track-2', devices: [device] }],
+        tracks,
     };
 }
 

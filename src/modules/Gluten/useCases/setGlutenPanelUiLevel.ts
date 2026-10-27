@@ -20,7 +20,7 @@ function resolveUniqueGlutenDevice(deviceId: string): GlutenDeviceTarget | undef
                 continue;
             }
             if (target || device.type !== 'gluten') {
-                return;
+                return undefined;
             }
             target = { trackId: track.id, device };
         }
