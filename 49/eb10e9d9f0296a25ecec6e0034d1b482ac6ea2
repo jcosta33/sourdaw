@@ -1,0 +1,33 @@
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_29d8df116c5b92::t_68c0817fc67b7e 392-394,402-423,431-455
+  s_29d8df116c5b92::t_ec8cb0978625cd 37,165,202,315-316
+  s_29d8df116c5b92::t_4a0af4988bc63b 8,289-295,357-371,387-391
+  s_29d8df116c5b92::t_a53d2921cd72d6 162,386,395-401,424-430
+  s_29d8df116c5b92::t_1abb018ab15c68 164,201,287-288,296-314,317,320-322,332-356,372-385
+  s_29d8df116c5b92::t_868d466a733aa8 323-331
+  s_29d8df116c5b92::t_5af76d550f8f6f 31,35
+  s_29d8df116c5b92::t_36ef13679408a3 318-319
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_29d8df116c5b92::t_b594e888e5183f 4,17,50-51,61-62,148-173,175-187,190-225,350,353
+  s_29d8df116c5b92::t_e80e5cd8485e01 58-60,63-107,268
+  s_29d8df116c5b92::t_4a0af4988bc63b 227-255,308-314
+  s_29d8df116c5b92::t_a53d2921cd72d6 52-57,188-189
+  s_29d8df116c5b92::t_59617f27940516 174
+  s_29d8df116c5b92::t_f48a2e12731bbc 226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49eb10e9d9f0296a25ecec6e0034d1b482ac6ea2",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
