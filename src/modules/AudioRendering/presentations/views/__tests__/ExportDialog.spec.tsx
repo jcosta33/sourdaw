@@ -1554,6 +1554,8 @@ describe('ExportDialog', () => {
     });
 
     describe('a Cancel that has ended the export', () => {
+        type RenderMock = ExportDialogMocks['renderOffline' | 'exportStems'];
+
         const stemTracks: TestTrack[] = [
             { id: 'track-bass', name: 'Bass', kind: 'audio', clips: [] },
             { id: 'track-lead', name: 'Lead', kind: 'audio', clips: [] },
@@ -1565,15 +1567,9 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
         };
 
-        const holdRender = <TValue,>(renderMock: typeof mocks.renderOffline) => {
-            const rendering = createDeferred<TValue>();
-            renderMock.mockReturnValue(rendering.promise);
-            return rendering;
-        };
-
         // The callbacks the dialog really handed the render: a late report goes through these.
-        const renderCallbacks = (renderMock: typeof mocks.renderOffline): RenderCallbacks => {
-            const renderedWith: RenderCallbacks | undefined = renderMock.mock.calls[0]?.[0];
+        const renderCallbacks = (renderMock: RenderMock): RenderCallbacks => {
+            const renderedWith = renderMock.mock.calls[0]?.[0];
             const { onProgress, onWarning } = renderedWith ?? {};
             if (!onProgress || !onWarning) {
                 throw new TypeError('expected the render to receive onProgress and onWarning');
@@ -1582,7 +1578,7 @@ describe('ExportDialog', () => {
         };
 
         const cancelRenderInFlight = async <TValue,>(
-            renderMock: typeof mocks.renderOffline,
+            renderMock: RenderMock,
             rendering: ReturnType<typeof createDeferred<TValue>>
         ): Promise<RenderCallbacks> => {
             await waitFor(() => {
@@ -1601,20 +1597,23 @@ describe('ExportDialog', () => {
 
         const cancelStemExportWhileRendering = async (): Promise<RenderCallbacks> => {
             setProjectTracks(stemTracks);
-            const rendering = holdRender<Map<string, AudioBuffer>>(mocks.exportStems);
+            const rendering = createDeferred<Map<string, AudioBuffer>>();
+            mocks.exportStems.mockReturnValue(rendering.promise);
             startStemExport();
             return cancelRenderInFlight(mocks.exportStems, rendering);
         };
 
         const cancelMixdownWhileRendering = async (): Promise<RenderCallbacks> => {
-            const rendering = holdRender<AudioBuffer>(mocks.renderOffline);
+            const rendering = createDeferred<AudioBuffer>();
+            mocks.renderOffline.mockReturnValue(rendering.promise);
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
             return cancelRenderInFlight(mocks.renderOffline, rendering);
         };
 
         const cancelClipRenderWhileRendering = async (): Promise<RenderCallbacks> => {
-            const rendering = holdRender<AudioBuffer>(mocks.renderOffline);
+            const rendering = createDeferred<AudioBuffer>();
+            mocks.renderOffline.mockReturnValue(rendering.promise);
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
             fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
@@ -2338,8 +2337,9 @@ describe('ExportDialog', () => {
                 'Podcast RSS MP3',
                 'Game Audio PCM',
             ];
-            for (const name of names)
-                expect(screen.getByRole('checkbox', { name: 'Export ' + name })).toBeInTheDocument();
+            for (const name of names) {
+                expect(screen.getByRole('checkbox', { name: `Export ${name}` })).toBeInTheDocument();
+            }
             fireEvent.change(screen.getByRole('combobox', { name: 'Delivery preset' }), {
                 target: { value: 'podcast-rss-mp3' },
             });
