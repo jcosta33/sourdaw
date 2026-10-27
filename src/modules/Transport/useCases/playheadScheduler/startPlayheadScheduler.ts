@@ -245,7 +245,7 @@ export function startPlayheadScheduler(
 ): void | Promise<boolean> {
     const state = transportStore.value;
     if (!state) {
-        return;
+        return undefined;
     }
 
     if (
@@ -1298,7 +1298,7 @@ export function startPlayheadScheduler(
     }
     if (!preparedInitial) {
         startWorker();
-        return;
+        return undefined;
     }
     const cancelInitialEmission = () => {
         if (preparedInitial.ownsSession()) {

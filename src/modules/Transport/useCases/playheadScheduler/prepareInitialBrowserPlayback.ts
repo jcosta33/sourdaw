@@ -9,7 +9,8 @@ import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
-import { prepareInitialMidiWindow, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import { prepareInitialMidiWindow } from '../scheduling/prepareInitialMidiWindow';
+import type { SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 
 import {
     INITIAL_HIGH_WATER_OFFSET_BEATS,
