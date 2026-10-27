@@ -1,10 +1,42 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { DISABLED_REASONS } from '../platformCapabilities';
 
 describe('getPlatformCapabilities', () => {
     beforeEach(() => {
         vi.resetModules();
+        vi.doUnmock('../desktopRuntime');
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('records missing browser Web MIDI once without claiming permission or a device', async () => {
+        vi.stubGlobal('navigator', {});
+        vi.doMock('../desktopRuntime', () => ({ isDesktopRuntime: () => false }));
+        const { getPlatformCapabilities: getCaps } = await import('../platformCapabilities');
+
+        const caps = getCaps();
+        expect(caps.webMidiApiPresent).toBe(false);
+        expect(caps.hasMidiInput).toBe(false);
+        expect(caps.degradations).toEqual([
+            { feature: 'midi-input', reason: 'api-absent', message: DISABLED_REASONS.midiInput },
+        ]);
+
+        vi.stubGlobal('navigator', { requestMIDIAccess: vi.fn() });
+        expect(getCaps()).toBe(caps);
+        expect(getCaps().webMidiApiPresent).toBe(false);
+    });
+
+    it('treats the desktop marker as a possible native route, not an opened device', async () => {
+        vi.stubGlobal('navigator', {});
+        vi.doMock('../desktopRuntime', () => ({ isDesktopRuntime: () => true }));
+        const { getPlatformCapabilities: getCaps } = await import('../platformCapabilities');
+
+        expect(getCaps()).toEqual(
+            expect.objectContaining({ webMidiApiPresent: false, hasMidiInput: true, degradations: [] })
+        );
     });
 
     it('should return the same cached object on repeat calls', async () => {

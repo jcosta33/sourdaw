@@ -2105,6 +2105,7 @@ const schemaDefinitions = [
             leftClip: 269,
             rightClip: 270,
             rightClipIndex: 1,
+            rightClipOrder: 20,
             sourceMidi: 132,
             rightMidi: 132,
             clipSatellites: 71,

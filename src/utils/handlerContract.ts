@@ -596,6 +596,8 @@ export type ClipSplitActionSnapshot = {
     readonly leftClip: ClipStateSnapshot;
     readonly rightClip: ClipStateSnapshot | null;
     readonly rightClipIndex: number;
+    /** Relative insertion witnesses, refreshed only by a committed Undo. Absent in legacy captures. */
+    readonly rightClipOrder?: string[];
     readonly sourceMidi: MidiClipDataActionSnapshot;
     readonly rightMidi: MidiClipDataActionSnapshot;
     /**

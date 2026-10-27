@@ -1,4 +1,7 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -9,6 +12,7 @@ import { planTakeRetirement } from '../comping/planTakeRetirement';
 import { reconcileTransitionBaseGaps } from '../comping/reconcileTakeReKeySources';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
+import { clipSatelliteStateCodec } from './clipSatelliteStateCodec';
 import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
@@ -17,6 +21,8 @@ import { type TakeLaneTransitionPlan } from './takeLaneTransitionPlan';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 import { validateTakeLaneTransitionPlan } from './validateTakeLaneTransitionPlan';
+
+import { type Clip } from '../../models/Track';
 
 type PreparedHandle = {
     name: string;
@@ -248,6 +254,124 @@ function takeRetirementsMatchDeletedRange(
     );
 }
 
+/** Satellite writes follow erased clips and surviving re-keyed sources, never every shifted clip. */
+function rightSurvivorMatches(candidate: Clip, original: Clip, expected: Clip): boolean {
+    if (!hasExactAudioSourceFields(original) || !hasExactAudioSourceFields(candidate)) {
+        return false;
+    }
+    if (original.type !== 'audio' || !Object.hasOwn(original, 'audioOffsetSeconds')) {
+        return timeOperationStateCodec.valuesEqual(candidate, expected);
+    }
+    if (!Object.hasOwn(candidate, 'audioOffsetSeconds')) {
+        return false;
+    }
+    const sourceFields = new Set([
+        'audioOffsetSeconds',
+        'audioUnwrappedOffsetSeconds',
+        'audioLoopStartSeconds',
+        'audioLoopPassEntrySeconds',
+        'audioLoopPassOriginBeat',
+    ]);
+    const ownerFacets = (clip: Clip) =>
+        Object.fromEntries(Object.entries(clip).filter(([key]) => !sourceFields.has(key)));
+    const expectedOwner = { ...expected };
+    if (original.loopEnabled) {
+        expectedOwner.loopLength = projectClipLoopExpansion({
+            clipDurationBeats: original.endBeat - original.startBeat,
+            configuredLoopLengthBeats: original.loopLength,
+            loopEnabled: true,
+        }).loopLengthBeats;
+    }
+    // The saved clock may no longer exist. Source-cut production proves source
+    // seconds; satellite authority proves this exact range-derived owner.
+    return timeOperationStateCodec.valuesEqual(ownerFacets(candidate), ownerFacets(expectedOwner));
+}
+
+function deletedSatelliteOwners(
+    before: TrackState,
+    after: TrackState,
+    range: { startBeat: number; endBeat: number }
+): ReadonlySet<string> {
+    const owners = new Set<string>();
+    const beforeIds = collectLiveClipIds(before.tracks);
+    const afterIds = collectLiveClipIds(after.tracks);
+    const afterIdCounts = new Map<string, number>();
+    for (const track of after.tracks) {
+        for (const clip of track.clips) {
+            afterIdCounts.set(clip.id, (afterIdCounts.get(clip.id) ?? 0) + 1);
+        }
+    }
+    const duration = range.endBeat - range.startBeat;
+    for (const track of before.tracks) {
+        const nextTrack = after.tracks.find((candidate) => candidate.id === track.id);
+        if (!nextTrack) {
+            continue;
+        }
+        for (const clip of track.clips) {
+            if (afterIds.has(clip.id) || clip.startBeat < range.startBeat || clip.startBeat >= range.endBeat) {
+                continue;
+            }
+            if (!hasExactAudioSourceFields(clip)) {
+                continue;
+            }
+            if (clip.endBeat <= range.endBeat) {
+                owners.add(clip.id);
+                continue;
+            }
+            // Only the exact right survivor produced by Delete Time owns the
+            // source's satellites. A changed local id alone is no authority.
+            const rightLoopOrigin =
+                clip.type === 'midi'
+                    ? restampLoopOriginEntry(clip, range.startBeat)
+                    : shiftLoopOriginEntry(clip, -duration);
+            const survivors = nextTrack.clips.filter(
+                (candidate) =>
+                    !beforeIds.has(candidate.id) &&
+                    afterIdCounts.get(candidate.id) === 1 &&
+                    rightSurvivorMatches(candidate, clip, {
+                        ...clip,
+                        id: candidate.id,
+                        startBeat: range.startBeat,
+                        endBeat: clip.endBeat - duration,
+                        audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (range.endBeat - clip.startBeat),
+                        midiOffsetBeats: 0,
+                        ...rightLoopOrigin,
+                    })
+            );
+            if (survivors.length === 1) {
+                owners.add(clip.id);
+                owners.add(survivors[0]!.id);
+            }
+        }
+    }
+    return owners;
+}
+
+function satelliteWritesMatchDeletedRange(
+    plan: CombinedStateRestorePlan,
+    range: { startBeat: number; endBeat: number }
+): boolean {
+    if (plan.clipSatellites === null) {
+        return true;
+    }
+    const satellites = clipSatelliteStateCodec.decodeRestorePlan(plan.clipSatellites);
+    const expected = timeOperationStateCodec.decodeTrackState(plan.local.expected.trackState);
+    const replacement = timeOperationStateCodec.decodeTrackState(plan.local.replacement.trackState);
+    if (!satellites || !expected || !replacement) {
+        return false;
+    }
+    const writes = satellites.expected.entries.filter(
+        (entry, index) => !timeOperationStateCodec.valuesEqual(entry, satellites.replacement.entries[index])
+    );
+    // The same saved plan runs in either direction. Each direction must be
+    // justified by one complete captured deletion, rather than unioning ids
+    // from contradictory interpretations of the two snapshots.
+    return [
+        deletedSatelliteOwners(expected, replacement, range),
+        deletedSatelliteOwners(replacement, expected, range),
+    ].some((owners) => writes.every((entry) => owners.has(entry.clipId)));
+}
+
 function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan | null {
     const cloned = timeOperationStateCodec.cloneJsonPlan(value);
     const properties =
@@ -327,7 +451,9 @@ export const timeOperationRestorePlan = {
         const plan = validateCombinedPlan(value);
         return (
             plan !== null &&
-            (deletedRange === undefined || takeRetirementsMatchDeletedRange(plan, deletedRange)) &&
+            (deletedRange === undefined ||
+                (takeRetirementsMatchDeletedRange(plan, deletedRange) &&
+                    satelliteWritesMatchDeletedRange(plan, deletedRange))) &&
             (plan.automation === null || validators.automation(plan.automation)) &&
             (plan.midi === null || validators.midi(plan.midi)) &&
             (plan.timelineMap === null || validators.timelineMap(plan.timelineMap)) &&

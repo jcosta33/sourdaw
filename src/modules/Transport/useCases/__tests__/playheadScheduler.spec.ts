@@ -79,7 +79,7 @@ const harness = vi.hoisted(() => ({
         value: { changes: [] as TempoMapStoreState['changes'] },
     },
     update_clip: vi.fn<UpdateClipMock>(),
-    commit_recording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+    commit_recording: vi.fn<typeof import('#/modules/Arrangement/useCases').commitRecording>(() => Promise.resolve()),
     stage_recording_take: vi.fn(),
 }));
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { type startRecording, type stopRecording } from '#/modules/Arrangement/useCases';
+import { type commitRecording, type startRecording, type stopRecording } from '#/modules/Arrangement/useCases';
 import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
@@ -139,11 +139,11 @@ const arrangementMocks = {
     >(() => []),
     // The real `stopRecording` is async: its promise is the take's commit, which
     // the recording lifecycle tracks.
-    stopRecording: vi.fn<typeof stopRecording>(() => Promise.resolve()),
+    stopRecording: vi.fn<typeof stopRecording>(() => Promise.resolve('closed')),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     stageRecordingTake: vi.fn(),
-    commitRecording: vi.fn(() => Promise.resolve()),
+    commitRecording: vi.fn<typeof commitRecording>(() => Promise.resolve()),
     updateClip: vi.fn(),
     discardRecording: vi.fn(),
     updateTransportState: vi.fn(),
@@ -203,8 +203,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTake: (...args: unknown[]) => (arrangementMocks.addTake as (...a: unknown[]) => unknown)(...args),
     stageRecordingTake: (...args: unknown[]) =>
         (arrangementMocks.stageRecordingTake as (...a: unknown[]) => unknown)(...args),
-    commitRecording: (...args: unknown[]) =>
-        (arrangementMocks.commitRecording as (...a: unknown[]) => unknown)(...args),
+    commitRecording: (...args: Parameters<typeof commitRecording>) => arrangementMocks.commitRecording(...args),
     updateClip: (...args: unknown[]) => (arrangementMocks.updateClip as (...a: unknown[]) => unknown)(...args),
     discardRecording: (...args: unknown[]) =>
         (arrangementMocks.discardRecording as (...a: unknown[]) => unknown)(...args),
@@ -328,7 +327,7 @@ describe('startPlayheadScheduler', () => {
         }));
         audioEngineMocks.getCompensationDelay.mockImplementation(() => 0);
         arrangementMocks.startRecording.mockImplementation(() => []);
-        arrangementMocks.stopRecording.mockResolvedValue(undefined);
+        arrangementMocks.stopRecording.mockResolvedValue('closed');
         evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
         transportStoreState.value = playingState();
         tempoMapStoreState.value = { changes: [] };
@@ -1538,8 +1537,10 @@ describe('startPlayheadScheduler', () => {
                 mediaOriginSeconds: 0.1,
                 sourceContextOriginSeconds: 0.1,
                 sourceDurationSeconds: completed.buffer.duration,
-            }
+            },
+            { shouldExecute: expect.any(Function) }
         );
+        expect(arrangementMocks.commitRecording.mock.calls[0]?.[2]?.shouldExecute?.()).toBe(true);
         // A delivered take is kept: no retirement and no failure notice.
         expect(arrangementMocks.discardRecording).not.toHaveBeenCalled();
         expect(notifyUserMock).not.toHaveBeenCalled();
@@ -1615,7 +1616,8 @@ describe('startPlayheadScheduler', () => {
                 mediaOriginSeconds: expect.closeTo(6.115, 10),
                 sourceContextOriginSeconds: expect.closeTo(50.165, 10),
                 sourceDurationSeconds: completed.buffer.duration,
-            }
+            },
+            { shouldExecute: expect.any(Function) }
         );
         expect(arrangementMocks.commitRecording).toHaveBeenNthCalledWith(
             2,
@@ -1625,8 +1627,11 @@ describe('startPlayheadScheduler', () => {
                 mediaOriginSeconds: expect.closeTo(6.075, 10),
                 sourceContextOriginSeconds: expect.closeTo(50.125, 10),
                 sourceDurationSeconds: completed.buffer.duration,
-            }
+            },
+            { shouldExecute: expect.any(Function) }
         );
+        expect(arrangementMocks.commitRecording.mock.calls[0]?.[2]?.shouldExecute?.()).toBe(true);
+        expect(arrangementMocks.commitRecording.mock.calls[1]?.[2]?.shouldExecute?.()).toBe(true);
     });
 
     it('retires the punched take and tells the user when the recording commit fails', async () => {
@@ -1680,7 +1685,7 @@ describe('startPlayheadScheduler', () => {
             if (clip && typeof atBeat === 'number') {
                 clip.endBeat = atBeat;
             }
-            return Promise.resolve();
+            return Promise.resolve('closed');
         });
         let capturedOnTerminal: PunchTerminal | null = null;
         audioEngineMocks.startAudioRecording.mockImplementationOnce((_trackId: string, onTerminal: PunchTerminal) => {
@@ -1719,8 +1724,10 @@ describe('startPlayheadScheduler', () => {
                 mediaOriginSeconds: 0.1,
                 sourceContextOriginSeconds: 0.1,
                 sourceDurationSeconds: completed.buffer.duration,
-            }
+            },
+            { shouldExecute: expect.any(Function) }
         );
+        expect(arrangementMocks.commitRecording.mock.calls[0]?.[2]?.shouldExecute?.()).toBe(true);
     });
 
     it('owns the punched commit on the recording lifecycle so a stop can await it', async () => {
@@ -1781,8 +1788,8 @@ describe('startPlayheadScheduler', () => {
         let release!: () => void;
         arrangementMocks.stopRecording.mockImplementationOnce(
             () =>
-                new Promise<void>((resolve) => {
-                    release = resolve;
+                new Promise<'closed'>((resolve) => {
+                    release = () => resolve('closed');
                 })
         );
 

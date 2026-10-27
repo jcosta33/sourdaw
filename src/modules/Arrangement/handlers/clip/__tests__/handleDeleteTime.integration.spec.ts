@@ -423,6 +423,291 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         expect(undoStore.value?.future).toHaveLength(0);
     });
 
+    it.each([
+        ['whole', 2, 4, false],
+        ['right survivor', 3, 8, false],
+        ['partial left', 0, 3, false],
+        ['spanning', 0, 8, false],
+        ['shifted', 6, 8, false],
+        ['canonical right survivor', 3, 8, true],
+    ] as const)(
+        'keeps saved Delete Time %s satellites replayable after binary reopen',
+        async (_effect, startBeat, endBeat, canonical) => {
+            hydrateProductionContracts();
+            arrangeComp(startBeat, endBeat);
+            if (canonical) {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) => ({
+                            ...clip,
+                            audioOffsetBeats: 7,
+                            audioOffsetSeconds: 0.25,
+                            audioUnwrappedOffsetSeconds: 0.25,
+                        })),
+                    })),
+                });
+            }
+            takeLaneStore.set({ lanes: [] });
+            midiStore.set(defaultMidiStoreState);
+            automationStore.set({ lanes: [] });
+            gainEnvelopeStore.set({
+                envelopes: {
+                    source: { clipId: 'source', enabled: true, points: [{ id: 'gain', beatOffset: 0.5, gainDb: -3 }] },
+                },
+            });
+            warpStateStore.set({
+                states: {
+                    source: {
+                        enabled: true,
+                        stretchMode: 'repitch',
+                        originalTempo: 120,
+                        markers: [{ id: 'warp', originalBeat: 1, warpedBeat: 1.5 }],
+                    },
+                },
+            });
+            flushAutomergeStorageWrites();
+            const original = durableOwners();
+            await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 4 } });
+            const deleted = durableOwners();
+            if (canonical) {
+                expect(deleted.tracks[0]?.clips).toHaveLength(1);
+                expect(deleted.tracks[0]?.clips[0]).toMatchObject({
+                    startBeat: 2,
+                    endBeat: 6,
+                    audioOffsetSeconds: 0.75,
+                    audioUnwrappedOffsetSeconds: 0.75,
+                });
+            }
+            await vi.waitFor(() =>
+                expect(
+                    (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past
+                ).toHaveLength(1)
+            );
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                const document = getCrdtDoc<Project>('root')!;
+                replaceCrdtDocInLineage({ id: 'root', doc: Automerge.load<Project>(Automerge.save(document)) });
+                projectCrdtToStores({ resetProjections: true });
+                hydrateProductionContracts();
+                expect(undoStore.value?.past).toHaveLength(1);
+                expect((await undo()).headConsumed).toBe(true);
+                expectDurableOwners(original);
+                await vi.waitFor(() =>
+                    expect(
+                        (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { future: unknown[] }).future
+                    ).toHaveLength(1)
+                );
+                const undone = getCrdtDoc<Project>('root')!;
+                replaceCrdtDocInLineage({ id: 'root', doc: Automerge.load<Project>(Automerge.save(undone)) });
+                projectCrdtToStores({ resetProjections: true });
+                hydrateProductionContracts();
+                await redo();
+                expectDurableOwners(deleted);
+                expect(undoStore.value?.past).toHaveLength(1);
+                expect(undoStore.value?.future).toHaveLength(0);
+                await vi.waitFor(() =>
+                    expect(
+                        (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past
+                    ).toHaveLength(1)
+                );
+            }
+        }
+    );
+
+    it.each([
+        ['global', 'right', 3, 8, 0.25, 0.75, 0.75, 2, 6],
+        ['selected', 'right', 3, 8, 0.25, 0.75, 0.75, 4, 8],
+        ['global', 'spanning', 0, 8, 0.25, 2.25, 2.25, 2, 6],
+        ['selected', 'spanning', 0, 8, 0.25, 2.25, 2.25, 4, 8],
+        ['global', 'left', 0, 3, 0.25, 0.25, 0.25, 0, 2],
+        ['selected', 'left', 0, 3, 0.25, 0.25, 0.25, 0, 2],
+        ['global', 'shifted', 6, 8, 0.25, 0.25, 0.25, 4, 6],
+        ['selected', 'shifted', 6, 8, 0.25, 0.25, 0.25, 6, 8],
+        ['global', 'signed', 3, 8, -1, -0.5, -0.5, 2, 6],
+        ['selected', 'signed', 3, 8, -1, -0.5, -0.5, 4, 8],
+        ['global', 'loop', 3, 11, 0.25, 1.25, 0.75, 2, 9],
+        ['selected', 'loop', 3, 11, 0.25, 1.25, 0.75, 4, 11],
+        ['global', 'implicit loop', 3, 11, 0.25, 1.25, 0.75, 2, 9],
+        ['selected', 'implicit loop', 3, 11, 0.25, 1.25, 0.75, 4, 11],
+        ['global', 'spanning loop', 0, 8, 0.25, 0.25, 2.25, 2, 6],
+        ['selected', 'spanning loop', 0, 8, 0.25, 0.25, 2.25, 4, 8],
+        ['global', 'tempo map', 3, 8, 0.25, 1.25, 1.25, 2, 6],
+        ['selected', 'tempo map', 3, 8, 0.25, 1.25, 1.25, 4, 8],
+    ] as const)(
+        'keeps canonical source entry through %s %s deletion and replay',
+        async (route, effect, startBeat, endBeat, entry, expectedEntry, expectedUnwrapped, nextStart, nextEnd) => {
+            hydrateProductionContracts();
+            arrangeComp(startBeat, endBeat);
+            takeLaneStore.set({ lanes: [] });
+            midiStore.set(defaultMidiStoreState);
+            automationStore.set({ lanes: [] });
+            gainEnvelopeStore.set({ envelopes: {} });
+            warpStateStore.set({ states: {} });
+            if (effect === 'tempo map') {
+                tempoMapStore.set({
+                    changes: [
+                        { id: 'old', beat: 0, tempo: 120, curve: 'instant' },
+                        { id: 'slow', beat: 3, tempo: 60, curve: 'instant' },
+                    ],
+                });
+            }
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) => ({
+                        ...clip,
+                        audioOffsetBeats: 7,
+                        audioOffsetSeconds: entry,
+                        audioUnwrappedOffsetSeconds: entry,
+                        ...(effect.endsWith('loop')
+                            ? {
+                                  loopEnabled: true,
+                                  ...(effect === 'implicit loop' ? {} : { loopLength: 4 }),
+                                  loopOriginBeat: startBeat,
+                                  audioLoopStartSeconds: entry,
+                                  audioLoopPassEntrySeconds: entry,
+                                  audioLoopPassOriginBeat: startBeat,
+                                  stretchMode: 'timestretch' as const,
+                                  stretchRatio: 2,
+                              }
+                            : {}),
+                    })),
+                })),
+            });
+            flushAutomergeStorageWrites();
+            const original = durableOwners();
+            const changes = route !== 'selected' || effect !== 'shifted';
+            if (changes) {
+                await removeTime(route, 2, 4);
+            } else {
+                deleteTimeRange(2, 4, ['track-1']);
+                flushAutomergeStorageWrites();
+                expect(undoStore.value?.past).toHaveLength(0);
+            }
+            const survivor = clips().find((clip) => clip.startBeat === nextStart && clip.endBeat === nextEnd);
+            expect(survivor).toMatchObject({
+                audioOffsetSeconds: expectedEntry,
+                audioUnwrappedOffsetSeconds: expectedUnwrapped,
+            });
+            if (effect.endsWith('loop')) {
+                expect(survivor).toMatchObject({
+                    loopLength: effect === 'implicit loop' ? 8 : 4,
+                    loopOriginBeat: route === 'global' ? startBeat - 2 : startBeat,
+                    audioLoopPassOriginBeat: route === 'global' ? startBeat - 2 : startBeat,
+                    audioLoopStartSeconds: entry,
+                    audioLoopPassEntrySeconds: entry,
+                });
+            }
+            if (!changes) {
+                expectDurableOwners(original);
+                return;
+            }
+            const deleted = durableOwners();
+            expect((await undo()).headConsumed).toBe(true);
+            flushAutomergeStorageWrites();
+            expectDurableOwners(original);
+            await redo();
+            flushAutomergeStorageWrites();
+            expectDurableOwners(deleted);
+        }
+    );
+
+    it.each([
+        ['gain', false],
+        ['warp', false],
+        ['unchanged', false],
+        ['gain', true],
+        ['warp', true],
+    ] as const)(
+        'binds saved Delete Time satellite writes to its affected clips: %s modern=%s',
+        async (change, modern) => {
+            hydrateProductionContracts();
+            arrangeComp(2, 4);
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: 'track-1',
+                        kind: 'audio',
+                        clips: [
+                            ClipDummy.create({
+                                id: 'peer',
+                                trackId: 'track-1',
+                                type: 'audio',
+                                startBeat: 0,
+                                endBeat: 1,
+                                ...(modern ? { audioOffsetSeconds: 0.25 } : {}),
+                            }),
+                            ClipDummy.create({
+                                id: 'erased',
+                                trackId: 'track-1',
+                                type: 'audio',
+                                startBeat: 2,
+                                endBeat: 4,
+                            }),
+                        ],
+                    }),
+                ],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            takeLaneStore.set({ lanes: [] });
+            gainEnvelopeStore.set({ envelopes: {} });
+            midiStore.set(defaultMidiStoreState);
+            automationStore.set({ lanes: [] });
+            warpStateStore.set({ states: {} });
+            flushAutomergeStorageWrites();
+            await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 4 } });
+            await vi.waitFor(() =>
+                expect(
+                    (JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: unknown[] }).past
+                ).toHaveLength(1)
+            );
+            const saved = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: SavedDeleteEntry[] };
+            const entry = saved.past[0]!;
+            const before = { version: 1, entries: [{ clipId: 'peer', gainEnvelope: null, warpState: null }] };
+            const after = {
+                version: 1,
+                entries: [
+                    {
+                        clipId: 'peer',
+                        gainEnvelope: change === 'gain' ? { clipId: 'peer', points: [], enabled: true } : null,
+                        warpState:
+                            change === 'warp'
+                                ? { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null }
+                                : null,
+                    },
+                ],
+            };
+            entry.inverseAction.payload.plan.clipSatellites = { version: 1, expected: before, replacement: after };
+            entry.redoAction.payload.plan.clipSatellites = { version: 1, expected: after, replacement: before };
+            sessionStorage.setItem('sourdaw-undo-session', JSON.stringify(saved));
+            const deleted = durableOwners();
+            const document = getCrdtDoc<Project>('root')!;
+            const heads = Automerge.getHeads(document);
+            replaceCrdtDocInLineage({ id: 'root', doc: Automerge.load<Project>(Automerge.save(document)) });
+            projectCrdtToStores({ resetProjections: true });
+            hydrateProductionContracts();
+            expectDurableOwners(deleted);
+            expect(Automerge.getHeads(getCrdtDoc<Project>('root')!)).toEqual(heads);
+            expect(undoStore.value?.past).toHaveLength(change === 'unchanged' ? 1 : 0);
+            if (change === 'unchanged') {
+                return;
+            }
+            const history = structuredClone(undoStore.value);
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                const result = await undo();
+                expect(result.headConsumed).toBe(false);
+                expectDurableOwners(deleted);
+                await redo();
+                expectDurableOwners(deleted);
+            }
+            expect(undoStore.value).toEqual(history);
+            expect(Automerge.getHeads(getCrdtDoc<Project>('root')!)).toEqual(heads);
+        }
+    );
+
     it.each([false, true])('binds saved time retirement to erased clips: forged=%s', async (forged) => {
         hydrateProductionContracts();
         arrangeJoinedOwners();
