@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { spawn } from 'node:child_process';
+import { getDefaultResultOrder, setDefaultResultOrder } from 'node:dns';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -157,7 +158,7 @@ describe('playwright config port derivation', () => {
         return config.use.baseURL;
     }
 
-    it('serves the configured dev server over IPv4 even when localhost resolves IPv6 first', async () => {
+    it('keeps the configured origin on owned Vite after an IPv6 listener starts on the same port', async () => {
         const reservation = createServer();
         await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve));
         const address = reservation.address();
@@ -167,11 +168,19 @@ describe('playwright config port derivation', () => {
         await new Promise<void>((resolve, reject) => reservation.close((error) => (error ? reject(error) : resolve())));
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, String(address.port));
         vi.stubEnv('CI', undefined);
-        const command = requiredSingleWebServer(await loadPlaywrightConfig()).command;
+        const config = await loadPlaywrightConfig();
+        const webServer = requiredSingleWebServer(config);
+        const command = webServer.command;
         if (!command?.startsWith('pnpm dev ')) {
             throw new Error('expected Vite dev server command');
         }
+        if (webServer.url === undefined) {
+            throw new Error('expected Vite readiness origin');
+        }
+        const resultOrder = getDefaultResultOrder();
+        setDefaultResultOrder('ipv6first');
         const child = spawn(process.execPath, ['node_modules/vite/bin/vite.js', ...command.slice(9).split(' ')], {
+            cwd: process.cwd(),
             env: { ...process.env, NODE_OPTIONS: '--dns-result-order=ipv6first' },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -187,10 +196,27 @@ describe('playwright config port derivation', () => {
                 child.once('error', reject);
                 child.once('exit', (code) => reject(new Error(`Vite exited before readiness: ${code}`)));
             });
-            await expect(
-                assertServingCheckoutIdentity(`http://127.0.0.1:${address.port}`, process.cwd())
-            ).resolves.toBeUndefined();
+            await expect(readServingCheckoutRoot(`http://127.0.0.1:${address.port}`)).resolves.toBe(process.cwd());
+            const foreignBody = 'simulated foreign IPv6 listener';
+            const foreign = createServer((_request, response) => response.end(foreignBody));
+            runningServers.push(foreign);
+            await new Promise<void>((resolve, reject) => {
+                foreign.once('error', reject);
+                foreign.listen({ host: '::1', port: address.port, ipv6Only: true }, resolve);
+            });
+            const foreignResponse = await fetch(`http://[::1]:${address.port}`);
+            expect(await foreignResponse.text()).toBe(foreignBody);
+
+            await expect(originAnswers(webServer.url)).resolves.toBe(true);
+            for (const origin of [webServer.url, requiredBaseURL(config)]) {
+                const response = await fetch(origin);
+                const body = await response.text();
+                expect(response.headers.get(SOURDAW_E2E_ROOT_HEADER), body).toBe(encodeURIComponent(process.cwd()));
+                expect(body).toContain('<title>Sourdaw</title>');
+                await expect(assertServingCheckoutIdentity(origin, process.cwd())).resolves.toBeUndefined();
+            }
         } finally {
+            setDefaultResultOrder(resultOrder);
             if (child.exitCode === null && child.signalCode === null) {
                 child.kill();
                 await new Promise<void>((resolve) => child.once('exit', () => resolve()));
