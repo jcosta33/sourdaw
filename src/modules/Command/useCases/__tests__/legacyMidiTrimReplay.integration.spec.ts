@@ -274,6 +274,18 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
+    it('keeps the historic audio representation through repeated Undo and Redo', async () => {
+        await loadFixture('audio');
+        const capturedClip = structuredClone(readClip());
+        expect(Object.hasOwn(capturedClip, 'audioOffsetSeconds')).toBe(false);
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            await redo();
+            await settleMirror();
+            expect(readClip()).toEqual(capturedClip);
+        }
+    });
+
     it('conservatively refuses a saved loop-disabled MIDI inverse without its captured offset', async () => {
         await loadFixture('loop-off');
         expect(readClip()).toMatchObject({ startBeat: 2, loopEnabled: false });
