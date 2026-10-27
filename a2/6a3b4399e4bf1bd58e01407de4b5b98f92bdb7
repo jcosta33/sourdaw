@@ -1,0 +1,24 @@
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_29d8df116c5b92::t_c71ed0bb71b03c 252-311
+  s_29d8df116c5b92::t_6e614e8929a7ab 5,109-129
+  s_29d8df116c5b92::t_202007b0e9e2c5 385-402
+  s_29d8df116c5b92::t_99e45741673d6e 665-679,718-763
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_29d8df116c5b92::t_79cabdcb3ed42e 109-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a26a3b4399e4bf1bd58e01407de4b5b98f92bdb7",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
