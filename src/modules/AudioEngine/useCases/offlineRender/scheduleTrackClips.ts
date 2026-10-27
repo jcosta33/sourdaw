@@ -60,6 +60,35 @@ import { selectOfflineNoteReceiver } from './selectOfflineNoteReceiver';
 import { type OfflineScheduleTally, type PendingNoteWorkletEvent, type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
+function selectedMidiWindows(clip: ResolvedClip) {
+    const source = clip.midiTakeSource;
+    if (!source) {
+        return [];
+    }
+    const span = source.sourceEndBeat - source.sourceEntryBeat;
+    const first = Math.max(0, Math.floor((clip.startBeat - source.phaseHeadBeat - span) / source.passLengthBeats) + 1);
+    const last = Math.ceil((clip.endBeat - source.phaseHeadBeat) / source.passLengthBeats);
+    const windows: {
+        passHead: number;
+        passEnd: number;
+        value: NonNullable<ReturnType<typeof projectFrozenMidiTakeWindow>>;
+    }[] = [];
+    for (let index = first; index < last; index++) {
+        const value = projectFrozenMidiTakeWindow({
+            source,
+            absoluteOccurrenceIndex: index,
+            fromBeat: clip.startBeat,
+            toBeat: clip.endBeat,
+        });
+        if (!value) {
+            throw new Error('Invalid frozen MIDI take window');
+        }
+        const passHead = source.phaseHeadBeat + index * source.passLengthBeats;
+        windows.push({ passHead, passEnd: Math.min(passHead + span, clip.endBeat), value });
+    }
+    return windows;
+}
+
 /**
  * Schedule a single track's clips into the given OfflineAudioContext.
  * Shared between mixdown and stem paths to avoid duplication.
@@ -613,8 +642,24 @@ export async function scheduleTrackClips({
             return [];
         }
         const clips = clipsToProcess.flatMap(({ clip }) => {
+            if (clip.type !== 'midi' || clip.muted) {
+                return [];
+            }
+            if (clip.midiTakeSource) {
+                return selectedMidiWindows(clip).flatMap(({ passHead, passEnd, value }) =>
+                    value.pitchBends.length === 0
+                        ? []
+                        : [
+                              {
+                                  clip: { startBeat: passHead, endBeat: passEnd, midiOffsetBeats: passHead },
+                                  controlChanges: value.controlChanges,
+                                  pitchBends: value.pitchBends,
+                              },
+                          ]
+                );
+            }
             const pitchBends = midi.pitchBendByClipId[clip.id];
-            if (clip.type !== 'midi' || clip.muted || !pitchBends?.length) {
+            if (!pitchBends?.length) {
                 return [];
             }
             return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
@@ -978,16 +1023,29 @@ export async function scheduleTrackClips({
             // The clip's moves at the time its closing-line move plays apply, in its own
             // order, ahead of a clip starting there, as live playback posts them.
             const storedControllers = dispatchControl && !frozenSource ? midi.ccByClipId[clip.id] : undefined;
-            if (storedControllers && projectClipControllers) {
+            if (dispatchControl && projectClipControllers && (storedControllers || frozenSource)) {
                 const regionStartSamples = regionStartSec * offlineCtx.sampleRate;
                 const clipControlEvents: { time: number; controller: number; value: number }[] = [];
                 let closingTime: number | undefined;
-                for (const controller of projectClipControllers({
-                    controlChanges: storedControllers,
-                    clip,
-                    fromBeat: regionStartBeat,
-                    toBeat: clip.endBeat,
-                })) {
+                const controllers = frozenSource
+                    ? selectedMidiWindows(clip)
+                          .flatMap(({ value }) => [
+                              ...value.controlChanges.map((row) => ({ ...row, closesClip: false })),
+                              ...value.closingControlChanges.map((row) => ({ ...row, closesClip: true })),
+                          ])
+                          .filter((row) =>
+                              row.closesClip
+                                  ? row.beat > regionStartBeat && row.beat <= clip.endBeat
+                                  : row.beat >= regionStartBeat && row.beat < clip.endBeat
+                          )
+                          .sort((left, right) => left.beat - right.beat)
+                    : projectClipControllers({
+                          controlChanges: storedControllers ?? [],
+                          clip,
+                          fromBeat: regionStartBeat,
+                          toBeat: clip.endBeat,
+                      });
+                for (const controller of controllers) {
                     checkCallerAbort();
                     const { startSamples } = projectPpqEndpoints({
                         startPpq: controller.beat,
