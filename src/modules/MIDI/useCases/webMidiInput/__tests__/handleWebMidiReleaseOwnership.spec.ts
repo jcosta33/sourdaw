@@ -32,6 +32,19 @@ const otherStrip = vi.hoisted(() => ({
 }));
 const applyNoteExpression = vi.hoisted(() => vi.fn());
 
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        admitRecordingMidiNoteOn: () => null,
+        admitRecordingMidiNoteOff: () => undefined,
+        admitRecordingMidiExpression: () => undefined,
+        findOpenRecordingMidiAdmission: () => undefined,
+        findOpenRecordingMidiMemberAdmission: () => undefined,
+        getRecordingMidiAdmission: () => undefined,
+        retireRecordingMidiAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     writeNativeBuiltinParameters: vi.fn(),
     audioEngine: {

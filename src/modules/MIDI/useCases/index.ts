@@ -187,6 +187,7 @@ export { transposeForChordTrack } from './transposeForChordTrack';
 export { initWebMidi } from './webMidiInput/initWebMidi';
 export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimeProcessor';
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
+export { setRecordingMidiAdmissionPort } from './webMidiInput/recordingMidiAdmissionPort';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { getMidiInputTrack } from './webMidiInput/getMidiInputTrack';
 export { getMidiInputTrackOwnerId } from './webMidiInput/getMidiInputTrackOwnerId';

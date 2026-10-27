@@ -1,6 +1,5 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { getRecordingMidiAdmission, retireRecordingMidiAdmission } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { readBeatAtSamples } from '#/modules/Transport/stores';
 import { DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
@@ -16,6 +15,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { createRecordedAdmittedMidiNote } from './createRecordedAdmittedMidiNote';
 import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordingMidiAdmissionPort } from './recordingMidiAdmissionPort';
 import { releaseKeyInRemovedYeastRack } from './releaseKeyInRemovedYeastRack';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -26,6 +26,8 @@ import { resolveRecordingPlacement } from './resolveRecordingPlacement';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
+
+const { getRecordingMidiAdmission, retireRecordingMidiAdmission } = recordingMidiAdmissionPort;
 
 /** Whether a key still held went through this Yeast on this instrument track. */
 function isYeastRouteHeld(instrumentTrackId: string, yeastDeviceId: string): boolean {

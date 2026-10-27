@@ -14,6 +14,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: () => true,
 }));
 
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        getRecordingMidiAdmission: () => undefined,
+        retireRecordingMidiAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 // Injection seam adapted from the issue source, per its own escape hatch: the
 // handler converts through the stores barrel's placement reads
 // (`readSecondsAtBeat`/`readBeatAtSamples`), which read the live

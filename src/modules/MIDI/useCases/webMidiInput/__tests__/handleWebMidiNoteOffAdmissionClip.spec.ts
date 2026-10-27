@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { RecordingMidiAdmission } from '#/modules/Arrangement/stores';
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
+
+import type { RecordingMidiAdmission } from '#/modules/Arrangement/stores';
 
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const get_track_strip = vi.hoisted(() => vi.fn());
@@ -15,6 +16,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getRecordingMidiAdmission: recording_admission.get,
     retireRecordingMidiAdmission: recording_admission.retire,
     takeOwnsRecordingRoot: () => true,
+}));
+
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        getRecordingMidiAdmission: recording_admission.get,
+        retireRecordingMidiAdmission: recording_admission.retire,
+        takeOwnsRecordingRoot: () => true,
+    },
 }));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
@@ -129,7 +138,8 @@ describe('handleWebMidiNoteOff recorded-note destination clip', () => {
             expressionChanges: [{ dimension: 'pressure', value: 80, audioTime: 1.5, sourceBeat: 8.5 }],
         };
         recording_admission.get.mockReturnValue(admitted);
-        const append_recorded_midi_note = vi.fn<NonNullable<HandleWebMidiNoteOffDependencies['appendRecordedMidiNote']>>();
+        const append_recorded_midi_note =
+            vi.fn<NonNullable<HandleWebMidiNoteOffDependencies['appendRecordedMidiNote']>>();
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 appendRecordedMidiNote: append_recorded_midi_note,

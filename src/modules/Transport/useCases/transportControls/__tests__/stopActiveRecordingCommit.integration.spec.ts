@@ -14,7 +14,12 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { activeRecordingRef, takeLaneStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import {
+    admitRecordingMidiExpression,
+    admitRecordingMidiNoteOff,
     admitRecordingMidiNoteOn,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
     getArrangementHandlers,
     retireRecordingMidiAdmission,
     stageRecordingTake,
@@ -50,6 +55,7 @@ import {
     setMidiInputTrack,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
+    setRecordingMidiAdmissionPort,
     triggerLiveNoteOn,
 } from '#/modules/MIDI/useCases';
 import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
@@ -141,6 +147,7 @@ const commitGate = vi.hoisted(() => ({
 }));
 
 let disposeMidiProcessor = (): void => {};
+let disposeRecordingAdmission = (): void => {};
 
 const liveMidiGate = vi.hoisted(() => ({ pending: null as Promise<void> | null, started: 0, completed: 0 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
@@ -320,6 +327,16 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         trackStore.set({ tracks: [recordingTrack('midi')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+        });
         setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
         await initWebMidi();
         setMidiInputTrack(TRACK_ID);
@@ -358,6 +375,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
         disposeMidiProcessor();
+        disposeRecordingAdmission();
         destroyWebMidi();
         setMidiInputTrack(null);
         flushAutomergeStorageWrites();

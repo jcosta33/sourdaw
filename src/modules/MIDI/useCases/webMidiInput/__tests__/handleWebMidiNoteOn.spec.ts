@@ -25,6 +25,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: () => true,
 }));
 
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        getRecordingMidiAdmission: () => undefined,
+        retireRecordingMidiAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 type TestMidiEvent = {
     timeSamples: number;
     noteInstanceId?: string;

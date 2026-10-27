@@ -204,12 +204,16 @@ function createDivergedMidiRowAction(kind: 'base' | 'take'): AppAction {
         midiStore.set({ notesByClipId: { 'midi-clip': [changed] }, ccByClipId: {}, pitchBendByClipId: {} });
     } else {
         const state = takeLaneStore.value;
-        if (!state) throw new Error('Expected MIDI take lane');
+        if (!state) {
+            throw new Error('Expected MIDI take lane');
+        }
         takeLaneStore.set({
             lanes: state.lanes.map((lane) => ({
                 ...lane,
                 takes: lane.takes.map((take) => {
-                    if (!take.midiSource) return take;
+                    if (!take.midiSource) {
+                        return take;
+                    }
                     return {
                         ...take,
                         midiSource: {

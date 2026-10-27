@@ -5,7 +5,18 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, startRecording } from '#/modules/Arrangement/useCases';
+import {
+    admitRecordingMidiExpression,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiNoteOn,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    getArrangementHandlers,
+    retireRecordingMidiAdmission,
+    startRecording,
+    takeOwnsRecordingRoot,
+} from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
@@ -23,7 +34,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import { setMidiInputTrack } from '#/modules/MIDI/useCases';
+import { setMidiInputTrack, setRecordingMidiAdmissionPort } from '#/modules/MIDI/useCases';
 import { playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
@@ -32,6 +43,7 @@ import { setMpeEnabledInternal } from '../../../repositories/webMidi/setMpeEnabl
 import { activeNotes } from '../../../repositories/webMidi/state';
 
 const TRACK_ID = 'track-recording';
+let disposeRecordingAdmission = (): void => {};
 
 type RecordingTerminal = (result: {
     kind: 'completed';
@@ -187,6 +199,16 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         trackStore.set({ tracks: [recordingTrack('midi')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         midiStore.set(structuredClone(defaultMidiStoreState));
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+        });
         activeNotes.clear();
         setMidiInputTrack(TRACK_ID);
         playheadWrapCountRef.current = 0;
@@ -212,6 +234,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         midiStore.set(structuredClone(defaultMidiStoreState));
         activeNotes.clear();
         setMidiInputTrack(null);
+        disposeRecordingAdmission();
         setMpeEnabledInternal(false);
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);

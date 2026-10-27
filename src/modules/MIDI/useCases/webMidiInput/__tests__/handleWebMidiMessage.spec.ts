@@ -29,6 +29,17 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: () => true,
 }));
 
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        admitRecordingMidiNoteOn: () => null,
+        admitRecordingMidiNoteOff: () => undefined,
+        admitRecordingMidiExpression: () => undefined,
+        findOpenRecordingMidiAdmission: () => undefined,
+        findOpenRecordingMidiMemberAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 vi.mock('../handleWebMidiNoteOn', () => ({
     handleWebMidiNoteOn: handle_note_on,
 }));

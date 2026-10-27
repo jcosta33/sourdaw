@@ -1,11 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import {
-    admitRecordingMidiNoteOff,
-    admitRecordingMidiNoteOn,
-    admitRecordingMidiExpression,
-    findOpenRecordingMidiAdmission,
-    findOpenRecordingMidiMemberAdmission,
-} from '#/modules/Arrangement/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { PITCH_BEND_CENTER } from '#/utils/midiData';
 
@@ -28,8 +21,17 @@ import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
+import { recordingMidiAdmissionPort } from './recordingMidiAdmissionPort';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
+
+const {
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+} = recordingMidiAdmissionPort;
 
 /**
  * Serial tail for note events.

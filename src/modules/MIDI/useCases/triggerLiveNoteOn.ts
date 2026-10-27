@@ -7,7 +7,6 @@
  * @param note    - MIDI note number (0–127)
  * @param velocity - Note velocity (1–127)
  */
-import { admitRecordingMidiNoteOn } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
@@ -17,6 +16,9 @@ import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompe
 import { captureEventPositionAt } from './webMidiInput/captureEventBeat';
 import { captureRecordingMemberExpression } from './webMidiInput/captureRecordingMemberExpression';
 import { handleWebMidiNoteOn } from './webMidiInput/handleWebMidiNoteOn';
+import { recordingMidiAdmissionPort } from './webMidiInput/recordingMidiAdmissionPort';
+
+const { admitRecordingMidiNoteOn } = recordingMidiAdmissionPort;
 
 export function triggerLiveNoteOn(channel: number, note: number, velocity: number): Promise<void> {
     if (transportStore.value?.isRecording !== true) {

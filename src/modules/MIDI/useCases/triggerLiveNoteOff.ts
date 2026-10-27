@@ -8,11 +8,14 @@
  * @param releaseVelocity - Normalized (0..1) note-off velocity; defaults to 0
  *                          (no release dynamic) for callers without one.
  */
-import { handleWebMidiNoteOff } from './webMidiInput/handleWebMidiNoteOff';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
-import { admitRecordingMidiNoteOff, findOpenRecordingMidiAdmission } from '#/modules/Arrangement/useCases';
-import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompensatedRecordingPosition';
 import { transportStore } from '#/modules/Transport/stores';
+
+import { captureCompensatedRecordingPosition } from './webMidiInput/captureCompensatedRecordingPosition';
+import { handleWebMidiNoteOff } from './webMidiInput/handleWebMidiNoteOff';
+import { recordingMidiAdmissionPort } from './webMidiInput/recordingMidiAdmissionPort';
+
+const { admitRecordingMidiNoteOff, findOpenRecordingMidiAdmission } = recordingMidiAdmissionPort;
 
 export function triggerLiveNoteOff(channel: number, note: number, releaseVelocity = 0): Promise<void> {
     if (transportStore.value?.isRecording !== true) {
