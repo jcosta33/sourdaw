@@ -11,8 +11,7 @@ import {
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { activeRecordingRef, takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { stageRecordingTake } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, undoHistoryStore } from '#/modules/Command/stores';
-import { undoTreeStore } from '#/modules/Command/stores/undoTree';
+import { clearHandlerRegistry, undoHistoryStore, undoTreeStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     registerProductionCommandHandlers,
