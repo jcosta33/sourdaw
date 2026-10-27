@@ -152,6 +152,8 @@ const measuredScriptBudgets = new Map<string, number>([
     ['install', 2304 * 1024 ** 2],
     // A focused pnpm exec eslint invocation over seven files peaked at 4015 MiB.
     ['exec', 4608 * 1024 ** 2],
+    // A dependency add peaked at 2360 MiB under the guard.
+    ['add', 3072 * 1024 ** 2],
     ['lint', 4 * 1024 ** 3],
     // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
     ['lint:full', 6500 * 1024 ** 2],

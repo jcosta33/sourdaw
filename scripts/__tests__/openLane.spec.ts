@@ -1,5 +1,14 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -480,6 +489,44 @@ describe('lane open', () => {
         expect(spawned.every((call) => call.startsWith('spawnSync:git'))).toBe(true);
         expect(spawned.some((call) => call.includes('gh'))).toBe(false);
         expect(code).toBe(1);
+    });
+
+    it.each(['missing', 'mutated'])('refuses a %s fork-marker reader in the pinned lane-open sources', (kind) => {
+        const f = creationFixture();
+        mkdirSync(join(f.root, 'scripts'));
+        for (const name of ['openLane.ts', 'stackedLanes.ts', 'laneStackForkMarkers.ts']) {
+            writeFileSync(join(f.root, 'scripts', name), readFileSync(join(import.meta.dirname, '..', name)));
+        }
+        f.git('add', 'scripts');
+        f.git('commit', '-m', 'test: pin lane-open sources');
+        f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        const verify = () =>
+            execFileSync(
+                process.execPath,
+                [
+                    '--input-type=module',
+                    '--eval',
+                    `import { shellCli } from ${JSON.stringify(join(import.meta.dirname, '..', 'openLane.ts'))}; shellCli.verifyTrustedBlob(process.argv[1]);`,
+                    f.root,
+                ],
+                { encoding: 'utf8', stdio: 'pipe' }
+            );
+        expect(verify).not.toThrow();
+
+        const path = 'scripts/laneStackForkMarkers.ts';
+        if (kind === 'missing') {
+            f.git('rm', path);
+        } else {
+            writeFileSync(join(f.root, path), 'export {};\n');
+            f.git('add', path);
+        }
+        f.git('commit', '-m', 'test: change pinned marker reader');
+        f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        const refusal =
+            kind === 'missing'
+                ? 'scripts/laneStackForkMarkers.ts is not available from origin/main'
+                : 'scripts/laneStackForkMarkers.ts does not match origin/main; refusing to run a mutated copy';
+        expect(verify).toThrow(refusal);
     });
 
     /**

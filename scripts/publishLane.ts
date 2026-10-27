@@ -2124,12 +2124,9 @@ export function shellPort(
             return matchingOpenPullRequest(rows, branch);
         },
         stackBase: (lane, branch, head, main) => {
-            const marker = spawnCapture(
-                executables.git,
-                ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`],
-                { cwd: primaryRoot, env: session.env }
+            const descriptor = readRegisteredLaneStack(primaryRoot, branch, (args) =>
+                spawnCapture(executables.git, args, { cwd: primaryRoot, env: session.env })
             );
-            const descriptor = readRegisteredLaneStack(primaryRoot, branch, marker);
             if (descriptor === undefined) {
                 return undefined;
             }

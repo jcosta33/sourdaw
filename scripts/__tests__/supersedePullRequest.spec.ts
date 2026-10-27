@@ -711,12 +711,9 @@ function realDependencyFixture(root: string, kind: 'direct' | 'late' | 'unrelate
         return dag.ancestor(ancestor, descendant);
     };
     fixture.port.readRegisteredLaneStack = (branch) => {
-        const marker = execFileSync(
-            'git',
-            ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`],
-            { cwd: root, encoding: 'utf8' }
-        ).trim();
-        return readRegisteredLaneStack(root, branch, marker);
+        return readRegisteredLaneStack(root, branch, (args) =>
+            execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+        );
     };
     const register = (patch: Partial<LaneStack> = {}) => {
         const descriptor: LaneStack = {

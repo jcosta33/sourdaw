@@ -77,6 +77,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     getStoredWarpState: vi.fn(),
     warpStateStore: { value: { states: {} }, subscribe: vi.fn() },
     trackStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'missing' })
+    ),
     defaultTrackState: { tracks: [] },
     // A barrel factory replaces the whole module, so every member anything in
     // this spec's graph imports has to be present here — Automation's range
