@@ -9,15 +9,15 @@ import {
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
-import { type AppAction } from '#/utils/handlerContract';
 import {
     createCrdtDoc,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { getCommandHandler } from '../getCommandHandler';
@@ -150,9 +150,12 @@ async function createDivergedAudioSourceAction(actionType: AudioSourceConflictAc
     flushAutomergeStorageWrites();
 
     const trims = actionType === 'trimClipStart' || actionType === 'restoreAudioClipStartTrim';
-    const forward: AppAction = trims
-        ? { type: 'trimClipStart', payload: { clipId: clip.id, newStartBeat: 2 } }
-        : { type: 'slipClipContent', payload: { clipId: clip.id, clipType: 'audio', offset: 0.7 } };
+    let forward: AppAction;
+    if (trims) {
+        forward = { type: 'trimClipStart', payload: { clipId: clip.id, newStartBeat: 2 } };
+    } else {
+        forward = { type: 'slipClipContent', payload: { clipId: clip.id, clipType: 'audio', offset: 0.7 } };
+    }
     const handler = getCommandHandler(forward);
     const inverse = handler?.describe(forward).inverseAction;
     if (!handler || !inverse || inverse.type !== (trims ? 'restoreAudioClipStartTrim' : 'restoreAudioClipSlip')) {

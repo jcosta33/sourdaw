@@ -1,8 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { updateClip } from '../../repositories/track/updateClip';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { audioClipTrimOwner } from '../../useCases/clipEditing/audioClipTrimOwner';
+import { updateClip } from '../../useCases/updateClip';
 
 export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipStartTrim'>({
     batchExecution: 'singleton',

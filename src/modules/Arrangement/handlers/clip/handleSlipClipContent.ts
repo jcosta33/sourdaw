@@ -30,9 +30,10 @@ function captureAudioSlip(action: SlipAction): AudioClipSlipCapture | null {
     });
     const clock = audioClipStartTrimState.captureClock();
     const after = prepareAudioClipSlip(before, action.payload.offset, audioClipStartTrimState.timeline(clock));
-    return after
-        ? { clipId: clip.id, offset: action.payload.offset, before, after, clock, direction: 'restore' }
-        : null;
+    if (!after) {
+        return null;
+    }
+    return { clipId: clip.id, offset: action.payload.offset, before, after, clock, direction: 'restore' };
 }
 
 export const handleSlipClipContent = createHandler<'slipClipContent'>({
