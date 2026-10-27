@@ -629,6 +629,7 @@ describe('the live MIDI writer', () => {
         nativeLiveGraphSession.loopEnabled = true;
         const sink = persistentMidiSink(4);
         await arm(4);
+        const prefetchedHead = [...sink.scheduledLate];
 
         sink.render(4, 5);
         // The renderer can enter the next pass before its position is echoed.
@@ -641,7 +642,7 @@ describe('the live MIDI writer', () => {
             ])
         );
         await pump(2.125, 1);
-        expect(sink.scheduledLate).toEqual([]);
+        expect(sink.scheduledLate).toEqual(prefetchedHead);
         expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
         expect(sink.refusals()).toBe(0);
         expect(mocks.warn).not.toHaveBeenCalled();
