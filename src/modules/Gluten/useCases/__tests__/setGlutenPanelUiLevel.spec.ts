@@ -9,6 +9,7 @@ import {
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import * as commandUseCases from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
@@ -26,7 +27,7 @@ import { getGlutenState, glutenStore, setGlutenUiLevel } from '../../stores/glut
 import { hydrateGlutenDisclosureFromProject } from '../hydrateGlutenDisclosureFromProject';
 import { setGlutenPanelUiLevel } from '../setGlutenPanelUiLevel';
 
-import type { TrackStoreState } from '#/modules/Arrangement/stores';
+import type { Device, TrackStoreState } from '#/modules/Arrangement/stores';
 
 function tracksWithTwoGlutenDevices() {
     return sanitizeTrackSnapshot({
@@ -63,7 +64,34 @@ function rawProjectState(deviceId: string) {
         .find((device) => device.id === deviceId)?.deviceState;
 }
 
-async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => TrackStoreState): Promise<void> {
+function duplicateDevice(type: string, version: number): Device {
+    return {
+        id: 'a',
+        name: 'Duplicate device',
+        type,
+        bypassed: true,
+        parameterValues: { mix: 0.75 },
+        deviceState: { version, data: { disclosureTier: 'shape', duplicate: 'preserve' } },
+    };
+}
+
+function withDuplicateDevice(state: TrackStoreState, device: Device, sameTrack: boolean): TrackStoreState {
+    const firstTrack = state.tracks[0];
+    if (!firstTrack) {
+        throw new Error('Missing fixture track');
+    }
+    return {
+        ...state,
+        tracks: sameTrack
+            ? [{ ...firstTrack, devices: [...firstTrack.devices, device] }, ...state.tracks.slice(1)]
+            : [...state.tracks, { ...firstTrack, id: 'track-2', devices: [device] }],
+    };
+}
+
+async function requestDuringSnapshotEdit(
+    edit: (state: TrackStoreState) => TrackStoreState,
+    afterCommit?: () => void
+): Promise<void> {
     let allowEdit!: () => void;
     let releaseTransaction!: () => void;
     let markStarted!: () => void;
@@ -83,11 +111,15 @@ async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => Track
     const transaction = transactSnapshot(async (snapshotTransaction) => {
         markStarted();
         await editAllowed;
-        const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
-            trackStore.set(edit(trackStore.value!));
-        });
-        storageTransaction.commit();
-        markEdited();
+        try {
+            const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+                trackStore.set(edit(trackStore.value!));
+            });
+            storageTransaction.commit();
+            afterCommit?.();
+        } finally {
+            markEdited();
+        }
         await transactionRelease;
     });
     await started;
@@ -118,6 +150,7 @@ describe('setGlutenPanelUiLevel project path', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         agentProjectRepairStateStore.set(null);
         trackStore.set({ ...defaultTrackState, tracks: [] });
         flushAutomergeStorageWrites();
@@ -222,6 +255,81 @@ describe('setGlutenPanelUiLevel project path', () => {
         expect(projectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
     });
 
+    it.each([
+        { type: 'gluten', version: 1, sameTrack: true },
+        { type: 'gluten', version: 1, sameTrack: false },
+        { type: 'yeast', version: 1, sameTrack: true },
+        { type: 'yeast', version: 99, sameTrack: false },
+    ])('does not dispatch for duplicate ids ($type, version $version, same track $sameTrack)', async (fixture) => {
+        trackStore.set(
+            withDuplicateDevice(trackStore.value!, duplicateDevice(fixture.type, fixture.version), fixture.sameTrack)
+        );
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value);
+        const rawBefore = Automerge.toJS(getCrdtDoc('root')!);
+        const dispatch = vi.spyOn(commandUseCases, 'executeUserAppAction');
+
+        await setGlutenPanelUiLevel('a', 5);
+
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(trackStore.value).toEqual(before);
+        expect(Automerge.toJS(getCrdtDoc('root')!)).toEqual(rawBefore);
+        expect(getGlutenState('a').uiLevel).toBe(1);
+    });
+
+    it('does not dispatch for a standalone device of another type', async () => {
+        const tracks = tracksWithTwoGlutenDevices();
+        tracks[0]!.devices[0] = duplicateDevice('yeast', 99);
+        trackStore.set({ ...defaultTrackState, tracks });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value);
+        const rawBefore = Automerge.toJS(getCrdtDoc('root')!);
+        const dispatch = vi.spyOn(commandUseCases, 'executeUserAppAction');
+
+        await setGlutenPanelUiLevel('a', 5);
+
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(trackStore.value).toEqual(before);
+        expect(Automerge.toJS(getCrdtDoc('root')!)).toEqual(rawBefore);
+        expect(getGlutenState('a').uiLevel).toBe(1);
+    });
+
+    it.each([
+        { type: 'gluten', version: 1, sameTrack: true },
+        { type: 'gluten', version: 1, sameTrack: false },
+        { type: 'yeast', version: 1, sameTrack: true },
+        { type: 'yeast', version: 99, sameTrack: false },
+    ])(
+        'refuses ids duplicated during snapshot admission ($type, version $version, same track $sameTrack)',
+        async (fixture) => {
+            let expected!: TrackStoreState;
+            const addressedDevice = trackStore.value!.tracks[0]!.devices[0]!;
+            await requestDuringSnapshotEdit(
+                (state) => {
+                    expect(state.tracks[0]?.devices[0]).toBe(addressedDevice);
+                    expected = withDuplicateDevice(
+                        state,
+                        duplicateDevice(fixture.type, fixture.version),
+                        fixture.sameTrack
+                    );
+                    return expected;
+                },
+                () => {
+                    // Retain the unchanged object so only the new duplicate can invalidate admission.
+                    trackStore.value!.tracks[0]!.devices[0] = addressedDevice;
+                }
+            );
+
+            expect(trackStore.value?.tracks[0]?.devices[0]).toBe(addressedDevice);
+            expect(trackStore.value).toEqual(expected);
+            expect(getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks).toEqual(
+                expected.tracks
+            );
+            expect(getGlutenState('a').uiLevel).toBe(1);
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+        }
+    );
+
     it('leaves project and visible tier unchanged when the command admission refuses', async () => {
         agentProjectRepairStateStore.set({
             audioGraphValid: false,
@@ -297,7 +405,7 @@ describe('setGlutenPanelUiLevel project path', () => {
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
     });
 
-    it('does not carry a pending choice into a successor project with the same device id', async () => {
+    it('refuses changed project authority while retaining the captured device object and content', async () => {
         let markStarted!: () => void;
         let releaseTransaction!: () => void;
         const started = new Promise<void>((resolve) => {
@@ -312,14 +420,19 @@ describe('setGlutenPanelUiLevel project path', () => {
         });
         await started;
 
+        const capturedState = trackStore.value!;
+        const capturedDevice = capturedState.tracks[0]!.devices[0]!;
         const request = setGlutenPanelUiLevel('a', 4);
         resetCrdtProjectAuthority('Successor Gluten project');
-        trackStore.set({ ...defaultTrackState, tracks: tracksWithTwoGlutenDevices() });
+        trackStore.set(capturedState);
         flushAutomergeStorageWrites();
+        // Preserve the original object and content to isolate the authority fence.
+        trackStore.value!.tracks[0]!.devices[0] = capturedDevice;
         releaseTransaction();
         await transaction;
         await request;
 
+        expect(trackStore.value?.tracks[0]?.devices[0]).toBe(capturedDevice);
         expect(rawProjectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
         expect(projectState('a')).toEqual(rawProjectState('a'));
         expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');

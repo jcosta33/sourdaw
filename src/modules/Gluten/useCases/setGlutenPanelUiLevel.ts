@@ -5,7 +5,28 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { effectDisclosureTierFromLevel } from '#/utils/UI/effectDisclosureTier';
 
+import type { Device } from '#/modules/Arrangement/stores';
+
 const latestChoiceByDevice = new WeakMap<object, symbol>();
+
+type GlutenDeviceTarget = { trackId: string; device: Device };
+
+// The shared state action addresses every matching id, including devices of other types.
+function resolveUniqueGlutenDevice(deviceId: string): GlutenDeviceTarget | undefined {
+    let target: GlutenDeviceTarget | undefined;
+    for (const track of trackStore.value?.tracks ?? []) {
+        for (const device of track.devices) {
+            if (device.id !== deviceId) {
+                continue;
+            }
+            if (target || device.type !== 'gluten') {
+                return;
+            }
+            target = { trackId: track.id, device };
+        }
+    }
+    return target;
+}
 
 /**
  * Request one addressed device's disclosure choice in project truth. The panel
@@ -13,13 +34,11 @@ const latestChoiceByDevice = new WeakMap<object, symbol>();
  * a write, so this function never changes the session state optimistically.
  */
 export async function setGlutenPanelUiLevel(deviceId: string, level: 1 | 2 | 3 | 4 | 5): Promise<void> {
-    const owner = trackStore.value?.tracks.find((track) =>
-        track.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'gluten')
-    );
-    const device = owner?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'gluten');
-    if (!owner || !device) {
+    const target = resolveUniqueGlutenDevice(deviceId);
+    if (!target) {
         return;
     }
+    const { device } = target;
     const prior = device.deviceState;
     if (prior && prior.version !== 1) {
         notifyUser('This Gluten control layout was saved by a newer version and cannot be changed here.', 'warning');
@@ -43,13 +62,12 @@ export async function setGlutenPanelUiLevel(deviceId: string, level: 1 | 2 | 3 |
                 if (latestChoiceByDevice.get(device) !== choice) {
                     return false;
                 }
-                const currentDevice = trackStore.value?.tracks
-                    .find((track) => track.id === owner.id)
-                    ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'gluten');
+                const currentTarget = resolveUniqueGlutenDevice(deviceId);
                 if (
                     captureProjectIdentity() === projectIdentity &&
-                    currentDevice === device &&
-                    canonicalJson(currentDevice) === capturedDevice
+                    currentTarget?.trackId === target.trackId &&
+                    currentTarget.device === device &&
+                    canonicalJson(currentTarget.device) === capturedDevice
                 ) {
                     return true;
                 }
