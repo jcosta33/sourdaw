@@ -98,6 +98,13 @@ function hasValidMidiTakeFields(value: object): boolean {
     );
 }
 
+function hasValidTakeOffsets(value: object): boolean {
+    return (
+        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
+        (!('sourceOffsetSeconds' in value) || is_finite_non_negative_number(value.sourceOffsetSeconds))
+    );
+}
+
 function is_valid_take(value: unknown): value is Take {
     return (
         value !== null &&
@@ -117,8 +124,7 @@ function is_valid_take(value: unknown): value is Take {
         typeof value.selected === 'boolean' &&
         // A take without the field reads at its clip's origin; a take with a
         // malformed one is dropped whole, like any other malformed take field.
-        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
-        (!('sourceOffsetSeconds' in value) || is_finite_non_negative_number(value.sourceOffsetSeconds)) &&
+        hasValidTakeOffsets(value) &&
         is_valid_pass_placement(value) &&
         hasValidAudioPassOrigin(value) &&
         hasValidMidiTakeFields(value)

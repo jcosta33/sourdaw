@@ -1,4 +1,4 @@
-import { createTake, createTakeLane, type Take } from '../../models/TakeLane';
+import { createTake, createTakeLane, type Take, type TakeLane } from '../../models/TakeLane';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
@@ -19,6 +19,61 @@ type StageRecordingTakeInput = {
     plannedPassEnd?: boolean;
     nextPassStartBeat?: number;
 };
+
+function nextOpenMidiTake(candidate: Take, input: StageRecordingTakeInput): Take {
+    if (
+        input.recordingPassIndex !== undefined &&
+        input.sourceOffsetBeats !== undefined &&
+        candidate.clipId === input.clipId &&
+        candidate.sourceOffsetBeats === undefined
+    ) {
+        return { ...candidate, recordingPassIndex: input.recordingPassIndex + 1 };
+    }
+    return candidate;
+}
+
+function stageTakeInLane(
+    existing: TakeLane,
+    input: StageRecordingTakeInput,
+    take: Take,
+    replacement: Take | undefined
+): TakeLane {
+    if (existing.trackId !== input.trackId) {
+        return existing;
+    }
+    if (!replacement) {
+        const takes = existing.takes.map((candidate) => nextOpenMidiTake(candidate, input));
+        return { ...existing, takes: [...takes, take] };
+    }
+    return {
+        ...existing,
+        takes: existing.takes.map((current) => (current.id === replacement.id ? take : current)),
+    };
+}
+
+function replaceProvisionalTake(
+    input: StageRecordingTakeInput,
+    lane: TakeLane | undefined
+): { take: Take; replacement: Take } {
+    const replacement = lane?.takes.find((candidate) => candidate.id === input.provisionalTakeId);
+    if (
+        !replacement ||
+        replacement.clipId !== input.clipId ||
+        replacement.sourceOffsetBeats !== undefined ||
+        input.sourceOffsetBeats === undefined
+    ) {
+        throw new Error('Recording provisional take is not available');
+    }
+    return {
+        replacement,
+        take: {
+            ...replacement,
+            startBeat: input.startBeat,
+            endBeat: input.endBeat,
+            sourceOffsetBeats: input.sourceOffsetBeats,
+        },
+    };
+}
 
 /**
  * Open a take for an in-flight recording without a history entry.
@@ -55,21 +110,7 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
     let replacement: Take | undefined;
     let take: Take;
     if (input.provisionalTakeId !== undefined) {
-        replacement = lane?.takes.find((candidate) => candidate.id === input.provisionalTakeId);
-        if (
-            !replacement ||
-            replacement.clipId !== input.clipId ||
-            replacement.sourceOffsetBeats !== undefined ||
-            input.sourceOffsetBeats === undefined
-        ) {
-            throw new Error('Recording provisional take is not available');
-        }
-        take = {
-            ...replacement,
-            startBeat: input.startBeat,
-            endBeat: input.endBeat,
-            sourceOffsetBeats: input.sourceOffsetBeats,
-        };
+        ({ take, replacement } = replaceProvisionalTake(input, lane));
     } else {
         const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
         if (replacementId !== undefined) {
@@ -90,9 +131,6 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
                 input.endBeat,
                 input.sourceOffsetBeats
             );
-            if (input.recordingPassIndex !== undefined) {
-                take.recordingPassIndex = input.recordingPassIndex;
-            }
         }
     }
     if (input.recordingPassIndex !== undefined) {
@@ -109,29 +147,5 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
         });
         return;
     }
-    takeLaneStore.set({
-        lanes: state.lanes.map((existing) => {
-            if (existing.trackId !== input.trackId) {
-                return existing;
-            }
-            if (!replacement) {
-                const takes = existing.takes.map((candidate) => {
-                    if (
-                        input.recordingPassIndex !== undefined &&
-                        input.sourceOffsetBeats !== undefined &&
-                        candidate.clipId === input.clipId &&
-                        candidate.sourceOffsetBeats === undefined
-                    ) {
-                        return { ...candidate, recordingPassIndex: input.recordingPassIndex + 1 };
-                    }
-                    return candidate;
-                });
-                return { ...existing, takes: [...takes, take] };
-            }
-            return {
-                ...existing,
-                takes: existing.takes.map((current) => (current.id === replacement.id ? take : current)),
-            };
-        }),
-    });
+    takeLaneStore.set({ lanes: state.lanes.map((existing) => stageTakeInLane(existing, input, take, replacement)) });
 }
