@@ -351,3 +351,39 @@ spy assertion to fail. Clear refs, then finalize again: no second gesture counts
 closure, legacy null witness and a landed sibling with a refused sibling; capture authority
 before clearing refs, retain it across every queued wait, and distinguish refused resume from
 success that settled just before replacement.
+
+### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
+
+PR #5453 added `material.prepare` to every native backend apply. The live session computes its
+rolling join position before calling `rollNativeTransport`, whose second `backend.apply` awaits
+material owner/lease preparation before sending `set-transport` to native IPC. That preparation
+also runs for a transport command with no clip PCM, so the clock gap is shared by the ordinary
+no-NAM path in source; no no-NAM runtime failure was observed. PR #4020's projection remains
+necessary for an already-rolling re-arm, as the adjacent #4089 lesson records.
+
+In Alpha's hosted run `40258854873`, Unit 1 job `121366976610`, the actual-model-drain cases
+failed at `maps` and `roll-material` because the NAM strip was already claimed while those
+checkpoints were held. At `roll-position`, Web Audio's anchor advanced from 10 to 10.4 while
+preparation was held; the sent position stayed at 2.5 instead of the expected 2.9. The
+`roll-admission` positive control passed. These results establish the NAM RED case, not a no-NAM
+runtime failure or live audibility. The public #5453 review record has four draws covering lease
+generation, admission capacity, callback retirement, and project repair preservation; it has no
+clock-handoff draw. The private historical prompts are unavailable.
+
+Blind spot: the reviewer checked asynchronous lease safety and capacity but missed that the
+position is consumed by a second apply with its own await after the position snapshot. A first
+topology apply's clock projection does not cover later awaits in the roll apply.
+
+Probe: hold roll material preparation after maps and MIDI are armed, advance the anchored Web
+Audio clock from 10 to 10.4, then require the `set-transport` position to be refreshed to 2.9
+after every pre-IPC await. For NAM, keep Web Audio sounding through model readback and all
+material/bank awaits; validate and claim the matching admission, then close the actual rebound
+strip gate in the same turn that constructs the refreshed command immediately before roll IPC.
+Do not wait for the roll reply to gate. Keep the no-NAM source-level exposure distinct from a
+runtime RED claim. This probe establishes ordering and admission, not live hardware audibility.
+
+### 2026-10-26 — a deferred seek finalized into a successor transport (introduced by PR #305; repaired by PR #5374)
+
+PR #305 (`b077ef6d34c7fc72bf3907a55bcaa7d7102a1584`) moved seek finalization behind the recording-flush promise while retaining only the pre-wait `wasPlaying` snapshot. During that wait, Stop→Play or Stop→Record can install a successor scheduler; the old finalizer can then stop that scheduler, write its stale seek target, or restart against successor state. Checking live `isPlaying` only gates restart; it does not establish ownership. Commit `983371455c147465033d6ac9ccd27706cc2210fa` later relocated the path into `executePlayheadSeek.ts` without introducing the race. PR #5374 (`ddceec4283b3715f267773b33bccfc21c3778e0f`) added the scheduler-generation ownership check before deferred side effects. The available public history does not contain the private reviewer prompts, so the exact missed stance or reviewer responsibility cannot be established.
+
+Probe: through the real seek/transport coordinator, hold a controlled promise returned at the `stopActiveRecording` boundary after a playing, recording seek is admitted. While it is held, exercise Stop→Play and Stop→Record, then resolve and reject the promise. Require the successor worker identity, generation, epoch, transport state, and position to remain intact; on rejection, require the original error to remain reported. Remove the generation-ownership guard and require both successor cases to fail. This controlled scheduler probe tests deferred ownership; it does not establish real capture, PCM flushing, browser behavior, or hardware audibility.

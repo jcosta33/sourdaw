@@ -6,6 +6,30 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
+
+PR #5388 changed a declared campaign fixture while the web-gated unit matrix skipped its
+freshness assertion. The cross-language validation obligation was missed; historical private
+review prompts and models are unavailable. Require the existing freshness case in required
+static validation without broadening web or browser selection. Change a real declared fixture
+without restamping its digest and require the case to fail on that path and digest; separately
+remove the static step and require the workflow contract to fail.
+
+### 2026-10-26 — argument-forwarding mocks accepted a stale rewrite destination (introduced by PR #4271)
+
+PR #4271 (`c5bfeda9bfeb68c934479536f3103221a853d940`) asserted that delivery forwarded the
+PR snapshot's cached base to git-ai. It never built the advanced-main graph that makes that input
+wrong: a three-commit feature squashed after unrelated main commits can take git-ai 1.7.5's rebase
+route and select those unrelated commits (#5711). Historical private reviewer model, tier, and stance
+are unknown; the public approval names refspec and skip-push probes, not destination ancestry.
+
+Exercise the actual delivery shell adapter over a real Git graph, with main advanced both before and
+after the squash. The emitted destination must equal the raw landed commit's sole available parent,
+and restoring cached-base forwarding must redden the case. Keep unavailable, zero, multiple, and
+malformed parent refusals observable before any rewrite or notes push. A portable adapter test proves
+argument selection and admission only; separately exercise the installed tool in a hermetic repository
+to prove its classification, full source-note union, and preservation of unrelated note blobs.
+
 ### 2026-10-25 — current-ref fixtures omitted the old child's historical dependency (introduced by PR #5615)
 
 PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) tested branch/ref identity while
@@ -1350,3 +1374,19 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
+
+PR #5274 (`40baa0716b`) introduced fail-closed file-inspection diagnostics; PR #5365 (`75b10ca71b`)
+refreshed whole and scoped catalogs for missing descriptor types while diagnostics still stopped
+immediately. Exact historical private reviewer prompts and tiers are unknown. Before merge, #5730's
+initial repair retained the diagnostic only at expiry: a later failed process list instead reported
+transient-eligible `process-users-unavailable`, without complete replacement proof.
+
+Run `refreshes an incomplete Darwin` whole/scoped cases with complete clear and holder replacements,
+persistent diagnostics, and later omissions. Run `keeps a Darwin ... diagnostic stable after` sequence
+cases with failed/unusable opening and closing process lists, missing/changed-UID identity, and later
+whole/scoped/parent inspection failures. Require retained storage and a stable, non-transient reason
+on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
+or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
+or add inspection diagnostics to the warning-success allowlist.

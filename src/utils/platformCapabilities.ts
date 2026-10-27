@@ -14,7 +14,9 @@ export type PlatformCapabilities = {
     readonly hasNativePlugins: boolean;
     /** Plugin directory scanning — desktop only */
     readonly hasPluginScanning: boolean;
-    /** MIDI input — Web MIDI API (Chrome) or native */
+    /** Web MIDI entry point exists; access and devices are checked at runtime. */
+    readonly webMidiApiPresent: boolean;
+    /** A browser or native MIDI route can be attempted, not that it will succeed. */
     readonly hasMidiInput: boolean;
     /** Native OS file save dialogs — desktop only */
     readonly hasNativeFileDialogs: boolean;
@@ -22,9 +24,15 @@ export type PlatformCapabilities = {
     readonly hasMultiTrackRecording: boolean;
     /** Whether we're running in the desktop app */
     readonly isDesktopApp: boolean;
+    /** Static capability gaps; runtime permission and device failures belong to their owners. */
+    readonly degradations: readonly PlatformDegradation[];
 };
 
-const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
+export type PlatformDegradation = {
+    readonly feature: 'midi-input';
+    readonly reason: 'api-absent';
+    readonly message: string;
+};
 
 let cached: PlatformCapabilities | null = null;
 
@@ -40,14 +48,21 @@ export function getPlatformCapabilities(): PlatformCapabilities {
     }
 
     const isDesktop = isDesktopRuntime();
+    const webMidiApiPresent = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
+    let degradations: readonly PlatformDegradation[] = [];
+    if (!webMidiApiPresent && !isDesktop) {
+        degradations = [{ feature: 'midi-input', reason: 'api-absent', message: DISABLED_REASONS.midiInput }];
+    }
 
     cached = {
         hasNativePlugins: isDesktop,
         hasPluginScanning: isDesktop,
-        hasMidiInput: webMidiSupported || isDesktop,
+        webMidiApiPresent,
+        hasMidiInput: webMidiApiPresent || isDesktop,
         hasNativeFileDialogs: isDesktop,
         hasMultiTrackRecording: isDesktop,
         isDesktopApp: isDesktop,
+        degradations,
     };
 
     return cached;

@@ -122,6 +122,47 @@ describe('findWasmDescriptor', () => {
         expect(findReleasedWasmDescriptor('grand-boule')).toBeDefined();
     });
 
+    it('keeps complete owner replay final across several queued Proof targets', async () => {
+        const syncProofPatch = vi.fn(() => {
+            proofNodeMocks.setParam('input_gain', 3);
+            proofNodeMocks.setParam('eq_band1_gain', 6);
+            proofNodeMocks.setParam('lim_ceiling', -3);
+            proofNodeMocks.setParam('ab_bypass', 0);
+        });
+        proofNodeMocks.createProofNode.mockResolvedValue(createProofNodeResult());
+        setAudioDeviceRuntimeSink({ syncProofPatch });
+        const descriptor = findWasmDescriptor('proof');
+        if (!descriptor) {
+            throw new Error('Missing actual Proof descriptor');
+        }
+        const { placeholder, loadPromise } = descriptor.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'proof-replay',
+            deviceType: 'proof',
+            onLoaded: vi.fn(),
+        });
+        if (!placeholder.controller) {
+            throw new Error('Missing loading Proof controller');
+        }
+        for (const [name, value] of [
+            ['input_gain', -9],
+            ['eq_band1_gain', -6],
+            ['lim_ceiling', -1],
+            ['ab_bypass', 1],
+        ] as const) {
+            placeholder.controller.setParam(name, value);
+        }
+        await loadPromise;
+        const final = new Map(proofNodeMocks.setParam.mock.calls.map(([name, value]) => [name, value]));
+        expect([...final]).toEqual([
+            ['input_gain', 3],
+            ['eq_band1_gain', 6],
+            ['lim_ceiling', -3],
+            ['ab_bypass', 0],
+        ]);
+        expect(proofNodeMocks.setParam).toHaveBeenCalledTimes(8);
+    });
+
     it('should apply the validated Proof patch after queued restored flat params', async () => {
         const syncProofPatch = vi.fn(() => {
             proofNodeMocks.setParam('lim_ceiling', -1);

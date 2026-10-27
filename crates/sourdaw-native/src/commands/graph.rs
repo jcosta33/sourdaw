@@ -155,6 +155,9 @@
 use crate::commands::crumbs::{self, CrumbsState};
 use crate::commands::levain::LevainBankStore;
 use crate::state::{AppState, TimelineSample, TimelineSamplePool};
+use daw_dsp::proof::parameter_registry::{
+    self as proof_parameters, NativeAdmission, ParameterKind, ParameterRoute,
+};
 use daw_engine::midi::note_store::{MidiNoteStore, TimedMidiNote, MIDI_NOTE_STORE_CAPACITY};
 use daw_engine::midi_fx::{probability_percent_to_cutoff, PROBABILITY_CUTOFF_RANGE};
 use daw_engine::offline::OfflineRenderer;
@@ -2311,6 +2314,74 @@ fn resolved_param_writes<T>(
         .collect()
 }
 
+/// Validate a Proof record before publishing any graph or queue command.
+/// Known project/graph metadata is admitted without claiming DSP application.
+fn proof_parameter_writes(
+    values: &HashMap<String, f64>,
+    record: bool,
+    device_id: &str,
+) -> Result<Vec<(BuiltinParamName, f32)>, String> {
+    let mut resolved = Vec::new();
+    let mut order = [None; 5];
+    for key in name_ordered_keys(values) {
+        let value = finite(values[key], "Proof parameter value")?;
+        if proof_parameters::by_name(key).is_some_and(|parameter| {
+            parameter.kind != ParameterKind::Continuous && value.fract() != 0.0
+        }) {
+            return Err(format!(
+                "device '{device_id}' refuses fractional Proof parameter '{key}'"
+            ));
+        }
+        match proof_parameters::admit_native(key, value as f32, record) {
+            Some(NativeAdmission::Apply { parameter, value }) => {
+                // Saved records and live writes share product bounds; auxiliary
+                // controls retain the bare DSP range.
+                let value = if parameter.live
+                    && (parameter.kind == ParameterKind::Continuous || parameter.clamp)
+                {
+                    value.clamp(parameter.live_minimum, parameter.live_maximum)
+                } else {
+                    value
+                };
+                if parameter.live
+                    && (value < parameter.live_minimum || value > parameter.live_maximum)
+                {
+                    return Err(format!(
+                        "device '{device_id}' refuses Proof parameter '{key}' or its value"
+                    ));
+                }
+                if parameter.route == ParameterRoute::Order {
+                    let slot = key
+                        .strip_prefix("chain_order_")
+                        .and_then(|slot| slot.parse::<usize>().ok())
+                        .expect("canonical order slot");
+                    order[slot] = Some(value as u8);
+                }
+                resolved.push((builtin_named_parameter(key, device_id)?, value));
+            }
+            Some(_) => {}
+            None => {
+                return Err(format!(
+                    "device '{device_id}' refuses Proof parameter '{key}' or its value"
+                ))
+            }
+        }
+    }
+    if order.iter().all(Option::is_some) {
+        let mut seen = [false; 5];
+        for slot in order {
+            let module = slot.expect("complete order") as usize;
+            if seen[module] {
+                return Err(format!(
+                    "device '{device_id}' carries a duplicate Proof module order"
+                ));
+            }
+            seen[module] = true;
+        }
+    }
+    Ok(resolved)
+}
+
 /// Resolve one built-in device's parameter key onto the address the engine
 /// routes it by, or refuse by name.
 ///
@@ -2335,6 +2406,14 @@ fn builtin_parameter(
     device_id: &str,
 ) -> Result<DeviceParam, String> {
     match builtin {
+        BuiltinEffectType::Proof => {
+            if proof_parameters::by_name(key).is_none() {
+                return Err(format!(
+                    "device '{device_id}' has no Proof parameter '{key}'"
+                ));
+            }
+            builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
+        }
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
@@ -2344,7 +2423,6 @@ fn builtin_parameter(
         | BuiltinEffectType::Crust
         | BuiltinEffectType::Grinder
         | BuiltinEffectType::Bacteria
-        | BuiltinEffectType::Proof
         | BuiltinEffectType::DutchOven
         | BuiltinEffectType::Toaster
         | BuiltinEffectType::Levain
@@ -2383,6 +2461,14 @@ fn immediate_device_parameters(
     values: &HashMap<String, f64>,
     device_id: &str,
 ) -> Result<Vec<(DeviceParam, f32)>, String> {
+    if builtin == BuiltinEffectType::Proof {
+        return proof_parameter_writes(values, false, device_id).map(|writes| {
+            writes
+                .into_iter()
+                .map(|(name, value)| (DeviceParam::BuiltinNamed(name), value))
+                .collect()
+        });
+    }
     let resolved = name_ordered_keys(values)
         .into_iter()
         .map(|key| {
@@ -2750,14 +2836,12 @@ fn map_device(
             )
         }
         BuiltinEffectType::Proof => {
-            resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
-                |patch| {
-                    (
-                        PluginCore::proof_with_patch(sample_rate, &patch),
-                        Vec::new(),
-                    )
-                },
-            )
+            proof_parameter_writes(&device.parameter_values, true, &device.id).map(|patch| {
+                (
+                    PluginCore::proof_with_patch(sample_rate, &patch),
+                    Vec::new(),
+                )
+            })
         }
         BuiltinEffectType::DutchOven => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
@@ -3711,6 +3795,40 @@ fn map_command(
                     "write-device-parameter: device '{device_id}' is not on strip '{track_id}'"
                 ));
             }
+            let normalized_proof_step = if device.builtin() == Some(BuiltinEffectType::Proof) {
+                let time = match write {
+                    DeviceParameterWritePayload::Step { time, .. }
+                    | DeviceParameterWritePayload::Hold { time } => time,
+                };
+                seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+                match write {
+                    DeviceParameterWritePayload::Step { value, time } => {
+                        let values = HashMap::from([(parameter_id.clone(), *value)]);
+                        let writes = proof_parameter_writes(&values, false, device_id)?;
+                        let Some((_, value)) = writes.first() else {
+                            return Ok(());
+                        };
+                        Some(DeviceParameterWritePayload::Step {
+                            value: f64::from(*value),
+                            time: *time,
+                        })
+                    }
+                    DeviceParameterWritePayload::Hold { .. } => {
+                        // Hold has no value to normalize. Metadata and graph bypass
+                        // have no DSP queue; every other canonical name shares the
+                        // typed target and cancellation route below.
+                        if proof_parameters::is_project_metadata(parameter_id)
+                            || parameter_id == "bypass"
+                        {
+                            return Ok(());
+                        }
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            let write = normalized_proof_step.as_ref().unwrap_or(write);
             // The address a stamp carries is decided by what the device is, not
             // by the name it was written under: a built-in's parameters are the
             // vocabulary its own body answers to, and a hosted plugin's are the
@@ -15873,6 +15991,403 @@ mod tests {
             "the declaration lands at {} behind the bypass at {bypass_position}, so the graph \
              re-aims a figure the bypass has already answered",
             declarations[0].0
+        );
+    }
+
+    #[test]
+    fn proof_registry_refuses_unknown_initial_records_before_graph_publication() {
+        let mut registry = GraphRegistry::default();
+        let result = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-proof",
+                "proof",
+                json!({"unknown_proof":1}),
+            )),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        );
+        assert!(
+            result.is_err(),
+            "unknown target was admitted as a native Proof patch"
+        );
+    }
+
+    #[test]
+    fn proof_registry_validates_actual_immediate_and_scheduled_command_routes() {
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device(
+                "d-proof",
+                "proof",
+                json!({"lim_ceiling":-3}),
+            )),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .unwrap();
+        for (name, value) in [
+            ("eq_band0Xfreq", 400.0),
+            ("dither_mode", 3.0),
+            ("eq_bypass", 2.0),
+            ("dither_mode", 0.25),
+            ("input_gain", 1e100),
+            ("chain_order_0", 2.5),
+        ] {
+            let stamped = batch(
+                json!([{"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":name},"write":{"shape":"step","value":value,"time":0}}]),
+            );
+            let immediate = batch(
+                json!([{"kind":"set-device-parameters","trackId":"t1","deviceId":"d-proof","values":{(name):value}}]),
+            );
+            assert!(
+                map_unbound_batch(&stamped, &mut registry.clone(), &sample_pool(), 48_000.0)
+                    .is_err(),
+                "scheduled {name}"
+            );
+            assert!(
+                map_unbound_batch(&immediate, &mut registry.clone(), &sample_pool(), 48_000.0)
+                    .is_err(),
+                "immediate {name}"
+            );
+        }
+        let ignored = batch(
+            json!([{"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"target_lufs"},"write":{"shape":"step","value":-14,"time":0}}]),
+        );
+        let mapped =
+            map_unbound_batch(&ignored, &mut registry.clone(), &sample_pool(), 48_000.0).unwrap();
+        assert!(!mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AutomateDeviceParam { .. } | GraphCommand::SetParam(..)
+        )));
+    }
+
+    #[test]
+    fn proof_registry_step_and_hold_share_exact_targets_and_queue_cancellation() {
+        use daw_engine::timeline::{DeviceParamEvent, DeviceParamQueue};
+
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-proof", "proof", json!({}))),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .unwrap();
+        let effect_id = registry.devices["d-proof"].native_effect_id;
+        let frequency = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+            builtin_named_parameter("eq_band0_freq", "d-proof").unwrap(),
+        ));
+        let ceiling = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+            builtin_named_parameter("lim_ceiling", "d-proof").unwrap(),
+        ));
+        let steps = batch(json!([
+            {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"eq_band0_freq"},"write":{"shape":"step","value":400,"time":0.25}},
+            {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"eq_band0_freq"},"write":{"shape":"step","value":800,"time":0.5}},
+            {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"lim_ceiling"},"write":{"shape":"step","value":-6,"time":0.75}}
+        ]));
+        let mapped = map_unbound_batch(&steps, &mut registry, &samples, 48_000.0).unwrap();
+        let writes = mapped
+            .ops
+            .iter()
+            .map(|op| match op {
+                GraphCommand::AutomateDeviceParam {
+                    effect_id: mapped_effect,
+                    param,
+                    value,
+                    at_frame,
+                } => {
+                    assert_eq!(*mapped_effect, effect_id);
+                    (*param, *value, *at_frame)
+                }
+                _ => panic!("Proof Step must map to an exact scheduled parameter"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            writes,
+            vec![
+                (frequency, 400.0, 12_000),
+                (frequency, 800.0, 24_000),
+                (ceiling, -6.0, 36_000),
+            ]
+        );
+        let mut engine_queue = DeviceParamQueue::new();
+        for (param, value, at_frame) in writes {
+            assert!(engine_queue.schedule(DeviceParamEvent {
+                param,
+                value,
+                at_frame,
+            }));
+        }
+        assert_eq!(
+            registry.device_param_pending[&effect_id]
+                .iter()
+                .map(|stamp| (stamp.param, stamp.at_frame))
+                .collect::<Vec<_>>(),
+            vec![(frequency, 12_000), (frequency, 24_000), (ceiling, 36_000)]
+        );
+
+        // Hold carries no value: cancel its tail while retaining earlier
+        // frequency and later ceiling, then admit the replacement separately.
+        let hold = device_hold("t1", "d-proof", "eq_band0_freq", 0.5);
+        let mapped = map_unbound_batch(
+            &batch(json!([
+                hold,
+                {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"eq_band0_freq"},"write":{"shape":"step","value":1000,"time":0.625}}
+            ])),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .unwrap();
+        assert!(matches!(
+            mapped.ops.as_slice(),
+            [GraphCommand::HoldDeviceParam { effect_id: held_effect, param: held_param, at_frame: 24_000 },
+             GraphCommand::AutomateDeviceParam { effect_id: written_effect, param: written_param, value: 1000.0, at_frame: 30_000 }]
+                if *held_effect == effect_id && *written_effect == effect_id
+                    && *held_param == frequency && *written_param == frequency
+        ));
+        for op in &mapped.ops {
+            match op {
+                GraphCommand::HoldDeviceParam {
+                    param, at_frame, ..
+                } => {
+                    engine_queue.hold(*param, *at_frame);
+                }
+                GraphCommand::AutomateDeviceParam {
+                    param,
+                    value,
+                    at_frame,
+                    ..
+                } => {
+                    assert!(engine_queue.schedule(DeviceParamEvent {
+                        param: *param,
+                        value: *value,
+                        at_frame: *at_frame,
+                    }));
+                }
+                _ => panic!("expected the mapped Proof Hold or replacement Step"),
+            }
+        }
+        let mut due = Vec::new();
+        while let Some(event) = engine_queue.pop_due(36_000) {
+            due.push((event.param, event.value, event.at_frame));
+        }
+        assert_eq!(
+            due,
+            vec![
+                (frequency, 400.0, 12_000),
+                (frequency, 1000.0, 30_000),
+                (ceiling, -6.0, 36_000),
+            ],
+            "the mapped Hold must cancel the same tail in the real engine queue"
+        );
+        let retained = registry.device_param_pending[&effect_id]
+            .iter()
+            .map(|stamp| (stamp.param, stamp.at_frame))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            retained,
+            vec![(frequency, 12_000), (ceiling, 36_000), (frequency, 30_000)]
+        );
+
+        for (parameter, time) in [
+            ("unknown_proof", 0.5),
+            ("eq_band0_freq", -1.0),
+            ("eq_band0_freq", 1e20),
+        ] {
+            let before = registry.batches_sent;
+            let refused = batch(json!([
+                device_hold("t1", "d-proof", "eq_band0_freq", 0.0),
+                device_hold("t1", "d-proof", parameter, time)
+            ]));
+            assert!(map_unbound_batch(&refused, &mut registry, &samples, 48_000.0).is_err());
+            assert_eq!(registry.batches_sent, before);
+            assert_eq!(
+                registry.device_param_pending[&effect_id]
+                    .iter()
+                    .map(|stamp| (stamp.param, stamp.at_frame))
+                    .collect::<Vec<_>>(),
+                retained,
+                "a later invalid Hold must not publish the earlier cancellation"
+            );
+        }
+    }
+
+    #[test]
+    fn proof_registry_hold_ignores_metadata_and_graph_bypass_but_keeps_runtime_ab() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        map_unbound_batch(
+            &batch(strip_with_device("d-proof", "proof", json!({}))),
+            &mut registry,
+            &samples,
+            48_000.0,
+        )
+        .unwrap();
+        let effect_id = registry.devices["d-proof"].native_effect_id;
+        for parameter in ["target_mode", "target_lufs", "bypass"] {
+            let mapped = map_unbound_batch(
+                &batch(json!([device_hold("t1", "d-proof", parameter, 0.5)])),
+                &mut registry,
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            assert!(mapped.ops.is_empty(), "{parameter} has no DSP queue");
+            assert!(registry.device_param_pending.is_empty());
+        }
+        for parameter in ["ab_bypass", "dither_bits"] {
+            let mapped = map_unbound_batch(
+                &batch(json!([device_hold("t1", "d-proof", parameter, 0.5)])),
+                &mut registry,
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            let target = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+                builtin_named_parameter(parameter, "d-proof").unwrap(),
+            ));
+            assert!(matches!(
+                mapped.ops.as_slice(),
+                [GraphCommand::HoldDeviceParam { effect_id: held_effect, param, at_frame: 24_000 }]
+                    if *held_effect == effect_id && *param == target
+            ));
+            assert!(
+                registry.device_param_pending.is_empty(),
+                "Hold charges no slot"
+            );
+        }
+    }
+
+    #[test]
+    fn proof_product_wire_clamps_dither_bits_for_records_immediate_and_scheduled_writes() {
+        let samples = sample_pool();
+        for (raw, expected) in [
+            (8.0, 16.0),
+            (12.0, 16.0),
+            (16.0, 16.0),
+            (24.0, 24.0),
+            (32.0, 24.0),
+        ] {
+            let patch = json!({"dither_mode":1,"dither_bits":raw,"dyneq_band0_freq":800});
+            let values = serde_json::from_value(patch.clone()).unwrap();
+            // map_device uses this exact admission result to build the saved
+            // Proof body; inspecting it makes no claim about rendered PCM.
+            let record = proof_parameter_writes(&values, true, "d-proof").unwrap();
+            let mut registry = GraphRegistry::default();
+            let mapped_record = map_unbound_batch(
+                &batch(strip_with_device("d-proof", "proof", patch.clone())),
+                &mut registry,
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            let effect_id = registry.devices["d-proof"].native_effect_id;
+            let immediate = map_unbound_batch(
+                &batch(json!([{"kind":"set-device-parameters","trackId":"t1","deviceId":"d-proof","values":patch}])),
+                &mut registry.clone(),
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+            let scheduled = map_unbound_batch(
+                &batch(json!([
+                    {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"dither_bits"},"write":{"shape":"step","value":raw,"time":0.5}},
+                    {"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-proof","parameterId":"dyneq_band0_freq"},"write":{"shape":"step","value":800,"time":0.5}}
+                ])),
+                &mut registry.clone(),
+                &samples,
+                48_000.0,
+            )
+            .unwrap();
+
+            assert!(mapped_record.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AddDetachedEffect(id, PluginCore::Proof(_), None) if *id == effect_id
+            )));
+            assert_eq!(
+                record
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), *value))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("dither_bits", expected),
+                    ("dither_mode", 1.0),
+                    ("dyneq_band0_freq", 800.0)
+                ],
+                "saved product wire dither_bits={raw}"
+            );
+            assert_eq!(immediate.ops.len(), 3);
+            for (op, (name, expected_value)) in immediate.ops.iter().zip([
+                ("dither_bits", expected),
+                ("dither_mode", 1.0),
+                ("dyneq_band0_freq", 800.0),
+            ]) {
+                let parameter =
+                    DeviceParam::BuiltinNamed(builtin_named_parameter(name, "d-proof").unwrap());
+                assert!(
+                    matches!(
+                        op,
+                        GraphCommand::SetParam(id, param, value)
+                            if *id == effect_id && *param == parameter && *value == expected_value
+                    ),
+                    "immediate product wire {name} for dither_bits={raw}"
+                );
+            }
+            assert_eq!(scheduled.ops.len(), 2);
+            for (op, (name, expected_value)) in scheduled.ops.iter().zip([
+                ("dither_bits", f64::from(expected)),
+                ("dyneq_band0_freq", 800.0),
+            ]) {
+                let parameter = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+                    builtin_named_parameter(name, "d-proof").unwrap(),
+                ));
+                assert!(
+                    matches!(
+                        op,
+                        GraphCommand::AutomateDeviceParam { effect_id: id, param, value, at_frame: 24_000 }
+                            if *id == effect_id && *param == parameter && *value == expected_value
+                    ),
+                    "scheduled product wire {name} for dither_bits={raw}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn proof_registry_distinguishes_admitted_metadata_from_applied_targets() {
+        let values = serde_json::from_value(
+            json!({"target_mode":2,"target_lufs":-6,"bypass":1,"ab_bypass":1}),
+        )
+        .unwrap();
+        let live =
+            immediate_device_parameters(BuiltinEffectType::Proof, &values, "d-proof").unwrap();
+        assert_eq!(live.len(), 1, "only runtime A/B is a live DSP target");
+        assert_eq!(addressed_parameter_name(&live[0].0), "ab_bypass");
+        for bad in [
+            json!({"eq_band0Xfreq":400}),
+            json!({"dither_mode":0.25}),
+            json!({"eq_band0_type":1.000000001}),
+            json!({"dither_mode":3}),
+            json!({"eq_bypass":2}),
+            json!({"chain_order_0":1.5}),
+            json!({"input_gain":1e100}),
+            json!({"chain_order_0":0,"chain_order_1":0,"chain_order_2":2,"chain_order_3":3,"chain_order_4":4}),
+        ] {
+            let values = serde_json::from_value(bad).unwrap();
+            assert!(
+                immediate_device_parameters(BuiltinEffectType::Proof, &values, "d-proof").is_err()
+            );
+        }
+        let valid = serde_json::from_value(json!({"input_gain":100,"lim_release":1000})).unwrap();
+        let applied =
+            immediate_device_parameters(BuiltinEffectType::Proof, &valid, "d-proof").unwrap();
+        assert_eq!(
+            applied.iter().map(|(_, value)| *value).collect::<Vec<_>>(),
+            vec![24.0, 500.0]
         );
     }
 
