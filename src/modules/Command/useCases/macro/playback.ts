@@ -227,6 +227,12 @@ async function executeMacroAction(
     options: { groupId: string; groupLabel: string }
 ): Promise<void> {
     const replayAction = structuredClone(action);
+    if (replayAction.type === 'slipClipContent' || replayAction.type === 'trimClipStart') {
+        // A public history reversion can be recorded with exact Undo coordinates.
+        // Macro playback is a new command against today's rows; its handler must
+        // capture those rows for its own history rather than restore the recording.
+        delete replayAction.payload.midiRowCoordinates;
+    }
     if (replayAction.type === 'addSidechainRoute') {
         const recordedRouteId = replayAction.payload.routeId;
         delete replayAction.payload.routeId;
@@ -369,8 +375,8 @@ async function executeMacroAction(
 
 /**
  * Replay a saved macro by dispatching each action in sequence.
- * All actions share a single undo group so the entire macro can be
- * undone/redone as one atomic operation.
+ * Batch-capable actions share an Undo group; singleton handlers retain
+ * their individual Undo steps.
  */
 export async function playMacro(macroId: string): Promise<void> {
     const state = macroStore.value;
