@@ -150,6 +150,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/findingLineage.ts',
     'scripts/gitAncestry.ts',
     'scripts/githubAppIdentity.ts',
+    'scripts/laneStackForkMarkers.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
     'scripts/publishLane.ts',

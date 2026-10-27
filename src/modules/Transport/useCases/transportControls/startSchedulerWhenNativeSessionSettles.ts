@@ -36,6 +36,7 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
+import { playheadClockRef } from '../../stores/playheadClockRef';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
@@ -65,7 +66,8 @@ export type HoldRelease = { contextSeconds: number | null };
 export async function startSchedulerWhenNativeSessionSettles(
     session: Promise<void>,
     generation: number,
-    release: HoldRelease
+    release: HoldRelease,
+    onRoll?: (contextSeconds: number, beat: number) => void
 ): Promise<void> {
     let capTimerId: ReturnType<typeof setTimeout> | null = null;
     const holdCap = new Promise<void>((resolve) => {
@@ -89,4 +91,5 @@ export async function startSchedulerWhenNativeSessionSettles(
     // actually opened at.
     release.contextSeconds = getAudioContext().currentTime;
     startPlayheadScheduler();
+    onRoll?.(playheadClockRef.audioTimeSeconds, playheadClockRef.beat);
 }

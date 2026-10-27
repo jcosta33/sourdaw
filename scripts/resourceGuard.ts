@@ -150,6 +150,8 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 const measuredScriptBudgets = new Map<string, number>([
     // A cold private frozen install peaked at 2051 MiB under the guard.
     ['install', 2304 * 1024 ** 2],
+    // A dependency add peaked at 2360 MiB under the guard.
+    ['add', 3072 * 1024 ** 2],
     ['lint', 4 * 1024 ** 3],
     // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
     ['lint:full', 6500 * 1024 ** 2],
