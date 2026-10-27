@@ -1,0 +1,25 @@
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_29d8df116c5b92::t_45f1dfd9d05681 54
+src/modules/MIDI/stores/index.ts
+  s_29d8df116c5b92::t_45f1dfd9d05681 34
+src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts
+  s_29d8df116c5b92::t_45f1dfd9d05681 1-78
+src/modules/MIDI/useCases/midiClipData/projectFrozenMidiTakeWindow.ts
+  s_29d8df116c5b92::t_aa43c6b75ff0a1 1-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2fdf91fbeca54e76e36f88536cf5011e7d997fb1",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
