@@ -107,9 +107,9 @@ describe('resolveE2ePort', () => {
 });
 
 describe('e2eOrigin', () => {
-    it('builds the localhost origin for a port', () => {
-        expect(e2eOrigin(5173)).toBe('http://localhost:5173');
-        expect(e2eOrigin(6123)).toBe('http://localhost:6123');
+    it('builds the literal IPv4 loopback origin for a port', () => {
+        expect(e2eOrigin(5173)).toBe('http://127.0.0.1:5173');
+        expect(e2eOrigin(6123)).toBe('http://127.0.0.1:6123');
     });
 });
 
@@ -228,16 +228,16 @@ describe('playwright config port derivation', () => {
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, undefined);
         const config = await loadPlaywrightConfig();
         const webServer = requiredSingleWebServer(config);
-        expect(requiredBaseURL(config)).toBe('http://localhost:5173');
-        expect(webServer.url).toBe('http://localhost:5173');
+        expect(requiredBaseURL(config)).toBe('http://127.0.0.1:5173');
+        expect(webServer.url).toBe('http://127.0.0.1:5173');
     });
 
     it('derives baseURL and webServer.url from the env var and binds the dev server with --strictPort', async () => {
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, '6123');
         const config = await loadPlaywrightConfig();
         const webServer = requiredSingleWebServer(config);
-        expect(requiredBaseURL(config)).toBe('http://localhost:6123');
-        expect(webServer.url).toBe('http://localhost:6123');
+        expect(requiredBaseURL(config)).toBe('http://127.0.0.1:6123');
+        expect(webServer.url).toBe('http://127.0.0.1:6123');
         expect(webServer.command).toBe('pnpm dev --mode e2e --host 127.0.0.1 --port 6123 --strictPort');
     });
 
@@ -279,8 +279,8 @@ describe('playwright config port derivation', () => {
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, '65535');
         const config = await loadPlaywrightConfig();
         const webServer = requiredSingleWebServer(config);
-        expect(requiredBaseURL(config)).toBe('http://localhost:65535');
-        expect(webServer.url).toBe('http://localhost:65535');
+        expect(requiredBaseURL(config)).toBe('http://127.0.0.1:65535');
+        expect(webServer.url).toBe('http://127.0.0.1:65535');
         expect(webServer.command).toBe('pnpm dev --mode e2e --host 127.0.0.1 --port 65535 --strictPort');
     });
 
@@ -291,6 +291,8 @@ describe('playwright config port derivation', () => {
         expect(config.workers).toBe(1);
         expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
         const servers = webServers(config);
+        expect(requiredBaseURL(config)).toBe('http://127.0.0.1:5173');
+        expect(servers.map((server) => server.url)).toEqual(['http://127.0.0.1:5173']);
         expect(servers.map((server) => server.command)).toEqual([
             'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 5173 --strictPort',
         ]);
@@ -303,7 +305,7 @@ describe('playwright config port derivation', () => {
         vi.stubEnv('E2E_SPECS', JSON.stringify(['tests/e2e/browserAiPanelsTestId.spec.ts']));
         const config = await loadPlaywrightConfig();
         const servers = webServers(config);
-        expect(servers.map((server) => server.url)).toEqual(['http://localhost:65535']);
+        expect(servers.map((server) => server.url)).toEqual(['http://127.0.0.1:65535']);
         expect(servers.map((server) => server.command)).toEqual([
             'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 65535 --strictPort',
         ]);
@@ -319,11 +321,12 @@ describe('playwright config port derivation', () => {
         expect(config.workers).toBe(1);
         expect(builtProject?.name).toBe('chromium');
         expect(devProject?.name).toBe('chromium-dev');
-        expect(devProject?.use?.baseURL).toBe('http://localhost:6124');
+        expect(requiredBaseURL(config)).toBe('http://127.0.0.1:6123');
+        expect(devProject?.use?.baseURL).toBe('http://127.0.0.1:6124');
         expect(builtProject?.testIgnore).toHaveLength(devServerOnlySpecs.length + 1);
         expect(devProject?.testMatch).toHaveLength(devServerOnlySpecs.length);
         const servers = webServers(config);
-        expect(servers.map((server) => server.url)).toEqual(['http://localhost:6123', 'http://localhost:6124']);
+        expect(servers.map((server) => server.url)).toEqual(['http://127.0.0.1:6123', 'http://127.0.0.1:6124']);
         expect(servers.map((server) => server.command)).toEqual([
             'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 6123 --strictPort',
             'pnpm dev --mode e2e --host 127.0.0.1 --port 6124 --strictPort',
