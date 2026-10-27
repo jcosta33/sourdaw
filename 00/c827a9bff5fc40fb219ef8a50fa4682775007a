@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_29d8df116c5b92::t_43218634454c76 246-250,259
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_29d8df116c5b92::t_b4cdba4893b2f6 410-412
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_29d8df116c5b92::t_b4cdba4893b2f6 311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00c827a9bff5fc40fb219ef8a50fa4682775007a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
