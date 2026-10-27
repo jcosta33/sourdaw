@@ -1,0 +1,68 @@
+src/modules/MIDI/useCases/index.ts
+  s_29d8df116c5b92::t_fd14baddae3a20 61
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_29d8df116c5b92::t_7404028da04193 454-463,692,694
+  s_29d8df116c5b92::t_3a5ae0e5dd67c2 239-247,252,255
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_29d8df116c5b92::t_d8af31357d6928 1274-1281,1283,1285,1295-1298
+  s_29d8df116c5b92::t_71ad58cd39cbad 1136,1143-1150,1156-1159,1303,1576,1578-1582,1584-1585,1909
+  s_29d8df116c5b92::t_d759d5f8ca63b9 1452-1453,1496-1502
+  s_29d8df116c5b92::t_ec5c835e110099 1895-1899
+  s_29d8df116c5b92::t_20339a1a8d7689 1905
+  s_29d8df116c5b92::t_7094c95c07ec6d 1747-1748,1750-1751,1754-1758,1760-1764,1769,1772-1778,1803-1804,1807,1809,1811-1815,1820,1823-1829,1894
+  s_29d8df116c5b92::t_ce119eafe61b09 1212-1213,1215-1216,1221,1225,1230,1233,1238,1241-1244
+  s_29d8df116c5b92::t_7eb1f62b9a0a6d 453-454,465
+  s_29d8df116c5b92::t_bb10d3e2f42f79 425-436,1779,1782,1830,1833
+  s_29d8df116c5b92::t_bfa38b8813e529 460-464
+  s_29d8df116c5b92::t_008669425ef7ef 1210,1245,1299,1301,1503,1505-1506,1508,1514,1583,1586,1665,1688,1712,1796,1847,1888-1889,1903,1907-1908,1910-1911,1917
+src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts
+  s_29d8df116c5b92::t_f96c25fe1de537 3,37-42,45,47,97-146,150-151,196-197,200,202-203
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_29d8df116c5b92::t_3b3deeb6c5951a 389-429
+  s_29d8df116c5b92::t_6008bb40c578f8 277-278
+  s_29d8df116c5b92::t_2dc08f881a2384 84-88
+src/modules/TimelineEditor/presentations/helpers/editPianoRollTakeNote.ts
+  s_29d8df116c5b92::t_fd14baddae3a20 2,23-34,39,41-42
+  s_29d8df116c5b92::t_a4d8debacad068 65,72,83
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.ts
+  s_29d8df116c5b92::t_8b1e424601263f 163-171,173
+  s_29d8df116c5b92::t_a396291d66a6d1 45-54,62,174-185,190-221
+  s_29d8df116c5b92::t_991efa0f46002f 222-228
+src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx
+  s_29d8df116c5b92::t_e10042b7f70e59 172-180,188,192-201,205,331-336
+  s_29d8df116c5b92::t_52dea6c0d43ba4 337-340,345,570,622,685
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_29d8df116c5b92::t_15d22def05a719 317-353,357,362,368,373
+  s_29d8df116c5b92::t_a8aa8179322ba2 354-356,358-361,363-367,369-372,374-377
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_29d8df116c5b92::t_6fa1200161a62d 170-206,210
+  s_29d8df116c5b92::t_6008bb40c578f8 133-134
+  s_29d8df116c5b92::t_ff12c0e61a63b4 207-209,211-214
+src/modules/MIDI/useCases/midiClipData/sliceMidiTakeNoteForEdit.ts
+  s_29d8df116c5b92::t_fd14baddae3a20 1-9
+src/modules/TimelineEditor/presentations/helpers/__tests__/projectPianoRollTakeNotes.spec.ts
+  s_29d8df116c5b92::t_ae0904d1fb18e1 94-113
+  s_29d8df116c5b92::t_709080dd2f01cf 114-122
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_29d8df116c5b92::t_6e323ca44a1308 296-325,332
+  s_29d8df116c5b92::t_6008bb40c578f8 260-261
+  s_29d8df116c5b92::t_1cd0268c920255 326-331,333-334
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_29d8df116c5b92::t_6fa1200161a62d 118-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ebc76a3a5d05da7f692a855812289d6aa705f50",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
