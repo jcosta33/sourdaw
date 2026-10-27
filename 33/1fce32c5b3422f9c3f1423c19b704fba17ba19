@@ -1,0 +1,47 @@
+src/app/bootstrap.ts
+  s_29d8df116c5b92::t_60384287c0429d 52,426
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_29d8df116c5b92::t_60384287c0429d 28,340
+src/modules/Arrangement/handlers/recording/__tests__/overdubControllerUndo.integration.spec.ts
+  s_29d8df116c5b92::t_1e97526719bb2a 66,129
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_29d8df116c5b92::t_07d44a9ca3936d 162-163,169-170
+src/modules/MIDI/useCases/webMidiInput/__tests__/stopHeldMidiNote.integration.spec.ts
+  s_29d8df116c5b92::t_60384287c0429d 19,212
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_29d8df116c5b92::t_1e97526719bb2a 68,122
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  s_29d8df116c5b92::t_c2a5688d7745cb 27,41,57,65,149-150,273-326,330-336,342-357,360-368
+  s_29d8df116c5b92::t_60384287c0429d 38
+  s_29d8df116c5b92::t_ab08e5d8e5217f 40,134,327-329,337-341
+  s_29d8df116c5b92::t_1167c8229240fb 358-359
+  s_29d8df116c5b92::t_d54fc7d283e148 369
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiMessage.spec.ts
+  s_29d8df116c5b92::t_b1b292f1cc153f 6,460-464,475-528,541-550
+src/modules/MIDI/useCases/webMidiInput/recordingMidiAdmissionPort.ts
+  s_29d8df116c5b92::t_fe65a1a349f99d 34,46,61
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  s_29d8df116c5b92::t_15f4e77daade52 38-39
+  s_29d8df116c5b92::t_fe65a1a349f99d 2,8,10,57,60,66-73,77,84
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  s_29d8df116c5b92::t_35da03bae1a5d5 75,98,111-112,216-217,376-403,408-438,447-466
+  s_29d8df116c5b92::t_ab08e5d8e5217f 81,201,404-407,439-446
+  s_29d8df116c5b92::t_60384287c0429d 79
+  s_29d8df116c5b92::t_9ec751f3db5be4 467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "331fce32c5b3422f9c3f1423c19b704fba17ba19",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
