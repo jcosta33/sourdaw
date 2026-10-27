@@ -16,9 +16,27 @@ import { hydrateChamberStateFromProject } from '../../../useCases/proofChamber/h
 import { updateChamberEngine } from '../../../useCases/proofChamber/updateChamberEngine';
 import { ProofChamberPanel } from '../ProofChamberPanel';
 
+// These cases exercise the complete parameter deck, whose entry tier is Lab.
+function fullDeckFixture(defaultValue: unknown): unknown {
+    if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {
+        return {
+            activeInstanceId: 'test-device',
+            instances: {
+                'test-device': {
+                    id: 'test-device',
+                    isBypassed: false,
+                    uiLevel: 5,
+                    engineState: { ...DEFAULT_PARAMS },
+                },
+            },
+        };
+    }
+    return defaultValue;
+}
+
 // Mock dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => fullDeckFixture(defaultValue)),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -85,7 +103,7 @@ describe('ProofChamberPanel', () => {
         // `clearAllMocks` clears recorded calls, not implementations, so a
         // `mockReturnValue` from one test would otherwise decide what every
         // later test's panel renders.
-        vi.mocked(useStore).mockImplementation((_store, defaultValue) => defaultValue);
+        vi.mocked(useStore).mockImplementation((_store, defaultValue) => fullDeckFixture(defaultValue));
         // The engine-write harness below replaces `updateChamberEngine` with a
         // store simulation; drop it so a later test never writes into an
         // earlier test's seeded state.
@@ -94,13 +112,14 @@ describe('ProofChamberPanel', () => {
 
     it('should render without crashing', () => {
         render(<ProofChamberPanel deviceId="test-device" />);
-        expect(document.body).toBeTruthy();
+        expect(screen.getByRole('group', { name: 'Effect control detail' })).toBeVisible();
     });
 
     it('should have interactive elements', () => {
         const { queryAllByRole } = render(<ProofChamberPanel deviceId="test-device" />);
         const buttons = queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+        expect(buttons.length).toBeGreaterThanOrEqual(5);
+        expect(screen.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('dispatches a decay-EQ band change with the contract `value` field', () => {
@@ -176,7 +195,7 @@ describe('ProofChamberPanel', () => {
                     tracks: [{ devices: [{ id: 'test-device', parameterValues }] }],
                 };
             }
-            return defaultValue;
+            return fullDeckFixture(defaultValue);
         });
     }
 
@@ -488,7 +507,7 @@ describe('ProofChamberPanel', () => {
                 'test-device': {
                     id: 'test-device',
                     isBypassed: false,
-                    uiLevel: 1,
+                    uiLevel: 5,
                     engineState: { ...DEFAULT_PARAMS, saturation: true },
                 },
             },
@@ -497,7 +516,7 @@ describe('ProofChamberPanel', () => {
             if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {
                 return chamberState;
             }
-            return defaultValue;
+            return fullDeckFixture(defaultValue);
         });
 
         render(<ProofChamberPanel deviceId="test-device" />);

@@ -79,7 +79,7 @@ function renderDampKnobAt(damping: number): HTMLElement {
     const engineState: ProofChamberEngineState = { ...DEFAULT_PARAMS, algorithm: 'plate', damping };
     const chamberState = {
         activeInstanceId: DEVICE_ID,
-        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
+        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 5, engineState } },
     };
     vi.mocked(useStore).mockImplementation((_store, defaultValue) => {
         if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {

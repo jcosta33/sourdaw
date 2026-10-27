@@ -182,7 +182,7 @@ function renderPanel(algorithm: ProofChamberAlgorithm, overrides: Partial<ProofC
     };
     MOCKED_CHAMBER_STORE_STATE = {
         activeInstanceId: DEVICE_ID,
-        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
+        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 5, engineState } },
     };
     render(<ProofChamberPanel deviceId={DEVICE_ID} />);
     // The Decay EQ overlay is behind a view toggle that starts closed, and its
