@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_b3201877f50e8a::t_f36d37ef356ec4 128-130,164-176,209-212,218-224
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_b3201877f50e8a::t_b17a14880b5d68 586-587,589,591-596,959-960,964,966-970,972-975,977
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d599dfa9807902774ee0a6a37c3bd5eb8ac6a6e",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

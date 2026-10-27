@@ -1,0 +1,74 @@
+.agents/skills/delivery-orchestration/historical-stack-admission.md
+  s_b3201877f50e8a::t_fdea1ef3782a12 1-32
+scripts/syncParentLane.ts
+  s_b3201877f50e8a::t_fdea1ef3782a12 54
+  s_b3201877f50e8a::t_a568d8e8b1cd9a 257,259
+  s_b3201877f50e8a::t_143a0979f58327 22,25,37-40,47-52,128-129,154-162
+  s_b3201877f50e8a::t_f925f6857ea7b8 164-166,170
+  s_b3201877f50e8a::t_bc075b2cb3b926 26,163,167-169,171-178,187-190,206,214,226
+  s_b3201877f50e8a::t_aa9d9070bd1d54 24,231,234,240
+  s_b3201877f50e8a::t_593f6f56fafb01 379-380
+  s_b3201877f50e8a::t_9f7ebfdf679a46 29,377,382,552
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_b3201877f50e8a::t_871d1e8741aed8 1039-1051
+  s_b3201877f50e8a::t_143a0979f58327 15
+  s_b3201877f50e8a::t_91c93e678c94fd 159-161,165-200,461-604
+  s_b3201877f50e8a::t_593f6f56fafb01 347-425,437,439,454,458,1003
+  s_b3201877f50e8a::t_de5c75aff0929f 426-436,438,440-453,455-457,459-460,638-644,1002,1004-1015
+  s_b3201877f50e8a::t_0345c195006979 647-687
+  s_b3201877f50e8a::t_85c7148bce93f6 35-44,629,634,817-819,821
+  s_b3201877f50e8a::t_ab5e3cdbe35eb8 823-825,827-829
+scripts/stackedLanes.ts
+  s_b3201877f50e8a::t_7390a733c423c4 5-10,345-574,580
+  s_b3201877f50e8a::t_8efe50b744df61 575-579
+  s_b3201877f50e8a::t_bc075b2cb3b926 608-635
+  s_b3201877f50e8a::t_4500313dd26729 581-607,636
+  s_b3201877f50e8a::t_2e3ee80e023c2c 162,164-168
+  s_b3201877f50e8a::t_2fed4e76a878ed 11,14-15
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_b3201877f50e8a::t_1ed1040bd0a9ed 341-342,513-514
+  s_b3201877f50e8a::t_2fed4e76a878ed 39
+scripts/reviewApprovalContext.ts
+  s_b3201877f50e8a::t_a66dc88b897124 124
+scripts/supersedePullRequestGh.ts
+  s_b3201877f50e8a::t_a66dc88b897124 89-92
+scripts/__tests__/stackedLanes.spec.ts
+  s_b3201877f50e8a::t_f262b495643deb 35-44,131-136
+  s_b3201877f50e8a::t_f3a6fd1f7822a7 142-144
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_b3201877f50e8a::t_a66dc88b897124 714-716
+scripts/publishLane.ts
+  s_b3201877f50e8a::t_6efe5827b89544 2127-2128
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_b3201877f50e8a::t_801409813dfe29 102
+scripts/__tests__/openLane.spec.ts
+  s_b3201877f50e8a::t_cbb8ebac10d3c9 2-11,503-514,529
+  s_b3201877f50e8a::t_801409813dfe29 494-502,515-528
+  s_b3201877f50e8a::t_088fabc6e50cbc 530-531
+scripts/reviewRiskPolicy.ts
+  s_b3201877f50e8a::t_801409813dfe29 153
+scripts/openLane.ts
+  s_b3201877f50e8a::t_801409813dfe29 394-399
+scripts/__tests__/publishLane.spec.ts
+  s_b3201877f50e8a::t_cbb8ebac10d3c9 678
+scripts/laneStackForkMarkers.ts
+  s_b3201877f50e8a::t_2fed4e76a878ed 1-11
+scripts/trustedGithubWriteBootstrap.ts
+  s_b3201877f50e8a::t_42ef9286e70043 162,219,234,273,311,353,415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f4299b2f4bca1afd57b2cfce9656f3705d5a588",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

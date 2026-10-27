@@ -1,0 +1,27 @@
+src/modules/MIDI/AGENTS.md
+  s_26f70b851e8f7a::t_9162ee6fe1b5e1 25
+src/modules/MIDI/useCases/index.ts
+  s_26f70b851e8f7a::t_c053f35a22e9f6 103
+src/modules/MIDI/useCases/midiEvent/removeHandEditedReturnFamily.ts
+  s_26f70b851e8f7a::t_70f273d29d949c 5-12,31
+src/modules/TimelineEditor/presentations/views/AutomationLane/CCLane.tsx
+  s_26f70b851e8f7a::t_0dc74dbfd8c650 10,99,101-102,105,152-153,167-173,176,207,219,222
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_26f70b851e8f7a::t_7f525f8d593781 607-611,988,1012-1021,1035-1047,1071-1074,1080,1084,1087,1110-1113,1129-1148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aaac530d2c8cf02b75b95c49821d45caa5be901a",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/recording/__tests__/recordingPassTimingRootOwner.integration.spec.ts
+  s_29d8df116c5b92::t_4dbb1150609638 79,93-100,112-117,119
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_29d8df116c5b92::t_4dbb1150609638 15-20,50,119,121-127,129-157,159-170,172-175,177-190,192-198,650
+  s_29d8df116c5b92::t_016d5b3f9ec718 120,158,171,176
+  s_29d8df116c5b92::t_71dbc24b7033f5 128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "648f80a95b9a8df474b3ec5fb30a0565171b9460",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

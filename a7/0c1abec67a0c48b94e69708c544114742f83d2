@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/device/__tests__/coldImportedDeviceEdits.integration.spec.ts
+  s_b3201877f50e8a::t_93632d4fcf5fbc 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a70c1abec67a0c48b94e69708c544114742f83d2",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

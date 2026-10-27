@@ -1,0 +1,32 @@
+src/modules/Command/useCases/__tests__/legacyMidiTrimReplay.integration.spec.ts
+  s_d99a62fe2de3a3::t_4700c2b81d02e7 6,34-35,43,142-149,151-152,157-169,266-267,277-313,397,407-426,485-486,488,490,497-499,513,516-517,520-529,531
+  s_d99a62fe2de3a3::t_927ca001d744c9 193-201,406,505-506
+  s_d99a62fe2de3a3::t_8b53bb797709a8 314
+  s_d99a62fe2de3a3::t_5f461e4ea8ae67 315-319,500-504,530,532-539
+.agents/skills/review-stances/project-integrity.md
+  s_d99a62fe2de3a3::t_031c93ac245b83 338-340,353-363
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_d99a62fe2de3a3::t_031c93ac245b83 54,59-64,66-67
+.agents/skills/review-stances/test-validity.md
+  s_d99a62fe2de3a3::t_031c93ac245b83 1403-1416
+src/modules/Command/useCases/__tests__/fixtures/legacyMidiTrimReplay.md
+  s_d99a62fe2de3a3::t_031c93ac245b83 33-37,39
+src/modules/Command/useCases/getLegacyTrimInverseReplayFailure.ts
+  s_d99a62fe2de3a3::t_031c93ac245b83 38,41-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7af8947f3631e88c292b787f86477e0eae9c3d84",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
