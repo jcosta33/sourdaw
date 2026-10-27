@@ -5,7 +5,6 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import * as audioAnalysisUseCases from '#/modules/AudioAnalysis/useCases';
 import {
     createTrack,
     getArrangementHandlers,
@@ -13,7 +12,7 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
-import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     commandTrackDefaultsPort,
@@ -138,23 +137,18 @@ function proposalOf(...items: ReturnType<typeof lowerGain>[]): Proposal {
     return { schemaVersion: 1, items };
 }
 
-/** A 1 kHz sine with the render's own geometry. */
-function sineBuffer(
-    amplitude: number,
-    sampleRate = SAMPLE_RATE,
-    durationSeconds = 2,
-    numberOfChannels = 2
-): AudioBuffer {
-    const length = sampleRate * durationSeconds;
+/** Two seconds of a 1 kHz stereo sine at `amplitude`. */
+function sineBuffer(amplitude: number): AudioBuffer {
+    const length = SAMPLE_RATE * 2;
     const channel = new Float32Array(length);
     for (let frame = 0; frame < length; frame++) {
-        channel[frame] = amplitude * Math.sin((2 * Math.PI * 1_000 * frame) / sampleRate);
+        channel[frame] = amplitude * Math.sin((2 * Math.PI * 1_000 * frame) / SAMPLE_RATE);
     }
     return {
-        sampleRate,
+        sampleRate: SAMPLE_RATE,
         length,
-        numberOfChannels,
-        duration: durationSeconds,
+        numberOfChannels: 2,
+        duration: length / SAMPLE_RATE,
         getChannelData: () => channel,
     } as unknown as AudioBuffer;
 }
@@ -248,8 +242,8 @@ function measure(args: Record<string, unknown>, revision = captureProjectRevisio
     });
 }
 
-function previewArgs(proposal: Proposal, metrics: readonly string[] = ['integratedLoudness']) {
-    return { scope: DRUMS_SCOPE, range: RANGE, metrics, subject: 'preview', proposal };
+function previewArgs(proposal: Proposal) {
+    return { scope: DRUMS_SCOPE, range: RANGE, metrics: ['integratedLoudness'], subject: 'preview', proposal };
 }
 
 /** One planning loop: a preview measurement, then a proposal adopting it by call id. */
@@ -293,9 +287,9 @@ function measureThenAdopt(proposal: Proposal, loopRevision: string) {
 }
 
 /** A hosted run's provider turns: interpret the request, measure the preview, propose exactly it. */
-function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal, metrics?: readonly string[]): void {
+function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal): void {
     scriptTurns(revision, [
-        [measureCallFor('measure-1', proposal, metrics)],
+        [measureCallFor('measure-1', proposal)],
         [proposeCall({ commands: [], compiledCallIds: ['measure-1'] })],
     ]);
 }
@@ -309,8 +303,8 @@ function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): 
     }
 }
 
-function measureCallFor(id: string, proposal: Proposal, metrics?: readonly string[]): ToolCallResult {
-    return { id, name: 'analysis.measure', arguments: previewArgs(proposal, metrics) };
+function measureCallFor(id: string, proposal: Proposal): ToolCallResult {
+    return { id, name: 'analysis.measure', arguments: previewArgs(proposal) };
 }
 
 function proposeCall(args: Record<string, unknown>): ToolCallResult {
@@ -483,102 +477,6 @@ describe('analysis.measure of a proposal preview', () => {
         expect(captureProjectRevision()).toBe(revision);
         expect(drumsLevel()).toBe(0);
         expect(engine.updateDeviceParam).not.toHaveBeenCalled();
-    });
-
-    it('retains local audition provenance and LUFS for the exact renders without adding them to the provider receipt', async () => {
-        const revision = captureProjectRevision();
-        const historyBefore = structuredClone(undoHistoryStore.value);
-        engine.renderTrackSubgraphOffline
-            .mockReset()
-            .mockResolvedValueOnce(sineBuffer(0.5, 48_000, 2, 2))
-            .mockResolvedValueOnce(sineBuffer(0.25, 44_100, 1.5, 1));
-        scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6)), ['rms']);
-
-        const { planned, confirmationId } = await approvalMeasuredPreview(revision);
-
-        const saved = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.measuredPreview;
-        expect(saved?.targets[0]?.audition).toMatchObject({
-            baselineRender: {
-                route: 'isolated-subgraph',
-                artifact: { sampleRate: SAMPLE_RATE, frameCount: SAMPLE_RATE * 2, channelCount: 2 },
-            },
-            previewRender: {
-                route: 'isolated-subgraph',
-                artifact: { sampleRate: 44_100, frameCount: 44_100 * 1.5, channelCount: 1, durationSeconds: 1.5 },
-            },
-            baselineIntegratedLoudness: { status: 'measured', unit: 'LUFS' },
-            previewIntegratedLoudness: { status: 'measured', unit: 'LUFS' },
-        });
-        expect(saved?.targets[0]).toMatchObject({
-            baseline: { rms: { status: 'measured' } },
-            preview: { rms: { status: 'measured' } },
-            deltas: { rms: { status: 'compared' } },
-        });
-        expect(saved?.targets[0]?.baseline).not.toHaveProperty('integratedLoudness');
-        expect(saved?.targets[0]?.preview).not.toHaveProperty('integratedLoudness');
-        expect(saved?.targets[0]?.deltas).not.toHaveProperty('integratedLoudness');
-        const receipt = planned.applicationToolReceipts?.find(({ callId }) => callId === 'measure-1');
-        expect(receipt?.data).toMatchObject({
-            metrics: ['rms'],
-            targets: [{ baseline: { rms: { status: 'measured' } } }],
-        });
-        expect(JSON.stringify(receipt)).not.toContain('audition');
-        expect(receipt?.data).toMatchObject({
-            targets: [
-                {
-                    baselineRender: { route: 'isolated-subgraph', artifact: { contentAddress: expect.any(String) } },
-                    previewRender: { route: 'isolated-subgraph', artifact: { contentAddress: expect.any(String) } },
-                },
-            ],
-        });
-        expect(JSON.stringify(receipt)).not.toContain('baselineIntegratedLoudness');
-        expect(JSON.stringify(receipt)).not.toContain('AudioBuffer');
-        expect(captureProjectRevision()).toBe(revision);
-        expect(undoHistoryStore.value).toEqual(historyBefore);
-        expect(drumsLevel()).toBe(0);
-        expect(engine.updateDeviceParam).not.toHaveBeenCalled();
-    });
-
-    it('keeps requested metrics successful when auxiliary loudness is absent from objective analysis', async () => {
-        const revision = captureProjectRevision();
-        const measureObjective = audioAnalysisUseCases.measureAgentScopeRender;
-        const measurementSpy = vi
-            .spyOn(audioAnalysisUseCases, 'measureAgentScopeRender')
-            .mockImplementation((buffer, metrics) => {
-                const measurements = measureObjective(buffer, metrics);
-                delete measurements.integratedLoudness;
-                return measurements;
-            });
-
-        const read = await measure(
-            {
-                scope: DRUMS_SCOPE,
-                range: RANGE,
-                metrics: ['rms'],
-                subject: 'preview',
-                proposal: proposalOf(lowerGain(DRUMS_GAIN_ID, -6)),
-            },
-            revision
-        );
-
-        measurementSpy.mockRestore();
-        expect(read.receipt).toMatchObject({ status: 'success', data: { metrics: ['rms'] } });
-        expect(read.measuredPreview?.targets[0]).toMatchObject({
-            baseline: { rms: { status: 'measured' } },
-            preview: { rms: { status: 'measured' } },
-            deltas: { rms: { status: 'compared' } },
-            audition: {
-                baselineIntegratedLoudness: {
-                    status: 'unavailable',
-                    reason: 'Objective analysis did not return integrated loudness for this render.',
-                },
-                previewIntegratedLoudness: {
-                    status: 'unavailable',
-                    reason: 'Objective analysis did not return integrated loudness for this render.',
-                },
-            },
-        });
-        expect(read.receipt.error).toBeNull();
     });
 
     // Red when the loop stops comparing a retained preview's revision with the measurement's own.

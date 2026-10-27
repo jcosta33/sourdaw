@@ -8,7 +8,7 @@ import { ANALYSIS_MEASURE_MAX_WARNING_LENGTH, ANALYSIS_MEASURE_MAX_WARNINGS } fr
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
-import { type MeasuredMetricEntry, type MeasuredPreview } from '../models/MeasuredPreview';
+import { type MeasuredPreview } from '../models/MeasuredPreview';
 import {
     describeMeasurementStop,
     planMeasurementWork,
@@ -128,60 +128,19 @@ function previewFailure(status: 'no-op' | 'rejected' | 'conflicted' | 'failed', 
     };
 }
 
-function measurementMetricsIncludingIntegratedLoudness(
-    metrics: ParsedArguments['metrics']
-): ParsedArguments['metrics'] {
-    if (metrics.includes('integratedLoudness')) {
-        return metrics;
-    }
-    const withIntegratedLoudness = [...metrics];
-    withIntegratedLoudness.push('integratedLoudness');
-    return withIntegratedLoudness;
-}
-
-function integratedLoudnessOf(measurements: ReturnType<typeof measureAgentScopeRender>): MeasuredMetricEntry {
-    const integratedLoudness = measurements.integratedLoudness;
-    if (integratedLoudness !== undefined) {
-        return integratedLoudness;
-    }
-    return {
-        status: 'unavailable',
-        reason: 'Objective analysis did not return integrated loudness for this render.',
-    };
-}
-
 function measureTarget(
     baseline: RenderedTarget,
     preview: RenderedTarget,
     metrics: ParsedArguments['metrics']
 ): MeasuredPreview['targets'][number] {
-    const measurementMetrics = measurementMetricsIncludingIntegratedLoudness(metrics);
-    const baselineMeasurements = measureAgentScopeRender(baseline.buffer, measurementMetrics);
-    const previewMeasurements = measureAgentScopeRender(preview.buffer, measurementMetrics);
-    const requestedMetricIds = new Set<string>(metrics);
-    const requested = (measurements: typeof baselineMeasurements) => {
-        const selected: typeof baselineMeasurements = {};
-        for (const [metric, measurement] of Object.entries(measurements)) {
-            if (requestedMetricIds.has(metric) && measurement !== undefined) {
-                selected[metric] = measurement;
-            }
-        }
-        return selected;
-    };
-    const baselineRequested = requested(baselineMeasurements);
-    const previewRequested = requested(previewMeasurements);
+    const baselineMeasurements = measureAgentScopeRender(baseline.buffer, metrics);
+    const previewMeasurements = measureAgentScopeRender(preview.buffer, metrics);
     return {
         targetId: baseline.targetId,
         targetKind: baseline.targetKind,
-        baseline: baselineRequested,
-        preview: previewRequested,
-        deltas: compareAgentScopeMeasurements({ baseline: baselineRequested, preview: previewRequested }),
-        audition: {
-            baselineRender: artifactOf(baseline),
-            previewRender: artifactOf(preview),
-            baselineIntegratedLoudness: integratedLoudnessOf(baselineMeasurements),
-            previewIntegratedLoudness: integratedLoudnessOf(previewMeasurements),
-        },
+        baseline: baselineMeasurements,
+        preview: previewMeasurements,
+        deltas: compareAgentScopeMeasurements({ baseline: baselineMeasurements, preview: previewMeasurements }),
     };
 }
 
@@ -255,11 +214,7 @@ function successRead(
             },
             metrics: parsed.metrics,
             targets: targets.map((target, index) => ({
-                targetId: target.targetId,
-                targetKind: target.targetKind,
-                baseline: target.baseline,
-                preview: target.preview,
-                deltas: target.deltas,
+                ...target,
                 baselineRender: artifactOf(pairs[index]![0]),
                 previewRender: artifactOf(pairs[index]![1]),
             })),
