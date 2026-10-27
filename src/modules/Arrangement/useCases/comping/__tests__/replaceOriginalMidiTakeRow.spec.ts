@@ -55,7 +55,7 @@ describe('replaceOriginalMidiTakeRow', () => {
         });
         const edited = { ...original, velocity: 71 };
         const owner = { laneId: 'lane-1', takeId: 'selected', sourceClipId: 'original-clip', rowId: original.id };
-        replaceOriginalMidiTakeRow({ ...owner, edit: { kind: 'note', expected: original, replacement: edited } });
+        replaceOriginalMidiTakeRow({ ...owner, rowKind: 'note', expected: original, replacement: edited });
         expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource?.rows.notes.value)).toEqual([
             [edited, peer],
             [edited, peer],
@@ -65,17 +65,21 @@ describe('replaceOriginalMidiTakeRow', () => {
         expect(() =>
             replaceOriginalMidiTakeRow({
                 ...owner,
-                edit: { kind: 'note', expected: original, replacement: { ...original, velocity: 50 } },
+                rowKind: 'note',
+                expected: original,
+                replacement: { ...original, velocity: 50 },
             })
-        ).toThrow('Frozen MIDI take row changed');
+        ).toThrow('Frozen MIDI take row changed or owner is unavailable');
         expect(takeLaneStore.value).toEqual(beforeRefusal);
         expect(() =>
             replaceOriginalMidiTakeRow({
                 ...owner,
                 sourceClipId: 'other-source',
-                edit: { kind: 'note', expected: edited, replacement: original },
+                rowKind: 'note',
+                expected: edited,
+                replacement: original,
             })
-        ).toThrow('Frozen MIDI take row owner is unavailable');
+        ).toThrow('Frozen MIDI take row changed or owner is unavailable');
         expect(takeLaneStore.value).toEqual(beforeRefusal);
     });
 });

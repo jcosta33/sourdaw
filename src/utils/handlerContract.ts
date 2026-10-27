@@ -539,6 +539,21 @@ export type MidiClipDataActionSnapshot = {
     readonly controlChanges: { readonly present: boolean; readonly value: readonly MidiClipCcSnapshot[] };
     readonly pitchBends: { readonly present: boolean; readonly value: readonly MidiClipPitchBendSnapshot[] };
 };
+/** One frozen original row, addressed through its selected take and immutable capture owner. */
+export type OriginalMidiTakeRowReplacementPayload = {
+    readonly laneId: string;
+    readonly takeId: string;
+    readonly sourceClipId: string;
+    readonly rowId: string;
+} & (
+    | { readonly rowKind: 'note'; readonly expected: MidiClipNoteSnapshot; readonly replacement: MidiClipNoteSnapshot }
+    | { readonly rowKind: 'cc'; readonly expected: MidiClipCcSnapshot; readonly replacement: MidiClipCcSnapshot }
+    | {
+          readonly rowKind: 'bend';
+          readonly expected: MidiClipPitchBendSnapshot;
+          readonly replacement: MidiClipPitchBendSnapshot;
+      }
+);
 export type MidiClipGlueActionSnapshot = {
     readonly clips: readonly {
         readonly clipId: string;
@@ -1386,6 +1401,7 @@ export type AppAction =
               expectedSelectedTakeId?: string | null;
           };
       }
+    | { type: 'replaceOriginalMidiTakeRow'; payload: OriginalMidiTakeRowReplacementPayload }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
     | {
