@@ -123,45 +123,18 @@ export const PianoRollContextMenu = ({
             })
             .catch((error) => logger.warn(`Could not ${label.toLowerCase()} selected MIDI take notes`, error));
     };
-    const transformFrozen = (transform: Parameters<typeof transformPianoRollTakeNotes>[2], label: string): void => {
+    const transformFrozen = (transform: Parameters<typeof transformPianoRollTakeNotes>[3], label: string): void => {
         if (usesFrozenRows && takeProjection) {
-            if ([...selectedNoteIds].some((id) => !takeProjection.ownersByViewId.has(id))) {
-                notifyUser('Select notes from one take or the base clip for this transform.', 'warning');
-                return;
-            }
-            runFrozen(transformPianoRollTakeNotes(takeProjection, selectedNoteIds, transform, label), label);
+            runFrozen(transformPianoRollTakeNotes(takeProjection, clipId, selectedNoteIds, transform, label), label);
         }
     };
     const deleteFrozenSelection = async (label: string): Promise<boolean> => {
         if (!takeProjection) {
             return false;
         }
-        const baseIds = [
-            ...new Set(
-                [...selectedNoteIds].flatMap((id) =>
-                    takeProjection.ownersByViewId.has(id)
-                        ? []
-                        : [takeProjection.baseOwnersByViewId.get(id)?.row.id ?? id]
-                )
-            ),
-        ];
-        const groupId = crypto.randomUUID();
-        const deleted = await deletePianoRollTakeNotes(takeProjection, selectedNoteIds, label, groupId);
+        const deleted = await deletePianoRollTakeNotes(takeProjection, clipId, selectedNoteIds, label);
         if (!deleted) {
             return false;
-        }
-        if (baseIds.length > 0) {
-            const before = snapshotClipNotes(clipId);
-            for (const id of baseIds) {
-                removeMidiNote(clipId, id);
-            }
-            const after = snapshotClipNotes(clipId);
-            pushUndoEntry(
-                label,
-                () => setNotesForClip(clipId, before),
-                () => setNotesForClip(clipId, after),
-                { groupId, groupLabel: label }
-            );
         }
         onClearSelection();
         return true;
@@ -222,7 +195,7 @@ export const PianoRollContextMenu = ({
                 shortcut="⌘V"
                 onClick={act(() => {
                     if (usesFrozenRows && takeProjection) {
-                        runFrozen(pastePianoRollTakeNotes(takeProjection, menu.beat), 'Paste');
+                        runFrozen(pastePianoRollTakeNotes(takeProjection, clipId, menu.beat), 'Paste');
                     } else {
                         pasteNotes(clipId, menu.beat);
                     }
@@ -235,11 +208,7 @@ export const PianoRollContextMenu = ({
                     role="menuitem"
                     shortcut="⌘D"
                     onClick={act(() => {
-                        if ([...selectedNoteIds].some((id) => !takeProjection.ownersByViewId.has(id))) {
-                            notifyUser('Select notes from one take to duplicate them.', 'warning');
-                            return;
-                        }
-                        runFrozen(duplicatePianoRollTakeNotes(takeProjection, selectedNoteIds), 'Duplicate');
+                        runFrozen(duplicatePianoRollTakeNotes(takeProjection, clipId, selectedNoteIds), 'Duplicate');
                     })}
                 >
                     Duplicate

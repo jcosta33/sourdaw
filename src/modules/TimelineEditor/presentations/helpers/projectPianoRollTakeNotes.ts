@@ -48,6 +48,7 @@ export type PianoRollTakeNotes = {
     readonly baseOwnersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner>;
     readonly coveredWindows: readonly { readonly startBeat: number; readonly endBeat: number }[];
     readonly insertOwnerAtBeat: (clipBeat: number) => FrozenPianoRollInsertOwner | null;
+    readonly baseSourceBeatAtBeat?: (clipBeat: number) => number | null;
 };
 
 type SelectedRegion = {
@@ -203,6 +204,16 @@ export function projectPianoRollTakeNotes(
         ownersByViewId,
         baseOwnersByViewId: base.ownersByViewId,
         coveredWindows,
+        baseSourceBeatAtBeat(clipBeat) {
+            const arrangementBeat = clip.startBeat + clipBeat - (clip.midiOffsetBeats ?? 0);
+            return arrangementBeat >= clip.startBeat &&
+                arrangementBeat < clip.endBeat &&
+                !coveredWindows.some(
+                    (window) => arrangementBeat >= window.startBeat && arrangementBeat < window.endBeat
+                )
+                ? clipBeat
+                : null;
+        },
         insertOwnerAtBeat(clipBeat) {
             const arrangementBeat = clip.startBeat + clipBeat - (clip.midiOffsetBeats ?? 0);
             const region = regions.find(

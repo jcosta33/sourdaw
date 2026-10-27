@@ -564,6 +564,15 @@ export type OriginalMidiTakeRowReplacementPayload = {
           readonly replacement: MidiClipPitchBendSnapshot | null;
       }
 );
+/** One original base-clip note, with the notes bucket's exact presence. */
+export type OriginalMidiBaseRowReplacementPayload = {
+    readonly clipId: string;
+    readonly rowId: string;
+    readonly expected: MidiClipNoteSnapshot | null;
+    readonly replacement: MidiClipNoteSnapshot | null;
+    readonly expectedSlotPresent: boolean;
+    readonly replacementSlotPresent: boolean;
+};
 export type MidiClipGlueActionSnapshot = {
     readonly clips: readonly {
         readonly clipId: string;
@@ -1414,6 +1423,7 @@ export type AppAction =
           };
       }
     | { type: 'replaceOriginalMidiTakeRow'; payload: OriginalMidiTakeRowReplacementPayload }
+    | { type: 'replaceOriginalMidiBaseRow'; payload: OriginalMidiBaseRowReplacementPayload }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
     | {

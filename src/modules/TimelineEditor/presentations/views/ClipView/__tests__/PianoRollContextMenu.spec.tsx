@@ -218,17 +218,22 @@ describe('PianoRollContextMenu', () => {
             />
         );
         fireEvent.click(screen.getByText('Delete Selected'));
-        await waitFor(() => expect(removeMidiNote).toHaveBeenCalledTimes(1));
-        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', base.id);
-        expect(executeAppActionBatch).toHaveBeenCalledWith(
-            [
-                {
-                    type: 'replaceOriginalMidiTakeRow',
-                    payload: expect.objectContaining({ rowId: frozen.id, replacement: null }),
-                },
-            ],
-            expect.objectContaining({ groupLabel: 'Delete MIDI take notes' })
+        await waitFor(() =>
+            expect(executeAppActionBatch).toHaveBeenCalledWith(
+                [
+                    {
+                        type: 'replaceOriginalMidiTakeRow',
+                        payload: expect.objectContaining({ rowId: frozen.id, replacement: null }),
+                    },
+                    {
+                        type: 'replaceOriginalMidiBaseRow',
+                        payload: expect.objectContaining({ rowId: base.id, expected: base, replacement: null }),
+                    },
+                ],
+                expect.objectContaining({ groupLabel: 'Delete MIDI take notes' })
+            )
         );
+        expect(removeMidiNote).not.toHaveBeenCalled();
     });
 
     it('keeps a base-only selection on its existing transform route even when the menu opens over a selected region', () => {
@@ -262,7 +267,7 @@ describe('PianoRollContextMenu', () => {
         expect(executeAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('refuses a mixed base and frozen transform before either owner is changed', () => {
+    it('dispatches a mixed base and frozen transform as one guarded Command batch', () => {
         const frozen = { id: 'frozen-view', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
         const base = { id: 'base-view', pitch: 64, startBeat: 2, duration: 1, velocity: 80 };
         renderWithTooltip(
@@ -300,12 +305,27 @@ describe('PianoRollContextMenu', () => {
             />
         );
         fireEvent.click(screen.getByText('+1'));
-        expect(executeAppActionBatch).not.toHaveBeenCalled();
-        expect(executeUserAppAction).not.toHaveBeenCalled();
-        expect(notifyUser).toHaveBeenCalledWith(
-            'Select notes from one take or the base clip for this transform.',
-            'warning'
+        expect(executeAppActionBatch).toHaveBeenCalledWith(
+            [
+                {
+                    type: 'replaceOriginalMidiTakeRow',
+                    payload: expect.objectContaining({
+                        rowId: 'original',
+                        replacement: expect.objectContaining({ pitch: 61 }),
+                    }),
+                },
+                {
+                    type: 'replaceOriginalMidiBaseRow',
+                    payload: expect.objectContaining({
+                        rowId: 'base-original',
+                        replacement: expect.objectContaining({ pitch: 65 }),
+                    }),
+                },
+            ],
+            expect.objectContaining({ groupLabel: 'Transpose MIDI take notes' })
         );
+        expect(executeUserAppAction).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
     });
 
     it('should render Select All button', () => {

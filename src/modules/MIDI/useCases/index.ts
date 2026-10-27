@@ -120,6 +120,7 @@ export { appendMidiNotes } from './midiNoteCrud/appendMidiNotes';
 export { batchAddMidiNotes } from './midiNoteCrud/batchAddMidiNotes';
 export { duplicateClipNotes } from './midiNoteCrud/duplicateClipNotes';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
+export { getMidiClipNotesSnapshot } from './midiNoteTransforms/getMidiClipNotesSnapshot';
 export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNotes';
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
 export { prepareClipMidiShiftTransaction } from './midiNoteCrud/prepareClipMidiShiftTransaction';

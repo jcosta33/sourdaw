@@ -9,9 +9,15 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { takeLaneStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, getCopiedPianoRollNotes } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
+import {
+    addClip,
+    createTrack,
+    getArrangementHandlers,
+    getCopiedPianoRollNotes,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     redo,
@@ -25,6 +31,8 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -33,6 +41,7 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
+import { transformPianoRollTakeNotes } from '../applyPianoRollTakeMenuAction';
 import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollContextMenu } from '../../views/ClipView/PianoRollContextMenu';
@@ -136,6 +145,39 @@ function mixedProjection() {
         ],
     });
     return projectPianoRollTakeNotes({ id: 'clip', startBeat: 0, endBeat: 12 }, 'track', takeLaneStore.value);
+}
+
+const baseGapRow = { id: 'base-gap-original', pitch: 62, startBeat: 4.5, duration: 0.5, velocity: 87 };
+
+function mixedGapProjection() {
+    mixedProjection();
+    const lane = takeLaneStore.value?.lanes[0];
+    if (!lane) {
+        throw new Error('Expected take lane');
+    }
+    takeLaneStore.set({
+        lanes: [
+            {
+                ...lane,
+                activeCompRegions: [
+                    { startBeat: 0, endBeat: 4, takeId: 'selected' },
+                    { startBeat: 8, endBeat: 12, takeId: 'second' },
+                ],
+            },
+        ],
+    });
+    setTrackStoreState({ ...defaultTrackState, tracks: [createTrack({ id: 'track', kind: 'midi', name: 'MIDI' })] });
+    if (addClip({ id: 'clip', trackId: 'track', startBeat: 0, endBeat: 12, name: 'Clip', type: 'midi' }) === null) {
+        throw new Error('Expected MIDI clip');
+    }
+    midiStore.set({ notesByClipId: { clip: [baseGapRow] }, ccByClipId: {}, pitchBendByClipId: {} });
+    registerHandlerMap(getMidiNoteTransformHandlers());
+    return projectPianoRollTakeNotes(
+        { id: 'clip', startBeat: 0, endBeat: 12 },
+        'track',
+        takeLaneStore.value,
+        midiStore.value?.notesByClipId.clip
+    );
 }
 
 function renderTakeMenu(
@@ -706,5 +748,113 @@ describe('selected piano roll Command callbacks', () => {
         expect(duplicate).toEqual(expect.objectContaining({ startBeat: 6.5, recordingPassIndex: 1 }));
         expect(await undo()).toEqual({ headConsumed: true });
         expect(rows()?.map((takeRows) => takeRows?.length)).toEqual([3, 3, 1, 1]);
+    });
+
+    it.each([
+        { label: '+1', frozenPitch: 61, basePitch: 63, frozenBeat: 5.5, baseBeat: 4.5 },
+        { label: '1/4', frozenPitch: 60, basePitch: 62, frozenBeat: 6, baseBeat: 5 },
+    ])('edits mixed original owners atomically through $label and one Undo', async (caseData) => {
+        const projection = mixedGapProjection();
+        const frozen = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === original.id);
+        const base = projection.baseNotes.find(
+            (note) => projection.baseOwnersByViewId.get(note.id)?.row.id === baseGapRow.id
+        );
+        if (!frozen || !base) {
+            throw new Error('Expected mixed frozen and base note occurrences');
+        }
+        renderTakeMenu(projection, new Set([frozen.id, base.id]), 4.5);
+        fireEvent.click(screen.getAllByText(caseData.label)[0]!);
+        await waitFor(() =>
+            expect(midiStore.value?.notesByClipId.clip?.[0]).toEqual(
+                expect.objectContaining({ pitch: caseData.basePitch, startBeat: caseData.baseBeat })
+            )
+        );
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(
+            expect.objectContaining({
+                pitch: caseData.frozenPitch,
+                startBeat: caseData.frozenBeat,
+                recordingPassIndex: 1,
+            })
+        );
+        expect(midiStore.value?.notesByClipId.clip?.[0]).toEqual(
+            expect.objectContaining({ pitch: caseData.basePitch, startBeat: caseData.baseBeat })
+        );
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(midiStore.value?.notesByClipId.clip?.[0]).toEqual(baseGapRow);
+        await redo();
+        expect(rows()?.[0]?.find((note) => note.id === original.id)?.startBeat).toBe(caseData.frozenBeat);
+        expect(midiStore.value?.notesByClipId.clip?.[0]?.startBeat).toBe(caseData.baseBeat);
+    });
+
+    it('duplicates frozen and base selections across owner boundaries in one Command', async () => {
+        const projection = mixedGapProjection();
+        const frozen = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === original.id);
+        const base = projection.baseNotes.find(
+            (note) => projection.baseOwnersByViewId.get(note.id)?.row.id === baseGapRow.id
+        );
+        if (!frozen || !base) {
+            throw new Error('Expected mixed frozen and base note occurrences');
+        }
+        renderTakeMenu(projection, new Set([frozen.id, base.id]), 4.5);
+        fireEvent.click(screen.getByText('Duplicate'));
+        await waitFor(() => expect(midiStore.value?.notesByClipId.clip).toHaveLength(2));
+        expect(midiStore.value?.notesByClipId.clip?.find((note) => note.id !== baseGapRow.id)).toEqual(
+            expect.objectContaining({ startBeat: 5, pitch: original.pitch })
+        );
+        expect(rows()?.[2]?.find((note) => note.id !== 'second-pass-row')).toEqual(
+            expect.objectContaining({ startBeat: 10, pitch: baseGapRow.pitch, recordingPassIndex: 0 })
+        );
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(midiStore.value?.notesByClipId.clip).toEqual([baseGapRow]);
+        expect(rows()?.[2]).toHaveLength(1);
+    });
+
+    it('refuses a late base peer conflict before changing the frozen owner or history', async () => {
+        const projection = mixedGapProjection();
+        const frozen = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === original.id);
+        const base = projection.baseNotes.find(
+            (note) => projection.baseOwnersByViewId.get(note.id)?.row.id === baseGapRow.id
+        );
+        if (!frozen || !base) {
+            throw new Error('Expected mixed frozen and base note occurrences');
+        }
+        const historyLength = undoStore.value?.past.length;
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: { ...midiStore.value!.notesByClipId, clip: [{ ...baseGapRow, pitch: 70 }] },
+        });
+        expect(
+            await transformPianoRollTakeNotes(
+                projection,
+                'clip',
+                new Set([frozen.id, base.id]),
+                { kind: 'transpose', semitones: 1 },
+                'Transpose mixed notes'
+            )
+        ).toBe(false);
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(midiStore.value?.notesByClipId.clip).toEqual([{ ...baseGapRow, pitch: 70 }]);
+        expect(undoStore.value?.past.length).toBe(historyLength);
+    });
+
+    it('refuses an unknown selected owner before editing a valid selected row', async () => {
+        const projection = mixedGapProjection();
+        const frozen = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === original.id);
+        if (!frozen) {
+            throw new Error('Expected selected frozen occurrence');
+        }
+        const historyLength = undoStore.value?.past.length;
+        expect(
+            await transformPianoRollTakeNotes(
+                projection,
+                'clip',
+                new Set([frozen.id, 'stale-selected-view']),
+                { kind: 'transpose', semitones: 1 },
+                'Transpose mixed notes'
+            )
+        ).toBe(false);
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(undoStore.value?.past.length).toBe(historyLength);
     });
 });
