@@ -1,0 +1,21 @@
+scripts/__tests__/e2eDevServer.spec.ts
+  s_567a084d0540c4::t_7167ed5fb15b81 2,11-23,29-32,37-48,50,52-59,61-71,83-95,97,99-114,116,118-150
+scripts/e2eDevServer.ts
+  s_567a084d0540c4::t_daa2aaa6e1fffd 35-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "282713554d3717ee6d306296c5d036c0e0320810",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
