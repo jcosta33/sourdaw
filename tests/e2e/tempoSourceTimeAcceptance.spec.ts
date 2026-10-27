@@ -1441,7 +1441,7 @@ test('snaps real menu splits to source-frame zero crossings through interior tem
         }
         expect(left.endBeat).toBeCloseTo(control.snappedBeat, 10);
         expect(right.startBeat).toBeCloseTo(control.snappedBeat, 10);
-        expect(right.audioOffsetSeconds).toBeCloseTo(control.sourceFrame / SAMPLE_RATE, 12);
+        expect(right.audioOffsetSeconds).toBe(control.sourceFrame / SAMPLE_RATE);
         expectFrame(
             (await waveform(page, state.trackId, right.id)).occurrences[0].startSample,
             control.sourceFrame,
@@ -1469,22 +1469,46 @@ test('snaps real menu splits to source-frame zero crossings through interior tem
         const outputEnd = control.rate === 1 ? 180_000 : 84_000;
         expectZeroSpan(pcm, outputEnd, pcm.frames, 'split exact exclusive output tail');
         const committed = state;
-        if (control.rate === 2) {
-            page = await saveAndReopen(page, info, state);
-        }
+        page = await saveAndReopen(page, info, state);
+        const reopenedWave = await waveform(page, state.trackId, right.id);
+        expectFrame(reopenedWave.occurrences[0].startSample, control.sourceFrame, 'saved split physical head');
+        expectFrame(
+            reopenedWave.occurrences.at(-1)?.endSample ?? -1,
+            control.sourceEndFrame,
+            'saved split exclusive source end'
+        );
         await page.getByRole('button', { name: 'Undo', exact: true }).click();
         await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(1);
         state = await readSnapshot(page);
         expect(state.raw).toEqual(before.raw);
         expect(state.projected).toEqual(before.projected);
-        if (control.rate === 2) {
-            page = await saveAndReopen(page, info, state);
-        }
+        const undoneWave = await waveform(page, state.trackId, onlyClip(state).id);
+        expectFrame(undoneWave.occurrences[0].startSample, 12_000, 'saved split Undo physical head');
+        expectFrame(
+            undoneWave.occurrences.at(-1)?.endSample ?? -1,
+            control.sourceEndFrame,
+            'saved split Undo exclusive source end'
+        );
+        page = await saveAndReopen(page, info, state);
         await page.getByRole('button', { name: 'Redo', exact: true }).click();
         await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(2);
         state = await readSnapshot(page);
         expect(state.raw).toEqual(committed.raw);
         expect(state.projected).toEqual(committed.projected);
+        const redoneWave = await waveform(page, state.trackId, right.id);
+        expectFrame(redoneWave.occurrences[0].startSample, control.sourceFrame, 'saved split Redo physical head');
+        expectFrame(
+            redoneWave.occurrences.at(-1)?.endSample ?? -1,
+            control.sourceEndFrame,
+            'saved split Redo exclusive source end'
+        );
+        await observeStarts(
+            page,
+            state.buffer.id,
+            right.startBeat,
+            [[control.sourceFrame / SAMPLE_RATE, (control.sourceEndFrame - control.sourceFrame) / SAMPLE_RATE]],
+            control.rate
+        );
         // Restore the one imported owner before the next rate control.
         await page.getByRole('button', { name: 'Undo', exact: true }).click();
         await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(1);
