@@ -1,0 +1,65 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_d99a62fe2de3a3::t_ad503b5668ae59 22,871-874,909-915,947-954
+  s_d99a62fe2de3a3::t_29c3bc3381e543 955-956
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_d99a62fe2de3a3::t_644b51cba197f2 67-69
+  s_d99a62fe2de3a3::t_9cbf5c81d68eb6 1470-1478,1573-1574
+  s_d99a62fe2de3a3::t_a5590703e6b453 70-71
+  s_d99a62fe2de3a3::t_7e1318ed4361ec 1575
+src/modules/Transport/useCases/transportControls/__tests__/schedulerTerminalRealQueue.integration.spec.ts
+  s_d99a62fe2de3a3::t_3bbe64a818137d 1-534
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_d99a62fe2de3a3::t_18b0999b2cf6f7 41-43
+  s_d99a62fe2de3a3::t_39ed6f1c39c0aa 44-45
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_d99a62fe2de3a3::t_6a4668eac1861b 105-107
+  s_d99a62fe2de3a3::t_9cbf5c81d68eb6 752-757
+  s_d99a62fe2de3a3::t_4cc4d1fb3a23f5 108-109
+  s_d99a62fe2de3a3::t_de7bc4ed4f4ebb 758-759
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_d99a62fe2de3a3::t_ad503b5668ae59 204-229
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_d99a62fe2de3a3::t_d70cb1c2226d95 51-53
+  s_d99a62fe2de3a3::t_b26b5bee4141c3 54-55
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_d99a62fe2de3a3::t_fd10551762db18 72-74
+  s_d99a62fe2de3a3::t_64c75f302c0431 75-76
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_d99a62fe2de3a3::t_880852e983502e 52-54
+  s_d99a62fe2de3a3::t_cf3f4b22f1763a 55-56
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_d99a62fe2de3a3::t_38d97026efcc51 65-67
+  s_d99a62fe2de3a3::t_9f6750cdb4dbe5 68-69
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_d99a62fe2de3a3::t_9a71e114ba79fc 49-51
+  s_d99a62fe2de3a3::t_d7612915ff800d 52-53
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_d99a62fe2de3a3::t_324117bcf06f48 42-44
+  s_d99a62fe2de3a3::t_77db7754a73740 45-46
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_d99a62fe2de3a3::t_ed064cfc6d4a95 160-162
+  s_d99a62fe2de3a3::t_309f106b932af9 163-164
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_d99a62fe2de3a3::t_e6cb04a957e6e8 42-44
+  s_d99a62fe2de3a3::t_80a44dc67d172a 45-46
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalRealQueue.integration.spec.ts
+  s_d99a62fe2de3a3::t_3bbe64a818137d 1-418
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_d99a62fe2de3a3::t_ad503b5668ae59 67-78,80,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b41c9a03c23ce51cb1d7c9ed9793486a2842dd15",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
