@@ -204,13 +204,13 @@ describe('splitClipWithUndo take restore', () => {
             ...defaultMidiStoreState,
             notesByClipId: {
                 'clip-1': [
-                    { id: 'pass-1-note', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
-                    { id: 'pass-2-note', pitch: 72, startBeat: 5, duration: 1, velocity: 100 },
+                    { id: 'pass-1-note', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassIndex: 0 },
+                    { id: 'pass-2-note', pitch: 72, startBeat: 5, duration: 1, velocity: 100, recordingPassIndex: 1 },
                 ],
             },
         });
-        const selected = { ...createTake(clip.id, 'Selected', 0, 4, 0), selected: true };
-        const unselected = createTake(clip.id, 'Unselected', 0, 4, 4);
+        const selected = { ...createTake(clip.id, 'Selected', 0, 4, 0), selected: true, recordingPassIndex: 0 };
+        const unselected = { ...createTake(clip.id, 'Unselected', 0, 4, 4), recordingPassIndex: 1 };
         takeLaneStore.set({
             lanes: [
                 {
@@ -231,6 +231,8 @@ describe('splitClipWithUndo take restore', () => {
         for (const take of afterSplit.takes) {
             expect(take.midiSource?.sourceClipId).toBe(clip.id);
             expect(take.midiSource?.rows.notes.value.map((note) => note.id)).toEqual(['pass-1-note', 'pass-2-note']);
+            expect(take.recordingPassIndex).toBe(take.name === 'Selected' ? 0 : 1);
+            expect(take.midiSource?.rows.notes.value.map((note) => note.recordingPassIndex)).toEqual([0, 1]);
         }
 
         await undo();
