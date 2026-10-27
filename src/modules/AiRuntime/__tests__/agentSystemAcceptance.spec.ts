@@ -1492,11 +1492,11 @@ describe('agent acceptance corpora', () => {
                 if (prior === undefined || heldOutPrior === undefined) {
                     throw new Error('Both disjointness fixtures need prior turns.');
                 }
-                const invalid = { ...heldOutCase };
+                let invalid: CorpusCase;
                 if (position === 'follow-up') {
-                    invalid.prompt = prior.prompt;
+                    invalid = { ...heldOutCase, prompt: prior.prompt };
                 } else {
-                    invalid.prior = { ...heldOutPrior, prompt: prior.prompt };
+                    invalid = { ...heldOutCase, prior: { ...heldOutPrior, prompt: prior.prompt } };
                 }
                 expect(() =>
                     assertHeldOutDisjointness(corpora.development, {
