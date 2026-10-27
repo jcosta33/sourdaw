@@ -1,0 +1,138 @@
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_29d8df116c5b92::t_8c3facffa3b5ef 16-21,51,227-298,300-306,773
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_29d8df116c5b92::t_3b6c3d68c06d45 184,186-192,194,197,199,202,211-246,249,314,353-354
+  s_29d8df116c5b92::t_4ae4a95997aad4 355-356
+.agents/skills/review-stances/audio-source-time.md
+  s_29d8df116c5b92::t_9e1006e5860b51 130-147
+.agents/skills/review-stances/security-and-platform.md
+  s_29d8df116c5b92::t_48cef03c78d4b8 59-64
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_c59e60efc472ca 1211-1212
+src/components/daw/DawDialogSection.tsx
+  s_29d8df116c5b92::t_308b4ed532f912 42
+src/components/ui/button.tsx
+  s_29d8df116c5b92::t_7f487b093da11a 20
+src/modules/Arrangement/handlers/clip/__tests__/audioClipSlipSession.spec.ts
+  s_29d8df116c5b92::t_41d29ca1e86503 1-301
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_b2ff9267a89381 26-28,50,85,89,792-1083
+src/modules/Arrangement/handlers/clip/__tests__/handleSlipClipContent.spec.ts
+  s_29d8df116c5b92::t_d9c014cb5aa97f 4-5,13,36,42,54,56-61,69-77,79,84
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.integration.spec.ts
+  s_29d8df116c5b92::t_2576c78f635fa2 26,120,138,265-266,269-270,282-283,289-337
+src/modules/Arrangement/handlers/clip/handleRestoreAudioClipSlip.ts
+  s_29d8df116c5b92::t_afdd009df20bfe 1-42
+src/modules/Arrangement/handlers/clip/handleRestoreAudioClipStartTrim.ts
+  s_29d8df116c5b92::t_1828a4dc98652f 1-57
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  s_29d8df116c5b92::t_d6da71a53fe608 2,4-8,14-37,39-40,42-56,69-80,91
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_29d8df116c5b92::t_ce86d8c96c7518 2,4-6,11-13,15-16,18-36,57-80
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_29d8df116c5b92::t_0b4f9556a36f9f 3,555,561-562,568,597,968-1030
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_29d8df116c5b92::t_8e31e9c075a54f 14,23-26,70-83,159-164,367-372,455,464,467-469,481-486,598,641-650,653
+src/modules/Arrangement/services/__tests__/snapSplitBeatToZeroCrossing.spec.ts
+  s_29d8df116c5b92::t_31878eaa177321 4-27,45-46,62-63,82-83,88-280
+src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts
+  s_29d8df116c5b92::t_96fdb91cacb94a 1-7,9,17-23,31-36,41-55,58-65,67-87,89-99,101-118,120-130
+src/modules/Arrangement/stores/clipDragPreviewRef.ts
+  s_29d8df116c5b92::t_b7790fc030f4d6 16-17,19,24
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_29d8df116c5b92::t_cba402a29ac41e 135-180
+src/modules/Arrangement/useCases/__tests__/prepareStripSilence.spec.ts
+  s_29d8df116c5b92::t_4a1c5e67a53cab 53,202-428,689-691,713,717-718,720-749,753-758,763,768
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  s_29d8df116c5b92::t_039ea0d2dd5008 1,24-25,28,31,44-50,52,66,162-163,192-193,213-361
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_29d8df116c5b92::t_683bc7b6174628 32,35,37,509-546,575
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipEditingOpsExtra.spec.ts
+  s_29d8df116c5b92::t_8297f7fd0b1da7 5,9,22,51-53
+src/modules/Arrangement/useCases/clipEditing/__tests__/prepareAudioClipSlip.spec.ts
+  s_29d8df116c5b92::t_0f32e29923c581 1-187
+src/modules/Arrangement/useCases/clipEditing/__tests__/slipClipContent.spec.ts
+  s_29d8df116c5b92::t_d8ad5a89b49a9a 5,8,13,35-44,52,54
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_29d8df116c5b92::t_60ca85b0fc8024 7,30-32,46,76,292,296-300,328,335-348
+src/modules/Arrangement/useCases/clipEditing/audioClipSlipOwner.ts
+  s_29d8df116c5b92::t_504c330529e5f0 1-128
+src/modules/Arrangement/useCases/clipEditing/audioClipSlipState.ts
+  s_29d8df116c5b92::t_d8de7e12b9f6f3 1-243
+src/modules/Arrangement/useCases/clipEditing/audioClipStartTrimState.ts
+  s_29d8df116c5b92::t_0848a71dd8660a 1-174
+src/modules/Arrangement/useCases/clipEditing/audioClipTrimOwner.ts
+  s_29d8df116c5b92::t_7a452666cd563f 1-105
+src/modules/Arrangement/useCases/clipEditing/prepareAudioClipSlip.ts
+  s_29d8df116c5b92::t_976ef93c869adb 1-169
+src/modules/Arrangement/useCases/clipEditing/prepareAudioClipStartTrim.ts
+  s_29d8df116c5b92::t_ae6d5cd7933dbe 1-36
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_29d8df116c5b92::t_3c8673a8de3a4e 16,19,138-143,170-172
+src/modules/Arrangement/useCases/clipEditing/slipClipContent.ts
+  s_29d8df116c5b92::t_3a38d4cb2192be 5-6,8-10,15,45-50,52-63
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_29d8df116c5b92::t_247ba027f23238 10-11,117-119,136-147
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_29d8df116c5b92::t_811cfa825ae0c1 6-7,20,224-225
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_29d8df116c5b92::t_b75f688c46414e 2-4,6,19-20,33,38,42-45,52-55,57-61,63-91,93-114,116-121,286-287,291-293,366-374,379,396-400,407-412
+src/modules/Arrangement/useCases/recording/__tests__/recordingPassTimingRootOwner.integration.spec.ts
+  s_29d8df116c5b92::t_ff2fabd95689ee 79,93-100,112-117,119
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransactionValidation.spec.ts
+  s_29d8df116c5b92::t_eff9d1249adb04 3-4,522-523,541-542,544-550,558-559,572-574,584-587
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/snapToZeroCrossing.spec.ts
+  s_29d8df116c5b92::t_4812a4b5796954 4-5,12-14,22-24,28,36-39,41-45,47-48,60,71-72,74-83,86-97,99,101,106,114-119,121-123,125-130
+src/modules/Arrangement/useCases/timelineInteractions/snapToZeroCrossing.ts
+  s_29d8df116c5b92::t_d5fc2ff679a320 3-4,6-7,10-17,19,24,27,32-33
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_29d8df116c5b92::t_ffb80e13c2dee9 16-17,37-42,83-84
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_6fd14309312e6a 2183-2229,2267,2272,2278,2285,2300,2324,2333-2334,2380,2384,2387,2391,2397,2409,2413,2430,2436,2439,2457,2464,2475,2506,2518,2526,2538,2554,2562,2568,2577-2578,2594,2605,2642,2647,2690,2695,2813,2819,2837,2842,2909,2937,2956,2984,3007-3008,3031,3050,3058,3067,3078-3080,3094-3096,3127,3133,3142,3153,3161,3172-3173,3195,3217-3218,3243-3244,3299,3307,3368,3386,3392,3440,3448,3457,3466-3467,3472-3477,3512,3519,3535,3543,3603-3604,3677,3688,3728,3734,3784,3799,3804,3823-3824,3844,3858-3859,3868,3870,3882-3883,3891-3892,3904,3920,3930,3948,3956-3958,3965,3986-3987,4001-4002,4016-4017,4060-4061,4137-4138,4218-4219,4361,4367,4371-4372,4387,4394,4397,4406,4408,4490-4491,4518-4519,4541,4555,4564,4586,4600,4607,4614-4616,4654-4656,4678,4683,4695,4702,4707,4709,4715,4720,4722-4723,4742,4749,4757-4758,4764,4767,4811-4812,4821-4822,4885,4891-4892,4905-4906,4932,4937-4938,4964,4972,4979,4984-4985,5001,5006-5007,5019,5029,5036,5042,5047,5056-5057,5079,5084-5085,5122-5123,5143,5157-5158,5166-5167,5208,5256,5263,5269-5270,5277,5291,5306,5320,5325-5328,5357,5363,5377,5383,5428,5430,5445,5454-5455,5457,5470-5471,5474,5481,5486,5513,5518,5613,5620,5648,5656,5662,5670-5671,5711,5722,5730,5736,5743,5748,5756-5757,5968,5984,6001,6008-6009,6012,6043,6056-6059,6069-6070,6115,6129,6134,6136,6184,6189,6207,6212,6244,6249,6312,6321,6333,6345,6366,6378,6384,6390-6391,6416,6422-6423,6487,6493,6496,6503,6508,6510,6519,6521,6530,6578,6583,6602,6607,6675-6696,6703-6727,6729-6759,6763,6765-6785,6788,6790-6800,6802-6803,6810-6844,6850-6851,6854-6858,6860-6861,6863,6865-6877,6879-6881,6883-6887,6889-6890,6892-6894,6896-6908,6910,6912-6914,6919-6920,6922-6925,6929-6934,6939,6941-6942,6944-6945,6948-6962,6964-6968,6970-6973,6977-6992
+src/modules/ControlSurface/presentations/views/MidiLearnButton.tsx
+  s_29d8df116c5b92::t_7e8a7c777c275c 6,55-56,74-77,82,90,102
+src/modules/ControlSurface/presentations/views/MidiLearnRotaryKnob.tsx
+  s_29d8df116c5b92::t_c33dbbc8b0461a 5,55-60,84-87,97
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnButton.spec.tsx
+  s_29d8df116c5b92::t_ca9b5f7cd84fb4 4-11,62-63,186-212
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnRotaryKnob.spec.tsx
+  s_29d8df116c5b92::t_98cb9e3536227c 4-11,47-48,167-200
+src/modules/ControlSurface/presentations/views/__tests__/midiLearnCapability.integration.spec.tsx
+  s_29d8df116c5b92::t_c0d8a8a16e189b 1-236
+src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts
+  s_29d8df116c5b92::t_2c6332a2155472 1,6,16-39,65-66,69,78-87,104,122-143
+src/modules/ControlSurface/useCases/midiLearn/__tests__/startMidiLearn.spec.ts
+  s_29d8df116c5b92::t_f9d969bb751079 3-9,17,40-58
+src/modules/ControlSurface/useCases/midiLearn/startMidiLearn.ts
+  s_29d8df116c5b92::t_4b06be1bfc110e 3,29-31
+src/modules/Transport/useCases/transportControls/commitRecoveredAudioRecording.ts
+  s_29d8df116c5b92::t_105c96e27ccb73 53-56,64
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_29d8df116c5b92::t_bfa76d95ef3186 284-307,434-436
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_1503e5b1011a9d 14,1702-1724
+tests/e2e/bakeryControlGeometry.spec.ts
+  s_29d8df116c5b92::t_2d5914df8afded 1-92
+tests/e2e/controlSurface.spec.ts
+  s_29d8df116c5b92::t_27cb47994351cf 88-168
+tests/e2e/tempoSourcePhysicalFixtures.ts
+  s_29d8df116c5b92::t_4cb506fbc8ddfc 1-105
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_29d8df116c5b92::t_f13e774ffb5b77 3,17,40-42,89-94,113-124,131-136,177,221-223,228-230,232-234,237-239,255-257,284-286,317-319,321-323,363-365,378-386,426-428,436-438,464-465,470,472,502,524,531-534,538-540,546-548,569-571,587,589-593,595-598,602-623,631,638-643,645,654-667,685,692-723,729,731-1023,1026-1027,1080,1095,1108,1118,1132-1134,1160-1162,1178,1181-1183,1214-1215,1249-1722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c753387bb56caf7592ffe8e1aec9660d07843fb",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
