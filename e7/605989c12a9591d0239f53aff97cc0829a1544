@@ -1,0 +1,36 @@
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_d99a62fe2de3a3::t_cf7b7d9dc04b33 55-60
+  s_d99a62fe2de3a3::t_d77d15c64db3c0 61-62
+src/modules/Command/useCases/getLegacyTrimInverseReplayFailure.ts
+  s_d99a62fe2de3a3::t_cf7b7d9dc04b33 41-43
+src/modules/Command/useCases/__tests__/fixtures/legacyMidiTrimReplay.md
+  s_d99a62fe2de3a3::t_cf7b7d9dc04b33 17-18,21-35
+  s_d99a62fe2de3a3::t_d77d15c64db3c0 19-20
+src/modules/Command/useCases/__tests__/legacyMidiTrimReplay.integration.spec.ts
+  s_d99a62fe2de3a3::t_1ac9d5ceb9438d 371,376-377
+  s_d99a62fe2de3a3::t_8b53bb797709a8 99-103,157-167,232-244,247-274,352-370,372-375,378-384
+  s_d99a62fe2de3a3::t_fe607c19be8348 385-386
+.agents/skills/review-stances/project-integrity.md
+  s_d99a62fe2de3a3::t_d77d15c64db3c0 346-347
+  s_d99a62fe2de3a3::t_cf7b7d9dc04b33 343-345,348-351
+.agents/skills/review-stances/test-validity.md
+  s_d99a62fe2de3a3::t_cf7b7d9dc04b33 1393-1402
+src/modules/Command/useCases/__tests__/fixtures/legacyMidiTrimReplay.json
+  s_d99a62fe2de3a3::t_d57673062e4be3 174-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7605989c12a9591d0239f53aff97cc0829a1544",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
