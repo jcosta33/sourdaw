@@ -43,6 +43,56 @@ const geometryOnlyRestore: AppAction = {
 };
 
 describe('projectClipReplayPrefix source completeness', () => {
+    it('restores Source owners and rich tracks at the incoming relative-order position after peer prepend', () => {
+        const restored = ClipDummy.create({
+            id: 'restored',
+            trackId: 'track',
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: -0.25,
+        });
+        const action: AppAction = {
+            type: 'restoreClip',
+            payload: {
+                ...geometryOnlyRestore.payload,
+                clipSnapshot: restored,
+                clipIndex: 2,
+                clipOrder: ['a', 'left', 'restored', 'right', 'c'],
+            },
+        };
+        const live = ['peer-x', 'peer-y', 'peer-z', 'a', 'c'].map((id) => ClipDummy.create({ id, trackId: 'track' }));
+        const projected = projectClipReplayPrefix([action], {
+            ...initial,
+            tracks: [TrackDummy.create({ id: 'track', clips: live })],
+        });
+        const order = ['peer-x', 'peer-y', 'peer-z', 'a', 'restored', 'c'];
+        expect(projected?.clips.map((owner) => owner.clip.id)).toEqual(order);
+        expect(projected?.tracks?.[0]?.clips.map((clip) => clip.id)).toEqual(order);
+        expect(projected?.tracks?.[0]?.clips[4]).toEqual(restored);
+    });
+
+    it('refuses the restored Source prefix when surviving captured peers reverse relative order', () => {
+        const action: AppAction = {
+            type: 'restoreClip',
+            payload: {
+                ...geometryOnlyRestore.payload,
+                clipSnapshot: ClipDummy.create({ id: 'restored', trackId: 'track' }),
+                clipIndex: 1,
+                clipOrder: ['a', 'restored', 'c'],
+            },
+        };
+        expect(
+            projectClipReplayPrefix([action], {
+                ...initial,
+                tracks: [
+                    TrackDummy.create({
+                        id: 'track',
+                        clips: ['c', 'a'].map((id) => ClipDummy.create({ id, trackId: 'track' })),
+                    }),
+                ],
+            })
+        ).toBeNull();
+    });
+
     it('keeps source tracks and replay owners in the same witnessed order after peers prepend', () => {
         const left = { ...existingClip, audioOffsetSeconds: 0 };
         const right = ClipDummy.create({
