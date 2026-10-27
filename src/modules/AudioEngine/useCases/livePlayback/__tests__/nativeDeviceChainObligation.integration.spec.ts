@@ -48,7 +48,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         createRuntimeGraphTopologyFingerprint,
     };
 });
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRevision: () => 'native-chain-project' }));
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    captureProjectRevision: () => 'native-chain-project',
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 // Note placement is outside this contract. The real native sink law still
 // chooses the target for each pass, including the pass the real observer re-arms.
