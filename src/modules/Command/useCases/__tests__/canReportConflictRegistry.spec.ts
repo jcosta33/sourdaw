@@ -33,7 +33,8 @@ import { materializeCommandHandlerArguments } from '../materializeCommandHandler
 // types the fixtures below cover: the expectation is derived from the fixture
 // array, so a flag without a diverged fixture is unrepresentable and reds. A
 // handler routed through `toHandlerExecutionResult` (`no-write | written`) can
-// never refuse and must never carry the flag. Second, each fixture's `execute`
+// never refuse and must never carry the flag. A public union cannot advertise
+// safe stepping when only its audio route can refuse. Second, each fixture's `execute`
 // genuinely refuses — returns `{ status: 'conflict' }` — against the diverged
 // live state it constructs. Mechanical adoption over the remaining
 // conflict-capable handlers is owned by a follow-up issue; extending the set
@@ -304,13 +305,11 @@ async function createDivergedAudioSourceAction(actionType: AudioSourceConflictAc
 }
 
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
-    ...(['trimClipStart', 'restoreAudioClipStartTrim', 'slipClipContent', 'restoreAudioClipSlip'] as const).map(
-        (actionType) => ({
-            title: `${actionType} refuses a captured edit after its media owner diverges`,
-            actionType,
-            createDivergedAction: () => createDivergedAudioSourceAction(actionType),
-        })
-    ),
+    ...(['trimClipStart', 'restoreAudioClipStartTrim', 'restoreAudioClipSlip'] as const).map((actionType) => ({
+        title: `${actionType} refuses a captured edit after its media owner diverges`,
+        actionType,
+        createDivergedAction: () => createDivergedAudioSourceAction(actionType),
+    })),
     {
         title: 'replaceOriginalMidiBaseRow refuses a peer-edited row',
         actionType: 'replaceOriginalMidiBaseRow',
@@ -772,6 +771,22 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
         // it can refuse (#2881). Shrinking the fixtures means the gate wedges
         // more than the set they name.
         expect(flagged).toEqual(FIXTURE_PROVEN_ACTION_TYPES);
+    });
+
+    it('keeps the public MIDI/audio slip union out of safe stepping while its captured audio route refuses', async () => {
+        const action = await createDivergedAudioSourceAction('slipClipContent');
+        const handler = getCommandHandler(action);
+        const midiAction: AppAction = {
+            type: 'slipClipContent',
+            payload: { clipId: 'clip-source', clipType: 'midi', offset: 0.7 },
+        };
+
+        expect(action.type).toBe('slipClipContent');
+        expect(action).toMatchObject({ payload: { clipType: 'audio' } });
+        expect(getCommandHandler(midiAction)).toBe(handler);
+        expect(handler?.canReportConflict).not.toBe(true);
+        expect(FIXTURE_PROVEN_ACTION_TYPES).not.toContain('slipClipContent');
+        expect(await handler?.execute(action)).toEqual({ status: 'conflict' });
     });
 
     it.each(CONFLICT_CAPABLE_FIXTURES)(
