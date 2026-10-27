@@ -186,7 +186,7 @@ function restoreSplitOwners(payload: RestoreClipSplitStateAction['payload']): bo
 /** History arrays live outside the transaction and publish only with their owning durable write. */
 function prepareSplitHistoryCapturePublication(
     action: RestoreClipSplitStateAction,
-    capture: ReturnType<typeof removeTakesForClips> | undefined,
+    capture: RestoreClipSplitStateAction['payload']['retiredTakeLanes'],
     orderCapture: string[] | undefined,
     stagedOrder: readonly string[],
     readRetired: () => ReturnType<typeof removeTakesForClips>
