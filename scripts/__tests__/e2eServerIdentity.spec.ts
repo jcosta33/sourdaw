@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -156,6 +157,41 @@ describe('playwright config port derivation', () => {
         return config.use.baseURL;
     }
 
+    it('serves the configured dev server over IPv4 even when localhost resolves IPv6 first', async () => {
+        const reservation = createServer();
+        await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve));
+        const address = reservation.address();
+        if (address === null || typeof address === 'string') throw new Error('missing reserved port');
+        await new Promise<void>((resolve, reject) => reservation.close((error) => (error ? reject(error) : resolve())));
+        vi.stubEnv(SOURDAW_E2E_PORT_ENV, String(address.port));
+        vi.stubEnv('CI', undefined);
+        const command = requiredSingleWebServer(await loadPlaywrightConfig()).command;
+        if (!command?.startsWith('pnpm dev ')) throw new Error('expected Vite dev server command');
+        const child = spawn(process.execPath, ['node_modules/vite/bin/vite.js', ...command.slice(9).split(' ')], {
+            env: { ...process.env, NODE_OPTIONS: '--dns-result-order=ipv6first' },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        try {
+            await new Promise<void>((resolve, reject) => {
+                let output = '';
+                child.stdout.on('data', (chunk: Buffer) => {
+                    output += chunk.toString();
+                    if (output.includes('ready in')) resolve();
+                });
+                child.once('error', reject);
+                child.once('exit', (code) => reject(new Error(`Vite exited before readiness: ${code}`)));
+            });
+            await expect(
+                assertServingCheckoutIdentity(`http://127.0.0.1:${address.port}`, process.cwd())
+            ).resolves.toBeUndefined();
+        } finally {
+            if (child.exitCode === null && child.signalCode === null) {
+                child.kill();
+                await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+            }
+        }
+    }, 30_000);
+
     it('defaults baseURL and webServer.url to port 5173 without the env var', async () => {
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, undefined);
         const config = await loadPlaywrightConfig();
@@ -170,7 +206,7 @@ describe('playwright config port derivation', () => {
         const webServer = requiredSingleWebServer(config);
         expect(requiredBaseURL(config)).toBe('http://localhost:6123');
         expect(webServer.url).toBe('http://localhost:6123');
-        expect(webServer.command).toBe('pnpm dev --mode e2e --port 6123 --strictPort');
+        expect(webServer.command).toBe('pnpm dev --mode e2e --host 127.0.0.1 --port 6123 --strictPort');
     });
 
     it('refuses to load the config when the env value is not a usable port', async () => {
@@ -192,7 +228,7 @@ describe('playwright config port derivation', () => {
         const config = await loadPlaywrightConfig();
         expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
         expect(webServers(config).map((server) => server.command)).toEqual([
-            'pnpm dev --mode e2e --port 5173 --strictPort',
+            'pnpm dev --mode e2e --host 127.0.0.1 --port 5173 --strictPort',
         ]);
     });
 
@@ -202,7 +238,7 @@ describe('playwright config port derivation', () => {
         const config = await loadPlaywrightConfig();
         expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
         expect(webServers(config).map((server) => server.command)).toEqual([
-            'pnpm dev --mode e2e --port 5173 --strictPort',
+            'pnpm dev --mode e2e --host 127.0.0.1 --port 5173 --strictPort',
         ]);
     });
 
@@ -213,7 +249,7 @@ describe('playwright config port derivation', () => {
         const webServer = requiredSingleWebServer(config);
         expect(requiredBaseURL(config)).toBe('http://localhost:65535');
         expect(webServer.url).toBe('http://localhost:65535');
-        expect(webServer.command).toBe('pnpm dev --mode e2e --port 65535 --strictPort');
+        expect(webServer.command).toBe('pnpm dev --mode e2e --host 127.0.0.1 --port 65535 --strictPort');
     });
 
     it('serves a build with one worker to a CI shard that needs no dev server', async () => {
@@ -224,7 +260,7 @@ describe('playwright config port derivation', () => {
         expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
         const servers = webServers(config);
         expect(servers.map((server) => server.command)).toEqual([
-            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port 5173 --strictPort',
+            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 5173 --strictPort',
         ]);
         expect(servers.map((server) => server.reuseExistingServer)).toEqual([false]);
     });
@@ -237,7 +273,7 @@ describe('playwright config port derivation', () => {
         const servers = webServers(config);
         expect(servers.map((server) => server.url)).toEqual(['http://localhost:65535']);
         expect(servers.map((server) => server.command)).toEqual([
-            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port 65535 --strictPort',
+            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 65535 --strictPort',
         ]);
         expect(servers.map((server) => server.reuseExistingServer)).toEqual([false]);
     });
@@ -257,8 +293,8 @@ describe('playwright config port derivation', () => {
         const servers = webServers(config);
         expect(servers.map((server) => server.url)).toEqual(['http://localhost:6123', 'http://localhost:6124']);
         expect(servers.map((server) => server.command)).toEqual([
-            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port 6123 --strictPort',
-            'pnpm dev --mode e2e --port 6124 --strictPort',
+            'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 6123 --strictPort',
+            'pnpm dev --mode e2e --host 127.0.0.1 --port 6124 --strictPort',
         ]);
         expect(servers.map((server) => server.reuseExistingServer)).toEqual([false, false]);
     });
