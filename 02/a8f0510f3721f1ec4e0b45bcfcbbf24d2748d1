@@ -1,0 +1,25 @@
+.agents/skills/review-stances/project-integrity.md
+  s_3168504f6ce387::t_b068ceccb66805 16-18
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_41cb172b33646e 26-28
+evidence/agent-campaign/manifest.json
+  s_3168504f6ce387::t_b74129c7a04fdf 816
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_3168504f6ce387::t_5a3e63df6b1cf0 27,482,502-565,741-745,751-755,757,760-761,956,964-965,1024-1039,1134-1135,1192-1195,1248-1260,1265-1266,1579,1700-1717,1787-1839
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02a8f0510f3721f1ec4e0b45bcfcbbf24d2748d1",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
