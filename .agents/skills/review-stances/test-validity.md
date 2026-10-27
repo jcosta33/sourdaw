@@ -12,8 +12,9 @@ PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write acc
 that inferred safety from barrel calls, revisions and Undo groups. Real chat commits bypassed those
 barrel spies, so a matching commit plus an unrecorded change to another track, the target gain or
 the target pan could still score zero unintended mutations (#5649). An extra barrel call could also
-borrow the commit's identical action signature. The single-turn spy-only limitation predates this
-refinement slice; historical private review prompts and tiers are not established.
+borrow the commit's identical action signature. The original single-turn spy counter came from
+PR #4348 (`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`), before this refinement slice.
+Historical private review prompts and tiers are not established.
 
 Compare materialized project truth before and after every turn with an independent field/value
 oracle, preserving CRDT scalar types. Inject each extra write through the actual project store,

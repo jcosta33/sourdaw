@@ -4,9 +4,9 @@
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) introduced refinement bookkeeping
 whose barrel-call and history checks missed real project writes beside a valid chat commit (#5649).
-The broader single-turn spy-only limitation already existed. The missed observable was complete
-project truth, not whether the intended action also ran; exact historical reviewer prompts and tiers
-are unavailable.
+The original single-turn spy counter came from PR #4348
+(`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`). The missed observable was complete project truth,
+not whether the intended action also ran; exact historical reviewer prompts and tiers are unavailable.
 
 Take typed materialized snapshots around each turn. Derive allowed fields and values from the frozen
 oracle rather than the executed action log, and compare every other entity and field as well. Add a
