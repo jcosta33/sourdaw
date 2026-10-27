@@ -10,6 +10,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
@@ -18,10 +19,9 @@ import { ensureTrackStrips } from '../../ensureTrackStrips';
 // `vi.fn` wrapper exists so one case can stand the claim's own wrap-count zero
 // down and isolate the epoch write's; `mockReset` hands the real one back.
 import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
+import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
-import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
-import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { startPlayback } from '../startPlayback';
 import { stopPlayback } from '../stopPlayback';
 

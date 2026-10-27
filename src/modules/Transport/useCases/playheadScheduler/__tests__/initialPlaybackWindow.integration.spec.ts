@@ -1,17 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { defaultTransportState } from '../../../models/TransportState';
-import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
-import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
-import { schedulerSession } from '../schedulerSession';
-import { startPlayback } from '../../transportControls/startPlayback';
-import { stopPlayback } from '../../transportControls/stopPlayback';
-import { playheadClockRef } from '../../../stores/playheadClockRef';
-import { captureGestureBeat } from '../../../stores/captureGestureBeat';
-import { setGestureClockSource } from '../../../stores/gestureClockSource';
-import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
 import { startRecording } from '#/modules/Arrangement/useCases';
 import { startAudioRecording } from '#/modules/AudioEngine/useCases';
+import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { captureGestureBeat } from '../../../stores/captureGestureBeat';
+import { setGestureClockSource } from '../../../stores/gestureClockSource';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
+import { startPlayback } from '../../transportControls/startPlayback';
+import { stopPlayback } from '../../transportControls/stopPlayback';
+import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
+import { schedulerSession } from '../schedulerSession';
 
 /** The actual browser start, MIDI/audio producers and tempo law run together.
  * Only engine calls, external Yeast work and foreign stores are controlled. */

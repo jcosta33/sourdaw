@@ -40,7 +40,6 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
-import type { LiveYeastIteration } from '../scheduling/processLiveYeastTrackBlock';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../transportControls/recordingLifecycle';
@@ -48,15 +47,17 @@ import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { beatAtSecondsFromAnchor } from './beatAtSecondsFromAnchor';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
-import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
-import { schedulerSession, stopActiveSources } from './schedulerSession';
-import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 import { type PreparedInitialBrowserPlayback } from './prepareInitialBrowserPlayback';
 import {
     INITIAL_HIGH_WATER_OFFSET_BEATS,
     projectLoopSeamWindow,
     SCHEDULE_AHEAD_SECONDS,
 } from './projectLoopSeamWindow';
+import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
+import { schedulerSession, stopActiveSources } from './schedulerSession';
+import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
+
+import type { LiveYeastIteration } from '../scheduling/processLiveYeastTrackBlock';
 
 function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
     return `${state.isLooping ? 1 : 0}:${state.loopStart}:${state.loopEnd}`;

@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { pausePlayback } from '../pausePlayback';
-import { startPlayback } from '../startPlayback';
 import { defaultTransportState } from '../../../models/TransportState';
 import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { pausePlayback } from '../pausePlayback';
+import { startPlayback } from '../startPlayback';
+
 import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 
 const mocks = vi.hoisted(() => ({

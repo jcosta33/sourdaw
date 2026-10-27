@@ -1,10 +1,9 @@
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import { readYeastRack } from '#/modules/Yeast/stores';
 import { valuesEqual } from '#/utils/structuralEquality';
-
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
-import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';

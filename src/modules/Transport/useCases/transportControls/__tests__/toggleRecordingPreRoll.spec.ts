@@ -2,17 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getTempoAtBeat, secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
-import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { transportStore } from '../../../stores/transportStore';
-import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
-import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';
+
+import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 
 type TestRecordingClip = {
     id: string;
