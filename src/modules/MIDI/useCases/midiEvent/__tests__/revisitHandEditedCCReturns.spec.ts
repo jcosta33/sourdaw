@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { SEQUENCER_TICK_BEATS } from '../../../models/SequencerTick';
 import { midiStore } from '../../../stores/midiStore';
 import { createStoredBendRangeReader } from '../../midiClipData/createStoredBendRangeReader';
+import { prepareMidiClipGlueState } from '../../midiClipData/prepareMidiClipGlueState';
+import { prepareMidiClipSplit } from '../../midiClipData/prepareMidiClipSplit';
 import { addMidiCC } from '../addMidiCC';
 import { moveMidiCC } from '../moveMidiCC';
 import { removeMidiCC } from '../removeMidiCC';
@@ -53,6 +55,85 @@ describe('revisitHandEditedCCReturns', () => {
         const rows = midiStore.value?.ccByClipId.c1 ?? [];
         return createStoredBendRangeReader(rows)(0, 1);
     }
+
+    it.each([
+        { producer: 'split', cutRange: 2 },
+        { producer: 'split', cutRange: 5 },
+        { producer: 'glue', cutRange: 2 },
+        { producer: 'glue', cutRange: 5 },
+    ])(
+        'retains the committed range after replacing a selector on a $producer head originally at $cutRange',
+        ({ producer, cutRange }) => {
+            const rangeRows = (key: string, beat: number, range: number): MidiCC[] =>
+                (
+                    [
+                        [101, 0],
+                        [100, 0],
+                        [6, range],
+                        [38, 0],
+                    ] as const
+                ).map(([controller, value], index) => ({
+                    id: `${key}-${index}`,
+                    controller,
+                    value,
+                    beat,
+                    channel: 0,
+                }));
+            midiStore.set({
+                notesByClipId: {},
+                ccByClipId: { source: [...rangeRows('held', 0.1, 12), ...rangeRows('cut', 1.3, cutRange)] },
+                pitchBendByClipId: { source: [{ id: 'held-bend', value: 8191, beat: 1.2, channel: 0 }] },
+            });
+            if (producer === 'split') {
+                const plan = prepareMidiClipSplit({
+                    sourceClipId: 'source',
+                    rightClipId: 'c1',
+                    splitBeat: 2,
+                    splitNotes: true,
+                });
+                expect(plan).not.toBeNull();
+                seed(plan!.nextRight.controlChanges.value);
+            } else {
+                const plan = prepareMidiClipGlueState({
+                    sources: [
+                        { clipId: 'source', visibleStartBeat: 2, visibleEndBeat: 4, beatOffset: -2 },
+                        { clipId: 'neighbor', visibleStartBeat: 0, visibleEndBeat: 2, beatOffset: 2 },
+                    ],
+                    targetClipId: 'c1',
+                });
+                expect(plan).not.toBeNull();
+                const target = plan!.next.clips.find(({ clipId }) => clipId === 'c1');
+                expect(target).toBeDefined();
+                seed(target!.data.controlChanges.value);
+            }
+            expect(rangeAfter()).toBe(cutRange);
+            addMidiCC('c1', 99, 1, 0, 0);
+            const selector = addMidiCC('c1', 100, 0, 0, 0);
+            const coarse = addMidiCC('c1', 6, 7, 0, 0);
+            expect(rangeAfter()).toBe(7);
+            const before = [...(midiStore.value?.ccByClipId.c1 ?? [])];
+            const returns = before.filter(({ id }) => id.includes('rpn-after-carried'));
+
+            // Replacement appends the selector after the coarse. That coarse now arrives under NRPN,
+            // but a selector does not undo the range already committed into the standing returns.
+            const replacement = addMidiCC('c1', 100, 0, 0, 0);
+            const committed = [...(midiStore.value?.ccByClipId.c1 ?? [])];
+            expect(committed.findIndex(({ id }) => id === replacement.id)).toBeGreaterThan(
+                committed.findIndex(({ id }) => id === coarse.id)
+            );
+            expect(committed.filter(({ id }) => id.includes('rpn-after-carried'))).toEqual(returns);
+            expect(rangeAfter()).toBe(7);
+
+            // Replay the captured point inverse with the existing public restoration primitive.
+            removeMidiCC('c1', replacement.id);
+            restoreMidiCCPoints('c1', [selector], before);
+            expect(midiStore.value?.ccByClipId.c1).toEqual(before);
+            expect(rangeAfter()).toBe(7);
+            addMidiCC('c1', 100, 0, 0, 0, replacement.id);
+            expect(midiStore.value?.ccByClipId.c1).toEqual(committed);
+            expect(rangeAfter()).toBe(7);
+        }
+    );
 
     it('carries the hand-set coarse range in the returns the add rewrites, and reading later bends gives it', () => {
         seed([...origin, ...cutReturn]);
