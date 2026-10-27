@@ -40,7 +40,7 @@ import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
-import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
+import { prepareInitialMidiWindow, scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
 /** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
@@ -1037,6 +1037,82 @@ describe('scheduleMidiNotes', () => {
 
         await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120);
         await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([67, 67]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: 'clip-1',
+                eventId: 'selected-row',
+                absoluteOccurrenceIndex: 1,
+            })
+        );
+    });
+
+    it('prepares selected source for the first Yeast window and reads it again while rolling', async () => {
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+        const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { 'clip-1': [{ id: 'ordinary-row', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                regionStartBeat: 0,
+                regionEndBeat: 8,
+                sourceStartBeat: 0,
+                midiTakeId: 'selected',
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 5,
+                    sourceEndBeat: 9,
+                    phaseHeadBeat: 0,
+                    passLengthBeats: 4,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [{ id: 'selected-row', pitch: 67, startBeat: 5.5, duration: 1, velocity: 100 }],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+        const cancellation: SchedulerCancellation = {
+            generation: 1,
+            discontinuityEpoch: 1,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+        };
+        const prepared = await prepareInitialMidiWindow(0, 1, defaultTransportState, cancellation, {
+            trackState: trackStore.value,
+            midiState: midiStore.value,
+            tempoState: tempoMapStore.value,
+            isCurrent: () => true,
+        });
+        if (!prepared) {
+            throw new Error('expected selected Yeast preparation');
+        }
+        expect(scheduleNote).not.toHaveBeenCalled();
+
+        await scheduleMidiNotes(
+            0,
+            1,
+            0,
+            new Set<string>(),
+            [],
+            defaultTransportState,
+            120,
+            cancellation,
+            false,
+            prepared,
+            0
+        );
+        await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120, cancellation);
 
         expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([67, 67]);
         expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
