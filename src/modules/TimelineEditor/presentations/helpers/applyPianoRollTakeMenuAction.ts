@@ -2,6 +2,7 @@ import { copyPianoRollNotes, getCopiedPianoRollNotes } from '#/modules/Arrangeme
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import {
     getMidiClipNotesSnapshot,
+    isValidMidiNoteSnapshot,
     projectMidiNoteMenuTransform,
     sliceMidiTakeNoteForEdit,
     type MidiNoteMenuTransform,
@@ -179,21 +180,41 @@ export async function transformPianoRollTakeNotes(
     );
 }
 
-export function copyPianoRollTakeNotes(projection: PianoRollTakeNotes, selectedNoteIds: ReadonlySet<string>): void {
+function selectedUniquePianoRollNotes(
+    projection: PianoRollTakeNotes,
+    selectedNoteIds: ReadonlySet<string>
+): MidiNote[] {
     const seen = new Set<string>();
     const selected = [...projection.notes, ...projection.baseNotes].filter((note) => selectedNoteIds.has(note.id));
-    copyPianoRollNotes(
-        selected.filter((note) => {
-            const frozen = projection.ownersByViewId.get(note.id);
-            const base = projection.baseOwnersByViewId.get(note.id);
-            const key = frozen ? originalKey(frozen) : JSON.stringify(['base', base?.row.id ?? note.id]);
-            if (seen.has(key)) {
-                return false;
-            }
-            seen.add(key);
-            return true;
-        })
-    );
+    return selected.filter((note) => {
+        const frozen = projection.ownersByViewId.get(note.id);
+        const base = projection.baseOwnersByViewId.get(note.id);
+        const key = frozen ? originalKey(frozen) : JSON.stringify(['base', base?.row.id ?? note.id]);
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+}
+
+export function copyPianoRollTakeNotes(projection: PianoRollTakeNotes, selectedNoteIds: ReadonlySet<string>): void {
+    copyPianoRollNotes(selectedUniquePianoRollNotes(projection, selectedNoteIds));
+}
+
+function stagePianoRollTakeClipboard(
+    projection: PianoRollTakeNotes,
+    selectedNoteIds: ReadonlySet<string>
+): readonly MidiNote[] | null {
+    if (!everySelectedOwnerIsKnown(projection, selectedNoteIds)) {
+        return null;
+    }
+    try {
+        const selected = selectedUniquePianoRollNotes(projection, selectedNoteIds);
+        return selected.length > 0 && isValidMidiNoteSnapshot(selected) ? structuredClone(selected) : null;
+    } catch {
+        return null;
+    }
 }
 
 export async function deletePianoRollTakeNotes(
@@ -212,6 +233,20 @@ export async function deletePianoRollTakeNotes(
         ],
         label
     );
+}
+
+/** Commit the document first; the app-local clipboard is published only after all selected owners land. */
+export async function cutPianoRollTakeNotes(
+    projection: PianoRollTakeNotes,
+    clipId: string,
+    selectedNoteIds: ReadonlySet<string>
+): Promise<boolean> {
+    const staged = stagePianoRollTakeClipboard(projection, selectedNoteIds);
+    if (!staged || !(await deletePianoRollTakeNotes(projection, clipId, selectedNoteIds, 'Cut MIDI take notes'))) {
+        return false;
+    }
+    copyPianoRollNotes(staged);
+    return true;
 }
 
 async function insertOccurrences(

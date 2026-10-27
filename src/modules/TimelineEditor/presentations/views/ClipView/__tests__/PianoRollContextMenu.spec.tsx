@@ -2,7 +2,12 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
+import {
+    copyPianoRollNotes,
+    copySelectedNotes,
+    getCopiedPianoRollNotes,
+    pasteNotes,
+} from '#/modules/Arrangement/useCases';
 import { executeAppActionBatch, executeUserAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
     getNotesForClip,
@@ -234,6 +239,58 @@ describe('PianoRollContextMenu', () => {
             )
         );
         expect(removeMidiNote).not.toHaveBeenCalled();
+    });
+
+    it('keeps the prior clipboard while a selected Cut command is pending', async () => {
+        const previous = { id: 'previous-copy', pitch: 48, startBeat: 0, duration: 1, velocity: 80 };
+        const frozen = { id: 'frozen-view', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
+        copyPianoRollNotes([previous]);
+        let finishBatch: ((result: Awaited<ReturnType<typeof executeAppActionBatch>>) => void) | null = null;
+        vi.mocked(executeAppActionBatch).mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishBatch = resolve;
+                })
+        );
+        renderWithTooltip(
+            <PianoRollContextMenu
+                {...defaultProps}
+                notes={[frozen]}
+                selectedNoteIds={new Set([frozen.id])}
+                takeProjection={{
+                    notes: [frozen],
+                    baseNotes: [],
+                    ownersByViewId: new Map([
+                        [
+                            frozen.id,
+                            {
+                                laneId: 'lane',
+                                takeId: 'take',
+                                sourceClipId: 'source',
+                                sourceEntryBeat: 5,
+                                row: { ...frozen, id: 'original', startBeat: 6 },
+                                occurrenceIndex: 0,
+                                displayedStartBeat: 1,
+                                displayedDuration: 1,
+                            },
+                        ],
+                    ]),
+                    baseOwnersByViewId: new Map(),
+                    coveredWindows: [{ startBeat: 0, endBeat: 4 }],
+                    insertOwnerAtBeat: () => null,
+                }}
+            />
+        );
+        fireEvent.click(screen.getByText('Cut'));
+        expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
+        expect(getCopiedPianoRollNotes()).toEqual([previous]);
+        expect(defaultProps.onClearSelection).not.toHaveBeenCalled();
+        if (!finishBatch) {
+            throw new Error('Expected pending Command batch');
+        }
+        finishBatch({ status: 'committed', actions: [] });
+        await waitFor(() => expect(getCopiedPianoRollNotes()).toEqual([frozen]));
+        expect(defaultProps.onClearSelection).toHaveBeenCalledTimes(1);
     });
 
     it('keeps a base-only selection on its existing transform route even when the menu opens over a selected region', () => {

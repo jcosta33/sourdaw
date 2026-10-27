@@ -32,6 +32,7 @@ import { type MidiNote } from '../../../models/MidiNoteViewTypes';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 import {
     copyPianoRollTakeNotes,
+    cutPianoRollTakeNotes,
     deletePianoRollTakeNotes,
     duplicatePianoRollTakeNotes,
     pastePianoRollTakeNotes,
@@ -167,8 +168,15 @@ export const PianoRollContextMenu = ({
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
                     if (usesFrozenRows && takeProjection) {
-                        copyPianoRollTakeNotes(takeProjection, selectedNoteIds);
-                        runFrozen(deleteFrozenSelection('Cut MIDI take notes'), 'Cut');
+                        runFrozen(
+                            cutPianoRollTakeNotes(takeProjection, clipId, selectedNoteIds).then((completed) => {
+                                if (completed) {
+                                    onClearSelection();
+                                }
+                                return completed;
+                            }),
+                            'Cut'
+                        );
                         return;
                     }
                     const cutNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));

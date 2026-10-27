@@ -12,6 +12,7 @@ import {
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import {
     addClip,
+    copyPianoRollNotes,
     createTrack,
     getArrangementHandlers,
     getCopiedPianoRollNotes,
@@ -41,7 +42,7 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
-import { transformPianoRollTakeNotes } from '../applyPianoRollTakeMenuAction';
+import { cutPianoRollTakeNotes, transformPianoRollTakeNotes } from '../applyPianoRollTakeMenuAction';
 import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollContextMenu } from '../../views/ClipView/PianoRollContextMenu';
@@ -696,7 +697,8 @@ describe('selected piano roll Command callbacks', () => {
         const selected = new Set([...repeated.map((note) => note.id), second.id]);
         renderTakeMenu(projection, selected, 1);
         fireEvent.click(screen.getByText('Copy'));
-        expect(getCopiedPianoRollNotes().map((note) => note.startBeat)).toEqual([0.5, 8.4]);
+        await waitFor(() => expect(getCopiedPianoRollNotes().map((note) => note.startBeat)).toEqual([0.5, 8.4]));
+        copyPianoRollNotes([{ id: 'previous-copy', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }]);
         fireEvent.click(screen.getByText('Cut'));
         await waitFor(() =>
             expect(rows()?.map((takeRows) => takeRows?.some((note) => note.id === original.id))).toEqual([
@@ -712,6 +714,7 @@ describe('selected piano roll Command callbacks', () => {
             false,
             false,
         ]);
+        await waitFor(() => expect(getCopiedPianoRollNotes().map((note) => note.startBeat)).toEqual([0.5, 8.4]));
         expect(await undo()).toEqual({ headConsumed: true });
         await redo();
         expect(rows()?.map((takeRows) => takeRows?.some((note) => note.id === original.id))).toEqual([
@@ -855,6 +858,53 @@ describe('selected piano roll Command callbacks', () => {
             )
         ).toBe(false);
         expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(undoStore.value?.past.length).toBe(historyLength);
+    });
+
+    it('keeps the prior clipboard and both owners when a peer changes a selected base row before Cut', async () => {
+        const projection = mixedGapProjection();
+        const frozen = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === original.id);
+        const base = projection.baseNotes.find(
+            (note) => projection.baseOwnersByViewId.get(note.id)?.row.id === baseGapRow.id
+        );
+        if (!frozen || !base) {
+            throw new Error('Expected mixed frozen and base note occurrences');
+        }
+        const previous = { id: 'previous-copy', pitch: 48, startBeat: 0, duration: 1, velocity: 80 };
+        copyPianoRollNotes([previous]);
+        const historyLength = undoStore.value?.past.length;
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: { ...midiStore.value!.notesByClipId, clip: [{ ...baseGapRow, pitch: 70 }] },
+        });
+        expect(await cutPianoRollTakeNotes(projection, 'clip', new Set([frozen.id, base.id]))).toBe(false);
+        expect(getCopiedPianoRollNotes()).toEqual([previous]);
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(midiStore.value?.notesByClipId.clip).toEqual([{ ...baseGapRow, pitch: 70 }]);
+        expect(undoStore.value?.past.length).toBe(historyLength);
+    });
+
+    it('does not delete when a selected copy cannot be validated or one owner is absent', async () => {
+        const projection = mixedGapProjection();
+        const frozen = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === original.id);
+        const base = projection.baseNotes.find(
+            (note) => projection.baseOwnersByViewId.get(note.id)?.row.id === baseGapRow.id
+        );
+        if (!frozen || !base) {
+            throw new Error('Expected mixed frozen and base note occurrences');
+        }
+        const previous = { id: 'previous-copy', pitch: 48, startBeat: 0, duration: 1, velocity: 80 };
+        copyPianoRollNotes([previous]);
+        const historyLength = undoStore.value?.past.length;
+        const malformed = {
+            ...projection,
+            notes: projection.notes.map((note) => (note.id === frozen.id ? { ...note, velocity: Number.NaN } : note)),
+        };
+        expect(await cutPianoRollTakeNotes(malformed, 'clip', new Set([frozen.id, base.id]))).toBe(false);
+        expect(await cutPianoRollTakeNotes(projection, 'clip', new Set([frozen.id, 'missing-view']))).toBe(false);
+        expect(getCopiedPianoRollNotes()).toEqual([previous]);
+        expect(rows()?.[0]?.find((note) => note.id === original.id)).toEqual(original);
+        expect(midiStore.value?.notesByClipId.clip).toEqual([baseGapRow]);
         expect(undoStore.value?.past.length).toBe(historyLength);
     });
 });
