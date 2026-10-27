@@ -85,6 +85,22 @@ describe('clipSplitStateRestorable', () => {
         ).toBe(true);
     });
 
+    it.each([
+        ['left', 'right', 'left'],
+        ['right', 'left'],
+        ['foreign', 'right'],
+        ['left', ''],
+    ])('refuses malformed insertion witnesses %j', (...rightClipOrder) => {
+        const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
+        const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
+        const expected = { ...snapshot(left), rightClipOrder };
+        const replacement = { ...expected, rightClip: right };
+        const state = { tracks: [TrackDummy.create({ id: 'track-1', clips: [left] })] };
+        expect(clipSplitStateRestorable({ clipId: 'left', rightClipId: 'right', expected, replacement }, state)).toBe(
+            false
+        );
+    });
+
     it('accepts a different in-range insertion slot for a composed split', () => {
         const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });
         const right = ClipDummy.create({ id: 'right', trackId: 'track-1' });
@@ -98,7 +114,7 @@ describe('clipSplitStateRestorable', () => {
         );
     });
 
-    it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 3])(
+    it.each([-1, 0, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 3])(
         'refuses an invalid replacement insertion slot %s',
         (rightClipIndex) => {
             const left = ClipDummy.create({ id: 'left', trackId: 'track-1' });

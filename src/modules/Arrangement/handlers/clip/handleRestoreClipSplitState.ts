@@ -196,6 +196,11 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         }
         const proof = captureRestoreClipSplitCommitValidation(action);
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
+        const orderCapture = !action.payload.replacement.rightClip ? action.payload.expected.rightClipOrder : undefined;
+        const stagedOrder =
+            getTrackStoreState()
+                ?.tracks.find((track) => track.id === action.payload.expected.trackId)
+                ?.clips.map((clip) => clip.id) ?? [];
         let createdMidi: ReturnType<typeof prepareCreatedMidi> = null;
         const conflict = () => {
             proof?.validation.release();
@@ -205,20 +210,21 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         try {
             createdMidi = prepareCreatedMidi(action);
             createdMidi?.stage(action.payload.replacement.rightMidi);
-            const documentBeforeReplay = capture ? captureDurableDocumentWitness() : null;
-            const ownsPublication = capture ? captureProjectMutationAuthorization() : null;
+            const documentBeforeReplay = capture || orderCapture ? captureDurableDocumentWitness() : null;
+            const ownsPublication = capture || orderCapture ? captureProjectMutationAuthorization() : null;
             // Bind inside this handler's storage transaction, before any owner writes.
             ownsPublication?.();
             let stagedRetired: ReturnType<typeof removeTakesForClips> = [];
             const installCapture = () => {
                 createdClipMidiCapture({ phase: 'discard', action });
                 if (
-                    capture &&
+                    (capture || orderCapture) &&
                     getCrdtDoc('root') &&
                     captureDurableDocumentWitness() !== documentBeforeReplay &&
                     ownsPublication?.()
                 ) {
-                    capture.splice(0, capture.length, ...stagedRetired);
+                    capture?.splice(0, capture.length, ...stagedRetired);
+                    orderCapture?.splice(0, orderCapture.length, ...stagedOrder);
                 }
             };
             if (!restoreSplitOwners(action.payload)) {
@@ -231,7 +237,7 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             }
             // The paired arrays belong to history, outside the project transaction.
             // Publish their staged capture only once this exact owner committed.
-            if (capture || createdMidi) {
+            if (capture || orderCapture || createdMidi) {
                 return {
                     status: 'written',
                     commitValidation: proof?.validation,

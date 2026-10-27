@@ -3930,6 +3930,54 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         });
     });
 
+    it('redoes a saved split after deletion shortens its index and peers prepend before the left fragment', async () => {
+        await executeAppAction({
+            type: 'splitClip',
+            payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' },
+        });
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        reloadSavedProject();
+        syncPeerProject((project) => project.tracks.tracks[0]!.clips.splice(1, 1));
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        reloadSavedProject();
+        syncPeerProject((project) =>
+            project.tracks.tracks[0]!.clips.unshift(
+                createClipFixture('peer-one', 20, 24),
+                createClipFixture('peer-two', 24, 28)
+            )
+        );
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            await redo();
+            expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual([
+                'peer-one',
+                'peer-two',
+                'clip-a',
+                'clip-right',
+            ]);
+            expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([
+                'peer-one',
+                'peer-two',
+                'clip-a',
+                'clip-right',
+            ]);
+            expect(undoHistoryStore.value?.future).toHaveLength(0);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+            );
+            reloadSavedProject();
+        }
+    });
+
     it.each([false, true])('restores saved split order after peer deletion and prepend: legacy=%s', async (legacy) => {
         syncPeerProject((project) => {
             project.tracks.tracks[0]!.clips.unshift(createClipFixture('predecessor', 12, 16));
@@ -3938,7 +3986,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
             { source: 'manual' }
         );
-        await vi.waitFor(() => expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1));
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
         if (legacy) {
             const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
             if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) throw new Error('Expected saved split');
@@ -3960,32 +4010,52 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             clips.splice(1, 0, createClipFixture('between', 16, 20), { ...right });
         });
         const split = structuredClone(getCrdtDoc<PeerProject>('root'));
-        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a', 'between', 'clip-right', 'clip-b']);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([
+            'clip-a',
+            'between',
+            'clip-right',
+            'clip-b',
+        ]);
         expect((await undo()).headConsumed).toBe(true);
         expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-a', 'between', 'clip-b']);
-        await vi.waitFor(() => expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1));
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
         reloadSavedProject();
         syncPeerProject((project) => {
-            project.tracks.tracks[0]!.clips.unshift(createClipFixture('peer-one', 20, 24), createClipFixture('peer-two', 24, 28));
+            project.tracks.tracks[0]!.clips.unshift(
+                createClipFixture('peer-one', 20, 24),
+                createClipFixture('peer-two', 24, 28)
+            );
         });
         for (let cycle = 0; cycle < 2; cycle += 1) {
             await redo();
             const expectedOrder = ['peer-one', 'peer-two', 'clip-a', 'between', 'clip-right', 'clip-b'];
-            expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(expectedOrder);
+            expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(
+                expectedOrder
+            );
             expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(expectedOrder);
-            expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.filter((clip) => !clip.id.startsWith('peer-'))).toEqual(split?.tracks.tracks[0]?.clips);
+            expect(
+                getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.filter((clip) => !clip.id.startsWith('peer-'))
+            ).toEqual(split?.tracks.tracks[0]?.clips);
             expect(undoHistoryStore.value?.past).toHaveLength(1);
             expect(undoHistoryStore.value?.future).toHaveLength(0);
-            await vi.waitFor(() => expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1));
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
             reloadSavedProject();
             expect((await undo()).headConsumed).toBe(true);
             const unsplitOrder = ['peer-one', 'peer-two', 'clip-a', 'between', 'clip-b'];
-            expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(unsplitOrder);
+            expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(
+                unsplitOrder
+            );
             expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(unsplitOrder);
             expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({ startBeat: 0, endBeat: 4 });
             expect(undoHistoryStore.value?.past).toHaveLength(0);
             expect(undoHistoryStore.value?.future).toHaveLength(1);
-            await vi.waitFor(() => expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1));
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+            );
             reloadSavedProject();
         }
     });

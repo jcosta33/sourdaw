@@ -5,6 +5,7 @@ import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../stores/trackStore';
 
 import { clipSplitStateRestorable, type ClipSplitStateRestorableInput } from './clipSplitStateRestorable';
+import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
 
 function cloneClip(snapshot: ClipStateSnapshot): Clip {
     const { overrides, kneadState, ...snapshotClip } = structuredClone(snapshot);
@@ -41,7 +42,11 @@ export function replaceClipSplitTrackState(input: ClipSplitStateRestorableInput)
         .filter((clip) => clip.id !== rightClipId)
         .map((clip) => (clip.id === clipId ? cloneClip(replacement.leftClip) : clip));
     if (replacement.rightClip) {
-        clips.splice(replacement.rightClipIndex, 0, cloneClip(replacement.rightClip));
+        const index = resolveClipSplitInsertionIndex(track.clips, clipId, rightClipId, input.expected, replacement);
+        if (index === null) {
+            return false;
+        }
+        clips.splice(index, 0, cloneClip(replacement.rightClip));
     }
     setTrackState({
         ...state,

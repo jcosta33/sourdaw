@@ -61,6 +61,14 @@ export const handleSplitClip = createHandler<'splitClip'>({
             entry.inverseAction?.type === 'restoreClipSplitState' &&
             entry.redoAction?.type === 'restoreClipSplitState'
         ) {
+            const inverse = entry.inverseAction.payload;
+            // Legacy history has no placement witness until a real Undo sees
+            // the right fragment. Do not infer peers from its stale index.
+            const order = inverse.expected.rightClipOrder ?? [];
+            inverse.expected = { ...inverse.expected, rightClipOrder: order };
+            inverse.replacement = { ...inverse.replacement, rightClipOrder: order };
+            entry.redoAction.payload.expected = inverse.replacement;
+            entry.redoAction.payload.replacement = inverse.expected;
             entry.redoAction.payload.retiredTakeLanes = entry.inverseAction.payload.retiredTakeLanes;
             entry.redoAction.payload.reKeyedTakeLanes = entry.inverseAction.payload.reKeyedTakeLanes;
         }

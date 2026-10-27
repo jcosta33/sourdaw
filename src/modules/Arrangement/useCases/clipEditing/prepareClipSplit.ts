@@ -100,13 +100,18 @@ export function prepareClipSplit({
     const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
 
     let reservedIdentityIds: ReadonlySet<string> | undefined;
+    let rightClipOrder = [...track.clips.map((clip) => clip.id), effectiveRightClipId];
     let rightClipIndex = track.clips.length;
     if (priorActions.length > 0) {
         const projected = projectClipReplayPrefix(priorActions);
         if (!projected) {
             return null;
         }
-        rightClipIndex = projected.clips.filter((owner) => owner.owningTrackId === track.id).length;
+        rightClipOrder = [
+            ...projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip.id),
+            effectiveRightClipId,
+        ];
+        rightClipIndex = rightClipOrder.length - 1;
         reservedIdentityIds = readClipSplitIdentityIds(
             projected.lanes,
             projected.clips.map((owner) => owner.clip)
@@ -170,6 +175,7 @@ export function prepareClipSplit({
         leftClip: structuredClone(clip),
         rightClip: null,
         rightClipIndex,
+        rightClipOrder,
         sourceMidi: midiPlan.previousSource,
         rightMidi: midiPlan.previousRight,
         clipSatellites: satellites.previous,
@@ -182,6 +188,7 @@ export function prepareClipSplit({
         leftClip: structuredClone(leftClip),
         rightClip: structuredClone(rightClip),
         rightClipIndex,
+        rightClipOrder,
         sourceMidi: midiPlan.nextSource,
         rightMidi: midiPlan.nextRight,
         clipSatellites: satellites.next,
