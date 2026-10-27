@@ -976,7 +976,8 @@ async function trimPhysicalHead(page: Page, before: Snapshot, beat: number, sour
     await page.mouse.move(from, point.y);
     await page.mouse.down();
     try {
-        await page.mouse.move(from + (beat - clip.startBeat) * point.pixelsPerBeat, point.y, { steps: 8 });
+        // Trim consumes the absolute cursor beat; its edge hit padding is not a drag delta.
+        await page.mouse.move(from - 8 + (beat - clip.startBeat) * point.pixelsPerBeat, point.y, { steps: 8 });
         const preview = await waveform(page, before.trackId, clip.id);
         expect(preview.rectangle.startBeat).toBeCloseTo(beat, 10);
         expect(preview.occurrences[0]?.startSample).toBe(sourceFrame);
