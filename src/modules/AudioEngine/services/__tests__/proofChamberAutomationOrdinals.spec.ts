@@ -11,7 +11,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
-import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../../engine/ProofChamberNode';
+import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS, createProofChamberNode } from '../../engine/ProofChamberNode';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { NativeDspDeviceStrategy } from '../../repositories/deviceStrategy/NativeDspDeviceStrategy';
 import { constantTempoProjector } from '../../repositories/offlineScheduler/__tests__/constantTempoProjector';
@@ -30,6 +30,18 @@ const wasmModule = new WebAssembly.Module(
     readFileSync(resolve(process.cwd(), 'public/wasm/proof-chamber/proof_chamber_bg.wasm'))
 );
 initSync({ module: wasmModule });
+
+vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
+    ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
+    fetchWasmModule: vi.fn(async () => ({ module: wasmModule, commit: vi.fn(), release: vi.fn() })),
+    createReadyHandshake: vi.fn(() => ({
+        promise: Promise.resolve({}),
+        onMessage: () => 'other' as const,
+        isSettled: () => true,
+    })),
+}));
+
+vi.mock('../../services/proofChamberProcessor.ts?worker&url', () => ({ default: 'proof-chamber-processor-url' }));
 
 type Processor = {
     port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
@@ -73,7 +85,7 @@ const FIXTURES: Readonly<Record<string, Fixture>> = {
     decay_eq_5: { from: 0.25, to: 4, why: '12 kHz loop rate below decay ceiling' },
 };
 
-function schedule(name: string, fixture: Fixture, moving: boolean): OfflineAutomationSegment[] {
+async function schedule(name: string, fixture: Fixture, moving: boolean): Promise<OfflineAutomationSegment[]> {
     const descriptor = getBuiltinPlugins().find((plugin) => plugin.id === 'dutch-oven');
     const parameter = descriptor?.parameters.find((item) => item.id === name);
     if (!parameter || !parameter.automatable) {
@@ -92,13 +104,33 @@ function schedule(name: string, fixture: Fixture, moving: boolean): OfflineAutom
             { beat: 1.5, value: moving ? fixture.to : fixture.from, curve: 'linear', tension: 0 },
         ],
     };
-    const calls: { name: string; segments: readonly OfflineAutomationSegment[] }[] = [];
-    const strategy = new NativeDspDeviceStrategy({
-        workletNode: {} as AudioWorkletNode,
-        ready: Promise.resolve({}),
-        acceptsScheduledParam: (candidate) => Object.hasOwn(PROOF_CHAMBER_AUTOMATION_PARAM_IDS, candidate),
-        scheduleParam: (candidate, segments) => calls.push({ name: candidate, segments }),
-    });
+    type AutomationMessage = { type: 'paramAutomation'; paramId: number; segments: OfflineAutomationSegment[] };
+    const calls: AutomationMessage[] = [];
+    const previousContext = globalThis.AudioContext;
+    const previousWorklet = globalThis.AudioWorkletNode;
+    class Context {
+        state = 'running';
+    }
+    class Worklet {
+        port = {
+            postMessage: (message: { type: 'init' } | AutomationMessage) => {
+                if (message.type === 'paramAutomation') {
+                    calls.push(message);
+                }
+            },
+            onmessage: null,
+        };
+    }
+    vi.stubGlobal('AudioContext', Context);
+    vi.stubGlobal('AudioWorkletNode', Worklet);
+    let node: Awaited<ReturnType<typeof createProofChamberNode>>;
+    try {
+        node = await createProofChamberNode(new Context() as unknown as BaseAudioContext);
+    } finally {
+        vi.stubGlobal('AudioContext', previousContext);
+        vi.stubGlobal('AudioWorkletNode', previousWorklet);
+    }
+    const strategy = new NativeDspDeviceStrategy(node);
     scheduleTrackAutomation({
         lanes: [lane],
         trackId: 'track-1',
@@ -120,7 +152,7 @@ function schedule(name: string, fixture: Fixture, moving: boolean): OfflineAutom
         resolveLaneCeiling: (candidate) => candidate.maxValue,
     });
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.name).toBe(name);
+    expect(calls[0]!.paramId).toBe(PROOF_CHAMBER_AUTOMATION_PARAM_IDS[name]);
     return [...calls[0]!.segments];
 }
 
@@ -272,8 +304,8 @@ describe('fresh Proof Chamber WASM offline automation', () => {
             for (const name of names) {
                 const fixture = FIXTURES[name]!;
                 expect(fixture.why).not.toBe('');
-                const movingSegments = schedule(name, fixture, true);
-                const staticSegments = schedule(name, fixture, false);
+                const movingSegments = await schedule(name, fixture, true);
+                const staticSegments = await schedule(name, fixture, false);
                 const ordinal = PROOF_CHAMBER_AUTOMATION_PARAM_IDS[name]!;
                 const moving = await render(name, fixture, movingSegments, 'by-id', spy);
                 const flat = await render(name, fixture, staticSegments, 'by-id', spy);
