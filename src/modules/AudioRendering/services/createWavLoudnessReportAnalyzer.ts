@@ -86,29 +86,35 @@ function readDataLength(header: Uint8Array, format: WavFormat): number {
 
 function createAudioState(shape: AudioShape, dataLength: number, relativeGatePower?: number) {
     const sample = new Uint8Array(4);
+    const sampleView = new DataView(sample.buffer);
+    const channels = Array.from({ length: shape.channels }, () => new Float32Array(4096));
+    const integrated = createIntegratedLoudnessAccumulator({
+        numberOfChannels: shape.channels,
+        sampleRate: shape.sampleRate,
+        relativeGatePower,
+    });
+    let windows: ReturnType<typeof createMaxWindowedLoudnessAccumulator> | undefined;
+    let truePeak: ReturnType<typeof createTruePeakAccumulator> | undefined;
+    if (relativeGatePower !== undefined) {
+        windows = createMaxWindowedLoudnessAccumulator({
+            numberOfChannels: shape.channels,
+            sampleRate: shape.sampleRate,
+        });
+        truePeak = createTruePeakAccumulator(shape.channels);
+    }
     return {
         shape,
         dataLength,
         dataBytes: 0,
         sample,
-        sampleView: new DataView(sample.buffer),
+        sampleView,
         sampleUsed: 0,
         channelIndex: 0,
         blockUsed: 0,
-        channels: Array.from({ length: shape.channels }, () => new Float32Array(4096)),
-        integrated: createIntegratedLoudnessAccumulator({
-            numberOfChannels: shape.channels,
-            sampleRate: shape.sampleRate,
-            relativeGatePower,
-        }),
-        windows:
-            relativeGatePower === undefined
-                ? undefined
-                : createMaxWindowedLoudnessAccumulator({
-                      numberOfChannels: shape.channels,
-                      sampleRate: shape.sampleRate,
-                  }),
-        truePeak: relativeGatePower === undefined ? undefined : createTruePeakAccumulator(shape.channels),
+        channels,
+        integrated,
+        windows,
+        truePeak,
     };
 }
 
@@ -203,13 +209,18 @@ function finishAudio(audio: AudioState, byteCount: number, md5: Digest) {
     const identity: WavShape = { ...shape, frames, bytes: byteCount, md5: hex(md5.digest()) };
     const gate = audio.integrated.relativeGatePower();
     const lufs = audio.integrated.integratedLufs();
-    const readings: readonly [number | null, number | null] = audio.windows ? audio.windows.finish() : [null, null];
+    let readings: readonly [number | null, number | null] = [null, null];
+    if (audio.windows) {
+        readings = audio.windows.finish();
+    }
     const [momentary, shortTerm] = readings;
     const peak = audio.truePeak?.finish();
-    const truePeakReading =
-        peak === undefined || peak === 0
-            ? unavailable(frames === 0 ? 'empty' : 'silence', 'dBTP')
-            : available(20 * Math.log10(peak), 'dBTP');
+    let truePeakReading: LoudnessReading;
+    if (peak === undefined || peak === 0) {
+        truePeakReading = unavailable(frames === 0 ? 'empty' : 'silence', 'dBTP');
+    } else {
+        truePeakReading = available(20 * Math.log10(peak), 'dBTP');
+    }
     return {
         wav: identity,
         relativeGatePower: gate,

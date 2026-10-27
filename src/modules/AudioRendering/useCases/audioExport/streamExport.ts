@@ -188,7 +188,7 @@ async function writeReportedWav({ source, target, stemId, audioName, progress, d
         algorithmRevision: 'sourdaw-current-kweight-4x12tap-v1',
         measurementBasis: 'decoded-WAV-bytes',
         publicationAttested: false,
-        stemId: stemId,
+        stemId,
         targetId: target.id,
         audioFile: audioName,
         wav: measured.wav,
