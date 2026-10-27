@@ -26,8 +26,8 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
-import { type AppAction } from '#/utils/handlerContract';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
+import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import {
@@ -547,14 +547,15 @@ function projectAfterOracleActions(before: ProjectTruth, actions: readonly Corpu
         if (!isProjectMap(track)) {
             throw new TypeError('An acceptance track must be a project map.');
         }
-        return { ...track };
+        return track;
     });
     const expected = { ...before, root: { ...root, tracks: { ...trackSlot, tracks } } };
     for (const action of actions) {
         if (action.type !== 'setTrackGain' || typeof action.payload.trackId !== 'string') {
             throw new TypeError(`Refinement project oracle does not cover ${action.type}.`);
         }
-        const track = tracks.find((candidate) => isRecord(candidate) && candidate.id === action.payload.trackId);
+        const trackIndex = tracks.findIndex((candidate) => candidate.id === action.payload.trackId);
+        const track = tracks[trackIndex];
         if (!isRecord(track) || typeof track.gain !== 'number') {
             throw new TypeError(`The acceptance project has no fader for ${action.payload.trackId}.`);
         }
@@ -576,7 +577,7 @@ function projectAfterOracleActions(before: ProjectTruth, actions: readonly Corpu
         if (!level.ok) {
             throw new Error('The acceptance fader oracle declares an invalid level.');
         }
-        track.gain = clampFaderGain(level.linear);
+        tracks[trackIndex] = { ...track, gain: clampFaderGain(level.linear) };
     }
     return expected;
 }
