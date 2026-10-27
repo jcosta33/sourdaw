@@ -1,0 +1,27 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_29d8df116c5b92::t_2f1e2c18a2d176 250-254
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.ts
+  s_29d8df116c5b92::t_05eb97de0d82f6 1-120
+  s_29d8df116c5b92::t_df60ba2070dca2 121-161
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_29d8df116c5b92::t_7d2ba13b29fc02 234-240,242-249,251-258,260-262,269-300,302,307-310,312-314
+  s_29d8df116c5b92::t_e23ca2b91e1fde 32,85-93,95,220-221,232-233,241,250,259,263-268,301,303-306,311
+  s_29d8df116c5b92::t_f22c793aad8f2e 28-31
+  s_29d8df116c5b92::t_b36776a6521b39 315-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bb505ea88b128643f466041629b826d23fcff6b",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
