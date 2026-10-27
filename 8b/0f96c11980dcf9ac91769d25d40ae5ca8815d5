@@ -1,0 +1,21 @@
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  s_59e31a5c6f3e31::t_e52dd47a9c35bb 697-720
+src/components/daw/RotaryKnob.tsx
+  s_59e31a5c6f3e31::t_6eae434650abe2 495
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b0f96c11980dcf9ac91769d25d40ae5ca8815d5",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
