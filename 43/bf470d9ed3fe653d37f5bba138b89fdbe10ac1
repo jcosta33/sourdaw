@@ -1,0 +1,49 @@
+src/modules/Transport/useCases/scheduling/resolveMidiWindowClips.ts
+  s_29d8df116c5b92::t_26203f88e0595d 5
+  s_3168504f6ce387::t_ca701233d862a5 6
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_26203f88e0595d 21
+  s_3168504f6ce387::t_41221e0f9e8c63 22
+src/modules/Transport/useCases/scheduling/prepareInitialMidiWindow.ts
+  s_29d8df116c5b92::t_26203f88e0595d 1-3
+  s_29d8df116c5b92::t_a771a86c7dd1c3 6
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_29d8df116c5b92::t_0b63d9a70617ae 22-24,26-28,382-469,471-476,530-533,536-544
+  s_29d8df116c5b92::t_a771a86c7dd1c3 365-381,470,477-511,573-578
+  s_29d8df116c5b92::t_57d6788d81e70d 512
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_29d8df116c5b92::t_580406eaf799f6 85-86
+  s_26f70b851e8f7a::t_076277eb151dc8 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43bf470d9ed3fe653d37f5bba138b89fdbe10ac1",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
