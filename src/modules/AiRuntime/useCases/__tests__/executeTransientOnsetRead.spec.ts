@@ -157,6 +157,14 @@ describe('one planning run transient onset read', () => {
             revision: firstData.sourceRevisionDigest,
         });
         expect(firstData).toMatchObject({
+            projectId: PROJECT_ID,
+            clipId: IDENTITY.clipId,
+            trackId: IDENTITY.trackId,
+            alternativeId: IDENTITY.alternativeId,
+            activeAlternative: IDENTITY.activeAlternative,
+            sampleRate: IDENTITY.sampleRate,
+            frameCount: IDENTITY.frameCount,
+            channelCount: IDENTITY.channelCount,
             timeAxis: 'source-buffer',
             totalHitCount: 130,
             complete: false,
@@ -166,6 +174,8 @@ describe('one planning run transient onset read', () => {
         expect(firstData.hits[0]).toEqual({ sourceSeconds: 512 / 48_000, confidence: 0.5 });
         expect(firstData.sourceRevisionDigest).toMatch(/^[0-9a-f]{64}$/u);
         expect(JSON.stringify(first)).not.toContain(PROJECT_REVISION);
+        expect(JSON.stringify(first).includes(IDENTITY.bufferId)).toBe(false);
+        expect(firstData).not.toHaveProperty('bufferId');
         expect(JSON.stringify(first)).not.toMatch(/"(channels|samples|pcm|path|url)"/iu);
         expect(new TextEncoder().encode(JSON.stringify(first)).byteLength).toBeLessThanOrEqual(16_384);
 

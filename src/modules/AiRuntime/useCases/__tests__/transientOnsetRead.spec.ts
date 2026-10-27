@@ -13,6 +13,7 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { getSettledProjectId, projectStore } from '#/modules/Project/stores';
+import { digest } from '#/utils/canonicalDigest';
 
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
@@ -488,6 +489,8 @@ describe('actual hosted planner, source owner and disposable read session', () =
         const wire = JSON.stringify(bodies);
         expect(wire).toContain('transient-onset-read');
         expect(wire).not.toContain(RAW_BUFFER_ID);
+        expect(wire.includes(digest(RAW_BUFFER_ID))).toBe(false);
+        expect(wire).not.toMatch(/\\?"bufferId\\?"/);
         expect(wire).not.toMatch(/"(?:channels|pcm|channelData|getChannelData|fileId|audioBufferId)"/);
         expect(disclosure.mock.calls.at(-1)?.[0].categories).toContain('measurement');
         expect(admit).toHaveBeenCalledExactlyOnceWith({ renderJobs: 0, analyses: 1 });
@@ -661,6 +664,10 @@ describe('actual hosted planner, source owner and disposable read session', () =
             data: { kind: 'transient-onset-read', hits: expect.any(Array) },
         });
         expect(provider.completion).toHaveBeenCalledTimes(4);
+        const localContext = JSON.stringify(provider.completion.mock.calls);
+        expect(localContext.includes(RAW_BUFFER_ID)).toBe(false);
+        expect(localContext.includes(digest(RAW_BUFFER_ID))).toBe(false);
+        expect(localContext).not.toMatch(/\\?"bufferId\\?"/);
         expect(provider.request).not.toHaveBeenCalled();
         expect(workers).toHaveLength(1);
         expect(result.actions).toEqual([]);

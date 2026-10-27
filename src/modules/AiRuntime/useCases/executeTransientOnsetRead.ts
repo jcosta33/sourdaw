@@ -183,7 +183,15 @@ function pageReceipt(
         data: {
             kind: 'transient-onset-read',
             schemaVersion: 1,
-            ...source.identity,
+            // A hashed cache identity can still reveal its file path by candidate matching.
+            projectId: source.identity.projectId,
+            clipId: source.identity.clipId,
+            trackId: source.identity.trackId,
+            alternativeId: source.identity.alternativeId,
+            activeAlternative: source.identity.activeAlternative,
+            sampleRate: source.identity.sampleRate,
+            frameCount: source.identity.frameCount,
+            channelCount: source.identity.channelCount,
             sourceRevisionDigest: session.sourceRevisionDigest,
             timeAxis: 'source-buffer',
             sensitivity: entry.sensitivity,
