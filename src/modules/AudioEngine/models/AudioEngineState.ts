@@ -1,4 +1,4 @@
-import { type AudioPreviewIntent } from './AudioPreviewIntent';
+import type { AudioPreviewIntent } from './AudioPreviewIntent';
 import type { BuiltinLufsMeterReader, BuiltinLufsMeterReading } from './BuiltinLufsMeterReader';
 import type {
     RuntimeGraphDeltaResult,
