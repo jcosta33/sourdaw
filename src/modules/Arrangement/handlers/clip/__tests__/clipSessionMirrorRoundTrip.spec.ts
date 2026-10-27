@@ -807,6 +807,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(hitTestClipEdge(60, 20)?.clipId).toBe('clip-a');
             const originalClips = structuredClone(trackStore.value!.tracks[0]!.clips);
             const groupId = grouped ? 'relative-removal-group' : undefined;
+            const historyLength = grouped ? 2 : 1;
             await executeAppAction(
                 { type: 'removeClip', payload: { clipId: 'clip-b', ripple: false } },
                 { source: 'manual', groupId }
@@ -818,7 +819,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 );
             }
             await vi.waitFor(() =>
-                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(
+                    historyLength
+                )
             );
             if (saved) {
                 reloadSavedProject();
@@ -833,9 +836,11 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips).toEqual(restored);
                 expect(trackStore.value?.tracks[0]?.clips).toEqual(restored);
                 expect(undoHistoryStore.value?.past).toHaveLength(0);
-                expect(undoHistoryStore.value?.future).toHaveLength(1);
+                expect(undoHistoryStore.value?.future).toHaveLength(historyLength);
                 await vi.waitFor(() =>
-                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(
+                        historyLength
+                    )
                 );
                 if (saved) {
                     reloadSavedProject();
@@ -843,10 +848,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 await redo();
                 expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(away);
                 expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(away);
-                expect(undoHistoryStore.value?.past).toHaveLength(1);
+                expect(undoHistoryStore.value?.past).toHaveLength(historyLength);
                 expect(undoHistoryStore.value?.future).toHaveLength(0);
                 await vi.waitFor(() =>
-                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(
+                        historyLength
+                    )
                 );
                 if (saved) {
                     reloadSavedProject();
