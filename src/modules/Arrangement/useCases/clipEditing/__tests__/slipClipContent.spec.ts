@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { slipClipContent } from '#/modules/Arrangement/useCases/clipEditing/slipClipContent';
 import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 
 import type { Clip } from '#/modules/Arrangement/models/Track';
+import { createTrack } from '../../../models/Track';
 
 vi.mock('#/modules/Arrangement/useCases/updateClip', () => ({
     updateClip: vi.fn(),
 }));
+vi.mock('#/modules/Arrangement/useCases/getTrackStoreState', () => ({ getTrackStoreState: vi.fn() }));
 
 function makeClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
     return {
@@ -29,6 +32,16 @@ function makeClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
 describe('slipClipContent', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(getTrackStoreState).mockReturnValue({
+            tracks: [
+                {
+                    ...createTrack({ id: 't1', name: 'Audio', kind: 'audio' }),
+                    clips: [makeClip({ id: 'c1', type: 'audio' })],
+                },
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
     });
 
     it('should update audioOffsetBeats for audio clips', () => {
@@ -36,8 +49,9 @@ describe('slipClipContent', () => {
         expect(vi.mocked(updateClip)).toHaveBeenCalledWith('c1', expect.any(Function));
 
         const updater = vi.mocked(updateClip).mock.calls[0]![1];
-        const result = updater(makeClip({ id: 'c1', audioOffsetBeats: 0 }));
+        const result = updater(makeClip({ id: 'c1', type: 'audio', audioOffsetBeats: 0 }));
         expect(result.audioOffsetBeats).toBe(2.5);
+        expect(result.audioOffsetSeconds).toBe(1.25);
     });
 
     it('should update midiOffsetBeats for midi clips', () => {

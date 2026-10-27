@@ -127,3 +127,21 @@ owned/foreign publications. Removing only the owned-birth check must fail the
 foreign case. A named recreation case must change the Automerge object ID while
 preserving geometry; a rectangle edit must retain the ID. Assert each mutation
 occurred before interpreting a rejected tempo command as ownership evidence.
+
+## Trim owner and captured replay
+
+A selected comp snapshot can keep the audible source correct while a left trim
+leaves the raw clip's canonical entry at its old head. Assert both the raw owner
+and its independent comp programme. Trim a canonical .1-second entry from beat
+1.5 to 1.75 under 120 BPM: the new owner entry is .225 seconds and the exclusive
+source ending stays .35 seconds. Exercise the real gesture, preview and typed
+save/reopen Undo/Redo; updating legacy beats alone must fail.
+
+Probe exact optional-field restoration, signed pre-roll, bounded stretch and
+finite or implicit loops whose first entry differs from later H/W entries.
+Captured Undo state follows the existing restoreClip trust boundary: validate a
+lawful captured before-state, its exact forward projection, the paired history
+actions and current retained-owner authority. Do not pretend the later audible
+fragment authenticates a first entry deliberately discarded across a seam.
+Reject malformed or mismatched retained tuples and wrong owners before writes,
+and preserve unrelated live clip facets, peer rows and independent comp anchors.

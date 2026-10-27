@@ -28,11 +28,13 @@ import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
-import { timelineViewStore } from '../stores/timelineViewStore';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
+
 import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
+import { prepareAudioClipSlip } from './clipEditing/prepareAudioClipSlip';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
@@ -504,6 +506,44 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             if (pos.trackId === track.id) {
                 const base = clipById.get(clipId);
                 if (base) {
+                    if (pos.audioSlipOffsetBeats !== undefined) {
+                        const raw = trackState?.tracks
+                            .find((row) => row.id === track.id)
+                            ?.clips.find((row) => row.id === clipId);
+                        const timeline = captureWaveformTimeline(
+                            transportState?.tempo ?? DEFAULT_TEMPO_BPM,
+                            tempoMapState?.changes ?? []
+                        );
+                        const projected =
+                            raw &&
+                            prepareAudioClipSlip(
+                                {
+                                    clip: raw,
+                                    lanes: takeLaneState?.lanes.filter((lane) => lane.trackId === track.id) ?? [],
+                                },
+                                pos.audioSlipOffsetBeats,
+                                timeline
+                            );
+                        if (projected) {
+                            const source = projected.clip;
+                            const programme = resolveCompingProgramme(
+                                track.id,
+                                [source],
+                                { lanes: projected.lanes },
+                                timeline
+                            );
+                            clips.push({
+                                ...base,
+                                audioOffsetBeats: source.audioOffsetBeats,
+                                audioOffsetSeconds: source.audioOffsetSeconds,
+                                audioLoopStartSeconds: source.audioLoopStartSeconds,
+                                audioLoopPassEntrySeconds: source.audioLoopPassEntrySeconds,
+                                audioLoopPassOriginBeat: source.audioLoopPassOriginBeat,
+                                audioProgramme: programme.map((part) => audioProgrammePart(part, timeline)),
+                            });
+                            continue;
+                        }
+                    }
                     const sameDuration = Math.abs(pos.endBeat - pos.startBeat - (base.endBeat - base.startBeat)) < 1e-9;
                     const shift = sameDuration ? pos.startBeat - base.startBeat : 0;
                     const audioProgramme =
@@ -532,6 +572,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                         audioLoopPassEntrySeconds: pos.audioLoopPassEntrySeconds ?? base.audioLoopPassEntrySeconds,
                         audioLoopPassOriginBeat: pos.audioLoopPassOriginBeat ?? base.audioLoopPassOriginBeat,
                         loopOriginBeat: pos.loopOriginBeat ?? base.loopOriginBeat,
+                        loopLength: pos.loopLength ?? base.loopLength,
                         clipStartTempo: readTempoAtBeat({ beat: pos.startBeat }),
                         midiOffsetBeats: pos.midiOffsetBeats ?? base.midiOffsetBeats,
                     });

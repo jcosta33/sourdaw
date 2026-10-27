@@ -23,7 +23,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import {
     type ConfirmPayload,
@@ -117,6 +117,7 @@ describe('handleSplitClip atomic integration', () => {
             pitchBendByClipId: {},
         });
         transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [] });
         warpStates.clear();
         setAllEnvelopes({});
         flushAutomergeStorageWrites();
@@ -134,6 +135,7 @@ describe('handleSplitClip atomic integration', () => {
         setAllEnvelopes({});
         vi.restoreAllMocks();
         transportStore.set({ ...defaultTransportState });
+        tempoMapStore.set({ changes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -260,10 +262,12 @@ describe('handleSplitClip atomic integration', () => {
                 requireCompensation: true,
             });
 
+            // Preparation sees the preceding tempo action before the live transport store changes.
+            const expectedSplitBeat = order === 'tempo-first' ? 2.5 : 5;
             expect(result).toMatchObject({ status: 'committed' });
             expect(trackStore.value!.tracks[0]!.clips).toMatchObject([
-                { id: 'clip-1', endBeat: 5 },
-                { startBeat: 5, endBeat: 8 },
+                { id: 'clip-1', endBeat: expectedSplitBeat },
+                { startBeat: expectedSplitBeat, endBeat: 8 },
             ]);
             expect(transportStore.value?.tempo).toBe(60);
 
@@ -275,12 +279,61 @@ describe('handleSplitClip atomic integration', () => {
             await redo();
             await redo();
             expect(trackStore.value!.tracks[0]!.clips).toMatchObject([
-                { id: 'clip-1', endBeat: 5 },
-                { startBeat: 5, endBeat: 8 },
+                { id: 'clip-1', endBeat: expectedSplitBeat },
+                { startBeat: expectedSplitBeat, endBeat: 8 },
             ]);
             expect(transportStore.value?.tempo).toBe(60);
         }
     );
+
+    it('retains selected source frame 108002 through the real rate2 split, undo and redo', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 0,
+            endBeat: 4,
+            audioBufferId: 'audio-buffer-1',
+            audioOffsetSeconds: 0.25,
+            audioOffsetBeats: 0.5,
+            stretchMode: 'repitch',
+            stretchRatio: 2,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        tempoMapStore.set({
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-1', beat: 1, tempo: 240, curve: 'instant' },
+                { id: 'tempo-2', beat: 2, tempo: 120, curve: 'instant' },
+            ],
+        });
+        const channelData = new Float32Array(192000).fill(-1);
+        channelData.fill(1, 108003);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 48000));
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+
+        const result = await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 2.5 } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(result).toMatchObject({ status: 'committed' });
+        const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+        const right = after.find((candidate) => candidate.id !== 'clip-1');
+        expect(right?.startBeat).toBeCloseTo(2.5 + 2 / 48000, 12);
+        expect(right?.audioOffsetSeconds).toBe(108002 / 48000);
+        expect(Math.floor(right!.audioOffsetSeconds! * 48000)).toBe(108002);
+
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+        expect(Math.floor(trackStore.value!.tracks[0]!.clips[1]!.audioOffsetSeconds! * 48000)).toBe(108002);
+    });
 
     describe('an audio split', () => {
         beforeEach(() => {

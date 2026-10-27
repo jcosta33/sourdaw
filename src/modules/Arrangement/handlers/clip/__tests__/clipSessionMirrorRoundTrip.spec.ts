@@ -23,6 +23,9 @@ import {
     executeUserAppAction,
     productionBriefAdmissionPort,
     registerProductionCommandHandlers,
+    createVersionedCommandEnvelope,
+    parseVersionedCommandEnvelope,
+    isExecutableAppActionType,
     undo,
     redo,
 } from '#/modules/Command/useCases';
@@ -44,6 +47,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { decodeMidiClipDataSnapshots, getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
+import { tempoMapStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
@@ -78,9 +82,11 @@ import { handleDrawClip } from '../handleDrawClip';
 import { handleDuplicateClipAt } from '../handleDuplicateClipAt';
 import { handleMoveClips } from '../handleMoveClips';
 import { handleRemoveClip } from '../handleRemoveClip';
+import { handleRestoreAudioClipStartTrim } from '../handleRestoreAudioClipStartTrim';
 import { handleRestoreClipMoves } from '../handleRestoreClipMoves';
 import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
 import { handleRestoreDrawnClip } from '../handleRestoreDrawnClip';
+import { handleTrimClipStart } from '../handleTrimClipStart';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const TRACK_ID = 'track-keys';
@@ -781,6 +787,298 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();
+    });
+
+    describe('audio start trim captured source replay', () => {
+        afterEach(() => tempoMapStore.set({ changes: [] }));
+
+        const cases: { name: string; fields: Partial<Clip>; trim: number; entry: number; map?: boolean }[] = [
+            {
+                name: 'canonical final phrase',
+                fields: { startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 },
+                trim: 1.75,
+                entry: 0.225,
+            },
+            {
+                name: 'legacy across an interior tempo event',
+                fields: { endBeat: 8, audioOffsetBeats: 0 },
+                trim: 4,
+                entry: 3,
+                map: true,
+            },
+            {
+                name: 'signed stretched pre-roll',
+                fields: { endBeat: 8, audioOffsetSeconds: -0.5, stretchMode: 'timestretch', stretchRatio: 2 },
+                trim: 0.25,
+                entry: -0.25,
+            },
+            {
+                name: 'finite independent first and repeated entries',
+                fields: {
+                    endBeat: 8,
+                    loopEnabled: true,
+                    loopLength: 2,
+                    loopOriginBeat: 0,
+                    audioOffsetSeconds: 0.4,
+                    audioUnwrappedOffsetSeconds: 0.4,
+                    audioLoopStartSeconds: 0,
+                    audioLoopPassEntrySeconds: 0.1,
+                    audioLoopPassOriginBeat: 0,
+                },
+                trim: 3,
+                entry: 0.6,
+            },
+            {
+                name: 'implicit loop bounds',
+                fields: { endBeat: 8, loopEnabled: true, audioOffsetSeconds: 0.4 },
+                trim: 3,
+                entry: 1.9,
+            },
+            {
+                name: 'leftward extension',
+                fields: { startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 },
+                trim: 1,
+                entry: -0.15,
+            },
+        ];
+
+        async function trimAudio(fields: Partial<Clip> = {}, trim = 1.75, map = false) {
+            const changes = [{ id: 'audio-trim-base', beat: 0, tempo: 120, curve: 'instant' as const }];
+            if (map) {
+                changes.push({ id: 'audio-trim-slow', beat: 2, tempo: 60, curve: 'instant' });
+            }
+            tempoMapStore.set({ changes });
+            const source = {
+                ...createClipFixture('clip-a', 0, 4),
+                type: 'audio' as const,
+                audioBufferId: 'source-buffer',
+                ...fields,
+            };
+            const peer = {
+                ...createClipFixture('clip-peer', 12, 16),
+                type: 'audio' as const,
+                audioBufferId: 'peer-buffer',
+            };
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'audio', clips: [source, peer] })],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            setEnvelope('clip-a', {
+                clipId: 'clip-a',
+                enabled: true,
+                points: [{ id: 'trim-gain', beatOffset: 0, gainDb: -3 }],
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            const before = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+            const satellites = structuredClone({
+                gain: gainEnvelopeStore.value,
+                warp: warpStateStore.value,
+                takes: takeLaneStore.value,
+            });
+            await executeAppAction(
+                { type: 'trimClipStart', payload: { clipId: 'clip-a', newStartBeat: trim } },
+                { source: 'manual' }
+            );
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            return { before, peer: structuredClone(clipOnTrack(TRACK_ID, 'clip-peer')), satellites };
+        }
+
+        function capturedAudioRestore() {
+            const description = handleTrimClipStart.describe({
+                type: 'trimClipStart',
+                payload: { clipId: 'clip-a', newStartBeat: 1.8 },
+            });
+            if (description.inverseAction?.type !== 'restoreAudioClipStartTrim') {
+                throw new Error('Expected internal audio trim capture');
+            }
+            return description.inverseAction;
+        }
+
+        it('keeps the captured restore out of public command execution and discovery', async () => {
+            await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
+            const action = capturedAudioRestore();
+            expect(isExecutableAppActionType(action.type)).toBe(false);
+            const envelope = createVersionedCommandEnvelope({
+                action,
+                availableDeviceVersions: {},
+                expectedEffect: 'Restore captured trim',
+                normalizedProjectRevision: 'source-trim-public-refusal',
+                objectReferences: [],
+                parameterUnits: [],
+                reason: 'Internal replay is not an executable command',
+                time: [],
+            });
+            expect(parseVersionedCommandEnvelope(envelope).status).toBe('invalid');
+        });
+
+        it('refuses every present-undefined modern source facet before writes', async () => {
+            await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
+            const action = capturedAudioRestore();
+            const raw = structuredClone(getCrdtDoc('root'));
+            const history = structuredClone(undoHistoryStore.value);
+            for (const field of [
+                'audioOffsetSeconds',
+                'audioUnwrappedOffsetSeconds',
+                'audioLoopStartSeconds',
+                'audioLoopPassEntrySeconds',
+                'audioLoopPassOriginBeat',
+            ]) {
+                const malformed = { ...action.payload, after: { ...action.payload.after, [field]: undefined } };
+                expect(handleRestoreAudioClipStartTrim.validateSessionActionArguments?.(malformed), field).toBe(false);
+            }
+            expect(getCrdtDoc('root')).toEqual(raw);
+            expect(undoHistoryStore.value).toEqual(history);
+        });
+
+        it.each(cases)(
+            'restores $name exactly through binary and session Undo/Redo',
+            async ({ fields, trim, entry, map }) => {
+                const { before, peer, satellites } = await trimAudio(fields, trim, map);
+                const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+                expect(after?.audioOffsetSeconds).toBeCloseTo(entry, 12);
+                expect(after?.endBeat).toBe(before?.endBeat);
+                if (fields.loopEnabled) {
+                    expect(after?.loopLength).toBe(fields.loopLength ?? 8);
+                    expect(after?.audioLoopPassOriginBeat).toBe(0);
+                }
+                reloadSavedProject();
+                expect(undoHistoryStore.value?.past).toHaveLength(1);
+                expect((await undo()).headConsumed).toBe(true);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(before);
+                expect(clipOnTrack(TRACK_ID, 'clip-peer')).toEqual(peer);
+                expect({
+                    gain: gainEnvelopeStore.value,
+                    warp: warpStateStore.value,
+                    takes: takeLaneStore.value,
+                }).toEqual(satellites);
+                reloadSavedProject();
+                expect(undoHistoryStore.value?.future).toHaveLength(1);
+                await redo();
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+                expect(clipOnTrack(TRACK_ID, 'clip-peer')).toEqual(peer);
+                expect({
+                    gain: gainEnvelopeStore.value,
+                    warp: warpStateStore.value,
+                    takes: takeLaneStore.value,
+                }).toEqual(satellites);
+            }
+        );
+
+        it('preserves unrelated live name, gain and mute during the exact owned restore', async () => {
+            const { before } = await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
+            const current = trackStore.value!;
+            trackStore.set({
+                ...current,
+                tracks: current.tracks.map((track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) =>
+                        clip.id === 'clip-a' ? { ...clip, name: 'Peer name', gain: 0.3, muted: true } : clip
+                    ),
+                })),
+            });
+            flushAutomergeStorageWrites();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual({ ...before, name: 'Peer name', gain: 0.3, muted: true });
+            await redo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toMatchObject({
+                startBeat: 1.75,
+                audioOffsetSeconds: 0.225,
+                name: 'Peer name',
+                gain: 0.3,
+                muted: true,
+            });
+        });
+
+        it.each(['retained-source', 'owner', 'clock'] as const)(
+            'refuses a changed live %s without consuming history or writing',
+            async (change) => {
+                await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
+                const state = trackStore.value!;
+                const source = clipOnTrack(TRACK_ID, 'clip-a')!;
+                if (change === 'clock') {
+                    tempoMapStore.set({ changes: [{ id: 'changed-clock', beat: 0, tempo: 60, curve: 'instant' }] });
+                } else if (change === 'owner') {
+                    trackStore.set({
+                        ...state,
+                        tracks: [
+                            {
+                                ...state.tracks[0]!,
+                                clips: state.tracks[0]!.clips.filter((clip) => clip.id !== source.id),
+                            },
+                            TrackDummy.create({
+                                id: 'foreign-owner',
+                                clips: [{ ...source, trackId: 'foreign-owner' }],
+                            }),
+                        ],
+                    });
+                } else {
+                    trackStore.set({
+                        ...state,
+                        tracks: state.tracks.map((track) => ({
+                            ...track,
+                            clips: track.clips.map((clip) =>
+                                clip.id === source.id ? { ...clip, audioOffsetSeconds: 0.9 } : clip
+                            ),
+                        })),
+                    });
+                }
+                flushAutomergeStorageWrites();
+                const raw = structuredClone(getCrdtDoc('root'));
+                const history = structuredClone(undoHistoryStore.value);
+                expect((await undo()).headConsumed).toBe(false);
+                expect(getCrdtDoc('root')).toEqual(raw);
+                expect(undoHistoryStore.value).toEqual(history);
+            }
+        );
+
+        it.each(['source', 'geometry', 'owner', 'unrelated-facet', 'modern-presence'] as const)(
+            'rejects a saved malformed %s pair before hydration writes',
+            async (change) => {
+                await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
+                const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+                if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) {
+                    throw new Error('Expected trim entry');
+                }
+                for (const key of ['inverseAction', 'redoAction']) {
+                    const action = saved.past[0][key];
+                    if (
+                        !isRecord(action) ||
+                        !isRecord(action.payload) ||
+                        !isRecord(action.payload.before) ||
+                        !isRecord(action.payload.after)
+                    ) {
+                        throw new Error('Expected trim capture pair');
+                    }
+                    if (change === 'source') {
+                        action.payload.after.audioOffsetSeconds = 0.9;
+                    }
+                    if (change === 'geometry') {
+                        action.payload.after.endBeat = 3;
+                    }
+                    if (change === 'owner') {
+                        action.payload.before.trackId = 'foreign-owner';
+                    }
+                    if (change === 'unrelated-facet') {
+                        action.payload.after.name = 'Forged name';
+                    }
+                    if (change === 'modern-presence') {
+                        action.payload.after.audioOffsetSeconds = null;
+                    }
+                }
+                sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+                const raw = structuredClone(getCrdtDoc('root'));
+                hydrateProductionContracts();
+                expect(undoHistoryStore.value?.past).toEqual([]);
+                expect(undoHistoryStore.value?.future).toEqual([]);
+                expect((await undo()).headConsumed).toBe(false);
+                expect(getCrdtDoc('root')).toEqual(raw);
+            }
+        );
     });
 
     describe.each([false, true])('relative removal placement saved=%s', (saved) => {

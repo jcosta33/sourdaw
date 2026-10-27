@@ -3,6 +3,8 @@ import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardC
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
+import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
+import { handleRestoreAudioClipSlip } from '../handlers/clip/handleRestoreAudioClipSlip';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
 import { handleAddGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleAddGainEnvelopePoint';
@@ -14,8 +16,8 @@ import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBea
 import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
-import { handleRestoreCompRegionInterval } from '../handlers/comping/handleRestoreCompRegionInterval';
 import { handleRemoveCompRegion } from '../handlers/comping/handleRemoveCompRegion';
+import { handleRestoreCompRegionInterval } from '../handlers/comping/handleRestoreCompRegionInterval';
 import { handleSetCompRegion } from '../handlers/comping/handleSetCompRegion';
 import { handleAddDevice } from '../handlers/device/handleAddDevice';
 import { handleAddSend } from '../handlers/device/handleAddSend';
@@ -219,6 +221,8 @@ export function getArrangementHandlers() {
         setClipStretchMode: handleSetClipStretchMode,
         setClipStretchRatio: handleSetClipStretchRatio,
         restoreClipStretchState: handleRestoreClipStretchState,
+        restoreAudioClipStartTrim: handleRestoreAudioClipStartTrim,
+        restoreAudioClipSlip: handleRestoreAudioClipSlip,
         fitClipToBeats: handleFitClipToBeats,
         loadPreset: handleLoadPreset,
         restorePresetDeviceChain: handleRestorePresetDeviceChain,

@@ -1,5 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { clipDragPreviewRef } from '../../../stores/clipDragPreviewRef';
 import { useTimelineInteractions } from '../useTimelineInteractions';
@@ -551,17 +552,20 @@ describe('useTimelineInteractions', () => {
                 midiOffsetBeats: 1.25,
             },
             expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: 3.25 },
+            expectedSource: {},
         },
         {
             name: 'audio clip',
             clip: { id: 'clip-1', trackId: 'track-1', type: 'audio', startBeat: 0, endBeat: 4, audioOffsetBeats: 0.5 },
             expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: undefined },
+            // The original 0.5-beat offset is .25s; the two-beat trim consumes 1s.
+            expectedSource: { audioOffsetSeconds: 1.25, audioUnwrappedOffsetSeconds: 1.25 },
         },
     ];
 
     it.each(trimOffsetCases)(
         'trim start preview draws a $name at its post-commit content offset',
-        ({ clip, expectedOffsets }) => {
+        ({ clip, expectedOffsets, expectedSource }) => {
             mocks.trackStoreValue.value = { tracks: [{ id: 'track-1', clips: [clip] }] };
             mocks.hitTestClip.mockReturnValue({ clipId: 'clip-1', trackId: 'track-1' });
             mocks.hitTestClipEdge.mockReturnValue({ edge: 'left' });
@@ -590,6 +594,7 @@ describe('useTimelineInteractions', () => {
                 startBeat: 2,
                 endBeat: 4,
                 audioOffsetBeats: expectedOffsets.audioOffsetBeats,
+                ...expectedSource,
                 midiOffsetBeats: expectedOffsets.midiOffsetBeats,
             });
         }
@@ -958,6 +963,69 @@ describe('useTimelineInteractions', () => {
         });
         expect(mocks.slipClipContent).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('seeds canonical audio slip from U under the current tempo, with matching preview and zero-motion release', () => {
+        const oldTransport = transportStore.value;
+        const oldMap = tempoMapStore.value;
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+        tempoMapStore.set({ changes: [] });
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetBeats: 99,
+                            audioOffsetSeconds: 0,
+                            audioUnwrappedOffsetSeconds: -0.25,
+                        },
+                    ],
+                },
+            ],
+        };
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+        try {
+            act(() =>
+                result.current.handleMouseDown({
+                    button: 0,
+                    clientX: 100,
+                    clientY: 50,
+                    ctrlKey: true,
+                    shiftKey: true,
+                } as any)
+            );
+            act(() => result.current.handleMouseUp({ clientX: 100, clientY: 50 } as any));
+            expect(mocks.executeUserAppAction).not.toHaveBeenCalled();
+            act(() =>
+                result.current.handleMouseDown({
+                    button: 0,
+                    clientX: 100,
+                    clientY: 50,
+                    ctrlKey: true,
+                    shiftKey: true,
+                } as any)
+            );
+            act(() => result.current.handleMouseMove({ clientX: 120, clientY: 50 } as any));
+            expect(clipDragPreviewRef.current?.positions.get('c1')).toMatchObject({
+                startBeat: 0,
+                endBeat: 4,
+                audioSlipOffsetBeats: expect.closeTo(-0.05),
+            });
+            act(() => result.current.handleMouseUp({ clientX: 120, clientY: 50 } as any));
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+                type: 'slipClipContent',
+                payload: { clipId: 'c1', clipType: 'audio', offset: expect.closeTo(-0.05) },
+            });
+        } finally {
+            transportStore.set(oldTransport);
+            tempoMapStore.set(oldMap);
+        }
     });
 
     it('does not commit a slip when the drag delta is sub-threshold', () => {

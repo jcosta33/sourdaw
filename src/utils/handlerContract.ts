@@ -11,6 +11,7 @@
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
 import { type AudioSourceSnapshot, type AudioSourceTile } from './audioSourceTime';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
+import { type TempoSourceClock } from './tempoAudioSourcePromotion';
 import { type TempoMapEdit, type TempoMapRowPlan } from './tempoMapRowPlan';
 
 /**
@@ -1698,6 +1699,29 @@ export type AppAction =
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | {
+          /** Internal exact audio-head replay; never a public trim source override. */
+          type: 'restoreAudioClipStartTrim';
+          payload: {
+              clipId: string;
+              before: ClipStateSnapshot;
+              after: ClipStateSnapshot;
+              clock: TempoSourceClock;
+              direction: 'apply' | 'restore';
+          };
+      }
+    | {
+          /** Internal exact source slip replay; absent from public command discovery. */
+          type: 'restoreAudioClipSlip';
+          payload: {
+              clipId: string;
+              offset: number;
+              before: { clip: ClipStateSnapshot; lanes: CompTakeLaneSnapshot[] };
+              after: { clip: ClipStateSnapshot; lanes: CompTakeLaneSnapshot[] };
+              clock: TempoSourceClock;
+              direction: 'apply' | 'restore';
+          };
+      }
     | {
           type: 'slipClipContent';
           payload: {

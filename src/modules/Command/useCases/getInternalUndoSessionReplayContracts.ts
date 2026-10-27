@@ -13,6 +13,8 @@ function createInternalReplayContract(
         | 'restoreClip'
         | 'restoreClipPlacement'
         | 'restoreClipSplitState'
+        | 'restoreAudioClipStartTrim'
+        | 'restoreAudioClipSlip'
         | 'restoreDrawnClip'
         | 'restoreMidiClipNotes'
         | 'restoreAutomationPointPresence'
@@ -32,7 +34,12 @@ function createInternalReplayContract(
             // These internal actions carry owner-defined captures wider than
             // their neutral Command snapshots. Their owner validators decode
             // the complete shapes without widening executable discovery.
-            if (actionType === 'restoreClip' || actionType === 'restoreTimeOperationState') {
+            if (
+                actionType === 'restoreClip' ||
+                actionType === 'restoreTimeOperationState' ||
+                actionType === 'restoreAudioClipStartTrim' ||
+                actionType === 'restoreAudioClipSlip'
+            ) {
                 return ownerValidator?.(payload) === true;
             }
             if (!validateVersionedCommandArguments(actionType, payload)) {
@@ -73,6 +80,8 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreClip', 1, 'required'),
         createInternalReplayContract('restoreClipPlacement', 1, 'required'),
         createInternalReplayContract('restoreClipSplitState', 1, 'required'),
+        createInternalReplayContract('restoreAudioClipStartTrim', 1, 'required'),
+        createInternalReplayContract('restoreAudioClipSlip', 1, 'required'),
         createInternalReplayContract('restoreDrawnClip', 1, 'optional'),
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
         createInternalReplayContract('restoreAutomationPointPresence', 1, 'required'),

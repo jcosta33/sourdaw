@@ -181,70 +181,25 @@ function closeRecordedTakes(input: {
     });
 }
 
-async function commitFinalizedMidiClips(
-    clips: readonly Clip[],
-    stillOwnsCaptureRoot: () => boolean
-): Promise<StopRecordingOutcome> {
-    // The commit can wait on a snapshot transaction. A root replacement during
-    // that wait refuses the captured take without discarding a successor's clip.
-    const outcomes = await Promise.all(
-        clips.map((clip) =>
-            commitRecording(clip, undefined, {
-                shouldExecute: () => {
-                    if (!stillOwnsCaptureRoot()) {
-                        throw new RecordingRootMovedRefusal();
-                    }
-                    return true;
-                },
-            })
-                .then(() => 'closed' as const)
-                .catch((error: unknown) => {
-                    if (error instanceof RecordingRootMovedRefusal) {
-                        notifyUser(
-                            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
-                            'warning'
-                        );
-                        return 'refused' as const;
-                    }
-                    logger.error(new Error('MIDI recording commit failed', { cause: error }));
-                    // Retire a failed gesture only under the root that owns it.
-                    if (stillOwnsCaptureRoot()) {
-                        notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
-                        discardRecording(clip.id);
-                    } else {
-                        notifyUser(
-                            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
-                            'warning'
-                        );
-                    }
-                    return 'closed' as const;
-                })
-        )
-    );
-    return outcomes.length > 0 && outcomes.every((outcome) => outcome === 'refused') ? 'refused' : 'closed';
-}
+type RecordingEnd = { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number };
 
-function finishPendingAudioEnds(input: {
-    tracks: NonNullable<ReturnType<typeof getTrackState>>['tracks'];
-    clipIds: ReadonlySet<string>;
-    ending: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number } | undefined;
-    manualAudioEnd: boolean;
-    endBeat: number;
-}): ReadonlyMap<string, { takeId: string; endBeat: number }> {
+function finishAudioRecordingPasses(
+    tracks: NonNullable<ReturnType<typeof getTrackState>>['tracks'],
+    clipIds: ReadonlySet<string>,
+    ending: RecordingEnd | undefined,
+    manualAudioEnd: boolean,
+    endBeat: number
+): Map<string, { takeId: string; endBeat: number }> {
     const pendingEnds = new Map<string, { takeId: string; endBeat: number }>();
-    if (!input.ending) {
+    if (!ending) {
         return pendingEnds;
     }
-    for (const track of input.tracks) {
+    for (const track of tracks) {
         for (const clip of track.clips) {
-            if (!input.clipIds.has(clip.id) || clip.type !== 'audio') {
+            if (!clipIds.has(clip.id) || clip.type !== 'audio') {
                 continue;
             }
-            const pendingEnd = recordingPassTiming.finish(
-                clip.id,
-                input.ending,
-                input.manualAudioEnd ? undefined : input.endBeat
-            );
+            const pendingEnd = recordingPassTiming.finish(clip.id, ending, manualAudioEnd ? undefined : endBeat);
             if (pendingEnd) {
                 pendingEnds.set(clip.id, pendingEnd);
             }
@@ -253,9 +208,45 @@ function finishPendingAudioEnds(input: {
     return pendingEnds;
 }
 
+function commitFinalizedMidiClip(clip: Clip, stillOwnsCaptureRoot: () => boolean): Promise<StopRecordingOutcome> {
+    // The queued commit must re-check the root; a refused resume is distinct
+    // from a commit that landed just before the root moved.
+    return commitRecording(clip, undefined, {
+        shouldExecute: () => {
+            if (!stillOwnsCaptureRoot()) {
+                throw new RecordingRootMovedRefusal();
+            }
+            return true;
+        },
+    })
+        .then(() => 'closed' as const)
+        .catch((error: unknown) => {
+            if (error instanceof RecordingRootMovedRefusal) {
+                notifyUser(
+                    'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+                    'warning'
+                );
+                return 'refused' as const;
+            }
+            logger.error(new Error('MIDI recording commit failed', { cause: error }));
+            // A failed commit retires its provisional result only on the root
+            // that owns the take, never on a successor branch.
+            if (stillOwnsCaptureRoot()) {
+                notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+                discardRecording(clip.id);
+            } else {
+                notifyUser(
+                    'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+                    'warning'
+                );
+            }
+            return 'closed' as const;
+        });
+}
+
 export async function stopRecording(
     atBeat?: number,
-    ending?: { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number },
+    ending?: RecordingEnd,
     manualAudioEnd = false
 ): Promise<StopRecordingOutcome> {
     const clipIds = activeRecordingRef.current;
@@ -320,13 +311,7 @@ export async function stopRecording(
     }
     const lanes = takeLaneStore.value?.lanes ?? [];
     const finalizedMidiClips: Clip[] = [];
-    const pendingEnds = finishPendingAudioEnds({
-        tracks: trackState.tracks,
-        clipIds: clipIdSet,
-        ending,
-        manualAudioEnd,
-        endBeat,
-    });
+    const pendingEnds = finishAudioRecordingPasses(trackState.tracks, clipIdSet, ending, manualAudioEnd, endBeat);
 
     setTrackState({
         ...trackState,
@@ -365,5 +350,8 @@ export async function stopRecording(
     closeRecordedTakes({ clipIds: clipIdSet, endBeat, pendingEnds, finalMidiPassOffsets, finalizedMidiClips });
     // A landed or retired sibling still settles this gesture even when another
     // clip refuses. With no MIDI commits, the audio finalizer also closes normally.
-    return commitFinalizedMidiClips(finalizedMidiClips, stillOwnsCaptureRoot);
+    const outcomes = await Promise.all(
+        finalizedMidiClips.map((clip) => commitFinalizedMidiClip(clip, stillOwnsCaptureRoot))
+    );
+    return outcomes.length > 0 && outcomes.every((outcome) => outcome === 'refused') ? 'refused' : 'closed';
 }
