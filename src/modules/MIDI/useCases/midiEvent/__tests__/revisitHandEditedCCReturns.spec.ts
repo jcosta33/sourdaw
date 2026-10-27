@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { SEQUENCER_TICK_BEATS } from '../../../models/SequencerTick';
-import { createStoredBendRangeReader } from '../../midiClipData/createStoredBendRangeReader';
 import { midiStore } from '../../../stores/midiStore';
+import { createStoredBendRangeReader } from '../../midiClipData/createStoredBendRangeReader';
 import { addMidiCC } from '../addMidiCC';
 import { moveMidiCC } from '../moveMidiCC';
 import { removeMidiCC } from '../removeMidiCC';
 import { restoreMidiCCPoints } from '../restoreMidiCCPoints';
 import { revisitHandEditedCCReturns } from '../revisitHandEditedCCReturns';
+
 import type { MidiCC } from '../../../models/MidiNote';
 
 describe('revisitHandEditedCCReturns', () => {
