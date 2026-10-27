@@ -14,6 +14,7 @@ import {
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
+import { isValidTakePlacement } from './isValidTakePlacement';
 import {
     appendTakeLaneWriteJournal,
     captureTakeLaneWriteJournal,
@@ -62,10 +63,6 @@ function is_finite_non_negative_number(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function is_finite_number(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function is_unknown_array(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
@@ -112,6 +109,7 @@ function is_valid_take(value: unknown): value is Take {
         typeof value.selected === 'boolean' &&
         // A take without the field reads at its clip's origin; a take with a
         // malformed one is dropped whole, like any other malformed take field.
+        isValidTakePlacement(value) &&
         hasValidTakeOffsets(value) &&
         is_valid_pass_placement(value) &&
         hasValidAudioPassOrigin(value)
@@ -135,7 +133,7 @@ function is_valid_pass_placement(value: object): boolean {
         hasAnchor &&
         hasDepth &&
         'sourceOffsetBeats' in value &&
-        is_finite_number(value.passAnchorSeconds) &&
+        (typeof value.passAnchorSeconds === 'number' && Number.isFinite(value.passAnchorSeconds)) &&
         is_finite_non_negative_number(value.passDepthSeconds) &&
         (!('passSourceEndSeconds' in value) ||
             (is_finite_non_negative_number(value.passSourceEndSeconds) &&
