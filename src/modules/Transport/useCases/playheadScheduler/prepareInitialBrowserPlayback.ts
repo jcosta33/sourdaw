@@ -11,11 +11,8 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { prepareInitialMidiWindow } from '../scheduling/prepareInitialMidiWindow';
 
-import {
-    INITIAL_HIGH_WATER_OFFSET_BEATS,
-    projectLoopSeamWindow,
-    SCHEDULE_AHEAD_SECONDS,
-} from './projectLoopSeamWindow';
+import { INITIAL_HIGH_WATER_OFFSET_BEATS, projectLoopSeamWindow } from './projectLoopSeamWindow';
+import { schedulerLookAheadBeats } from './schedulerLookAheadBeats';
 import { schedulerSession } from './schedulerSession';
 
 import type { SchedulerCancellation } from '../scheduling/schedulerCancellation';
@@ -72,7 +69,7 @@ export function prepareInitialBrowserPlayback(generation: number) {
     const changes = tempoState?.changes ?? [];
     const epoch = schedulerSession.discontinuityEpoch;
     const position = state.playheadPosition;
-    const lookAheadBeats = (SCHEDULE_AHEAD_SECONDS * getTempoAtBeat(changes, position, state.tempo)) / 60;
+    const lookAheadBeats = schedulerLookAheadBeats(getTempoAtBeat(changes, position, state.tempo));
     const seam = projectLoopSeamWindow(
         state,
         changes,
