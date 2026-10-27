@@ -1,0 +1,30 @@
+src/modules/ElasticAudio/useCases/elasticAudio/readClipTransientOnsets.ts
+  s_3168504f6ce387::t_588bffe4e4c3b9 71,82-117,121,137-142,146-147,151-165,167-195,197-203,205,209
+  s_3168504f6ce387::t_fb3b64a5204319 204,206-208,214-216,221,232
+src/modules/AiRuntime/useCases/__tests__/transientOnsetRead.spec.ts
+  s_3168504f6ce387::t_102c3602bf5a52 6,22,25-26
+src/modules/AiRuntime/useCases/executeTransientOnsetRead.ts
+  s_3168504f6ce387::t_70b0f18748d483 76,80-93,95-106,108-131,133-135,137,139,141,143-152,154-184,186-195,197-245,247-274,276-281,283-287
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/transientOnsetLocalDiscovery.spec.ts
+  s_3168504f6ce387::t_14f2c83edb39b9 4-5
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/readClipTransientOnsets.spec.ts
+  s_3168504f6ce387::t_3c37197dae8c18 3
+src/modules/ElasticAudio/workers/transientOnsetWorker.ts
+  s_3168504f6ce387::t_83d601482c6c84 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd5a9d8233ece928e440d284fea566c834da3114",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
