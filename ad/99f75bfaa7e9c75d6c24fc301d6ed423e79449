@@ -1,0 +1,35 @@
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_59e31a5c6f3e31::t_4576fd9e828f51 1520
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_b3201877f50e8a::t_1e19caff3e09f5 6-9,1096,1107,1110-1114,1125-1138,1172-1175,1186-1243
+src/modules/AudioEngine/useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority.ts
+  s_b3201877f50e8a::t_f28f557d6e5c6a 23,33-39
+src/modules/AudioEngine/useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt.ts
+  s_59e31a5c6f3e31::t_101496bc6d8c51 18-20,23-24,26-30,39-42
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_b3201877f50e8a::t_4d095cf1cf7f96 95,110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad99f75bfaa7e9c75d6c24fc301d6ed423e79449",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
