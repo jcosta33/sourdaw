@@ -1,0 +1,25 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_7b55fec91f0edf 14,68-69,72,122,297-301,317-319,333,347-348,367,427-489,577-578,615-616,620,625-640
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_a916b8324ce2b9 14-15,72
+src/modules/Transport/useCases/playheadScheduler/schedulerLookAheadBeats.ts
+  s_29d8df116c5b92::t_bc98b528fd1f85 1-6
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_4bf7547979e253 64,674
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef3b5bf9eacce0d6a536c923d4a46593a69d4a2a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
