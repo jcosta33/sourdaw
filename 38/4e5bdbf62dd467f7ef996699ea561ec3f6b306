@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_3168504f6ce387::t_50ac9b24752e37 1834-1835,1839-1844,1879-1884,1934
+  s_3168504f6ce387::t_af8a36d0cc29b6 1822-1833,1836-1838,1845-1848
+  s_3168504f6ce387::t_57e45ba1172995 1863-1878,1885-1933,1935-1936
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_3168504f6ce387::t_50ac9b24752e37 115,125-135
+  s_3168504f6ce387::t_57e45ba1172995 91-114,116-124,136-137
+  s_3168504f6ce387::t_6aa0ce673c5f7c 138-140
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_3168504f6ce387::t_56959d2b870fe1 6-7,94-101,117-125,127-128,130-131,204-207,209-219,248,251
+  s_3168504f6ce387::t_50ac9b24752e37 208
+  s_3168504f6ce387::t_57e45ba1172995 32,126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "384e5bdbf62dd467f7ef996699ea561ec3f6b306",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

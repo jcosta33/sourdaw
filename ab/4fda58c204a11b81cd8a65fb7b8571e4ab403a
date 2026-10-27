@@ -1,0 +1,41 @@
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_b3201877f50e8a::t_0e9cbe34cf8cde 7
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_b3201877f50e8a::t_1e48de96b6750e 6-7
+src/modules/AudioEngine/stores/deviceParameterRuntimeWriteOwners.ts
+  s_b3201877f50e8a::t_c85967220f7d10 5-12
+src/modules/AudioEngine/useCases/deviceControls/__tests__/holdWebFallbackDeviceParam.spec.ts
+  s_b3201877f50e8a::t_cdd786e1380141 19-20
+src/modules/AudioEngine/useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority.ts
+  s_b3201877f50e8a::t_297002bf0a5c09 6-7
+src/modules/AudioEngine/useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt.ts
+  s_b3201877f50e8a::t_99545e5603dd41 1-40
+src/modules/AudioEngine/useCases/deviceControls/deviceParameterRuntimeWriteParameterId.ts
+  s_b3201877f50e8a::t_28e8e72f81c3a0 1-8
+src/modules/AudioEngine/useCases/deviceControls/holdWebFallbackDeviceParam.ts
+  s_b3201877f50e8a::t_9f5a2071670b1a 7
+src/modules/AudioEngine/useCases/deviceControls/setDeviceParameterRuntimeWriteOwner.ts
+  s_b3201877f50e8a::t_179b3e60fe98f1 1
+src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts
+  s_b3201877f50e8a::t_a0bcfcd11fd873 6
+src/modules/AudioEngine/useCases/deviceControls/withDeviceParameterRuntimeWriteOwner.ts
+  s_b3201877f50e8a::t_302980f974b2c3 1-20
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_b3201877f50e8a::t_93a1f392445060 4,788
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab4fda58c204a11b81cd8a65fb7b8571e4ab403a",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

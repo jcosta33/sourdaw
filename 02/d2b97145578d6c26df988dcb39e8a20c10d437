@@ -1,0 +1,25 @@
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_59e31a5c6f3e31::t_f625d10c35a421 31-47,132-135
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  s_59e31a5c6f3e31::t_f625d10c35a421 140
+  s_59e31a5c6f3e31::t_48028d0a31c91e 153-173
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  s_59e31a5c6f3e31::t_f6e9e56301643e 3-10,12-26,237-310,313
+  s_59e31a5c6f3e31::t_fe997ae754a99c 311-312,314-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02d2b97145578d6c26df988dcb39e8a20c10d437",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

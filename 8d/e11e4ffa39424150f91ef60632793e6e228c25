@@ -1,0 +1,51 @@
+.agents/skills/delivery-orchestration/historical-stack-admission.md
+  s_3168504f6ce387::t_4e0a28799cd946 1-32
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_3168504f6ce387::t_87a2c1bb752ae9 102
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_3168504f6ce387::t_5eaca1724bc0f0 1-1118
+scripts/__tests__/openLane.spec.ts
+  s_3168504f6ce387::t_54682d542c01bf 2-11,494-531
+scripts/__tests__/publishLane.spec.ts
+  s_3168504f6ce387::t_a333646d3cbbc6 678
+scripts/__tests__/stackedLanes.spec.ts
+  s_3168504f6ce387::t_40bbfb566001bb 35-44,131-136,142-144
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_3168504f6ce387::t_2270f6c3e433ab 714-716
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_3168504f6ce387::t_2c8c868c261163 39,341-342,513-514
+scripts/laneStackForkMarkers.ts
+  s_3168504f6ce387::t_249b14106e6885 1-11
+scripts/openLane.ts
+  s_3168504f6ce387::t_5f5e252b7a3522 394-399
+scripts/publishLane.ts
+  s_3168504f6ce387::t_c151094e44a6da 2127-2128
+scripts/reviewApprovalContext.ts
+  s_3168504f6ce387::t_6c8e2265f79d65 124
+scripts/reviewRiskPolicy.ts
+  s_3168504f6ce387::t_7a56b15182f1c6 153
+scripts/stackedLanes.ts
+  s_3168504f6ce387::t_00191a7f46e826 5-11,14-15,25-74,125,130,152,162,164-168,170-181,345-636
+scripts/supersedePullRequestGh.ts
+  s_3168504f6ce387::t_4df390a8f66722 89-92
+scripts/syncParentLane.ts
+  s_3168504f6ce387::t_f7a8f08b5aeabc 2-3,16,22,24-27,29,31,37-40,42,47-384,531-532,551-553,556-558,564-586
+scripts/trustedGithubWriteBootstrap.ts
+  s_3168504f6ce387::t_397d05057bd118 162,219,234,273,311,353,415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8de11e4ffa39424150f91ef60632793e6e228c25",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
