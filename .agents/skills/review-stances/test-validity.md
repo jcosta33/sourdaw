@@ -23,7 +23,9 @@ score. Include a duplicate barrel action, an unrelated entity, a wrong value on 
 and typed values whose distinctions JSON serialization would erase. Removing the project-state
 comparison must fail the named acceptance cases while an ordinary intended commit still passes.
 Also count prior barrel writes that restore their original value, and inject an outside-barrel write
-beside Undo; removing only the Undo comparison must fail that case.
+beside Undo; removing only the Undo comparison must fail that case. Observe settled CRDT
+transitions as well as final truth: an unauthorized persisted write followed by restoration must
+fail beside planning, prior and follow-up commits, and Undo.
 
 ### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
 
