@@ -388,6 +388,13 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
         typeof value.rightClipIndex === 'number' &&
         Number.isSafeInteger(value.rightClipIndex) &&
         value.rightClipIndex >= 0 &&
+        (value.rightClipOrder === undefined ||
+            (Array.isArray(value.rightClipOrder) &&
+                value.rightClipOrder.every((id) => typeof id === 'string' && id.length > 0) &&
+                new Set(value.rightClipOrder).size === value.rightClipOrder.length &&
+                (value.rightClipOrder.length === 0 ||
+                    (value.rightClipOrder.indexOf(clipId) >= 0 &&
+                        value.rightClipOrder.indexOf(rightClipId) > value.rightClipOrder.indexOf(clipId))))) &&
         isExactMidiClipDataActionSnapshot(value.sourceMidi) &&
         isExactMidiClipDataActionSnapshot(value.rightMidi) &&
         hasFiniteNumbers(value)
@@ -558,6 +565,7 @@ function splitReplaySnapshotsMatch(
     redo: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload']
 ): boolean {
     return (
+        valuesEqual(inverse.expected.rightClipOrder, inverse.replacement.rightClipOrder) &&
         valuesEqual(inverse.expected, redo.replacement) &&
         valuesEqual(inverse.replacement, redo.expected) &&
         valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes) &&

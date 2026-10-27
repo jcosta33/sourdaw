@@ -8,6 +8,8 @@ import { isClipDropCompatible } from '../clip/isClipDropCompatible';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { planRippleDelete } from '../rippleDelete/planRippleDelete';
 
+import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
+
 type LocatedClip = { owningTrackId: string; clip: ClipSnapshot & Pick<Clip, 'loopOriginBeat'> };
 type ShiftedOwnerState = {
     clips: readonly LocatedClip[];
@@ -78,13 +80,23 @@ function projectDuplicate(
 function projectSplitRestore(
     state: ShiftedOwnerState,
     payload: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload']
-): ShiftedOwnerState {
+): ShiftedOwnerState | null {
     const { clipId, rightClipId, replacement } = payload;
     const trackClips = state.clips
         .filter((owner) => owner.owningTrackId === replacement.trackId && owner.clip.id !== rightClipId)
         .map((owner) => (owner.clip.id === clipId ? { ...owner, clip: replacement.leftClip } : owner));
     if (replacement.rightClip) {
-        trackClips.splice(replacement.rightClipIndex, 0, {
+        const index = resolveClipSplitInsertionIndex(
+            trackClips.map((owner) => owner.clip),
+            clipId,
+            rightClipId,
+            payload.expected,
+            replacement
+        );
+        if (index === null) {
+            return null;
+        }
+        trackClips.splice(index, 0, {
             owningTrackId: replacement.trackId,
             clip: replacement.rightClip,
         });
@@ -207,7 +219,11 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
             continue;
         }
         if (action.type === 'restoreClipSplitState') {
-            state = projectSplitRestore(state, action.payload);
+            const restored = projectSplitRestore(state, action.payload);
+            if (!restored) {
+                return null;
+            }
+            state = restored;
             continue;
         }
         if (action.type !== 'restoreClip') {

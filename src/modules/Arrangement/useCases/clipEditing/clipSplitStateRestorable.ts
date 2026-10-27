@@ -3,6 +3,8 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 
+import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
+
 export type ClipSplitStateRestorableInput = {
     clipId: string;
     rightClipId: string;
@@ -55,9 +57,8 @@ function clipOwnershipMatches(
 /** Same precondition `replaceClipSplitTrackState` writes against, kept as the sole export of its
  *  own file (rather than a second export alongside the write) so a handler's `validate` can
  *  preflight a batch without performing the write that `replaceClipSplitTrackState` performs once
- *  the precondition holds. A deleted unrelated predecessor may shorten the live
- *  track; only a paired saved insertion index may extend past its current end.
- *  In either case the right fragment must remain after its left. */
+ *  the precondition holds. Relative witnesses preserve peer ordering; legacy
+ *  captures retain the conservative paired-index admission. */
 export function clipSplitStateRestorable(
     { clipId, rightClipId, expected, replacement }: ClipSplitStateRestorableInput,
     state: { tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[] } | null = getTrackState()
@@ -78,18 +79,11 @@ export function clipSplitStateRestorable(
     if (!clipOwnershipMatches(state.tracks, expected.trackId, clipId, rightClipId, expected.rightClip !== null)) {
         return false;
     }
-    if (replacement.rightClip) {
-        const clipsAfterRemoval = track.clips.filter((clip) => clip.id !== rightClipId).length;
-        const leftClipIndex = track.clips.findIndex((clip) => clip.id === clipId);
-        if (
-            !Number.isSafeInteger(replacement.rightClipIndex) ||
-            replacement.rightClipIndex < 0 ||
-            (replacement.rightClipIndex > clipsAfterRemoval &&
-                replacement.rightClipIndex !== expected.rightClipIndex) ||
-            Math.min(replacement.rightClipIndex, clipsAfterRemoval) <= leftClipIndex
-        ) {
-            return false;
-        }
+    if (
+        replacement.rightClip &&
+        resolveClipSplitInsertionIndex(track.clips, clipId, rightClipId, expected, replacement) === null
+    ) {
+        return false;
     }
     return true;
 }
