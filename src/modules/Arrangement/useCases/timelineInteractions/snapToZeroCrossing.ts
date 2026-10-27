@@ -1,8 +1,9 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
 
 import { snapSplitBeatToZeroCrossing as snapSplitBeatToZeroCrossingService } from '../../services/snapSplitBeatToZeroCrossing';
 import { type Clip } from '../../stores/trackStore';
+import { consumedStretchFactor } from '../clipEditing/consumedStretchFactor';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 
 export function snapToZeroCrossing(clip: Clip, beat: number): number {
     if (clip.type !== 'audio' || !clip.audioBufferId) {
@@ -19,6 +20,7 @@ export function snapToZeroCrossing(clip: Clip, beat: number): number {
         splitBeat: beat,
         channelData: buffer.getChannelData(0),
         sampleRate: buffer.sampleRate,
-        tempo: readTempoAtBeat({ beat: clip.startBeat }),
+        timeline: liveTempoTimeline,
+        stretchRatio: consumedStretchFactor(clip),
     });
 }

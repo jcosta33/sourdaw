@@ -1,4 +1,12 @@
+import {
+    getAudioSourcePositionSeconds,
+    getAudioTimelineElapsedSeconds,
+    projectAudioLoopPassSegments,
+} from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+
 import { type Clip } from '../models/Track';
+import { type TempoTimeline } from '../models/TempoTimeline';
 import { findNearestZeroCrossing } from '../transformers/clipDspTransformers';
 
 export type SnapSplitBeatToZeroCrossingInput = {
@@ -6,7 +14,8 @@ export type SnapSplitBeatToZeroCrossingInput = {
     splitBeat: number;
     channelData: Float32Array;
     sampleRate: number;
-    tempo: number;
+    timeline: TempoTimeline;
+    stretchRatio: number;
 };
 
 /**
@@ -19,23 +28,94 @@ export function snapSplitBeatToZeroCrossing({
     splitBeat,
     channelData,
     sampleRate,
-    tempo,
+    timeline,
+    stretchRatio,
 }: SnapSplitBeatToZeroCrossingInput): number {
-    if (clip.type !== 'audio' || !clip.audioBufferId) {
+    if (
+        clip.type !== 'audio' ||
+        !clip.audioBufferId ||
+        !Number.isFinite(splitBeat) ||
+        splitBeat < clip.startBeat ||
+        !Number.isFinite(sampleRate) ||
+        sampleRate <= 0 ||
+        !Number.isFinite(stretchRatio) ||
+        stretchRatio <= 0 ||
+        channelData.length < 2
+    ) {
         return splitBeat;
     }
 
-    const beatsPerSecond = tempo / 60;
+    const splitSeconds = timeline.secondsAtBeat(splitBeat);
+    // Include rounding slack around the finder's 256-sample search window.
+    const searchSeconds = 257 / (sampleRate * stretchRatio);
+    const windowStartBeat = Math.max(clip.startBeat, timeline.beatAtSeconds(splitSeconds - searchSeconds));
+    const windowEndBeat = timeline.beatAtSeconds(splitSeconds + searchSeconds);
+    if (!Number.isFinite(windowStartBeat) || !Number.isFinite(windowEndBeat)) {
+        return splitBeat;
+    }
 
-    // The absolute distance from the clip's start beat, plus its internal audio offset
-    const offsetInAudio = splitBeat - clip.startBeat + (clip.audioOffsetBeats ?? 0);
-    const targetSample = Math.round((offsetInAudio / beatsPerSecond) * sampleRate);
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const part = projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: loop.loopLengthBeats,
+        iterationStartBeat: windowStartBeat,
+        iterationEndBeat: windowEndBeat,
+        stretchRatio,
+        tempoAtClipStart: timeline.tempoAtBeat(clip.startBeat),
+        secondsAtBeat: timeline.secondsAtBeat,
+    }).find(
+        (candidate) =>
+            windowStartBeat + candidate.startOffsetBeats <= splitBeat &&
+            splitBeat < windowStartBeat + candidate.endOffsetBeats
+    );
+    if (!part) {
+        return splitBeat;
+    }
 
-    const snappedSample = findNearestZeroCrossing(channelData, targetSample);
+    const partStartBeat = windowStartBeat + part.startOffsetBeats;
+    const partEndBeat = windowStartBeat + part.endOffsetBeats;
+    const partStartSeconds = timeline.secondsAtBeat(partStartBeat);
+    const sourceSeconds = getAudioSourcePositionSeconds(
+        part.sourceStartSeconds,
+        splitSeconds - partStartSeconds,
+        stretchRatio
+    );
+    if (!Number.isFinite(sourceSeconds) || sourceSeconds < 0 || sourceSeconds >= channelData.length / sampleRate) {
+        return splitBeat;
+    }
 
-    // Convert the snapped sample back into a beat offset from the clip's start
-    const snappedOffsetInAudio = (snappedSample / sampleRate) * beatsPerSecond;
-    const snappedRelativeBeat = snappedOffsetInAudio - (clip.audioOffsetBeats ?? 0);
+    const sourceEndSeconds = getAudioSourcePositionSeconds(
+        part.sourceStartSeconds,
+        timeline.secondsAtBeat(partEndBeat) - partStartSeconds,
+        stretchRatio
+    );
+    // Both samples of the sign pair must belong to this occurrence and its finite media.
+    const firstSample = Math.max(0, Math.ceil(part.sourceStartSeconds * sampleRate));
+    const endSample = Math.min(channelData.length, Math.ceil(sourceEndSeconds * sampleRate));
+    const samples = channelData.subarray(firstSample, endSample);
+    const targetSample = Math.round(sourceSeconds * sampleRate) - firstSample;
+    const snappedSample = findNearestZeroCrossing(samples, targetSample);
+    if (
+        snappedSample < 0 ||
+        snappedSample >= samples.length - 1 ||
+        !(samples[snappedSample]! * samples[snappedSample + 1]! <= 0)
+    ) {
+        return splitBeat;
+    }
 
-    return clip.startBeat + snappedRelativeBeat;
+    const snappedBeat = timeline.beatAtSeconds(
+        partStartSeconds +
+            getAudioTimelineElapsedSeconds(
+                part.sourceStartSeconds,
+                (firstSample + snappedSample) / sampleRate,
+                stretchRatio
+            )
+    );
+    return Number.isFinite(snappedBeat) && partStartBeat <= snappedBeat && snappedBeat < partEndBeat
+        ? snappedBeat
+        : splitBeat;
 }
