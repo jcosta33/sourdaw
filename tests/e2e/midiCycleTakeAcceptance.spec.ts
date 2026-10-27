@@ -23,6 +23,12 @@ type CapturedTake = {
     endBeat: number;
     sourceOffsetBeats?: number;
 };
+type OscillatorStart = {
+    frequency: number;
+    scheduledContextSeconds: number;
+    sampleRate: number;
+    clock?: { beat: number; contextSeconds: number; compensationSeconds: number };
+};
 type Capture = {
     projectId: string;
     clipId: string | null;
@@ -125,9 +131,14 @@ async function installSynthObserver(page: Page): Promise<void> {
         const start = OscillatorNode.prototype.start;
         Reflect.set(window, '__midiCycleOscillatorStarts', []);
         OscillatorNode.prototype.start = function (...args): void {
-            (Reflect.get(window, '__midiCycleOscillatorStarts') as number[]).push(
-                scheduledValues.get(this.frequency) ?? this.frequency.value
-            );
+            const readClock = Reflect.get(window, '__midiCycleReadClock') as
+                (() => OscillatorStart['clock']) | undefined;
+            (Reflect.get(window, '__midiCycleOscillatorStarts') as OscillatorStart[]).push({
+                frequency: scheduledValues.get(this.frequency) ?? this.frequency.value,
+                scheduledContextSeconds: args[0] ?? this.context.currentTime,
+                sampleRate: this.context.sampleRate,
+                clock: readClock?.(),
+            });
             Reflect.apply(start, this, args);
         };
     });
@@ -139,9 +150,53 @@ async function clearSynthStarts(page: Page): Promise<void> {
 
 async function synthPitches(page: Page): Promise<number[]> {
     return page.evaluate(() => {
-        const starts = Reflect.get(window, '__midiCycleOscillatorStarts') as number[];
-        return starts.map((frequency) => Math.round(69 + 12 * Math.log2(frequency / 440)));
+        const starts = Reflect.get(window, '__midiCycleOscillatorStarts') as OscillatorStart[];
+        return starts.map(({ frequency }) => Math.round(69 + 12 * Math.log2(frequency / 440)));
     });
+}
+
+async function installPlaybackClockObserver(page: Page, trackId: string): Promise<void> {
+    const clock = await page.evaluate(async (id) => {
+        const [{ getCompensationDelay }, { playheadClockRef }, { tempoMapStore, transportStore }] = await Promise.all([
+            import('/src/modules/AudioEngine/useCases/index.ts'),
+            import('/src/modules/Transport/stores/playheadClockRef.ts'),
+            import('/src/modules/Transport/stores/index.ts'),
+        ]);
+        const readClock = () => ({
+            beat: playheadClockRef.beat,
+            contextSeconds: playheadClockRef.audioTimeSeconds,
+            compensationSeconds: getCompensationDelay(id),
+        });
+        Reflect.set(window, '__midiCycleReadClock', readClock);
+        return {
+            tempo: transportStore.value?.tempo,
+            tempoChanges: tempoMapStore.value?.changes,
+            compensationSeconds: getCompensationDelay(id),
+        };
+    }, trackId);
+    expect(clock.tempo).toBe(120);
+    expect(clock.tempoChanges).toEqual([]);
+    expect(clock.compensationSeconds).toBe(0);
+}
+
+async function scheduledPitchesInInterval(page: Page, startBeat: number, endBeat: number): Promise<number[]> {
+    const starts = await page.evaluate(() => Reflect.get(window, '__midiCycleOscillatorStarts') as OscillatorStart[]);
+    const boundaryFrame = (start: OscillatorStart, beat: number): number => {
+        if (!start.clock) {
+            throw new Error('The scheduled oscillator has no published transport clock anchor');
+        }
+        return (
+            Math.round(start.clock.contextSeconds * start.sampleRate) +
+            Math.round((beat - start.clock.beat) * 0.5 * start.sampleRate) +
+            Math.round(start.clock.compensationSeconds * start.sampleRate)
+        );
+    };
+    return starts
+        .filter((start) => {
+            const frame = Math.round(start.scheduledContextSeconds * start.sampleRate);
+            return frame >= boundaryFrame(start, startBeat) - 1 && frame < boundaryFrame(start, endBeat) - 1;
+        })
+        .map(({ frequency }) => Math.round(69 + 12 * Math.log2(frequency / 440)));
 }
 
 async function selectTake(page: Page, take: CapturedTake): Promise<void> {
@@ -246,7 +301,10 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         await page.keyboard.down('g'); // G4 belongs to its onset pass across the seam.
         await waitForPhase(page, firstWrap + 1, 8.25);
         await page.keyboard.up('g');
-        await keyPhrase(page, 's', firstWrap + 1, 8.7, 9.2); // D4, pass 2
+        await waitForPhase(page, firstWrap + 1, 8.7);
+        await page.keyboard.down('s'); // D4 owns pass 2 even while held across its seam.
+        await waitForPhase(page, firstWrap + 2, 8.25);
+        await page.keyboard.up('s');
         await waitForPhase(page, firstWrap + 2, 8.7);
         await page.keyboard.down('d'); // E4 is admitted immediately before Stop seals this session.
         await waitForPhase(page, firstWrap + 2, 9.15);
@@ -262,6 +320,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
             [64, 2],
         ]);
         expect(recorded.notes.find((note) => note.pitch === 67)?.duration).toBeGreaterThan(0.5);
+        expect(recorded.notes.find((note) => note.pitch === 62)?.duration).toBeGreaterThan(3);
         expect(recorded.notes.find((note) => note.pitch === 64)?.duration).toBeGreaterThan(0);
         expect(await synthPitches(page), 'the browser Web Audio observer must see the live D4 voice').toContain(62);
         expect(recorded.takes.map((take) => take.recordingPassIndex).sort()).toEqual([0, 1, 2]);
@@ -451,15 +510,30 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                 { startBeat: LOOP_START, endBeat: finalPass.endBeat, takeId: finalPass.id },
                 { startBeat: finalPass.endBeat, endBeat: LOOP_END, takeId: recorded.regions[0].takeId },
             ]);
+        await installPlaybackClockObserver(page, recordedTrackId);
         await clearSynthStarts(page);
         await seek(page, LOOP_START);
         await page.getByTestId('transport-play').click();
         await expect.poll(() => synthPitches(page), { timeout: 8_000 }).toContain(64);
+        await expect
+            .poll(
+                async () => {
+                    const observed = await phase(page);
+                    return observed.wraps === 0 && observed.beat > finalPass.endBeat + 0.1;
+                },
+                { timeout: 8_000 }
+            )
+            .toBe(true);
         await page.getByTestId('transport-stop').click();
-        const heard = await synthPitches(page);
-        expect(heard).toContain(64);
-        expect(heard).not.toContain(60);
-        expect(heard).not.toContain(62);
-        expect(heard).not.toContain(67);
+        const finalInterval = await scheduledPitchesInInterval(page, LOOP_START, finalPass.endBeat);
+        expect(finalInterval).toContain(64);
+        expect(finalInterval).not.toContain(60);
+        expect(finalInterval).not.toContain(62);
+        expect(finalInterval).not.toContain(67);
+        const followingInterval = await scheduledPitchesInInterval(page, finalPass.endBeat, LOOP_END);
+        expect(followingInterval).toContain(62);
+        expect(followingInterval).not.toContain(60);
+        expect(followingInterval).not.toContain(64);
+        expect(followingInterval).not.toContain(67);
     });
 });
