@@ -475,8 +475,8 @@ export function landEditOnRows(stored: readonly MidiCC[], edit: MidiCC): MidiCC[
  * target is then the cut state the returns restore, untouched. The family is never emptied: a revisit that finds
  * the returns gone could never restore them, so a rewrite with nothing to reconcile re-declares the target state.
  *
- * A no-op — signalled by `null` — when the head carries no returns, when RPN 0 is not selected after the visible
- * rows, when a fine-only edit finds no hand coarse at the head to complete, or when the returns already restore
+ * A no-op — signalled by `null` — when the head carries no returns, when a fine-only edit finds no hand coarse
+ * at the head to complete, or when the returns already restore
  * exactly the target state.
  */
 export function reconcileHandEditedReturns(
@@ -492,14 +492,12 @@ export function reconcileHandEditedReturns(
     const kept = rows.filter((row) => !returns.includes(row));
     const visible = kept.filter((row) => row.beat <= head.beat);
     const afterEdit = replayInReaderOrder(visible, head.channel);
-    if (!isPitchBendSensitivitySelected(afterEdit)) {
-        return null;
-    }
     // A hand coarse Data Entry is what sets the range the returns must carry: the writer's
     // declaration and carried coarses (ids carrying `:rpn-`) are the rows the returns exist to
     // override, and a lone Data Entry LSB refines nothing. The range provenance runs through the
     // full replay — a hand coarse only sets the range under the selection the writer rows left —
     // tracking the last valid coarse write, including an explicit write of the value already in force.
+    // A later selector changes the destination of future data, not the range this write already set.
     let rangeSourceId: string | undefined;
     const rangeState = createMidiChannelControllerState();
     for (const row of visible

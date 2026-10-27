@@ -1041,6 +1041,126 @@ describe('CCLane return-family history with real MIDI edits', () => {
         laneMocks.useActualStore = false;
     });
 
+    it.each(
+        (['split', 'glue'] as const).flatMap((producer) => [
+            { producer, selection: 'NRPN', selectors: [[99, 1]] as const, coarseFirst: true },
+            {
+                producer,
+                selection: 'Null RPN',
+                selectors: [
+                    [101, 127],
+                    [100, 127],
+                ] as const,
+                coarseFirst: true,
+            },
+            { producer, selection: 'NRPN', selectors: [[99, 1]] as const, coarseFirst: false },
+            {
+                producer,
+                selection: 'Null RPN',
+                selectors: [
+                    [101, 127],
+                    [100, 127],
+                ] as const,
+                coarseFirst: false,
+            },
+        ])
+    )(
+        'moves a range onto a produced $producer head with $selection selected later, coarse first: $coarseFirst',
+        ({ producer, selectors, coarseFirst }) => {
+            const declaredRange = (key: string, beat: number, value: number): MidiCC[] =>
+                (
+                    [
+                        [101, 0],
+                        [100, 0],
+                        [6, value],
+                        [38, 0],
+                    ] as const
+                ).map(([controller, data], index) => ({
+                    id: `${key}-${index}`,
+                    controller,
+                    value: data,
+                    beat,
+                    channel: 0,
+                }));
+            midiStore.set({
+                notesByClipId: {},
+                ccByClipId: { source: [...declaredRange('held', 0.1, 12), ...declaredRange('cut', 1.3, 2)] },
+                pitchBendByClipId: { source: [{ id: 'held-bend', value: 8191, beat: 1.2, channel: 0 }] },
+            });
+            if (producer === 'split') {
+                const plan = actualMidiUseCases.prepareMidiClipSplit({
+                    sourceClipId: 'source',
+                    rightClipId: 'clip-1',
+                    splitBeat: 2,
+                    splitNotes: true,
+                });
+                expect(plan).not.toBeNull();
+                seed([...plan!.nextRight.controlChanges.value]);
+            } else {
+                const plan = actualMidiUseCases.prepareMidiClipGlueState({
+                    sources: [
+                        { clipId: 'source', visibleStartBeat: 2, visibleEndBeat: 4, beatOffset: -2 },
+                        { clipId: 'neighbor', visibleStartBeat: 0, visibleEndBeat: 2, beatOffset: 2 },
+                    ],
+                    targetClipId: 'clip-1',
+                });
+                expect(plan).not.toBeNull();
+                const glued = plan!.next.clips.find(({ clipId }) => clipId === 'clip-1');
+                expect(glued).toBeDefined();
+                seed([...glued!.data.controlChanges.value]);
+            }
+            expect(rangeAt(0)).toBe(12);
+            expect(rangeAt(0.5)).toBe(2);
+            const addCoarse = () => actualMidiUseCases.addMidiCC('clip-1', 6, 9, 1, 0, 'hand-coarse');
+            if (coarseFirst) {
+                addCoarse();
+            }
+            for (const [controller, value] of selectors) {
+                // Move the selectors too, preserving the producer's opening declaration and list order.
+                const selector = actualMidiUseCases.addMidiCC('clip-1', controller, value, 0.5, 0);
+                actualMidiUseCases.moveMidiCC('clip-1', selector.id, 0, selector.value);
+                actualMidiUseCases.revisitHandEditedCCReturns(
+                    'clip-1',
+                    { channel: 0, beat: 0.5 },
+                    {
+                        editedController: selector.controller,
+                        editedRowId: selector.id,
+                    }
+                );
+                actualMidiUseCases.revisitHandEditedCCReturns(
+                    'clip-1',
+                    { channel: 0, beat: 0 },
+                    {
+                        editedController: selector.controller,
+                        editedRowId: selector.id,
+                    }
+                );
+            }
+            if (!coarseFirst) {
+                addCoarse();
+            }
+            const before = [...rows()];
+            const view = render(<CCLane {...props} />);
+            const point = view.container.querySelector('[title="Beat 1.00: 9"]');
+            expect(point).not.toBeNull();
+            fireEvent.pointerDown(point!, { pointerId: 1, button: 0, clientX: 48, clientY: valueToY(9, 80) });
+            fireEvent.pointerMove(point!, { pointerId: 1, clientX: 8, clientY: valueToY(9, 80) });
+            fireEvent.pointerUp(point!, { pointerId: 1 });
+            expect(rows().find(({ id }) => id === 'hand-coarse')?.beat).toBe(0);
+            // The coarse writes only when RPN 0 is selected at its own arrival, regardless of the final selector.
+            expect(rangeAt(0)).toBe(coarseFirst ? 9 : 12);
+            expect(rangeAt(0.5)).toBe(coarseFirst ? 9 : 2);
+            const committed = [...rows()];
+            const { undo, redo } = replay();
+            undo();
+            expect(rows()).toEqual(before);
+            expect(rangeAt(0.5)).toBe(2);
+            redo();
+            expect(rows()).toEqual(committed);
+            expect(rangeAt(0.5)).toBe(coarseFirst ? 9 : 2);
+        }
+    );
+
     it('restores exact rows and same-beat order after adding, undoing and redoing a hand range', () => {
         seed([
             ...headRows(0, 'cc-split:right'),
