@@ -1,6 +1,8 @@
-import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlCompilation } from '../models/RuntimeDeviceControl';
-
-const MAX_ID_LENGTH = 128;
+import {
+    SET_FALLBACK_PARAM_COMMAND,
+    isRuntimeDeviceControlId,
+    type RuntimeDeviceControlCompilation,
+} from '../models/RuntimeDeviceControl';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -15,10 +17,6 @@ function isRecord(value: unknown): value is UnknownRecord {
 function hasOnlyKeys(value: UnknownRecord, keys: readonly string[]): boolean {
     const actualKeys = Object.keys(value);
     return actualKeys.length === keys.length && actualKeys.every((key) => keys.includes(key));
-}
-
-export function isRuntimeDeviceControlId(value: unknown): value is string {
-    return typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
 }
 
 function isNonNegativeSafeInteger(value: unknown): value is number {

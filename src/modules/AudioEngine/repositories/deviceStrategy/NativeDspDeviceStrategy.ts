@@ -2,9 +2,8 @@ import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { type NoteExpressionControls } from '../../engine/noteExpression';
 import { createOfflineGrinderSetupError } from '../../errors/OfflineGrinderSetupError';
-import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
+import { isRuntimeDeviceControlId, type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 import { type Device } from '../../models/TrackViewTypes';
-import { isRuntimeDeviceControlId } from '../../services/compileRuntimeDeviceControl';
 import { type OfflineDeviceNode } from '../devices/types';
 
 import {
