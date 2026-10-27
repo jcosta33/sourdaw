@@ -119,6 +119,8 @@ vi.mock('#/modules/Automation/useCases', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: vi.fn(() => true),
     admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
+    prepareRecoveredRecording: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
@@ -142,6 +144,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
  */
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),

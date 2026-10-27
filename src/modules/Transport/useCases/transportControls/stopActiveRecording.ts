@@ -9,11 +9,19 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { captureRecordingEnd } from './captureRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
-async function closeActiveRecording(): Promise<void> {
+/** A failed Record start may close only its own capture; flush and clip closure can admit a successor reentrantly. */
+async function closeActiveRecording(stillOwns?: () => boolean): Promise<void> {
+    if (stillOwns?.() === false) {
+        return;
+    }
     recordingLifecycle.cancelPendingRecordingStart();
     const ending = captureRecordingEnd();
     recordingLifecycle.endRecording();
     const recordingFlush = stopAudioRecording();
+    if (stillOwns?.() === false) {
+        await recordingFlush;
+        return;
+    }
     // A manual ending belongs to its synchronous receipt, between ticks too.
     // The last published playhead can precede captured PCM; passing it as an
     // intended cap would discard the tail before a pending seam sounds.
@@ -32,13 +40,15 @@ async function closeActiveRecording(): Promise<void> {
         recordingLifecycle.trackTakeCommit(recordingCommit);
     }
 
-    const timerId = recordingLifecycle.countInTimerId;
-    if (timerId !== null) {
-        clearTimeout(timerId);
-        recordingLifecycle.setCountInTimerId(null);
-    }
+    if (stillOwns?.() !== false) {
+        const timerId = recordingLifecycle.countInTimerId;
+        if (timerId !== null) {
+            clearTimeout(timerId);
+            recordingLifecycle.setCountInTimerId(null);
+        }
 
-    updateTransportState({ isRecording: false });
+        updateTransportState({ isRecording: false });
+    }
     await recordingFlush;
     // The terminal that registers the audio commit runs inside the flush, so
     // this is where that promise becomes waitable.
@@ -65,8 +75,8 @@ async function closeActiveRecording(): Promise<void> {
  * not have registered its commit yet, so only the first stop can say when the
  * take has landed.
  */
-export async function stopActiveRecording(): Promise<void> {
-    const closing = closeActiveRecording();
+export async function stopActiveRecording(stillOwns?: () => boolean): Promise<void> {
+    const closing = closeActiveRecording(stillOwns);
     recordingLifecycle.trackClosing(closing);
     try {
         await closing;
