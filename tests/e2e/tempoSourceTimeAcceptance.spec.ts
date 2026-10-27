@@ -808,7 +808,10 @@ async function slipGesture(
     previewProgramme?: [number, number][]
 ): Promise<Snapshot> {
     const clip = onlyClip(before);
-    const point = await canvasPoint(page, clip, clip.startBeat + Math.min(0.5, (clip.endBeat - clip.startBeat) / 2));
+    // Use the actual body midpoint. At the import overview zoom, half a beat
+    // is only six pixels and can lie under the adjacent pane's resize hit area.
+    const point = await canvasPoint(page, clip, (clip.startBeat + clip.endBeat) / 2);
+    await expectCanvasAdmission(page, point.x, point.y);
     await page.keyboard.down('Control');
     await page.keyboard.down('Shift');
     await page.mouse.move(point.x, point.y);
@@ -947,11 +950,27 @@ async function gainSatellites(page: Page) {
     });
 }
 
+async function expectCanvasAdmission(page: Page, x: number, y: number): Promise<void> {
+    const target = await page.evaluate(
+        ({ x, y }) => {
+            const hit = document.elementFromPoint(x, y);
+            return { tag: hit?.tagName, label: hit?.getAttribute('aria-label') };
+        },
+        { x, y }
+    );
+    expect(target, 'the normal pointer must reach the timeline rather than an adjacent resize handle').toEqual({
+        tag: 'CANVAS',
+        label: 'Timeline editor surface',
+    });
+}
+
 async function trimPhysicalHead(page: Page, before: Snapshot, beat: number, sourceFrame: number): Promise<Snapshot> {
     const clip = onlyClip(before);
-    const anchorBeat = clip.startBeat + 0.125;
+    const anchorBeat = (clip.startBeat + clip.endBeat) / 2;
     const point = await canvasPoint(page, clip, anchorBeat);
-    const from = point.x - (anchorBeat - clip.startBeat) * point.pixelsPerBeat + 2;
+    // Eight pixels is inside the real10px left-edge hit area and clear of the pane divider.
+    const from = point.x - (anchorBeat - clip.startBeat) * point.pixelsPerBeat + 8;
+    await expectCanvasAdmission(page, from, point.y);
     await page.mouse.move(from, point.y);
     await page.mouse.down();
     try {
@@ -1240,6 +1259,16 @@ test('slips canonical media and manual comp snapshots from authoritative seconds
     await dragEdge(page, onlyClip(state), 'right', 2);
     await expect.poll(async () => onlyClip(await readSnapshot(page)).endBeat).toBe(2);
     state = await readSnapshot(page);
+    // Normal Zoom to Fit makes the .2/.1-media-beat gestures whole CSS pixels.
+    await page.keyboard.press('f');
+    await expect
+        .poll(async () =>
+            page.evaluate(async () => {
+                const { timelineViewStore } = await import('/src/modules/Arrangement/stores/timelineViewStore.ts');
+                return timelineViewStore.value?.pixelsPerBeat;
+            })
+        )
+        .toBe(80);
     await page.getByRole('button', { name: 'Toggle tempo map' }).click();
     state = await addTempoEvent(page, 0, 120, state);
     await page.getByRole('button', { name: 'Toggle tempo map' }).click();
