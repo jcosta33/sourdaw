@@ -63,3 +63,26 @@ this probe to fail at frame 4799; a passing unmutated suite does not establish
 that discrimination. Retain a genuinely fractional-frame endpoint, negative
 pre-roll and its inverse, and a constant-tempo linear segment so the repair
 cannot pass by rounding or substituting another source clock.
+
+## Escape: legacy cut source entry crossed an interior tempo event
+
+PR [#645](https://github.com/jcosta33/sourdaw/pull/645), merged as
+`e2795259dc52842a7cecb04a6655ba9d8dec7e68`, introduced selected-range deletion
+with a right survivor's source offset advanced in beats. PR #5495 carried that
+law forward. A beat-only clip spanning beats 0–8 at 120 BPM through beat 2,
+then 60 BPM, enters source second 3 at beat 4. Deleting selected beats 1–4
+retained beat 4 but reinterpreted its advanced four-beat offset at 60 BPM,
+entering source second 4. The missed probe was physical source seconds across
+an interior tempo event for a legacy live cut; flat-tempo geometry and loop
+phase assertions could pass. Historical prompt, model and tier are unestablished.
+
+Cut the same source through selected UI and global Command routes. Compare the
+actual offline/native playback projection before and after, including first
+source frame, exclusive ending, stretch and finite loop phase. Reopen the binary
+project and require exact original optional-field absence on Undo and identical
+physical source on Redo. Global typed history must replay after saved-session
+rehydration; selected callback history remains the separate #5126 obligation.
+A source-cut helper that returns no fields merely because canonical seconds are
+absent must fail this probe. Keep strict malformed-present-source refusals and
+unaffected-peer satellite admission controls while allowing a valid legacy cut
+to capture its source under the clock that actually existed before deletion.

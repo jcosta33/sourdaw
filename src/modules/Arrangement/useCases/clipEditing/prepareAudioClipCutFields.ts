@@ -13,9 +13,6 @@ export function prepareAudioClipCutFields(clip: Clip, retainedBeat: number, plac
     if (!hasExactAudioSourceFields(clip)) {
         return null;
     }
-    if (!Object.hasOwn(clip, 'audioOffsetSeconds')) {
-        return {};
-    }
     const source = audioSourceAtBeat(clip, retainedBeat);
     if (!source) {
         return null;

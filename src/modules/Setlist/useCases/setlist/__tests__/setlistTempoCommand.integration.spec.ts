@@ -136,8 +136,12 @@ function projectAuthorityMatchesStores(): void {
     const publishedTracks = structuredClone(trackStore.value!.tracks);
     for (const track of publishedTracks) {
         // Projection defaults name these absent keys; the durable document does not.
-        if (track.frozenBufferId === undefined) { delete track.frozenBufferId; }
-        if (track.showVariationLanes === undefined) { delete track.showVariationLanes; }
+        if (track.frozenBufferId === undefined) {
+            delete track.frozenBufferId;
+        }
+        if (track.showVariationLanes === undefined) {
+            delete track.showVariationLanes;
+        }
     }
     expect(getCrdtDoc('root')).toMatchObject({
         transport: {

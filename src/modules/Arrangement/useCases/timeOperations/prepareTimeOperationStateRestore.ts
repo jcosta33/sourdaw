@@ -258,11 +258,13 @@ function rightSurvivorMatches(candidate: Clip, original: Clip, expected: Clip): 
     if (!hasExactAudioSourceFields(original) || !hasExactAudioSourceFields(candidate)) {
         return false;
     }
-    if (original.type !== 'audio' || !Object.hasOwn(original, 'audioOffsetSeconds')) {
+    if (original.type !== 'audio') {
         return timeOperationStateCodec.valuesEqual(candidate, expected);
     }
     if (!Object.hasOwn(candidate, 'audioOffsetSeconds')) {
-        return false;
+        return (
+            !Object.hasOwn(original, 'audioOffsetSeconds') && timeOperationStateCodec.valuesEqual(candidate, expected)
+        );
     }
     const sourceFields = new Set([
         'audioOffsetSeconds',
