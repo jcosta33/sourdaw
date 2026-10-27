@@ -520,9 +520,18 @@ function expectExportEnd(pcm: ReturnType<typeof pcm24Wav>, bodyFrame: number): v
             'last selected source frame must survive the end fade'
         ).toBeGreaterThan(4_096);
         expect(pcm.at(LAST_OUTPUT_FRAME, channel)).toBeLessThan(pcm.at(bodyFrame, channel));
+        let firstNonzero: { frame: number; value: number } | null = null;
         for (let frame = EXCLUSIVE_OUTPUT_FRAME; frame < pcm.frames; frame += 1) {
-            expect(pcm.at(frame, channel), `trailing frame ${frame} must not read excluded source`).toBe(0);
+            const value = pcm.at(frame, channel);
+            if (value !== 0) {
+                firstNonzero = { frame, value };
+                break;
+            }
         }
+        expect(
+            firstNonzero,
+            `all trailing PCM24 samples in channel ${channel} must be zero; first excluded-source sample: ${JSON.stringify(firstNonzero)}`
+        ).toBeNull();
     }
 }
 
