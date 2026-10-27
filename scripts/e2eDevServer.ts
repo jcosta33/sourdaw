@@ -32,7 +32,9 @@ export function runE2eDevServer(root: string, port: number, command: string, arg
     process.on('SIGINT', onInterrupt);
     process.on('SIGTERM', onTerminate);
     child.once('spawn', () => record('start', { pid: child.pid, root, port }));
-    child.once('error', () => record('spawn-error', {}));
+    child.once('error', (error: NodeJS.ErrnoException) =>
+        record('spawn-error', { code: error.code, message: error.message.replace(command, '<executable>') })
+    );
     child.once('close', (code, signal) => {
         if (timer) clearTimeout(timer);
         process.off('SIGINT', onInterrupt);
