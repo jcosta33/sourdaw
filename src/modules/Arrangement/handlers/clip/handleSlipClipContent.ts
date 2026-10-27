@@ -4,13 +4,16 @@ import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { slipWrapRowLiftBeats } from '../../useCases/clipEditing/slipWrapRowLiftBeats';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
 
 const rowReplay = createMidiRowCoordinateReplay('slipClipContent');
 
 export const handleSlipClipContent = createHandler<'slipClipContent'>({
     execute: (action) => {
-        if (!rowReplay.canExecute(action)) return { status: 'conflict' };
+        if (!rowReplay.canExecute(action)) {
+            return { status: 'conflict' };
+        }
         if (action.payload.clipType === 'audio') {
             return toHandlerExecutionResult(
                 slipClipContent(action.payload.clipId, 'audio', action.payload.offset, action.payload.rowLiftBeats)
@@ -27,11 +30,14 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
             coordinates
         );
         if (!didWrite) {
-            return coordinates.refused || action.payload.midiRowCoordinates !== undefined
-                ? { status: 'conflict' }
-                : { status: 'no-write' };
+            if (coordinates.refused || action.payload.midiRowCoordinates !== undefined) {
+                return { status: 'conflict' };
+            }
+            return { status: 'no-write' };
         }
-        if (coordinates.capture) rowReplay.recordApplied(action, coordinates.capture);
+        if (coordinates.capture) {
+            rowReplay.recordApplied(action, coordinates.capture);
+        }
         return { status: 'written' };
     },
     describe: (action) => {
@@ -80,7 +86,7 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
                     label,
                     ...rowReplay.describe(action, inverseAction, {
                         type: 'slipClipContent',
-                        payload: { ...action.payload },
+                        payload: structuredClone(action.payload),
                     }),
                 };
             }

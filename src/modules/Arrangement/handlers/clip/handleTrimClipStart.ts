@@ -3,13 +3,16 @@ import { createHandler } from '#/utils/createHandler';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
 import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
 
 const rowReplay = createMidiRowCoordinateReplay('trimClipStart');
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     execute: (action) => {
-        if (!rowReplay.canExecute(action)) return { status: 'conflict' };
+        if (!rowReplay.canExecute(action)) {
+            return { status: 'conflict' };
+        }
         const clip = getTrackStoreState()
             ?.tracks.flatMap((track) => track.clips)
             .find((candidate) => candidate.id === action.payload.clipId);
@@ -38,11 +41,14 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
             coordinates
         );
         if (!didWrite) {
-            return coordinates.refused || action.payload.midiRowCoordinates !== undefined
-                ? { status: 'conflict' }
-                : { status: 'no-write' };
+            if (coordinates.refused || action.payload.midiRowCoordinates !== undefined) {
+                return { status: 'conflict' };
+            }
+            return { status: 'no-write' };
         }
-        if (coordinates.capture) rowReplay.recordApplied(action, coordinates.capture);
+        if (coordinates.capture) {
+            rowReplay.recordApplied(action, coordinates.capture);
+        }
         return { status: 'written' };
     },
     describe: (alpha) => {
@@ -88,7 +94,7 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                     label,
                     ...rowReplay.describe(alpha, inverseAction, {
                         type: 'trimClipStart',
-                        payload: { ...alpha.payload },
+                        payload: structuredClone(alpha.payload),
                     }),
                 };
             }

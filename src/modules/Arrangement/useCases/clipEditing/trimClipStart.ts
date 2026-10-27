@@ -81,7 +81,9 @@ export function trimClipStart(
         Extract<ReturnType<typeof prepareClipMidiRowCoordinateShift>, { status: 'prepared' }>['capture'] | undefined;
     function applyMidiRows(beatDelta: number): void {
         const plan = prepareClipMidiRowCoordinateShift({ clipId, beatDelta, restore: rowCoordinates?.restore });
-        if (plan.status === 'refused' || !plan.apply()) throw refused;
+        if (plan.status === 'refused' || !plan.apply()) {
+            throw refused;
+        }
         capture = plan.capture;
     }
     try {
@@ -124,7 +126,9 @@ export function trimClipStart(
                     delete updated.loopOriginBeat;
                 }
                 if (context.type === 'midi') {
-                    if (!Number.isFinite(delta) || !Number.isFinite(updated.audioOffsetBeats)) throw refused;
+                    if (!Number.isFinite(delta) || !Number.isFinite(updated.audioOffsetBeats)) {
+                        throw refused;
+                    }
                     if (restoreMidiOffsetBeats !== undefined) {
                         // The recorded-inverse offset restore (#5512). The forward
                         // trim wrapped its raw advance against the loop length the
@@ -162,7 +166,9 @@ export function trimClipStart(
                     }
                     const rawOffsetBeats = (context.midiOffsetBeats ?? 0) + delta;
                     const midiOffsetBeats = loopedMidiOffsetBeats(updated, rawOffsetBeats);
-                    if (!Number.isFinite(midiOffsetBeats)) throw refused;
+                    if (!Number.isFinite(midiOffsetBeats)) {
+                        throw refused;
+                    }
                     applyMidiRows(midiOffsetBeats - rawOffsetBeats);
                     return { ...updated, midiOffsetBeats };
                 }
@@ -170,11 +176,15 @@ export function trimClipStart(
             }
             return context;
         });
-        if (didWrite && rowCoordinates && capture) rowCoordinates.capture = capture;
+        if (didWrite && rowCoordinates && capture) {
+            rowCoordinates.capture = capture;
+        }
         return didWrite;
     } catch (error) {
         if (error === refused) {
-            if (rowCoordinates) rowCoordinates.refused = true;
+            if (rowCoordinates) {
+                rowCoordinates.refused = true;
+            }
             return false;
         }
         throw error;

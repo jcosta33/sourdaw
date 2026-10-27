@@ -8,24 +8,6 @@ type Input = {
     restore?: unknown;
 };
 
-type CoordinateCapture = Extract<ReturnType<typeof planMidiRowCoordinateShift>, { status: 'planned' }>['capture'];
-
-/** Validates serialized replay data independently of today's clip and row membership. */
-export function isMidiRowCoordinateCapture(value: unknown): value is CoordinateCapture {
-    if (value === null || typeof value !== 'object' || !('beatDelta' in value) || typeof value.beatDelta !== 'number') {
-        return false;
-    }
-    return (
-        planMidiRowCoordinateShift({
-            notes: [],
-            controllers: [],
-            pitchBends: [],
-            beatDelta: -value.beatDelta,
-            restore: value,
-        }).status === 'planned'
-    );
-}
-
 /** Plans every lane before either owner writes. Apply synchronously in the caller's transaction. */
 export function prepareClipMidiRowCoordinateShift({ clipId, beatDelta, restore }: Input) {
     const state = midiStore.value;
@@ -52,30 +34,31 @@ export function prepareClipMidiRowCoordinateShift({ clipId, beatDelta, restore }
         return coordinate.afterBeat;
     }
     const changed = plan.capture.coordinates.some((change) => !Object.is(change.beforeBeat, change.afterBeat));
-    const nextState =
-        state && changed
-            ? {
-                  ...state,
-                  notesByClipId: notes
-                      ? {
-                            ...state.notesByClipId,
-                            [clipId]: notes.map((row) => ({ ...row, startBeat: nextBeat('note', row.id) })),
-                        }
-                      : state.notesByClipId,
-                  ccByClipId: controllers
-                      ? {
-                            ...state.ccByClipId,
-                            [clipId]: controllers.map((row) => ({ ...row, beat: nextBeat('cc', row.id) })),
-                        }
-                      : state.ccByClipId,
-                  pitchBendByClipId: pitchBends
-                      ? {
-                            ...state.pitchBendByClipId,
-                            [clipId]: pitchBends.map((row) => ({ ...row, beat: nextBeat('pitchBend', row.id) })),
-                        }
-                      : state.pitchBendByClipId,
-              }
-            : state;
+    let nextState = state;
+    if (state && changed) {
+        let notesByClipId = state.notesByClipId;
+        if (notes) {
+            notesByClipId = {
+                ...state.notesByClipId,
+                [clipId]: notes.map((row) => ({ ...row, startBeat: nextBeat('note', row.id) })),
+            };
+        }
+        let ccByClipId = state.ccByClipId;
+        if (controllers) {
+            ccByClipId = {
+                ...state.ccByClipId,
+                [clipId]: controllers.map((row) => ({ ...row, beat: nextBeat('cc', row.id) })),
+            };
+        }
+        let pitchBendByClipId = state.pitchBendByClipId;
+        if (pitchBends) {
+            pitchBendByClipId = {
+                ...state.pitchBendByClipId,
+                [clipId]: pitchBends.map((row) => ({ ...row, beat: nextBeat('pitchBend', row.id) })),
+            };
+        }
+        nextState = { ...state, notesByClipId, ccByClipId, pitchBendByClipId };
+    }
 
     return {
         status: 'prepared' as const,

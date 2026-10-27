@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type MidiStoreState } from '../../../stores/midiStore';
-import { isMidiRowCoordinateCapture, prepareClipMidiRowCoordinateShift } from '../prepareClipMidiRowCoordinateShift';
+import { isMidiRowCoordinateCapture } from '../isMidiRowCoordinateCapture';
+import { prepareClipMidiRowCoordinateShift } from '../prepareClipMidiRowCoordinateShift';
 
 const store = vi.hoisted(() => ({ value: null as MidiStoreState | null, set: vi.fn() }));
 vi.mock('../../../stores/midiStore', () => ({ midiStore: store }));
@@ -38,12 +39,12 @@ describe('MIDI owner coordinate shift preparation', () => {
     it('writes all three coordinate lanes together and restores their exact fractional figures', () => {
         const before = structuredClone(store.value);
         const forward = prepare(8);
-        expect(isMidiRowCoordinateCapture(JSON.parse(JSON.stringify(forward.capture)))).toBe(true);
+        expect(isMidiRowCoordinateCapture(structuredClone(forward.capture))).toBe(true);
         expect(store.set).not.toHaveBeenCalled();
         expect(forward.apply()).toBe(true);
         expect(store.set).toHaveBeenCalledTimes(1);
         expect(store.value).toEqual(rowsAt(8.1));
-        const inverse = prepare(-8, JSON.parse(JSON.stringify(forward.capture)));
+        const inverse = prepare(-8, structuredClone(forward.capture));
         expect(inverse.apply()).toBe(true);
         expect(store.value).toEqual(before);
     });
@@ -74,9 +75,15 @@ describe('MIDI owner coordinate shift preparation', () => {
         (edit) => {
             const prepared = prepare(8);
             const peer = rowsAt(0.1);
-            if (edit === 'coordinate') peer.notesByClipId.clip![0]!.startBeat = 1.25;
-            if (edit === 'property') peer.notesByClipId.clip![0]!.velocity = 42;
-            if (edit === 'membership') peer.ccByClipId.clip = [];
+            if (edit === 'coordinate') {
+                peer.notesByClipId.clip![0]!.startBeat = 1.25;
+            }
+            if (edit === 'property') {
+                peer.notesByClipId.clip![0]!.velocity = 42;
+            }
+            if (edit === 'membership') {
+                peer.ccByClipId.clip = [];
+            }
             store.value = peer;
             expect(prepared.apply()).toBe(false);
             expect(store.value).toBe(peer);
@@ -105,6 +112,19 @@ describe('MIDI owner coordinate shift preparation', () => {
         });
         expect(store.value).toEqual(before);
         expect(store.set).not.toHaveBeenCalled();
+    });
+
+    it('preserves absent-lane map identities when preparing the note lane', () => {
+        const current = rowsAt(0.1);
+        delete current.ccByClipId.clip;
+        delete current.pitchBendByClipId.clip;
+        store.value = current;
+        expect(prepare(8).apply()).toBe(true);
+        expect(store.value?.notesByClipId.clip?.[0]?.startBeat).toBe(8.1);
+        expect(store.value?.ccByClipId).toBe(current.ccByClipId);
+        expect(store.value?.pitchBendByClipId).toBe(current.pitchBendByClipId);
+        expect(store.value?.probabilitySeed).toBe(current.probabilitySeed);
+        expect(store.value?.noteCoordinateFormat).toBe(current.noteCoordinateFormat);
     });
 
     it('creates no lists for an absent clip or null store and writes nothing for a zero shift', () => {

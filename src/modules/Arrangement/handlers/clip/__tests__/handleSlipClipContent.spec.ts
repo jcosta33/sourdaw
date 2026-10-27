@@ -107,22 +107,29 @@ describe('handleSlipClipContent', () => {
             payload: { clipId: 'cm', clipType: 'midi' as const, offset: -1 },
         };
         const description = handleSlipClipContent.describe(action);
+        expect(description.redoAction?.type).toBe('slipClipContent');
+        expect(description.redoAction?.payload).not.toBe(action.payload);
         const capture = {
             beatDelta: 8,
             coordinates: [{ kind: 'note' as const, id: 'note', beforeBeat: 0.1, afterBeat: 8.1 }],
         };
         mocks.slipClipContent.mockImplementationOnce((_id, _type, _offset, _lift, coordinates) => {
-            if (!coordinates) throw new Error('Expected the MIDI coordinate capture output');
+            if (!coordinates) {
+                throw new Error('Expected the MIDI coordinate capture output');
+            }
             coordinates.capture = capture;
             return true;
         });
         expect(handleSlipClipContent.execute(action)).toEqual({ status: 'written' });
+        expect(Object.hasOwn(action.payload, 'midiRowCoordinates')).toBe(false);
         expect(mocks.slipClipContent).toHaveBeenCalledWith('cm', 'midi', -1, undefined, {
             restore: undefined,
             capture,
         });
         expect(description.inverseAction).toMatchObject({ payload: { rowLiftBeats: -8, midiRowCoordinates: capture } });
-        if (description.inverseAction?.type !== 'slipClipContent') throw new Error('Expected a slip inverse');
+        if (description.inverseAction?.type !== 'slipClipContent') {
+            throw new Error('Expected a slip inverse');
+        }
         mocks.slipClipContent.mockReturnValueOnce(true);
         expect(handleSlipClipContent.execute(description.inverseAction)).toEqual({ status: 'written' });
         expect(mocks.slipClipContent).toHaveBeenLastCalledWith('cm', 'midi', 0, -8, { restore: capture });
@@ -130,8 +137,12 @@ describe('handleSlipClipContent', () => {
 
     it.each([false, true])('distinguishes a fresh MIDI no-write from unsafe coordinate refusal: %s', (refused) => {
         mocks.slipClipContent.mockImplementationOnce((_id, _type, _offset, _lift, coordinates) => {
-            if (!coordinates) throw new Error('Expected MIDI coordinate preflight output');
-            if (refused) coordinates.refused = true;
+            if (!coordinates) {
+                throw new Error('Expected MIDI coordinate preflight output');
+            }
+            if (refused) {
+                coordinates.refused = true;
+            }
             return false;
         });
         expect(

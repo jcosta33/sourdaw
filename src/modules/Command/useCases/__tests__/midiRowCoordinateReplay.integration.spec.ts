@@ -24,8 +24,8 @@ import {
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionCommittedError, AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { clearHandlerRegistry } from '../../stores/handlerRegistry';
@@ -74,7 +74,6 @@ function seed(loopLength?: number, type: 'audio' | 'midi' = 'midi', loopEnabled 
         audioOffsetBeats: 0,
         loopEnabled,
         loopOriginBeat: 0,
-        ...(loopLength === undefined ? {} : { loopLength }),
         fadeInBeats: 0,
         fadeOutBeats: 0,
         gain: 1,
@@ -82,6 +81,9 @@ function seed(loopLength?: number, type: 'audio' | 'midi' = 'midi', loopEnabled 
         locked: false,
         muted: false,
     };
+    if (loopLength !== undefined) {
+        clip.loopLength = loopLength;
+    }
     const track = createTrack({ id: 'keys', name: 'Keys', kind: type, withoutDefaultDevice: true });
     trackStore.set({
         ...defaultTrackState,
@@ -106,7 +108,9 @@ function trim(newStartBeat = 2): AppAction {
 }
 function readClip(): Clip {
     const clip = trackStore.value?.tracks[0]?.clips.find((candidate) => candidate.id === CLIP_ID);
-    if (!clip) throw new Error('Expected the phrase clip');
+    if (!clip) {
+        throw new Error('Expected the phrase clip');
+    }
     return clip;
 }
 function readRows() {
@@ -246,7 +250,9 @@ describe('exact row captures through real Command history and persistence (#5695
         'keeps peer additions, deletions, moves and properties before both directions of %s',
         async (kind) => {
             seed();
-            if (kind === 'trim') await executeAppAction(slip());
+            if (kind === 'trim') {
+                await executeAppAction(slip());
+            }
             await executeAppAction(kind === 'slip' ? slip() : trim());
             const beforeUndo = readRows()!;
             const target = beforeUndo.notesByClipId[CLIP_ID]![0]!.startBeat;
@@ -409,15 +415,18 @@ describe('exact row captures through real Command history and persistence (#5695
         'refuses an unbound capture added to a fresh %s request before any write',
         async (kind) => {
             seed();
-            if (kind === 'trim') await executeAppAction(slip());
+            if (kind === 'trim') {
+                await executeAppAction(slip());
+            }
             await executeAppAction(kind === 'slip' ? slip() : trim());
             await settleMirror();
             const entry = undoStore.value?.past.at(-1);
             if (
                 entry?.kind !== 'action' ||
                 (entry.inverseAction?.type !== 'slipClipContent' && entry.inverseAction?.type !== 'trimClipStart')
-            )
+            ) {
                 throw new Error('Expected a coordinate inverse');
+            }
             const forged = structuredClone(entry.inverseAction);
             const before = snapshot();
             await expect(executeAppAction(forged)).rejects.toBeInstanceOf(AppActionConflictError);
@@ -430,16 +439,21 @@ describe('exact row captures through real Command history and persistence (#5695
         'refuses malformed bound %s capture without consuming or rewriting pending history',
         async (kind) => {
             seed();
-            if (kind === 'trim') await executeAppAction(slip());
+            if (kind === 'trim') {
+                await executeAppAction(slip());
+            }
             await executeAppAction(kind === 'slip' ? slip() : trim());
             const entry = undoStore.value?.past.at(-1);
             if (
                 entry?.kind !== 'action' ||
                 (entry.inverseAction?.type !== 'slipClipContent' && entry.inverseAction?.type !== 'trimClipStart')
-            )
+            ) {
                 throw new Error('Expected a coordinate inverse');
+            }
             const capture = entry.inverseAction.payload.midiRowCoordinates;
-            if (!capture) throw new Error('Expected an executed coordinate capture');
+            if (!capture) {
+                throw new Error('Expected an executed coordinate capture');
+            }
             capture.coordinates[0]!.afterBeat = 99;
             await settleMirror();
             const before = snapshot();
@@ -458,10 +472,18 @@ describe('exact row captures through real Command history and persistence (#5695
             await settleMirror();
             const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY)!);
             const entry = saved.past.at(-1);
-            if (broken === 'clip identity') entry.redoAction.payload.clipId = 'other';
-            if (broken === 'redo request') entry.redoAction.payload.newStartBeat = 3;
-            if (broken === 'opposite displacement') entry.redoAction.payload.midiRowCoordinates.beatDelta = 0;
-            if (broken === 'anchor') delete entry.inverseAction.payload.loopOriginBeat;
+            if (broken === 'clip identity') {
+                entry.redoAction.payload.clipId = 'other';
+            }
+            if (broken === 'redo request') {
+                entry.redoAction.payload.newStartBeat = 3;
+            }
+            if (broken === 'opposite displacement') {
+                entry.redoAction.payload.midiRowCoordinates.beatDelta = 0;
+            }
+            if (broken === 'anchor') {
+                delete entry.inverseAction.payload.loopOriginBeat;
+            }
             const before = readRows();
             const rawBefore = JSON.stringify(getCrdtDoc('root'));
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(saved));
@@ -496,13 +518,17 @@ describe('exact row captures through real Command history and persistence (#5695
         await executeAppAction(slip());
         const originalEntry = undoStore.value?.past.at(-1);
         const id = actionHistoryStore.value?.entries.at(-1)?.id;
-        if (!id || originalEntry?.kind !== 'action') throw new Error('Expected a recorded action capability');
+        if (!id || originalEntry?.kind !== 'action') {
+            throw new Error('Expected a recorded action capability');
+        }
         expect(getActionReplayStatus(id)).toEqual({ status: 'ready' });
         await expect(revertAction(id)).resolves.toEqual({ status: 'executed' });
         expect(getActionReplayStatus(id)).toEqual({ status: 'unavailable' });
         expect(actionHistoryStore.value?.entries.find((entry) => entry.id === id)?.reverted).toBe(true);
         const reversion = undoStore.value?.past.at(-1);
-        if (reversion?.kind !== 'action') throw new Error('Expected an undoable reversion');
+        if (reversion?.kind !== 'action') {
+            throw new Error('Expected an undoable reversion');
+        }
         expect(reversion.action).toBe(originalEntry.inverseAction);
         expect(readRows()).toEqual(initial);
         await undo();

@@ -80,16 +80,21 @@ describe('handleTrimClipStart', () => {
         });
         const action = { type: 'trimClipStart' as const, payload: { clipId: 'cm', newStartBeat: 2 } };
         const description = handleTrimClipStart.describe(action);
+        expect(description.redoAction?.type).toBe('trimClipStart');
+        expect(description.redoAction?.payload).not.toBe(action.payload);
         const capture = {
             beatDelta: -6,
             coordinates: [{ kind: 'note' as const, id: 'note', beforeBeat: 8.1, afterBeat: 2.0999999999999996 }],
         };
         mocks.trimClipStart.mockImplementationOnce((_id, _start, _anchor, _offset, coordinates) => {
-            if (!coordinates) throw new Error('Expected MIDI coordinate capture output');
+            if (!coordinates) {
+                throw new Error('Expected MIDI coordinate capture output');
+            }
             coordinates.capture = capture;
             return true;
         });
         expect(handleTrimClipStart.execute(action)).toEqual({ status: 'written' });
+        expect(Object.hasOwn(action.payload, 'midiRowCoordinates')).toBe(false);
         expect(mocks.trimClipStart).toHaveBeenCalledWith('cm', 2, undefined, undefined, {
             restore: undefined,
             capture,
@@ -97,7 +102,9 @@ describe('handleTrimClipStart', () => {
         expect(description.inverseAction).toMatchObject({
             payload: { newStartBeat: 0, midiOffsetBeats: 7, midiRowCoordinates: capture },
         });
-        if (description.inverseAction?.type !== 'trimClipStart') throw new Error('Expected a trim inverse');
+        if (description.inverseAction?.type !== 'trimClipStart') {
+            throw new Error('Expected a trim inverse');
+        }
         mocks.trimClipStart.mockReturnValueOnce(true);
         expect(handleTrimClipStart.execute(description.inverseAction)).toEqual({ status: 'written' });
         expect(mocks.trimClipStart).toHaveBeenLastCalledWith('cm', 0, null, 7, { restore: capture });
@@ -108,8 +115,12 @@ describe('handleTrimClipStart', () => {
             tracks: [{ id: 't1', clips: [{ id: 'cm', startBeat: 0, type: 'midi' }] }],
         });
         mocks.trimClipStart.mockImplementationOnce((_id, _start, _anchor, _offset, coordinates) => {
-            if (!coordinates) throw new Error('Expected MIDI coordinate preflight output');
-            if (refused) coordinates.refused = true;
+            if (!coordinates) {
+                throw new Error('Expected MIDI coordinate preflight output');
+            }
+            if (refused) {
+                coordinates.refused = true;
+            }
             return false;
         });
         expect(

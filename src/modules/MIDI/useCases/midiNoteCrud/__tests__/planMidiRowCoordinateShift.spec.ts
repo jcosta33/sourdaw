@@ -54,24 +54,24 @@ describe('exact identity-scoped MIDI coordinate shift planning', () => {
         }
     );
 
-    it('keeps exact intermediate and terminal coordinates through a slip/trim chain and repeated persisted inverse plans', () => {
+    it('keeps exact intermediate and terminal coordinates through a slip/trim chain and repeated inverse plans', () => {
         const original = rowsAt(0.1);
         const slip = planned({ ...original, beatDelta: 8 });
         const postSlip = apply(original, slip);
         const trim = planned({ ...postSlip, beatDelta: -6 });
         const postTrim = apply(postSlip, trim);
-        const undoTrim = planned({ ...postTrim, beatDelta: 6, restore: JSON.parse(JSON.stringify(trim)) });
+        const undoTrim = planned({ ...postTrim, beatDelta: 6, restore: structuredClone(trim) });
         expect(apply(postTrim, undoTrim)).toEqual(postSlip);
-        const undoSlip = planned({ ...postSlip, beatDelta: -8, restore: JSON.parse(JSON.stringify(slip)) });
+        const undoSlip = planned({ ...postSlip, beatDelta: -8, restore: structuredClone(slip) });
         let current = apply(postSlip, undoSlip);
         expect(current).toEqual(original);
 
         let inverse = undoSlip;
         for (let cycle = 0; cycle < 3; cycle += 1) {
-            const redo = planned({ ...current, beatDelta: 8, restore: JSON.parse(JSON.stringify(inverse)) });
+            const redo = planned({ ...current, beatDelta: 8, restore: structuredClone(inverse) });
             current = apply(current, redo);
             expect(current).toEqual(postSlip);
-            inverse = planned({ ...current, beatDelta: -8, restore: JSON.parse(JSON.stringify(redo)) });
+            inverse = planned({ ...current, beatDelta: -8, restore: structuredClone(redo) });
             current = apply(current, inverse);
             expect(current).toEqual(original);
         }
@@ -131,7 +131,7 @@ describe('exact identity-scoped MIDI coordinate shift planning', () => {
         peer.controllers.push({ id: 'added-on-undo', beat: 1.5, controller: 1, value: 55, channel: 2 });
         const before = structuredClone(peer);
 
-        const redo = planned({ ...peer, beatDelta: 8, restore: JSON.parse(JSON.stringify(undo)) });
+        const redo = planned({ ...peer, beatDelta: 8, restore: structuredClone(undo) });
         const redone = apply(peer, redo);
 
         expect(redone.notes).toEqual([{ ...peer.notes[0], startBeat: 8.25 }]);
@@ -170,7 +170,7 @@ describe('exact identity-scoped MIDI coordinate shift planning', () => {
 
     it('refuses duplicate current identities after otherwise valid rows', () => {
         const rows = rowsAt(0.1);
-        rows.pitchBends.push({ ...rows.pitchBends[0]! });
+        rows.pitchBends.push(structuredClone(rows.pitchBends[0]!));
         expect(planMidiRowCoordinateShift({ ...rows, beatDelta: 8 })).toEqual({
             status: 'refused',
             reason: 'invalid-row',
@@ -182,9 +182,15 @@ describe('exact identity-scoped MIDI coordinate shift planning', () => {
         (kind) => {
             for (const beat of [Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_VALUE]) {
                 const rows = rowsAt(0.1);
-                if (kind === 'notes') rows.notes[0]!.startBeat = beat;
-                if (kind === 'controllers') rows.controllers[0]!.beat = beat;
-                if (kind === 'pitchBends') rows.pitchBends[0]!.beat = beat;
+                if (kind === 'notes') {
+                    rows.notes[0]!.startBeat = beat;
+                }
+                if (kind === 'controllers') {
+                    rows.controllers[0]!.beat = beat;
+                }
+                if (kind === 'pitchBends') {
+                    rows.pitchBends[0]!.beat = beat;
+                }
                 const before = structuredClone(rows);
                 expect(planMidiRowCoordinateShift({ ...rows, beatDelta: Number.MAX_VALUE }).status).toBe('refused');
                 expect(rows).toEqual(before);
@@ -219,7 +225,7 @@ describe('exact identity-scoped MIDI coordinate shift planning', () => {
 
     it('refuses duplicate captured identities and derived capture overflow even when captured rows were deleted', () => {
         const duplicate = planned({ ...rowsAt(0.1), beatDelta: 8 });
-        duplicate.coordinates.push({ ...duplicate.coordinates[0]! });
+        duplicate.coordinates.push(structuredClone(duplicate.coordinates[0]!));
         expect(planMidiRowCoordinateShift({ ...rowsAt(8.1), beatDelta: -8, restore: duplicate }).status).toBe(
             'refused'
         );

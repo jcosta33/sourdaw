@@ -69,17 +69,25 @@ export function slipClipContent(
                     configuredLoopLengthBeats: context.loopLength,
                     offsetBeats: newOffset,
                 });
-            if (!Number.isFinite(midiOffsetBeats)) throw refused;
+            if (!Number.isFinite(midiOffsetBeats)) {
+                throw refused;
+            }
             const plan = prepareClipMidiRowCoordinateShift({ clipId, beatDelta, restore: rowCoordinates?.restore });
-            if (plan.status === 'refused' || !plan.apply()) throw refused;
+            if (plan.status === 'refused' || !plan.apply()) {
+                throw refused;
+            }
             capture = plan.capture;
             return { ...context, midiOffsetBeats };
         });
-        if (didWrite && rowCoordinates && capture) rowCoordinates.capture = capture;
+        if (didWrite && rowCoordinates && capture) {
+            rowCoordinates.capture = capture;
+        }
         return didWrite;
     } catch (error) {
         if (error === refused) {
-            if (rowCoordinates) rowCoordinates.refused = true;
+            if (rowCoordinates) {
+                rowCoordinates.refused = true;
+            }
             return false;
         }
         throw error;

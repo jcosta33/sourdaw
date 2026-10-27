@@ -110,12 +110,10 @@ export { appendMidiNotes } from './midiNoteCrud/appendMidiNotes';
 export { batchAddMidiNotes } from './midiNoteCrud/batchAddMidiNotes';
 export { duplicateClipNotes } from './midiNoteCrud/duplicateClipNotes';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
+export { isMidiRowCoordinateCapture } from './midiNoteCrud/isMidiRowCoordinateCapture';
 export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNotes';
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
-export {
-    isMidiRowCoordinateCapture,
-    prepareClipMidiRowCoordinateShift,
-} from './midiNoteCrud/prepareClipMidiRowCoordinateShift';
+export { prepareClipMidiRowCoordinateShift } from './midiNoteCrud/prepareClipMidiRowCoordinateShift';
 export { prepareClipMidiShiftTransaction } from './midiNoteCrud/prepareClipMidiShiftTransaction';
 export { prepareMidiGlobalTimeTransaction } from './midiNoteCrud/prepareMidiGlobalTimeTransaction';
 export { prepareMidiTimeStateRestore } from './midiNoteCrud/prepareMidiTimeStateRestore';
