@@ -372,7 +372,7 @@ describe('historical stack native admission', () => {
         expect(query).toContain('child:pullRequest(number:5438)');
         expect(query).toContain('parent:pullRequest(number:5425)');
         // Actor has no id field; identity must be selected on supported concrete Node types.
-        const authors = [...query.matchAll(/author\s*\{(.*?)\}\s*repository/g)].map((match) => match[1]?.trim());
+        const authors = Array.from(query.matchAll(/author\s*\{(.*?)\}\s*repository/g), (match) => match[1]?.trim());
         expect(authors).toEqual(['... on Bot { id } ... on User { id }', '... on Bot { id } ... on User { id }']);
     });
 
