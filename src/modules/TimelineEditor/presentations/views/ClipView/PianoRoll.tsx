@@ -247,7 +247,11 @@ export const PianoRoll = ({
         }
         const baseOutsideSelected = original.filter((note) => {
             const beat = clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0);
-            return !projection.coveredWindows.some((window) => beat >= window.startBeat && beat < window.endBeat);
+            return (
+                beat >= clip.startBeat &&
+                beat < clip.endBeat &&
+                !projection.coveredWindows.some((window) => beat >= window.startBeat && beat < window.endBeat)
+            );
         });
         return [...baseOutsideSelected, ...projection.notes];
     };

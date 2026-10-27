@@ -25,6 +25,11 @@ const pianoRollStoreState = vi.hoisted(() => ({
         ccByClipId: {},
         pitchBendByClipId: {},
     },
+    tracks: {
+        tracks: [] as Array<{ id: string; devices: Array<{ type: string }>; clips: Array<Record<string, unknown>> }>,
+        selectedTrackId: null,
+    },
+    takes: { lanes: [] as Array<Record<string, unknown>> },
 }));
 
 type NotePropertyLaneCapturedProps = {
@@ -73,14 +78,21 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const trackState = { tracks: [], selectedTrackId: null };
     return {
         ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
         trackStore: {
             get value() {
-                return trackState;
+                return pianoRollStoreState.tracks;
             },
-            getSnapshot: () => trackState,
+            getSnapshot: () => pianoRollStoreState.tracks,
+            subscribe: vi.fn(() => () => {}),
+            subscribeReact: vi.fn(() => () => {}),
+        },
+        takeLaneStore: {
+            get value() {
+                return pianoRollStoreState.takes;
+            },
+            getSnapshot: () => pianoRollStoreState.takes,
             subscribe: vi.fn(() => () => {}),
             subscribeReact: vi.fn(() => () => {}),
         },
@@ -205,6 +217,8 @@ describe('PianoRoll', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         pianoRollStoreState.midi.notesByClipId = {};
+        pianoRollStoreState.tracks = { tracks: [], selectedTrackId: null };
+        pianoRollStoreState.takes = { lanes: [] };
         toolbarPropsRef.current = null;
         notePropertyLanePropsRef.current = null;
         contextMenuPropsRef.current = null;
@@ -213,6 +227,91 @@ describe('PianoRoll', () => {
     it('should render without crashing', () => {
         render(<PianoRoll {...defaultProps} />);
         expect(screen.getByTestId('toolbar')).toBeInTheDocument();
+    });
+
+    it('hands mixed selected-pass occurrences to the real piano roll renderer and interaction boundary', () => {
+        pianoRollStoreState.tracks = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    devices: [],
+                    clips: [{ id: 'clip-1', trackId: 'track-1', type: 'midi', startBeat: 0, endBeat: 8 }],
+                },
+            ],
+            selectedTrackId: null,
+        };
+        const first = {
+            id: 'original-first',
+            pitch: 60,
+            startBeat: 5.5,
+            duration: 1,
+            velocity: 90,
+            recordingPassIndex: 0,
+        };
+        const second = {
+            id: 'original-second',
+            pitch: 62,
+            startBeat: 9.5,
+            duration: 1,
+            velocity: 80,
+            recordingPassIndex: 1,
+        };
+        const source = {
+            sourceClipId: 'source',
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: [first, second] },
+                controlChanges: { present: true, value: [] },
+                pitchBends: { present: true, value: [] },
+            },
+        };
+        pianoRollStoreState.takes = {
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'first',
+                            clipId: 'clip-1',
+                            name: 'First',
+                            selected: true,
+                            startBeat: 0,
+                            endBeat: 8,
+                            recordingPassIndex: 0,
+                            midiSource: { ...source, sourceEntryBeat: 5, sourceEndBeat: 9 },
+                        },
+                        {
+                            id: 'second',
+                            clipId: 'clip-1',
+                            name: 'Second',
+                            selected: false,
+                            startBeat: 0,
+                            endBeat: 8,
+                            recordingPassIndex: 1,
+                            midiSource: { ...source, sourceEntryBeat: 9, sourceEndBeat: 13 },
+                        },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 4, takeId: 'first' },
+                        { startBeat: 4, endBeat: 8, takeId: 'second' },
+                    ],
+                },
+            ],
+        };
+        pianoRollStoreState.midi.notesByClipId = { 'clip-1': [first, second] };
+        render(<PianoRoll {...defaultProps} />);
+        const interactionArgs = vi.mocked(usePianoRollInteractions).mock.calls.at(-1)?.[0];
+        const rendererArgs = vi.mocked(usePianoRollRenderer).mock.calls.at(-1)?.[0];
+        expect(interactionArgs?.notes.map((note) => [note.pitch, note.startBeat])).toEqual([
+            [60, 0.5],
+            [62, 4.5],
+        ]);
+        expect(rendererArgs?.notes.map((note) => note.id)).toEqual(interactionArgs?.notes.map((note) => note.id));
+        expect(
+            interactionArgs?.takeProjections?.get('clip-1')?.ownersByViewId.get(interactionArgs.notes[1]!.id)?.row
+        ).toEqual(second);
     });
 
     it('should render toolbar', () => {
