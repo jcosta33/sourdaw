@@ -24,6 +24,7 @@ import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../getArrangementHandlers';
 import { commitRecording } from '../commitRecording';
 import { recordingPassTiming } from '../recordingPassTiming';
+import { stageRecordingTake } from '../stageRecordingTake';
 import { startRecording } from '../startRecording';
 
 const hold = vi.hoisted(() => ({
@@ -131,4 +132,85 @@ describe('recording pass timing belongs to its captured project root', () => {
             'Recording pass has no captured source ending'
         );
     });
+
+    it('finalizes the staged pass clock after roll without republishing its take', () => {
+        transportStore.set({
+            ...transportStore.value!,
+            isPlaying: true,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 11.9,
+        });
+        let firstPassContextSeconds: number | null = null;
+        const [clip] = startRecording(11.9, () => firstPassContextSeconds);
+        if (!clip) {
+            throw new Error('expected the recording clip');
+        }
+        const finalize = stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip.id,
+            name: 'Initial seam',
+            startBeat: 8,
+            endBeat: 12,
+            sourceOffsetBeats: 0,
+            plannedPassEnd: true,
+        });
+        const staged = takeLaneStore.value;
+        const take = staged?.lanes[0]?.takes.at(-1);
+        if (!finalize || !take) {
+            throw new Error('expected the staged pass and its clock receipt');
+        }
+
+        firstPassContextSeconds = 52.1;
+        expect(finalize(52.15)).toBe(true);
+        expect(takeLaneStore.value).toBe(staged);
+        expect(Math.round(recordingPassTiming.depthSeconds(take, 51.9, 0) * 48000)).toBe(9600);
+        expect(Math.round(recordingPassTiming.sourceEndSeconds(take, 51.9, 0) * 48000)).toBe(12000);
+        expect(finalize(53)).toBe(false);
+        expect(Math.round(recordingPassTiming.sourceEndSeconds(take, 51.9, 0) * 48000)).toBe(12000);
+    });
+
+    it.each(['retired', 'root replaced', 'same-ID successor'] as const)(
+        'leaves the successor unchanged when a staged clock belongs to an owner that was %s',
+        (change) => {
+            transportStore.set({ ...transportStore.value!, isPlaying: false, loopStart: 0 });
+            const [clip] = startRecording(4, () => 50);
+            if (!clip) {
+                throw new Error('expected the recording clip');
+            }
+            const finalize = stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Old pass',
+                startBeat: 4,
+                endBeat: 8,
+                sourceOffsetBeats: 0,
+            });
+            if (!finalize) {
+                throw new Error('expected a staged clock receipt');
+            }
+            if (change === 'root replaced') {
+                replaceRootWithSuccessor();
+            }
+            recordingPassTiming.retire(clip.id);
+            if (change !== 'retired') {
+                recordingPassTiming.begin(clip.id, 4, () => 60);
+            }
+            const successor = recordingPassTiming.ownedTakes(clip.id);
+            const successorTake = createTake(clip.id, 'Successor', 4, 8, 0);
+            if (successor) {
+                recordingPassTiming.stage(successorTake, 61);
+            }
+            const staged = takeLaneStore.value;
+
+            expect(finalize(52)).toBe(false);
+            expect(recordingPassTiming.ownedTakes(clip.id)).toBe(successor);
+            expect(takeLaneStore.value).toBe(staged);
+            if (successor) {
+                expect(recordingPassTiming.depthSeconds(successorTake, 60, 0)).toBe(0);
+                expect(recordingPassTiming.sourceEndSeconds(successorTake, 60, 0)).toBe(1);
+            }
+        }
+    );
 });

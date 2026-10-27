@@ -742,7 +742,8 @@ describe('initial browser playback window', () => {
             const playback = startPlayback();
             try {
                 await vi.waitFor(() => expect(processYeastMidi).toHaveBeenCalled());
-                expect(startRecording).toHaveBeenCalledExactlyOnceWith(1.5);
+                expect(startRecording).toHaveBeenCalledExactlyOnceWith(1.5, expect.any(Function));
+                expect(vi.mocked(startRecording).mock.calls[0]?.[1]?.()).toBeNull();
                 expect(transportStoreState.value?.isRecording).toBe(true);
                 expect(notes).toEqual([]);
                 if (change === 'source edited') {
@@ -757,6 +758,7 @@ describe('initial browser playback window', () => {
                 expect(sources).toHaveLength(change === 'unchanged' ? 1 : 0);
                 if (change === 'unchanged') {
                     expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1, hold: null });
+                    expect(vi.mocked(startRecording).mock.calls[0]?.[1]?.()).toBe(10.1);
                 }
             } finally {
                 ready.resolve();

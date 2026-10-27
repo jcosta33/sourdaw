@@ -62,6 +62,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleDeviceWriteTarget: vi.fn(),
 
     trackStore: { value: null, subscribe: vi.fn(() => () => {}) },
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'missing' })
+    ),
     getTrackEligibility: vi.fn(() => ({ acceptsRecording: true })),
     adjustmentLayerStore: { hydrate: vi.fn() },
     gainEnvelopeStore: { hydrate: vi.fn() },

@@ -48,9 +48,12 @@ function beginRecordingPassTiming(
     const openPassBeat = Math.max(recordPointBeat, transport.loopStart);
     let recordPointContextSeconds: number | null = null;
     if (transport.isPlaying && !pendingNative) {
-        recordPointContextSeconds =
-            firstPassClock?.() ??
-            playheadClockRef.audioTimeSeconds + recordPointSeconds - seconds(playheadClockRef.beat);
+        if (firstPassClock) {
+            recordPointContextSeconds = firstPassClock();
+        } else {
+            recordPointContextSeconds =
+                playheadClockRef.audioTimeSeconds + recordPointSeconds - seconds(playheadClockRef.beat);
+        }
     }
     recordingPassTimings.set(clipId, {
         rootIdentity: captureProjectRootIdentity(),
@@ -124,6 +127,39 @@ function beginNextPass(timing: RecordingPassTiming, contextSeconds: number, beat
     timing.previousSeamContextSeconds = contextSeconds;
     timing.openPassContextSeconds = contextSeconds;
     timing.openPassBeat = beat;
+}
+
+/** A same-ID successor must never inherit an older staged pass's clock receipt. */
+function capturePlannedPassClock(take: Take): ((contextSeconds: number) => boolean) | undefined {
+    const owner = currentRecordingPassTiming(take.clipId);
+    if (!owner || !owner.ownedTakeIds.has(take.id) || take.sourceOffsetBeats === undefined) {
+        return undefined;
+    }
+    let pending = true;
+    return (contextSeconds) => {
+        if (
+            !pending ||
+            currentRecordingPassTiming(take.clipId) !== owner ||
+            !owner.ownedTakeIds.has(take.id) ||
+            owner.ending !== null
+        ) {
+            return false;
+        }
+        const firstStart =
+            owner.openPassContextSeconds ??
+            (owner.openPassBeat === owner.recordPointBeat ? (owner.firstPassClock?.() ?? null) : null);
+        if (
+            firstStart === null ||
+            !Number.isFinite(firstStart) ||
+            !Number.isFinite(contextSeconds) ||
+            contextSeconds <= firstStart
+        ) {
+            return false;
+        }
+        pending = false;
+        stageRecordingPassTiming(take, contextSeconds, true);
+        return true;
+    };
 }
 
 function recordingPassDepthSeconds(take: Take, sourceContextOriginSeconds: number, mediaOriginSeconds: number): number {
@@ -308,6 +344,7 @@ export const recordingPassTiming = {
     },
     begin: beginRecordingPassTiming,
     stage: stageRecordingPassTiming,
+    capturePlannedClock: capturePlannedPassClock,
     depthSeconds: recordingPassDepthSeconds,
     sourceEndSeconds: recordingPassSourceEndSeconds,
     retire: retireRecordingPassTiming,

@@ -91,6 +91,9 @@ const audioEngineMocks = {
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
     adjustmentLayerStore: { value: null },
     gainEnvelopeStore: { value: null },
     getTrackEligibility: vi.fn(),

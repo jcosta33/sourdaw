@@ -30,18 +30,22 @@ type StageRecordingTakeInput = {
  * incomplete capture would leave a replayable take behind. `addTake` and
  * `addTakeLane` stay the history-bearing routes for every non-recording gesture,
  * and for armed MIDI tracks, whose notes are committed by their own actions.
+ * A returned clock receipt dates this same pass after roll admission without
+ * publishing another take or changing the programme a pending start captured.
  */
-export function stageRecordingTake(input: StageRecordingTakeInput): void {
+export function stageRecordingTake(
+    input: StageRecordingTakeInput
+): ((passEndContextSeconds: number) => boolean) | undefined {
     const track = getTrackState()?.tracks.find((candidate) => candidate.id === input.trackId);
     if (!track || !recordingPassTiming.isCurrent(input.clipId, track.kind === 'midi' ? 'midi' : 'audio')) {
-        return;
+        return undefined;
     }
     const state = takeLaneStore.value;
     if (!state) {
         if (input.provisionalTakeId !== undefined) {
             throw new Error('Recording provisional take is not available');
         }
-        return;
+        return undefined;
     }
 
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
@@ -84,6 +88,7 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
     }
     recordingPassTiming.ownTake(input.clipId, take.id);
     recordingPassTiming.stage(take, input.passEndContextSeconds, input.plannedPassEnd);
+    const finalizeClock = recordingPassTiming.capturePlannedClock(take);
     if (input.nextPassStartBeat !== undefined) {
         recordingPassTiming.relocateEntry(input.clipId, input.nextPassStartBeat);
     }
@@ -91,7 +96,7 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
         takeLaneStore.set({
             lanes: [...state.lanes, { ...createTakeLane(input.trackId), takes: [take] }],
         });
-        return;
+        return finalizeClock;
     }
     takeLaneStore.set({
         lanes: state.lanes.map((existing) => {
@@ -107,4 +112,5 @@ export function stageRecordingTake(input: StageRecordingTakeInput): void {
             };
         }),
     });
+    return finalizeClock;
 }
