@@ -36,7 +36,7 @@ type StreamExportInput = {
 
 const REPORT_RATES = new Set([44100, 48000, 88200, 96000]);
 
-export function validateWavReportPlan(
+function validateWavReportPlan(
     input: Pick<StreamExportInput, 'destination' | 'includeWavLoudnessReports' | 'exportMode'>,
     targets: readonly Pick<Target, 'formats' | 'bitDepth' | 'sampleRate' | 'channels'>[]
 ) {
@@ -142,26 +142,91 @@ function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: Abort
     });
 }
 
+type ReportedWavInput = {
+    source: ExportAudioSource;
+    target: Target;
+    stemId: string;
+    audioName: string;
+    progress: (fraction: number) => void;
+    destination: Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
+    input: Pick<StreamExportInput, 'checkCancelled' | 'signal'>;
+};
+
+async function writeReportedWav({ source, target, stemId, audioName, progress, destination, input }: ReportedWavInput) {
+    const seed = target.dither.seed ?? Math.floor(Math.random() * 0x100000000);
+    const dither = { ...target.dither, seed };
+    const first = createWavLoudnessReportAnalyzer(createIncrementalMd5());
+    await awaitExportOperation(
+        audioBufferToWav(source, target.bitDepth, undefined, dither, {
+            checkCancelled: input.checkCancelled,
+            write: async (bytes) => {
+                first.write(bytes);
+            },
+        }),
+        input.signal
+    );
+    const threshold = first.finish();
+    const entry = await awaitExportOperation(destination.beginFile(audioName), input.signal);
+    const second = createWavLoudnessReportAnalyzer(createIncrementalMd5(), threshold.relativeGatePower);
+    await awaitExportOperation(
+        audioBufferToWav(source, target.bitDepth, progress, dither, {
+            checkCancelled: input.checkCancelled,
+            write: async (bytes) => {
+                second.write(bytes);
+                await entry.writer.write(bytes);
+            },
+        }),
+        input.signal
+    );
+    const measured = second.finish();
+    if (JSON.stringify(threshold.wav) !== JSON.stringify(measured.wav)) {
+        throw new Error('WAV report refused: emitted audio changed between measurement and output.');
+    }
+    await awaitExportOperation(entry.finish(), input.signal);
+    const reportName = `${audioName}.loudness.json`;
+    const report: WavLoudnessReport = {
+        algorithmRevision: 'sourdaw-current-kweight-4x12tap-v1',
+        measurementBasis: 'decoded-WAV-bytes',
+        publicationAttested: false,
+        stemId: stemId,
+        targetId: target.id,
+        audioFile: audioName,
+        wav: measured.wav,
+        integrated: measured.integrated,
+        maxMomentary: measured.maxMomentary,
+        maxShortTerm: measured.maxShortTerm,
+        truePeak: measured.truePeak,
+    };
+    const reportEntry = await awaitExportOperation(destination.beginFile(reportName), input.signal);
+    await awaitExportOperation(
+        reportEntry.writer.write(new TextEncoder().encode(`${JSON.stringify(report)}\n`)),
+        input.signal
+    );
+    await awaitExportOperation(reportEntry.finish(), input.signal);
+    destination.registerReportPair(audioName, reportName);
+}
+
+function openExportDestination(input: StreamExportInput) {
+    if (input.destination.kind === 'native') {
+        return streamExportToNative({
+            ...input.destination,
+            requireReportPairs: input.includeWavLoudnessReports,
+            checkCancelled: input.checkCancelled,
+        });
+    }
+    return streamExportToBrowser({
+        ...input.destination,
+        checkCancelled: input.checkCancelled,
+        signal: input.signal,
+        requireReportPairs: input.includeWavLoudnessReports,
+    });
+}
+
 /** Storage precedes rendering; each borrowed render drains all targets before its owner continues. */
 export async function streamExport(input: StreamExportInput) {
     const targets = 'targets' in input ? copyTargets(input.targets) : undefined;
     validateWavReportPlan(input, targets ?? []);
-    let destination:
-        Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
-    if (input.destination.kind === 'native') {
-        destination = await streamExportToNative({
-            ...input.destination,
-            requireReportPairs: input.includeWavLoudnessReports,
-            checkCancelled: input.checkCancelled,
-        });
-    } else {
-        destination = await streamExportToBrowser({
-            ...input.destination,
-            checkCancelled: input.checkCancelled,
-            signal: input.signal,
-            requireReportPairs: input.includeWavLoudnessReports,
-        });
-    }
+    const destination = await openExportDestination(input);
     let sealedReports = 0;
     let committed = false;
     return {
@@ -196,62 +261,15 @@ export async function streamExport(input: StreamExportInput) {
                         if (!options.stemId) {
                             throw new Error('WAV report stem identity is unavailable.');
                         }
-                        const seed = target.dither.seed ?? Math.floor(Math.random() * 0x100000000);
-                        const dither = { ...target.dither, seed };
-                        const first = createWavLoudnessReportAnalyzer(createIncrementalMd5());
-                        await awaitExportOperation(
-                            audioBufferToWav(prepared.source, target.bitDepth, undefined, dither, {
-                                checkCancelled: input.checkCancelled,
-                                write: async (bytes) => {
-                                    first.write(bytes);
-                                },
-                            }),
-                            input.signal
-                        );
-                        const threshold = first.finish();
-                        const entry = await awaitExportOperation(destination.beginFile(audioName), input.signal);
-                        const second = createWavLoudnessReportAnalyzer(
-                            createIncrementalMd5(),
-                            threshold.relativeGatePower
-                        );
-                        await awaitExportOperation(
-                            audioBufferToWav(prepared.source, target.bitDepth, progress, dither, {
-                                checkCancelled: input.checkCancelled,
-                                write: async (bytes) => {
-                                    second.write(bytes);
-                                    await entry.writer.write(bytes);
-                                },
-                            }),
-                            input.signal
-                        );
-                        const measured = second.finish();
-                        if (JSON.stringify(threshold.wav) !== JSON.stringify(measured.wav)) {
-                            throw new Error(
-                                'WAV report refused: emitted audio changed between measurement and output.'
-                            );
-                        }
-                        await awaitExportOperation(entry.finish(), input.signal);
-                        const reportName = `${audioName}.loudness.json`;
-                        const report: WavLoudnessReport = {
-                            algorithmRevision: 'sourdaw-current-kweight-4x12tap-v1',
-                            measurementBasis: 'decoded-WAV-bytes',
-                            publicationAttested: false,
+                        await writeReportedWav({
+                            source: prepared.source,
+                            target,
                             stemId: options.stemId,
-                            targetId: target.id,
-                            audioFile: audioName,
-                            wav: measured.wav,
-                            integrated: measured.integrated,
-                            maxMomentary: measured.maxMomentary,
-                            maxShortTerm: measured.maxShortTerm,
-                            truePeak: measured.truePeak,
-                        };
-                        const reportEntry = await awaitExportOperation(destination.beginFile(reportName), input.signal);
-                        await awaitExportOperation(
-                            reportEntry.writer.write(new TextEncoder().encode(`${JSON.stringify(report)}\n`)),
-                            input.signal
-                        );
-                        await awaitExportOperation(reportEntry.finish(), input.signal);
-                        destination.registerReportPair(audioName, reportName);
+                            audioName,
+                            progress,
+                            destination,
+                            input,
+                        });
                         sealedReports++;
                         input.checkCancelled();
                         continue;

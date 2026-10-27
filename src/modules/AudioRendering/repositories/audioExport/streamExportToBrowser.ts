@@ -148,35 +148,74 @@ function createExportByteWriter(
     };
 }
 
+function createBrowserReportPairs(input: BrowserExportInput, hasArchive: boolean) {
+    const completed = new Set<string>();
+    const pairs = new Map<string, string>();
+    return {
+        completed,
+        registerPair(audioName: string, reportName: string) {
+            if (
+                !input.requireReportPairs ||
+                reportName !== `${audioName}.loudness.json` ||
+                !completed.has(audioName) ||
+                !completed.has(reportName) ||
+                pairs.has(audioName)
+            ) {
+                throw new Error('Invalid WAV report pair.');
+            }
+            pairs.set(audioName, reportName);
+        },
+        assertComplete() {
+            if (
+                input.requireReportPairs &&
+                (!hasArchive ||
+                    pairs.size * 2 !== completed.size ||
+                    [...completed].some((name) =>
+                        name.endsWith('.wav') ? !pairs.has(name) : ![...pairs.values()].includes(name)
+                    ))
+            ) {
+                throw new Error('WAV report pairs are incomplete.');
+            }
+        },
+    };
+}
+
+type BrowserLifecycle = { closed: boolean; abortPromise?: Promise<void> };
+
+function abortBrowserExport(
+    lifecycle: BrowserLifecycle,
+    writable: WritableExportFile,
+    zip: Zip | undefined,
+    emitted: Uint8Array[]
+): Promise<void> {
+    if (lifecycle.closed) {
+        return Promise.resolve();
+    }
+    if (lifecycle.abortPromise) {
+        return lifecycle.abortPromise;
+    }
+    zip?.terminate();
+    emitted.length = 0;
+    lifecycle.abortPromise = writable.abort().then(() => {
+        lifecycle.closed = true;
+    });
+    return lifecycle.abortPromise;
+}
+
 /** Owns one transactional picker writable. No Blob or retained OPFS download is created. */
 export async function streamExportToBrowser(input: BrowserExportInput) {
     const writable = await openBrowserWritable(input);
     const drainState: ArchiveDrainState = { archiveBytes: 0 };
     let centralBytes = 22;
     let count = 0;
-    let closed = false;
+    const lifecycle: BrowserLifecycle = { closed: false };
     let fileOpen = false;
-    let abortPromise: Promise<void> | undefined;
     const emitted: Uint8Array[] = [];
     const names = new Set<string>();
-    const completed = new Set<string>();
-    const pairs = new Map<string, string>();
     const zip = input.archive ? createZipOutput(emitted, drainState) : undefined;
+    const reports = createBrowserReportPairs(input, zip !== undefined);
     const drain = () => drainZipOutput(emitted, writable, input.checkCancelled, drainState, input.signal);
-    const abort = (): Promise<void> => {
-        if (closed) {
-            return Promise.resolve();
-        }
-        if (abortPromise) {
-            return abortPromise;
-        }
-        zip?.terminate();
-        emitted.length = 0;
-        abortPromise = writable.abort().then(() => {
-            closed = true;
-        });
-        return abortPromise;
-    };
+    const abort = () => abortBrowserExport(lifecycle, writable, zip, emitted);
     const abortOnSignal = () => {
         void abort().catch(() => {});
     };
@@ -188,7 +227,7 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
     return {
         async beginFile(name: string) {
             input.checkCancelled();
-            if (closed || fileOpen || names.has(name) || /[\\/]/u.test(name)) {
+            if (lifecycle.closed || fileOpen || names.has(name) || /[\\/]/u.test(name)) {
                 throw new Error('Invalid export entry order or name.');
             }
             const nameBytes = new TextEncoder().encode(name).length;
@@ -224,37 +263,17 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
                         await drain();
                     }
                     fileOpen = false;
-                    completed.add(name);
+                    reports.completed.add(name);
                 },
             };
         },
-        registerReportPair(audioName: string, reportName: string) {
-            if (
-                !input.requireReportPairs ||
-                reportName !== `${audioName}.loudness.json` ||
-                !completed.has(audioName) ||
-                !completed.has(reportName) ||
-                pairs.has(audioName)
-            ) {
-                throw new Error('Invalid WAV report pair.');
-            }
-            pairs.set(audioName, reportName);
-        },
+        registerReportPair: reports.registerPair,
         async commit(onCommitBegin: () => void) {
             input.checkCancelled();
-            if (fileOpen || count === 0 || closed) {
+            if (fileOpen || count === 0 || lifecycle.closed) {
                 throw new Error('Export has no completed files.');
             }
-            if (
-                input.requireReportPairs &&
-                (!zip ||
-                    pairs.size * 2 !== completed.size ||
-                    [...completed].some((name) =>
-                        name.endsWith('.wav') ? !pairs.has(name) : ![...pairs.values()].includes(name)
-                    ))
-            ) {
-                throw new Error('WAV report pairs are incomplete.');
-            }
+            reports.assertComplete();
             if (zip) {
                 zip.end();
                 await drain();
@@ -262,7 +281,7 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
             input.checkCancelled();
             onCommitBegin();
             await writable.close();
-            closed = true;
+            lifecycle.closed = true;
             input.signal?.removeEventListener('abort', abortOnSignal);
         },
         async abort() {

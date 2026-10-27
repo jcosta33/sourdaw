@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
-import { createIncrementalMd5 } from '../../repositories/audioEncoders/createIncrementalMd5';
-import { audioBufferToWav } from '../../repositories/audioEncoders/wavEncoder';
-import { createWavLoudnessReportAnalyzer } from '../createWavLoudnessReportAnalyzer';
-
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureMaxWindowedLoudness } from '#/utils/audioMetering/measureMaxWindowedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
+
+import { createIncrementalMd5 } from '../../repositories/audioEncoders/createIncrementalMd5';
+import { audioBufferToWav } from '../../repositories/audioEncoders/wavEncoder';
+import { createWavLoudnessReportAnalyzer } from '../createWavLoudnessReportAnalyzer';
 
 const source = (rate: number, seconds: number, amplitude = 0.1) => {
     const length = Math.round(rate * seconds);
