@@ -105,13 +105,17 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
                         }
                         // Arrangement's freeze and bounce call this public engine route.
                         // Freeze replays through the live mixer; bounce bakes the mixer.
+                        let targetMixer: 'bake' | 'keepLive' = 'bake';
+                        if (urls.route === 'freeze') {
+                            targetMixer = 'keepLive';
+                        }
                         buffer = await audio.renderTrackSubgraphOffline({
                             targetTrackId: trackId,
                             renderTracks: [track],
                             startBeat: 0,
                             endBeat: 4,
                             tailSeconds: 0,
-                            targetMixer: urls.route === 'freeze' ? 'keepLive' : 'bake',
+                            targetMixer,
                             onWarning: options.onWarning,
                         });
                     }
@@ -179,7 +183,18 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
                         builtinDifference = Math.max(builtinDifference, Math.abs(first[frame]! - second[frame]!));
                     }
                 }
-                return { finite, lowEnergy, highEnergy, peak, residual, repeatDifference, ratio, builtinDifference };
+                return {
+                    finite,
+                    lowEnergy,
+                    highEnergy,
+                    peak,
+                    residual,
+                    repeatDifference,
+                    ratio,
+                    builtinDifference,
+                    channels: low.length,
+                    frames: low[0]?.length,
+                };
             },
             {
                 command: '/src/modules/Command/useCases/index.ts',
@@ -194,6 +209,8 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
             body: JSON.stringify({ route, ...rendered }, null, 2),
             contentType: 'application/json',
         });
+        expect(rendered.channels).toBe(2);
+        expect(rendered.frames).toBe(96_000);
         expect(rendered.finite).toBe(true);
         expect(rendered.lowEnergy).toBeGreaterThan(0);
         expect(rendered.highEnergy).toBeGreaterThan(rendered.lowEnergy);
