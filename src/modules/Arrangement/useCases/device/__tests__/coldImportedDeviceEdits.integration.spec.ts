@@ -107,6 +107,59 @@ afterEach(() => {
 });
 
 describe('device edits on an imported track before first Play', () => {
+    it('removes and restores an EQ while retaining the imported per-note Synth', async () => {
+        await importMidiFile(new File([], 'small.mid'), { shouldContinue: () => true });
+        const track = importedTrack();
+        const synth = structuredClone(track.devices[0]);
+        expect(synth?.type).toBe('builtin-synth');
+        expect(audioEngine.getTrackStrip(track.id)).toBeUndefined();
+        const initialize = vi.spyOn(audioEngine, 'initializeTrackStripFromSnapshot');
+
+        await executeAppAction({
+            type: 'addDevice',
+            payload: { trackId: track.id, deviceType: 'builtin-eq', deviceId: 'retained-synth-eq' },
+        });
+        expect(initialize).toHaveBeenCalledTimes(1);
+        expect(initialize.mock.calls[0]?.[0]).toMatchObject({
+            nodes: [
+                expect.objectContaining({
+                    devices: [
+                        expect.objectContaining({ id: synth?.id, type: 'builtin-synth' }),
+                        expect.objectContaining({ id: 'retained-synth-eq', type: 'builtin-eq' }),
+                    ],
+                }),
+            ],
+        });
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes.map((device) => device.deviceId)).toEqual([
+            'retained-synth-eq',
+        ]);
+        await executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'retained-synth-eq', paramId: 'eq-mid-freq', value: 2400 },
+        });
+        await executeAppAction({
+            type: 'bypassDevice',
+            payload: { deviceId: 'retained-synth-eq', bypassed: true },
+        });
+        const devices = structuredClone(importedTrack().devices);
+        clearUndoHistory();
+
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: 'retained-synth-eq' } });
+
+        expect(importedTrack().devices).toEqual([synth]);
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([]);
+        await undo();
+        expect(importedTrack().devices).toEqual(devices);
+        const restoredNodes = audioEngine.getTrackStrip(track.id)?.deviceNodes;
+        expect(restoredNodes?.map((device) => device.deviceId)).toEqual(['retained-synth-eq']);
+        expect(restoredNodes?.[0]).toMatchObject({ bypassed: true });
+        expect(restoredNodes?.[0]?.nodes[1]).toHaveProperty('frequency.value', 2400);
+        await redo();
+        expect(importedTrack().devices).toEqual([synth]);
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([]);
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
     it('removes the default Synth cleanly and preserves its identity through undo and redo', async () => {
         await expect(importMidiFile(new File([], 'small.mid'), { shouldContinue: () => true })).resolves.toBe(
             'completed'
