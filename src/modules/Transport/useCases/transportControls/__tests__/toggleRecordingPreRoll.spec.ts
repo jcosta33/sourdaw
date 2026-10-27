@@ -9,7 +9,7 @@ import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { transportStore } from '../../../stores/transportStore';
 import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
-import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';

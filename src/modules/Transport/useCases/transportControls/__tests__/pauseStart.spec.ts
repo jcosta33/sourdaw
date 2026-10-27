@@ -5,7 +5,7 @@ import { startPlayback } from '../startPlayback';
 import { defaultTransportState } from '../../../models/TransportState';
 import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
-import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 
 const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn<() => Record<string, unknown>>(),
@@ -128,7 +128,7 @@ describe('Pause/Start Playback', () => {
     });
 
     describe('startPlayback', () => {
-        let state = { ...defaultTransportState };
+        let state = defaultTransportState;
         beforeEach(() => {
             state = { ...defaultTransportState, preRollEnabled: false };
             mocks.getTransportState.mockImplementation(() => state);

@@ -102,12 +102,13 @@ export function prepareInitialBrowserPlayback(generation: number) {
         yeastRouteLineage: new Map(),
     };
     const from = position - INITIAL_HIGH_WATER_OFFSET_BEATS;
-    const windows = seam
-        ? [
-              { from, to: state.loopEnd },
-              { from: state.loopStart, to: seam.wrappedUpTo },
-          ]
-        : [{ from, to: position + lookAheadBeats }];
+    let windows = [{ from, to: position + lookAheadBeats }];
+    if (seam) {
+        windows = [
+            { from, to: state.loopEnd },
+            { from: state.loopStart, to: seam.wrappedUpTo },
+        ];
+    }
     const originalProgramme = captureInitialMidiProgramme(cancellation);
     // Called immediately after the scheduler's synchronous recording writes.
     // Its new witness includes those clips and takes, and still rejects any

@@ -228,6 +228,15 @@ function stageLoopWrapTakes(current: TransportState): void {
     }
 }
 
+export function startPlayheadScheduler(): void;
+export function startPlayheadScheduler(
+    preparedInitial: PreparedInitialBrowserPlayback,
+    onRoll?: (contextSeconds: number, beat: number) => void
+): Promise<boolean>;
+export function startPlayheadScheduler(
+    preparedInitial?: PreparedInitialBrowserPlayback,
+    onRoll?: (contextSeconds: number, beat: number) => void
+): void | Promise<boolean>;
 export function startPlayheadScheduler(
     preparedInitial?: PreparedInitialBrowserPlayback,
     onRoll?: (contextSeconds: number, beat: number) => void
@@ -541,17 +550,17 @@ export function startPlayheadScheduler(
         // consecutive ticks — advancing the discontinuity epoch and panicking
         // the rack many times per physical wrap. Such regions keep the old
         // post-crossing wrap: exactly one discontinuity per boundary.
-        const projectedSeam =
-            initial && preparedInitial
-                ? preparedInitial.seam
-                : projectLoopSeamWindow(
-                      current,
-                      changes,
-                      schedulerSession.accumulatedPosition,
-                      newPosition,
-                      lookAheadBeats,
-                      now
-                  );
+        let projectedSeam = preparedInitial?.seam ?? null;
+        if (!initial || !preparedInitial) {
+            projectedSeam = projectLoopSeamWindow(
+                current,
+                changes,
+                schedulerSession.accumulatedPosition,
+                newPosition,
+                lookAheadBeats,
+                now
+            );
+        }
 
         if (insideLoopRegion && newPosition >= current.loopEnd) {
             // Late wrap: the playhead itself crossed loopEnd this tick. Only
@@ -1263,19 +1272,20 @@ export function startPlayheadScheduler(
             });
             schedulerSession.worker = worker;
         }
-        worker.onmessage = (event: MessageEvent<unknown>) => {
+        worker.onmessage = (event: MessageEvent) => {
             const receivedAtMs = highResolutionEpochMs();
+            const message: unknown = event.data;
             if (
-                !isSchedulerWorkerTick(event.data, receivedAtMs) ||
-                event.data.generation !== schedulerGeneration ||
+                !isSchedulerWorkerTick(message, receivedAtMs) ||
+                message.generation !== schedulerGeneration ||
                 schedulerSession.generation !== schedulerGeneration
             ) {
                 return;
             }
             schedulerTimingDiagnostics.recordTickMessage(
-                event.data.sequence,
-                event.data.scheduledAtMs,
-                event.data.sentAtMs,
+                message.sequence,
+                message.scheduledAtMs,
+                message.sentAtMs,
                 receivedAtMs
             );
             tick().catch((error: unknown) => {

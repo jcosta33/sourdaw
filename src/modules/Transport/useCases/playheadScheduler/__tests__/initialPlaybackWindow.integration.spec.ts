@@ -297,11 +297,19 @@ function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[numbe
         fadeOutBeats: 0,
         gain: 1,
     };
+    const plainClips: Array<ReturnType<typeof midiClip> | NonNullable<typeof recordingClip>> = [midiClip('plain-midi')];
+    const audioClips: Array<typeof audio | NonNullable<typeof recordingClip>> = [audio];
+    if (recordingClip?.trackId === 'plain-track') {
+        plainClips.push(recordingClip);
+    }
+    if (recordingClip?.trackId === 'audio-track') {
+        audioClips.push(recordingClip);
+    }
     return [
         {
             ...midiTrack('plain-track', 'plain-midi', false),
             armed: recordingClip?.trackId === 'plain-track',
-            clips: [midiClip('plain-midi'), ...(recordingClip?.trackId === 'plain-track' ? [recordingClip] : [])],
+            clips: plainClips,
         },
         midiTrack('yeast-track', 'yeast-midi', true),
         {
@@ -311,7 +319,7 @@ function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[numbe
             devices: [],
             muted: false,
             sends: [],
-            clips: [audio, ...(recordingClip?.trackId === 'audio-track' ? [recordingClip] : [])],
+            clips: audioClips,
             freezeState: { status: 'unfrozen' },
         },
     ];
