@@ -21,21 +21,24 @@ const METHOD_STEPS: readonly MethodStep[] = [
     },
     { name: 'measure the target', clause: '(2) measure it with analysis.measure; ' },
     {
-        name: 'discover and expand a recipe',
-        clause: '(3) discover a recipe with recipe.discover and expand it with recipe.expand; ',
+        name: 'discover a recipe',
+        clause: '(3) discover a recipe with recipe.discover; ',
     },
-    { name: 'plan values inside the recipe ranges', clause: "(4) plan values inside the recipe's ranges; " },
+    {
+        name: 'plan values inside the recipe ranges',
+        clause: '(4) choose values within its discovered ranges and pass values to recipe.expand, then await its successful receipt; ',
+    },
     {
         name: 'measure the planned list as a preview',
-        clause: "(5) measure that planned list as a preview with analysis.measure subject 'preview' and the list as proposal; ",
+        clause: "(5) measure that expansion with analysis.measure subject 'preview' and recipeCallId set to the expansion's callId; ",
     },
     {
         name: 'propose adopting only the preview call id',
-        clause: "(6) propose with command.batch.propose, adopting only the preview's callId in compiledCallIds, because its list already carries the recipe's commands. ",
+        clause: "(6) propose with command.batch.propose, adopting only the preview's callId in compiledCallIds, because the preview already carries the recipe's commands. For a semantic-list preview, pass proposal instead of recipeCallId. ",
     },
     {
         name: 'reads needing no earlier receipt share a turn',
-        clause: 'Reads that need no earlier receipt share one turn, such as analysis.measure on the target beside recipe.discover; recipe.expand, the preview and the propose each wait for the receipt before them. ',
+        clause: 'Independent reads share one turn, such as analysis.measure on the target beside recipe.discover; recipe.expand, preview and propose each await the preceding successful receipt. ',
     },
     { name: 'propose ends the run', clause: 'command.batch.propose ends the run, so measure before it. ' },
     {

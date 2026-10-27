@@ -245,7 +245,13 @@ type RunApplicationOwnedToolLoopInput = {
     };
 };
 
-type MeasurementCallContext = { callId: string; turn: number; loopId: string; signal?: AbortSignal };
+type MeasurementCallContext = {
+    callId: string;
+    turn: number;
+    loopId: string;
+    signal?: AbortSignal;
+    retainedCompilations?: readonly RetainedCompilation[];
+};
 
 /** Every tool name the measurement read answers: its own and its companions'. */
 function getMeasurementToolNames(measurement: RunApplicationOwnedToolLoopInput['measurement']): readonly string[] {
@@ -1335,6 +1341,7 @@ function executeTurnReads(input: {
     transform: RunApplicationOwnedToolLoopInput['transform'];
     recipe: RunApplicationOwnedToolLoopInput['recipe'];
     nextRecipeOrdinal: () => number;
+    retainedCompilations: readonly RetainedCompilation[];
     signal?: AbortSignal;
 }): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
@@ -1408,7 +1415,13 @@ function executeTurnReads(input: {
                 }),
             };
         }
-        return executeMeasurement(measurement, call, { callId, turn, loopId: input.loopId, signal: input.signal });
+        return executeMeasurement(measurement, call, {
+            callId,
+            turn,
+            loopId: input.loopId,
+            signal: input.signal,
+            retainedCompilations: input.retainedCompilations,
+        });
     });
 }
 
@@ -2351,6 +2364,7 @@ export async function runApplicationOwnedToolLoop(
                 transform: input.transform,
                 recipe: input.recipe,
                 nextRecipeOrdinal,
+                retainedCompilations: [...retainedCompilations.values()],
                 signal: input.signal,
             })
         );

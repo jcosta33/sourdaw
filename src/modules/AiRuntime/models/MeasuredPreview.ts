@@ -1,3 +1,5 @@
+import { type AdoptedRecipe } from './RetainedCompilation';
+
 /** One objective figure as an agent measurement reports it: read from the audio, or why it could not be. */
 export type MeasuredMetricEntry =
     | {
@@ -33,6 +35,8 @@ export type MeasuredPreviewTarget = {
  * hashes the same.
  */
 export type MeasuredPreview = {
+    /** Application-authored identity of the retained expansion this exact preview measured. */
+    readonly recipeSource?: AdoptedRecipe;
     readonly scope:
         | { readonly kind: 'master' | 'project' }
         | { readonly kind: 'tracks' | 'buses'; readonly ids: readonly string[] };

@@ -370,8 +370,8 @@ export async function reproposePendingChatActions(
         // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
         // carried only for the whole proposal, never guessed for a part of it.
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
-        // Persisting binds the figures to the rebuilt batch, so a subset or changed batch drops them.
-        measuredPreview: confirmation.approvalSnapshot.measuredPreview,
+        // Subsets drop evidence unconditionally; persistence binds whole batches to their digest and revision.
+        measuredPreview: selectsSubset ? undefined : confirmation.approvalSnapshot.measuredPreview,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
         // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.

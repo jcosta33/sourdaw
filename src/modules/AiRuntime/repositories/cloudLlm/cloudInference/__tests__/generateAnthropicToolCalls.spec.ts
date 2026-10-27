@@ -51,6 +51,47 @@ describe('generateAnthropicToolCalls', () => {
         vi.clearAllMocks();
     });
 
+    it('keeps the production recipe reference optional in the Anthropic projection', async () => {
+        const tool = getPlanningProviderToolSchemas().find((entry) => entry.function.name === 'analysis.measure');
+        if (tool === undefined) {
+            throw new Error('Missing analysis.measure');
+        }
+        returnPayload({
+            content: [
+                {
+                    type: 'tool_use',
+                    id: 'measure-1',
+                    name: 'analysis_measure',
+                    input: {
+                        scope: { kind: 'master' },
+                        range: { startBeat: 0, endBeat: 8 },
+                        subject: 'preview',
+                        recipeCallId: 'expand-1',
+                    },
+                },
+            ],
+            stop_reason: 'tool_use',
+        });
+        const result = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'preview expansion',
+            toolSchemas: [tool],
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+        });
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (request === undefined) {
+            throw new Error('Missing provider request');
+        }
+        const body = JSON.parse(request.body) as { tools: Array<{ input_schema: Record<string, unknown> }> };
+        const schema = body.tools[0]?.input_schema;
+        expect(schema).toHaveProperty(['properties', 'recipeCallId', 'type'], 'string');
+        expect(schema?.required).not.toContain('recipeCallId');
+        expect(schema).toHaveProperty('additionalProperties', false);
+        expect(result.calls).toMatchObject([{ name: 'analysis.measure', arguments: { recipeCallId: 'expand-1' } }]);
+    });
+
     it('maps tool calls through an opaque native session', async () => {
         returnPayload({
             content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],

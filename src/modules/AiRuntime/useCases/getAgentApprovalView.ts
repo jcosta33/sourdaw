@@ -377,7 +377,12 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         previousProposalDiff: projectPreviousProposalDiff(confirmation),
         scope: commandBatch ? commandBatch.authority.scope : EMPTY_SCOPE,
         risk: projectRisk(agentApproval),
-        recipes: projectRecipes(adoptedRecipes),
+        recipes: projectRecipes([
+            ...(adoptedRecipes ?? []),
+            ...(measuredPreview?.revision === confirmation.projectRevision && measuredPreview.recipeSource !== undefined
+                ? [measuredPreview.recipeSource]
+                : []),
+        ]),
         measuredPreview: projectMeasuredPreview(measuredPreview, confirmation.projectRevision),
         ...projectSemanticDiff(semanticDiff),
         baseRevision: confirmation.projectRevision,
