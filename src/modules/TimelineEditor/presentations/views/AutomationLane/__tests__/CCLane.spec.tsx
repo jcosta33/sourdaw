@@ -55,6 +55,18 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     },
 }));
 
+// Keep the real MIDI editing use cases on the same in-memory rows as the rendered lane.
+vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+    midiStore: {
+        get value() {
+            return laneMocks.midiState;
+        },
+        set(next: { ccByClipId: Record<string, MidiCC[]> }) {
+            laneMocks.midiState = next;
+        },
+    },
+}));
+
 vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
@@ -982,5 +994,104 @@ describe('CCLane', () => {
                 { editedController: 1, editedRowId: 'cc-a' }
             );
         });
+    });
+});
+
+
+const actualMidiUseCases = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+
+describe('CCLane return-family history with real MIDI edits', () => {
+    const tick = 1 / 960;
+    const props = { clipId: 'clip-1', controller: 6, beatWidth: 40, contentWidth: 800 };
+
+    function headRows(beat: number, key: string): MidiCC[] {
+        return [
+            { id: `${key}:rpn-0`, controller: 101, value: 0, beat, channel: 0 },
+            { id: `${key}:rpn-1`, controller: 100, value: 0, beat, channel: 0 },
+            ...[[101, 0], [100, 0], [6, 2], [38, 0], [99, 1], [98, 1]].map(([controller, value], index) => ({
+                id: `${key}:rpn-after-carried-${index}`,
+                controller,
+                value,
+                beat: beat + tick,
+                channel: 0,
+            })),
+        ];
+    }
+
+    function rows(): MidiCC[] {
+        return laneMocks.midiState.ccByClipId['clip-1'] ?? [];
+    }
+
+    function replay(): { undo: () => void; redo: () => void } {
+        const entry = vi.mocked(pushUndoEntry).mock.calls.at(-1);
+        expect(entry).toBeDefined();
+        return { undo: entry![1], redo: entry![2] };
+    }
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        laneMocks.midiState = { ccByClipId: { 'clip-1': [] } };
+        vi.mocked(addMidiCC).mockImplementation(actualMidiUseCases.addMidiCC);
+        vi.mocked(moveMidiCC).mockImplementation(actualMidiUseCases.moveMidiCC);
+        vi.mocked(removeMidiCC).mockImplementation(actualMidiUseCases.removeMidiCC);
+        vi.mocked(removeHandEditedReturnFamily).mockImplementation(actualMidiUseCases.removeHandEditedReturnFamily);
+        vi.mocked(restoreMidiCCPoints).mockImplementation(actualMidiUseCases.restoreMidiCCPoints);
+        vi.mocked(revisitHandEditedCCReturns).mockImplementation(actualMidiUseCases.revisitHandEditedCCReturns);
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 80));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('restores exact rows and same-beat order after adding, undoing and redoing a hand range', () => {
+        laneMocks.midiState.ccByClipId['clip-1'] = headRows(0, 'cc-split:right');
+        const before = [...rows()];
+        render(<CCLane {...props} />);
+        fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
+        const committed = [...rows()];
+        expect(committed).not.toEqual(before);
+        const { undo, redo } = replay();
+        undo();
+        expect(rows()).toEqual(before);
+        redo();
+        expect(rows()).toEqual(committed);
+    });
+
+    it('restores both heads exactly when a hand range moves between carried return families', () => {
+        laneMocks.midiState.ccByClipId['clip-1'] = [...headRows(0, 'cc-glue:first'), ...headRows(2, 'cc-glue:second')];
+        actualMidiUseCases.addMidiCC('clip-1', 6, 7, 0, 0, 'hand-coarse');
+        const before = [...rows()];
+        const view = render(<CCLane {...props} />);
+        const point = view.container.querySelector('[title="Beat 0.00: 7"]');
+        expect(point).not.toBeNull();
+        fireEvent.pointerDown(point!, { pointerId: 1, button: 0, clientX: 8, clientY: valueToY(7, 80) });
+        fireEvent.pointerMove(point!, { pointerId: 1, clientX: 88, clientY: valueToY(9, 80) });
+        fireEvent.pointerUp(point!, { pointerId: 1 });
+        const committed = [...rows()];
+        expect(committed).not.toEqual(before);
+        const { undo, redo } = replay();
+        undo();
+        expect(rows()).toEqual(before);
+        redo();
+        expect(rows()).toEqual(committed);
+    });
+
+    it('restores exact rows after deleting a hand range and redoes the committed family', () => {
+        laneMocks.midiState.ccByClipId['clip-1'] = headRows(0, 'cc-split:right');
+        actualMidiUseCases.addMidiCC('clip-1', 6, 7, 0, 0, 'hand-coarse');
+        actualMidiUseCases.addMidiCC('clip-1', 38, 50, 0, 0, 'hand-fine');
+        const before = [...rows()];
+        const view = render(<CCLane {...props} />);
+        const point = view.container.querySelector('[title="Beat 0.00: 7"]');
+        expect(point).not.toBeNull();
+        fireEvent.doubleClick(point!);
+        const committed = [...rows()];
+        expect(committed).not.toEqual(before);
+        const { undo, redo } = replay();
+        undo();
+        expect(rows()).toEqual(before);
+        redo();
+        expect(rows()).toEqual(committed);
     });
 });
