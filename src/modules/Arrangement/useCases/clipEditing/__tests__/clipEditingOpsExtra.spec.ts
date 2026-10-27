@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     updateClip: vi.fn<(typeof updateClipUseCase)['updateClip']>(),
+    getTrackStoreState: vi.fn(),
 }));
 
 vi.mock('../../updateClip', () => ({ updateClip: mocks.updateClip }));
+vi.mock('../../getTrackStoreState', () => ({ getTrackStoreState: mocks.getTrackStoreState }));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type Clip } from '../../../models/Track';
@@ -17,6 +19,7 @@ import type * as updateClipUseCase from '../../updateClip';
 /** Route the mocked use case through the given clip and collect updater results. */
 function captureUpdate(clip: Clip): Clip[] {
     const result: Clip[] = [];
+    mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: clip.trackId, clips: [clip] }] });
     mocks.updateClip.mockImplementation((_clipId, updater) => {
         result.push(updater(clip));
         return true;
@@ -45,7 +48,9 @@ describe('slipClipContent', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('sets audioOffsetBeats for audio clips and leaves the midi offset alone', () => {
-        const result = captureUpdate(ClipDummy.create({ audioOffsetBeats: 0, midiOffsetBeats: 0 }));
+        const result = captureUpdate(
+            ClipDummy.create({ id: 'c1', type: 'audio', audioOffsetBeats: 0, midiOffsetBeats: 0 })
+        );
         slipClipContent('c1', 'audio', 2.5);
         expect(result[0]).toMatchObject({ audioOffsetBeats: 2.5, midiOffsetBeats: 0 });
     });

@@ -23,6 +23,7 @@ import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplica
 import { relocateAudioSourceTimeFields } from '../../useCases/clip/relocateAudioSourceTimeFields';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
+import { audioClipSlipOffsetBeats } from '../../useCases/clipEditing/prepareAudioClipSlip';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
@@ -363,7 +364,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         clipType: clip.type,
                         startX: x,
                         originalOffset:
-                            clip.type === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0),
+                            clip.type === 'audio'
+                                ? audioClipSlipOffsetBeats(
+                                      clip,
+                                      audioClipStartTrimState.timeline(audioClipStartTrimState.captureClock())
+                                  )
+                                : (clip.midiOffsetBeats ?? 0),
                     };
                     return;
                 }
@@ -589,6 +595,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         preview.positions.set(clipId, {
                             ...current,
                             audioOffsetBeats: clipType === 'audio' ? newOffset : current.audioOffsetBeats,
+                            audioSlipOffsetBeats: clipType === 'audio' ? newOffset : undefined,
                             midiOffsetBeats: clipType === 'midi' ? newOffset : current.midiOffsetBeats,
                         });
                     }

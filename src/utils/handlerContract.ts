@@ -1661,6 +1661,18 @@ export type AppAction =
           };
       }
     | {
+          /** Internal exact source slip replay; absent from public command discovery. */
+          type: 'restoreAudioClipSlip';
+          payload: {
+              clipId: string;
+              offset: number;
+              before: { clip: ClipStateSnapshot; lanes: CompTakeLaneSnapshot[] };
+              after: { clip: ClipStateSnapshot; lanes: CompTakeLaneSnapshot[] };
+              clock: TempoSourceClock;
+              direction: 'apply' | 'restore';
+          };
+      }
+    | {
           type: 'slipClipContent';
           payload: {
               clipId: string;

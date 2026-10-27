@@ -4,6 +4,7 @@ import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateComp
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
+import { handleRestoreAudioClipSlip } from '../handlers/clip/handleRestoreAudioClipSlip';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
 import { handleAddGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleAddGainEnvelopePoint';
@@ -219,6 +220,7 @@ export function getArrangementHandlers() {
         setClipStretchRatio: handleSetClipStretchRatio,
         restoreClipStretchState: handleRestoreClipStretchState,
         restoreAudioClipStartTrim: handleRestoreAudioClipStartTrim,
+        restoreAudioClipSlip: handleRestoreAudioClipSlip,
         fitClipToBeats: handleFitClipToBeats,
         loadPreset: handleLoadPreset,
         restorePresetDeviceChain: handleRestorePresetDeviceChain,

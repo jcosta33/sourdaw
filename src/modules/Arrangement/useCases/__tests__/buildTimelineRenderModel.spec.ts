@@ -132,6 +132,52 @@ vi.mock('../../stores/activeRecordingRef', async (importOriginal) => {
 });
 
 describe('buildTimelineRenderModel', () => {
+    it('projects canonical slip preview through its owned comp programme without moving the rectangle', () => {
+        const source = clip({
+            id: 'slip',
+            type: 'audio',
+            audioBufferId: 'bursts',
+            audioOffsetBeats: 99,
+            audioOffsetSeconds: 0.25,
+            audioUnwrappedOffsetSeconds: 0.25,
+        });
+        const snapshot = {
+            startBeat: 0,
+            audioOffsetSeconds: 1,
+            audioLoopStartSeconds: 1,
+            audioLoopPassEntrySeconds: 1,
+            audioLoopPassOriginBeat: 0,
+            loopOriginBeat: 0,
+            loopLength: 4,
+        };
+        seedStores({
+            tracks: [{ ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }), clips: [source] }],
+            takeLanes: {
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 't',
+                        takes: [
+                            { id: 'take', clipId: 'slip', name: 'Manual', startBeat: 0, endBeat: 4, selected: true },
+                        ],
+                        activeCompRegions: [{ takeId: 'take', startBeat: 0, endBeat: 4, audioSource: snapshot }],
+                    },
+                ],
+            },
+        });
+        const before = buildTimelineRenderModel().tracks[0]!.clips[0]!;
+        const pos = { trackId: 't', startBeat: 0, endBeat: 4, audioSlipOffsetBeats: 0.7 };
+        clipDragPreviewRef.current = { positions: new Map([['slip', pos]]), originals: new Map([['slip', pos]]) };
+        const preview = buildTimelineRenderModel().tracks[0]!.clips[0]!;
+        expect(preview.startBeat).toBe(before.startBeat);
+        expect(preview.endBeat).toBe(before.endBeat);
+        expect(preview.audioOffsetSeconds).toBeCloseTo(0.35);
+        expect(preview.audioProgramme?.[0]?.audioOffsetSeconds).toBeCloseTo(1.1);
+        expect(before.audioProgramme?.[0]?.audioOffsetSeconds).toBe(1);
+        expect(trackStoreMock.value?.tracks[0]!.clips[0]).toEqual(source);
+        clipDragPreviewRef.current = null;
+    });
+
     it('carries canonical audio source fields and the map the waveform will invert', () => {
         const source = clip({
             id: 'audio-source',

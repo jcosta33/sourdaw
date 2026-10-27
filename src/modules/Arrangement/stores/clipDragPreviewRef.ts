@@ -13,6 +13,8 @@ export type ClipPreviewPosition = {
     startBeat: number;
     endBeat: number;
     audioOffsetBeats?: number;
+    /** Absolute public slip coordinate; the renderer projects the same owned programme as commit. */
+    audioSlipOffsetBeats?: number;
     audioOffsetSeconds?: number;
     audioUnwrappedOffsetSeconds?: number;
     audioLoopStartSeconds?: number;

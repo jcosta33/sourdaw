@@ -14,6 +14,7 @@ function createInternalReplayContract(
         | 'restoreClipPlacement'
         | 'restoreClipSplitState'
         | 'restoreAudioClipStartTrim'
+        | 'restoreAudioClipSlip'
         | 'restoreDrawnClip'
         | 'restoreMidiClipNotes'
         | 'restoreAutomationPointPresence'
@@ -36,7 +37,8 @@ function createInternalReplayContract(
             if (
                 actionType === 'restoreClip' ||
                 actionType === 'restoreTimeOperationState' ||
-                actionType === 'restoreAudioClipStartTrim'
+                actionType === 'restoreAudioClipStartTrim' ||
+                actionType === 'restoreAudioClipSlip'
             ) {
                 return ownerValidator?.(payload) === true;
             }
@@ -79,6 +81,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
         createInternalReplayContract('restoreClipPlacement', 1, 'required'),
         createInternalReplayContract('restoreClipSplitState', 1, 'required'),
         createInternalReplayContract('restoreAudioClipStartTrim', 1, 'required'),
+        createInternalReplayContract('restoreAudioClipSlip', 1, 'required'),
         createInternalReplayContract('restoreDrawnClip', 1, 'optional'),
         createInternalReplayContract('restoreMidiClipNotes', 1, 'required'),
         createInternalReplayContract('restoreAutomationPointPresence', 1, 'required'),

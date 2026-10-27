@@ -1,12 +1,59 @@
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { audioClipSlipOwner } from '../../useCases/clipEditing/audioClipSlipOwner';
+import { audioClipSlipState, type AudioClipSlipCapture } from '../../useCases/clipEditing/audioClipSlipState';
+import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
+import { prepareAudioClipSlip } from '../../useCases/clipEditing/prepareAudioClipSlip';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { slipWrapRowLiftBeats } from '../../useCases/clipEditing/slipWrapRowLiftBeats';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+type SlipAction = Extract<AppAction, { type: 'slipClipContent' }>;
+const preparedAudioSlips = new WeakMap<object, AudioClipSlipCapture>();
+
+function captureAudioSlip(action: SlipAction): AudioClipSlipCapture | null {
+    if (action.payload.clipType !== 'audio' || Object.hasOwn(action.payload, 'rowLiftBeats')) {
+        return null;
+    }
+    const clip = getTrackStoreState()
+        ?.tracks.flatMap((track) => track.clips)
+        .find((row) => row.id === action.payload.clipId);
+    if (!clip) {
+        return null;
+    }
+    const before = structuredClone({
+        clip,
+        lanes: takeLaneStore.value?.lanes.filter((lane) => lane.trackId === clip.trackId) ?? [],
+    });
+    const clock = audioClipStartTrimState.captureClock();
+    const after = prepareAudioClipSlip(before, action.payload.offset, audioClipStartTrimState.timeline(clock));
+    return after
+        ? { clipId: clip.id, offset: action.payload.offset, before, after, clock, direction: 'restore' }
+        : null;
+}
+
 export const handleSlipClipContent = createHandler<'slipClipContent'>({
+    canReportConflict: true,
+    validateSessionEntry: audioClipSlipState.isSessionEntry,
     execute: (action) => {
+        if (action.payload.clipType === 'audio') {
+            const capture = preparedAudioSlips.get(action) ?? captureAudioSlip(action);
+            if (!capture || !audioClipSlipOwner.matches(capture.before, capture.clock)) {
+                return { status: 'conflict' };
+            }
+            const proof = audioClipSlipOwner.captureCommitValidation(capture.before, capture.after, capture.clock);
+            if (!proof) {
+                return { status: 'conflict' };
+            }
+            if (!audioClipSlipOwner.write(capture.before, capture.after)) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            return { status: 'written', commitValidation: proof };
+        }
         return toHandlerExecutionResult(
             slipClipContent(
                 action.payload.clipId,
@@ -19,6 +66,18 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
     describe: (action) => {
         const label = 'Slip clip content';
         try {
+            if (action.payload.clipType === 'audio') {
+                const capture = captureAudioSlip(action);
+                if (!capture) {
+                    return { label, inverseAction: null };
+                }
+                preparedAudioSlips.set(action, capture);
+                return {
+                    label,
+                    inverseAction: { type: 'restoreAudioClipSlip', payload: capture },
+                    redoAction: { type: 'restoreAudioClipSlip', payload: { ...capture, direction: 'apply' } },
+                };
+            }
             const state = getTrackStoreState();
             const clip = state?.tracks
                 .flatMap((time) => time.clips)
@@ -29,8 +88,7 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
             // Slip sets the offset wholesale, so the exact inverse is the same
             // action carrying the offset captured before the write — 0 when the
             // clip never carried one, matching the gesture's own baseline.
-            const previousOffset =
-                action.payload.clipType === 'audio' ? (clip.audioOffsetBeats ?? 0) : (clip.midiOffsetBeats ?? 0);
+            const previousOffset = clip.midiOffsetBeats ?? 0;
             const inversePayload: {
                 clipId: string;
                 clipType: 'audio' | 'midi';
