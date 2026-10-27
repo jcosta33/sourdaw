@@ -1388,6 +1388,171 @@ describe('connected stem export output ownership', () => {
         },
         GC_CASE_TIMEOUT_MS
     );
+
+    it('consumes two reported WAV targets before releasing each of64 rendered stems', async () => {
+        const deadline = Date.now() + 60000;
+        const actualEngine = await vi.importActual<typeof import('#/modules/AudioEngine/useCases')>(
+            '#/modules/AudioEngine/useCases'
+        );
+        const writerTerminal = Promise.withResolvers<'closed' | 'aborted'>();
+        const chunks: Uint8Array[] = [];
+        let closed = false;
+        let closeCalls = 0;
+        let abortCalls = 0;
+        let writeCalls = 0;
+        let writeBytes = 0;
+        let exportStarted = false;
+        let failure: Error | undefined;
+        const withPhase = (error: unknown): Error => {
+            const result = error instanceof Error ? error : new Error(String(error));
+            const loggedError: unknown = mocks.loggerError.mock.lastCall?.[0];
+            result.message += `\nReported stem output phase: ${JSON.stringify({
+                ...ownership,
+                closed,
+                closeCalls,
+                abortCalls,
+                writeCalls,
+                writeBytes,
+                storeReadCalls: mocks.useStore.mock.calls.length,
+                error: loggedError instanceof Error ? loggedError.message.slice(0, 500) : undefined,
+            })}`;
+            return result;
+        };
+        let releaseFirstWrite: () => void = () => {};
+        let signalFirstWrite: () => void = () => {};
+        const firstWriteStarted = new Promise<void>((resolve) => {
+            signalFirstWrite = resolve;
+        });
+        const firstWriteDrain = new Promise<void>((resolve) => {
+            releaseFirstWrite = resolve;
+        });
+        let firstWrite = true;
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => ({
+                write: async (bytes: Uint8Array) => {
+                    writeCalls++;
+                    writeBytes += bytes.byteLength;
+                    if (firstWrite) {
+                        firstWrite = false;
+                        signalFirstWrite();
+                        await firstWriteDrain;
+                    }
+                    chunks.push(bytes.slice());
+                },
+                close: async () => {
+                    closeCalls++;
+                    closed = true;
+                    writerTerminal.resolve('closed');
+                },
+                abort: async () => {
+                    abortCalls++;
+                    writerTerminal.resolve('aborted');
+                },
+            }),
+        }));
+        try {
+            render(<ExportDialog open onClose={() => {}} />);
+            fireEvent.click(screen.getByTestId('export-mode-stems'));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Apple Music stereo master' }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
+            fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '1' } });
+            fireEvent.click(screen.getByRole('button', { name: /^Off$/ }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Include WAV loudness reports' }));
+            await act(async () => {
+                exportStarted = true;
+                fireEvent.click(screen.getByTestId('export-start'));
+                const firstEvent = await awaitBeforeDeadline(
+                    Promise.race([
+                        firstWriteStarted.then(() => 'first-write' as const),
+                        writerTerminal.promise.then(() => 'terminal' as const),
+                    ]),
+                    deadline,
+                    () => withPhase(new Error('Timed out waiting for the first report-export writer block.'))
+                );
+                expect(firstEvent).toBe('first-write');
+            });
+            expect(ownership.rendered).toBe(1);
+            expect(ownership.consumed).toBe(0);
+            await act(async () => {
+                releaseFirstWrite();
+                const terminal = await awaitBeforeDeadline(writerTerminal.promise, deadline, () =>
+                    withPhase(new Error('Timed out waiting for reported stem writer close.'))
+                );
+                expect(terminal).toBe('closed');
+            });
+            expect(closed).toBe(true);
+            expect(closeCalls).toBe(1);
+            expect(abortCalls).toBe(0);
+            expect(ownership.rendered).toBe(64);
+            expect(ownership.consumed).toBe(64);
+            expect(ownership.peakRetained).toBe(1);
+            const archive = new Uint8Array(chunks.reduce((sum, b) => sum + b.length, 0));
+            let offset = 0;
+            for (const b of chunks) {
+                archive.set(b, offset);
+                offset += b.length;
+            }
+            const entries = unzipSync(archive);
+            expect(Object.keys(entries)).toHaveLength(256);
+            for (const [name, bytes] of Object.entries(entries)) {
+                if (name.endsWith('.loudness.json')) {
+                    const report = JSON.parse(new TextDecoder().decode(bytes));
+                    expect(report.audioFile).toBe(name.slice(0, -'.loudness.json'.length));
+                    expect(report.measurementBasis).toBe('decoded-WAV-bytes');
+                    expect(report.publicationAttested).toBe(false);
+                    continue;
+                }
+                const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                if (name.endsWith('__game-audio-pcm.wav')) {
+                    expect(view.getUint32(24, true)).toBe(48000);
+                    expect(view.getUint16(22, true)).toBe(1);
+                    expect(bytes.length).toBe(44 + 48000 * 3);
+                    expect(bytes.subarray(44).every((b) => b === 0)).toBe(true);
+                } else {
+                    expect(name).toMatch(/__apple-music-stereo-master\.wav$/);
+                    expect(view.getUint32(24, true)).toBe(44100);
+                    expect(view.getUint16(22, true)).toBe(2);
+                }
+            }
+        } catch (error) {
+            failure = withPhase(error);
+        }
+        try {
+            const cleanupDeadline = Math.min(deadline + 4000, Date.now() + 4000);
+            await act(async () => {
+                releaseFirstWrite();
+                if (exportStarted && !closed) {
+                    const cancel = screen.queryByRole('button', { name: 'Turn off Oven' });
+                    if (cancel) {
+                        fireEvent.click(cancel);
+                    }
+                    actualEngine.cancelExport();
+                }
+                if (exportStarted) {
+                    await awaitBeforeDeadline(writerTerminal.promise, cleanupDeadline, () =>
+                        withPhase(new Error('Reported stem export never reached writer close or abort during cleanup.'))
+                    );
+                }
+            });
+            if (exportStarted) {
+                await waitFor(() => expect(screen.getByTestId('export-mode-stems')).toBeEnabled(), {
+                    timeout: Math.max(1, cleanupDeadline - Date.now()),
+                    onTimeout: withPhase,
+                });
+                expect(closeCalls + abortCalls).toBe(1);
+            }
+        } catch (error) {
+            throw new AggregateError(
+                [failure, withPhase(error)].filter((item): item is Error => item !== undefined),
+                'Reported stem cleanup did not finish; platform globals remain installed.',
+                { cause: error }
+            );
+        }
+        vi.unstubAllGlobals();
+        if (failure) {
+            throw failure;
+        }
+    }, 65000);
 });
 
 it('keeps only live observed export buffers after sampling', () => {
