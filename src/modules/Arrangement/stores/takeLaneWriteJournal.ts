@@ -5,29 +5,28 @@ import {
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
+import { applyTakeFieldOperation } from './applyTakeFieldOperation';
 import {
     captureBaseGapAudioSources,
     replaceBaseGapAudioSources,
     reconcileBaseGapAudioSourceDelta,
 } from './baseGapAudioSourceDelta';
+import { captureDelta } from './captureTakeLaneDelta';
 import { type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {
     applyCompAudioSourcePromotions,
     compSelectionMatchesSources,
     type CompAudioSourceAuthorization,
 } from './compAudioSourcePromotions';
+import { cloneValue, optionalString, valuesEqual } from './takeLaneJournalValues';
 import {
-    type OptionalStringValue,
-    type OptionalNumberValue,
-    type OptionalTakeNumberField,
-    type TakeFieldOperation,
-    type TakeLaneWriteIntent,
     type LaneWriteOperation,
-    type TakeLaneWriteOperation,
-    type TakeLaneWriteJournal,
+    type TakeLaneWriteIntent,
     type TakeLaneStoreValue,
     type TakeLaneCompRegionPatch,
-} from './takeLaneWriteTypes';
+    type TakeLaneWriteOperation,
+    type TakeLaneWriteJournal,
+} from './takeLaneWriteJournalTypes';
 import { projectTempoAudioSourceLanes } from './tempoAudioSources';
 import { tempoAudioSourceWriteIntentMatches } from './tempoAudioSourceWriteIntent';
 
@@ -37,210 +36,13 @@ export {
     type OptionalAudioSourceTiles,
 } from './baseGapAudioSourceDelta';
 export type {
-    TakeLaneWriteOperation,
-    TakeLaneWriteJournal,
     TakeLaneStoreValue,
     TakeLaneCompRegionPatch,
-} from './takeLaneWriteTypes';
+    TakeLaneWriteOperation,
+    TakeLaneWriteJournal,
+} from './takeLaneWriteJournalTypes';
 
 let pendingWriteIntent: { readonly intent: TakeLaneWriteIntent; readonly owner: object | undefined } | undefined;
-
-function cloneValue<Value>(value: Value): Value {
-    return structuredClone(value);
-}
-
-function valuesEqual(left: unknown, right: unknown): boolean {
-    if (Object.is(left, right)) {
-        return true;
-    }
-    if (Array.isArray(left) || Array.isArray(right)) {
-        return (
-            Array.isArray(left) &&
-            Array.isArray(right) &&
-            left.length === right.length &&
-            left.every((value, index) => valuesEqual(value, right[index]))
-        );
-    }
-    if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
-        return false;
-    }
-    const leftRecord = left as Record<string, unknown>;
-    const rightRecord = right as Record<string, unknown>;
-    const leftKeys = Object.keys(leftRecord).sort();
-    const rightKeys = Object.keys(rightRecord).sort();
-    return (
-        leftKeys.length === rightKeys.length &&
-        leftKeys.every((key, index) => key === rightKeys[index] && valuesEqual(leftRecord[key], rightRecord[key]))
-    );
-}
-
-function optionalString(source: TakeLane, field: 'automationLaneId'): OptionalStringValue {
-    if (Object.hasOwn(source, field) && source[field] !== undefined) {
-        return { present: true, value: source[field] };
-    }
-    return { present: false };
-}
-
-function optionalNumber(source: Take, field: OptionalTakeNumberField): OptionalNumberValue {
-    if (Object.hasOwn(source, field) && source[field] !== undefined) {
-        return { present: true, value: source[field] };
-    }
-    return { present: false };
-}
-
-function previousIdentity<Item extends { readonly id: string }>(items: readonly Item[], index: number): string | null {
-    return index > 0 ? (items[index - 1]?.id ?? null) : null;
-}
-
-function captureTakeFieldOperations(laneId: string, before: Take, next: Take): TakeFieldOperation[] {
-    const operations: TakeFieldOperation[] = [];
-    for (const field of ['clipId', 'name'] as const) {
-        if (before[field] !== next[field]) {
-            operations.push({
-                kind: 'take-string-field',
-                laneId,
-                takeId: before.id,
-                field,
-                expected: before[field],
-                replacement: next[field],
-            });
-        }
-    }
-    for (const field of ['startBeat', 'endBeat'] as const) {
-        if (before[field] !== next[field]) {
-            operations.push({
-                kind: 'take-number-field',
-                laneId,
-                takeId: before.id,
-                field,
-                expected: before[field],
-                replacement: next[field],
-            });
-        }
-    }
-    if (before.selected !== next.selected) {
-        operations.push({
-            kind: 'take-selected-field',
-            laneId,
-            takeId: before.id,
-            expected: before.selected,
-            replacement: next.selected,
-        });
-    }
-    for (const field of [
-        'sourceOffsetBeats',
-        'sourceOffsetSeconds',
-        'passAnchorSeconds',
-        'passDepthSeconds',
-        'passSourceEndSeconds',
-        'passOriginBeat',
-        'passOriginSourceSeconds',
-    ] as const) {
-        const beforeValue = optionalNumber(before, field);
-        const nextValue = optionalNumber(next, field);
-        if (!valuesEqual(beforeValue, nextValue)) {
-            operations.push({
-                kind: 'take-optional-number-field',
-                laneId,
-                takeId: before.id,
-                field,
-                expected: beforeValue,
-                replacement: nextValue,
-            });
-        }
-    }
-    return operations;
-}
-
-function captureLaneOperations(before: TakeLane, next: TakeLane): TakeLaneWriteOperation[] {
-    const operations: TakeLaneWriteOperation[] = [];
-    if (before.trackId !== next.trackId) {
-        operations.push({
-            kind: 'lane-track-field',
-            laneId: before.id,
-            expected: before.trackId,
-            replacement: next.trackId,
-        });
-    }
-    const beforeAutomation = optionalString(before, 'automationLaneId');
-    const nextAutomation = optionalString(next, 'automationLaneId');
-    if (!valuesEqual(beforeAutomation, nextAutomation)) {
-        operations.push({
-            kind: 'lane-automation-field',
-            laneId: before.id,
-            expected: beforeAutomation,
-            replacement: nextAutomation,
-        });
-    }
-
-    const beforeTakes = new Map(before.takes.map((take) => [take.id, take]));
-    const nextTakes = new Map(next.takes.map((take) => [take.id, take]));
-    for (const take of before.takes) {
-        if (!nextTakes.has(take.id)) {
-            operations.push({ kind: 'remove-take', laneId: before.id, takeId: take.id });
-        }
-    }
-    for (const [index, take] of next.takes.entries()) {
-        const previous = beforeTakes.get(take.id);
-        if (!previous) {
-            operations.push({
-                kind: 'insert-take',
-                laneId: before.id,
-                take: cloneValue(take),
-                afterTakeId: previousIdentity(next.takes, index),
-            });
-            continue;
-        }
-        operations.push(...captureTakeFieldOperations(before.id, previous, take));
-    }
-
-    if (!valuesEqual(before.activeCompRegions, next.activeCompRegions)) {
-        operations.push({
-            kind: 'replace-comp-regions',
-            laneId: before.id,
-            expected: cloneValue(before.activeCompRegions),
-            replacement: cloneValue(next.activeCompRegions),
-        });
-    }
-    const beforeGaps = captureBaseGapAudioSources(before);
-    const nextGaps = captureBaseGapAudioSources(next);
-    if (!valuesEqual(beforeGaps, nextGaps)) {
-        operations.push({
-            kind: 'replace-base-gap-audio-sources',
-            laneId: before.id,
-            expected: beforeGaps,
-            replacement: nextGaps,
-        });
-    }
-    return operations;
-}
-
-function captureDelta(before: TakeLaneStoreValue | null, next: TakeLaneStoreValue | null): TakeLaneWriteJournal {
-    if (before === null || next === null) {
-        return [{ kind: 'replace-state', expected: cloneValue(before), replacement: cloneValue(next) }];
-    }
-    const operations: TakeLaneWriteOperation[] = [];
-    const beforeLanes = new Map(before.lanes.map((lane) => [lane.id, lane]));
-    const nextLanes = new Map(next.lanes.map((lane) => [lane.id, lane]));
-    for (const lane of before.lanes) {
-        if (!nextLanes.has(lane.id)) {
-            operations.push({ kind: 'remove-lane', laneId: lane.id });
-        }
-    }
-    for (const [index, lane] of next.lanes.entries()) {
-        const previous = beforeLanes.get(lane.id);
-        if (!previous) {
-            operations.push({
-                kind: 'insert-lane',
-                lane: cloneValue(lane),
-                afterLaneId: previousIdentity(next.lanes, index),
-            });
-            continue;
-        }
-        operations.push(...captureLaneOperations(previous, lane));
-    }
-    return operations;
-}
 
 export function runWithTakeLaneWriteIntent<Result>(intent: TakeLaneWriteIntent, callback: () => Result): Result {
     const previousIntent = pendingWriteIntent;
@@ -399,43 +201,6 @@ function insertAfter<Item extends { readonly id: string }>(
 
 function replaceLane(state: TakeLaneStoreValue, replacement: TakeLane): TakeLaneStoreValue {
     return { lanes: state.lanes.map((lane) => (lane.id === replacement.id ? replacement : lane)) };
-}
-
-function applyTakeFieldOperation(
-    state: TakeLaneStoreValue,
-    lane: TakeLane,
-    operation: TakeFieldOperation
-): TakeLaneStoreValue | undefined {
-    const take = findTake(lane, operation.takeId);
-    if (!take) {
-        return undefined;
-    }
-    let replacementTake: Take;
-    if (operation.kind === 'take-optional-number-field') {
-        if (!valuesEqual(optionalNumber(take, operation.field), operation.expected)) {
-            return undefined;
-        }
-        replacementTake = cloneValue(take);
-        if (operation.replacement.present) {
-            replacementTake[operation.field] = operation.replacement.value;
-        } else {
-            delete replacementTake[operation.field];
-        }
-    } else if (operation.kind === 'take-selected-field') {
-        if (take.selected !== operation.expected) {
-            return undefined;
-        }
-        replacementTake = { ...take, selected: operation.replacement };
-    } else {
-        if (take[operation.field] !== operation.expected) {
-            return undefined;
-        }
-        replacementTake = { ...take, [operation.field]: operation.replacement };
-    }
-    return replaceLane(state, {
-        ...lane,
-        takes: lane.takes.map((candidate) => (candidate.id === take.id ? replacementTake : candidate)),
-    });
 }
 
 function applyLaneOperation(

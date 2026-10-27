@@ -9,7 +9,50 @@
  * the capture terminal uses (#5289). `null` means no witness was recorded
  * (a legacy in-flight take), which reads as always-owning.
  */
-export const activeRecordingRef: { current: string[]; capturedRootIdentity: string | null } = {
+export type RecordingMidiAdmission = {
+    id: string;
+    clipId: string;
+    trackId: string;
+    channel: number;
+    note: number;
+    velocity: number;
+    onsetAudioTime: number;
+    onsetSourceBeat: number;
+    /** Pass relative to this recording's first seam, captured with the onset. */
+    onsetPassIndex?: number;
+    releaseAudioTime?: number;
+    releaseSourceBeat?: number;
+    initialExpression?: {
+        pressure?: number;
+        slide?: number;
+        pitchBend?: number;
+        pitchBendRangeSemitones?: number;
+    };
+    expressionChanges?: Array<{
+        dimension: 'pressure' | 'slide' | 'pitchBend';
+        value: number;
+        audioTime: number;
+        sourceBeat: number;
+        bendRangeSemitones?: number;
+    }>;
+};
+
+export const activeRecordingRef: {
+    current: string[];
+    capturedRootIdentity: string | null;
+    startWrapCount: number;
+    startBeat: number;
+    loopStart: number;
+    loopEnd: number;
+    startedLooping: boolean;
+    midiAdmissions: RecordingMidiAdmission[];
+} = {
     current: [],
     capturedRootIdentity: null,
+    startWrapCount: 0,
+    startBeat: 0,
+    loopStart: 0,
+    loopEnd: 0,
+    startedLooping: false,
+    midiAdmissions: [],
 };

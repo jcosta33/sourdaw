@@ -498,6 +498,87 @@ describe('sanitize_take_lane_store_state', () => {
         expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
     });
 
+    it('retains a present frozen MIDI source through exact snapshots and hydration', async () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: { present: true, value: [] },
+                controlChanges: { present: true, value: [] },
+                pitchBends: { present: true, value: [] },
+            },
+            sourceEntryBeat: 0,
+            sourceEndBeat: 4,
+            phaseHeadBeat: -0,
+            passLengthBeats: 4,
+        };
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    midiSource: source,
+                    recordingPassIndex: 0,
+                },
+            ],
+            activeCompRegions: [],
+        };
+
+        expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
+        const sanitized = sanitize_take_lane_store_state({ lanes: [lane] });
+        expect(sanitized.lanes[0]?.takes[0]?.midiSource).toEqual(source);
+        expect(sanitized.lanes[0]?.takes[0]?.recordingPassIndex).toBe(0);
+        expect(Object.is(sanitized.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat, -0)).toBe(true);
+    });
+
+    it('refuses malformed present MIDI source instead of dropping its take or comp selection', () => {
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    midiSource: { sourceClipId: 'clip-1', rows: null },
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'pass-1' }],
+        };
+
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(() => sanitize_take_lane_store_state({ lanes: [lane] })).toThrow('Invalid frozen MIDI take source');
+    });
+
+    it('refuses a malformed present recording pass identity before sanitizing its take', () => {
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    recordingPassIndex: -1,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'pass-1' }],
+        };
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(() => sanitize_take_lane_store_state({ lanes: [lane] })).toThrow('Invalid MIDI recording pass identity');
+    });
+
     it('should preserve a pass placement, a negative anchor included, and drop takes carrying a malformed one', () => {
         const take = (id: string, fields: Record<string, unknown>) => ({
             id,
@@ -572,12 +653,40 @@ describe('takeLaneStore', () => {
     });
 
     it('should preserve valid CRDT hydration without writing back', async () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: {
+                    present: true as const,
+                    value: [
+                        { id: 'recorded', pitch: 60, startBeat: 5, duration: 1, velocity: 100, recordingPassIndex: 1 },
+                    ],
+                },
+                controlChanges: { present: true as const, value: [] },
+                pitchBends: { present: true as const, value: [] },
+            },
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
         const valid_state = {
             lanes: [
                 {
                     id: 'lane-1',
                     trackId: 'track-1',
-                    takes: [],
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-1',
+                            name: 'Recorded',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            recordingPassIndex: 1,
+                            midiSource: source,
+                        },
+                    ],
                     activeCompRegions: [],
                 },
             ],
@@ -588,6 +697,8 @@ describe('takeLaneStore', () => {
         await flush_pending_frame();
 
         expect(takeLaneStore.value).toEqual(valid_state);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value[0]?.recordingPassIndex).toBe(1);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat).toBe(0);
         expect(mutation_count).toBe(0);
     });
 

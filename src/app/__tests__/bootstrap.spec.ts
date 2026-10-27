@@ -161,6 +161,7 @@ const {
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
+    setRecordingMidiAdmissionPortMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
     runtimeGraphTopologyMock,
@@ -296,6 +297,7 @@ const {
         ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
+        setRecordingMidiAdmissionPortMock: vi.fn(),
         setProjectIdentityTransitionDependenciesMock:
             vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
@@ -359,6 +361,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingMidiNoteOn: noop,
+    admitRecordingMidiNoteOff: noop,
+    admitRecordingMidiExpression: noop,
+    findOpenRecordingMidiAdmission: noop,
+    findOpenRecordingMidiMemberAdmission: noop,
+    getRecordingMidiAdmission: noop,
+    retireRecordingMidiAdmission: noop,
+    takeOwnsRecordingRoot: noop,
     getDeviceManifestProtocolContract: noop,
     setClipAudioAssetStager: noop,
     stageAudioBufferAsset: noop,
@@ -610,6 +620,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
     setWebMidiRuntimeEventBus: noop,
+    setRecordingMidiAdmissionPort: setRecordingMidiAdmissionPortMock,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
     destroyWebMidi: noop,
 }));
@@ -989,6 +1000,16 @@ describe('bootstrap', () => {
             captureAgentProjectInspectionState
         );
         expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
+        expect(setRecordingMidiAdmissionPortMock).toHaveBeenCalledExactlyOnceWith({
+            admitRecordingMidiNoteOn: noop,
+            admitRecordingMidiNoteOff: noop,
+            admitRecordingMidiExpression: noop,
+            findOpenRecordingMidiAdmission: noop,
+            findOpenRecordingMidiMemberAdmission: noop,
+            getRecordingMidiAdmission: noop,
+            retireRecordingMidiAdmission: noop,
+            takeOwnsRecordingRoot: noop,
+        });
 
         expect(configureRuntimeGraphProjectRevisionValidatorMock).toHaveBeenCalledTimes(1);
         const projectRevisionValidatorCall = configureRuntimeGraphProjectRevisionValidatorMock.mock.calls.at(0);

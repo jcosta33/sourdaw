@@ -62,11 +62,19 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import {
+    admitRecordingMidiExpression,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiNoteOn,
     createTrack,
     duplicateClip,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
     getArrangementHandlers,
+    retireRecordingMidiAdmission,
     startRecording,
     stopRecording,
+    takeOwnsRecordingRoot,
 } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -83,7 +91,13 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { destroyWebMidi, initWebMidi, setMidiInputTrack, setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
+import {
+    destroyWebMidi,
+    initWebMidi,
+    setMidiInputTrack,
+    setRecordingMidiAdmissionPort,
+    setWebMidiRuntimeEventBus,
+} from '#/modules/MIDI/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import {
@@ -98,6 +112,7 @@ const TRACK_ID = 'track-midi';
 const DEVICE_ID = 'gb-1';
 /** At 120 BPM and 48 kHz a beat is 24 000 frames. */
 const BEAT_FRAMES = 24_000;
+let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -168,6 +183,16 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+        });
         transportStore.set({
             ...transportStore.value!,
             isRecording: false,
@@ -180,6 +205,7 @@ describe('a recorded controller-only take, played by the window scheduler', () =
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
+        disposeRecordingAdmission();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();

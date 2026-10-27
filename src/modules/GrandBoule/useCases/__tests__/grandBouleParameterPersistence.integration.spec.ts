@@ -82,6 +82,11 @@ vi.mock('#/modules/Knead/useCases', async (importOriginal) => {
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        isFrozenMidiTakeSource: actual.isFrozenMidiTakeSource,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
         decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         adaptGrooveTemplateForConsumer: vi.fn(),

@@ -16,6 +16,9 @@ vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.get
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
+        getMidiStoreState: actual.getMidiStoreState,
+        isFrozenMidiTakeSource: actual.isFrozenMidiTakeSource,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
         getGrooveTemplate: actual.getGrooveTemplate,
         getScopedGrooveAssignment: actual.getScopedGrooveAssignment,

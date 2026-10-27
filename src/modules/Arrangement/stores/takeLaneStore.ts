@@ -3,6 +3,7 @@ import {
     AutomergeStorageWriteConflictError,
     createAutomergeStorage,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import {
     hasValidAudioPassOrigin,
     hasValidAudioSourceTiles,
@@ -33,7 +34,7 @@ const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId', 'baseGapAudioSources'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
-const TAKE_OPTIONAL_KEYS = [
+const TAKE_OPTIONAL_NUMBER_KEYS = [
     'sourceOffsetBeats',
     'sourceOffsetSeconds',
     'passAnchorSeconds',
@@ -42,6 +43,7 @@ const TAKE_OPTIONAL_KEYS = [
     'passOriginBeat',
     'passOriginSourceSeconds',
 ] as const;
+const TAKE_OPTIONAL_KEYS = [...TAKE_OPTIONAL_NUMBER_KEYS, 'midiSource', 'recordingPassIndex'] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 const COMP_REGION_OPTIONAL_KEYS = ['audioSource'] as const;
 
@@ -86,6 +88,15 @@ function get_lane_values(value: unknown): unknown[] | null {
     return value.lanes;
 }
 
+function hasValidMidiTakeFields(value: object): boolean {
+    return (
+        (!('recordingPassIndex' in value) ||
+            (typeof value.recordingPassIndex === 'number' &&
+                Number.isSafeInteger(value.recordingPassIndex) &&
+                value.recordingPassIndex >= 0)) &&
+        (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
+    );
+}
 function hasValidTakeOffsets(value: object): boolean {
     return (
         (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
@@ -114,7 +125,8 @@ function is_valid_take(value: unknown): value is Take {
         // malformed one is dropped whole, like any other malformed take field.
         hasValidTakeOffsets(value) &&
         is_valid_pass_placement(value) &&
-        hasValidAudioPassOrigin(value)
+        hasValidAudioPassOrigin(value) &&
+        hasValidMidiTakeFields(value)
     );
 }
 
@@ -174,6 +186,12 @@ function normalize_take(take: Take): Take {
             sanitized.passOriginBeat = take.passOriginBeat;
             sanitized.passOriginSourceSeconds = take.passOriginSourceSeconds;
         }
+    }
+    if (take.midiSource !== undefined) {
+        sanitized.midiSource = structuredClone(take.midiSource);
+    }
+    if (take.recordingPassIndex !== undefined) {
+        sanitized.recordingPassIndex = take.recordingPassIndex;
     }
     return sanitized;
 }
@@ -273,6 +291,35 @@ function get_normalized_takes(takes: unknown[]): Take[] {
     return takes.filter(is_valid_take).map(normalize_take);
 }
 
+function refuseMalformedMidiSources(lanes: readonly unknown[]): void {
+    for (const lane of lanes) {
+        if (lane === null || typeof lane !== 'object' || !('takes' in lane) || !Array.isArray(lane.takes)) {
+            continue;
+        }
+        const takes: unknown[] = lane.takes;
+        for (const take of takes) {
+            if (
+                take !== null &&
+                typeof take === 'object' &&
+                'midiSource' in take &&
+                !isFrozenMidiTakeSource(take.midiSource)
+            ) {
+                throw new Error('Invalid frozen MIDI take source');
+            }
+            if (
+                take !== null &&
+                typeof take === 'object' &&
+                'recordingPassIndex' in take &&
+                (typeof take.recordingPassIndex !== 'number' ||
+                    !Number.isSafeInteger(take.recordingPassIndex) ||
+                    take.recordingPassIndex < 0)
+            ) {
+                throw new Error('Invalid MIDI recording pass identity');
+            }
+        }
+    }
+}
+
 function retain_non_overlapping_regions(regions: CompRegion[]): CompRegion[] {
     const retained_regions: CompRegion[] = [];
 
@@ -352,6 +399,20 @@ function project_exact_audio_source(value: AudioSourceSnapshot, numbers: TakeLan
     };
 }
 
+function canonicalizeSourcePrefixNumbers(value: unknown): void {
+    if (value === null || typeof value !== 'object') {
+        return;
+    }
+    for (const key of Reflect.ownKeys(value)) {
+        const child: unknown = Reflect.get(value, key);
+        if (typeof child === 'number' && Object.is(child, -0)) {
+            Reflect.set(value, key, 0);
+        } else {
+            canonicalizeSourcePrefixNumbers(child);
+        }
+    }
+}
+
 function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take {
     const take: Take = {
         id: value.id,
@@ -361,11 +422,21 @@ function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take
         endBeat: snapshot_number(value.endBeat, numbers),
         selected: value.selected,
     };
-    for (const field of TAKE_OPTIONAL_KEYS) {
+    for (const field of TAKE_OPTIONAL_NUMBER_KEYS) {
         const number = value[field];
         if (Object.hasOwn(value, field) && number !== undefined) {
             take[field] = snapshot_number(number, numbers);
         }
+    }
+    if (Object.hasOwn(value, 'midiSource') && value.midiSource !== undefined) {
+        const midiSource = structuredClone(value.midiSource);
+        if (numbers === 'source-prefix') {
+            canonicalizeSourcePrefixNumbers(midiSource);
+        }
+        take.midiSource = midiSource;
+    }
+    if (Object.hasOwn(value, 'recordingPassIndex') && value.recordingPassIndex !== undefined) {
+        take.recordingPassIndex = value.recordingPassIndex;
     }
     return take;
 }
@@ -473,6 +544,8 @@ export function sanitize_take_lane_store_state(value: unknown): TakeLaneStoreSta
     if (lanes === null) {
         return defaultTakeLaneStoreState;
     }
+
+    refuseMalformedMidiSources(lanes);
 
     return {
         lanes: lanes.map(get_sanitizable_take_lane).filter(is_sanitizable_take_lane).map(normalize_take_lane),
