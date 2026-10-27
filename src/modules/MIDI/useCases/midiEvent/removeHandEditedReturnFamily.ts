@@ -1,14 +1,7 @@
 import { type MidiCC } from '../../models/MidiNote';
-import { isCarriedBendReturnOnEditedHead } from '../../services/registeredParameterState';
 import { midiStore } from '../../stores/midiStore';
 
-/** The return rows belonging to the edited head, in their stored order. */
-export function getHandEditedReturnFamily(
-    rows: readonly MidiCC[],
-    head: { channel: number; beat: number }
-): readonly MidiCC[] {
-    return rows.filter((row) => isCarriedBendReturnOnEditedHead(row, head));
-}
+import { getHandEditedReturnFamily } from './getHandEditedReturnFamily';
 
 /**
  * Removes the returns a split or glue wrote just after a clip's head, whatever ids they currently
