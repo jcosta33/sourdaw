@@ -20,7 +20,9 @@ export function runE2eDevServer(root: string, port: number, command: string, arg
     let timer: NodeJS.Timeout | undefined;
     let requestedSignal: ShutdownSignal | undefined;
     const stop = (signal: ShutdownSignal): void => {
-        if (requestedSignal) return;
+        if (requestedSignal) {
+            return;
+        }
         requestedSignal = signal;
         record('cleanup', { signal });
         child.kill(signal);
@@ -36,7 +38,9 @@ export function runE2eDevServer(root: string, port: number, command: string, arg
         record('spawn-error', { code: error.code, message: error.message.replace(command, '<executable>') })
     );
     child.once('close', (code, signal) => {
-        if (timer) clearTimeout(timer);
+        if (timer) {
+            clearTimeout(timer);
+        }
         process.off('SIGINT', onInterrupt);
         process.off('SIGTERM', onTerminate);
         record('exit', { code, signal }, () => {

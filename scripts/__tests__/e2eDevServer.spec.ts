@@ -30,25 +30,31 @@ async function withFixture(
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
     child.once('exit', () => (exited = true));
-    const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveClose, reject) => {
+    const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((_resolve, reject) => {
         child.once('error', reject);
-        child.once('close', (code, signal) => resolveClose({ code, signal }));
+        child.once('close', (code, signal) => _resolve({ code, signal }));
     });
     const terminate = (): void => {
-        if (!exited && child.pid !== undefined && child.pid > 0) child.kill('SIGTERM');
+        if (!exited && child.pid !== undefined && child.pid > 0) {
+            child.kill('SIGTERM');
+        }
     };
     const watchdog = setTimeout(terminate, 8_000);
     const forceStop = setTimeout(() => {
-        if (!exited && child.pid !== undefined && child.pid > 0) child.kill('SIGKILL');
+        if (!exited && child.pid !== undefined && child.pid > 0) {
+            child.kill('SIGKILL');
+        }
     }, 11_000);
     const waitForReady = (): Promise<void> =>
-        new Promise((resolveReady, reject) => {
+        new Promise((_resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('fixture did not become ready')), 5_000);
             const checkOutput = (): void => {
-                if (!stdout.includes('fixture-ready')) return;
+                if (!stdout.includes('fixture-ready')) {
+                    return;
+                }
                 clearTimeout(timer);
                 child.stdout.off('data', checkOutput);
-                resolveReady();
+                _resolve();
             };
             child.stdout.on('data', checkOutput);
             checkOutput();
