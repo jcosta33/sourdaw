@@ -158,7 +158,7 @@ describe('Grinder disclosure in project truth', () => {
 
     it('hydrates after duplicate identity becomes eligible with identical parameter values', () => {
         const track = trackStore.value!.tracks[0]!;
-        const ambiguous = { ...track, devices: [...track.devices, { ...track.devices[0]! }] };
+        const ambiguous = { ...track, devices: [...track.devices, track.devices[0]!] };
         trackStore.set({ ...defaultTrackState, tracks: [ambiguous] });
         render(<GrinderPanel deviceId="a" />);
         expect(screen.getByRole('slider', { name: 'Gain' })).toHaveAttribute(
