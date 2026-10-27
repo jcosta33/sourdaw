@@ -148,9 +148,11 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 
 // Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
 const measuredScriptBudgets = new Map<string, number>([
-    // A cold private frozen install peaked at 1582 MiB under the guard.
-    ['install', 2048 * 1024 ** 2],
+    // A cold private frozen install peaked at 2051 MiB under the guard.
+    ['install', 2304 * 1024 ** 2],
     ['lint', 4 * 1024 ** 3],
+    // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
+    ['lint:full', 6500 * 1024 ** 2],
     // The focused batch that touched seven spec files at once peaked at 4423 MiB.
     ['test:run', 6144 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
@@ -1174,14 +1176,14 @@ function killedByTimeout(error: Error | undefined): boolean {
 
 type ScopedFileState =
     | { kind: 'alive' }
-    | { kind: 'uncovered'; pids: number[] }
+    | { kind: 'uncovered'; pids: number[]; reason?: string }
     | { kind: 'expired' }
     | { kind: 'unavailable'; reason: string };
 
 // Reads only the processes a whole catalog missed. A PID absent from a usable read stays
 // uncovered even when it has exited: it may have forked a storage user after the process
-// lists were taken, so only a fresh observation can cover it. Any other failure leaves the
-// proof unavailable.
+// lists were taken, so only a fresh observation can cover it. An inspection diagnostic also
+// requires a fresh observation, retaining its stable reason. Other failures leave proof unavailable.
 function scopedDarwinFileState(
     pids: number[],
     uid: number,
@@ -1208,6 +1210,9 @@ function scopedDarwinFileState(
                   parseReason = reason;
               });
     if (census === undefined) {
+        if (parseReason === 'file-inspection-diagnostic') {
+            return { kind: 'uncovered', pids, reason: `lsof-scoped-fields-unusable:${parseReason}` };
+        }
         return parseReason === 'descriptor-type-missing'
             ? { kind: 'uncovered', pids }
             : { kind: 'unavailable', reason: `lsof-scoped-fields-unusable:${parseReason}` };
@@ -1641,8 +1646,10 @@ export function storageFileState(
     supervisorPid?: number,
     ownerStartTicks?: number
 ): 'alive' | 'dead' | 'unknown' {
+    // Every inconclusive exit must retain an inspection failure until fresh proof resolves it.
+    let inspectionDiagnostic: string | undefined;
     const unknown = (reason: string): 'unknown' => {
-        report(reason);
+        report(inspectionDiagnostic ?? reason);
         return 'unknown';
     };
     const uid = process.getuid?.();
@@ -1691,7 +1698,7 @@ export function storageFileState(
             return unknown(pids);
         }
         if (platform() === 'darwin') {
-            // Expiry reports the last omission, so a retained run names what stayed uncovered.
+            // Expiry reports the last omission unless an inspection diagnostic stayed unproved.
             let uncovered = 'file-census-time-bound';
             const expired = (): 'unknown' => unknown(uncovered);
             for (let observation = 0; Date.now() < deadline; observation += 1) {
@@ -1717,8 +1724,12 @@ export function storageFileState(
                     parseReason = reason;
                 });
                 if (census === undefined) {
-                    // A descriptor can close between lsof's field reads. Discard
+                    // A descriptor can close or become uninspectable between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
+                    if (parseReason === 'file-inspection-diagnostic') {
+                        inspectionDiagnostic ??= `lsof-fields-unusable:${parseReason}`;
+                        continue;
+                    }
                     if (parseReason === 'descriptor-type-missing') {
                         uncovered = `lsof-fields-unusable:${parseReason}`;
                         continue;
@@ -1803,6 +1814,9 @@ export function storageFileState(
                     const scoped = scopedDarwinFileState([...missing.keys()], uid, tempDirectories, deadline);
                     if (scoped.kind === 'alive') {
                         return 'alive';
+                    }
+                    if (scoped.kind === 'uncovered' && scoped.reason !== undefined) {
+                        inspectionDiagnostic ??= scoped.reason;
                     }
                     if (scoped.kind === 'expired' || Date.now() >= deadline) {
                         return expired();

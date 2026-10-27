@@ -65,6 +65,17 @@ const audioEngineMocks = {
 };
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    updateClipInStore: vi.fn(() => false),
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -127,6 +138,13 @@ const evaluateFollowActionsMock = vi.fn<
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        })),
     startRecording: (...args: unknown[]) => (arrangementMocks.startRecording as (...a: unknown[]) => unknown)(...args),
     stopRecording: (...args: unknown[]) => (arrangementMocks.stopRecording as (...a: unknown[]) => unknown)(...args),
     addTakeLane: (...args: unknown[]) => (arrangementMocks.addTakeLane as (...a: unknown[]) => unknown)(...args),
@@ -140,16 +158,44 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         (arrangementMocks.discardRecording as (...a: unknown[]) => unknown)(...args),
     updateTransportState: (...args: unknown[]) =>
         (arrangementMocks.updateTransportState as (...a: unknown[]) => unknown)(...args),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
+    shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
+        if (probabilityPercent <= 0) {
+            return false;
+        }
+        if (probabilityPercent >= 100) {
+            return true;
+        }
+        throw new Error('This scheduler fixture requires deterministic note probability');
+    },
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
     // A held note that survived would still have a change due, so a test that expects none sees it.
     advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
         timeline,
@@ -1573,6 +1619,9 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        // A punch take is open and owns the root, so the finalizer registers
+        // its commit on the lifecycle (#5517).
+        activeRecordingRefState.current = ['punch-take'];
         // The finalizer's own promise is pending: the tick must still complete,
         // and the promise must be owned so a user-facing stop can await it.
         let release!: () => void;
@@ -1600,6 +1649,7 @@ describe('startPlayheadScheduler', () => {
         expect(settled).toBe(false);
         release();
         await waiting;
+        activeRecordingRefState.current = [];
     });
 
     it('does not cache or update a punched clip for a failed recording result', async () => {

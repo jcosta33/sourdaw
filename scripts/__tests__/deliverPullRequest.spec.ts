@@ -1445,7 +1445,6 @@ describe('pull-request delivery', () => {
         const syncCalls: Array<{
             mergeCommitSha: string;
             headSha: string;
-            baseSha: string;
             headRef: string;
             baseRef: string;
         }> = [];
@@ -1464,7 +1463,6 @@ describe('pull-request delivery', () => {
             {
                 mergeCommitSha: 'merge-commit-sha-777',
                 headSha: 'head',
-                baseSha: 'base',
                 headRef: 'feat/gate',
                 baseRef: 'main',
             },
@@ -12465,14 +12463,14 @@ describe('delivery shell boundary', () => {
     it('syncs authorship notes unauthenticated by merging and pushing refs/notes/ai', () => {
         const runs: Array<{ command: string; args: string[] }> = [];
         const port = shellPort('jcosta33/sourdaw', {
-            capture: () => '',
+            capture: (_command, args) =>
+                args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
             run: (command, args) => runs.push({ command, args }),
         });
 
         port.syncAuthorshipNotes?.({
-            mergeCommitSha: 'merge-sha-123',
+            mergeCommitSha: 'a'.repeat(40),
             headSha: 'head-sha-456',
-            baseSha: 'base-sha-789',
             headRef: 'feat/test',
             baseRef: 'main',
         });
@@ -12489,11 +12487,11 @@ describe('delivery shell boundary', () => {
                     'local',
                     'merge',
                     '--merge-commit-sha',
-                    'merge-sha-123',
+                    'a'.repeat(40),
                     '--base-ref',
                     'main',
                     '--base-sha',
-                    'base-sha-789',
+                    'b'.repeat(40),
                     '--head-ref',
                     'feat/test',
                     '--head-sha',
@@ -12512,16 +12510,16 @@ describe('delivery shell boundary', () => {
     it('syncs authorship notes through the trusted git-ai path the launcher froze', () => {
         const runs: Array<{ command: string; args: string[] }> = [];
         const port = shellPort('jcosta33/sourdaw', {
-            capture: () => '',
+            capture: (_command, args) =>
+                args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
             run: (command, args) => runs.push({ command, args }),
         });
         const previous = process.env.SOURDAW_TRUSTED_GIT_AI_PATH;
         process.env.SOURDAW_TRUSTED_GIT_AI_PATH = '/trusted/bin/git-ai';
         try {
             port.syncAuthorshipNotes?.({
-                mergeCommitSha: 'merge-sha-123',
+                mergeCommitSha: 'a'.repeat(40),
                 headSha: 'head-sha-456',
-                baseSha: 'base-sha-789',
                 headRef: 'feat/test',
                 baseRef: 'main',
             });
@@ -12548,16 +12546,16 @@ describe('delivery shell boundary', () => {
             const port = shellPort(
                 'jcosta33/sourdaw',
                 {
-                    capture: () => '',
+                    capture: (_command, args) =>
+                        args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
                     run: (command, args) => runs.push({ command, args }),
                 },
                 { gitToken: 'ghs_notes_token', helperDir }
             );
 
             port.syncAuthorshipNotes?.({
-                mergeCommitSha: 'merge-sha-123',
+                mergeCommitSha: 'a'.repeat(40),
                 headSha: 'head-sha-456',
-                baseSha: 'base-sha-789',
                 headRef: 'feat/test',
                 baseRef: 'main',
             });
@@ -12574,11 +12572,11 @@ describe('delivery shell boundary', () => {
                     'local',
                     'merge',
                     '--merge-commit-sha',
-                    'merge-sha-123',
+                    'a'.repeat(40),
                     '--base-ref',
                     'main',
                     '--base-sha',
-                    'base-sha-789',
+                    'b'.repeat(40),
                     '--head-ref',
                     'feat/test',
                     '--head-sha',
@@ -12602,7 +12600,8 @@ describe('delivery shell boundary', () => {
         console.warn = (msg: string) => warnings.push(msg);
         try {
             const port = shellPort('jcosta33/sourdaw', {
-                capture: () => '',
+                capture: (_command, args) =>
+                    args[0] === 'cat-file' && args[1] === 'commit' ? `parent ${'b'.repeat(40)}\n\nS` : 'commit',
                 run: () => {
                     throw new Error('git-ai command failed');
                 },
@@ -12610,9 +12609,8 @@ describe('delivery shell boundary', () => {
 
             expect(() =>
                 port.syncAuthorshipNotes?.({
-                    mergeCommitSha: 'merge-sha-123',
+                    mergeCommitSha: 'a'.repeat(40),
                     headSha: 'head-sha-456',
-                    baseSha: 'base-sha-789',
                     headRef: 'feat/test',
                     baseRef: 'main',
                 })

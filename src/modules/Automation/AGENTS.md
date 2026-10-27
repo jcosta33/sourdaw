@@ -27,7 +27,8 @@ Owns parameter automation lanes, breakpoint envelope curves, live automation rec
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/Automation
-pnpm deps:validate
+pnpm test:run <changed-spec>
 ```

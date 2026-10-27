@@ -682,7 +682,11 @@
         "steps": [
           {
             "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0,
+              "ref": "${{ github.sha }}"
+            }
           },
           {
             "name": "Set up pnpm",
@@ -706,6 +710,10 @@
           {
             "name": "Artifact freshness",
             "run": "pnpm wasm:verify"
+          },
+          {
+            "name": "Campaign fixture freshness",
+            "run": "pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2"
           },
           {
             "name": "App types",
@@ -739,6 +747,10 @@
             "name": "Command argument schemas",
             "if": "needs.decide.outputs.tooling != 'true'",
             "run": "pnpm test:command-schema"
+          },
+          {
+            "name": "Release inventory",
+            "run": "pnpm test:release-inventory"
           },
           {
             "name": "Test collection scope",

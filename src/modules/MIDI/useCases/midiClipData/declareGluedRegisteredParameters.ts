@@ -17,8 +17,8 @@ type DeclareGluedRegisteredParametersInput = {
     visibleStartBeat: number;
     /** Where the window starts in the glued clip. */
     glueBeat: number;
-    /** Where the window ends in the glued clip. */
-    glueEndBeat: number;
+    /** Where the window's closing line plays in the glued clip: its end, or the next source's head when that comes first. */
+    closingLineBeat: number;
     /** The bends the window carries onto its start, each with the beat its row was recorded at on the source. */
     carriedBends: readonly CarriedBendRecording[];
     /** The window's own bends, its carries excluded, where they play in the glued clip. */
@@ -65,7 +65,7 @@ export function declareGluedRegisteredParameters({
     sourceControlChanges,
     visibleStartBeat,
     glueBeat,
-    glueEndBeat,
+    closingLineBeat,
     carriedBends,
     windowBends,
     windowControlChanges,
@@ -81,8 +81,8 @@ export function declareGluedRegisteredParameters({
         carried: carriedBends,
         head,
     });
-    // Never past the window's end, where the next source's own state begins.
-    const returnBeat = Math.min(carriedBendReturnBeat(head), glueEndBeat);
+    // Never past the window's closing line, where the next source's own state begins.
+    const returnBeat = Math.min(carriedBendReturnBeat(head), closingLineBeat);
     return [
         ...placeMessages(opening, glueBeat, (index) => createId(`rpn-${index}`)),
         ...placeMessages(carried.onHead, glueBeat, (index) => createId(`rpn-carried-${index}`)),

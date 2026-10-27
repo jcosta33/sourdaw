@@ -15,7 +15,9 @@ const TRACK_ID = 'track-armed-auto';
 const mocks = vi.hoisted(() => ({
     getUserMedia: vi.fn<(constraints: MediaStreamConstraints) => Promise<MediaStream>>(),
     notifyUser: vi.fn<(message: string, level: string) => void>(),
-    startPlayback: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(async (onRoll) => {
+        onRoll?.(0, 0);
+    }),
 }));
 
 // The owner, the stores, the monitor use cases and their repository are real, and

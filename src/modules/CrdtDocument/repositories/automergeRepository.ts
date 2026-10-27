@@ -11,7 +11,9 @@ import {
     merge,
     change,
     getChanges,
+    getChangesMetaSince,
     getMissingDeps,
+    hasHeads,
     view,
     getHeads,
     clone,
@@ -53,6 +55,42 @@ function createRepositoryChangedDuringLoadError(): Error {
 
 function createSnapshotTransactionOverlapError(id: DocId): Error {
     return new Error(`[AutomergeRepository] Unowned write to ${id} overlaps the active snapshot transaction`);
+}
+
+function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>): boolean {
+    const previousHeads = getHeads(previous);
+    const replacementHeads = getHeads(replacement);
+    const unreachedHeads = new Set(previousHeads);
+    for (const head of replacementHeads) {
+        unreachedHeads.delete(head);
+    }
+    if (unreachedHeads.size === 0) {
+        return true;
+    }
+    if (!hasHeads(replacement, previousHeads)) {
+        return false;
+    }
+
+    const dependencies = new Map(
+        getChangesMetaSince(replacement, previousHeads).map((change) => [change.hash, change.deps])
+    );
+    const visited = new Set<string>();
+    const pending = [...replacementHeads];
+    while (pending.length > 0 && unreachedHeads.size > 0) {
+        const head = pending.pop();
+        if (!head || visited.has(head)) {
+            continue;
+        }
+        visited.add(head);
+        if (unreachedHeads.delete(head)) {
+            continue;
+        }
+        const dependentHeads = dependencies.get(head);
+        if (dependentHeads) {
+            pending.push(...dependentHeads);
+        }
+    }
+    return unreachedHeads.size === 0;
 }
 
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
@@ -245,6 +283,7 @@ class AutomergeRepository {
     private docs = new Map<DocId, Doc<AnyDoc>>();
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
+    private lastHistoryDiscardEpoch = 0;
     private get documentIdentityEpoch(): number {
         return readDocumentIdentityEpoch();
     }
@@ -313,6 +352,11 @@ class AutomergeRepository {
     /** Monotonic epoch for any local project mutation, including exact-state restore. */
     getMutationEpoch(): number {
         return this.mutationEpoch;
+    }
+
+    /** Last local mutation that installed active heads without their prior causal history. */
+    getLastHistoryDiscardEpoch(): number {
+        return this.lastHistoryDiscardEpoch;
     }
 
     /**
@@ -464,9 +508,14 @@ class AutomergeRepository {
      * `mergeRemoteDoc` does.
      */
     replaceDocInLineage(id: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
+        const previous = this.docs.get(id);
+        const discardsHistory = previous !== undefined && !retainsActiveHistory(previous, doc);
         this.captureBeforeMutation(id, snapshotTransaction);
         this.docs.set(id, doc);
         this.markMutation();
+        if (discardsHistory) {
+            this.lastHistoryDiscardEpoch = this.mutationEpoch;
+        }
         this.notifyListeners(id);
     }
 
@@ -760,6 +809,14 @@ class AutomergeRepository {
                 decoded.set(id, load<AnyDoc>(entry.bytes));
             }
         }
+        let discardsHistory = false;
+        for (const [id, replacement] of decoded) {
+            const previous = this.docs.get(id);
+            if (previous !== undefined && !retainsActiveHistory(previous, replacement)) {
+                discardsHistory = true;
+                break;
+            }
+        }
 
         let changesMembership = false;
         let changesContent = false;
@@ -774,7 +831,8 @@ class AutomergeRepository {
             }
 
             changesMembership ||= !this.docs.has(id);
-            this.docs.set(id, decoded.get(id)!);
+            const replacement = decoded.get(id)!;
+            this.docs.set(id, replacement);
             changesContent = true;
             changesRootIdentity ||= id === this.rootId;
         }
@@ -786,6 +844,9 @@ class AutomergeRepository {
                 this.markDocumentIdentityMutation();
             } else {
                 this.markMutation();
+            }
+            if (discardsHistory) {
+                this.lastHistoryDiscardEpoch = this.mutationEpoch;
             }
             this.notifyListeners();
         }
