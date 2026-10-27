@@ -257,6 +257,8 @@ type CorpusCase = {
     /** A `refinement` case only: which follow-up it is, and the turn it follows. */
     refinementKind?: RefinementKind;
     prior?: CorpusPriorTurn;
+    /** Explicit musician edits between a committed prior and its continuation. */
+    interveningFaderEdits?: readonly { trackId: string; gainDb: number }[];
 };
 
 type CorpusClassState = { sealed: boolean; pendingContract?: string };
@@ -533,7 +535,7 @@ function projectDifferences(expected: unknown, actual: unknown): number {
 }
 
 /**
- * The sealed refinement commits currently authorize only fader fields. Fail closed when a future
+ * The sealed refinement commits currently authorize only gain and mute fields. Fail closed when a future
  * case adds another operation: its permitted project transition needs an explicit oracle too.
  */
 function projectAfterOracleActions(before: ProjectTruth, actions: readonly CorpusOracleAction[]): ProjectTruth {
@@ -551,13 +553,20 @@ function projectAfterOracleActions(before: ProjectTruth, actions: readonly Corpu
     });
     const expected = { ...before, root: { ...root, tracks: { ...trackSlot, tracks } } };
     for (const action of actions) {
-        if (action.type !== 'setTrackGain' || typeof action.payload.trackId !== 'string') {
+        if (!['setTrackGain', 'muteTrack'].includes(action.type) || typeof action.payload.trackId !== 'string') {
             throw new TypeError(`Refinement project oracle does not cover ${action.type}.`);
         }
         const trackIndex = tracks.findIndex((candidate) => candidate.id === action.payload.trackId);
         const track = tracks[trackIndex];
         if (!isRecord(track) || typeof track.gain !== 'number') {
             throw new TypeError(`The acceptance project has no fader for ${action.payload.trackId}.`);
+        }
+        if (action.type === 'muteTrack') {
+            if (typeof action.payload.muted !== 'boolean') {
+                throw new TypeError('A mute oracle value must be boolean.');
+            }
+            tracks[trackIndex] = { ...track, muted: action.payload.muted };
+            continue;
         }
         const { gain, gainDb, deltaDb } = action.payload;
         for (const value of [gain, gainDb, deltaDb]) {
@@ -1143,6 +1152,16 @@ async function runRefinementCase(
                 captureProjectTruth()
             );
         }
+        for (const edit of testCase.interveningFaderEdits ?? []) {
+            const expectedGain = trackStore.value?.tracks.find((track) => track.id === edit.trackId)?.gain;
+            if (expectedGain === undefined) {
+                throw new Error(`The intervening edit names no fixture track ${edit.trackId}.`);
+            }
+            await commandUseCases.executeAppAction({
+                type: 'setTrackGain',
+                payload: { trackId: edit.trackId, gainDb: edit.gainDb, expectedGain },
+            });
+        }
         const writes = await sendScriptedChatTurn({
             id: testCase.id,
             prompt: testCase.prompt,
@@ -1255,17 +1274,53 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
     };
 }
 
+function assertRefinementCaseFloors(corpus: Corpus): void {
+    const refinementCases = corpus.cases.filter((entry) => entry.promptClass === 'refinement');
+    for (const kind of REFINEMENT_KINDS) {
+        expect(
+            refinementCases.filter((entry) => entry.refinementKind === kind).length,
+            `The refinement class carries too few ${kind} cases`
+        ).toBeGreaterThanOrEqual(MINIMUM_SEALED_CLASS_CASES);
+    }
+}
+
+function assertRefinementCaseSchemas(corpus: Corpus): void {
+    const refinementCases = corpus.cases.filter((entry) => entry.promptClass === 'refinement');
+    for (const testCase of refinementCases) {
+        const kind = testCase.refinementKind;
+        expect(REFINEMENT_KINDS, `Case ${testCase.id} declares an unknown refinement kind`).toContain(kind);
+        if (kind === undefined) {
+            continue;
+        }
+        expect(testCase.prior?.outcome, `Case ${testCase.id} follows the wrong prior turn`).toBe(
+            PRIOR_OUTCOME_BY_KIND[kind]
+        );
+        expect(testCase.class, `Case ${testCase.id} is no executed change`).toBe('execute-exact');
+        expect(
+            refinementOracleShape(testCase.oracle),
+            `Case ${testCase.id} declares the wrong oracle for ${kind}`
+        ).toBe(REFINEMENT_ORACLE_SHAPE[kind]);
+    }
+    for (const testCase of corpus.cases.filter((entry) => entry.promptClass !== 'refinement')) {
+        expect(testCase.prior, `Case ${testCase.id} follows a turn outside the refinement class`).toBe(undefined);
+    }
+}
+
+function assertHeldOutDisjointness(development: Corpus, heldOut: Corpus): void {
+    const developmentPrompts = new Set(development.cases.flatMap(casePrompts));
+    for (const heldOutPrompt of heldOut.cases.flatMap(casePrompts)) {
+        expect(developmentPrompts.has(heldOutPrompt), `Held-out prompt "${heldOutPrompt}" is in development`).toBe(
+            false
+        );
+    }
+}
+
 describe('agent acceptance corpora', () => {
     it('carries unique case ids across both corpora and held-out prompts disjoint from development', () => {
         const allIds = [...corpora.development.cases, ...corpora['held-out'].cases].map((testCase) => testCase.id);
         expect(new Set(allIds).size).toBe(allIds.length);
 
-        const developmentPrompts = new Set(corpora.development.cases.flatMap(casePrompts));
-        for (const heldOutPrompt of corpora['held-out'].cases.flatMap(casePrompts)) {
-            expect(developmentPrompts.has(heldOutPrompt), `Held-out prompt "${heldOutPrompt}" is in development`).toBe(
-                false
-            );
-        }
+        assertHeldOutDisjointness(corpora.development, corpora['held-out']);
     });
 
     it('pins the frozen thresholds table to AGENT_ACCEPTANCE_THRESHOLDS', () => {
@@ -1327,33 +1382,8 @@ describe('agent acceptance corpora', () => {
         });
 
         it('gives every refinement kind its own cases, each following the turn its kind needs', () => {
-            const refinementCases = corpus.cases.filter((entry) => entry.promptClass === 'refinement');
-            for (const kind of REFINEMENT_KINDS) {
-                expect(
-                    refinementCases.filter((entry) => entry.refinementKind === kind).length,
-                    `The refinement class carries too few ${kind} cases`
-                ).toBeGreaterThanOrEqual(MINIMUM_SEALED_CLASS_CASES);
-            }
-            for (const testCase of refinementCases) {
-                const kind = testCase.refinementKind;
-                expect(REFINEMENT_KINDS, `Case ${testCase.id} declares an unknown refinement kind`).toContain(kind);
-                if (kind === undefined) {
-                    continue;
-                }
-                expect(testCase.prior?.outcome, `Case ${testCase.id} follows the wrong prior turn`).toBe(
-                    PRIOR_OUTCOME_BY_KIND[kind]
-                );
-                expect(testCase.class, `Case ${testCase.id} is no executed change`).toBe('execute-exact');
-                expect(
-                    refinementOracleShape(testCase.oracle),
-                    `Case ${testCase.id} declares the wrong oracle for ${kind}`
-                ).toBe(REFINEMENT_ORACLE_SHAPE[kind]);
-            }
-            for (const testCase of corpus.cases.filter((entry) => entry.promptClass !== 'refinement')) {
-                expect(testCase.prior, `Case ${testCase.id} follows a turn outside the refinement class`).toBe(
-                    undefined
-                );
-            }
+            assertRefinementCaseFloors(corpus);
+            assertRefinementCaseSchemas(corpus);
         });
 
         it('covers every outcome class the boundary cases answer for', () => {
@@ -1402,6 +1432,75 @@ describe('agent acceptance corpora', () => {
                 barrel.restore();
             },
             CORPUS_RUN_TIMEOUT_MS
+        );
+    });
+
+    describe('corpus validation self-checks', () => {
+        it.each(REFINEMENT_KINDS)('rejects fewer than the required %s cases', (kind) => {
+            let retained = 0;
+            const cases = corpora.development.cases.filter((testCase) => {
+                if (testCase.refinementKind !== kind) {
+                    return true;
+                }
+                retained += 1;
+                return retained < MINIMUM_SEALED_CLASS_CASES;
+            });
+            expect(() => assertRefinementCaseFloors({ ...corpora.development, cases })).toThrow(
+                `too few ${kind} cases`
+            );
+        });
+
+        it.each(['prior', 'class', 'oracle', 'kind', 'outside-refinement'] as const)(
+            'rejects a malformed later case: %s',
+            (violation) => {
+                const valid = corpusCase('development', 'AC004-DEV-SCALE-1');
+                const invalid: CorpusCase = { ...valid, id: 'invalid-later-case' };
+                switch (violation) {
+                    case 'prior':
+                        invalid.prior = undefined;
+                        break;
+                    case 'class':
+                        invalid.class = 'deny-policy';
+                        break;
+                    case 'oracle':
+                        invalid.oracle = { kind: 'revert', group: 'prior-commit' };
+                        break;
+                    case 'kind':
+                        invalid.refinementKind = undefined;
+                        break;
+                    case 'outside-refinement':
+                        invalid.promptClass = 'literal-structural';
+                        break;
+                }
+                expect(() => assertRefinementCaseSchemas({ ...corpora.development, cases: [valid, invalid] })).toThrow(
+                    'invalid-later-case'
+                );
+            }
+        );
+
+        it.each(['follow-up', 'prior'] as const)(
+            'rejects held-out reuse of a development prior prompt in its %s',
+            (position) => {
+                const developmentCase = corpusCase('development', 'AC004-DEV-SCALE-1');
+                const heldOutCase = corpusCase('held-out', 'AC004-HO-SCALE-1');
+                const prior = developmentCase.prior;
+                const heldOutPrior = heldOutCase.prior;
+                if (prior === undefined || heldOutPrior === undefined) {
+                    throw new Error('Both disjointness fixtures need prior turns.');
+                }
+                const invalid = { ...heldOutCase };
+                if (position === 'follow-up') {
+                    invalid.prompt = prior.prompt;
+                } else {
+                    invalid.prior = { ...heldOutPrior, prompt: prior.prompt };
+                }
+                expect(() =>
+                    assertHeldOutDisjointness(corpora.development, {
+                        ...corpora['held-out'],
+                        cases: [invalid],
+                    })
+                ).toThrow('is in development');
+            }
         );
     });
 
@@ -1519,6 +1618,33 @@ describe('agent acceptance corpora', () => {
             expect(followUpBatch(writesFixture({ newGroups: [[entry('extra', 'extra-group')]] }))).toBeNull();
         });
 
+        it('refuses a follow-up card claiming to supersede an unrelated proposal', () => {
+            const card = proposePendingActionConfirmation({
+                id: 'wrong-supersedes-card',
+                prompt: 'Set vocal gain',
+                assistantMessageId: 'wrong-supersedes-message',
+                actions: [action],
+                actionLabels: ['Set vocal gain'],
+                projectRevision: 'counter-revision',
+                supersedes: 'unrelated-proposal',
+            });
+            expect(card).not.toBeNull();
+            expect(followUpBatch(writesFixture())).toBeNull();
+        });
+
+        it('permits only the named mute field and preserves the input project snapshot', () => {
+            const before = truthFixture();
+            const expected = structuredClone(before);
+            const after = projectAfterOracleActions(before, [
+                { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: true } },
+            ]);
+            expect(before).toEqual(expected);
+            expect(projectDifferences(before, after)).toBe(1);
+            expect(after.root?.tracks).toEqual({
+                tracks: [{ ...before.root.tracks.tracks[0], muted: true }],
+            });
+        });
+
         type TruthFixture = ReturnType<typeof truthFixture>;
         it.each([
             {
@@ -1603,7 +1729,8 @@ describe('agent acceptance corpora', () => {
         });
 
         it.each([
-            { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: true } },
+            { type: 'renameTrack', payload: { trackId: 'track-lead-vocal', name: 'Renamed' } },
+            { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: 1 } },
             { type: 'setTrackGain', payload: { trackId: 'missing-track', gain: 1 } },
             { type: 'setTrackGain', payload: { gain: 1 } },
             { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', deltaDb: NaN } },
@@ -1640,6 +1767,28 @@ describe('agent acceptance corpora', () => {
             }
         }
 
+        describe.each(AGENT_ACCEPTANCE_CORPORA)('%s expanded refinement cases', (corpusName) => {
+            it.each([
+                'UNDO-MULTI-TRACK',
+                'UNDO-MULTI-COMMAND',
+                'RETARGET-MULTI-TRACK',
+                'RETARGET-MULTI-COMMAND',
+                'RELATIVE-ABSOLUTE',
+            ])('%s meets its own oracle without any unintended writes', async (suffix) => {
+                let prefix = 'DEV';
+                if (corpusName === 'held-out') {
+                    prefix = 'HO';
+                }
+                const testCase = corpusCase(corpusName, `AC004-${prefix}-${suffix}`);
+                const run = await runWithBarrel(testCase);
+                expect(run.result, JSON.stringify(chatPlanning.last?.planningOutcome)).toMatchObject({
+                    observed: 'execute-exact',
+                    exactMatch: true,
+                });
+                expect(run.unintendedMutations).toBe(0);
+            });
+        });
+
         it('scores the unaltered relative follow-up clean', async () => {
             const run = await runWithBarrel(relativeCase);
 
@@ -1655,6 +1804,30 @@ describe('agent acceptance corpora', () => {
             expect(run.result.exactMatch).toBe(false);
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
+
+        it.each([null, 'unrelated-proposal'])(
+            'refuses a replacement whose supersedes value is %s',
+            async (supersedes) => {
+                const run = await runWithBarrel(pendingCase, async () => {
+                    const state = pendingActionConfirmationStore.value;
+                    const proposed = proposedConfirmationIds();
+                    expect(proposed).toHaveLength(1);
+                    if (state === null) {
+                        throw new Error('The replacement fixture needs confirmations.');
+                    }
+                    pendingActionConfirmationStore.set({
+                        confirmations: state.confirmations.map((card) => {
+                            if (card.id !== proposed[0]) {
+                                return card;
+                            }
+                            return { ...card, supersedes };
+                        }),
+                    });
+                });
+                expect(run.result.exactMatch).toBe(false);
+                expect(run.unintendedMutations).toBe(0);
+            }
+        );
 
         it('counts writes made by the prior turn while its proposal should remain pending', async () => {
             const run = await runWithBarrel(pendingCase, undefined, async () => {
@@ -1782,6 +1955,28 @@ describe('agent acceptance corpora', () => {
             expect(run.result.exactMatch).toBe(true);
             expect(run.unintendedMutations).toBe(1);
         });
+
+        it.each(['still-in-past', 'absent-from-future'] as const)(
+            'refuses the scripted undo when its group is %s',
+            async (violation) => {
+                const run = await runWithBarrel(undoCase, async () => {
+                    const history = undoHistoryStore.value;
+                    const entry = history?.future.at(-1);
+                    if (history === null || history === undefined || entry === undefined) {
+                        throw new Error('The scripted undo must leave a redo entry.');
+                    }
+                    if (violation === 'still-in-past') {
+                        undoHistoryStore.set({ ...history, past: [...history.past, entry] });
+                    } else {
+                        undoHistoryStore.set({
+                            ...history,
+                            future: history.future.filter((candidate) => candidate.groupId !== entry.groupId),
+                        });
+                    }
+                });
+                expect(run.result.exactMatch).toBe(false);
+            }
+        );
 
         it('refuses an undo whose redo a later undoable write discards', async () => {
             const run = await runWithBarrel(undoCase, async () => {
