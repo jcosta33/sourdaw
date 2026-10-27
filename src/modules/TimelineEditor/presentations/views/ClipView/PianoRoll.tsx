@@ -224,7 +224,8 @@ export const PianoRoll = ({
     );
     const laneState = useStore(takeLaneStore);
     const trackState = useStore(trackStore);
-    const ids = new Set([clipId, ...(openedClipIds ?? [])]);
+    const ids = new Set(openedClipIds ?? []);
+    ids.add(clipId);
     const editedClips = new Map<string, Clip>();
     for (const track of trackState?.tracks ?? []) {
         for (const clip of track.clips) {
@@ -461,7 +462,7 @@ export const PianoRoll = ({
     );
     const contextSelectedNoteIds = contextUsesFrozenRows
         ? selectedNoteIds
-        : new Set([...selectedNoteIds].map((id) => primaryTakeProjection?.baseOwnersByViewId.get(id)?.row.id ?? id));
+        : new Set(Array.from(selectedNoteIds, (id) => primaryTakeProjection?.baseOwnersByViewId.get(id)?.row.id ?? id));
 
     return (
         <Stack grow className="min-w-0 overflow-hidden">
@@ -613,19 +614,22 @@ export const PianoRoll = ({
                                         if (!projection) {
                                             return;
                                         }
-                                        const change =
-                                            activeExpressionLane === 'velocity'
-                                                ? { velocity: value }
-                                                : activeExpressionLane === 'pressure'
-                                                  ? { pressure: value }
-                                                  : activeExpressionLane === 'slide'
-                                                    ? { slide: value }
-                                                    : {
-                                                          pitchBend:
-                                                              Math.round(
-                                                                  (value / MAX_MIDI_DATA_7BIT) * HIGH_RESOLUTION_MAX
-                                                              ) - PITCH_BEND_CENTER,
-                                                      };
+                                        let change: Partial<
+                                            Pick<MidiNote, 'velocity' | 'pressure' | 'slide' | 'pitchBend'>
+                                        >;
+                                        if (activeExpressionLane === 'velocity') {
+                                            change = { velocity: value };
+                                        } else if (activeExpressionLane === 'pressure') {
+                                            change = { pressure: value };
+                                        } else if (activeExpressionLane === 'slide') {
+                                            change = { slide: value };
+                                        } else {
+                                            change = {
+                                                pitchBend:
+                                                    Math.round((value / MAX_MIDI_DATA_7BIT) * HIGH_RESOLUTION_MAX) -
+                                                    PITCH_BEND_CENTER,
+                                            };
+                                        }
                                         void editPianoRollTakeNote(projection, viewId, change).catch((error) =>
                                             logger.warn('Could not edit selected MIDI note property', error)
                                         );

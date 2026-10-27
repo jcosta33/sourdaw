@@ -33,12 +33,14 @@ export function createRecordedAdmittedMidiNote(
         Math.min(admitted.releaseAudioTime ?? endedAt, endedAt) - admitted.onsetAudioTime
     );
     const tempo = transportStore.value?.tempo ?? 120;
-    const durationBeats =
-        admitted.releaseSourceBeat === undefined
-            ? endSourceBeat === undefined
-                ? (durationSeconds * tempo) / 60
-                : endSourceBeat - admitted.onsetSourceBeat
-            : admitted.releaseSourceBeat - admitted.onsetSourceBeat;
+    let durationBeats: number;
+    if (admitted.releaseSourceBeat !== undefined) {
+        durationBeats = admitted.releaseSourceBeat - admitted.onsetSourceBeat;
+    } else if (endSourceBeat !== undefined) {
+        durationBeats = endSourceBeat - admitted.onsetSourceBeat;
+    } else {
+        durationBeats = (durationSeconds * tempo) / 60;
+    }
     const note = createMidiNote(
         admitted.note,
         admitted.onsetSourceBeat,
@@ -113,11 +115,15 @@ export function sealHeldRecordedMidiNotes({
             continue;
         }
         const durationSeconds = stoppedAt - held.startTime;
-        const secondsToBeats = (seconds: number): number =>
-            placement.flatTimeline
-                ? (seconds * placement.defaultTempo) / 60
-                : readBeatAtSamples({ samples: placement.originSeconds + seconds, sampleRate: 1 }) -
-                  placement.latencyAdjustedBeat;
+        const secondsToBeats = (seconds: number): number => {
+            if (placement.flatTimeline) {
+                return (seconds * placement.defaultTempo) / 60;
+            }
+            return (
+                readBeatAtSamples({ samples: placement.originSeconds + seconds, sampleRate: 1 }) -
+                placement.latencyAdjustedBeat
+            );
+        };
         const note = createMidiNote(
             held.note,
             placement.clipBeat,

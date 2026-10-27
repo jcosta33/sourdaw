@@ -59,10 +59,8 @@ export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
 export { isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from './midiClipData/projectFrozenMidiTakeWindow';
 export { replaceFrozenMidiTakeRow } from './midiClipData/replaceFrozenMidiTakeRow';
 export { sliceMidiTakeNoteForEdit } from './midiClipData/sliceMidiTakeNoteForEdit';
-export {
-    projectMidiNoteMenuTransform,
-    type MidiNoteMenuTransform,
-} from './midiNoteTransforms/projectMidiNoteMenuTransform';
+export { projectMidiNoteMenuTransform } from './midiNoteTransforms/projectMidiNoteMenuTransform';
+export type { MidiNoteMenuTransform } from './midiNoteTransforms/projectMidiNoteMenuTransform';
 export { projectMidiClipPlayback } from './midiClipData/projectMidiClipPlayback';
 export { snapshotMidiClipData } from './midiClipData/snapshotMidiClipData';
 export { projectClipControllerEvents } from './midiClipData/projectClipControllerEvents';

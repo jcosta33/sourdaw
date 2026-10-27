@@ -36,13 +36,14 @@ function rowEdit(input: OriginalMidiTakeRowReplacementPayload): RowEdit {
 }
 
 function containsRow(source: MidiTakeSource, edit: RowEdit, rowId: string): boolean {
-    const slot =
-        edit.kind === 'note'
-            ? source.rows.notes
-            : edit.kind === 'cc'
-              ? source.rows.controlChanges
-              : source.rows.pitchBends;
-    return slot.value.some((row) => row.id === rowId);
+    switch (edit.kind) {
+        case 'note':
+            return source.rows.notes.value.some((row) => row.id === rowId);
+        case 'cc':
+            return source.rows.controlChanges.value.some((row) => row.id === rowId);
+        case 'bend':
+            return source.rows.pitchBends.value.some((row) => row.id === rowId);
+    }
 }
 
 function notePassIdentityMatches(
@@ -95,11 +96,12 @@ export function prepareOriginalMidiTakeRowReplacement(
         (edit.replacement !== null && input.rowId !== edit.replacement.id) ||
         ownerSource?.sourceClipId !== input.sourceClipId ||
         !ownerSource ||
-        !notePassIdentityMatches(input, owner?.recordingPassIndex) ||
-        (edit.expected === null
-            ? containsRow(ownerSource, edit, input.rowId)
-            : !containsRow(ownerSource, edit, input.rowId))
+        !notePassIdentityMatches(input, owner?.recordingPassIndex)
     ) {
+        return null;
+    }
+    const ownerHasRow = containsRow(ownerSource, edit, input.rowId);
+    if ((edit.expected === null && ownerHasRow) || (edit.expected !== null && !ownerHasRow)) {
         return null;
     }
     let changed = 0;
