@@ -4,7 +4,7 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
-import { isExactMidiClipDataActionSnapshot } from './isExactMidiClipDataActionSnapshot';
+import { isExactMidiClipDataActionSnapshot } from '../../services/isExactMidiClipDataActionSnapshot';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiClipDataSlotSnapshot<Row> = {

@@ -1,9 +1,9 @@
 import { isPedalControllerLift } from '#/utils/pianoPedalController';
 
-import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
-import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
-import { isRegisteredParameterController } from '../../services/registeredParameterState';
-import { sliceMidiNoteExtent } from '../../services/sliceMidiNoteExtent';
+import { type MidiCC, type MidiNote, type MidiPitchBend } from '../models/MidiNote';
+import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
+import { isRegisteredParameterController } from './registeredParameterState';
+import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
 
 type MidiClipWindow = {
     /** Added to every projected beat; places the window's content on the destination timeline. */

@@ -296,7 +296,8 @@ function refuseMalformedMidiSources(lanes: readonly unknown[]): void {
         if (lane === null || typeof lane !== 'object' || !('takes' in lane) || !Array.isArray(lane.takes)) {
             continue;
         }
-        for (const take of lane.takes) {
+        const takes: unknown[] = lane.takes;
+        for (const take of takes) {
             if (
                 take !== null &&
                 typeof take === 'object' &&

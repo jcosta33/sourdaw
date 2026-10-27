@@ -1,9 +1,9 @@
 import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
-import { type projectFrozenMidiTakeWindow } from '#/modules/MIDI/useCases';
+import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
 
 import { type TempoTimeline } from './TempoTimeline';
 
-export type MidiTakeSource = Parameters<typeof projectFrozenMidiTakeWindow>[0]['source'];
+export type MidiTakeSource = MidiTakeSourceSnapshot;
 
 export type Take = {
     id: string;

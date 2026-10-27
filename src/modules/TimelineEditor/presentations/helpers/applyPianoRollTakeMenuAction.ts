@@ -5,7 +5,6 @@ import {
     isValidMidiNoteSnapshot,
     projectMidiNoteMenuTransform,
     sliceMidiTakeNoteForEdit,
-    type MidiNoteMenuTransform,
 } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
@@ -130,7 +129,7 @@ export async function transformPianoRollTakeNotes(
     projection: PianoRollTakeNotes,
     clipId: string,
     selectedNoteIds: ReadonlySet<string>,
-    transform: MidiNoteMenuTransform,
+    transform: Parameters<typeof projectMidiNoteMenuTransform>[1],
     label: string
 ): Promise<boolean> {
     if (!everySelectedOwnerIsKnown(projection, selectedNoteIds)) {

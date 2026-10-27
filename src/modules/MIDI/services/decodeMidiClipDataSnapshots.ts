@@ -1,7 +1,7 @@
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 
-import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
-import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
+import { type MidiCC, type MidiPitchBend } from '../models/MidiNote';
+import { isMidiNoteSnapshot } from '../transformers/isMidiNoteSnapshot';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {

@@ -1,6 +1,6 @@
 import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
 
-import { isExactMidiClipDataActionSnapshot } from '../useCases/midiClipData/isExactMidiClipDataActionSnapshot';
+import { isExactMidiClipDataActionSnapshot } from '../services/isExactMidiClipDataActionSnapshot';
 
 export type FrozenMidiTakeSource = MidiTakeSourceSnapshot;
 

@@ -5,7 +5,7 @@ import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/Mid
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
 import { declareGluedRegisteredParameters } from './declareGluedRegisteredParameters';
-import { projectMidiClipWindow } from './projectMidiClipWindow';
+import { projectMidiClipWindow } from '../../services/projectMidiClipWindow';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiGlueSource = {

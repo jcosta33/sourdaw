@@ -1,5 +1,5 @@
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../models/MidiNote';
-import { projectMidiClipWindow } from '../useCases/midiClipData/projectMidiClipWindow';
+import { projectMidiClipWindow } from '../services/projectMidiClipWindow';
 
 import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
 import { selectMidiNotesForRecordingPass } from './selectMidiNotesForRecordingPass';
