@@ -37,7 +37,6 @@ describe('real MIDI Learn entries against the cached platform route', () => {
     beforeEach(() => {
         originalSourdawDescriptor = Object.getOwnPropertyDescriptor(window, 'sourdaw');
         vi.resetModules();
-        vi.useFakeTimers();
         vi.stubGlobal('navigator', {});
         Reflect.deleteProperty(window, 'sourdaw');
     });
@@ -63,6 +62,7 @@ describe('real MIDI Learn entries against the cached platform route', () => {
             MidiLearnRotaryKnob,
             MIDI_LEARN_TIMEOUT_MS,
         } = await loadSystem();
+        vi.useFakeTimers();
         const capabilities = getPlatformCapabilities();
         expect(capabilities).toMatchObject({
             hasMidiInput: false,
@@ -115,6 +115,7 @@ describe('real MIDI Learn entries against the cached platform route', () => {
         }
         const { getPlatformCapabilities, midiLearnStore, defaultMidiLearnState, MidiLearnButton, MidiLearnRotaryKnob } =
             await loadSystem();
+        vi.useFakeTimers();
         expect(getPlatformCapabilities()).toMatchObject({ hasMidiInput: true, degradations: [] });
         midiLearnStore.set(defaultMidiLearnState);
         render(<MidiLearnButton targetType="trackGain" trackId="track-1" />);
@@ -154,6 +155,7 @@ describe('real MIDI Learn entries against the cached platform route', () => {
             removeMapping,
             injectDependencies,
         } = await loadSystem();
+        vi.useFakeTimers();
         const dispatch = vi.fn((_action: unknown) => Promise.resolve());
         injectDependencies(removeMapping, { executeUserAppAction: dispatch });
         const mappings = [
