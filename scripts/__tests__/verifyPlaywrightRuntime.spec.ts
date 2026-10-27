@@ -5,7 +5,7 @@ import { verifyPlaywrightRuntime } from '../verifyPlaywrightRuntime';
 
 describe('preinstalled Playwright runtime admission', () => {
     const close = vi.fn(async () => {});
-    const launch = vi.fn(async () => ({ version: () => '153.0.8010.12', close }));
+    const launch = vi.fn(async () => ({ version: (): string => '153.0.8010.12', close }));
 
     beforeEach(() => {
         vi.clearAllMocks();
