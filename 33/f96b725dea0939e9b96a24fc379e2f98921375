@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/restore/handleRestoreClip.ts
+  s_29d8df116c5b92::t_605ed978e71902 12
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_29d8df116c5b92::t_7a4f276b53e760 187-248,295-296,299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "33f96b725dea0939e9b96a24fc379e2f98921375",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
