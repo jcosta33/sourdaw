@@ -1,0 +1,24 @@
+.agents/skills/review-stances/project-integrity.md
+  s_3168504f6ce387::t_08cd1d4c48720a 14
+  s_3168504f6ce387::t_e5fa7f96dc672e 3-13,18
+  s_3168504f6ce387::t_f133448080d147 15-17
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_e5fa7f96dc672e 9-21,24
+  s_3168504f6ce387::t_f133448080d147 22-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7fde1fd9e9c5880f2e95e605bc66956ab409ef3",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
