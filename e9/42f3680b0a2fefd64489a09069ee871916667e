@@ -1,0 +1,93 @@
+src/modules/Arrangement/useCases/index.ts
+  s_29d8df116c5b92::t_8386524fe27835 113-114
+src/modules/Arrangement/handlers/recording/__tests__/overdubControllerUndo.integration.spec.ts
+  s_29d8df116c5b92::t_1a893f3989760c 48,60-66,69,72,119-128,143
+src/modules/MIDI/useCases/index.ts
+  s_29d8df116c5b92::t_8386524fe27835 59-60
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_29d8df116c5b92::t_8386524fe27835 18-19
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_29d8df116c5b92::t_c6f0036300fd28 17-18
+src/modules/MIDI/stores/isFrozenMidiTakeSource.ts
+  s_29d8df116c5b92::t_f2a08ff814b10c 11-16,22
+src/modules/MIDI/useCases/midiClipData/replaceFrozenMidiTakeRow.ts
+  s_29d8df116c5b92::t_0b5b3be3753542 8
+src/modules/MIDI/useCases/webMidiInput/resolveAdmittedEventPosition.ts
+  s_29d8df116c5b92::t_c6f0036300fd28 1-33
+src/modules/Arrangement/useCases/clipboard/getCopiedPianoRollNotes.ts
+  s_29d8df116c5b92::t_8386524fe27835 1-7
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.tsx
+  s_29d8df116c5b92::t_d663a97811b445 1-911
+src/modules/MIDI/useCases/webMidiInput/captureEventBeatAt.ts
+  s_29d8df116c5b92::t_c6f0036300fd28 1-5
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_29d8df116c5b92::t_c6f0036300fd28 23
+src/modules/Arrangement/useCases/comping/relocateMidiTakeSource.ts
+  s_29d8df116c5b92::t_8386524fe27835 1-19
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  s_29d8df116c5b92::t_4c42ec55d9304a 29-36,58,73,121-130,143
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_29d8df116c5b92::t_89575bc8c1f250 4,83
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_29d8df116c5b92::t_cf362b51a982cc 186-215,217
+  s_29d8df116c5b92::t_2adea32a9f8a7d 216,288-292
+src/modules/Arrangement/useCases/comping/__tests__/prepareMidiTakeSourceCapture.spec.ts
+  s_29d8df116c5b92::t_8386524fe27835 8-9
+src/modules/Arrangement/useCases/clipboard/copyPianoRollNotes.ts
+  s_29d8df116c5b92::t_8386524fe27835 2
+src/modules/MIDI/useCases/midiClipData/__tests__/projectFrozenMidiTakeWindow.spec.ts
+  s_29d8df116c5b92::t_8386524fe27835 3
+  s_29d8df116c5b92::t_8c94b8575e1be7 4
+src/modules/MIDI/transformers/isMidiNoteSnapshot.ts
+  s_29d8df116c5b92::t_f2a08ff814b10c 31-41,52
+src/modules/Arrangement/models/ResolvedClip.ts
+  s_29d8df116c5b92::t_a476daecf162c2 2
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  s_29d8df116c5b92::t_b72cabd4b68373 15
+src/modules/Arrangement/useCases/__tests__/resolveComping.spec.ts
+  s_29d8df116c5b92::t_c3f5485344975e 4
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  s_29d8df116c5b92::t_2ae9cc74f76c9e 76-79
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_29d8df116c5b92::t_8c6aacf6c4e265 60
+src/modules/MIDI/services/projectMidiClipWindow.ts
+  s_29d8df116c5b92::t_a1488dc8300680 5
+src/modules/MIDI/useCases/midiClipData/midiClipSplitStateMatches.ts
+  s_29d8df116c5b92::t_fcb849d6254eb2 5
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  s_29d8df116c5b92::t_a2f9e9a8542eb9 5
+src/modules/MIDI/useCases/midiClipData/projectClipControllerEvents.ts
+  s_29d8df116c5b92::t_0da2b156f00b22 2
+src/modules/MIDI/useCases/midiClipData/projectClipPitchBendEvents.ts
+  s_29d8df116c5b92::t_a5a55a6605eb32 2
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipData.ts
+  s_29d8df116c5b92::t_73af59240fbf0d 1
+src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx
+  s_29d8df116c5b92::t_826f01f5a7905e 45
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_29d8df116c5b92::t_506b2cbec7b439 27,40
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_29d8df116c5b92::t_b5356668d47515 23
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_29d8df116c5b92::t_ffd94bff17b129 41
+src/modules/Transport/useCases/scheduling/resolveChannelBendClips.ts
+  s_29d8df116c5b92::t_67baf7c73c7d51 4
+src/modules/Transport/useCases/scheduling/resolveStoredControllerClips.ts
+  s_29d8df116c5b92::t_f59b740300a559 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e942f3680b0a2fefd64489a09069ee871916667e",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
