@@ -184,6 +184,68 @@ function insertRestoredClips(
     return next;
 }
 
+function projectClipRestore(
+    state: ShiftedOwnerState,
+    payload: Extract<AppAction, { type: 'restoreClip' }>['payload'],
+    trackIds: readonly string[]
+): ShiftedOwnerState | null {
+    const { trackId, clipSnapshot, ripplePlan } = payload;
+    const removedClips = ripplePlan?.removedClips ?? [clipSnapshot];
+    const liveClipIds = new Set(state.clips.map((owner) => owner.clip.id));
+    if (removedClips.some((clip) => liveClipIds.has(clip.id))) {
+        return null;
+    }
+    const clipIndex = resolveClipRestoreInsertionIndex(
+        state.clips.filter((owner) => owner.owningTrackId === trackId).map((owner) => owner.clip),
+        payload
+    );
+    if (clipIndex === null) {
+        return null;
+    }
+    if (!ripplePlan) {
+        return { ...state, clips: insertRestoredClips(state.clips, trackId, clipIndex, [clipSnapshot], trackIds) };
+    }
+    if (!isExactAutomationLaneSnapshots(ripplePlan.clipAutomationLanes)) {
+        return null;
+    }
+    const shifts = new Map(ripplePlan.shiftedClips.map((shift) => [shift.clipId, shift]));
+    const clips = state.clips.map((owner) => {
+        const shift = shifts.get(owner.clip.id);
+        if (!shift || owner.owningTrackId !== trackId) {
+            return owner;
+        }
+        return {
+            ...owner,
+            clip: {
+                ...owner.clip,
+                startBeat: shift.origStartBeat,
+                endBeat: shift.origEndBeat,
+                ...shiftLoopOriginEntry(owner.clip, shift.origStartBeat - owner.clip.startBeat),
+            },
+        };
+    });
+    const shiftedLanes = state.lanes.map((lane) => {
+        const shift = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);
+        if (!shift || shift.automationDelta === 0) {
+            return lane;
+        }
+        return {
+            ...lane,
+            points: lane.points
+                .map((point) => ({ ...point, beat: Math.max(0, point.beat - shift.automationDelta) }))
+                .sort((left, right) => left.beat - right.beat),
+        };
+    });
+    const liveIds = new Set(shiftedLanes.map((lane) => lane.id));
+    if (ripplePlan.clipAutomationLanes.some((lane) => liveIds.has(lane.id))) {
+        return null;
+    }
+    return {
+        clips: insertRestoredClips(clips, trackId, clipIndex, ripplePlan.removedClips, trackIds),
+        lanes: [...shiftedLanes, ...ripplePlan.clipAutomationLanes],
+    };
+}
+
 /** Exactly the geometry and automation clip removal and `undoRippleDelete` write, in group order.
  * Restored lanes matter even when that earlier removal did not ripple: a later
  * inverse may shift the clip the earlier inverse just brought back. */
@@ -230,62 +292,11 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
         if (action.type !== 'restoreClip') {
             continue;
         }
-        const { trackId, clipSnapshot, ripplePlan } = action.payload;
-        const removedClips = ripplePlan?.removedClips ?? [clipSnapshot];
-        const liveClipIds = new Set(state.clips.map((owner) => owner.clip.id));
-        if (removedClips.some((clip) => liveClipIds.has(clip.id))) {
+        const restored = projectClipRestore(state, action.payload, trackIds);
+        if (!restored) {
             return null;
         }
-        const clipIndex = resolveClipRestoreInsertionIndex(
-            state.clips.filter((owner) => owner.owningTrackId === trackId).map((owner) => owner.clip),
-            action.payload
-        );
-        if (clipIndex === null) {
-            return null;
-        }
-        if (!ripplePlan) {
-            state = { ...state, clips: insertRestoredClips(state.clips, trackId, clipIndex, [clipSnapshot], trackIds) };
-            continue;
-        }
-        if (!isExactAutomationLaneSnapshots(ripplePlan.clipAutomationLanes)) {
-            return null;
-        }
-        const shifts = new Map(ripplePlan.shiftedClips.map((shift) => [shift.clipId, shift]));
-        const clips = state.clips.map((owner) => {
-            const shift = shifts.get(owner.clip.id);
-            if (!shift || owner.owningTrackId !== trackId) {
-                return owner;
-            }
-            return {
-                ...owner,
-                clip: {
-                    ...owner.clip,
-                    startBeat: shift.origStartBeat,
-                    endBeat: shift.origEndBeat,
-                    ...shiftLoopOriginEntry(owner.clip, shift.origStartBeat - owner.clip.startBeat),
-                },
-            };
-        });
-        const shiftedLanes = state.lanes.map((lane) => {
-            const shift = lane.clipId === undefined ? undefined : shifts.get(lane.clipId);
-            if (!shift || shift.automationDelta === 0) {
-                return lane;
-            }
-            return {
-                ...lane,
-                points: lane.points
-                    .map((point) => ({ ...point, beat: Math.max(0, point.beat - shift.automationDelta) }))
-                    .sort((left, right) => left.beat - right.beat),
-            };
-        });
-        const liveIds = new Set(shiftedLanes.map((lane) => lane.id));
-        if (ripplePlan.clipAutomationLanes.some((lane) => liveIds.has(lane.id))) {
-            return null;
-        }
-        state = {
-            clips: insertRestoredClips(clips, trackId, clipIndex, ripplePlan.removedClips, trackIds),
-            lanes: [...shiftedLanes, ...ripplePlan.clipAutomationLanes],
-        };
+        state = restored;
     }
     return state;
 }

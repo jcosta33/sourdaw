@@ -7,9 +7,9 @@ import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIden
 import { clipSatelliteEntriesMatchSnapshot } from '../../stores/clipSatelliteState';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { captureRestoreClipCommitValidation } from '../../useCases/clipEditing/captureRestoreClipCommitValidation';
-import { resolveClipRestoreInsertionIndex } from '../../useCases/clipEditing/resolveClipRestoreInsertionIndex';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
+import { resolveClipRestoreInsertionIndex } from '../../useCases/clipEditing/resolveClipRestoreInsertionIndex';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { retiredTakeLaneOwnersMatchStore } from '../../useCases/comping/retiredTakeLaneOwnersMatchStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
