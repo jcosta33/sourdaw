@@ -1,0 +1,55 @@
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_b3201877f50e8a::t_cc2a1493fc7afa 70-100
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_b3201877f50e8a::t_a8bf2a6f69da11 137-149,166,169-172,230-231,251
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_29d8df116c5b92::t_49cb36072e58d0 7,177-182,190,794-795,802,806-813,896-900,903-906,1254,1514-1515,1517-1530
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_b3201877f50e8a::t_5db134fb95f6a6 5-7,1023-1126
+src/modules/AudioEngine/stores/deviceParameterRuntimeWriteOwners.ts
+  s_b3201877f50e8a::t_8c2bdbe94e7530 2-4
+src/modules/AudioEngine/useCases/deviceControls/__tests__/holdWebFallbackDeviceParam.spec.ts
+  s_b3201877f50e8a::t_736a8a35f7f182 19-21,66-81
+src/modules/AudioEngine/useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority.ts
+  s_29d8df116c5b92::t_e3ecafdc4f995e 1-6,8-18,20-21,27-31,33
+src/modules/AudioEngine/useCases/deviceControls/holdWebFallbackDeviceParam.ts
+  s_b3201877f50e8a::t_b74ed1f33e438e 7,33-35
+src/modules/AudioEngine/useCases/deviceControls/setDeviceParameterRuntimeWriteOwner.ts
+  s_b3201877f50e8a::t_23be07d6d300b4 1-12,39-91
+src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts
+  s_b3201877f50e8a::t_d86e4563021451 6,42-44
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_b3201877f50e8a::t_479cfe985237df 646-672
+src/modules/Command/useCases/executeAppAction.ts
+  s_b3201877f50e8a::t_a7b55e69594412 11-16,47,203-205,295-302,333-335
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_b3201877f50e8a::t_f545c00c8ed2dd 497-503
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_b3201877f50e8a::t_a48a84d01c6484 39-40,278,280,688-709,754
+src/utils/handlerContract.ts
+  s_b3201877f50e8a::t_f05dcaa65bff42 3218-3225,3283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a81afba5c4e4d40e5a30b128811f68c2eb2e2596",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
