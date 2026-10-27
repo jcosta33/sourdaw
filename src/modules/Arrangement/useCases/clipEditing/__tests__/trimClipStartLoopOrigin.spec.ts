@@ -296,16 +296,19 @@ describe('trimClipStart loop anchoring', () => {
         trackStore.set({
             ...defaultTrackState,
             tracks: [
-                midiTrack([
-                    loopedClip({
-                        id: 'canonical-audio',
-                        type: 'audio',
-                        loopEnabled: false,
-                        audioOffsetBeats: 0.5,
-                        audioOffsetSeconds: 0.25,
-                        audioUnwrappedOffsetSeconds: 0.25,
-                    }),
-                ]),
+                {
+                    ...midiTrack([
+                        loopedClip({
+                            id: 'canonical-audio',
+                            type: 'audio',
+                            loopEnabled: false,
+                            audioOffsetBeats: 0.5,
+                            audioOffsetSeconds: 0.25,
+                            audioUnwrappedOffsetSeconds: 0.25,
+                        }),
+                    ]),
+                    kind: 'audio',
+                },
             ],
         });
 
@@ -325,7 +328,7 @@ describe('trimClipStart loop anchoring', () => {
         'audioLoopPassOriginBeat',
     ] as const)('refuses a present undefined %s rather than treating a legacy restore as source-free', (field) => {
         const clip = { ...loopedClip({ id: 'malformed-audio', type: 'audio' }), [field]: undefined };
-        trackStore.set({ ...defaultTrackState, tracks: [midiTrack([clip])] });
+        trackStore.set({ ...defaultTrackState, tracks: [{ ...midiTrack([clip]), kind: 'audio' }] });
         const before = structuredClone(trackStore.value);
 
         expect(trimClipStart(clip.id, 2, null)).toBe(false);
