@@ -725,20 +725,19 @@ describe('prepareMidiClipGlueState', () => {
                             !(row.beat === editedBeat && row.controller === 6 && row.channel === 0)
                     );
                     expect(nextReturn.length).toBeGreaterThan(0);
-                    const read = () =>
-                        projectChannelBend({
+                    const read = () => {
+                        const pitchBends = mocks.state.value?.pitchBendByClipId.target ?? [];
+                        return projectChannelBend({
                             clips: [
                                 {
                                     clip: { startBeat: 0, endBeat: 8 },
                                     controlChanges: mocks.state.value?.ccByClipId.target ?? [],
-                                    pitchBends: [
-                                        ...(mocks.state.value?.pitchBendByClipId.target ?? []),
-                                        { id: 'later', value: 4096, beat: 1, channel: 0 },
-                                    ],
+                                    pitchBends: [...pitchBends, { id: 'later', value: 4096, beat: 1, channel: 0 }],
                                 },
                             ],
                             frameAtBeat: (beat) => beat * 24_000,
                         }).find(({ beat }) => beat === 1)?.rangeSemitones;
+                    };
                     expect(read()).toBe(5);
                     addMidiCC('target', 6, 7, editedBeat, 0);
                     expect(read()).toBe(expectedRange);

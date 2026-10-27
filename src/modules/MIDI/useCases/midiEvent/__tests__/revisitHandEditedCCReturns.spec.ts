@@ -111,13 +111,15 @@ describe('revisitHandEditedCCReturns', () => {
             const selector = addMidiCC('c1', 100, 0, 0, 0);
             const coarse = addMidiCC('c1', 6, 7, 0, 0);
             expect(rangeAfter()).toBe(7);
-            const before = [...(midiStore.value?.ccByClipId.c1 ?? [])];
+            const currentCCsBefore = midiStore.value?.ccByClipId.c1 ?? [];
+            const before = [...currentCCsBefore];
             const returns = before.filter(({ id }) => id.includes('rpn-after-carried'));
 
             // Replacement appends the selector after the coarse. That coarse now arrives under NRPN,
             // but a selector does not undo the range already committed into the standing returns.
             const replacement = addMidiCC('c1', 100, 0, 0, 0);
-            const committed = [...(midiStore.value?.ccByClipId.c1 ?? [])];
+            const currentCCsAfter = midiStore.value?.ccByClipId.c1 ?? [];
+            const committed = [...currentCCsAfter];
             expect(committed.findIndex(({ id }) => id === replacement.id)).toBeGreaterThan(
                 committed.findIndex(({ id }) => id === coarse.id)
             );
