@@ -19,8 +19,6 @@ test.describe('Bakery control geometry', () => {
 
         const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
         const off = dialog.getByRole('button', { name: 'Off', exact: true });
-        const repeatable = dialog.getByRole('button', { name: 'Repeatable', exact: true });
-
         await off.click();
         await expect
             .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('sourdaw:export-settings') ?? '{}').dither))
@@ -30,9 +28,9 @@ test.describe('Bakery control geometry', () => {
         await expect(dialog).not.toBeVisible();
         await openBakery(page);
 
-        const selectedBackground = await dialog.getByRole('button', { name: 'Off', exact: true }).evaluate((element) =>
-            getComputedStyle(element).backgroundColor
-        );
+        const selectedBackground = await dialog
+            .getByRole('button', { name: 'Off', exact: true })
+            .evaluate((element) => getComputedStyle(element).backgroundColor);
         const unselectedBackground = await dialog
             .getByRole('button', { name: 'Repeatable', exact: true })
             .evaluate((element) => getComputedStyle(element).backgroundColor);
@@ -43,17 +41,31 @@ test.describe('Bakery control geometry', () => {
         await openBakery(page);
 
         const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
-        const ditherOff = dialog.getByRole('button', { name: 'Off', exact: true });
-        await expect(ditherOff).toBeEnabled();
+        const repeatable = dialog.getByRole('button', { name: 'Repeatable', exact: true });
+        await expect(repeatable).toBeEnabled();
 
         const dialogBox = await dialog.boundingBox();
         if (!dialogBox) {
             throw new Error('Bakery dialog bounding box not available');
         }
 
+        const readScrollablePositions = async (): Promise<number[]> =>
+            dialog.evaluate((dialogElement) => {
+                const elements = [dialogElement, ...dialogElement.querySelectorAll('*')];
+                return elements
+                    .filter((element) => {
+                        const { overflowY } = getComputedStyle(element);
+                        return (
+                            (overflowY === 'auto' || overflowY === 'scroll') &&
+                            element.scrollHeight > element.clientHeight
+                        );
+                    })
+                    .map((element) => element.scrollTop);
+            });
+
         await page.mouse.move(dialogBox.x + dialogBox.width / 2, dialogBox.y + dialogBox.height / 2);
         for (let attempt = 0; attempt < 8; attempt += 1) {
-            const isReachable = await ditherOff.evaluate((element) => {
+            const isReachable = await repeatable.evaluate((element) => {
                 const rect = element.getBoundingClientRect();
                 const viewportHeight = document.documentElement.clientHeight;
                 const viewportWidth = document.documentElement.clientWidth;
@@ -71,9 +83,10 @@ test.describe('Bakery control geometry', () => {
             await page.mouse.wheel(0, 500);
         }
 
-        await ditherOff.click({ timeout: 2_000 });
+        expect((await readScrollablePositions()).some((scrollTop) => scrollTop > 0)).toBe(true);
+        await repeatable.click({ timeout: 2_000 });
         await expect
             .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('sourdaw:export-settings') ?? '{}').dither))
-            .toBe('none');
+            .toBe('seeded');
     });
 });
