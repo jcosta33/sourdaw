@@ -89,9 +89,17 @@ describe('takeLaneWriteJournal', () => {
             phaseHeadBeat: 0,
             passLengthBeats: 4,
         };
-        const before = { lanes: [{ ...structuredClone(firstLane), takes: [{ ...firstLane.takes[0]!, midiSource: source }] }] };
+        const before = {
+            lanes: [
+                {
+                    ...structuredClone(firstLane),
+                    takes: [{ ...firstLane.takes[0]!, midiSource: source, recordingPassIndex: 0 }],
+                },
+            ],
+        };
         const next = structuredClone(before);
         next.lanes[0]!.takes[0]!.midiSource.phaseHeadBeat = -2;
+        next.lanes[0]!.takes[0]!.recordingPassIndex = 1;
         const peer = structuredClone(before);
         peer.lanes[0]!.takes[0]!.midiSource.rows.notes.value[1]!.velocity = 111;
 
@@ -103,6 +111,7 @@ describe('takeLaneWriteJournal', () => {
             return;
         }
         expect(replay.value?.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat).toBe(-2);
+        expect(replay.value?.lanes[0]?.takes[0]?.recordingPassIndex).toBe(1);
         expect(replay.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value[1]?.velocity).toBe(111);
     });
 

@@ -44,6 +44,10 @@ function isMidiNote(value: unknown): value is MidiNote {
         isOptionalFiniteNumber(value, 'pitchBend') &&
         isOptionalFiniteNumber(value, 'pitchBendRangeSemitones') &&
         isOptionalFiniteNumber(value, 'channel') &&
+        (!Object.hasOwn(value, 'recordingPassIndex') ||
+            (typeof value.recordingPassIndex === 'number' &&
+                Number.isSafeInteger(value.recordingPassIndex) &&
+                value.recordingPassIndex >= 0)) &&
         (!Object.hasOwn(value, 'articulation') ||
             value.articulation === undefined ||
             isValidMidiArticulation(value.articulation)) &&

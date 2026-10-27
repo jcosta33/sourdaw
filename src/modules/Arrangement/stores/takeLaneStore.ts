@@ -43,7 +43,7 @@ const TAKE_OPTIONAL_NUMBER_KEYS = [
     'passOriginBeat',
     'passOriginSourceSeconds',
 ] as const;
-const TAKE_OPTIONAL_KEYS = [...TAKE_OPTIONAL_NUMBER_KEYS, 'midiSource'] as const;
+const TAKE_OPTIONAL_KEYS = [...TAKE_OPTIONAL_NUMBER_KEYS, 'midiSource', 'recordingPassIndex'] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 const COMP_REGION_OPTIONAL_KEYS = ['audioSource'] as const;
 
@@ -111,6 +111,10 @@ function is_valid_take(value: unknown): value is Take {
         (!('sourceOffsetSeconds' in value) || is_finite_non_negative_number(value.sourceOffsetSeconds)) &&
         is_valid_pass_placement(value) &&
         hasValidAudioPassOrigin(value) &&
+        (!('recordingPassIndex' in value) ||
+            (typeof value.recordingPassIndex === 'number' &&
+                Number.isSafeInteger(value.recordingPassIndex) &&
+                value.recordingPassIndex >= 0)) &&
         (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
     );
 }
@@ -174,6 +178,9 @@ function normalize_take(take: Take): Take {
     }
     if (take.midiSource !== undefined) {
         sanitized.midiSource = structuredClone(take.midiSource);
+    }
+    if (take.recordingPassIndex !== undefined) {
+        sanitized.recordingPassIndex = take.recordingPassIndex;
     }
     return sanitized;
 }
@@ -298,6 +305,16 @@ function refuseMalformedMidiSources(lanes: readonly unknown[]): void {
             ) {
                 throw new Error('Invalid frozen MIDI take source');
             }
+            if (
+                take !== null &&
+                typeof take === 'object' &&
+                'recordingPassIndex' in take &&
+                (typeof take.recordingPassIndex !== 'number' ||
+                    !Number.isSafeInteger(take.recordingPassIndex) ||
+                    take.recordingPassIndex < 0)
+            ) {
+                throw new Error('Invalid MIDI recording pass identity');
+            }
         }
     }
 }
@@ -398,6 +415,9 @@ function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take
     }
     if (Object.hasOwn(value, 'midiSource') && value.midiSource !== undefined) {
         take.midiSource = structuredClone(value.midiSource);
+    }
+    if (Object.hasOwn(value, 'recordingPassIndex') && value.recordingPassIndex !== undefined) {
+        take.recordingPassIndex = value.recordingPassIndex;
     }
     return take;
 }

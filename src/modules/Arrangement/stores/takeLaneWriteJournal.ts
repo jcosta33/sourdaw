@@ -48,9 +48,7 @@ export {
 type OptionalStringValue = { readonly present: false } | { readonly present: true; readonly value: string };
 
 type OptionalNumberValue = { readonly present: false } | { readonly present: true; readonly value: number };
-type OptionalMidiSourceValue =
-    | { readonly present: false }
-    | { readonly present: true; readonly value: MidiTakeSource };
+type OptionalMidiSourceValue = { readonly present: false } | { readonly present: true; readonly value: MidiTakeSource };
 
 type OptionalTakeNumberField =
     | 'sourceOffsetBeats'
@@ -59,7 +57,8 @@ type OptionalTakeNumberField =
     | 'passDepthSeconds'
     | 'passSourceEndSeconds'
     | 'passOriginBeat'
-    | 'passOriginSourceSeconds';
+    | 'passOriginSourceSeconds'
+    | 'recordingPassIndex';
 
 type TakeFieldOperation =
     | {
@@ -221,9 +220,7 @@ function optionalNumber(source: Take, field: OptionalTakeNumberField): OptionalN
 }
 
 function optionalMidiSource(take: Take): OptionalMidiSourceValue {
-    return take.midiSource === undefined
-        ? { present: false }
-        : { present: true, value: cloneValue(take.midiSource) };
+    return take.midiSource === undefined ? { present: false } : { present: true, value: cloneValue(take.midiSource) };
 }
 
 function previousIdentity<Item extends { readonly id: string }>(items: readonly Item[], index: number): string | null {
@@ -273,6 +270,7 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
         'passSourceEndSeconds',
         'passOriginBeat',
         'passOriginSourceSeconds',
+        'recordingPassIndex',
     ] as const) {
         const beforeValue = optionalNumber(before, field);
         const nextValue = optionalNumber(next, field);
@@ -293,10 +291,7 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
         if (
             beforeMidiSource.present &&
             nextMidiSource.present &&
-            valuesEqual(
-                { ...beforeMidiSource.value, phaseHeadBeat: 0 },
-                { ...nextMidiSource.value, phaseHeadBeat: 0 }
-            )
+            valuesEqual({ ...beforeMidiSource.value, phaseHeadBeat: 0 }, { ...nextMidiSource.value, phaseHeadBeat: 0 })
         ) {
             operations.push({
                 kind: 'take-midi-source-phase',

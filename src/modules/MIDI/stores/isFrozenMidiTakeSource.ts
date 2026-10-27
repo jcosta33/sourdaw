@@ -1,15 +1,8 @@
-import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
 
 import { isExactMidiClipDataActionSnapshot } from '../useCases/midiClipData/isExactMidiClipDataActionSnapshot';
 
-export type FrozenMidiTakeSource = {
-    readonly sourceClipId: string;
-    readonly rows: MidiClipDataActionSnapshot;
-    readonly sourceEntryBeat: number;
-    readonly sourceEndBeat: number;
-    readonly phaseHeadBeat: number;
-    readonly passLengthBeats: number;
-};
+export type FrozenMidiTakeSource = MidiTakeSourceSnapshot;
 
 function isFiniteBeat(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);

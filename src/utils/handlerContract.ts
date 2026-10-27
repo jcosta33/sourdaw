@@ -371,6 +371,8 @@ export type MidiClipNoteSnapshot = {
     readonly channel?: number;
     readonly articulation?: string;
     readonly expression?: MidiNoteExpressionSnapshot;
+    /** Original recording pass, absent on legacy and manually edited notes. */
+    readonly recordingPassIndex?: number;
 };
 export type MidiExpressionPointSnapshot = { readonly offsetBeats: number; readonly value: number };
 export type MidiNoteExpressionSnapshot = {
@@ -630,6 +632,18 @@ export type TakeSnapshot = {
     passSourceEndSeconds?: number;
     passOriginBeat?: number;
     passOriginSourceSeconds?: number;
+    /** Original recording pass, absent on legacy and manually made takes. */
+    recordingPassIndex?: number;
+    midiSource?: MidiTakeSourceSnapshot;
+};
+/** Plain wire value: MIDI owns validation and all row projection. */
+export type MidiTakeSourceSnapshot = {
+    readonly sourceClipId: string;
+    readonly rows: MidiClipDataActionSnapshot;
+    readonly sourceEntryBeat: number;
+    readonly sourceEndBeat: number;
+    readonly phaseHeadBeat: number;
+    readonly passLengthBeats: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {

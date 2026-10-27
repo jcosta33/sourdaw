@@ -55,6 +55,8 @@ export type Take = {
     passOriginSourceSeconds?: number;
     /** Exact original MIDI rows and pass phase captured before clip re-keying. */
     midiSource?: MidiTakeSource;
+    /** Original recording pass; absent for legacy and manually made takes. */
+    recordingPassIndex?: number;
 };
 
 export type TakeLane = {
