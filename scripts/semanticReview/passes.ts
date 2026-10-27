@@ -15,6 +15,7 @@ import { missingRequiredEvidence } from './requiredEvidence.ts';
 import { type SemanticRule, type SemanticRuleId } from './rules.ts';
 
 import type { UnitChangedLineFacts } from './changeFacts.ts';
+import type { TestCaseContextProof } from './testCaseContext.ts';
 
 /**
  * One unit's evidence as every per-pass question about it is asked: the passes it travels in, the
@@ -27,6 +28,7 @@ export type UnitPassEvidence = {
     readonly context: readonly EvidenceReference[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly testCaseContext?: TestCaseContextProof;
 };
 
 /**
@@ -178,6 +180,7 @@ export function passMissingEvidence(input: {
     readonly unitContext: readonly EvidenceReference[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly testCaseContext?: TestCaseContextProof;
 }): string[] {
     const ownDropped = effectiveDroppedSides(input.pass.own, input.unitOwn, input.ownDroppedSides);
     const contextDropped = effectiveDroppedSides(input.pass.context, input.unitContext, input.contextDroppedSides);
@@ -187,7 +190,8 @@ export function passMissingEvidence(input: {
         input.pass.context,
         input.kind,
         ownDropped,
-        contextDropped
+        contextDropped,
+        input.testCaseContext
     );
 }
 
@@ -212,6 +216,7 @@ export function choosePassIndexForRule(input: {
     readonly unitContext: readonly EvidenceReference[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly testCaseContext?: TestCaseContextProof;
 }): number {
     const first = input.passes[0];
     if (first === undefined) {
@@ -226,6 +231,7 @@ export function choosePassIndexForRule(input: {
         unitContext: input.unitContext,
         ownDroppedSides: input.ownDroppedSides,
         contextDroppedSides: input.contextDroppedSides,
+        testCaseContext: input.testCaseContext,
     }).length;
     for (let index = 1; index < input.passes.length; index += 1) {
         const pass = input.passes[index];
@@ -240,6 +246,7 @@ export function choosePassIndexForRule(input: {
             unitContext: input.unitContext,
             ownDroppedSides: input.ownDroppedSides,
             contextDroppedSides: input.contextDroppedSides,
+            testCaseContext: input.testCaseContext,
         });
         if (missing.length < bestMissing) {
             bestMissing = missing.length;
@@ -302,6 +309,7 @@ function missingEvidenceInPass(input: {
         unitContext: input.evidence.context,
         ownDroppedSides: input.evidence.ownDroppedSides,
         contextDroppedSides: input.evidence.contextDroppedSides,
+        testCaseContext: input.evidence.testCaseContext,
     });
 }
 

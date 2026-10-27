@@ -256,6 +256,7 @@ describe('midiImportWorker', () => {
                 tempo: 120,
                 declaredTrackCount: 1,
                 truncated: false,
+                timing: { format: 0, ticksPerBeat: 480, events: [], complete: true },
             });
         });
 
@@ -268,6 +269,7 @@ describe('midiImportWorker', () => {
                 tempo: 120,
                 declaredTrackCount: 0,
                 truncated: false,
+                timing: { format: 1, ticksPerBeat: 96, events: [], complete: true },
             });
         });
 
@@ -564,6 +566,209 @@ describe('midiImportWorker', () => {
     });
 
     describe('meta events', () => {
+        it.each([
+            {
+                label: 'tempo only',
+                body: [0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20],
+                event: {
+                    kind: 'tempo',
+                    tick: 0,
+                    beat: 0,
+                    sourceTrackIndex: 0,
+                    eventOrdinal: 0,
+                    microsecondsPerQuarterNote: 500000,
+                },
+            },
+            {
+                label: 'meter only',
+                body: [0, 0xff, 0x58, 4, 3, 2, 24, 8],
+                event: {
+                    kind: 'meter',
+                    tick: 0,
+                    beat: 0,
+                    sourceTrackIndex: 0,
+                    eventOrdinal: 0,
+                    numerator: 3,
+                    denominatorExponent: 2,
+                    clocksPerClick: 24,
+                    notated32ndsPerQuarter: 8,
+                },
+            },
+        ])('keeps $label metadata in a track without note or CC content', ({ body, event }) => {
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw([...body, ...endOfTrack(0)])]));
+            expect(parsedTracks()).toEqual([]);
+            expect(lastPosted().timing).toEqual({ format: 0, ticksPerBeat: 480, events: [event], complete: true });
+        });
+
+        it('retains every raw timing event from metadata-only tracks in tick, track, ordinal order', () => {
+            const conductor = mTrkRaw([
+                0x00,
+                0xff,
+                0x03,
+                0x01,
+                0x41,
+                ...varlen(2400),
+                0xff,
+                0x58,
+                0x04,
+                3,
+                2,
+                24,
+                8,
+                0x00,
+                0xff,
+                0x51,
+                0x03,
+                0x01,
+                0x86,
+                0xa1,
+                ...endOfTrack(0),
+            ]);
+            const other = mTrkRaw([
+                0x00,
+                0xff,
+                0x51,
+                0x03,
+                0x07,
+                0xa1,
+                0x21,
+                ...varlen(2400),
+                0xff,
+                0x58,
+                0x04,
+                4,
+                2,
+                36,
+                9,
+                0x00,
+                0xff,
+                0x51,
+                0x03,
+                0x07,
+                0xa1,
+                0x21,
+                ...endOfTrack(0),
+            ]);
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...conductor, ...other]));
+
+            expect(parsedTracks()).toEqual([]);
+            expect(lastPosted().timing).toEqual({
+                format: 1,
+                ticksPerBeat: 480,
+                complete: true,
+                events: [
+                    {
+                        kind: 'tempo',
+                        tick: 0,
+                        beat: 0,
+                        sourceTrackIndex: 1,
+                        eventOrdinal: 0,
+                        microsecondsPerQuarterNote: 500001,
+                    },
+                    {
+                        kind: 'meter',
+                        tick: 2400,
+                        beat: 5,
+                        sourceTrackIndex: 0,
+                        eventOrdinal: 1,
+                        numerator: 3,
+                        denominatorExponent: 2,
+                        clocksPerClick: 24,
+                        notated32ndsPerQuarter: 8,
+                    },
+                    {
+                        kind: 'tempo',
+                        tick: 2400,
+                        beat: 5,
+                        sourceTrackIndex: 0,
+                        eventOrdinal: 2,
+                        microsecondsPerQuarterNote: 100001,
+                    },
+                    {
+                        kind: 'meter',
+                        tick: 2400,
+                        beat: 5,
+                        sourceTrackIndex: 1,
+                        eventOrdinal: 1,
+                        numerator: 4,
+                        denominatorExponent: 2,
+                        clocksPerClick: 36,
+                        notated32ndsPerQuarter: 9,
+                    },
+                    {
+                        kind: 'tempo',
+                        tick: 2400,
+                        beat: 5,
+                        sourceTrackIndex: 1,
+                        eventOrdinal: 2,
+                        microsecondsPerQuarterNote: 500001,
+                    },
+                ],
+            });
+        });
+
+        it('retains a zero raw tempo and unsupported meter bytes without adopting them', () => {
+            const body = [0, 0xff, 0x51, 3, 0, 0, 0, 0, 0xff, 0x58, 4, 17, 7, 0, 255, ...endOfTrack(0)];
+            dispatchParse(toBuffer([...mThd(0, 1, 96), ...mTrkRaw(body)]));
+            expect(lastPosted().tempo).toBe(120);
+            expect(lastPosted().timing).toEqual({
+                format: 0,
+                ticksPerBeat: 96,
+                complete: true,
+                events: [
+                    {
+                        kind: 'tempo',
+                        tick: 0,
+                        beat: 0,
+                        sourceTrackIndex: 0,
+                        eventOrdinal: 0,
+                        microsecondsPerQuarterNote: 0,
+                    },
+                    {
+                        kind: 'meter',
+                        tick: 0,
+                        beat: 0,
+                        sourceTrackIndex: 0,
+                        eventOrdinal: 1,
+                        numerator: 17,
+                        denominatorExponent: 7,
+                        clocksPerClick: 0,
+                        notated32ndsPerQuarter: 255,
+                    },
+                ],
+            });
+        });
+
+        it('marks a malformed timing length incomplete while keeping later notes', () => {
+            const body = [0, 0xff, 0x51, 2, 7, 0xd0, 0, 0x90, 60, 100, ...varlen(480), 0x80, 60, 0, ...endOfTrack(0)];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...mTrkRaw(body)]));
+            expect(firstNote().duration).toBe(1);
+            expect(lastPosted().truncated).toBe(false);
+            expect(lastPosted().timing).toEqual({ format: 0, ticksPerBeat: 480, events: [], complete: false });
+        });
+
+        it('does not read a timing payload across a declared track boundary', () => {
+            const first = mTrkRaw([0, 0x90, 60, 100, 0, 0xff, 0x51, 3, 0x07]);
+            const second = mTrkRaw([0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20, ...endOfTrack(0)]);
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...first, ...second]));
+            expect(parsedTracks()).toHaveLength(1);
+            expect(lastPosted().timing).toEqual({
+                format: 1,
+                ticksPerBeat: 480,
+                complete: false,
+                events: [
+                    {
+                        kind: 'tempo',
+                        tick: 0,
+                        beat: 0,
+                        sourceTrackIndex: 1,
+                        eventOrdinal: 0,
+                        microsecondsPerQuarterNote: 500000,
+                    },
+                ],
+            });
+        });
+
         it('captures the track name from meta type 0x03', () => {
             // Track-name meta: 0xff 0x03 len <bytes>. The name is the literal
             // ASCII payload of the meta event. A note is added so the track
@@ -725,6 +930,23 @@ describe('midiImportWorker', () => {
             const message = lastPosted();
             expect(message.declaredTrackCount).toBe(2);
             expect(message.truncated).toBe(false);
+            // The unknown chunk still consumed one declared slot, so the
+            // timing result cannot claim full track coverage.
+            expect(message.timing).toMatchObject({ complete: false });
+        });
+
+        it('does not claim timing coverage when an unknown chunk consumes the only declared track slot', () => {
+            const unknown = [...u32(0x58, 0x58, 0x58, 0x58), ...u32(0, 0, 0, 4), 0xde, 0xad, 0xbe, 0xef];
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...unknown]));
+            expect(lastPosted()).toEqual({
+                type: 'parsed',
+                tracks: [],
+                ticksPerBeat: 480,
+                tempo: 120,
+                declaredTrackCount: 1,
+                truncated: false,
+                timing: { format: 0, ticksPerBeat: 480, events: [], complete: false },
+            });
         });
     });
 
@@ -773,6 +995,51 @@ describe('midiImportWorker', () => {
     });
 
     describe('malformed input', () => {
+        it('recovers an intact note track when a later tempo payload ends at physical EOF', () => {
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const tornTempo = mTrkRaw([0, 0xff, 0x51, 3, 0x07, 0xa1]);
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...tornTempo]));
+
+            expect(parsedTracks()).toHaveLength(1);
+            expect(firstNote()).toMatchObject({ pitch: 60, startBeat: 0, duration: 1 });
+            expect(lastPosted()).toMatchObject({
+                declaredTrackCount: 2,
+                truncated: true,
+                timing: { events: [], complete: false },
+            });
+        });
+
+        it('rejects a tempo payload ending at physical EOF when no track content was recovered', () => {
+            const tornTempo = mTrkRaw([0, 0xff, 0x51, 3, 0x07, 0xa1]);
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...tornTempo]));
+            expect(lastPosted()).toEqual({ type: 'error', message: 'Invalid MIDI file: no readable track data' });
+        });
+
+        it('retains the legacy EOF signal when a status falls past the declared chunk boundary', () => {
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const tornNote = [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, 0, 1), 0, 0x90, 60];
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...tornNote]));
+            expect(parsedTracks()).toHaveLength(1);
+            expect(lastPosted()).toMatchObject({ truncated: true, timing: { complete: false } });
+        });
+
+        it('retains the legacy EOF signal when a tempo header crosses the declared chunk boundary', () => {
+            const intact = mTrk([
+                { status: 0x90, data1: 60, data2: 100, delta: 0 },
+                { status: 0x80, data1: 60, data2: 0, delta: 480 },
+            ]);
+            const tornTempo = [...u32(0x4d, 0x54, 0x72, 0x6b), ...u32(0, 0, 0, 3), 0, 0xff, 0x51, 3, 0x07, 0xa1];
+            dispatchParse(toBuffer([...mThd(1, 2, 480), ...intact, ...tornTempo]));
+            expect(parsedTracks()).toHaveLength(1);
+            expect(lastPosted()).toMatchObject({ truncated: true, timing: { events: [], complete: false } });
+        });
+
         it('keeps the tracks it already parsed when a later chunk length overruns the buffer', () => {
             // A partial download: two intact tracks, then a third whose declared
             // length runs past the end of what arrived.
@@ -790,6 +1057,29 @@ describe('midiImportWorker', () => {
             // must say so, or the importer presents a partial file as complete.
             expect(message.declaredTrackCount).toBe(3);
             expect(message.truncated).toBe(true);
+            expect(message.timing).toMatchObject({ complete: false });
+        });
+
+        it('marks a declared track-length overrun incomplete even when every received event is readable', () => {
+            const intact = mTrkRaw([0, 0x90, 60, 100, ...varlen(480), 0x80, 60, 0, ...endOfTrack(0)]);
+            const declaredTooLong = [...intact];
+            declaredTooLong[7] = intact.length - 8 + 5;
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...declaredTooLong]));
+            expect(firstNote().duration).toBe(1);
+            expect(lastPosted()).toMatchObject({ truncated: false, timing: { complete: false } });
+        });
+
+        it('keeps a readable metadata-only overrun as an empty recovered track result', () => {
+            const metadata = mTrkRaw([0, 0xff, 0x51, 3, 0x07, 0xa1, 0x20, ...endOfTrack(0)]);
+            const declaredTooLong = [...metadata];
+            declaredTooLong[7] = metadata.length - 8 + 5;
+            dispatchParse(toBuffer([...mThd(0, 1, 480), ...declaredTooLong]));
+            expect(lastPosted()).toMatchObject({
+                type: 'parsed',
+                tracks: [],
+                truncated: false,
+                timing: { complete: false, events: [{ kind: 'tempo', microsecondsPerQuarterNote: 500000 }] },
+            });
         });
 
         it('reports a file truncated before its first track instead of parsing zero tracks', () => {

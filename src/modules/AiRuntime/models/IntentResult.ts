@@ -6,7 +6,7 @@ import { type ExecutableRuntimeAction } from './ExecutableRuntimeAction';
 import { type MeasuredPreview } from './MeasuredPreview';
 import { type PlanningOutcome } from './PlanningOutcome';
 import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
-import { type ProposalGroundingBasis } from './ProposalGroundingBasis';
+import { type ProposalGroundingBasis, type ProposalProtectionFacts } from './ProposalGroundingBasis';
 import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
 import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
@@ -68,6 +68,8 @@ export type IntentResult = {
     refines?: string;
     /** What a later refinement of this batch's card inherits; only an ordinary batch carries one. */
     groundingBasis?: ProposalGroundingBasis;
+    /** Protections resolved from the request chain even when this batch carries no grounding basis. */
+    protectionFacts?: ProposalProtectionFacts;
     /** Objects a refinement's chain protects beyond those this request's own text protects. */
     refinementProtectedUnchanged?: Array<{ id: string; name: string }>;
     /** Actions whose value kept the refined change's direction because the refinement stated none. */

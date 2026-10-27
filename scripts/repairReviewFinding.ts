@@ -5,8 +5,8 @@
  * The reviewer's `selectEligibleRepairs` refuses a thread that carries conflicting distinct records —
  * a re-record on a descending head supersedes the earlier record instead (#4589) — and only a head
  * that addresses a finding may resolve its thread. So the author records the repair without
- * resolving: where `review:resolve` writes the fixed word `Done`, this command writes the rendered
- * repair reply — prose plus the machine-readable marker — and leaves the thread open. Recording twice
+ * resolving: this command writes the rendered repair reply — prose plus the machine-readable marker —
+ * and leaves the thread open. Recording twice
  * is a no-op: a reply whose canonical rendering is byte-identical to the one about to be posted is
  * already the record this command exists to make.
  *
@@ -16,9 +16,9 @@
  * of the thread.
  */
 
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
+import { shellIsAncestor } from './gitAncestry.ts';
 import {
     AUTHOR_BOT_NODE_ID,
     assertRequiredRepository,
@@ -30,6 +30,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import { withPullRequestMutationLock, type PullRequestMutationSerialization } from './pullRequestMutationLock.ts';
 import {
     readPublicReviewComments,
     readPublicReviews,
@@ -50,6 +51,8 @@ import {
     type ReviewRepairRecord,
 } from './reviewRepair.ts';
 import { logReviewRoundFreezeAtThreshold } from './reviewRoundEscalation.ts';
+
+export { isAncestorExitStatus, shellIsAncestor } from './gitAncestry.ts';
 
 export const REPAIR_USAGE =
     'usage: pnpm review:repair <pr-number> --thread <thread-node-id> --head <full-sha> --commit <full-sha> --summary <single-line> [--evidence <path-to-json>]';
@@ -592,44 +595,6 @@ export function postRepairReply(threadId: string, body: string, clientMutationId
     }
 }
 
-/** The exit status is the answer: exit 1 is the false answer rather than a failure. */
-export function isAncestorExitStatus(status: number | null, stderr: string): boolean {
-    if (status === 0) {
-        return true;
-    }
-    if (status === 1) {
-        return false;
-    }
-    throw new Error(stderr.trim() || 'git merge-base --is-ancestor failed');
-}
-
-type AncestorSpawn = (
-    command: string,
-    args: string[],
-    options: { cwd: string; env?: NodeJS.ProcessEnv; encoding: 'utf8'; shell: false }
-) => { status: number | null; stderr: string };
-
-/**
- * `git merge-base --is-ancestor` answers with its exit status and writes nothing, so it is spawned
- * directly rather than through a capturing helper. The spawn is injectable so the exit-status
- * reading can be exercised without a repository.
- */
-export function shellIsAncestor(
-    primaryRoot: string,
-    env?: NodeJS.ProcessEnv,
-    spawn: AncestorSpawn = spawnSync
-): (commit: string, head: string) => boolean {
-    return (commit, head) => {
-        const result = spawn('git', ['merge-base', '--is-ancestor', commit, head], {
-            cwd: primaryRoot,
-            env,
-            encoding: 'utf8',
-            shell: false,
-        });
-        return isAncestorExitStatus(result.status, result.stderr);
-    };
-}
-
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
@@ -660,6 +625,7 @@ export type RepairReviewFindingAuthentication = {
 
 export type RepairReviewFindingCoordinatorDependencies = {
     primaryRoot: () => string;
+    serialize: PullRequestMutationSerialization;
     authenticateAuthor: (primaryRoot: string) => Promise<RepairReviewFindingAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
     port: (session: GhSession, primaryRoot: string) => RepairReviewFindingPort;
@@ -669,6 +635,7 @@ export type RepairReviewFindingCoordinatorDependencies = {
 export function defaultRepairReviewFindingCoordinatorDependencies(): RepairReviewFindingCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
+        serialize: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
@@ -686,15 +653,39 @@ export async function coordinateRepairReviewFinding(
     dependencies: RepairReviewFindingCoordinatorDependencies = defaultRepairReviewFindingCoordinatorDependencies()
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    const auth = await dependencies.authenticateAuthor(primaryRoot);
+    let attemptedOwner: string | undefined;
     try {
-        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+        await dependencies.serialize(primaryRoot, number, async (boundary) => {
+            const auth = await dependencies.authenticateAuthor(primaryRoot);
+            try {
+                if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+                    fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+                }
+                assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+                const port = dependencies.port(auth.session, primaryRoot);
+                const guardedPort: RepairReviewFindingPort = {
+                    ...port,
+                    postReply: (...args) => {
+                        boundary.markRemoteMutationAttempt();
+                        attemptedOwner = boundary.ownerOid;
+                        port.postReply(...args);
+                    },
+                };
+                dependencies.repair(number, input, guardedPort);
+            } finally {
+                auth.session.dispose();
+            }
+        });
+    } catch (error) {
+        if (attemptedOwner !== undefined) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(
+                `${message}; PR #${number} repair preserved lock owner ${attemptedOwner}: ` +
+                    `pnpm deliver --recover-lock ${number} --owner ${attemptedOwner}`,
+                { cause: error }
+            );
         }
-        assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-        dependencies.repair(number, input, dependencies.port(auth.session, primaryRoot));
-    } finally {
-        auth.session.dispose();
+        throw error;
     }
 }
 

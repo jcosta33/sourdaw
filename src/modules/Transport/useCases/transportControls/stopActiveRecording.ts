@@ -1,5 +1,5 @@
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
-import { stopRecording } from '#/modules/Arrangement/useCases';
+import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
@@ -9,28 +9,40 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 
 import { recordingLifecycle } from './recordingLifecycle';
 
-async function closeActiveRecording(): Promise<void> {
+/** A failed Record start may close only its own capture; flush and clip closure can admit a successor reentrantly. */
+async function closeActiveRecording(stillOwns?: () => boolean): Promise<void> {
+    if (stillOwns?.() === false) {
+        return;
+    }
     recordingLifecycle.cancelPendingRecordingStart();
     const recordingFlush = stopAudioRecording();
+    if (stillOwns?.() === false) {
+        await recordingFlush;
+        return;
+    }
     // Close the clips where the playhead actually is. Mid-playback the transport
     // store still holds the beat playback started at (it is written on discrete
     // events only), which would truncate the take back to its own start beat.
     const rolling = getTransportState()?.isPlaying === true;
-    const closesTake = activeRecordingRef.current.length > 0;
+    const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
     const recordingCommit = stopRecording(rolling ? playheadPositionRef.current : undefined);
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to
-        // know that the project it is leaving gained a take.
-        recordingLifecycle.trackCommit(recordingCommit);
+        // know that the project it is leaving gained a take. A stop the root
+        // guard will refuse closes no take (#5517): counting it would owe the
+        // next replacement a save for a take this project never gained.
+        recordingLifecycle.trackTakeCommit(recordingCommit);
     }
 
-    const timerId = recordingLifecycle.countInTimerId;
-    if (timerId !== null) {
-        clearTimeout(timerId);
-        recordingLifecycle.setCountInTimerId(null);
-    }
+    if (stillOwns?.() !== false) {
+        const timerId = recordingLifecycle.countInTimerId;
+        if (timerId !== null) {
+            clearTimeout(timerId);
+            recordingLifecycle.setCountInTimerId(null);
+        }
 
-    updateTransportState({ isRecording: false });
+        updateTransportState({ isRecording: false });
+    }
     await recordingFlush;
     // The terminal that registers the audio commit runs inside the flush, so
     // this is where that promise becomes waitable.
@@ -57,8 +69,8 @@ async function closeActiveRecording(): Promise<void> {
  * not have registered its commit yet, so only the first stop can say when the
  * take has landed.
  */
-export async function stopActiveRecording(): Promise<void> {
-    const closing = closeActiveRecording();
+export async function stopActiveRecording(stillOwns?: () => boolean): Promise<void> {
+    const closing = closeActiveRecording(stillOwns);
     recordingLifecycle.trackClosing(closing);
     try {
         await closing;

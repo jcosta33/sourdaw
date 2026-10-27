@@ -1,5 +1,5 @@
 /**
- * Reviewer-model diversity check for `review:publish`.
+ * Fresh reviewer-model cost and diversity checks for `review:publish`.
  *
  * Enforces the AGENTS.md Review rule: "Assign reviewers a model different from
  * the author's when that set offers one; otherwise reuse the author's." The
@@ -34,8 +34,21 @@ export type ReviewerModelDocument = {
     reviewerModel?: string;
     modelExhaustion?: string;
     body: string;
-    draws?: readonly { stance: string; reviewerModel: string }[];
+    draws?: readonly { stance: string; reviewerModel: string; tier?: string }[];
 };
+
+/** Public model names only: numeric versions cannot smuggle a premium edition or routing alias. */
+const LOW_COST_REVIEW_MODEL = /^(?:gpt-\d+(?:\.\d+)?-(?:luna|terra)|claude-(?:sonnet|haiku)-\d+(?:[.-]\d+)*)$/u;
+
+/** Fresh publication alone calls this; canonical historical parsers retain every recorded tier. */
+export function assertReviewModelEligible(model: string, label: string, tier?: string): void {
+    if (!LOW_COST_REVIEW_MODEL.test(model.trim())) {
+        fail(`${label} must name a permitted low-cost review model: Luna, Terra, Sonnet or Haiku`);
+    }
+    if (tier !== undefined && tier !== 'economy' && tier !== 'standard') {
+        fail(`${label} must use economy or standard review tier; strongest is historical metadata only`);
+    }
+}
 
 export function assertReviewerModelDiversity(input: {
     actorNodeId: string;
@@ -49,8 +62,12 @@ export function assertReviewerModelDiversity(input: {
     if (reviewerModel === undefined || reviewerModel.trim() === '') {
         fail(
             'review.json must carry reviewerModel (the model that performed the review stance, ' +
-                'e.g. "glm-5.3-flash"); the reviewer-diversity rule cannot be checked without it'
+                'e.g. "gpt-6-luna"); the reviewer-diversity rule cannot be checked without it'
         );
+    }
+    assertReviewModelEligible(reviewerModel, 'review.json reviewerModel');
+    for (const [index, draw] of (input.document.draws ?? []).entries()) {
+        assertReviewModelEligible(draw.reviewerModel, `review.json draws[${index}].reviewerModel`, draw.tier);
     }
     const authorModels = input.authorLabels
         .map(authorModelFromLabel)

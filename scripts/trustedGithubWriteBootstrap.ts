@@ -112,6 +112,8 @@ function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefine
         command === 'deliver' ||
         command === 'pr:supersede' ||
         command === 'pr:retire' ||
+        command === 'review:repair' ||
+        command === 'review:confirm' ||
         command === 'review:accept' ||
         command === 'review:publish' ||
         command === 'review:publish:recover'
@@ -156,6 +158,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/supersedePullRequest.ts',
         'scripts/supersedePullRequestGh.ts',
+        'scripts/stackedLanes.ts',
         'scripts/findingLineage.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/reviewRepair.ts',
@@ -350,6 +353,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
     'review:repair': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/repairReviewFinding.ts',
+        'scripts/gitAncestry.ts',
         'scripts/reconstructReviewRounds.ts',
         'scripts/reviewBundleLocator.ts',
         'scripts/reviewDossierViews.ts',
@@ -367,6 +371,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/wasm-artifacts.ts',
         'scripts/wasmToolchainPins.ts',
         'scripts/workspaceManifestFingerprint.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
@@ -376,15 +381,11 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/reviewRepair.ts',
         'scripts/evidenceSafety.ts',
         'scripts/canonicalRecord.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
-    'review:resolve': [
-        'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/resolveThread.ts',
-        'scripts/githubAppIdentity.ts',
-        'scripts/prContract.ts',
-    ],
+    'review:resolve': ['scripts/trustedGithubWriteBootstrap.ts', 'scripts/resolveThread.ts', 'scripts/prContract.ts'],
     'review:shadow-status': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/reviewShadowStatus.ts',
@@ -404,6 +405,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/retirementRecord.ts',
         'scripts/supersedePullRequest.ts',
         'scripts/supersedePullRequestGh.ts',
+        'scripts/stackedLanes.ts',
         'scripts/findingLineage.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/reviewRepair.ts',

@@ -45,6 +45,7 @@ const {
 // Match the owning Transport tempo-map store; its model bounds are private to that module.
 const MIN_TEMPO_MAP_BPM = 20;
 const MAX_TEMPO_MAP_BPM = 999;
+const LOOP_ROUNDOFF_TOLERANCE_BEATS = 1e-9;
 
 type ParseContext = {
     /** Map from track XML id to our own stable id. */
@@ -129,6 +130,7 @@ type ClipTiming = {
     endBeat: number;
     contentUnit: TimelineUnit;
     playStartBeat: number;
+    visibleDurationBeat: number | null;
     visibleEndBeat: number | null;
     tempo: number;
 };
@@ -153,9 +155,22 @@ function readClipTiming(
             : clip.attrNumber('duration', 0);
     const durationUnit = explicitDuration === null ? contentUnit : unit;
     const startBeat = originBeat + toBeats(clip.attrNumber('time', 0), unit, tempo);
-    const endBeat =
-        startBeat + toBeats(Math.max(0, rawDuration), durationUnit, explicitDuration === null ? contentTempo : tempo);
+    const durationBeat = toBeats(
+        Math.max(0, rawDuration),
+        durationUnit,
+        explicitDuration === null ? contentTempo : tempo
+    );
+    const endBeat = startBeat + durationBeat;
     const playStartBeat = toBeats(clip.attrNumber('playStart', 0), contentUnit, contentTempo);
+    const visibleDurationBeat =
+        explicitDuration === null && playStop === null
+            ? null
+            : Math.min(
+                  durationBeat,
+                  playStop === null
+                      ? durationBeat
+                      : toBeats(clip.attrNumber('playStop', 0), contentUnit, contentTempo) - playStartBeat
+              );
     const contentOriginBeat = startBeat - playStartBeat;
     const visibleEndBeat =
         explicitDuration === null && playStop === null
@@ -166,7 +181,7 @@ function readClipTiming(
                       ? endBeat
                       : contentOriginBeat + toBeats(clip.attrNumber('playStop', 0), contentUnit, contentTempo)
               );
-    return { startBeat, endBeat, contentUnit, playStartBeat, visibleEndBeat, tempo: contentTempo };
+    return { startBeat, endBeat, contentUnit, playStartBeat, visibleDurationBeat, visibleEndBeat, tempo: contentTempo };
 }
 
 function parseTransport(transport: XmlQuery | null): {
@@ -351,10 +366,114 @@ function clipNotesUnit(content: ClipNotesContent, contentUnit: TimelineUnit): Ti
     return content.route.reduce((unit, node) => readTimeUnit(node, unit), contentUnit);
 }
 
+function repeatsClipLoop(clip: XmlQuery, timing: ClipTiming, transformTempo: number | null): boolean {
+    const loopStart = clip.attr('loopStart');
+    const loopEnd = clip.attr('loopEnd');
+    if (loopStart === null && loopEnd === null) {
+        return false;
+    }
+    if (loopStart === null || loopEnd === null || timing.visibleDurationBeat === null || transformTempo === null) {
+        return true;
+    }
+    const loopStartBeat = toBeats(clip.attrNumber('loopStart', 0), timing.contentUnit, transformTempo);
+    const loopEndBeat = toBeats(clip.attrNumber('loopEnd', 0), timing.contentUnit, transformTempo);
+    const playStartBeat = toBeats(clip.attrNumber('playStart', 0), timing.contentUnit, transformTempo);
+    if (loopEndBeat <= loopStartBeat) {
+        return true;
+    }
+    // Converted decimal endpoints can differ by a few ulps at a one-pass boundary.
+    return playStartBeat + timing.visibleDurationBeat - loopEndBeat > LOOP_ROUNDOFF_TOLERANCE_BEATS;
+}
+
+function hasNonIdentityWarpPoints(clip: XmlQuery, timing: ClipTiming, transformTempo: number | null): boolean {
+    const warps = clip.child('Warps');
+    if (!warps) {
+        return false;
+    }
+    const timeUnit = readTimeUnit(warps, timing.contentUnit);
+    const contentUnit = readContentTimeUnit(warps, timeUnit);
+    return warps.children('Warp').some((warp) => {
+        if (transformTempo === null) {
+            return true;
+        }
+        const time = readTimingScalar(warp, 'time', NaN);
+        const contentTime = readTimingScalar(warp, 'contentTime', NaN);
+        if (time === null || contentTime === null || !Number.isFinite(time) || !Number.isFinite(contentTime)) {
+            return true;
+        }
+        const timeBeat = toBeats(time, timeUnit, transformTempo);
+        const contentBeat = toBeats(contentTime, contentUnit, transformTempo);
+        return !Number.isFinite(timeBeat) || !Number.isFinite(contentBeat) || Math.abs(timeBeat - contentBeat) > 1e-9;
+    });
+}
+
+function hasNonIdentityLeafWarp(clip: XmlQuery, timing: ClipTiming, transformTempo: number | null): boolean {
+    const warps = clip.child('Warps');
+    const points = warps?.children('Warp') ?? [];
+    if (!warps || points.length === 0) {
+        return false;
+    }
+    if (transformTempo === null || timing.visibleDurationBeat === null || points.length < 2) {
+        return true;
+    }
+    const timeUnit = readTimeUnit(warps, timing.contentUnit);
+    const contentUnit = readContentTimeUnit(warps, timeUnit);
+    const converted: { time: number; contentTime: number }[] = [];
+    for (const point of points) {
+        const time = readTimingScalar(point, 'time', NaN);
+        const contentTime = readTimingScalar(point, 'contentTime', NaN);
+        if (time === null || contentTime === null) {
+            return true;
+        }
+        const timeBeat = toBeats(time, timeUnit, transformTempo);
+        const contentBeat = toBeats(contentTime, contentUnit, transformTempo);
+        const previous = converted.at(-1);
+        if (!Number.isFinite(timeBeat) || !Number.isFinite(contentBeat) || (previous && timeBeat <= previous.time)) {
+            return true;
+        }
+        converted.push({ time: timeBeat, contentTime: contentBeat });
+    }
+    // playStart selects the outer timeline; it is not an offset in the Warp map.
+    const start = toBeats(clip.attrNumber('playStart', 0), timing.contentUnit, transformTempo);
+    const end = start + timing.visibleDurationBeat;
+    const first = converted[0];
+    const last = converted.at(-1);
+    if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        end < start ||
+        !first ||
+        !last ||
+        start < first.time - LOOP_ROUNDOFF_TOLERANCE_BEATS ||
+        end > last.time + LOOP_ROUNDOFF_TOLERANCE_BEATS
+    ) {
+        return true;
+    }
+    for (let index = 1; index < converted.length; index++) {
+        const left = converted[index - 1]!;
+        const right = converted[index]!;
+        if (right.time < start || left.time > end) {
+            continue;
+        }
+        // The map is linear between points. Checking both clipped endpoints
+        // proves the complete played segment, including boundaries between points.
+        for (const boundary of [Math.max(start, left.time), Math.min(end, right.time)]) {
+            const fraction = (boundary - left.time) / (right.time - left.time);
+            const difference =
+                (left.contentTime - left.time) * (1 - fraction) + (right.contentTime - right.time) * fraction;
+            if (!Number.isFinite(difference) || Math.abs(difference) > LOOP_ROUNDOFF_TOLERANCE_BEATS) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 function parseClip(
     clip: XmlQuery,
     ownerKind: DawProjectParsedTrack['kind'],
     timing: ClipTiming,
+    transformTempo: number | null,
     context: ParseContext,
     index: number,
     trackName: string,
@@ -364,6 +483,16 @@ function parseClip(
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
     const id = `clip-${crypto.randomUUID()}`;
     const source = { sourceId: clip.attr('id') ?? undefined, sourceOrder: context.elementOrder.get(clip.element) };
+    let nonidentityWarp: boolean;
+    if (clip.element.getElementsByTagName(CLIP).length > 0) {
+        nonidentityWarp = hasNonIdentityWarpPoints(clip, timing, transformTempo);
+    } else {
+        nonidentityWarp = hasNonIdentityLeafWarp(clip, timing, transformTempo);
+    }
+    if (repeatsClipLoop(clip, timing, transformTempo) || nonidentityWarp) {
+        warn(context, clip, 'unsupported-clip', name, trackName);
+        return null;
+    }
     // `playStart` is where the clip starts reading its media, in content time.
     // Kept whenever it differs from the default 0 — negative is the slip of a
     // clip left of its media start.
@@ -767,6 +896,36 @@ function parseArrangementClips(
         return timing;
     }
 
+    function leafTransformTempo(clip: XmlQuery, timing: ClipTiming): number | null {
+        if (hasNestedClips(clip)) {
+            return timing.tempo;
+        }
+        const hasLoop = clip.attr('loopStart') !== null || clip.attr('loopEnd') !== null;
+        const warps = clip.child('Warps');
+        const warpPoints = warps?.children('Warp') ?? [];
+        const warpTimeUnit = warps ? readTimeUnit(warps, timing.contentUnit) : timing.contentUnit;
+        const warpContentUnit = warps ? readContentTimeUnit(warps, warpTimeUnit) : warpTimeUnit;
+        const mixedWarp = warpPoints.length > 0 && warpTimeUnit !== warpContentUnit;
+        if (!(hasLoop && timing.contentUnit === 'seconds') && !mixedWarp) {
+            return timing.tempo;
+        }
+        if (!tempoPointsUseBeats) {
+            return null;
+        }
+        const visibleEndBeat = timing.visibleEndBeat;
+        if (
+            visibleEndBeat === null ||
+            !Number.isFinite(timing.startBeat) ||
+            !Number.isFinite(visibleEndBeat) ||
+            visibleEndBeat < timing.startBeat
+        ) {
+            return null;
+        }
+        // The source seek is represented separately. Only the visible playback
+        // interval needs one affine seconds-to-beats conversion for admission.
+        return constantTempo(timing.startBeat, visibleEndBeat);
+    }
+
     function resolveTrackId(candidate: string | null): string | null {
         if (candidate === null) {
             return null;
@@ -934,7 +1093,16 @@ function parseArrangementClips(
                 const targetTrackId = resolveTrackId(contentOwner.reference);
                 const target = targetTrackId ? trackById.get(targetTrackId) : null;
                 if (target) {
-                    const clip = parseClip(laneOrClips, target.kind, timing, context, index, target.name, muted);
+                    const clip = parseClip(
+                        laneOrClips,
+                        target.kind,
+                        timing,
+                        leafTransformTempo(laneOrClips, timing),
+                        context,
+                        index,
+                        target.name,
+                        muted
+                    );
                     if (clip) {
                         target.clips.push(clip);
                     }

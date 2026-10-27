@@ -1160,7 +1160,6 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/resolveThread.ts',
-            'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
@@ -1417,10 +1416,11 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:repair' as const,
                 entry: 'scripts/repairReviewFinding.ts',
-                required: 'scripts/reviewRepair.ts',
+                required: 'scripts/gitAncestry.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/repairReviewFinding.ts',
+                    'scripts/gitAncestry.ts',
                     'scripts/reconstructReviewRounds.ts',
                     'scripts/reviewBundleLocator.ts',
                     'scripts/reviewDossierViews.ts',
@@ -1438,6 +1438,7 @@ describe('package scripts and gitignore', () => {
                     'scripts/wasm-artifacts.ts',
                     'scripts/wasmToolchainPins.ts',
                     'scripts/workspaceManifestFingerprint.ts',
+                    'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1445,13 +1446,14 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:confirm' as const,
                 entry: 'scripts/confirmReviewRepairs.ts',
-                required: 'scripts/reviewRepair.ts',
+                required: 'scripts/pullRequestMutationLock.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/confirmReviewRepairs.ts',
                     'scripts/reviewRepair.ts',
                     'scripts/evidenceSafety.ts',
                     'scripts/canonicalRecord.ts',
+                    'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1459,11 +1461,10 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:resolve' as const,
                 entry: 'scripts/resolveThread.ts',
-                required: 'scripts/githubAppIdentity.ts',
+                required: 'scripts/prContract.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/resolveThread.ts',
-                    'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
             },
@@ -3484,7 +3485,7 @@ describe('package scripts and gitignore', () => {
                         },
                     ],
                 },
-                reviewerModel: 'glm-5.3-flash',
+                reviewerModel: 'gpt-6-luna',
             })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');
