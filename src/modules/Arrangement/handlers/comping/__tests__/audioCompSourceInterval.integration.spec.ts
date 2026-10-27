@@ -1,18 +1,14 @@
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createEventBus } from '#/infra/events/createEventBus';
-import {
-    setNotificationEventBus,
-    type NotifyPayload,
-    type ConfirmPayload,
-    type PromptPayload,
-} from '#/utils/Notification/notificationEventBus';
 import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
+import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, undoHistoryStore, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -34,8 +30,6 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
-import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
@@ -45,17 +39,23 @@ import {
     captureAudioSourceSnapshot,
     projectAudioLoopPassSegments,
 } from '#/utils/audioSourceTime';
+import {
+    setNotificationEventBus,
+    type NotifyPayload,
+    type ConfirmPayload,
+    type PromptPayload,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type TakeLane, type CompRegion } from '../../../models/TakeLane';
+import { captureCompAudioSourceInputProof } from '../../../stores/compAudioSourceInputs';
 import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { compRegionInterval } from '../../../useCases/comping/compRegionInterval';
-import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
-import { captureCompAudioSourceInputProof } from '../../../stores/compAudioSourceInputs';
 import { liveCompAudioSourceInputs } from '../../../useCases/comping/liveCompAudioSourceInputs';
 import { removeCompRegion } from '../../../useCases/comping/removeCompRegion';
+import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { resolveClipsWithComping } from '../../../useCases/resolveComping';
 
 const originalRegion: CompRegion = { startBeat: 0, endBeat: 8, takeId: 'a' };
@@ -735,9 +735,13 @@ describe('bounded audio comp source promotion', () => {
         }
         const patch = entry.redoAction.payload;
         const audioSourcePromotions = patch.audioSourcePromotions?.map((delta) => {
-            const replacement = delta.replacement.audioSource
-                ? { ...delta.replacement, audioSource: { ...delta.replacement.audioSource, audioOffsetSeconds: 19 } }
-                : delta.replacement;
+            let replacement = delta.replacement;
+            if (delta.replacement.audioSource) {
+                replacement = {
+                    ...delta.replacement,
+                    audioSource: { ...delta.replacement.audioSource, audioOffsetSeconds: 19 },
+                };
+            }
             return { ...delta, replacement };
         });
         const forged = { ...patch, audioSourcePromotions };
@@ -786,9 +790,13 @@ describe('bounded audio comp source promotion', () => {
         }
         const payload = entry.inverseAction.payload;
         const audioSourcePromotions = payload.audioSourcePromotions?.map((delta) => {
-            const expected = delta.expected.audioSource
-                ? { ...delta.expected, audioSource: { ...delta.expected.audioSource, audioOffsetSeconds: 19 } }
-                : delta.expected;
+            let expected = delta.expected;
+            if (delta.expected.audioSource) {
+                expected = {
+                    ...delta.expected,
+                    audioSource: { ...delta.expected.audioSource, audioOffsetSeconds: 19 },
+                };
+            }
             return { ...delta, expected };
         });
         await executeAppAction({ type: 'restoreCompRegionInterval', payload: { ...payload, audioSourcePromotions } });

@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, normalizeTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
@@ -133,13 +133,19 @@ function sourceEntrySeconds(): number {
 
 function projectAuthorityMatchesStores(): void {
     flushAutomergeStorageWrites();
+    const publishedTracks = structuredClone(trackStore.value!.tracks);
+    for (const track of publishedTracks) {
+        // Projection defaults name these absent keys; the durable document does not.
+        if (track.frozenBufferId === undefined) { delete track.frozenBufferId; }
+        if (track.showVariationLanes === undefined) { delete track.showVariationLanes; }
+    }
     expect(getCrdtDoc('root')).toMatchObject({
         transport: {
             tempo: transportStore.value!.tempo,
             timeSignatureNumerator: transportStore.value!.timeSignatureNumerator,
             timeSignatureDenominator: transportStore.value!.timeSignatureDenominator,
         },
-        tracks: JSON.parse(JSON.stringify({ tracks: trackStore.value!.tracks })),
+        tracks: { tracks: publishedTracks },
         tempoMap: tempoMapStore.value,
     });
 }
@@ -214,14 +220,14 @@ describe('Setlist transport changes use guarded project actions', () => {
             autoAdvance: false,
             countInBars: 1,
         });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         playheadPositionRef.current = Number.POSITIVE_INFINITY;
         advanceSetlistItemEnd();
         vi.clearAllTimers();
         vi.useRealTimers();
         takeLaneStore.set({ lanes: [] });
         tempoMapStore.set({ changes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         Container.clear();

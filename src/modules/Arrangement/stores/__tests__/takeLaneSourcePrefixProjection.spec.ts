@@ -44,7 +44,26 @@ describe('exact and source-prefix take-lane projections', () => {
             expect(exact).toStrictEqual(structuredClone([lane]));
             expect(Object.is(exact?.[0]?.takes[0]?.sourceOffsetBeats, -0)).toBe(true);
             const canonical = decodeExactTakeLaneSnapshots(input, 'source-prefix');
-            expect(canonical).toStrictEqual(JSON.parse(JSON.stringify([lane])));
+            const canonicalSource = {
+                startBeat: 0,
+                audioOffsetSeconds: 0,
+                audioLoopStartSeconds: 0,
+                audioLoopPassEntrySeconds: 0,
+                audioLoopPassOriginBeat: 0,
+                loopOriginBeat: 0,
+                loopLength: 4,
+            };
+            expect(canonical).toStrictEqual([
+                {
+                    ...lane,
+                    takes: [{ ...take, startBeat: 0, sourceOffsetBeats: 0 }],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 1, takeId: 'take', audioSource: canonicalSource }],
+                    baseGapAudioSources: lane.baseGapAudioSources.map((tile) => ({
+                        ...tile,
+                        audioSource: canonicalSource,
+                    })),
+                },
+            ]);
             expect(Object.is(canonical?.[0]?.activeCompRegions[0]?.audioSource?.startBeat, -0)).toBe(false);
             expect(() => structuredClone(canonical)).not.toThrow();
             expect(canonical?.[0]?.baseGapAudioSources?.map((tile) => tile.clipId)).toEqual(['z', 'a', 'z']);

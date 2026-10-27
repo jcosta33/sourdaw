@@ -452,7 +452,9 @@ describe('createAutomergeStorage', () => {
                 reduce: ({ current, captured }) => {
                     const next: number[] = [];
                     if (current) {
-                        current.forEach((value) => next.push(value));
+                        for (const value of current) {
+                            next.push(value);
+                        }
                     }
                     next.push(...captured);
                     return next;
@@ -1987,7 +1989,8 @@ describe('createAutomergeStorage', () => {
                 reduce: ({ current, captured: next }) => {
                     expect(Object.isFrozen(current?.steps)).toBe(true);
                     expect(Object.isFrozen(next.steps[0])).toBe(true);
-                    return { steps: [...(current?.steps ?? []), ...next.steps] };
+                    const previousSteps = current?.steps ?? [];
+                    return { steps: [...previousSteps, ...next.steps] };
                 },
             },
             validateBeforeMutation: ({ doc: authority, key, metadata }) => {

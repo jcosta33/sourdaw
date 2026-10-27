@@ -2,16 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { clearUndoHistory, pushUndoEntry, redo, revertActionGroup, undo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
-
-import { clearUndoHistory, pushUndoEntry, redo, revertActionGroup, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -38,7 +37,7 @@ beforeEach(() => {
     registerCrdtStorageRuntime();
     clearHandlerRegistry();
     registerHandlerMap(getArrangementHandlers());
-    transportStore.set({ ...defaultTransportState });
+    transportStore.set(structuredClone(defaultTransportState));
     tempoMapStore.set({ changes: [] });
 });
 

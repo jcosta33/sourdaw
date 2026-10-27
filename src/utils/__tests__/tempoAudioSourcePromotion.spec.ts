@@ -114,14 +114,20 @@ describe('tempo source-promotion value decoder', () => {
         const fields = ['id', 'startBeat', 'audioOffsetSeconds', 'audioSource', 'fileId'];
         const expected = {
             present: true,
-            value: JSON.parse(
-                JSON.stringify({
-                    id: clip.id,
-                    startBeat: clip.startBeat,
-                    audioOffsetSeconds: clip.audioOffsetSeconds,
-                    audioSource,
-                })
-            ) as Record<string, unknown>,
+            value: {
+                id: clip.id,
+                startBeat: 0,
+                audioOffsetSeconds: 0,
+                audioSource: {
+                    startBeat: 0,
+                    audioOffsetSeconds: 0,
+                    audioLoopStartSeconds: 0,
+                    audioLoopPassEntrySeconds: 0,
+                    audioLoopPassOriginBeat: 0,
+                    loopOriginBeat: 0,
+                    loopLength: 4,
+                },
+            },
         };
         expect(captureTempoSourceOwnerValue(context, owner, fields)).toStrictEqual(expected);
         expect(captureTempoSourceOwnerValue(from(context), owner, fields)).toStrictEqual(expected);
@@ -210,7 +216,7 @@ describe('tempo source-promotion value decoder', () => {
 
     it('rejects an incomplete newly written loop tuple', () => {
         const value = plan();
-        const after = { ...structuredClone(value.clips[0]!.after) };
+        const after = structuredClone(value.clips[0]!.after);
         delete after.audioLoopPassOriginBeat;
         expect(isTempoAudioSourcePromotion({ ...value, clips: [{ ...value.clips[0], after }] })).toBe(false);
     });

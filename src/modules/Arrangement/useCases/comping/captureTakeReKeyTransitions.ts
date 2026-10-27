@@ -7,14 +7,13 @@ import {
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { type Clip } from '../../models/Track';
-import { type TempoTimeline } from '../../models/TempoTimeline';
-
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
+import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type Clip } from '../../models/Track';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
-import { resolveCompingProgramme } from './resolveCompingProgramme';
 
+import { resolveCompingProgramme } from './resolveCompingProgramme';
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type CaptureTakeReKeyTransitionsInput = {
@@ -260,7 +259,12 @@ function mapRegionThroughFragments(region: CompRegion, fragments: readonly TakeF
             continue;
         }
         const delta = fragment.targetStartBeat - fragment.sourceStartBeat;
-        const mappedRegion: CompRegion = { ...region };
+        const mappedRegion: CompRegion = {
+            ...region,
+            startBeat: mapBeatThroughWindow(overlapStart, fragment),
+            endBeat: mapBeatThroughWindow(overlapEnd, fragment),
+            takeId: fragment.takeId,
+        };
         if (region.audioSource) {
             mappedRegion.audioSource = {
                 ...region.audioSource,
@@ -269,9 +273,6 @@ function mapRegionThroughFragments(region: CompRegion, fragments: readonly TakeF
                 audioLoopPassOriginBeat: region.audioSource.audioLoopPassOriginBeat + delta,
             };
         }
-        mappedRegion.startBeat = mapBeatThroughWindow(overlapStart, fragment);
-        mappedRegion.endBeat = mapBeatThroughWindow(overlapEnd, fragment);
-        mappedRegion.takeId = fragment.takeId;
         mapped.push(mappedRegion);
     }
     return mapped;
