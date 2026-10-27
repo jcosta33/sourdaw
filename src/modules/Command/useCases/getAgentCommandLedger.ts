@@ -27,7 +27,8 @@ type AgentCommandLedgerEntryDto = {
 type AgentCommandLedgerDto = {
     schemaVersion: number;
     entries: readonly AgentCommandLedgerEntryDto[];
-    readOnlyEntries: readonly ((typeof AGENT_COMMAND_READ_ONLY_LEDGER)[number] & {
+    /** Schema-1 values can predate read discovery; the live publisher below always includes it. */
+    readOnlyEntries?: readonly ((typeof AGENT_COMMAND_READ_ONLY_LEDGER)[number] & {
         minimumWriteSet: false;
         previewExecution: 'not-applicable';
     })[];

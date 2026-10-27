@@ -32,6 +32,9 @@ describe('agent command read discovery', () => {
 
     it('binds each read to an available callable capability with the same owner and version', () => {
         const reads = getAgentCommandLedger().readOnlyEntries;
+        if (reads === undefined) {
+            throw new Error('The live ledger must publish read discovery.');
+        }
         expect(reads.length).toBeGreaterThan(0);
         const catalog = getAgentCapabilityCatalog([]);
         for (const read of reads) {
