@@ -50,7 +50,10 @@ export function commitRecoveredAudioRecording(
         })
         .catch((error: unknown) => {
             if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
-                notifyUser('Recording stopped — the project switched branches while the take was landing, so it was not kept.', 'warning');
+                notifyUser(
+                    'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+                    'warning'
+                );
                 return 'refused' as const;
             }
             logger.error(new Error('Recovered recording could not be committed', { cause: error }));
@@ -58,6 +61,7 @@ export function commitRecoveredAudioRecording(
                 'The recovered audio could not be added to this project. Keep the project open and try saving again.',
                 'error'
             );
+            return undefined;
         });
     recordingLifecycle.trackCommit(closing);
     return closing;
