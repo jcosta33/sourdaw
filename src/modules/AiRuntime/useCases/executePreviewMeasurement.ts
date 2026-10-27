@@ -171,6 +171,16 @@ function artifactOf(target: RenderedTarget) {
     return { route: target.route, artifact: target.artifact };
 }
 
+function measuredPreviewWithSource(
+    base: Omit<MeasuredPreview, 'recipeSource'>,
+    recipeSource: MeasuredPreview['recipeSource']
+): MeasuredPreview {
+    if (recipeSource === undefined) {
+        return base;
+    }
+    return { ...base, recipeSource };
+}
+
 function successRead(
     input: ExecutePreviewMeasurementInput,
     rendered: RenderedPreview,
@@ -187,17 +197,16 @@ function successRead(
     const { parsed } = input;
     const { commands, batchContentHash, targets, retentionWarnings } = measured;
     const { startBeat, endBeat, sectionId } = measured.beats;
-    const measuredPreviewBase = {
-        scope: parsed.scope,
-        range: { startBeat, endBeat, sectionId },
-        targets,
-        batchContentHash,
-        revision: input.projectRevision,
-    };
-    const measuredPreview: MeasuredPreview =
-        measured.recipeSource === undefined
-            ? measuredPreviewBase
-            : { ...measuredPreviewBase, recipeSource: measured.recipeSource };
+    const measuredPreview: MeasuredPreview = measuredPreviewWithSource(
+        {
+            scope: parsed.scope,
+            range: { startBeat, endBeat, sectionId },
+            targets,
+            batchContentHash,
+            revision: input.projectRevision,
+        },
+        measured.recipeSource
+    );
     const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,

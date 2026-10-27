@@ -364,7 +364,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         confirmation.approvalSnapshot;
     const freshness = getFreshness(confirmation);
     const routeView = getProviderRouteView({ runId: confirmation.runId });
-    const recipes = [...(adoptedRecipes ?? [])];
+    const recipes = Array.from(adoptedRecipes ?? []);
     if (measuredPreview?.revision === confirmation.projectRevision && measuredPreview.recipeSource !== undefined) {
         recipes.push(measuredPreview.recipeSource);
     }
