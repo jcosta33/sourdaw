@@ -1,0 +1,32 @@
+src/modules/Transport/useCases/playheadScheduler/schedulerLookAheadBeats.ts
+  s_29d8df116c5b92::t_b82871f3014d34 3
+  s_29d8df116c5b92::t_522366bb45f89e 1-2,4-6
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_36a84ddecca4b0 14,72,122
+  s_29d8df116c5b92::t_7c831a7db785a9 440-480
+  s_29d8df116c5b92::t_78d60d26f2cdb9 626
+  s_29d8df116c5b92::t_19e23eb7afc2a9 627-629
+  s_29d8df116c5b92::t_803dd7565e90d1 568-569,606-607,611,616-625,630
+  s_29d8df116c5b92::t_8f736fbb780c14 68-69
+  s_29d8df116c5b92::t_23ab0769ff855d 631
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_522366bb45f89e 57,534
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_c59bfb9ccd7ffb 14-15,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41a12664c90120a0c89361bf97f844a99ff551d0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
