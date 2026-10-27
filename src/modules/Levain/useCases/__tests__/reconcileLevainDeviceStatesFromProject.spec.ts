@@ -5,11 +5,13 @@ type FixtureTracks = { tracks: { id: string; kind: string; devices: FixtureDevic
 
 const mocks = vi.hoisted(() => ({
     trackStore: { value: undefined as FixtureTracks | undefined },
+    coordinateRequests: [] as Promise<void>[],
     resolveWriteTarget: vi.fn(),
     applyPatchToEngine: vi.fn(),
     loadSamplesForInstrument: vi.fn(),
     setLevainParamWithAudio: vi.fn(),
     executeAppAction: vi.fn((_action: unknown) => Promise.resolve()),
+    executeUserAppAction: vi.fn<typeof executeUserAppAction>(() => Promise.resolve()),
 }));
 
 // Exhaustive over this spec's graph: the sweep reads `trackStore`, the preset
@@ -35,12 +37,28 @@ vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
 }));
 // The persistence subscriber commits through this door; captured so the
 // data-loss case can read exactly what a local edit mirrored into the document.
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAppAction }));
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
+}));
+
+vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../coordinateLevainDeviceState')>();
+    return {
+        coordinateLevainDeviceState: (...args: Parameters<typeof original.coordinateLevainDeviceState>) => {
+            const request = original.coordinateLevainDeviceState(...args);
+            mocks.coordinateRequests.push(request);
+            return request;
+        },
+    };
+});
 
 import { createDefaultPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setCurrentArticulation } from '../../stores/levainStore';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
 import { reconcileLevainDeviceStatesFromProject } from '../reconcileLevainDeviceStatesFromProject';
+
+import type { executeUserAppAction } from '#/modules/Command/useCases';
 
 const DEVICE_ID = 'levain-peer-1';
 const TRACK_ID = 'track-1';
@@ -79,8 +97,10 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
         stopPersistence = initLevainDeviceStatePersistence();
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         stopPersistence();
+        await Promise.all(mocks.coordinateRequests);
+        mocks.coordinateRequests.length = 0;
         levainStore.set({});
     });
 
@@ -142,6 +162,7 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
 
         reconcileLevainDeviceStatesFromProject();
         setCurrentArticulation(DEVICE_ID, 'spiccato');
+        await Promise.all(mocks.coordinateRequests);
 
         const commit = mocks.executeAppAction.mock.calls.map((call) => call[0]).findLast(isSetDeviceStateAction);
         expect(commit).toBeDefined();

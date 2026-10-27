@@ -1,5 +1,6 @@
 import { type ReactElement } from 'react';
 
+import { Row } from '#/components/layout';
 import { EFFECT_DISCLOSURE_TIERS, type EffectDisclosureTier } from '#/utils/UI/effectDisclosureTier';
 
 import { DawPluginChip } from './DawPluginChip';
@@ -22,7 +23,7 @@ export function DawEffectDisclosure({
     groupLabel = 'Effect control detail',
 }: Props): ReactElement {
     return (
-        <div role="group" aria-label={groupLabel} className="flex flex-wrap items-stretch gap-1.5">
+        <Row role="group" aria-label={groupLabel} align="stretch" wrap gap={1.5}>
             {options.map((option) => (
                 <DawPluginChip
                     key={option}
@@ -35,6 +36,6 @@ export function DawEffectDisclosure({
                     {labels?.[option] ?? option}
                 </DawPluginChip>
             ))}
-        </div>
+        </Row>
     );
 }

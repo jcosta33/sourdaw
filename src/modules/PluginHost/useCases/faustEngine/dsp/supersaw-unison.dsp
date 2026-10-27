@@ -1,4 +1,5 @@
 import("stdfaust.lib");
+gain  = hslider("gain", 0.5, 0, 1, 0.01);
 freq  = hslider("freq", 440, 20, 12000, 0.01);
 gate  = button("gate");
 det   = hslider("detune", 15, 0, 100, 0.1);
@@ -23,7 +24,7 @@ mod_cutoff = cutoff * (1 + lfo * 0.5) : max(100) : min(20000) : si.smoo;
 
 resonance = hslider("resonance", 0.3, 0, 0.99, 0.01);
 filtered = raw : fi.resonlp(mod_cutoff, 1 + resonance * 8, 1);
-process = filtered * en.adsr(
+process = filtered * gain * en.adsr(
     hslider("attack",  0.01,  0.001, 5, 0.001),
     hslider("decay",   0.3,   0.01,  5, 0.01),
     hslider("sustain", 0.8,   0,     1, 0.01),

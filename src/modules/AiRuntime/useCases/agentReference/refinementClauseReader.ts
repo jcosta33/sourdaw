@@ -11,6 +11,7 @@ import {
 } from './bindRefinementFigure';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
+import { withoutReferencedLevelPhrases } from './groundingStrategies/withoutReferencedLevelPhrases';
 import { refinementActionWords } from './refinementActionWords';
 import { refinementCardCommands, type CommandView } from './refinementCardCommands';
 import { refinementCourtesy } from './refinementCourtesy';
@@ -168,7 +169,8 @@ function createClauseScopeInput(input: {
 }): ClauseScopeInput {
     const commands = refinementCardCommands.view(input.basis, input.context);
     const candidates = refinementRequestReading.candidates(input.context);
-    const catalog = getExecutableAppActionGroundingCatalog();
+    // A refinement reads a level phrase naming its track as it always has: as a value on the card's commands.
+    const catalog = withoutReferencedLevelPhrases(getExecutableAppActionGroundingCatalog());
     return {
         commands,
         removedCommandIndexes: input.removedCommandIndexes,

@@ -1,9 +1,7 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { executeAppAction } from '#/modules/Command/useCases';
-import { canonicalJson } from '#/utils/canonicalDigest';
-
 import { fromLevainDeviceState, toLevainDeviceState } from '../models/LevainDeviceState';
 import { levainStore } from '../stores/levainStore';
+
+import { coordinateLevainDeviceState } from './coordinateLevainDeviceState';
 
 /**
  * Mirror a device's selected instrument into project truth.
@@ -26,33 +24,13 @@ export function commitLevainDeviceState(deviceId: string): void {
     if (!patch) {
         return;
     }
-
-    const owner = trackStore.value?.tracks.find((track) =>
-        track.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'levain')
-    );
-    const device = owner?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-    if (!owner || !device || (device.deviceState && device.deviceState.version !== 1)) {
-        return;
-    }
-    const prior = fromLevainDeviceState(device.deviceState);
-    if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
-        return;
-    }
-    // Carry current peer fields, then refuse if snapshot admission made this capture stale.
-    const tier = device.deviceState?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
-    const encoded = toLevainDeviceState(patch, tier);
-    const state = { ...encoded, data: { ...device.deviceState?.data, ...encoded.data } };
-    const capturedDevice = canonicalJson(device);
-    void executeAppAction(
-        { type: 'setDeviceState', payload: { deviceId, state } },
-        {
-            skipMacroRecording: true,
-            shouldExecute: () => {
-                const current = trackStore.value?.tracks
-                    .find((track) => track.id === owner.id)
-                    ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-                return current === device && canonicalJson(current) === capturedDevice;
-            },
+    void coordinateLevainDeviceState(deviceId, 'identity', (current) => {
+        const prior = fromLevainDeviceState(current);
+        if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
+            return undefined;
         }
-    );
+        const tier = current?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
+        const encoded = toLevainDeviceState(patch, tier);
+        return { ...encoded, data: { ...current?.data, ...encoded.data } };
+    });
 }

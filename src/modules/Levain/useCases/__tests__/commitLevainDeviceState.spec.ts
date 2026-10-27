@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
     trackStore: {
+        subscribe: vi.fn(() => () => {}),
         value: {
             tracks: [] as {
                 id: string;
@@ -15,8 +16,14 @@ const mocks = vi.hoisted(() => ({
         },
     },
 }));
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAppAction }));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: mocks.executeAppAction,
+}));
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: mocks.trackStore,
+}));
 
 import { createDefaultPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
@@ -62,7 +69,7 @@ describe('commitLevainDeviceState', () => {
                     },
                 },
             },
-            { skipMacroRecording: true, shouldExecute: expect.any(Function) }
+            { skipMacroRecording: true, shouldExecute: expect.any(Function), onCommitted: expect.any(Function) }
         );
     });
 
