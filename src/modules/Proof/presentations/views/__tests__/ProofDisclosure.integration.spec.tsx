@@ -128,6 +128,44 @@ describe('Proof cumulative disclosure in project truth', () => {
         expect(screen.getByRole('region', { name: 'Play controls' })).toBeVisible();
     });
 
+    it('shows restored sound parameters without an audio bridge and after cache resets', async () => {
+        const project = trackStore.value;
+        if (!project) {
+            throw new Error('Expected the Proof fixture project');
+        }
+        trackStore.set({
+            ...project,
+            tracks: project.tracks.map((track) => ({
+                ...track,
+                devices: track.devices.map((device) =>
+                    device.id === 'a'
+                        ? {
+                              ...device,
+                              parameterValues: { lim_ceiling: -1.1 },
+                              deviceState: { version: 1, data: { disclosureTier: 'lab' } },
+                          }
+                        : device
+                ),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        proofStore.set({});
+        render(<ProofPanel deviceId="a" />);
+
+        expect(screen.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('slider', { name: 'Mission limiter ceiling', exact: true })).toHaveAttribute(
+            'aria-valuenow',
+            '-1.1'
+        );
+        await selectTier('play');
+        act(() => proofStore.set({}));
+        expect(screen.getByRole('button', { name: 'play', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('slider', { name: 'Mission limiter ceiling', exact: true })).toHaveAttribute(
+            'aria-valuenow',
+            '-1.1'
+        );
+    });
+
     it('re-projects the saved choice after a module-cache reset while the panel stays mounted', async () => {
         render(<ProofPanel deviceId="a" />);
         await selectTier('lab');
@@ -140,8 +178,9 @@ describe('Proof cumulative disclosure in project truth', () => {
     });
 
     it('projects a legacy numeric choice without replacing sound or meter values', () => {
-        const instance = getProofState('a');
         render(<ProofPanel deviceId="a" />);
+        // Compare against initialization, before the subsequent metadata projection.
+        const instance = getProofState('a');
         act(() =>
             trackStore.set({
                 ...trackStore.value!,

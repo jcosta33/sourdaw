@@ -46,6 +46,7 @@ import {
 } from '../../stores/proofStore';
 import { hydrateProofDisclosureFromProject } from '../../useCases/hydrateProofDisclosureFromProject';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
+import { rehydrateRestoredPatch } from '../../useCases/proofParamBridge/rehydrateRestoredPatch';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
@@ -380,12 +381,12 @@ const ProofAbCompareChip = ({ deviceId }: { deviceId: string }): ReactElement =>
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    // Two narrow subscriptions instead of one on the whole instances record.
+    // Subscribe to patch/layout state instead of the whole instances record.
     // The record gets a new identity on every meter frame — ~62 a second per
     // open device — so subscribing to it here re-rendered the entire desk on
     // every frame of every device, and cancelled in-flight knob gestures'
-    // memoization along the way. Patch and desk level change only on a user
-    // edit, so this tree re-renders only when the user changes something.
+    // memoization along the way. Patch, layout and restoration status change on
+    // edits or loads, so meter frames do not re-render this tree.
     const patch = useStoreSelector(
         proofStore,
         (instances) => instances?.[deviceId]?.patch ?? DEFAULT_PROOF_STATE.patch
@@ -394,6 +395,10 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         proofStore,
         (instances) => instances?.[deviceId]?.uiLevel ?? DEFAULT_PROOF_STATE.uiLevel
     );
+    const projectPatchHydrated = useStoreSelector(
+        proofStore,
+        (instances) => instances?.[deviceId]?.projectPatchHydrated ?? false
+    );
     const projectLevel = useStoreSelector(trackStore, (project) => {
         const device = project?.tracks
             .flatMap((track) => track.devices)
@@ -401,10 +406,13 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         return device ? proofDisclosureLevelFromState(device.deviceState) : null;
     });
     useEffect(() => {
+        if (projectLevel !== null && !projectPatchHydrated) {
+            rehydrateRestoredPatch(deviceId);
+        }
         if (projectLevel !== null && projectLevel !== uiLevel) {
             hydrateProofDisclosureFromProject(deviceId);
         }
-    }, [deviceId, projectLevel, uiLevel]);
+    }, [deviceId, projectLevel, uiLevel, projectPatchHydrated]);
 
     const patchSnapshot = getProofPatchSnapshot(patch);
     const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);

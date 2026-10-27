@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace, wait_for_launch_first_paint, wait_for_workspace_ready } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -70,5 +70,80 @@ test.describe('Proof device — add to chain', () => {
         await selector.getByRole('button', { name: 'play', exact: true }).click();
         await expect(page.getByRole('region', { name: 'Build controls', exact: true })).toHaveCount(0);
         await expect(ceiling).toHaveAttribute('aria-valuenow', before);
+    });
+
+    test('saved disclosure and ceiling survive reopening in a fresh page', async ({ page }) => {
+        test.setTimeout(120_000);
+        const name = 'Proof disclosure round trip';
+        await page.getByRole('button', { name: 'Untitled Project', exact: true }).click();
+        const projectName = page.locator('input:focus');
+        await projectName.fill(name);
+        await projectName.press('Enter');
+
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        await inspector.getByRole('button', { name: 'Add device' }).click();
+        await page.getByRole('menuitem', { name: /^Proof$/ }).click();
+        await expect(inspector.getByRole('button', { name: /^Bypass Proof$/i })).toBeVisible();
+        await inspector.getByText('Proof', { exact: false }).first().click();
+
+        const selector = page.getByRole('group', { name: 'Effect control detail' });
+        await selector.getByRole('button', { name: 'lab', exact: true }).click();
+        await expect(selector.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        const ceiling = page.getByRole('slider', { name: 'Mission limiter ceiling', exact: true });
+        const prior = await ceiling.getAttribute('aria-valuenow');
+        if (prior === null) {
+            throw new Error('Proof mission ceiling has no current value');
+        }
+        await ceiling.press('ArrowLeft');
+        await expect(ceiling).not.toHaveAttribute('aria-valuenow', prior);
+        const savedCeiling = await ceiling.getAttribute('aria-valuenow');
+        if (savedCeiling === null) {
+            throw new Error('Proof mission ceiling has no saved value');
+        }
+        await page.getByRole('button', { name: 'Close Proof', exact: true }).click();
+        await page.keyboard.press(`${MOD}+k`);
+        await page.getByPlaceholder('Type a command...', { exact: true }).fill('Save Project');
+        await page.getByRole('option', { name: /^Save ProjectSave project to local storage/ }).click();
+        await expect(page.getByTitle('Unsaved changes')).toHaveCount(0);
+
+        const context = page.context();
+        const origin = new URL('/', page.url()).toString();
+        await page.close();
+        const reopened = await context.newPage();
+        try {
+            // Remove the live CRDT recovery copy in this isolated browser profile,
+            // so the recent-project card must read the explicitly saved snapshot.
+            await reopened.goto(new URL('/src/modules/CrdtDocument/models/CrdtRootLineage.ts', origin).toString());
+            await reopened.evaluate(async () => {
+                await new Promise<void>((resolve, reject) => {
+                    const request = indexedDB.deleteDatabase('sourdaw-crdt-docs');
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => reject(request.error ?? new Error('IndexedDB delete failed'));
+                    request.onblocked = () => reject(new Error('IndexedDB delete was blocked'));
+                });
+            });
+            await reopened.goto(origin);
+            await wait_for_launch_first_paint(reopened);
+            await reopened.getByRole('button', { name: `Open recent project ${name}`, exact: true }).click();
+            await wait_for_workspace_ready(reopened);
+            await expect(reopened.getByTestId('project-name')).toHaveText(name);
+
+            const restoredInspector = reopened.getByRole('complementary', { name: 'Inspector panel' });
+            await restoredInspector.getByText('Proof', { exact: false }).first().click();
+            const restoredSelector = reopened.getByRole('group', { name: 'Effect control detail' });
+            await expect(restoredSelector.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute(
+                'aria-pressed',
+                'true'
+            );
+            await expect(reopened.getByRole('region', { name: 'Lab controls', exact: true })).toBeVisible();
+            await expect(
+                reopened.getByRole('slider', { name: 'Mission limiter ceiling', exact: true })
+            ).toHaveAttribute('aria-valuenow', savedCeiling);
+        } finally {
+            await reopened.close();
+        }
     });
 });
