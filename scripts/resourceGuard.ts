@@ -148,8 +148,10 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 
 // Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
 const measuredScriptBudgets = new Map<string, number>([
-    // A cold private frozen install peaked at 1582 MiB under the guard.
-    ['install', 2048 * 1024 ** 2],
+    // A cold private frozen install peaked at 2057 MiB under the guard.
+    ['install', 2304 * 1024 ** 2],
+    // A focused pnpm exec eslint invocation over seven files peaked at 4015 MiB.
+    ['exec', 4608 * 1024 ** 2],
     ['lint', 4 * 1024 ** 3],
     // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
     ['lint:full', 6500 * 1024 ** 2],
