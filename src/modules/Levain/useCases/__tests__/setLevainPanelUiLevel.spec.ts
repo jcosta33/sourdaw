@@ -1,6 +1,7 @@
 import { load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { batchStoreUpdates } from '#/infra/store/createStore';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -14,6 +15,7 @@ import {
     captureProjectIdentity,
     createCrdtDoc,
     getCrdtDoc,
+    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -84,7 +86,7 @@ function rawProjectState(deviceId: string) {
 }
 
 async function requestDuringSnapshotEdit(
-    edit: ((state: TrackStoreState) => TrackStoreState | void) | null,
+    edit: ((state: TrackStoreState, snapshotTransaction: object) => TrackStoreState | void) | null,
     requestAction = () => setLevainPanelUiLevel('a', 6)
 ): Promise<void> {
     let allowEdit!: () => void;
@@ -108,7 +110,7 @@ async function requestDuringSnapshotEdit(
         await editAllowed;
         const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
             if (edit) {
-                const next = edit(trackStore.value!);
+                const next = edit(trackStore.value!, snapshotTransaction);
                 if (next) {
                     trackStore.set(next);
                 }
@@ -616,3 +618,101 @@ it.each(['instrument', 'articulation'])(
         expect(projectState('b')?.data.instrumentId).toBe('horn');
     }
 );
+
+function commitTopology(tracks: TrackStoreState['tracks'], snapshotTransaction: object): void {
+    mutateCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>({
+        id: 'root',
+        snapshotTransaction,
+        changeFn: (document) => {
+            document.tracks.tracks = structuredClone(tracks);
+        },
+    });
+    projectCrdtToStores();
+}
+
+it.each(['tier', 'identity'] as const)(
+    'retires an already submitted %s request after committed removal and identical restore',
+    async (facet) => {
+        const original = structuredClone(rawProjectState('a'));
+        if (facet === 'identity') {
+            levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
+        }
+        await requestDuringSnapshotEdit(
+            (state, transaction) => {
+                const tracks = structuredClone(state.tracks);
+                commitTopology(
+                    editDevice(state, (device) => device).tracks.map((track) => ({
+                        ...track,
+                        devices: track.devices.filter((device) => device.id !== 'a'),
+                    })),
+                    transaction
+                );
+                expect(rawProjectDevice('a')).toBeUndefined();
+                commitTopology(tracks, transaction);
+                expect(rawProjectState('a')).toEqual(original);
+            },
+            async () => {
+                if (facet === 'tier') {
+                    await setLevainPanelUiLevel('a', 6);
+                } else {
+                    commitLevainDeviceState('a');
+                    await settleIdentityRequests();
+                }
+            }
+        );
+        expect(rawProjectState('a')).toEqual(original);
+        expect(levainStore.value?.a?.uiLevel).toBe(1);
+    }
+);
+
+it('observes separate committed remove and restore while projection notifications batch', async () => {
+    const original = structuredClone(rawProjectState('a'));
+    const projected = vi.fn();
+    const unsubscribe = trackStore.subscribe(projected);
+    try {
+        await requestDuringSnapshotEdit((state, transaction) => {
+            const tracks = structuredClone(state.tracks);
+            batchStoreUpdates(() => {
+                commitTopology(
+                    tracks.map((track) => ({
+                        ...track,
+                        devices: track.devices.filter((device) => device.id !== 'a'),
+                    })),
+                    transaction
+                );
+                expect(rawProjectDevice('a')).toBeUndefined();
+                commitTopology(tracks, transaction);
+                expect(projected).not.toHaveBeenCalled();
+            });
+            expect(projected).toHaveBeenCalledTimes(1);
+        });
+        expect(rawProjectState('a')).toEqual(original);
+        expect(levainStore.value?.a?.uiLevel).toBe(1);
+    } finally {
+        unsubscribe();
+    }
+});
+
+it.each(['owner', 'type'] as const)('retires a queued choice after committed %s loss and restore', async (loss) => {
+    const original = structuredClone(rawProjectState('a'));
+    await requestDuringSnapshotEdit((state, transaction) => {
+        const tracks = structuredClone(state.tracks);
+        const absent = loss === 'owner' ? [] : editDevice(state, (device) => ({ ...device, type: 'crust' })).tracks;
+        commitTopology(absent, transaction);
+        commitTopology(tracks, transaction);
+    });
+    expect(rawProjectState('a')).toEqual(original);
+});
+
+it('keeps a queued choice after an optimistic removal is aborted without committed loss', async () => {
+    await requestDuringSnapshotEdit((state, transaction) => {
+        const optimistic = runWithAutomergeStorageTransaction(transaction, () => {
+            trackStore.set({ ...state, tracks: [] });
+        });
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(rawProjectDevice('a')).toBeDefined();
+        optimistic.abort();
+        expect(trackStore.value?.tracks[0]?.devices[0]?.id).toBe('a');
+    });
+    expect(rawProjectState('a')?.data.disclosureTier).toBe('expert');
+});
