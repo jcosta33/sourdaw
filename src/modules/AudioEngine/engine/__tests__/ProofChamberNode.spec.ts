@@ -137,7 +137,7 @@ describe('createProofChamberNode', () => {
 
     it('posts each Dutch Oven control with its pinned unique ordinal', async () => {
         const node = await createProofChamberNode(makeCtx());
-        const segments = [{ startFrame: 128, endFrame: 384, startValue: 0.25, endValue: 0.75 }];
+        const segments = [{ startFrame: 128, endFrame: 128, startValue: 1, endValue: 1 }];
         postMessage.mockClear();
 
         expect(PROOF_CHAMBER_AUTOMATION_PARAM_IDS).toEqual(EXPECTED_ORDINALS);
@@ -149,6 +149,27 @@ describe('createProofChamberNode', () => {
         }
         expect(postMessage).toHaveBeenCalledTimes(23);
     });
+
+    it.each(['freeze', 'shimmer'] as const)(
+        'holds %s until its scheduled frame and preserves the final write',
+        async (name) => {
+            const node = await createProofChamberNode(makeCtx());
+            const segments = [{ startFrame: 128, endFrame: 384, startValue: 0, endValue: 1 }];
+            postMessage.mockClear();
+
+            node.scheduleParam(name, segments);
+
+            expect(postMessage).toHaveBeenCalledWith({
+                type: 'paramAutomation',
+                paramId: EXPECTED_ORDINALS[name],
+                segments: [
+                    { startFrame: 128, endFrame: 384, startValue: 0, endValue: 0 },
+                    { startFrame: 384, endFrame: 384, startValue: 1, endValue: 1 },
+                ],
+            });
+            expect(segments).toEqual([{ startFrame: 128, endFrame: 384, startValue: 0, endValue: 1 }]);
+        }
+    );
 
     it('should forward setBypass as a bypass message', async () => {
         const node = await createProofChamberNode(makeCtx());
