@@ -12,7 +12,12 @@ import { automationStore } from '#/modules/Automation/stores';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
-import { createCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    createCrdtDoc,
+    mutateCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { getCommandHandler } from '../getCommandHandler';
@@ -42,7 +47,7 @@ type DivergedFixture = {
     readonly title: string;
     readonly actionType: string;
     readonly divergedAction?: AppAction;
-    readonly createDivergedAction?: () => AppAction;
+    readonly createDivergedAction?: () => AppAction | Promise<AppAction>;
     readonly reason?: string;
 };
 
@@ -111,7 +116,86 @@ function createDivergedTempoMapAction(actionType: TempoMapConflictActionType): A
     return action;
 }
 
+type AudioSourceConflictActionType =
+    'trimClipStart' | 'restoreAudioClipStartTrim' | 'slipClipContent' | 'restoreAudioClipSlip';
+
+async function createDivergedAudioSourceAction(actionType: AudioSourceConflictActionType): Promise<AppAction> {
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    registerCrdtStorageRuntime();
+    takeLaneStore.hydrate();
+    transportStore.set({ ...defaultTransportState, tempo: 120 });
+    tempoMapStore.set({ changes: [] });
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: 'track-source', name: 'Source', kind: 'audio' })],
+    });
+    const clip = addClip({
+        id: 'clip-source',
+        trackId: 'track-source',
+        startBeat: 0,
+        endBeat: 8,
+        name: 'Source clip',
+        type: 'audio',
+        audioBufferId: 'source-original',
+        audioOffsetBeats: 0.5,
+        audioOffsetSeconds: 0.25,
+    });
+    if (!clip) {
+        throw new Error('Expected the canonical audio source fixture');
+    }
+    takeLaneStore.set({ lanes: [] });
+    flushAutomergeStorageWrites();
+
+    const trims = actionType === 'trimClipStart' || actionType === 'restoreAudioClipStartTrim';
+    const forward: AppAction = trims
+        ? { type: 'trimClipStart', payload: { clipId: clip.id, newStartBeat: 2 } }
+        : { type: 'slipClipContent', payload: { clipId: clip.id, clipType: 'audio', offset: 0.7 } };
+    const handler = getCommandHandler(forward);
+    const inverse = handler?.describe(forward).inverseAction;
+    if (!handler || !inverse || inverse.type !== (trims ? 'restoreAudioClipStartTrim' : 'restoreAudioClipSlip')) {
+        throw new Error('Expected an owner-captured audio source inverse');
+    }
+    const applyWrittenAction = async (action: AppAction): Promise<void> => {
+        const result = await getCommandHandler(action)?.execute(action);
+        if (result?.status !== 'written') {
+            throw new Error(`Expected ${action.type} to write before source divergence`);
+        }
+        result.commitValidation?.release();
+        flushAutomergeStorageWrites();
+    };
+    await applyWrittenAction(forward);
+
+    let action: AppAction = inverse;
+    if (actionType === forward.type) {
+        await applyWrittenAction(inverse);
+        handler.describe(forward);
+        action = forward;
+    } else if (getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 }) !== true) {
+        throw new Error('Expected the captured audio inverse to validate before source divergence');
+    }
+
+    // The media-owner refusals are also covered by clipSessionMirrorRoundTrip's
+    // audio trim replay and audioClipSlipSession's changed-media-owner fixture.
+    mutateCrdtDoc<{ tracks: { tracks: Array<{ clips: Array<{ audioBufferId?: string }> }> } }>({
+        id: 'root',
+        changeFn: (document) => {
+            document.tracks.tracks[0]!.clips[0]!.audioBufferId = 'source-peer';
+        },
+    });
+    return action;
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    ...(['trimClipStart', 'restoreAudioClipStartTrim', 'slipClipContent', 'restoreAudioClipSlip'] as const).map(
+        (actionType) => ({
+            title: `${actionType} refuses a captured edit after its media owner diverges`,
+            actionType,
+            createDivergedAction: () => createDivergedAudioSourceAction(actionType),
+        })
+    ),
     {
         title: 'setTempo refuses a changed pinned scalar before source capture',
         actionType: 'setTempo',
@@ -563,7 +647,7 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
     it.each(CONFLICT_CAPABLE_FIXTURES)(
         '$title',
         async ({ actionType, divergedAction, createDivergedAction, reason }) => {
-            const action = createDivergedAction?.() ?? divergedAction;
+            const action = createDivergedAction ? await createDivergedAction() : divergedAction;
             if (!action) {
                 throw new Error(`Expected a diverged action for ${actionType}`);
             }
