@@ -344,3 +344,39 @@ controls. Land one sibling before replacing the root and refuse another afterwar
 landed entry and exactly one settled gesture through Transport's public count consumed by
 Project's owed-save comparison. All-refused adds zero; downstream count filtering cannot prove
 that either Stop caller rejected registration.
+
+## Legacy inverse refusal must reach the history consumer
+
+The pre-#5578 trim handler records inverses without an offset capture. The current handler
+maps a domain `false` result to `no-write`, which Command treats as successful execution;
+relying on that writer refusal would still consume Undo. Refusal must reach the history
+consumer as a conflict. Historical review prompts and model tiers are unverified.
+
+Exercise genuine saved history through the real Undo consumer. Require the raw document,
+owning projections, past/future, tree cursor and settled session mirror to remain unchanged.
+Hold the actual snapshot transaction, remove an eligible legacy audio target through
+public CRDT mutation and projection, then release it: admission must observe that
+resumed state before any write or history consumption.
+Removing the post-wait admission must fail this case. A pre-wait check or a bare boolean
+refusal cannot carry the claim. For direct grouped replay, refuse an unproven prefix before
+any sibling writes; metadata-only and compatible-target controls remain separate.
+
+A legacy looped MIDI trim at an unchanged start can still have normalized an old
+whole-loop offset and translated notes, controllers and bends. Its current phase
+cannot establish its previous raw coordinates. Exercise a genuine saved sequence that
+slips with looping off, enables a loop, then trims at the unchanged start. Require visible refusal with
+the entry still pending, all raw rows and peer content unchanged. A normalized
+zero-distance legacy entry also lacks that authentication. Pair these refusals with
+current capture-bearing zero-distance Undo/Redo restoring exact raw owner coordinates,
+including captured zero; no historical graph reconstruction is required for admission.
+
+Current loop-disabled mode does not authenticate the mode when the historical trim
+ran. Disable looping through a peer edit on the genuine saved looping case and require
+refusal without consuming history or changing that peer state. Missing-capture MIDI
+inverses refuse regardless of current mode; genuine saved audio remains replayable.
+
+Broader MIDI refusal must not make earlier timing and prefix tests vacuous. Use an
+eligible audio target for the held-snapshot removal above and for a synthetic direct
+revert unit whose newest callback would remove that target. The early callback guard
+must refuse before invoking the callback, preserving raw project, full history and tree.
+Retain callback identity when snapshotting history rather than cloning its functions.

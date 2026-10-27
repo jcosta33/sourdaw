@@ -5,6 +5,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -81,6 +82,7 @@ import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
 import { executeReferenceMeasurement } from './executeReferenceMeasurement';
 import { executeTransformCompile } from './executeTransformCompile';
+import { executeTransientOnsetRead } from './executeTransientOnsetRead';
 import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
@@ -680,7 +682,13 @@ const planPromptIntent = inject({ logger })(
                     projectRevision === undefined || projectRevision === ''
                         ? null
                         : projectDeclarativeTransformSnapshot(context, projectRevision);
+                const transientRead =
+                    projectRevision === undefined || projectRevision === ''
+                        ? undefined
+                        : executeTransientOnsetRead({ projectRevision, signal, admit: onMeasurementAttempt });
                 const planningOutcome = await runApplicationOwnedToolLoop({
+                    transientOnsetRead: transientRead,
+                    textReceiptCharacterBudget: AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                     loopId: `planning-${crypto.randomUUID()}`,
                     limits: {
                         maxCallsPerTurn: MAX_LLM_ACTIONS_PER_BATCH + 2,
@@ -795,7 +803,13 @@ const planPromptIntent = inject({ logger })(
                                                 },
                                             }),
                               },
-                    requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
+                    requestTurn: async ({
+                        receiptContext,
+                        directive,
+                        history,
+                        budgetNote,
+                        transientOnsetsDiscovered,
+                    }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
                         if (!planningContext.authorityComplete) {
@@ -818,6 +832,10 @@ const planPromptIntent = inject({ logger })(
                                 firstUserMessage: initialPlanningContext.message,
                                 history,
                                 budgetNote,
+                                transientOnsetsDiscovered,
+                                localReceiptContextComplete:
+                                    receiptContext === null ||
+                                    receiptContext.length <= AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                                 // Measured deltas in the thread context are figures, which the
                                 // hosted request declares as the evidence category it admits.
                                 ...(initialPlanningContext.hostedThreadCarriesMeasurement
@@ -827,7 +845,7 @@ const planPromptIntent = inject({ logger })(
                             planningContext.localMessage
                         );
                     },
-                });
+                }).finally(() => transientRead?.dispose());
                 applicationToolReceiptFields =
                     planningOutcome.receipts.length === 0
                         ? {}
