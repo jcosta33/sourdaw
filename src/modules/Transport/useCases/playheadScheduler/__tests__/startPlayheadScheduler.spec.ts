@@ -227,8 +227,12 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
     shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
-        if (probabilityPercent <= 0) return false;
-        if (probabilityPercent >= 100) return true;
+        if (probabilityPercent <= 0) {
+            return false;
+        }
+        if (probabilityPercent >= 100) {
+            return true;
+        }
         throw new Error('This scheduler fixture requires deterministic note probability');
     },
     adaptGrooveTemplateForConsumer: vi.fn(),
