@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/transportControls/__tests__/schedulerTerminalRealQueue.integration.spec.ts
+  s_d99a62fe2de3a3::t_451ab62a9ee44d 16,40,43-44
+  s_d99a62fe2de3a3::t_5fd53fb7e0de1e 1,150-151,156-157,159
+src/modules/Transport/useCases/transportControls/__tests__/recordingTerminalRealQueue.integration.spec.ts
+  s_d99a62fe2de3a3::t_451ab62a9ee44d 13,15,39
+  s_d99a62fe2de3a3::t_cc658f691c4103 1,129-130,135-136,138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee9c58286df2f34b0e2200c057f1d340e759d6b0",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
