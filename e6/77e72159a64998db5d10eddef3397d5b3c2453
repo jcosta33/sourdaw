@@ -1,0 +1,177 @@
+.agents/skills/delivery-orchestration/historical-stack-admission.md
+  s_29d8df116c5b92::t_9827561258eae4 1-32
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_29d8df116c5b92::t_8d73c4b6801abc 43-67
+.agents/skills/review-stances/project-integrity.md
+  s_29d8df116c5b92::t_fe370dfe9c6d73 610-645
+.agents/skills/review-stances/rendered-contrast.md
+  s_29d8df116c5b92::t_eb65a37789eb45 1-37
+.agents/skills/review-stances/session-lifecycle.md
+  s_29d8df116c5b92::t_e95f06db3e1a50 39-55
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_9cb0550166547d 9-25,1474-1512
+evidence/agent-campaign/manifest.json
+  s_29d8df116c5b92::t_c3ba93602bc5fd 627
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_14606637ca15a2 1211-1212
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_29d8df116c5b92::t_4ba2a671b0b13a 102
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_29d8df116c5b92::t_3a897ba95a6b14 1-1118
+scripts/__tests__/openLane.spec.ts
+  s_29d8df116c5b92::t_f7ff8b3185b0dd 2-11,494-531
+scripts/__tests__/publishLane.spec.ts
+  s_29d8df116c5b92::t_d30e99ebf7a9df 678
+scripts/__tests__/runLint.spec.ts
+  s_29d8df116c5b92::t_fe141db77248c4 1-5,169-209
+scripts/__tests__/stackedLanes.spec.ts
+  s_29d8df116c5b92::t_175199ce2803cf 35-44,131-136,142-144
+scripts/__tests__/supersedePullRequest.spec.ts
+  s_29d8df116c5b92::t_cbc48914d8eb1a 714-716
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_29d8df116c5b92::t_69187e2ae4b411 39,341-342,513-514
+scripts/laneStackForkMarkers.ts
+  s_29d8df116c5b92::t_4fc7909032b9e5 1-11
+scripts/openLane.ts
+  s_29d8df116c5b92::t_3c81b784acb0ac 394-399
+scripts/publishLane.ts
+  s_29d8df116c5b92::t_eb2e18032f8c38 2127-2128
+scripts/reviewApprovalContext.ts
+  s_29d8df116c5b92::t_8111c34637456f 124
+scripts/reviewRiskPolicy.ts
+  s_29d8df116c5b92::t_66afeb1e90e938 153
+scripts/runLint.ts
+  s_29d8df116c5b92::t_d930f4671927f7 132-133,135-136
+scripts/stackedLanes.ts
+  s_29d8df116c5b92::t_6083520392b752 5-11,14-15,25-74,125,130,152,162,164-168,170-181,345-636
+scripts/supersedePullRequestGh.ts
+  s_29d8df116c5b92::t_67eda2c45f9108 89-92
+scripts/syncParentLane.ts
+  s_29d8df116c5b92::t_dc4de9a4d87622 2-3,16,22,24-27,29,31,37-40,42,47-384,531-532,551-553,556-558,564-586
+scripts/trustedGithubWriteBootstrap.ts
+  s_29d8df116c5b92::t_f0ea569108c56a 162,219,234,273,311,353,415
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_29d8df116c5b92::t_a281cdbaa60712 40-42
+src/components/daw/LatchButton.tsx
+  s_29d8df116c5b92::t_436f540f3d1a4d 33
+src/components/daw/__tests__/LatchButton.contrast.spec.tsx
+  s_29d8df116c5b92::t_08231f4e6318d0 1-213
+src/components/daw/__tests__/LatchButton.spec.tsx
+  s_29d8df116c5b92::t_583c2930e0d1ec 133-155
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_29d8df116c5b92::t_56bf9b13280fda 30-32
+src/modules/AiRuntime/useCases/agentReference/__tests__/prepareStemImportBudget.spec.ts
+  s_29d8df116c5b92::t_08ff0a8e3f1341 42
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  s_29d8df116c5b92::t_f0f3b000b1b070 26,426-460,466
+src/modules/Arrangement/useCases/freezeBounce/__tests__/flattenTrackGc.integration.spec.ts
+  s_29d8df116c5b92::t_9509602ac8c762 1-381
+src/modules/Arrangement/useCases/recording/__tests__/recordingPassTimingRootOwner.integration.spec.ts
+  s_29d8df116c5b92::t_f2c4516d921f7b 27,149-229
+src/modules/Arrangement/useCases/recording/recordingPassTiming.ts
+  s_29d8df116c5b92::t_2a29e19a0164ce 83-88,204-236,420
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_29d8df116c5b92::t_f4f6b7b4e57b31 33-34,36-38,41,48,91,99,115
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_29d8df116c5b92::t_f9c04e74f344d4 1,523-525
+src/modules/AudioEngine/models/AudioPreviewIntent.ts
+  s_29d8df116c5b92::t_af70058db43b0b 1-5
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_29d8df116c5b92::t_c84d3e46cd13b7 1821-1903
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_29d8df116c5b92::t_972f2a3fabf3b3 33,409-410,2650-2657,2659-2671
+src/modules/AudioEngine/services/audioPreview/__tests__/createAudioPreviewIntents.spec.ts
+  s_29d8df116c5b92::t_43cba5a356fb62 1-194
+src/modules/AudioEngine/services/audioPreview/createAudioPreviewIntents.ts
+  s_29d8df116c5b92::t_1aea16fb1c1467 1-74
+src/modules/AudioEngine/stores/__tests__/aiPreviewHandoffOwnership.spec.tsx
+  s_29d8df116c5b92::t_a93b9c33ccfb12 39,48-49,60-63,74,177-179,181-187
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_29d8df116c5b92::t_418decff336faf 48,57-58,69-72,83,218-220,222-228
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheDurableOwnership.spec.ts
+  s_29d8df116c5b92::t_aed7f48ce5d22a 132-272
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_29d8df116c5b92::t_7eb92602709d0c 16-19,1296,1304,1306-1310,1318,2066-2096,2103-2118,2337,2343,2350,2354,2779,2788,2812,2825,2840-2842,2867,2869,2891,2900,2952,2957,3002-3005,3034,3037,3062,3070,3101-3104
+src/modules/AudioEngine/stores/durableAudioBufferOwnership.ts
+  s_29d8df116c5b92::t_6a3af775146819 3-4,17-26,36
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_29d8df116c5b92::t_6470204e1924a0 26-33,587,610-612,617-631
+src/modules/AudioEngine/useCases/__tests__/playCachedAudioBufferPreview.spec.ts
+  s_29d8df116c5b92::t_f2695379645009 3,6-18,21,25-38,45,57-64,68-69,73,107,112-259
+src/modules/AudioEngine/useCases/configureDurableAudioBufferOwnership.ts
+  s_29d8df116c5b92::t_673a29fc4486bb 8-10
+src/modules/AudioEngine/useCases/playCachedAudioBufferPreview.ts
+  s_29d8df116c5b92::t_fd0af1a93db41c 1-2,5,27-30,32-43,45-87
+src/modules/Command/useCases/__tests__/fixtures/legacyMidiTrimReplay.json
+  s_29d8df116c5b92::t_71897662eb7fa0 1-227
+src/modules/Command/useCases/__tests__/fixtures/legacyMidiTrimReplay.md
+  s_29d8df116c5b92::t_ee12b6b9ca0aa8 1-53
+src/modules/Command/useCases/__tests__/legacyMidiTrimReplay.integration.spec.ts
+  s_29d8df116c5b92::t_28137e37a778aa 1-541
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_29d8df116c5b92::t_7fc3cfee716863 124
+src/modules/Command/useCases/__tests__/undo.spec.ts
+  s_29d8df116c5b92::t_51f4698043ab6b 350,403,432
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_29d8df116c5b92::t_a67a3691744dc1 7,66,71-75
+src/modules/Command/useCases/executeAppAction.ts
+  s_29d8df116c5b92::t_94532184804285 42,182-186,248-252
+src/modules/Command/useCases/getLegacyTrimInverseReplayFailure.ts
+  s_29d8df116c5b92::t_5cde7bd87267c6 1-46
+src/modules/Command/useCases/revertActionGroup.ts
+  s_29d8df116c5b92::t_6835c9cff62b4d 1-2,6-7,24,30,33-37,61-70,76-86
+src/modules/Command/useCases/undo.ts
+  s_29d8df116c5b92::t_b4d61b1cc300c6 8,10,88-89,92-96
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_29d8df116c5b92::t_1092b1ca14dc36 61-63
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_29d8df116c5b92::t_c5463c773fca80 100-102
+src/modules/Crumbs/useCases/__tests__/voiceStacking.spec.ts
+  s_29d8df116c5b92::t_94bab3c1b9fa6b 23-26
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_29d8df116c5b92::t_2ae6cd82def1bd 77-79
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/collectDurableOwnedAudioBufferIds.spec.ts
+  s_29d8df116c5b92::t_600b14f6d4eb24 22-25,29-41,49-52,62-65,72-73,245-248,275-283,292-355,361,368,397,412,432,435,440,453,459
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/collectDurableOwnedAudioBufferIds.storage.integration.spec.ts
+  s_29d8df116c5b92::t_6bb0a4818d615a 17-20,84,89-92,99-102,187-195,211-213,235
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/savedAudioCollectionRace.integration.spec.ts
+  s_29d8df116c5b92::t_3626b5efec9a47 275,279-281,283,291,314,335,352
+src/modules/Project/useCases/projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds.ts
+  s_29d8df116c5b92::t_ded666493c19b6 1-3,6-8,60-81,83-86,88-91,97-119
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_29d8df116c5b92::t_3f4f748be27379 80-82
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_a149370f708ec8 103-105
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_ab88eafe2e170c 745-746,761
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_29d8df116c5b92::t_32fab162e1bb51 612-649
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_f9c1339b9311a7 94-96
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_100c363bf1558d 204,206-207,212,263,272,274-276,278,1015,1083-1087,1150-1152,1311,1319-1327,1337-1340,1359-1361,1395-1397
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_29d8df116c5b92::t_8cf808b9e6b663 65-67
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_29d8df116c5b92::t_3bf4c257a74c10 456-459
+src/modules/Tuner/presentations/views/__tests__/TunerPanelPoly.spec.tsx
+  s_29d8df116c5b92::t_29fc32e29d16d3 24-26
+tests/e2e/audioOwnership.native.spec.ts
+  s_29d8df116c5b92::t_8d4792bfae0030 178-199,292-293,295,371-374,377-380,436,461,478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e677e72159a64998db5d10eddef3397d5b3c2453",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
