@@ -361,6 +361,51 @@ export function isCarriedBendReturnOnEditedHead(
     return afterEdit >= -SAME_BEAT_TOLERANCE && afterEdit <= SEQUENCER_TICK_BEATS + SAME_BEAT_TOLERANCE;
 }
 
+/**
+ * The single source family the edit addresses. Timing admits candidates, while the shared writer-id prefix
+ * ties a return to its source head. A previous source's return on the next head is never a head witness.
+ */
+export function getCarriedBendReturnFamily(
+    rows: readonly MidiCC[],
+    head: { channel: number; beat: number }
+): readonly MidiCC[] {
+    const candidates = rows.filter((row) => isCarriedBendReturnOnEditedHead(row, head));
+    const prefixes = new Set(candidates.map((row) => row.id.replace(CARRIED_BEND_RETURN_ID, '')));
+    const headByPrefix = new Map<string, number>();
+    const writerId = /:rpn-(?:carried-)?\d+$/;
+    for (const row of rows) {
+        if (row.channel !== head.channel || !writerId.test(row.id)) {
+            continue;
+        }
+        const prefix = row.id.replace(writerId, '');
+        if (!prefixes.has(prefix)) {
+            continue;
+        }
+        headByPrefix.set(prefix, Math.min(headByPrefix.get(prefix) ?? row.beat, row.beat));
+    }
+    let selectedPrefix: string | undefined;
+    let selectedBeat = Number.NEGATIVE_INFINITY;
+    for (const [prefix, beat] of headByPrefix) {
+        // A future source head must not join this edit, however short the preceding window is.
+        // Equal heads follow source/list order, just as the state reader does.
+        if (beat <= head.beat && beat >= selectedBeat) {
+            selectedPrefix = prefix;
+            selectedBeat = beat;
+        }
+    }
+    if (selectedPrefix === undefined && prefixes.size === 1) {
+        const [prefix] = prefixes;
+        if (prefix !== undefined && !headByPrefix.has(prefix)) {
+            selectedPrefix = prefix;
+        }
+    }
+    // Several families without a surviving head witness are ambiguous; leave all of them untouched.
+    if (selectedPrefix === undefined) {
+        return [];
+    }
+    return candidates.filter((row) => row.id.replace(CARRIED_BEND_RETURN_ID, '') === selectedPrefix);
+}
+
 /** `state` with RPN 0's range replaced by `semitones`; the selection and every other parameter stay as they are. */
 function withBendRange(state: MidiChannelControllerState, semitones: number): MidiChannelControllerState {
     const replaced = { ...state, bendRangeSemitones: semitones };
@@ -439,7 +484,7 @@ export function reconcileHandEditedReturns(
     head: { channel: number; beat: number },
     options: { fineOnlyEdit?: boolean } = {}
 ): readonly MidiCC[] | null {
-    const returns = rows.filter((row) => isCarriedBendReturnOnEditedHead(row, head));
+    const returns = getCarriedBendReturnFamily(rows, head);
     const [firstReturn] = returns;
     if (firstReturn === undefined) {
         return null;
@@ -450,38 +495,28 @@ export function reconcileHandEditedReturns(
     if (!isPitchBendSensitivitySelected(afterEdit)) {
         return null;
     }
-    if (options.fineOnlyEdit === true) {
-        // A Data Entry LSB sets no coarse range alone, and the returns deliberately restore the cut's
-        // range over the writer's declaration and carried rows at the head (their ids carry `:rpn-`).
-        // The fine half refines the returns only when a hand coarse stands at the head for it to
-        // complete; otherwise the returns keep restoring the cut as they are.
-        const handCoarseStands = visible.some(
-            (row) => isBendRangeDataController(row.controller) && !row.id.includes(':rpn-')
-        );
-        if (!handCoarseStands) {
-            return null;
-        }
-    }
     // A hand coarse Data Entry is what sets the range the returns must carry: the writer's
     // declaration and carried coarses (ids carrying `:rpn-`) are the rows the returns exist to
     // override, and a lone Data Entry LSB refines nothing. The range provenance runs through the
     // full replay — a hand coarse only sets the range under the selection the writer rows left —
-    // tracking which row last moved it.
+    // tracking the last valid coarse write, including an explicit write of the value already in force.
     let rangeSourceId: string | undefined;
     const rangeState = createMidiChannelControllerState();
     for (const row of visible
         .filter((row) => row.channel === head.channel)
         .toSorted((first, second) => first.beat - second.beat)) {
-        const before = rangeState.bendRangeSemitones;
-        applyRegisteredParameterChange(rangeState, row.controller, row.value);
-        if (rangeState.bendRangeSemitones !== before && row.controller !== CC_DATA_ENTRY_LSB) {
-            // A Data Entry LSB refines a range a coarse authored; it never authors one alone.
+        if (isBendRangeDataController(row.controller) && isPitchBendSensitivitySelected(rangeState)) {
+            // A coarse write remains authoritative even when its value or a clamped step does not change the number.
             rangeSourceId = row.id;
         }
+        applyRegisteredParameterChange(rangeState, row.controller, row.value);
     }
     const coarseStands = rangeSourceId !== undefined && !rangeSourceId.includes(':rpn-');
+    if (options.fineOnlyEdit === true && !coarseStands) {
+        return null;
+    }
     const cut = replayInReaderOrder(
-        rows.filter((row) => row.beat <= head.beat + SAME_BEAT_TOLERANCE || isCarriedBendReturnOnEditedHead(row, head)),
+        rows.filter((row) => row.beat <= head.beat + SAME_BEAT_TOLERANCE || returns.includes(row)),
         head.channel
     );
     let target = cut;
@@ -500,8 +535,8 @@ export function reconcileHandEditedReturns(
     const rewrittenSource = messages.length > 0 ? messages : targetDeclaration;
 
     // The rewritten rows reuse the standing family's ids in order, minting only for rows beyond
-    // it: every later revisit then rewrites the same ids, so an undo entry that captured the
-    // family at add time removes exactly the rows that stand when the undo runs.
+    // it. Reusing or shortening a family can change rows without changing their ids, so gesture
+    // history captures actual row transitions and restores only owned changes still standing.
     const idPrefix = firstReturn.id.replace(CARRIED_BEND_RETURN_ID, ':');
     const firstIndex = nextCarriedBendReturnIndex(rows);
     const rewritten: MidiCC[] = rewrittenSource.map(({ controller, value, channel }, index) => {

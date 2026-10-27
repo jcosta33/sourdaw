@@ -335,6 +335,16 @@ describe('addMidiCC', () => {
             expect(idsAfter()).toContain(cc.id);
         });
 
+        it('leaves multiple candidate families untouched when no surviving writer identifies the edited source', () => {
+            const first = { ...splitReturn, id: 'cc-glue:target:0:rpn-after-carried-0' };
+            const second = { ...splitReturn, id: 'cc-glue:target:1:rpn-after-carried-0' };
+            seed([first, second]);
+            addMidiCC('c1', 6, 7, 0, 0);
+            expect((midiStore.value?.ccByClipId.c1 ?? []).filter(({ id }) => id.includes('rpn-after-carried'))).toEqual(
+                [first, second]
+            );
+        });
+
         it('keeps the return when the point set is not a registered-parameter controller', () => {
             seed([splitReturn]);
 

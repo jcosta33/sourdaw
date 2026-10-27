@@ -22,6 +22,7 @@ const { addMidiCC } = await import('../../midiEvent/addMidiCC');
 const { removeHandEditedReturnFamily } = await import('../../midiEvent/removeHandEditedReturnFamily');
 const { removeMidiCC } = await import('../../midiEvent/removeMidiCC');
 const { restoreMidiCCPoints } = await import('../../midiEvent/restoreMidiCCPoints');
+const { revisitHandEditedCCReturns } = await import('../../midiEvent/revisitHandEditedCCReturns');
 const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
 const { prepareMidiClipGlueState } = await import('../prepareMidiClipGlueState');
 const { projectChannelBend } = await import('../projectChannelBend');
@@ -627,6 +628,127 @@ describe('prepareMidiClipGlueState', () => {
                     { beat: addedBeat, rangeSemitones: 2 },
                 ]);
             });
+
+            it('honors an equal-value hand range after writer fine rows were deleted from a later glued head', () => {
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': rangeAt('prior', 0.1, 12), 'source-b': recordedUnderTwelve },
+                    pitchBendByClipId: { 'source-b': [carried] },
+                };
+                const plan = prepareMidiClipGlueState({
+                    sources: [
+                        { clipId: 'source-a', beatOffset: -1, visibleStartBeat: 1, visibleEndBeat: 3 },
+                        { clipId: 'source-b', beatOffset: 2 - 1.35, visibleStartBeat: 1.35, visibleEndBeat: 4 },
+                    ],
+                    targetClipId: 'target',
+                });
+                const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+                expect(target).toBeDefined();
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { target: Array.from(target!.data.controlChanges.value) },
+                    pitchBendByClipId: { target: Array.from(target!.data.pitchBends.value) },
+                };
+                const fineRows = (mocks.state.value.ccByClipId.target ?? []).filter(
+                    (row) => row.beat === 2 && row.controller === 38 && row.id.includes(':rpn-')
+                );
+                expect(fineRows).toHaveLength(2);
+                for (const row of fineRows) {
+                    removeMidiCC('target', row.id);
+                    revisitHandEditedCCReturns(
+                        'target',
+                        { channel: 0, beat: 2 },
+                        { editedController: 38, editedRowId: row.id }
+                    );
+                }
+                addMidiCC('target', 6, 12, 2, 0);
+                expect(createStoredBendRangeReader(mocks.state.value.ccByClipId.target ?? [])(0, 3)).toBe(12);
+            });
+
+            it.each([
+                { name: 'first head', editedSource: 0, expectedRange: 5, protectedSource: 1 },
+                {
+                    name: 'next head coincident with the preceding return',
+                    editedSource: 1,
+                    expectedRange: 7,
+                    protectedSource: 0,
+                },
+            ])(
+                'keeps the neighboring return family when editing the $name',
+                ({ editedSource, expectedRange, protectedSource }) => {
+                    const length = 1 / 2000;
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: {
+                            'source-a': recordedUnderTwelve,
+                            'source-b': [
+                                ...rangeAt('nine', 0.1, 9),
+                                ...rangeAt('five', 1.3, 5),
+                                row('b-volume', 1.35025, 7, 100),
+                            ],
+                        },
+                        pitchBendByClipId: { 'source-a': [carried], 'source-b': [{ ...carried, id: 'b-carried' }] },
+                    };
+                    const plan = prepareMidiClipGlueState({
+                        sources: [
+                            {
+                                clipId: 'source-a',
+                                beatOffset: -1.35,
+                                visibleStartBeat: 1.35,
+                                visibleEndBeat: 1.35 + length,
+                            },
+                            {
+                                clipId: 'source-b',
+                                beatOffset: length - 1.35,
+                                visibleStartBeat: 1.35,
+                                visibleEndBeat: 4,
+                            },
+                        ],
+                        targetClipId: 'target',
+                    });
+                    const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+                    expect(target).toBeDefined();
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { target: Array.from(target!.data.controlChanges.value) },
+                        pitchBendByClipId: { target: Array.from(target!.data.pitchBends.value) },
+                    };
+                    const headRows = (mocks.state.value.ccByClipId.target ?? []).filter(
+                        ({ id }) =>
+                            id.startsWith(`cc-glue:target:${editedSource}:rpn-`) && !id.includes('rpn-after-carried')
+                    );
+                    expect(headRows.length).toBeGreaterThan(0);
+                    const editedBeat = Math.min(...headRows.map(({ beat }) => beat));
+                    const nextReturn = (mocks.state.value.ccByClipId.target ?? []).filter(
+                        (row) =>
+                            row.id.startsWith(`cc-glue:target:${protectedSource}:rpn-after-carried`) &&
+                            !(row.beat === editedBeat && row.controller === 6 && row.channel === 0)
+                    );
+                    expect(nextReturn.length).toBeGreaterThan(0);
+                    const read = () =>
+                        projectChannelBend({
+                            clips: [
+                                {
+                                    clip: { startBeat: 0, endBeat: 8 },
+                                    controlChanges: mocks.state.value?.ccByClipId.target ?? [],
+                                    pitchBends: [
+                                        ...(mocks.state.value?.pitchBendByClipId.target ?? []),
+                                        { id: 'later', value: 4096, beat: 1, channel: 0 },
+                                    ],
+                                },
+                            ],
+                            frameAtBeat: (beat) => beat * 24_000,
+                        }).find(({ beat }) => beat === 1)?.rangeSemitones;
+                    expect(read()).toBe(5);
+                    addMidiCC('target', 6, 7, editedBeat, 0);
+                    expect(read()).toBe(expectedRange);
+                    expect(
+                        (mocks.state.value.ccByClipId.target ?? []).filter(({ id }) =>
+                            nextReturn.some((row) => row.id === id)
+                        )
+                    ).toEqual(nextReturn);
+                }
+            );
 
             describe('a range set by hand on the window start', () => {
                 /** The glued clip, as the store holds it before the hand edit. */

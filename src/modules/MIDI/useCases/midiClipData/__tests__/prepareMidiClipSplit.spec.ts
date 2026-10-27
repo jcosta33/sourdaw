@@ -336,6 +336,18 @@ describe('prepareMidiClipSplit bend range', () => {
                 return displaced;
             }
 
+            it.each([
+                { controller: 96, heldRange: 127 },
+                { controller: 97, heldRange: 0 },
+            ])(
+                'keeps an explicit clamped range step at a split head for CC$controller',
+                ({ controller: cc, heldRange }) => {
+                    storeRightHalf([...rangeAt('held', 0.1, heldRange), ...rangeAt('cut', 1.3, 2)]);
+                    addMidiCC('right', cc, 0, 0, 0);
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(heldRange);
+                }
+            );
+
             it('governs a bend drawn after it, in place of the state at the cut', () => {
                 storeRightHalf();
 

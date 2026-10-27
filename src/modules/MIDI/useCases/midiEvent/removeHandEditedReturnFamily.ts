@@ -4,10 +4,8 @@ import { midiStore } from '../../stores/midiStore';
 import { getHandEditedReturnFamily } from './getHandEditedReturnFamily';
 
 /**
- * Removes the returns a split or glue wrote just after a clip's head, whatever ids they currently
- * carry, and returns the rows it removed: revisits rewrite the family in place under its standing
- * ids, so an undo entry cannot capture them by the ids it saw at gesture time and must sweep the
- * family at undo time, restoring the rows it removed from its own pre-gesture capture.
+ * Removes only the edited head's return family and returns its rows in stored order.
+ * Other source families survive even when a short neighboring window places them within the same tick.
  */
 export function removeHandEditedReturnFamily(
     clipId: string,
