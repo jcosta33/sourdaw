@@ -1,0 +1,41 @@
+.agents/skills/review-stances/README.md
+  s_29d8df116c5b92::t_4d3c63a6e96e9b 43-44,46
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_3b2e88015c63e3 9-17,1377-1392
+.github/workflows/validation.yml
+  s_29d8df116c5b92::t_38757048450f8c 338-340
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_29d8df116c5b92::t_67ebb0e9bd37a6 714-717
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_29d8df116c5b92::t_7c41cd77360cd4 1996-2004,4667-4696
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_29d8df116c5b92::t_30ce91051450f4 39,2749-2974,4543-4547,4577-4586,5047-5052
+scripts/healthGateWorkflowContract.ts
+  s_29d8df116c5b92::t_e87251edb457e3 109-113,190
+scripts/resourceGuard.ts
+  s_3168504f6ce387::t_7eb8899ee61086 1181,1187-1188,1215-1217,1651-1652,1654,1703,1729,1731-1734,1820-1822
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d1056d5da3d278aa41cbbf46145d3232cad5625",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
