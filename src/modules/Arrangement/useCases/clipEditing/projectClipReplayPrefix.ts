@@ -8,6 +8,7 @@ import { isClipDropCompatible } from '../clip/isClipDropCompatible';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { planRippleDelete } from '../rippleDelete/planRippleDelete';
 
+import { resolveClipRestoreInsertionIndex } from './resolveClipRestoreInsertionIndex';
 import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
 
 type LocatedClip = { owningTrackId: string; clip: ClipSnapshot & Pick<Clip, 'loopOriginBeat'> };
@@ -229,10 +230,17 @@ export function projectClipReplayPrefix(priorActions: readonly AppAction[] = [])
         if (action.type !== 'restoreClip') {
             continue;
         }
-        const { trackId, clipIndex, clipSnapshot, ripplePlan } = action.payload;
+        const { trackId, clipSnapshot, ripplePlan } = action.payload;
         const removedClips = ripplePlan?.removedClips ?? [clipSnapshot];
         const liveClipIds = new Set(state.clips.map((owner) => owner.clip.id));
         if (removedClips.some((clip) => liveClipIds.has(clip.id))) {
+            return null;
+        }
+        const clipIndex = resolveClipRestoreInsertionIndex(
+            state.clips.filter((owner) => owner.owningTrackId === trackId).map((owner) => owner.clip),
+            action.payload
+        );
+        if (clipIndex === null) {
             return null;
         }
         if (!ripplePlan) {

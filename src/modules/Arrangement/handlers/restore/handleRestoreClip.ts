@@ -7,6 +7,7 @@ import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIden
 import { clipSatelliteEntriesMatchSnapshot } from '../../stores/clipSatelliteState';
 import { clipAutomationLaneTransitionMatchesStore } from '../../useCases/clip/clipAutomationLaneTransitionMatchesStore';
 import { captureRestoreClipCommitValidation } from '../../useCases/clipEditing/captureRestoreClipCommitValidation';
+import { resolveClipRestoreInsertionIndex } from '../../useCases/clipEditing/resolveClipRestoreInsertionIndex';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
@@ -158,6 +159,12 @@ function restoreStateMatches(
         !projected ||
         !tracks.some((track) => track.id === action.payload.trackId) ||
         projected.clips.some((owner) => owner.clip.id === action.payload.clipId) ||
+        resolveClipRestoreInsertionIndex(
+            projected.clips
+                .filter((owner) => owner.owningTrackId === action.payload.trackId)
+                .map((owner) => owner.clip),
+            action.payload
+        ) === null ||
         !capturedMidiIdentitiesAreAvailable(action, priorActions, completedPrefix) ||
         !retiredTakeLaneOwnersMatchStore(action.payload.retiredTakeLanes ?? [], projectedPriorActions) ||
         !rippleDeleteShiftStateMatchesStore(
@@ -172,6 +179,14 @@ function restoreStateMatches(
     // Removal retires these target-owned records. A later owner is a conflict,
     // even when the capture was empty; peer records under other ids stay free.
     return targetOwnersAreAbsent(action, projectedPriorActions, projected);
+}
+
+function liveRestoreInsertionIndex(payload: RestoreClipAction['payload']): number | null {
+    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === payload.trackId);
+    if (!track) {
+        return null;
+    }
+    return resolveClipRestoreInsertionIndex(track.clips, payload);
 }
 
 /**
@@ -219,13 +234,16 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
         ) {
             return { status: 'conflict' };
         }
+        const clipIndex = liveRestoreInsertionIndex(alpha.payload);
+        if (clipIndex === null) {
+            return { status: 'conflict' };
+        }
         const proof = captureRestoreClipCommitValidation(alpha);
         try {
             const {
                 clipId,
                 trackId,
                 clipSnapshot,
-                clipIndex,
                 ripplePlan,
                 midiNotesSnapshot,
                 midiCcSnapshot,
@@ -242,18 +260,14 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
                     clipAutomationLanes: ripplePlan.clipAutomationLanes,
                     retiredTakeLanes,
                 };
-                if (clipIndex !== undefined) {
+                if (alpha.payload.clipIndex !== undefined) {
                     input.clipIndex = clipIndex;
                 }
                 undoRippleDelete(input);
             } else {
                 updateTrack(trackId, (time) => {
                     const clips = [...time.clips];
-                    clips.splice(
-                        clipIndex === undefined ? clips.length : Math.min(clipIndex, clips.length),
-                        0,
-                        clipSnapshot
-                    );
+                    clips.splice(clipIndex, 0, clipSnapshot);
                     return { ...time, clips };
                 });
                 restoreTakesForClip(retiredTakeLanes ?? []);

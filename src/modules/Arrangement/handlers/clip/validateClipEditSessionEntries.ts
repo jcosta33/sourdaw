@@ -8,6 +8,7 @@ import {
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
+import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
@@ -264,8 +265,7 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     return (
         value.clipId.length > 0 &&
         value.trackId.length > 0 &&
-        (value.clipIndex === undefined ||
-            (typeof value.clipIndex === 'number' && Number.isSafeInteger(value.clipIndex) && value.clipIndex >= 0)) &&
+        isClipRestoreOrderSnapshot(value) &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
         (value.ripplePlan === null ||
             isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&

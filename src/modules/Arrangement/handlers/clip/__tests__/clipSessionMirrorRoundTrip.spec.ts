@@ -1791,6 +1791,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         }[];
         expect(entries[0]!.inverseAction.payload.retiredTakeLanes).toEqual([]);
         delete entries[0]!.inverseAction.payload.clipIndex;
+        delete entries[0]!.inverseAction.payload.clipOrder;
         delete entries[0]!.inverseAction.payload.retiredTakeLanes;
         sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
         reloadSavedProject();
