@@ -37,6 +37,7 @@ export function resolveFrozenMidiControllerPasses(clip: PlayedClip) {
             clip: { startBeat, endBeat, midiOffsetBeats: startBeat },
             controlChanges: [...value.controlChanges, ...value.closingControlChanges],
             pitchBends: value.pitchBends,
+            sourceControlChanges: source.rows.controlChanges.value,
         });
     }
     return passes;

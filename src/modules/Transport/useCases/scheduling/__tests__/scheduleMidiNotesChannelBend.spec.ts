@@ -268,6 +268,55 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
         ]);
     });
 
+    it('keeps a carried bend’s recorded range when ordinary and frozen selected windows play the same source', async () => {
+        stripFor(GRAND_BOULE);
+        const controls = [
+            controller('rpn-msb', 0, 101, 0),
+            controller('rpn-lsb', 0, 100, 0),
+            controller('range-12', 0, 6, 12),
+            controller('range-24', 3, 6, 24),
+        ];
+        const notes = [{ ...note('selected', 4, 3), recordingPassIndex: 1 }];
+        const bends = [bend('carried', 2, 8191), bend('later', 5, 4096)];
+        const frozenSource = {
+            sourceClipId: 'clip-1',
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: notes },
+                controlChanges: { present: true, value: controls },
+                pitchBends: { present: true, value: bends },
+            },
+        };
+        const expected = [
+            { sampleFrame: 0, pitchBend: 8191, bendRangeSemitones: 12 },
+            { sampleFrame: FRAMES_PER_BEAT, pitchBend: 4096, bendRangeSemitones: 24 },
+        ];
+
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ endBeat: 4, midiOffsetBeats: 4, midiTakeRecordingPassIndex: 1 }),
+            ]),
+            notes: { 'clip-1': notes },
+            controllers: { 'clip-1': controls },
+            bends: { 'clip-1': bends },
+        });
+        await play(0, 4);
+        expect(appliedBend()).toEqual(expected);
+
+        vi.mocked(applyNoteExpression).mockClear();
+        forgetHeldNoteExpression();
+        setProject({
+            track: midiTrack(GRAND_BOULE, [
+                midiClip({ endBeat: 4, midiTakeSource: frozenSource, midiTakeRecordingPassIndex: 1 }),
+            ]),
+        });
+        await play(0, 4);
+        expect(appliedBend()).toEqual(expected);
+    });
+
     it.each([FERMENTER, LEVAIN, GRAND_BOULE])(
         'bends a sounding $type note at the frames a note at the bend beats gets, through the live input surface',
         async (instrument) => {

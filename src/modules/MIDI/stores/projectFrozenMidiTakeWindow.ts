@@ -1,5 +1,5 @@
-import { type MidiCC, type MidiNote, type MidiPitchBend } from '../models/MidiNote';
-import { projectMidiClipWindow } from '../services/projectMidiClipWindow';
+import { type MidiCC, type MidiNote } from '../models/MidiNote';
+import { projectMidiClipWindow, type SourceLocatedMidiPitchBend } from '../services/projectMidiClipWindow';
 import {
     isRegisteredParameterController,
     reconcileRegisteredParameterMessages,
@@ -26,7 +26,7 @@ export type FrozenMidiTakeWindow = {
     readonly notes: readonly MidiNote[];
     readonly controlChanges: readonly MidiCC[];
     readonly closingControlChanges: readonly MidiCC[];
-    readonly pitchBends: readonly MidiPitchBend[];
+    readonly pitchBends: readonly SourceLocatedMidiPitchBend[];
 };
 
 function isFiniteBeat(value: unknown): value is number {
@@ -108,7 +108,7 @@ export function projectFrozenMidiTakeWindow({
     const projected = projectMidiClipWindow({
         notes: selectMidiNotesForRecordingPass(source.rows.notes.value, recordingPassIndex),
         controlChanges: source.rows.controlChanges.value,
-        pitchBends: source.rows.pitchBends.value,
+        pitchBends: source.rows.pitchBends.value.map((bend) => ({ ...bend, sourceRecordedBeat: bend.beat })),
         window,
         carriesRegisteredParameterLanes: false,
     });

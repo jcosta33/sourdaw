@@ -46,6 +46,60 @@ function source(): FrozenMidiTakeSource {
 }
 
 describe('frozen MIDI take window', () => {
+    it('retains a carried bend’s original source beat through full, partial and repeated windows', () => {
+        const original = source();
+        const controls = [
+            { id: 'rpn-msb', controller: 101, value: 0, channel: 0, beat: 0 },
+            { id: 'rpn-lsb', controller: 100, value: 0, channel: 0, beat: 0 },
+            { id: 'range-12', controller: 6, value: 12, channel: 0, beat: 0 },
+            { id: 'range-24', controller: 6, value: 24, channel: 0, beat: 3 },
+        ];
+        const frozen = {
+            ...original,
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            rows: {
+                ...original.rows,
+                controlChanges: { present: true as const, value: controls },
+                pitchBends: {
+                    present: true as const,
+                    value: [
+                        { id: 'carried', value: 8191, channel: 0, beat: 2 },
+                        { id: 'later', value: 4096, channel: 0, beat: 5 },
+                    ],
+                },
+            },
+        };
+        const beforeProjection = structuredClone(frozen);
+        const project = (absoluteOccurrenceIndex: number, fromBeat: number, toBeat: number) =>
+            projectFrozenMidiTakeWindow({ source: frozen, absoluteOccurrenceIndex, fromBeat, toBeat });
+        const sourceBeats = (window: NonNullable<ReturnType<typeof project>>) =>
+            window.pitchBends.map(({ id, beat, sourceRecordedBeat }) => [id, beat, sourceRecordedBeat]);
+
+        const first = project(0, 0, 4);
+        const partial = project(0, 0.5, 4);
+        const repeated = project(1, 4, 8);
+
+        expect(first).not.toBeNull();
+        expect(partial).not.toBeNull();
+        expect(repeated).not.toBeNull();
+        expect(sourceBeats(first!)).toEqual([
+            ['carried', 0, 2],
+            ['later', 1, 5],
+        ]);
+        expect(sourceBeats(partial!)).toEqual([
+            ['carried', 0.5, 2],
+            ['later', 1, 5],
+        ]);
+        expect(sourceBeats(repeated!)).toEqual([
+            ['carried', 4, 2],
+            ['later', 5, 5],
+        ]);
+        expect(createStoredBendRangeReader(first!.controlChanges)(0, 0)).toBe(24);
+        expect(createStoredBendRangeReader(controls)(0, 2)).toBe(12);
+        expect(frozen).toEqual(beforeProjection);
+    });
+
     it('declares each channel’s complete pre-window parameter state without changing ordinary carries or source rows', () => {
         const original = source();
         const controls: MidiCC[] = [

@@ -1,4 +1,5 @@
-import { type MidiCC, type MidiPitchBend } from '../../models/MidiNote';
+import { type MidiCC } from '../../models/MidiNote';
+import { type MidiPitchBendWindowRow } from '../../services/projectMidiClipWindow';
 
 import { createStoredBendRangeReader } from './createStoredBendRangeReader';
 import { type ControllerProjectionClip } from './listClipControllerPasses';
@@ -8,7 +9,9 @@ type ChannelBendClip = {
     clip: ControllerProjectionClip;
     /** The clip's stored controllers: the RPN 0 messages among them say how deep its bend is. */
     controlChanges: readonly MidiCC[];
-    pitchBends: readonly MidiPitchBend[];
+    pitchBends: readonly MidiPitchBendWindowRow[];
+    /** Original frozen rows, paired with the projected bends' source beats; never stored on the clip. */
+    sourceControlChanges?: readonly MidiCC[];
 };
 
 type ProjectChannelBendInput = {
@@ -69,17 +72,24 @@ export function projectChannelBend({
     toBeat = Number.POSITIVE_INFINITY,
 }: ProjectChannelBendInput): ChannelBendPoint[] {
     const placed: PlacedBend[] = [];
-    for (const [clipIndex, { clip, controlChanges, pitchBends }] of clips.entries()) {
-        const readRange = createStoredBendRangeReader(controlChanges);
+    for (const [clipIndex, { clip, controlChanges, pitchBends, sourceControlChanges }] of clips.entries()) {
+        const readRange = createStoredBendRangeReader(sourceControlChanges ?? controlChanges);
         const bends = projectClipPitchBendEvents({ pitchBends, clip, fromBeat, toBeat });
         for (const [rowIndex, bend] of bends.entries()) {
+            let recordedContentBeat = bend.recordedContentBeat;
+            if (sourceControlChanges !== undefined) {
+                if (bend.sourceRecordedBeat === undefined) {
+                    throw new Error('Frozen MIDI bend has no source position');
+                }
+                recordedContentBeat = bend.sourceRecordedBeat;
+            }
             placed.push({
                 point: {
                     beat: bend.beat,
                     frame: frameAtBeat(bend.beat),
                     recordedBeat: bend.recordedBeat,
                     value: bend.value,
-                    rangeSemitones: readRange(bend.channel, bend.recordedContentBeat),
+                    rangeSemitones: readRange(bend.channel, recordedContentBeat),
                 },
                 clipIndex,
                 rowIndex,

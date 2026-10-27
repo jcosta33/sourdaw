@@ -6,6 +6,10 @@ import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
 import { isRegisteredParameterController } from './registeredParameterState';
 import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
 
+/** Source location belongs to a window projection, never to a stored bend row. */
+export type MidiPitchBendWindowRow = MidiPitchBend & { readonly sourceRecordedBeat?: number };
+export type SourceLocatedMidiPitchBend = MidiPitchBendWindowRow & { readonly sourceRecordedBeat: number };
+
 type MidiClipWindow = {
     /** Added to every projected beat; places the window's content on the destination timeline. */
     beatOffset: number;

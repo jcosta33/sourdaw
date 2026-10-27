@@ -2256,6 +2256,77 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             expect(bends(arrivals)).toEqual([{ sampleFrame: 18_000, bendSemitones: 6 }]);
         });
 
+        it('keeps the original range of a carried bend in ordinary and frozen selected windows', async () => {
+            const controls = [
+                { ...controllerRow('rpn-msb', 0, 101, 0), channel: 3 },
+                { ...controllerRow('rpn-lsb', 0, 100, 0), channel: 3 },
+                { ...controllerRow('range-12', 0, 6, 12), channel: 3 },
+                { ...controllerRow('range-24', 3, 6, 24), channel: 3 },
+            ];
+            const bendRows = [bendRow('carried', 2, 8191, 3), bendRow('later', 5, 4096, 3)];
+            const ordinary = await dispatchOneNote(
+                { startBeat: 4, duration: 3 },
+                { clip: { midiOffsetBeats: 4 }, lanes: { controllers: controls, bends: bendRows } }
+            );
+            const expected = [
+                { sampleFrame: 0, bendSemitones: (8191 / 8192) * 12 },
+                { sampleFrame: 24_000, bendSemitones: 12 },
+            ];
+            expect(ordinary.noteOn[0]?.sampleFrame).toBe(0);
+            expect(bends(ordinary)).toEqual(expected);
+
+            mocks.takeLaneValue.value = {
+                lanes: [
+                    {
+                        id: 'lane-midi',
+                        trackId: 'track-inst',
+                        takes: [
+                            {
+                                id: 'selected',
+                                clipId: 'clip-1',
+                                name: 'Selected',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: true,
+                                sourceOffsetBeats: 4,
+                                recordingPassIndex: 1,
+                                midiSource: {
+                                    sourceClipId: 'clip-1',
+                                    sourceEntryBeat: 4,
+                                    sourceEndBeat: 8,
+                                    phaseHeadBeat: 0,
+                                    passLengthBeats: 4,
+                                    rows: {
+                                        notes: {
+                                            present: true,
+                                            value: [
+                                                {
+                                                    id: 'selected-note',
+                                                    pitch: 60,
+                                                    startBeat: 4,
+                                                    duration: 3,
+                                                    velocity: 100,
+                                                    channel: 3,
+                                                    recordingPassIndex: 1,
+                                                },
+                                            ],
+                                        },
+                                        controlChanges: { present: true, value: controls },
+                                        pitchBends: { present: true, value: bendRows },
+                                    },
+                                },
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected' }],
+                    },
+                ],
+            };
+            const frozen = await dispatchOneNote({}, { lanes: { bends: [bendRow('ordinary', 0.75, -8192, 3)] } });
+
+            expect(frozen.noteOn[0]?.sampleFrame).toBe(0);
+            expect(bends(frozen)).toEqual(expected);
+        });
+
         // The live scheduler's case: scheduleMidiNotesChannelBend.spec.ts, "bends a sounding fermenter note at the
         // frames a note at the bend beats gets": the same clip offset, the same tempo change, the same frames.
         it('hands a sounding note each move at the frame a note at that beat gets, across a clip offset and a tempo change', async () => {

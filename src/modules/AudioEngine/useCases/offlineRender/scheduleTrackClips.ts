@@ -664,6 +664,7 @@ export async function scheduleTrackClips({
                 return [];
             }
             if (clip.midiTakeSource) {
+                const source = clip.midiTakeSource;
                 return selectedMidiWindows(clip).flatMap(({ passHead, passEnd, value }) =>
                     value.pitchBends.length === 0
                         ? []
@@ -672,6 +673,7 @@ export async function scheduleTrackClips({
                                   clip: { startBeat: passHead, endBeat: passEnd, midiOffsetBeats: passHead },
                                   controlChanges: value.controlChanges,
                                   pitchBends: value.pitchBends,
+                                  sourceControlChanges: source.rows.controlChanges.value,
                               },
                           ]
                 );
