@@ -284,6 +284,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         mocks.startPlayback.mockClear();
         mocks.notifyUser.mockClear();
         mocks.audioClock.currentTime = 0;
+        mocks.getCompensationDelay.mockReturnValue(0);
     });
 
     afterEach(() => {
@@ -647,6 +648,47 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
         await redo();
         expect(midiStore.value?.notesByClipId[provisional.id]).toEqual(notes);
+    });
+
+    it('seals a latency-compensated physical onset at its heard pass beat while its worker is held', async () => {
+        transportStore.set({
+            ...transportStore.value!,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 4,
+        });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional MIDI clip');
+        }
+        flushAutomergeStorageWrites();
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        playheadClockRef.beat = 4.5;
+        playheadClockRef.audioTimeSeconds = 0.5;
+        mocks.audioClock.currentTime = 0.5;
+        Object.defineProperty(audioEngine.context, 'currentTime', {
+            configurable: true,
+            get: () => mocks.audioClock.currentTime,
+        });
+        mocks.getCompensationDelay.mockReturnValue(0.25);
+        const worker = Promise.withResolvers<void>();
+        liveMidiGate.pending = worker.promise;
+
+        const physical = handleWebMidiMessage({ data: new Uint8Array([0x91, 69, 100]), timeStamp: undefined });
+        expect(activeRecordingRef.midiAdmissions.map((admitted) => admitted.onsetSourceBeat)).toEqual([0]);
+        playheadClockRef.beat = 5;
+        playheadClockRef.audioTimeSeconds = 0.75;
+        mocks.audioClock.currentTime = 0.75;
+
+        await stopActiveRecording();
+        worker.resolve();
+        await physical;
+
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual([
+            expect.objectContaining({ pitch: 69, startBeat: 0 }),
+        ]);
+        expect(committedEntryCount()).toBe(1);
     });
 
     it('records the audio gesture entry before Stop resolves, so one undo removes the recorded result', async () => {
