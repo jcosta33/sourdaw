@@ -37,7 +37,7 @@ coordinates.
 
 Preflight the displacement and every translated row before either owner writes. Probe opposite
 finite extremes, then overflow each row type separately with a finite displacement. Require
-owner refusal, handler `no-write`, and unchanged clip and all row types; exercise raw-document
+owner refusal, handler `conflict`, and unchanged clip and all row types; exercise raw-document
 and history preservation through the real command wherever the fixture codec admits the input.
 Keep ordinary and zero captures, the configured-loop control and keyless replay behavior intact.
 
