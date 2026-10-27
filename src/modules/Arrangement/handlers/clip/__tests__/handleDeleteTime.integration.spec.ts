@@ -472,8 +472,8 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 4 } });
             const deleted = durableOwners();
             if (canonical) {
-                expect(deleted.tracks.tracks[0]?.clips).toHaveLength(1);
-                expect(deleted.tracks.tracks[0]?.clips[0]).toMatchObject({
+                expect(deleted.tracks[0]?.clips).toHaveLength(1);
+                expect(deleted.tracks[0]?.clips[0]).toMatchObject({
                     startBeat: 2,
                     endBeat: 6,
                     audioOffsetSeconds: 0.75,
