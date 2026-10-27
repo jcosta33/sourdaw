@@ -113,3 +113,17 @@ This prevents corruption on those accepted future publications. It neither
 repairs already-truncated data nor claims a general repair for every numeric
 input or every direct dependency import route. Do not round the producer, relax
 strict source snapshots, or put Float64 wrapper objects into bulk payloads.
+
+## Recording ownership probe preconditions
+
+A recording birth probe must show the raw matching-row count before and after
+publication, the actual owned receipt and the bound incarnation. An outer
+storage scope does not hold startRecording unpublished: its own transaction
+publishes clip and take together. A later identical peer append therefore tests
+duplicate detection, not the first-publication receipt predicate. Probe that
+predicate directly through the real recording observer and public receipt/CRDT
+seam, with zero matching raw rows initially, exactly one afterward, and paired
+owned/foreign publications. Removing only the owned-birth check must fail the
+foreign case. A named recreation case must change the Automerge object ID while
+preserving geometry; a rectangle edit must retain the ID. Assert each mutation
+occurred before interpreting a rejected tempo command as ownership evidence.

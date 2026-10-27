@@ -1,8 +1,10 @@
+import { getObjectId } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    getCurrentAutomergeStorageMutationOwner,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -12,6 +14,8 @@ import {
     getCrdtDoc,
     mutateCrdtDoc,
     registerCrdtStorageRuntime,
+    readOwnedProjectPublications,
+    subscribeToCrdtChanges,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
@@ -22,7 +26,7 @@ import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { trackStore } from '../../stores/trackStore';
+import { trackStore, type Clip } from '../../stores/trackStore';
 import { prepareTempoAudioSources } from '../prepareTempoAudioSources';
 import { recordingPassTiming } from '../recording/recordingPassTiming';
 import { startRecording } from '../recording/startRecording';
@@ -44,6 +48,18 @@ function recordingClip() {
         throw new Error('Expected the real provisional recording');
     }
     return clip;
+}
+
+type RawRecordingProject = {
+    tracks: { tracks: { clips: Clip[] }[] };
+    takeLanes: { lanes: { takes: { clipId: string }[] }[] };
+};
+function rawClips(clipId: string): Clip[] {
+    const project = getCrdtDoc<RawRecordingProject>('root');
+    if (!project) {
+        throw new Error('Expected the current raw project');
+    }
+    return project.tracks.tracks.flatMap((track) => track.clips).filter((clip) => clip.id === clipId);
 }
 
 describe('tempo source preparation while a recording owns unpublished PCM', () => {
@@ -135,9 +151,10 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
     );
 
     it.each([false, true])(
-        'adopts tempo beside committed media without inventing PCM zero (published=%s)',
-        async (published) => {
-            if (published) {
+        'adopts tempo beside already published provisional media without inventing PCM zero (additional flush=%s)',
+        async (flushAgain) => {
+            expect(rawClips(recordingId)).toHaveLength(1);
+            if (flushAgain) {
                 flushAutomergeStorageWrites();
             }
             registerHandlerMap(getTransportHandlers());
@@ -155,6 +172,10 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
         'refuses changed recording authority before tempo commit: %s',
         async (change) => {
             flushAutomergeStorageWrites();
+            const before = structuredClone(recordingClip());
+            const originalObjectId = getObjectId(rawClips(recordingId)[0]);
+            expect(originalObjectId).toBeTypeOf('string');
+            let changed = false;
             const handlers = getTransportHandlers();
             registerHandlerMap({
                 ...handlers,
@@ -162,19 +183,40 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
                     ...handlers.setTempo,
                     execute: (action, context) => {
                         const result = handlers.setTempo.execute(action, context);
+                        expect(result).toMatchObject({ status: 'written' });
                         if (change === 'retired') {
                             recordingPassTiming.retire(recordingId);
                         } else {
-                            mutateCrdtDoc<{ tracks: { tracks: { clips: { id: string; startBeat: number }[] }[] } }>({
+                            mutateCrdtDoc<RawRecordingProject>({
                                 id: 'root',
                                 changeFn: (project) => {
-                                    const clip = project.tracks.tracks[0]!.clips.find(
-                                        (clip) => clip.id === recordingId
-                                    )!;
-                                    clip.startBeat = 9;
+                                    const clips = project.tracks.tracks[0]!.clips;
+                                    const index = clips.findIndex((clip) => clip.id === recordingId);
+                                    if (change === 'peer-recreated') {
+                                        clips.splice(index, 1, { ...clips[index]!, id: recordingId });
+                                    } else {
+                                        clips[index]!.startBeat = 9;
+                                    }
                                 },
                             });
                         }
+                        const [raw] = rawClips(recordingId);
+                        expect(raw).toBeDefined();
+                        if (change === 'peer-recreated') {
+                            expect(raw).toEqual(before);
+                            expect(getObjectId(raw)).not.toBe(originalObjectId);
+                            expect(recordingPassTiming.ownedTakes(recordingId)).toBeUndefined();
+                        } else {
+                            expect(getObjectId(raw)).toBe(originalObjectId);
+                            if (change === 'peer-rectangle') {
+                                expect(raw?.startBeat).toBe(9);
+                                expect(recordingPassTiming.ownedTakes(recordingId)).toBeDefined();
+                            } else {
+                                expect(raw).toEqual(before);
+                                expect(recordingPassTiming.ownedTakes(recordingId)).toBeUndefined();
+                            }
+                        }
+                        changed = true;
                         return result;
                     },
                 },
@@ -182,6 +224,7 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
             await expect(
                 executeAppAction({ type: 'setTempo', payload: { bpm: 60 } }, { skipUndo: true })
             ).rejects.toThrow('Action conflicts with current project state: setTempo');
+            expect(changed).toBe(true);
             expect(transportStore.value?.tempo).toBe(120);
             expect(getCrdtDoc<{ transport: { tempo: number } }>('root')?.transport.tempo).toBe(120);
             expect(Object.hasOwn(recordingClip(), 'audioOffsetSeconds')).toBe(false);
@@ -202,25 +245,107 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
         expect(prepare()?.clips.map((clip) => clip.clipId)).toContain(recordingId);
     });
 
-    it('does not bind a foreign identical first publication before the recording birth publishes', () => {
+    it('observes an atomic real recording birth before a foreign duplicate invalidates it', () => {
         recordingPassTiming.retire(recordingId);
-        // Hold the real producer's owned birth outside raw truth.
+        const observations: { clipIds: string[]; takeClipIds: string[] }[] = [];
+        const unsubscribe = subscribeToCrdtChanges((docId) => {
+            if (docId !== 'root') {
+                return;
+            }
+            const project = getCrdtDoc<RawRecordingProject>('root')!;
+            observations.push({
+                clipIds: project.tracks.tracks.flatMap((track) => track.clips.map((clip) => clip.id)),
+                takeClipIds: project.takeLanes.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId)),
+            });
+        });
+        // startRecording commits its own owner even inside another open scope.
         const pending = runWithAutomergeStorageTransaction(undefined, () => startRecording(12, () => null, null));
+        unsubscribe();
         if (pending.status !== 'returned' || !pending.value[0]) {
-            throw new Error('Expected a held recording birth');
+            pending.abort();
+            throw new Error('Expected a real recording birth');
         }
         const clip = pending.value[0];
-        expect(recordingPassTiming.ownedTakes(clip.id)).toBeDefined();
-        mutateCrdtDoc<{ tracks: { tracks: { clips: (typeof clip)[] }[] } }>({
-            id: 'root',
-            changeFn: (project) => {
-                project.tracks.tracks[0]!.clips.push({ ...clip, id: clip.id });
-            },
-        });
-        expect(recordingPassTiming.ownedTakes(clip.id)).toBeUndefined();
-        pending.abort();
-        recordingPassTiming.retire(clip.id);
+        try {
+            expect(observations).toHaveLength(1);
+            expect(observations[0]?.clipIds.filter((id) => id === clip.id)).toEqual([clip.id]);
+            expect(observations[0]?.takeClipIds.filter((id) => id === clip.id)).toEqual([clip.id]);
+            expect(rawClips(clip.id)).toEqual([clip]);
+            const objectId = getObjectId(rawClips(clip.id)[0]);
+            expect(objectId).toBeTypeOf('string');
+            expect(recordingPassTiming.ownedTakes(clip.id)?.rawClipObjectId).toBe(objectId);
+            mutateCrdtDoc<RawRecordingProject>({
+                id: 'root',
+                changeFn: (project) => {
+                    project.tracks.tracks[0]!.clips.push({ ...clip, id: clip.id });
+                },
+            });
+            expect(rawClips(clip.id)).toEqual([clip, clip]);
+            expect(new Set(rawClips(clip.id).map((row) => getObjectId(row))).size).toBe(2);
+            expect(recordingPassTiming.ownedTakes(clip.id)).toBeUndefined();
+        } finally {
+            pending.abort();
+            recordingPassTiming.retire(clip.id);
+        }
     });
+
+    it.each(['owned', 'foreign'] as const)(
+        'recording observer authenticates the first raw incarnation using its publication receipt: %s',
+        (birth) => {
+            const clip = { ...recordingClip(), id: 'first-publication-observer', startBeat: 12, endBeat: 12 };
+            expect(rawClips(clip.id)).toEqual([]);
+            // Probe the real observer/receipt seam directly. The public producer
+            // above is atomic and cannot be held unpublished by an outer scope.
+            const pending = runWithAutomergeStorageTransaction(undefined, () => {
+                recordingPassTiming.begin(clip.id, 12, () => null, true);
+                const owner = getCurrentAutomergeStorageMutationOwner();
+                if (!owner) {
+                    throw new Error('Expected a real publication owner');
+                }
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map((track) => ({ ...track, clips: [...track.clips, clip] })),
+                });
+                return owner;
+            });
+            if (pending.status !== 'returned') {
+                pending.abort();
+                recordingPassTiming.retire(clip.id);
+                throw pending.error;
+            }
+            const owner = pending.value;
+            try {
+                expect(rawClips(clip.id)).toEqual([]);
+                expect(readOwnedProjectPublications(owner)).toEqual([]);
+                expect(recordingPassTiming.ownedTakes(clip.id)).toBeDefined();
+                if (birth === 'owned') {
+                    pending.commit();
+                    expect(readOwnedProjectPublications(owner).map((publication) => publication.docId)).toEqual([
+                        'root',
+                    ]);
+                    expect(recordingPassTiming.ownedTakes(clip.id)?.rawClipObjectId).toBe(
+                        getObjectId(rawClips(clip.id)[0])
+                    );
+                } else {
+                    expect(getCurrentAutomergeStorageMutationOwner()).toBeUndefined();
+                    mutateCrdtDoc<RawRecordingProject>({
+                        id: 'root',
+                        changeFn: (project) => {
+                            project.tracks.tracks[0]!.clips.push({ ...clip, id: clip.id });
+                        },
+                    });
+                    expect(readOwnedProjectPublications(owner)).toEqual([]);
+                    expect(rawClips(clip.id)).toEqual([clip]);
+                    expect(getObjectId(rawClips(clip.id)[0])).toBeTypeOf('string');
+                    expect(recordingPassTiming.ownedTakes(clip.id)).toBeUndefined();
+                }
+                expect(rawClips(clip.id)).toEqual([clip]);
+            } finally {
+                pending.abort();
+                recordingPassTiming.retire(clip.id);
+            }
+        }
+    );
 
     it('does not hide a present malformed modern source facet on a recording owner', () => {
         trackStore.set({
