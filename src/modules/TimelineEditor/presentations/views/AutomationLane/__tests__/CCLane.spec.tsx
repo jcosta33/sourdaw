@@ -583,19 +583,17 @@ describe('CCLane', () => {
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
+            // The undo restores the pre-drag rows exactly (sweep + capture) — the revisit is
+            // not an inverse and is deliberately not replayed on the undo direction.
             vi.mocked(revisitHandEditedCCReturns).mockClear();
+            vi.mocked(removeHandEditedReturnFamily).mockClear();
             undoFn!();
-            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
-                'clip-1',
-                { channel: 0, beat: 0 },
-                { editedController: 1, editedRowId: 'cc-a' }
-            );
-            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
-                'clip-1',
-                { channel: 0, beat: draggedBeat },
-                { editedController: 1, editedRowId: 'cc-a' }
-            );
-            vi.mocked(revisitHandEditedCCReturns).mockClear();
+            expect(removeHandEditedReturnFamily).toHaveBeenCalledWith('clip-1', {
+                channel: 0,
+                beat: 0,
+            });
+            expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [], []);
+            expect(revisitHandEditedCCReturns).not.toHaveBeenCalled();
             redoFn!();
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
@@ -958,16 +956,25 @@ describe('CCLane', () => {
                 { editedController: 1, editedRowId: 'cc-a' }
             );
 
+            // The undo restores the pre-delete rows exactly (sweep + capture) — the revisit is
+            // not an inverse and is deliberately not replayed on the undo direction.
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
             vi.mocked(revisitHandEditedCCReturns).mockClear();
+            vi.mocked(removeHandEditedReturnFamily).mockClear();
             undoFn!();
-            expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
+            expect(removeHandEditedReturnFamily).toHaveBeenCalledWith('clip-1', {
+                channel: 0,
+                beat: 0,
+            });
+            expect(restoreMidiCCPoints).toHaveBeenCalledWith(
                 'clip-1',
-                { channel: 0, beat: 0 },
-                { editedController: 1, editedRowId: 'cc-a' }
+                [
+                    { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
+                ],
+                [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }]
             );
-            vi.mocked(revisitHandEditedCCReturns).mockClear();
+            expect(revisitHandEditedCCReturns).not.toHaveBeenCalled();
             redoFn!();
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
                 'clip-1',
