@@ -29,7 +29,7 @@ export async function editPianoRollTakeNote(
             ? expected.duration
             : expected.duration + change.duration - owner.displayedDuration;
     const resized =
-        startBeat === expected.startBeat && duration === expected.duration
+        change?.duration === undefined || (startBeat === expected.startBeat && duration === expected.duration)
             ? expected
             : sliceMidiTakeNoteForEdit(expected, { fromOffset: startBeat - expected.startBeat, duration });
     const replacement =

@@ -307,6 +307,34 @@ describe('selected piano roll Command callbacks', () => {
         expect(rows()?.map((takeRows) => takeRows?.find((note) => note.id === original.id)?.startBeat)).toEqual([6, 6]);
     });
 
+    it('moves a whole expressive note without changing its performed curve or onset pass', async () => {
+        const projection = projectPianoRollTakeNotes(
+            { id: 'clip', startBeat: 0, endBeat: 4 },
+            'track',
+            takeLaneStore.value
+        );
+        const view = projection.notes.find((note) => projection.ownersByViewId.get(note.id)?.row.id === expressive.id);
+        if (!view) {
+            throw new Error('Expected expressive selected note occurrence');
+        }
+        render(createElement(SelectedNoteEditor, { projection, viewId: view.id }));
+        fireEvent.keyDown(screen.getByLabelText('selected-note-editor'), { key: 'ArrowRight' });
+        await waitFor(() =>
+            expect(rows()?.map((takeRows) => takeRows?.find((note) => note.id === expressive.id)?.startBeat)).toEqual([
+                6.5, 6.5,
+            ])
+        );
+        expect(rows()?.map((takeRows) => takeRows?.find((note) => note.id === expressive.id))).toEqual([
+            { ...expressive, startBeat: 6.5 },
+            { ...expressive, startBeat: 6.5 },
+        ]);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(rows()?.map((takeRows) => takeRows?.find((note) => note.id === expressive.id))).toEqual([
+            expressive,
+            expressive,
+        ]);
+    });
+
     it('routes both resize edges through Command with the original expression and pass owner', async () => {
         const projection = projectPianoRollTakeNotes(
             { id: 'clip', startBeat: 0, endBeat: 4 },
