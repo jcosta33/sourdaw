@@ -277,22 +277,25 @@ describe('setGlutenPanelUiLevel project path', () => {
         expect(getGlutenState('a').uiLevel).toBe(1);
     });
 
-    it('does not dispatch for a standalone device of another type', async () => {
-        const tracks = tracksWithTwoGlutenDevices();
-        tracks[0]!.devices[0] = duplicateDevice('yeast', 99);
-        trackStore.set({ ...defaultTrackState, tracks });
-        flushAutomergeStorageWrites();
-        const before = structuredClone(trackStore.value);
-        const rawBefore = Automerge.toJS(getCrdtDoc('root')!);
-        const dispatch = vi.spyOn(commandUseCases, 'executeUserAppAction');
+    it.each([1, 99])(
+        'does not dispatch for a standalone device of another type with state version %i',
+        async (version) => {
+            const tracks = tracksWithTwoGlutenDevices();
+            tracks[0]!.devices[0] = duplicateDevice('yeast', version);
+            trackStore.set({ ...defaultTrackState, tracks });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value);
+            const rawBefore = Automerge.toJS(getCrdtDoc('root')!);
+            const dispatch = vi.spyOn(commandUseCases, 'executeUserAppAction');
 
-        await setGlutenPanelUiLevel('a', 5);
+            await setGlutenPanelUiLevel('a', 5);
 
-        expect(dispatch).not.toHaveBeenCalled();
-        expect(trackStore.value).toEqual(before);
-        expect(Automerge.toJS(getCrdtDoc('root')!)).toEqual(rawBefore);
-        expect(getGlutenState('a').uiLevel).toBe(1);
-    });
+            expect(dispatch).not.toHaveBeenCalled();
+            expect(trackStore.value).toEqual(before);
+            expect(Automerge.toJS(getCrdtDoc('root')!)).toEqual(rawBefore);
+            expect(getGlutenState('a').uiLevel).toBe(1);
+        }
+    );
 
     it.each([
         { type: 'gluten', version: 1, sameTrack: true },
