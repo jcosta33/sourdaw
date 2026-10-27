@@ -407,6 +407,9 @@ export function prepareStripSilence({
             // Compatibility only; canonical seconds and the original pass anchors govern playback.
             audioOffsetBeats: (region.sourceStartSeconds * liveTempoTimeline.tempoAtBeat(targetClip.startBeat)) / 60,
             ...source,
+            // Detection owns this exact source boundary. Round-tripping it
+            // through song beats can move the waveform head one sample early.
+            audioOffsetSeconds: region.sourceStartSeconds,
         });
         newClipSatellites.push({
             clipId: newClipId,

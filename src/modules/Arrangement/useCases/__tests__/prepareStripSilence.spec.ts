@@ -243,6 +243,11 @@ describe('prepareStripSilence', () => {
             const plan = preparePhysicalClip({}, samples);
             expect(plan).not.toBeNull();
             expect(plan!.next.clips).toHaveLength(3);
+            // Waveforms floor the source entry to a frame: an inverse-clock
+            // residue below 1.5s incorrectly exposes frame 71999 instead of 72000.
+            expect(plan!.next.clips.map((clip) => Math.floor(clip.audioOffsetSeconds! * 48_000))).toEqual([
+                36_000, 72_000, 108_000,
+            ]);
             const expected = [
                 [0.5, 0.6, 0.75],
                 [1.5, 1.7, 1.5],
@@ -251,7 +256,7 @@ describe('prepareStripSilence', () => {
             for (const [index, clip] of plan!.next.clips.entries()) {
                 expect(clip.startBeat).toBeCloseTo(expected[index]![0]!, 10);
                 expect(clip.endBeat).toBeCloseTo(expected[index]![1]!, 10);
-                expect(clip.audioOffsetSeconds).toBeCloseTo(expected[index]![2]!, 10);
+                expect(clip.audioOffsetSeconds).toBe(expected[index]![2]!);
                 expect(clip.audioUnwrappedOffsetSeconds).toBeCloseTo((expected[index]![2]! - 0.25) / 2 + 0.25, 10);
             }
             expect(plan!.previous.clips[0]).toMatchObject({ audioOffsetSeconds: 0.25, audioOffsetBeats: 99 });

@@ -308,7 +308,7 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
             ].entries()) {
                 expect(children[index]!.startBeat).toBeCloseTo(expected[0]!, 10);
                 expect(children[index]!.endBeat).toBeCloseTo(expected[1]!, 10);
-                expect(children[index]!.audioOffsetSeconds).toBeCloseTo(expected[2]!, 10);
+                expect(children[index]!.audioOffsetSeconds).toBe(expected[2]!);
                 expect(children[index]!.audioUnwrappedOffsetSeconds).toBeCloseTo(expected[3]!, 10);
             }
             expect(after.takes).toEqual(before.takes);
