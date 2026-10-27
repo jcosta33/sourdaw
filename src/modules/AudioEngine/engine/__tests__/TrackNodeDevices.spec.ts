@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
 import { type BuiltinDeviceNode, type SendNode } from '../../models/AudioEngineState';
+import {
+    deviceParameterRuntimeWriteOwners,
+    deviceParameterRuntimeWriteSequences,
+} from '../../stores/deviceParameterRuntimeWriteOwners';
 import { captureDeviceParameterRuntimeWriteAuthority } from '../../useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority';
 import { withDeviceParameterRuntimeWriteOwner } from '../../useCases/deviceControls/withDeviceParameterRuntimeWriteOwner';
 import { createDeviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
@@ -1089,7 +1093,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(earlier.isCurrent()).toBe(false);
         });
 
-        it('does not displace an earlier effective preview with a later queued attempt until promotion', () => {
+        it('retains an applied stamp but fences restoration and settlement behind a later queued write', () => {
             const track = new TrackNode('t1', makeDeps(ctx));
             const original = createLoadedDevice();
             track.strip.deviceNodes.push(original.device);
@@ -1100,8 +1104,14 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             track.strip.deviceNodes.length = 0;
             const deferred = installDeferredWasmDevice();
             track.addDevice('wasm-1', 'levain');
+            const appliedSequence = deviceParameterRuntimeWriteSequences.get(JSON.stringify(['t1', 'wasm-1', 'gain']));
             track.updateParam('wasm-1', 'gain', 0.8);
             expect(preview.isCurrent()).toBe(true);
+            expect(deviceParameterRuntimeWriteOwners.get('t1')?.get('wasm-1')?.get('gain')).toBe(preview.owner);
+            expect(deviceParameterRuntimeWriteSequences.get(JSON.stringify(['t1', 'wasm-1', 'gain']))).toBe(
+                appliedSequence
+            );
+            expect(preview.canCommit()).toBe(false);
             const loaded = createLoadedDevice();
             deferred.resolve(loaded.device);
             expect(loaded.controller.setParam).toHaveBeenCalledWith('gain', 0.8);
@@ -1112,18 +1122,20 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             'preserves a later ownerless queued write when an obsolete %s preview cancels',
             (route) => {
                 const queued = new Map<string, number>();
-                const deferred = installDeferredWasmDevice(
-                    route === 'descriptor-owned'
-                        ? {
-                              controller: { setParam: (name, value) => { queued.set(name, value); } },
-                              beforeLoaded: (node) => {
-                                  for (const [name, value] of queued) {
-                                      node.controller?.setParam(name, value);
-                                  }
-                              },
-                          }
-                        : {}
-                );
+                const options: Parameters<typeof installDeferredWasmDevice>[0] = {};
+                if (route === 'descriptor-owned') {
+                    options.controller = {
+                        setParam: (name, value) => {
+                            queued.set(name, value);
+                        },
+                    };
+                    options.beforeLoaded = (node) => {
+                        for (const [name, value] of queued) {
+                            node.controller?.setParam(name, value);
+                        }
+                    };
+                }
+                const deferred = installDeferredWasmDevice(options);
                 const track = new TrackNode('t1', makeDeps(ctx));
                 track.addDevice('wasm-1', 'levain');
                 const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
@@ -1157,7 +1169,10 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 );
                 const newer = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
                 withDeviceParameterRuntimeWriteOwner(
-                    't1', 'wasm-1', 'gain', producer === 'owned' ? newer.owner : undefined,
+                    't1',
+                    'wasm-1',
+                    'gain',
+                    producer === 'owned' ? newer.owner : undefined,
                     () => track.updateParam('wasm-1', 'gain', 0.8)
                 );
 
@@ -1167,6 +1182,64 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 expect(newer.canCommit()).toBe(producer === 'owned');
             }
         );
+
+        it('clears obsolete pending cancellation authority after a later ready producer effectively writes', () => {
+            installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('wasm-1', 'levain');
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            track.removeDevice('wasm-1');
+            const loaded = createLoadedDevice();
+            track.strip.deviceNodes.push(loaded.device);
+            const newer = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', newer.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.8)
+            );
+
+            expect(preview.isCurrent()).toBe(false);
+            expect(preview.canCommit()).toBe(false);
+            expect(newer.isCurrent()).toBe(true);
+            expect(newer.canCommit()).toBe(true);
+        });
+
+        it('retains the newer queued producer when a descriptor controller reenters its write route', () => {
+            const queued = new Map<string, number>();
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            const newer = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            const deferred = installDeferredWasmDevice({
+                controller: {
+                    setParam: (name, value) => {
+                        queued.set(name, value);
+                        if (value === 0.25) {
+                            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', newer.owner, () =>
+                                track.updateParam('wasm-1', 'gain', 0.8)
+                            );
+                        }
+                    },
+                },
+                beforeLoaded: (node) => {
+                    for (const [name, value] of queued) {
+                        node.controller?.setParam(name, value);
+                    }
+                },
+            });
+            track.addDevice('wasm-1', 'levain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            expect(preview.canCommit()).toBe(false);
+            expect(newer.canCommit()).toBe(true);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+
+            expect(loaded.controller.setParam.mock.calls).toEqual([['gain', 0.8]]);
+            expect(preview.isCurrent()).toBe(false);
+            expect(newer.isCurrent()).toBe(true);
+        });
 
         it('retains cancellable pending ownership without displacing a current effective producer', () => {
             const deferred = installDeferredWasmDevice();

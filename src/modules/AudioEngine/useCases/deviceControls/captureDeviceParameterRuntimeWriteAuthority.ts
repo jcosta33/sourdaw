@@ -20,6 +20,7 @@ export function captureDeviceParameterRuntimeWriteAuthority(
     const owner = Symbol('device parameter runtime write');
     const key = JSON.stringify([trackId, deviceId, paramId]);
     const sequence = deviceParameterRuntimeWriteSequences.get(key);
+    const startingPending = pendingDeviceParameterRuntimeWriteOwners.get(key);
     const ownsCurrentWrite = (): boolean =>
         deviceParameterRuntimeWriteOwners.get(trackId)?.get(deviceId)?.get(paramId) === owner;
 
@@ -29,7 +30,13 @@ export function captureDeviceParameterRuntimeWriteAuthority(
             ownsCurrentWrite() ||
             (pendingDeviceParameterRuntimeWriteOwners.get(key)?.has(owner) === true &&
                 deviceParameterRuntimeWriteSequences.get(key) === sequence),
-        canCommit: (): boolean => ownsCurrentWrite() || deviceParameterRuntimeWriteSequences.get(key) === sequence,
+        canCommit: (): boolean => {
+            const pending = pendingDeviceParameterRuntimeWriteOwners.get(key);
+            const pendingUnchanged = pending === undefined || pending === startingPending || pending.has(owner);
+            return (
+                pendingUnchanged && (ownsCurrentWrite() || deviceParameterRuntimeWriteSequences.get(key) === sequence)
+            );
+        },
         release: (): void => {
             pendingDeviceParameterRuntimeWriteOwners.get(key)?.delete(owner);
             if (ownsCurrentWrite()) {

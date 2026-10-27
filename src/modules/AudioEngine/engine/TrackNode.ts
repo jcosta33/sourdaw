@@ -1516,9 +1516,8 @@ export class TrackNode {
         dn.controller.setParam(paramId, value);
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);
         if (pendingLoad && !pendingLoad.resolved) {
-            receipt.pending();
             // The generic placeholder already retains one receipt per actual queued write.
-            if (!pendingLoad.parameterWrites.some((write) => write.name === paramId)) {
+            if (!pendingLoad.parameterWrites.some((write) => write.name === paramId) && receipt.pending()) {
                 pendingLoad.parameterReceipts.set(paramId, receipt);
             }
             return;

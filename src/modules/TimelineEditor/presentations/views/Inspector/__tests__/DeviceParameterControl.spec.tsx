@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getPluginById } from '#/modules/Arrangement/useCases';
+import * as audioEngineUseCases from '#/modules/AudioEngine/useCases';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { TrackAutomationSection } from '../TrackAutomationSection';
@@ -313,6 +314,34 @@ describe('DeviceParameterControl', () => {
             },
             expect.objectContaining({ shouldExecute: expect.any(Function) })
         );
+    });
+
+    it('does not restore an applied preview over a later pending producer on unmount', () => {
+        const release = vi.fn();
+        const capture = vi.spyOn(audioEngineUseCases, 'captureDeviceParameterRuntimeWriteAuthority');
+        capture.mockReturnValueOnce({
+            owner: Symbol('applied preview'),
+            isCurrent: () => true,
+            canCommit: () => false,
+            release,
+        });
+        try {
+            const view = render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+            const props = mockMidiLearnRotaryKnob.mock.calls.at(-1)![0] as {
+                onChange: (value: number, transient?: boolean) => void;
+            };
+            act(() => props.onChange(0.7, true));
+            expect(mockSetDeviceParameter).toHaveBeenCalledOnce();
+            mockSetDeviceParameter.mockClear();
+
+            view.unmount();
+
+            expect(mockSetDeviceParameter).not.toHaveBeenCalled();
+            expect(release).toHaveBeenCalledOnce();
+            expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
+        } finally {
+            capture.mockRestore();
+        }
     });
 
     it('should render select for choice parameters', () => {

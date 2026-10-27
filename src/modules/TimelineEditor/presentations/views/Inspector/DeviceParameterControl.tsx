@@ -92,7 +92,7 @@ function readGestureDevice(gesture: ParameterGesture, requireStartingValue: bool
 }
 
 function restoreGesturePreview(gesture: ParameterGesture): void {
-    if (!gesture.runtimeAuthority.isCurrent()) {
+    if (!gesture.runtimeAuthority.isCurrent() || !gesture.runtimeAuthority.canCommit()) {
         return;
     }
     const device = readGestureDevice(gesture, false);
@@ -107,7 +107,7 @@ function restoreGesturePreview(gesture: ParameterGesture): void {
 
 function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
     const currentMode = trackStore.value?.tracks.find((track) => track.id === gesture.trackId)?.automationMode;
-    if (currentMode === 'touch' || (currentMode === undefined && gesture.startedInTouchAutomation)) {
+    if (currentMode === 'touch' || gesture.startedInTouchAutomation) {
         gesture.recordingAuthority.release();
     }
 }

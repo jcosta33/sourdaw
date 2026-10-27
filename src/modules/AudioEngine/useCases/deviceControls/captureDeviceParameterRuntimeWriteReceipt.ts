@@ -15,24 +15,31 @@ export function captureDeviceParameterRuntimeWriteReceipt(trackId: string, devic
         (entry) => entry.trackId === trackId && entry.deviceId === deviceId && entry.paramId === paramId
     );
     const owner = context?.owner;
+    const key = JSON.stringify([trackId, deviceId, paramId]);
+    const startingPending = pendingDeviceParameterRuntimeWriteOwners.get(key);
+    let pending: Set<symbol> | undefined;
     return {
         pending: () => {
-            if (owner) {
-                const key = JSON.stringify([trackId, deviceId, paramId]);
-                const pending = pendingDeviceParameterRuntimeWriteOwners.get(key) ?? new Set<symbol>();
-                pending.add(owner);
-                pendingDeviceParameterRuntimeWriteOwners.set(key, pending);
+            if (pendingDeviceParameterRuntimeWriteOwners.get(key) !== startingPending) {
+                return false;
             }
+            // Queue admission replaces cancellation authority, never the applied DSP stamp.
+            // Keep ownerless admission too, so an obsolete gesture cannot erase it.
+            pending = new Set(owner ? [owner] : []);
+            pendingDeviceParameterRuntimeWriteOwners.set(key, pending);
+            return true;
         },
         begin: () => {
             const sequence = ++deviceParameterRuntimeWriteCounter.nextWrite;
-            const key = JSON.stringify([trackId, deviceId, paramId]);
             return () => {
                 if ((completedWrites.get(key) ?? 0) > sequence) {
                     return;
                 }
                 completedWrites.set(key, sequence);
-                pendingDeviceParameterRuntimeWriteOwners.delete(key);
+                const currentPending = pendingDeviceParameterRuntimeWriteOwners.get(key);
+                if (currentPending === pending || currentPending === startingPending) {
+                    pendingDeviceParameterRuntimeWriteOwners.delete(key);
+                }
                 setDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, owner);
             };
         },
