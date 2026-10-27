@@ -26,7 +26,7 @@ import { getProofState, proofStore, setProofUiLevel } from '../../stores/proofSt
 import { hydrateProofDisclosureFromProject } from '../hydrateProofDisclosureFromProject';
 import { setProofPanelUiLevel } from '../setProofPanelUiLevel';
 
-import type { TrackStoreState } from '#/modules/Arrangement/stores';
+import type { Device, TrackStoreState } from '#/modules/Arrangement/stores';
 
 function tracksWithTwoProofDevices() {
     return sanitizeTrackSnapshot({
@@ -63,7 +63,42 @@ function rawProjectState(deviceId: string) {
         .find((device) => device.id === deviceId)?.deviceState;
 }
 
-async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => TrackStoreState): Promise<void> {
+function rawProjectTracks() {
+    return getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root')?.tracks.tracks;
+}
+
+function withCollidingDevice(
+    tracks: TrackStoreState['tracks'],
+    type: string,
+    version: number,
+    acrossTracks: boolean,
+    first = false
+): TrackStoreState['tracks'] {
+    const owner = tracks[0];
+    if (!owner) {
+        throw new Error('Missing fixture track');
+    }
+    const collision: Device = {
+        id: 'a',
+        name: 'Other device',
+        type,
+        bypassed: true,
+        parameterValues: { input_gain: -6 },
+        deviceState: { version, data: { disclosureTier: 'shape', unrelated: 'other', future: 'retain' } },
+    };
+    if (acrossTracks) {
+        return [...tracks, { ...owner, id: 'track-2', devices: [collision] }];
+    }
+    return [
+        { ...owner, devices: first ? [collision, ...owner.devices] : [...owner.devices, collision] },
+        ...tracks.slice(1),
+    ];
+}
+
+async function requestDuringSnapshotEdit(
+    edit: (state: TrackStoreState) => TrackStoreState,
+    afterEdit?: () => void
+): Promise<void> {
     let allowEdit!: () => void;
     let releaseTransaction!: () => void;
     let markStarted!: () => void;
@@ -94,6 +129,7 @@ async function requestDuringSnapshotEdit(edit: (state: TrackStoreState) => Track
     const request = setProofPanelUiLevel('a', 5);
     allowEdit();
     await edited;
+    afterEdit?.();
     releaseTransaction();
     await transaction;
     await request;
@@ -118,6 +154,7 @@ describe('setProofPanelUiLevel project path', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         agentProjectRepairStateStore.set(null);
         trackStore.set({ ...defaultTrackState, tracks: [] });
         flushAutomergeStorageWrites();
@@ -222,6 +259,79 @@ describe('setProofPanelUiLevel project path', () => {
         expect(projectState('a')).toEqual({ version: 1, data: { unrelated: 'preserve' } });
     });
 
+    it.each([
+        { type: 'proof', version: 1, acrossTracks: false, first: false },
+        { type: 'proof', version: 1, acrossTracks: true, first: false },
+        { type: 'eq', version: 1, acrossTracks: false, first: true },
+        { type: 'eq', version: 99, acrossTracks: false, first: false },
+        { type: 'eq', version: 99, acrossTracks: true, first: false },
+    ])('refuses duplicate ids without altering any record: %j', async ({ type, version, acrossTracks, first }) => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: withCollidingDevice(tracksWithTwoProofDevices(), type, version, acrossTracks, first),
+        });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value!.tracks);
+        const patch = getProofState('a').patch;
+
+        await setProofPanelUiLevel('a', 5);
+
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(rawProjectTracks()).toEqual(before);
+        expect(getProofState('a').uiLevel).toBe(1);
+        expect(getProofState('a').patch).toBe(patch);
+    });
+
+    it('leaves a standalone wrong-kind device and its future metadata unchanged', async () => {
+        const tracks = tracksWithTwoProofDevices();
+        const device = tracks[0]?.devices[0];
+        if (!device) {
+            throw new Error('Missing fixture device');
+        }
+        device.type = 'eq';
+        device.deviceState = { version: 99, data: { future: 'retain' } };
+        trackStore.set({ ...defaultTrackState, tracks });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value!.tracks);
+
+        await setProofPanelUiLevel('a', 5);
+
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(rawProjectTracks()).toEqual(before);
+        expect(getProofState('a').uiLevel).toBe(1);
+    });
+
+    it.each([
+        { type: 'proof', version: 1, acrossTracks: false },
+        { type: 'proof', version: 1, acrossTracks: true },
+        { type: 'eq', version: 99, acrossTracks: false },
+        { type: 'eq', version: 99, acrossTracks: true },
+    ])('refuses a duplicate introduced during snapshot admission: %j', async ({ type, version, acrossTracks }) => {
+        const initialState = trackStore.value!;
+        const device = initialState.tracks[0]?.devices[0];
+        let before: TrackStoreState['tracks'] = [];
+        let projectedState = initialState;
+
+        await requestDuringSnapshotEdit(
+            () => {
+                const tracks = withCollidingDevice(initialState.tracks, type, version, acrossTracks);
+                before = structuredClone(tracks);
+                projectedState = { ...initialState, tracks };
+                return projectedState;
+            },
+            () => {
+                // Keep the captured object so duplicate admission, rather than replacement identity, decides refusal.
+                vi.spyOn(trackStore, 'value', 'get').mockReturnValue(projectedState);
+            }
+        );
+
+        expect(trackStore.value?.tracks[0]?.devices[0]).toBe(device);
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(rawProjectTracks()).toEqual(before);
+        expect(getProofState('a').uiLevel).toBe(1);
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('changed'), 'warning');
+    });
+
     it('leaves project and visible tier unchanged when the command admission refuses', async () => {
         agentProjectRepairStateStore.set({
             audioGraphValid: false,
@@ -313,9 +423,14 @@ describe('setProofPanelUiLevel project path', () => {
         await started;
 
         const request = setProofPanelUiLevel('a', 4);
+        const capturedState = trackStore.value!;
+        const capturedDevice = capturedState.tracks[0]?.devices[0];
         resetCrdtProjectAuthority('Successor Proof project');
-        trackStore.set({ ...defaultTrackState, tracks: tracksWithTwoProofDevices() });
+        trackStore.set(capturedState);
         flushAutomergeStorageWrites();
+        // Isolate project authority from the separate object-replacement guard.
+        vi.spyOn(trackStore, 'value', 'get').mockReturnValue(capturedState);
+        expect(trackStore.value?.tracks[0]?.devices[0]).toBe(capturedDevice);
         releaseTransaction();
         await transaction;
         await request;
