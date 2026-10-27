@@ -1,0 +1,21 @@
+src/modules/MIDI/useCases/midiNoteCrud/planMidiRowCoordinateShift.ts
+  s_d99a62fe2de3a3::t_aec54009475bd1 56-72,89
+src/modules/Arrangement/handlers/clip/midiRowCoordinateReplay.ts
+  s_d99a62fe2de3a3::t_160d106a123599 28,44-48,70-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d844b1bb498d4b128e9a5800c026fdbdb0eecf7",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

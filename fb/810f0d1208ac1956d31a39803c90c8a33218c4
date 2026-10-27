@@ -1,0 +1,38 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareClipMidiRowCoordinateShift.spec.ts
+  s_d99a62fe2de3a3::t_9c1f62a6067ee7 42,47,78-86,117-121
+  s_d99a62fe2de3a3::t_61f32264060fcb 4-5,122-129
+src/modules/Arrangement/handlers/clip/__tests__/handleSlipClipContent.spec.ts
+  s_d99a62fe2de3a3::t_9c1f62a6067ee7 110-111,117
+  s_d99a62fe2de3a3::t_455c8965e2d4b2 118-119
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStart.spec.ts
+  s_d99a62fe2de3a3::t_9c1f62a6067ee7 83-84,90
+  s_d99a62fe2de3a3::t_83e63208645edf 91-92
+src/modules/MIDI/useCases/midiNoteCrud/prepareClipMidiRowCoordinateShift.ts
+  s_d99a62fe2de3a3::t_8607a6267c9b4e 37-61
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  s_d99a62fe2de3a3::t_6cba416c33f5d6 7,14-16,33-39,89
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_d99a62fe2de3a3::t_692d9170cee384 6,13-15,44-50,97
+src/modules/Command/useCases/__tests__/midiRowCoordinateReplay.integration.spec.ts
+  s_d99a62fe2de3a3::t_0fef8f549ba34e 28,84-86,111-113,253-255,418-420,427,429,442-444,450,452,454-456,475-486,521-523,529-531
+src/modules/MIDI/useCases/index.ts
+  s_d99a62fe2de3a3::t_5a30b9c3c5e7b4 113,116
+src/modules/MIDI/useCases/midiNoteCrud/isMidiRowCoordinateCapture.ts
+  s_d99a62fe2de3a3::t_075eda09e9b750 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb810f0d1208ac1956d31a39803c90c8a33218c4",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_29d8df116c5b92::t_42946160f5e9d7 89-90,92-94,97,110,145,153,156
+src/modules/Arrangement/useCases/comping/captureClipSplitTakeReKey.ts
+  s_29d8df116c5b92::t_42946160f5e9d7 3-4
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_29d8df116c5b92::t_e8a501b5899141 12,383,386-387
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_42946160f5e9d7 204,206-207,212,272,277-280,282,1019,1087-1091,1154-1156,1315,1323-1331,1341-1344,1363-1365,1399-1401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25cefa43c6c6484ef123e2ee7ee7109ab12d938d",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
