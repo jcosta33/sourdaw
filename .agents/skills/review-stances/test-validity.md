@@ -27,6 +27,23 @@ beside Undo; removing only the Undo comparison must fail that case. Observe sett
 transitions as well as final truth: an unauthorized persisted write followed by restoration must
 fail beside planning, prior and follow-up commits, and Undo.
 
+### 2026-10-27 — start-only preview checks missed resource and owner teardown (preserved by PR #187)
+
+PR #187 (`8c11c40674b32074a12a209b308d3361e93fe873`) extracted the cached-preview helper
+with cases for starting a source and a missing buffer. Those checks did not observe disconnect,
+repeated Stop, natural completion or engine reset/disposal. The stop-only source behavior already
+existed in commit `454de02a76069e5cec5fcee104eb9a64521e2f97`, for which GitHub reports no
+associated PR; exact historical private reviewer prompts and tiers are unknown.
+
+Capture a real playback handle and its ended callback. Deliver Stop twice and then the old callback;
+require one stop, disconnect, release and completion notification. Natural completion must release
+without stopping an already-ended source. Throw from stop and disconnect and still require owner
+release. Exercise actual engine reset/dispose and reentrant callbacks, not only an intent stub.
+Remove the abort subscription, disconnect, release or reset invalidation separately; each named
+spec must fail its corresponding probe while the ordinary-preview control survives. Keep the
+offline/live graph, drag-handoff PCM and Undo/Redo fixtures using the real intent registry and
+explicit playback cleanup when the engine contract changes.
+
 ### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
 
 PR #5388 changed a declared campaign fixture while the web-gated unit matrix skipped its
