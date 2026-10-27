@@ -169,7 +169,7 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
     if (command !== 'pnpm') {
         return undefined;
     }
-    const optionsWithArgument = new Set(['-C', '--dir', '-F', '--filter', '--reporter', '--loglevel']);
+    const optionsWithArgument = new Set(['-C', '--dir', '-F', '--filter', '--filter-prod', '--reporter', '--loglevel']);
     let index = 0;
     while (index < args.length) {
         const arg = args[index];
@@ -187,6 +187,7 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
         if (
             arg.startsWith('--config.') ||
             arg.startsWith('--filter=') ||
+            arg.startsWith('--filter-prod=') ||
             arg.startsWith('-F=') ||
             arg.startsWith('--dir=') ||
             arg.startsWith('-C=') ||
