@@ -1005,6 +1005,16 @@ describe('reconcileCrdtSlot exact fractions in accepted composite writes', () =>
             }
         }
     });
+    it('keeps an immutable intended composite untouched on a plain storage port', () => {
+        const payload = fractionPayload(exactFraction);
+        Object.freeze(payload.nested);
+        Object.freeze(payload.curve);
+        Object.freeze(payload);
+        const doc: Doc = {};
+        reconcileCrdtSlot({ doc, key: 'slot', baseValue: null, value: payload });
+        expect(doc.slot).toBe(payload);
+        expectExactFraction(payload);
+    });
     it('retains an edited owned row identity and a newer peer tuple when only one scalar changed', () => {
         const base: FractionSlot = { rows: [fractionRow('owned'), fractionRow('peer')] };
         let document = from<FractionDocument>({ slot: base });

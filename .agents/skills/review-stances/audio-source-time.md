@@ -86,3 +86,30 @@ A source-cut helper that returns no fields merely because canonical seconds are
 absent must fail this probe. Keep strict malformed-present-source refusals and
 unaffected-peer satellite admission controls while allowing a valid legacy cut
 to capture its source under the clock that actually existed before deletion.
+
+## Escape: first composite publication changed a fractional source second
+
+The inherited dependency defect is present in Automerge 3.5.0 bulk hydration at upstream commit
+[`4d2a8f6`](https://github.com/automerge/automerge/blob/4d2a8f6bfecfb7f1e4fca126e6d2122ac526f903/rust/automerge-wasm/src/interop.rs#L1148-L1153)
+infers an integer when a positive rounded value is within `f64::EPSILON`, then
+casts the original value. The finite noninteger `0.9999999999999999` becomes
+integer zero. The native scalar proxy instead supplies an explicit f64 datatype
+and preserves its bits. Inserting or relocating a newly canonicalized source
+row could therefore change its first sample and make strict Undo refuse, while
+editing the same field on an existing row passed. Its first affected Sourdaw
+action is unestablished. The missed probe was the first
+raw composite publication, rather than producer arithmetic or binary load alone.
+
+Exercise nested map assignment, collection replacement, new entity insertion
+and an actual row move through reconciliation, then save/load. Require the exact
+fraction in raw source fields and unchanged peer object IDs/fields. Keep direct
+scalar edits, ordinary fractions, integers and negative-zero controls: rewriting
+all numeric leaves through scalar assignment loses the bulk path's negative
+zero. Only just-assigned composites and actually inserted rows are this write's
+to inspect; an unchanged root or peer tuple is not. Preserve per-row conflicts
+and changed-owned-row identity in the existing concurrent storage probes.
+
+This prevents corruption on those accepted future publications. It neither
+repairs already-truncated data nor claims a general repair for every numeric
+input or every direct dependency import route. Do not round the producer, relax
+strict source snapshots, or put Float64 wrapper objects into bulk payloads.
