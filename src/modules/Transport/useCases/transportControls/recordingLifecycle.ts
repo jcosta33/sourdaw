@@ -10,6 +10,8 @@ type RecordingLifecycle = {
     hasPendingRecordingStart: () => boolean;
     /** True while a stop is still closing a recording, or a tracked take commit is in flight. */
     isClosingRecording: () => boolean;
+    /** The latest start request, including one whose pending phase has completed. */
+    isLatestRecordingStart: (token: number) => boolean;
     ownsPendingRecordingStart: (token: number) => boolean;
     setCountInTimerId: (id: ReturnType<typeof setTimeout> | null) => void;
     /** Own the stop that is closing a recording, so every later stop and the idle check can see it. */
@@ -153,6 +155,7 @@ export const recordingLifecycle: RecordingLifecycle = {
     },
     hasPendingRecordingStart: () => pendingRecordingStartToken !== null || countInTimerId !== null,
     isClosingRecording,
+    isLatestRecordingStart: (token) => nextRecordingStartToken === token,
     ownsPendingRecordingStart: (token) => pendingRecordingStartToken === token,
     setCountInTimerId: (id) => {
         countInTimerId = id;
