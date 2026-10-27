@@ -1,0 +1,25 @@
+playwright.config.ts
+  s_567a084d0540c4::t_73fbccbe97791d 53-56,93-96
+scripts/__tests__/e2eDevServer.spec.ts
+  s_567a084d0540c4::t_e40128533d1ca4 1-95
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_567a084d0540c4::t_57997f85f2fade 173-176,197,205,215,260,263-265
+scripts/e2eDevServer.ts
+  s_567a084d0540c4::t_89f9aaad66fb1e 1-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6eb52d12296431de7ca4d9bbe6633ebe46a93880",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
