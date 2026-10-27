@@ -387,3 +387,29 @@ runtime RED claim. This probe establishes ordering and admission, not live hardw
 PR #305 (`b077ef6d34c7fc72bf3907a55bcaa7d7102a1584`) moved seek finalization behind the recording-flush promise while retaining only the pre-wait `wasPlaying` snapshot. During that wait, Stop→Play or Stop→Record can install a successor scheduler; the old finalizer can then stop that scheduler, write its stale seek target, or restart against successor state. Checking live `isPlaying` only gates restart; it does not establish ownership. Commit `983371455c147465033d6ac9ccd27706cc2210fa` later relocated the path into `executePlayheadSeek.ts` without introducing the race. PR #5374 (`ddceec4283b3715f267773b33bccfc21c3778e0f`) added the scheduler-generation ownership check before deferred side effects. The available public history does not contain the private reviewer prompts, so the exact missed stance or reviewer responsibility cannot be established.
 
 Probe: through the real seek/transport coordinator, hold a controlled promise returned at the `stopActiveRecording` boundary after a playing, recording seek is admitted. While it is held, exercise Stop→Play and Stop→Record, then resolve and reject the promise. Require the successor worker identity, generation, epoch, transport state, and position to remain intact; on rejection, require the original error to remain reported. Remove the generation-ownership guard and require both successor cases to fail. This controlled scheduler probe tests deferred ownership; it does not establish real capture, PCM flushing, browser behavior, or hardware audibility.
+
+### 2026-10-27 — dense loop-off inherited a linear window that replenished after its frames (introduced by PR #3912)
+
+PR #3912 (`cb8a0c81fc`) admitted a capacity-sized linear prefix but kept its spent entries until
+more than three seconds into playback. A 1200-pair, three-second phrase filled the 2048-entry
+store; the remaining 352 events arrived only after their frames. Loop-window work in #5346
+exposed the same path by disabling looping near the start. The original public review checked
+prefix limits, refusal bookkeeping and trail counts without rendering the unadmitted suffix.
+Private historical dispatches are unavailable, so the exact reviewer prompt is unverified.
+
+Blind spot: capacity-safe admission does not establish timely delivery. A lifecycle stance must
+walk dense loop-on to loop-off at the start and near-start, then seek and edit-rearm in the
+resulting linear mode. Drive the real writer against a persistent store and render through the
+entire phrase; require every expected event identity before its frame, bounded residency and no
+callback overflow. Carry a distant real off and a same-key reattack through those transitions,
+without replaying the old onset. Restore the linear prefix/three-second-clear path and require
+the suffix assertions to fail. Model host queue admission separately from callback application:
+a later note-store refusal leaves preceding clears applied and cannot be retried from an
+already-applied host response. Native output peaks supplement this probe; they cannot count all
+attacks/releases or establish zero callback refusals when the wire omits those counters.
+
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.

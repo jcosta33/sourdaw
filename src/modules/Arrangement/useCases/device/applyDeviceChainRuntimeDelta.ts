@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     applyRuntimeGraphDelta,
     getRuntimeGraphRevision,
+    getTrackStrip,
     matchesRuntimeDeviceChainTopology,
     mirrorDeviceChainDelta,
 } from '#/modules/AudioEngine/useCases';
@@ -9,6 +10,7 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { getAllTracks } from '../../repositories/track/getAllTracks';
+import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 import { runtimeGraphTopology } from '../runtimeGraphTopology';
 
 import { hasLiveProjectHostTrack } from './hasLiveProjectHostTrack';
@@ -143,18 +145,31 @@ export function applyDeviceChainRuntimeDelta({
         });
     }
 
-    const result = applyRuntimeGraphDelta({
-        schemaVersion: 1,
-        command: 'replace-track-device-chain',
-        correlation: {
-            appRevision: getRuntimeGraphRevision(),
-            projectRevision: captureProjectRevision(),
-        },
-        operation: mayComposeGroupedFinal ? 'replace-device-chain' : operation,
-        before: runtimeGraphTopology.createNode(before),
-        after: authoritativeAfter,
-        parameters: [],
-    });
+    // Imports can publish a device-bearing track after the app's initial strip
+    // projection. Only an absent strip may bootstrap from current final truth;
+    // an existing strip still has to prove the delta's exact before-chain.
+    const initializeMissingStrip =
+        currentTrack !== undefined &&
+        (compiledAfterIsCurrent || mayComposeGroupedFinal) &&
+        getTrackStrip(currentTrack.id) === undefined;
+    const result = initializeMissingStrip
+        ? (projectTrackToLiveStrip({ trackId: currentTrack.id }) ?? {
+              acceptance: 'rejected' as const,
+              application: 'not-applied' as const,
+              reason: `Cannot initialize device runtime strip for track ${currentTrack.id}`,
+          })
+        : applyRuntimeGraphDelta({
+              schemaVersion: 1,
+              command: 'replace-track-device-chain',
+              correlation: {
+                  appRevision: getRuntimeGraphRevision(),
+                  projectRevision: captureProjectRevision(),
+              },
+              operation: mayComposeGroupedFinal ? 'replace-device-chain' : operation,
+              before: runtimeGraphTopology.createNode(before),
+              after: authoritativeAfter,
+              parameters: [],
+          });
     // Only a delta Web Audio actually applied: a rejected or half-applied one
     // leaves the two carriers to be reconciled by the repair the result already
     // asks for, and mirroring it would put a chain on the native engine that

@@ -10,7 +10,7 @@ import {
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, executeAppActionBatch, redo, undo } from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
     createCrdtDoc,
@@ -27,6 +27,7 @@ import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../getArrangementHandlers';
 import { importMidiFile } from '../../importMidiFile';
 import { runtimeGraphTopology } from '../../runtimeGraphTopology';
+import { compileTrackStripInitializationSnapshot } from '../../compileTrackStripInitializationSnapshot';
 
 // Physical Web Audio nodes are doubled; the engine, graph validation, import,
 // Command transaction, CRDT projection, and history are production implementations.
@@ -92,6 +93,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+    vi.restoreAllMocks();
     audioEngine.resetGraph();
     configureRuntimeGraphProjectRevisionValidator(null);
     configureRuntimeGraphTopologyValidator(null);
@@ -126,10 +128,106 @@ describe('device edits on an imported track before first Play', () => {
 
         await undo();
         expect(importedTrack().devices).toEqual([synth]);
-        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes.map((device) => device.deviceId)).toEqual([synth!.id]);
+        // The default Synth is voiced per note into the strip, without a persistent device node.
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([]);
         await redo();
         expect(importedTrack().devices).toEqual([]);
         expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([]);
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+    it('keeps an initialization rejection as a committed action failure and sends no parameters', async () => {
+        await importMidiFile(new File([], 'small.mid'), { shouldContinue: () => true });
+        const track = importedTrack();
+        expect(audioEngine.getTrackStrip(track.id)).toBeUndefined();
+        const initialize = vi.spyOn(audioEngine, 'initializeTrackStripFromSnapshot').mockReturnValue({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'injected current-revision refusal',
+        });
+        const parameters = vi.spyOn(audioEngine, 'updateDeviceParam');
+        await expect(
+            executeAppAction({
+                type: 'addDevice',
+                payload: { trackId: track.id, deviceType: 'builtin-eq', deviceId: 'added-eq' },
+            })
+        ).rejects.toMatchObject({ name: 'AppActionCommittedError' });
+        expect(importedTrack().devices.map((device) => device.id)).toContain('added-eq');
+        expect(audioEngine.getTrackStrip(track.id)).toBeUndefined();
+        expect(initialize).toHaveBeenCalled();
+        expect(parameters).not.toHaveBeenCalled();
+    });
+
+    it('refuses an existing mismatched source without reinitializing or replacing its live chain', async () => {
+        await importMidiFile(new File([], 'small.mid'), { shouldContinue: () => true });
+        const track = importedTrack();
+        const synth = track.devices[0]!;
+        const snapshot = compileTrackStripInitializationSnapshot(track, [track]);
+        expect(snapshot).not.toBeNull();
+        // Construct the divergent live fixture, then restore the production authority check.
+        configureRuntimeGraphTopologyValidator(null);
+        const initialized = audioEngine.initializeTrackStripFromSnapshot({
+            ...snapshot,
+            nodes: [
+                {
+                    id: track.id,
+                    kind: 'midi',
+                    devices: [{ id: 'foreign-live-device', type: 'builtin-eq', parameterIds: [] }],
+                },
+            ],
+        });
+        expect(initialized).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+        const initialize = vi.spyOn(audioEngine, 'initializeTrackStripFromSnapshot');
+        await expect(executeAppAction({ type: 'removeDevice', payload: { deviceId: synth.id } })).rejects.toMatchObject(
+            { name: 'AppActionCommittedError' }
+        );
+        expect(initialize).not.toHaveBeenCalled();
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes.map((device) => device.deviceId)).toEqual([
+            'foreign-live-device',
+        ]);
+    });
+    it('initializes only the authoritative final chain for a cold consecutive batch', async () => {
+        await importMidiFile(new File([], 'small.mid'), { shouldContinue: () => true });
+        const track = importedTrack();
+        expect(audioEngine.getTrackStrip(track.id)).toBeUndefined();
+        const initialize = vi.spyOn(audioEngine, 'initializeTrackStripFromSnapshot');
+        const result = await executeAppActionBatch([
+            { type: 'removeDevice', payload: { deviceId: track.devices[0]!.id } },
+            { type: 'addDevice', payload: { trackId: track.id, deviceType: 'builtin-eq', deviceId: 'final-eq' } },
+        ]);
+        expect(result.status).toBe('committed');
+        expect(initialize).toHaveBeenCalledTimes(1);
+        expect(initialize.mock.calls[0]?.[0]).toMatchObject({
+            nodes: [expect.objectContaining({ devices: [expect.objectContaining({ id: 'final-eq' })] })],
+        });
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes.map((device) => device.deviceId)).toEqual(['final-eq']);
+        expect(importedTrack().devices.map((device) => device.id)).toEqual(['final-eq']);
+    });
+
+    it('composes grouped device restorations through the same authoritative final chain', async () => {
+        await importMidiFile(new File([], 'small.mid'), { shouldContinue: () => true });
+        const track = importedTrack();
+        await executeAppAction({ type: 'removeDevice', payload: { deviceId: track.devices[0]!.id } });
+        const setup = await executeAppActionBatch([
+            { type: 'addDevice', payload: { trackId: track.id, deviceType: 'builtin-eq', deviceId: 'eq-one' } },
+            { type: 'addDevice', payload: { trackId: track.id, deviceType: 'builtin-eq', deviceId: 'eq-two' } },
+        ]);
+        expect(setup.status).toBe('committed');
+        const devices = structuredClone(importedTrack().devices);
+        clearUndoHistory();
+        const removed = await executeAppActionBatch(
+            devices.map((device) => ({ type: 'removeDevice' as const, payload: { deviceId: device.id } })),
+            { groupId: 'remove-eq-pair' }
+        );
+        expect(removed.status).toBe('committed');
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([]);
+        await undo();
+        expect(importedTrack().devices).toEqual(devices);
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes.map((device) => device.deviceId)).toEqual(
+            devices.map((device) => device.id)
+        );
+        await redo();
+        expect(importedTrack().devices).toEqual([]);
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([]);
     });
 });

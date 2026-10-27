@@ -1,15 +1,27 @@
+import { reportLatency, updateDeviceBypass, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
+import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 
-import type { DeviceSnapshot } from '#/utils/handlerContract';
+import { applyDeviceChainRuntimeDelta } from './applyDeviceChainRuntimeDelta';
+import { getRuntimeDeviceDeltaPostCommitFailure } from './runtimeDeviceDeltaPostCommit';
+
+import type { DeviceSnapshot, HandlerValidationContext } from '#/utils/handlerContract';
 import type { Device } from '../../models/Track';
 
 type RestoreDeviceInput = {
     trackId: string;
     deviceSnapshot: DeviceSnapshot;
     deviceIndex: number;
+};
+
+type RestoreDeviceOptions = {
+    deferRuntimeEffects?: boolean;
+    batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
 };
 
 type DeferredRestoreDeviceOutput = {
@@ -21,11 +33,11 @@ type DeferredRestoreDeviceOutput = {
 export function restoreDevice(input: RestoreDeviceInput): 'written' | 'conflict';
 export function restoreDevice(
     input: RestoreDeviceInput,
-    options: { deferRuntimeEffects: true }
+    options: RestoreDeviceOptions & { deferRuntimeEffects: true }
 ): DeferredRestoreDeviceOutput | 'conflict';
 export function restoreDevice(
     { trackId, deviceSnapshot, deviceIndex }: RestoreDeviceInput,
-    options?: { deferRuntimeEffects?: boolean }
+    options?: RestoreDeviceOptions
 ): DeferredRestoreDeviceOutput | 'written' | 'conflict' {
     const state = getTrackState();
     if (!state || !Number.isInteger(deviceIndex)) {
@@ -61,6 +73,10 @@ export function restoreDevice(
         // its module default — losing the kit the removal was supposed to be undoing.
         ...(deviceSnapshot.deviceState !== undefined ? { deviceState: deviceSnapshot.deviceState } : {}),
     };
+    const beforeTrack = structuredClone(track);
+    const restoredDevices = [...beforeTrack.devices];
+    restoredDevices.splice(deviceIndex, 0, device);
+    const afterTrack = { ...beforeTrack, devices: restoredDevices };
     const wasLive = shouldCreateLiveTrackStrip(track);
     const activatesFolderStrip = !wasLive && track.kind === 'folder' && device.type === 'toaster';
     updateTrack(trackId, (current) => {
@@ -69,30 +85,81 @@ export function restoreDevice(
         return { ...current, devices };
     });
 
+    let postCommitFailure: Error | undefined;
+
+    function projectExactTrack(targetTrackId: string): void {
+        const result = projectTrackToLiveStrip({ trackId: targetTrackId, activateDormantExternalPlugins: true });
+        const failure = getRuntimeDeviceDeltaPostCommitFailure(
+            result ?? {
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: `Restored device strip initialization did not produce an outcome for ${targetTrackId}`,
+            }
+        );
+        if (failure) {
+            throw failure;
+        }
+    }
+
     function reconcileRuntime(): void {
+        if (postCommitFailure) {
+            throw postCommitFailure;
+        }
         const committedState = getTrackState();
         const committedTrack = committedState?.tracks.find((candidate) => candidate.id === trackId);
         if (
             !committedState ||
             !committedTrack ||
-            !committedTrack.devices.some((candidate) => candidate.id === device.id)
+            !committedTrack.devices.some((candidate) => candidate.id === device.id) ||
+            !shouldCreateLiveTrackStrip(committedTrack)
         ) {
             return;
         }
-        const isLive = shouldCreateLiveTrackStrip(committedTrack);
-        const activatesCommittedFolderStrip =
-            !isLive &&
-            committedTrack.kind === 'folder' &&
-            committedTrack.devices.some((candidate) => candidate.type === 'toaster');
-        if (isLive || activatesCommittedFolderStrip) {
-            projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
-        }
-        if (activatesCommittedFolderStrip) {
-            for (const child of committedState.tracks) {
-                if (child.parentId === trackId && shouldCreateLiveTrackStrip(child)) {
-                    projectTrackToLiveStrip({ trackId: child.id, activateDormantExternalPlugins: true });
+        try {
+            if (wasLive) {
+                const result = applyDeviceChainRuntimeDelta({
+                    before: beforeTrack,
+                    after: afterTrack,
+                    operation: 'add-device',
+                    batchContext: options?.batchContext,
+                });
+                if (result.acceptance === 'superseded' && result.application === 'not-applied') {
+                    return;
+                }
+                if (result.acceptance !== 'superseded') {
+                    const failure = getRuntimeDeviceDeltaPostCommitFailure(result);
+                    if (failure) {
+                        throw failure;
+                    }
+                }
+                if (device.type === 'external-plugin' && device.externalInstanceId && device.externalPluginId) {
+                    void activateExternalPlugin({
+                        pluginId: device.externalPluginId,
+                        instanceId: device.externalInstanceId,
+                        stateChunk: device.externalStateChunk,
+                        onLatencyMs: (latency) => reportLatency(device.id, latency),
+                    });
+                }
+                for (const [parameterId, value] of orderDeviceParametersForReplay(
+                    device.type,
+                    device.parameterValues
+                )) {
+                    updateDeviceParam(trackId, device.id, parameterId, value);
+                }
+                updateDeviceBypass(trackId, device.id, device.bypassed);
+            } else {
+                projectExactTrack(trackId);
+            }
+            if (activatesFolderStrip) {
+                for (const child of committedState.tracks) {
+                    if (child.parentId === trackId && shouldCreateLiveTrackStrip(child)) {
+                        projectExactTrack(child.id);
+                    }
                 }
             }
+        } catch (error) {
+            postCommitFailure = error instanceof Error ? error : new Error(String(error));
+            throw postCommitFailure;
         }
     }
     if (options?.deferRuntimeEffects) {
@@ -102,15 +169,6 @@ export function restoreDevice(
             afterAmbiguousCommit: reconcileRuntime,
         };
     }
-    if (wasLive || activatesFolderStrip) {
-        projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
-    }
-    if (activatesFolderStrip) {
-        for (const child of state.tracks) {
-            if (child.parentId === trackId && shouldCreateLiveTrackStrip(child)) {
-                projectTrackToLiveStrip({ trackId: child.id, activateDormantExternalPlugins: true });
-            }
-        }
-    }
+    reconcileRuntime();
     return 'written';
 }
