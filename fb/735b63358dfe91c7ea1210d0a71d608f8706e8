@@ -1,0 +1,43 @@
+src/modules/Grinder/presentations/views/__tests__/GrinderDisclosure.integration.spec.tsx
+  s_59e31a5c6f3e31::t_5e8e0acb81547f 87-92,97,100,105-107
+  s_59e31a5c6f3e31::t_e7dac32ab172fa 1-82,165
+  s_59e31a5c6f3e31::t_a2637a936a6dce 83-86,93-96,98-99,101-104,108-142
+  s_59e31a5c6f3e31::t_600147760ba9dc 143-164
+  s_59e31a5c6f3e31::t_6c7375a4ab339d 166-183
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_59e31a5c6f3e31::t_7a207424c38eb6 5,20-25,27-31,71,1111-1119,1121-1141,1970-1982,2032-2033,2137-2138,2142-2149
+  s_59e31a5c6f3e31::t_600147760ba9dc 18,83-96,2166
+  s_59e31a5c6f3e31::t_7dd0c8c0df16ba 19
+  s_59e31a5c6f3e31::t_018c198a7f6d18 97-98,2150,2153-2154,2165,2167-2169,2171,2177
+tests/e2e/grinderPresetSearchTestId.spec.ts
+  s_59e31a5c6f3e31::t_17ee7220cf31fe 9,75-77,80-83,89,97-108,121-124
+  s_59e31a5c6f3e31::t_3844f3e3af02c9 74,78-79,84-88,90,94-96,109-114,116-117,119-120,125-126,128
+  s_59e31a5c6f3e31::t_7dd0c8c0df16ba 91-93,115,118,127
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_59e31a5c6f3e31::t_a2637a936a6dce 20-27
+src/modules/Grinder/models/GrinderDisclosure.ts
+  s_59e31a5c6f3e31::t_7a207424c38eb6 1-35
+src/modules/Grinder/models/__tests__/GrinderDisclosure.spec.ts
+  s_59e31a5c6f3e31::t_a2637a936a6dce 1-39
+  s_59e31a5c6f3e31::t_e740297de5d4d2 40-44
+src/modules/Grinder/useCases/__tests__/setGrinderPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_d5bb16599a6528 1-316
+src/modules/Grinder/useCases/setGrinderPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_8de55e0b2e25ba 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb735b63358dfe91c7ea1210d0a71d608f8706e8",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
