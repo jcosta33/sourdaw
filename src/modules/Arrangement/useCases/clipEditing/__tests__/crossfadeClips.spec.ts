@@ -226,9 +226,7 @@ describe('crossfadeClips', () => {
             if (loopOriginBeat !== undefined) {
                 clipOverrides.loopOriginBeat = loopOriginBeat;
             }
-            const recordedClip = makeClip('b', 4, 8, {
-                ...clipOverrides,
-            });
+            const recordedClip = makeClip('b', 4, 8, clipOverrides);
             const track = makeTrack([makeClip('a', 0, 4), recordedClip]);
             mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' });
             const mediaOrigin = recordedClip.startBeat - recordedClip.audioOffsetBeats! / stretchRatio;
