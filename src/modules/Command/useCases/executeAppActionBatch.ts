@@ -27,7 +27,8 @@ import { registerActionReplayCapabilities, revokeActionReplayCapability } from '
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
-import { captureRecordedRedoContext, commitRedoInverseCapture } from './commitRedoInverseCapture';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
+import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntries } from './commitUndoEntries';
 import { compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';

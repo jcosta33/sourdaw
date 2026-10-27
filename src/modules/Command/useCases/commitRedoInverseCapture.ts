@@ -1,8 +1,10 @@
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { type ActionUndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
+
+import { findPendingRedoEntry } from './findPendingRedoEntry';
 
 // Project owners supply this read capability; Command must not import their
 // document/runtime composition back into its execution kernel.
@@ -39,29 +41,6 @@ type CaptureLifecycle =
 
 // Execution-local intents only. They never enter the document or session mirror.
 const stagedCaptures = new WeakMap<AppAction, StagedCapture>();
-
-function findEntry(replayAction: AppAction): ActionUndoEntry | undefined {
-    const entry = undoStore.value?.future.find(
-        (candidate) => candidate.kind === 'action' && (candidate.redoAction ?? candidate.action) === replayAction
-    );
-    return entry?.kind === 'action' ? entry : undefined;
-}
-
-/** Capture the same exact pending entry used by inverse reconciliation, before any dispatch wait. */
-export function captureRecordedRedoContext(action: AppAction): HandlerValidationContext['recordedRedo'] {
-    const entry = findEntry(action);
-    if (!entry) {
-        return undefined;
-    }
-    const inverseAction = entry.inverseAction;
-    return {
-        inverseAction,
-        isCurrent: () =>
-            undoStore.value?.future.includes(entry) === true &&
-            (entry.redoAction ?? entry.action) === action &&
-            entry.inverseAction === inverseAction,
-    };
-}
 
 function publicationIsCurrent(publication: Publication, actions: readonly AppAction[]): boolean {
     return (
@@ -143,7 +122,7 @@ export function commitRedoInverseCapture(replayAction: AppAction, inverseAction:
 export function commitRedoInverseCapture(lifecycle: CaptureLifecycle): void;
 export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, inverseAction?: AppAction): void {
     if (!('phase' in input)) {
-        const entry = findEntry(input);
+        const entry = findPendingRedoEntry(input);
         if (entry && inverseAction && entry.inverseAction?.type === inverseAction.type) {
             entry.inverseAction = inverseAction;
         }
@@ -151,7 +130,7 @@ export function commitRedoInverseCapture(input: AppAction | CaptureLifecycle, in
     }
     if (input.phase === 'stage') {
         stagedCaptures.delete(input.action);
-        const entry = findEntry(input.action);
+        const entry = findPendingRedoEntry(input.action);
         const owner = getCurrentAutomergeStorageMutationOwner();
         if (!entry || !owner || entry.inverseAction?.type !== input.inverseAction.type) {
             return;

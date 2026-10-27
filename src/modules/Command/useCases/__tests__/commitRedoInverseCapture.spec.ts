@@ -22,7 +22,8 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ActionUndoEntry } from '../../models/UndoEntry';
 import { undoStore } from '../../stores/undoStore';
-import { captureRecordedRedoContext, commitRedoInverseCapture } from '../commitRedoInverseCapture';
+import { captureRecordedRedoContext } from '../captureRecordedRedoContext';
+import { commitRedoInverseCapture } from '../commitRedoInverseCapture';
 import { createUndoEntry } from '../createUndoEntry';
 
 function rename(trackId: string, name: string): AppAction {

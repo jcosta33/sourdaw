@@ -22,7 +22,8 @@ import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
-import { captureRecordedRedoContext, commitRedoInverseCapture } from './commitRedoInverseCapture';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
+import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
 import { type AbortCompensation, compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
