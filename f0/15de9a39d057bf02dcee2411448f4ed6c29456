@@ -1,0 +1,29 @@
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  s_29d8df116c5b92::t_a5ef5beb55c70f 60-70,72
+  s_29d8df116c5b92::t_fb6c1f97975e00 119-124,128-130
+  s_29d8df116c5b92::t_bc5c40438450ba 224,285,344
+  s_29d8df116c5b92::t_fe414ded93fcfb 225-226
+  s_29d8df116c5b92::t_b49fd3b5250ec0 7,33,38-44,55-56,71,73-75,82-83,99-107,161-163,186,215,217-220,256-260,306-309,321-328
+  s_29d8df116c5b92::t_ae577f6462618f 164,227-241,266-275,288-296
+  s_29d8df116c5b92::t_3b21d3471a30be 265,277-279
+  s_29d8df116c5b92::t_7531329c3d4ab1 1-6,8-32,34-37,45-54,57-59,76-81,84-98,108-118,125-127,131-160,165-185,187-214,216,221-223,242-255,261-264,276,280-284,286-287,297-305,310-320,329-343,345-351
+  s_29d8df116c5b92::t_31e29c4af7c16f 352-359
+tests/e2e/devServerOnlySpecs.ts
+  s_29d8df116c5b92::t_7531329c3d4ab1 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f015de9a39d057bf02dcee2411448f4ed6c29456",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
