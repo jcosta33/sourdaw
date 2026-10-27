@@ -211,4 +211,34 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         expect(takeLaneStore.value).toEqual(before);
         expect(undoHistoryStore.value?.past.length).toBe(beforeCount);
     });
+
+    it('adds a selected-pass note and restores source slot membership through Undo and Redo', async () => {
+        const added = {
+            id: 'new-selected',
+            pitch: 67,
+            startBeat: 7,
+            duration: 0.5,
+            velocity: 100,
+            recordingPassIndex: 1,
+        };
+        await executeUserAppAction({
+            type: 'replaceOriginalMidiTakeRow',
+            payload: {
+                laneId: 'lane',
+                takeId: 'selected',
+                sourceClipId: 'original',
+                rowId: added.id,
+                rowKind: 'note',
+                expected: null,
+                replacement: added,
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
+            },
+        });
+        expect(frozenRows()?.map((rows) => rows?.at(-1)?.id)).toEqual([added.id, added.id]);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(frozenRows()?.map((rows) => rows?.some((note) => note.id === added.id))).toEqual([false, false]);
+        await redo();
+        expect(frozenRows()?.map((rows) => rows?.at(-1)?.recordingPassIndex)).toEqual([1, 1]);
+    });
 });
