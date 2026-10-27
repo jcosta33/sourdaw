@@ -1,0 +1,59 @@
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_29d8df116c5b92::t_9d03e1538ce1c5 46,114-117,182-184,308-317,419-421
+src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts
+  s_29d8df116c5b92::t_cca24797849a6a 23-27
+src/modules/Arrangement/models/TakeLane.ts
+  s_29d8df116c5b92::t_c43a8a19d3e40f 58-59
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  s_29d8df116c5b92::t_0f2dc9d0c2f364 60
+  s_29d8df116c5b92::t_9d03e1538ce1c5 61,223,273
+  s_29d8df116c5b92::t_62e3c9462dd27e 51,294
+src/modules/MIDI/models/MidiNote.ts
+  s_29d8df116c5b92::t_c43a8a19d3e40f 68-69,82
+src/modules/MIDI/stores/midiStore.ts
+  s_29d8df116c5b92::t_696dbdc429fe93 111-113,185-189
+  s_29d8df116c5b92::t_1f075978e34e9f 191,335-358,367
+  s_29d8df116c5b92::t_c43a8a19d3e40f 110,190
+  s_26f70b851e8f7a::t_97806f1da8b219 368
+src/modules/MIDI/stores/isFrozenMidiTakeSource.ts
+  s_29d8df116c5b92::t_d69cb6d1ea9cf5 1,5
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_c43a8a19d3e40f 374-375,635-646
+src/modules/MIDI/transformers/isMidiNoteSnapshot.ts
+  s_29d8df116c5b92::t_696dbdc429fe93 48-49
+  s_29d8df116c5b92::t_c43a8a19d3e40f 47,50
+src/modules/Arrangement/useCases/comping/writeTakeReKeyTransitions.ts
+  s_29d8df116c5b92::t_9d03e1538ce1c5 27,155
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_29d8df116c5b92::t_d60cfaec05e6c9 92-99,102,114
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_29d8df116c5b92::t_c9eadc96eff3fd 366-374
+  s_29d8df116c5b92::t_cca24797849a6a 353,365
+  s_29d8df116c5b92::t_e7c5be1089a112 375-378
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  s_29d8df116c5b92::t_cca24797849a6a 526,535,561-581
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "002988f8a9617cc7fd5e783392ac4c34b7b6dcd4",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
