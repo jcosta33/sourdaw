@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     defaultTransportState,
     playheadPositionRef,
+    playheadWrapCountRef,
     setGestureClockSource,
     transportStore,
 } from '#/modules/Transport/stores';
@@ -456,7 +457,11 @@ describe('handleWebMidiMessage', () => {
                 await queued;
 
                 expect(handler).toHaveBeenCalledTimes(1);
-                expect(handler).toHaveBeenCalledWith(...expectedArgs, { audioTime: 2, recordingBeat: 0.15 });
+                expect(handler).toHaveBeenCalledWith(...expectedArgs, {
+                    audioTime: 2,
+                    recordingBeat: 0.15,
+                    recordingPassIndex: 0,
+                });
             } finally {
                 transportStore.set(previous);
                 setGestureClockSource({
@@ -466,6 +471,60 @@ describe('handleWebMidiMessage', () => {
             }
         }
     );
+
+    it.each([
+        { name: 'controller', bytes: [0xb1, 64, 127], handler: handle_cc, expectedArgs: [1, 64, 127] },
+        { name: 'pitch bend', bytes: [0xe1, 0, 96], handler: handle_pitch_bend, expectedArgs: [1, 0, 96] },
+    ])('keeps a queued $name on its admitted pass across a loop wrap', async ({ bytes, handler, expectedArgs }) => {
+        const previousTransport = transportStore.value;
+        const previousWrapCount = playheadWrapCountRef.current;
+        let nativeBeat = 4.5;
+        transportStore.set({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: true,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 4,
+        });
+        playheadPositionRef.current = nativeBeat;
+        playheadWrapCountRef.current = 1;
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => nativeBeat,
+        });
+        let finishNoteOn!: () => void;
+        const noteOnPending = new Promise<void>((resolve) => {
+            finishNoteOn = resolve;
+        });
+        handle_note_on.mockReset();
+        handle_note_on.mockImplementationOnce(() => noteOnPending);
+        handler.mockReset();
+        try {
+            handleWebMidiMessage(midi_event([0x91, 60, 100]));
+            const queued = handleWebMidiMessage(midi_event(bytes));
+            nativeBeat = 4.25;
+            playheadPositionRef.current = nativeBeat;
+            playheadWrapCountRef.current = 2;
+            finishNoteOn();
+            await queued;
+
+            expect(handler).toHaveBeenCalledTimes(1);
+            expect(handler).toHaveBeenCalledWith(...expectedArgs, {
+                audioTime: 2,
+                recordingBeat: 4.5,
+                recordingPassIndex: 1,
+            });
+        } finally {
+            transportStore.set(previousTransport);
+            playheadWrapCountRef.current = previousWrapCount;
+            setGestureClockSource({
+                getAudioTimeSeconds: () => audio_clock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+        }
+    });
 
     it("stamps a recording take's controller and bend with the beat of their own arrival", () => {
         const previous = transportStore.value;
@@ -479,8 +538,16 @@ describe('handleWebMidiMessage', () => {
             handleWebMidiMessage(midi_event([0xb3, 64, 127]));
             handleWebMidiMessage(midi_event([0xe2, 0, 96]));
 
-            expect(handle_cc).toHaveBeenCalledWith(3, 64, 127, { audioTime: 2, recordingBeat: 3.5 });
-            expect(handle_pitch_bend).toHaveBeenCalledWith(2, 0, 96, { audioTime: 2, recordingBeat: 3.5 });
+            expect(handle_cc).toHaveBeenCalledWith(3, 64, 127, {
+                audioTime: 2,
+                recordingBeat: 3.5,
+                recordingPassIndex: 0,
+            });
+            expect(handle_pitch_bend).toHaveBeenCalledWith(2, 0, 96, {
+                audioTime: 2,
+                recordingBeat: 3.5,
+                recordingPassIndex: 0,
+            });
         } finally {
             transportStore.set(previous);
             setGestureClockSource({

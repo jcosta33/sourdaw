@@ -49,6 +49,7 @@ import {
     getRecordingMidiAdmission,
     retireRecordingMidiAdmission,
     takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
 import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -422,6 +423,7 @@ setRecordingMidiAdmissionPort({
     getRecordingMidiAdmission,
     retireRecordingMidiAdmission,
     takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 });
 setNotificationEventBus(eventBus);
 // Storage adapters cannot resolve `notifyUser` before this line: `inject`

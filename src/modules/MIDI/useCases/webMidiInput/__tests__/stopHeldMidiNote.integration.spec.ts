@@ -16,6 +16,7 @@ import {
     retireRecordingMidiAdmission,
     startRecording,
     takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
@@ -208,6 +209,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             getRecordingMidiAdmission,
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
+            recordingMidiSourceBeatAt,
         });
         activeNotes.clear();
         setMidiInputTrack(TRACK_ID);

@@ -65,6 +65,7 @@ import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecor
 import { findOpenRecordingMidiAdmission } from '../../../useCases/recording/findOpenRecordingMidiAdmission';
 import { findOpenRecordingMidiMemberAdmission } from '../../../useCases/recording/findOpenRecordingMidiMemberAdmission';
 import { getRecordingMidiAdmission } from '../../../useCases/recording/getRecordingMidiAdmission';
+import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
 import { retireRecordingMidiAdmission } from '../../../useCases/recording/retireRecordingMidiAdmission';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -118,6 +119,7 @@ describe('recorded controller take commit', () => {
             getRecordingMidiAdmission,
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
+            recordingMidiSourceBeatAt,
         });
         transportStore.set({
             ...transportStore.value!,

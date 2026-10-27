@@ -24,6 +24,7 @@ import {
     createTrack,
     duplicateClip,
     getArrangementHandlers,
+    stageRecordingTake,
     startRecording,
     stopRecording,
     admitRecordingMidiExpression,
@@ -34,8 +35,10 @@ import {
     getRecordingMidiAdmission,
     retireRecordingMidiAdmission,
     takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     redo,
@@ -51,6 +54,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
+    captureEventPositionAt,
     destroyWebMidi,
     initWebMidi,
     projectClipControllerEvents,
@@ -58,7 +62,7 @@ import {
     setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { playheadClockRef, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 import { projectPpqEndpoints } from '#/modules/Transport/useCases';
 
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
@@ -127,6 +131,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
             getRecordingMidiAdmission,
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
+            recordingMidiSourceBeatAt,
         });
         transportStore.set({
             ...transportStore.value!,
@@ -141,6 +146,8 @@ describe('a recorded controller-only take, rendered by the offline export schedu
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
         disposeRecordingAdmission();
+        playheadClockRef.hold = null;
+        playheadWrapCountRef.current = 0;
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -262,5 +269,102 @@ describe('a recorded controller-only take, rendered by the offline export schedu
             `control 64=127 @${8.5 * BEAT_FRAMES}`,
             `control 64=0 @${9.5 * BEAT_FRAMES}`,
         ]);
+    });
+
+    it('exports only the selected recorded pass after the live controller and bend cross two wraps', async () => {
+        setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+        await initWebMidi();
+        setMidiInputTrack(TRACK_ID);
+        playheadWrapCountRef.current = 0;
+        transportStore.set({
+            ...transportStore.value!,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 4,
+        });
+        const [clip] = startRecording(4);
+        expect(clip).toBeDefined();
+        transportStore.set({ ...transportStore.value!, isRecording: true, isPlaying: true });
+
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip!.id,
+            name: 'first pass',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+        });
+        playheadWrapCountRef.current = 1;
+        const send = (beat: number, ...bytes: number[]): void => {
+            playheadClockRef.hold = { generation: 123, beat };
+            expect(captureEventPositionAt({ audioTime: audioEngine.context.currentTime })).toEqual({
+                beat,
+                passIndex: 1,
+            });
+            liveMidi.input.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));
+        };
+        send(4.5, 0xb0, 64, 127);
+        send(4.75, 0xe0, 127, 127);
+        send(5.5, 0xb0, 64, 0);
+        send(5.75, 0xe0, 0, 64);
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip!.id,
+            name: 'second pass',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 4,
+            recordingPassIndex: 1,
+        });
+        playheadWrapCountRef.current = 2;
+        playheadClockRef.hold = { generation: 123, beat: 4.25 };
+        await stopRecording(4.25);
+        transportStore.set({ ...transportStore.value!, isRecording: false, isPlaying: false });
+        flushAutomergeStorageWrites();
+
+        expect(
+            midiStore.value?.ccByClipId[clip!.id]?.map(({ controller, value, beat }) => [controller, value, beat])
+        ).toEqual([
+            [64, 127, 4.5],
+            [64, 0, 5.5],
+        ]);
+        expect(midiStore.value?.pitchBendByClipId[clip!.id]?.map(({ value, beat }) => [value, beat])).toEqual([
+            [8191, 4.75],
+            [0, 5.75],
+        ]);
+        expect(
+            undoHistoryStore.value?.past.filter(
+                (entry) => entry.kind === 'action' && entry.action.type === 'commitRecording'
+            )
+        ).toHaveLength(1);
+
+        const lane = takeLaneStore.value!.lanes.find((candidate) => candidate.trackId === TRACK_ID)!;
+        const selectPass = (index: number): void => {
+            const take = lane.takes.find((candidate) => candidate.recordingPassIndex === index)!;
+            takeLaneStore.set({
+                lanes: [{ ...lane, activeCompRegions: [{ startBeat: 4, endBeat: 8, takeId: take.id }] }],
+            });
+        };
+        selectPass(0);
+        expect(await exportArrivals()).toEqual([]);
+        selectPass(1);
+        expect(await exportArrivals()).toEqual([
+            `control 64=127 @${4.5 * BEAT_FRAMES}`,
+            `control 64=0 @${5.5 * BEAT_FRAMES}`,
+        ]);
+        selectPass(2);
+        // The preceding pass's released pedal is carried as a neutral value at the next head.
+        expect(await exportArrivals()).toEqual([`control 64=0 @${4 * BEAT_FRAMES}`]);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.ccByClipId[clip!.id]).toBeUndefined();
+        expect(midiStore.value?.pitchBendByClipId[clip!.id]).toBeUndefined();
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.ccByClipId[clip!.id]?.map(({ beat }) => beat)).toEqual([4.5, 5.5]);
+        expect(midiStore.value?.pitchBendByClipId[clip!.id]?.map(({ beat }) => beat)).toEqual([4.75, 5.75]);
     });
 });

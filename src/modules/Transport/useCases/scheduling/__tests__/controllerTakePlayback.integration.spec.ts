@@ -72,10 +72,13 @@ import {
     getRecordingMidiAdmission,
     getArrangementHandlers,
     retireRecordingMidiAdmission,
+    stageRecordingTake,
     startRecording,
     stopRecording,
     takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -92,6 +95,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
+    captureEventPositionAt,
     destroyWebMidi,
     initWebMidi,
     setMidiInputTrack,
@@ -104,6 +108,8 @@ import {
     forgetStoredControllerEngagements,
     noteStoredControllerPost,
 } from '../../../services/storedControllerEngagement';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { transportStore } from '../../../stores/transportStore';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
@@ -192,6 +198,7 @@ describe('a recorded controller-only take, played by the window scheduler', () =
             getRecordingMidiAdmission,
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
+            recordingMidiSourceBeatAt,
         });
         transportStore.set({
             ...transportStore.value!,
@@ -206,6 +213,8 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
         disposeRecordingAdmission();
+        playheadClockRef.hold = null;
+        playheadWrapCountRef.current = 0;
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -363,5 +372,97 @@ describe('a recorded controller-only take, played by the window scheduler', () =
         await playWindow(8, 12);
 
         expect(engineStub.sustain).toEqual([`sustain 1 @${8.5 * BEAT_FRAMES}`, `sustain 0 @${9.5 * BEAT_FRAMES}`]);
+    });
+
+    it('plays a pitch wheel recorded in the second wrapped pass only for that selected pass', async () => {
+        setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+        await initWebMidi();
+        setMidiInputTrack(TRACK_ID);
+        playheadWrapCountRef.current = 0;
+        transportStore.set({
+            ...transportStore.value!,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 4,
+        });
+        const [clip] = startRecording(4);
+        expect(clip).toBeDefined();
+        transportStore.set({ ...transportStore.value!, isRecording: true, isPlaying: true });
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip!.id,
+            name: 'first pass',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+        });
+        playheadWrapCountRef.current = 1;
+        const sendBend = (beat: number, lsb: number, msb: number): void => {
+            playheadClockRef.hold = { generation: 123, beat };
+            expect(captureEventPositionAt({ audioTime: audioEngine.context.currentTime })).toEqual({
+                beat,
+                passIndex: 1,
+            });
+            liveMidi.input.dispatchEvent(
+                Object.assign(new Event('midimessage'), { data: Uint8Array.from([0xe0, lsb, msb]) })
+            );
+        };
+        sendBend(4.5, 127, 127);
+        sendBend(5.5, 0, 64);
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip!.id,
+            name: 'second pass',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 4,
+            recordingPassIndex: 1,
+        });
+        playheadWrapCountRef.current = 2;
+        playheadClockRef.hold = { generation: 123, beat: 4.25 };
+        await stopRecording(4.25);
+        transportStore.set({ ...transportStore.value!, isRecording: false, isPlaying: false });
+        flushAutomergeStorageWrites();
+        expect(midiStore.value?.pitchBendByClipId[clip!.id]?.map(({ value, beat }) => [value, beat])).toEqual([
+            [8191, 4.5],
+            [0, 5.5],
+        ]);
+
+        // The note is only a receiver for the recorded bend in the real window scheduler.
+        midiStore.set({
+            ...midiStore.value!,
+            notesByClipId: {
+                ...midiStore.value!.notesByClipId,
+                [clip!.id]: [
+                    {
+                        id: 'held-second-pass',
+                        pitch: 60,
+                        startBeat: 4,
+                        duration: 3,
+                        velocity: 100,
+                        recordingPassIndex: 1,
+                    },
+                ],
+            },
+        });
+        const lane = takeLaneStore.value!.lanes.find((candidate) => candidate.trackId === TRACK_ID)!;
+        const selectPass = (index: number): void => {
+            const take = lane.takes.find((candidate) => candidate.recordingPassIndex === index)!;
+            takeLaneStore.set({
+                lanes: [{ ...lane, activeCompRegions: [{ startBeat: 4, endBeat: 8, takeId: take.id }] }],
+            });
+        };
+        selectPass(0);
+        await playWindow(0, 8);
+        expect(engineStub.expressions).toEqual([]);
+        selectPass(1);
+        await playWindow(0, 8);
+        expect(engineStub.expressions).toEqual([
+            { note: 60, pitchBend: undefined, range: undefined, frame: 4 * BEAT_FRAMES },
+            { note: 60, pitchBend: 8191, range: 2, frame: 4.5 * BEAT_FRAMES },
+            { note: 60, pitchBend: 0, range: 2, frame: 5.5 * BEAT_FRAMES },
+        ]);
     });
 });

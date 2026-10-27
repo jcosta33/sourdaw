@@ -31,6 +31,7 @@ export type RecordingMidiAdmissionPort = {
     getRecordingMidiAdmission(id: string): RecordingMidiAdmission | undefined;
     retireRecordingMidiAdmission(id: string): void;
     takeOwnsRecordingRoot(): boolean;
+    recordingMidiSourceBeatAt(clipId: string, position: EventPosition): number | null;
 };
 
 const inactive: RecordingMidiAdmissionPort = {
@@ -42,6 +43,7 @@ const inactive: RecordingMidiAdmissionPort = {
     getRecordingMidiAdmission: () => undefined,
     retireRecordingMidiAdmission: () => undefined,
     takeOwnsRecordingRoot: () => false,
+    recordingMidiSourceBeatAt: () => null,
 };
 
 let configured = inactive;
@@ -56,6 +58,7 @@ export const recordingMidiAdmissionPort: RecordingMidiAdmissionPort = {
     getRecordingMidiAdmission: (id) => configured.getRecordingMidiAdmission(id),
     retireRecordingMidiAdmission: (id) => configured.retireRecordingMidiAdmission(id),
     takeOwnsRecordingRoot: () => configured.takeOwnsRecordingRoot(),
+    recordingMidiSourceBeatAt: (clipId, position) => configured.recordingMidiSourceBeatAt(clipId, position),
 };
 
 export function setRecordingMidiAdmissionPort(port: RecordingMidiAdmissionPort): () => void {

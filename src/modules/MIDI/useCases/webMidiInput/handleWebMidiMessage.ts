@@ -15,7 +15,6 @@ import { activeNotes } from '../../repositories/webMidi/state';
 
 import { captureCompensatedRecordingPosition } from './captureCompensatedRecordingPosition';
 import { captureEventPositionAt } from './captureEventBeat';
-import { captureEventBeatAt } from './captureEventBeatAt';
 import { captureRecordingMemberExpression } from './captureRecordingMemberExpression';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
@@ -160,15 +159,15 @@ function dispatchExpressionHandler(channel: number, handler: () => void): Promis
 }
 
 /**
- * Pins a recording take's controller event to the beat of its own arrival, as
- * a note-on is pinned, so a queue wait cannot move it. Only a recording
- * transport needs the beat; any other skips the capture.
+ * Pins a recording take's controller event to the position of its own arrival,
+ * as a note-on is pinned, so a queue wait cannot move it to another pass.
  */
 function admitControllerTime(timeStamp: CapturedInputEventTime): CapturedInputEventTime {
     if (transportStore.value?.isRecording !== true) {
         return timeStamp;
     }
-    return { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
+    const position = captureEventPositionAt(timeStamp);
+    return { ...timeStamp, recordingBeat: position.beat, recordingPassIndex: position.passIndex };
 }
 
 function admitMemberExpression(
