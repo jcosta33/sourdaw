@@ -5,6 +5,19 @@ import { chromium, expect, test, type Page, type TestInfo } from '@playwright/te
 
 import { launch_new_project, setupWorkspace, wait_for_launch_first_paint, wait_for_workspace_ready } from './e2eUtils';
 import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
+import {
+    bindPunchRecordingClockWitness,
+    captureFrameDrift,
+    compensatedCaptureFrontierBeat,
+    currentPunchRecordingClock,
+    finalCapturedFrames,
+    frozenRecordingLatency,
+    installPunchRecordingClockWitness,
+    readPunchRecordingClockWitness,
+    RECORDING_RENDER_QUANTUM_FRAMES,
+    stopClockEvent,
+    type PunchRecordingClockWitness,
+} from './punchRecordingClockWitness';
 
 const PROJECT_NAME = 'Punch loop microphone acceptance';
 const LOOP_START = 8;
@@ -16,6 +29,7 @@ const MIC_SAMPLE_RATE = 48_000;
 const MIC_SECONDS = 24;
 const MARKER_SECONDS = 0.4;
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
+const CAPTURE_FRONTIER_BOUND_BEATS = (2 * RECORDING_RENDER_QUANTUM_FRAMES * TEMPO) / (MIC_SAMPLE_RATE * 60);
 
 type CapturedTake = {
     id: string;
@@ -174,8 +188,8 @@ async function recordingSnapshot(page: Page, trackId: string): Promise<Recording
             bufferId: clip.audioBufferId,
             clipStartBeat: clip.startBeat,
             clipEndBeat: clip.endBeat,
-            takes: lane.takes.map((take) => ({ ...take })),
-            regions: lane.activeCompRegions.map((region) => ({ ...region })),
+            takes: lane.takes,
+            regions: lane.activeCompRegions,
             durationSeconds: buffer?.duration ?? 0,
         };
     }, trackId);
@@ -198,9 +212,12 @@ async function expectNoAuditionRecording(page: Page, trackId: string, takeIds: s
 async function recordedEnvelope(page: Page, bufferId: string | null): Promise<number[]> {
     return page.evaluate(async (id) => {
         const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
-        const buffer: AudioBuffer | undefined = id
-            ? audioBufferCache.get(id)
-            : Reflect.get(window, '__punchClosingBuffer');
+        let buffer: AudioBuffer | undefined;
+        if (id) {
+            buffer = audioBufferCache.get(id);
+        } else {
+            buffer = Reflect.get(window, '__punchClosingBuffer');
+        }
         if (!buffer) {
             return [];
         }
@@ -487,8 +504,8 @@ async function recordingOwners(page: Page, trackId: string) {
             lanes: (lanes?.lanes.filter((lane) => lane.trackId === id) ?? []).map((lane) => ({
                 id: lane.id,
                 trackId: lane.trackId,
-                takes: lane.takes.map((take) => ({ ...take })),
-                regions: lane.activeCompRegions.map((region) => ({ ...region })),
+                takes: lane.takes,
+                regions: lane.activeCompRegions,
             })),
         });
         if (!root) {
@@ -504,9 +521,12 @@ async function recordingOwners(page: Page, trackId: string) {
 async function pcmFingerprint(page: Page, bufferId: string | null) {
     return page.evaluate(async (id) => {
         const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
-        const buffer: AudioBuffer | undefined = id
-            ? audioBufferCache.get(id)
-            : Reflect.get(window, '__punchClosingBuffer');
+        let buffer: AudioBuffer | undefined;
+        if (id) {
+            buffer = audioBufferCache.get(id);
+        } else {
+            buffer = Reflect.get(window, '__punchClosingBuffer');
+        }
         if (!buffer) {
             throw new Error('The original captured PCM is unavailable for the durability comparison');
         }
@@ -608,8 +628,8 @@ async function observeClosingRecording(page: Page, trackId: string, projectId: s
                     bufferId: clip.audioBufferId,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,
-                    takes: lane.takes.map((take) => ({ ...take })),
-                    regions: lane.activeCompRegions.map((region) => ({ ...region })),
+                    takes: lane.takes,
+                    regions: lane.activeCompRegions,
                     durationSeconds: buffer.duration,
                 });
                 // Retain the actual committed AudioBuffer across the product's cache teardown.
@@ -765,9 +785,7 @@ async function recordThroughTwoWraps(page: Page, trackId: string): Promise<void>
                         import('/src/modules/Transport/stores/playheadClockRef.ts'),
                     ]);
                     return (
-                        playheadWrapCountRef.current === 2 &&
-                        playheadClockRef.beat >= 9 &&
-                        playheadClockRef.beat < 11
+                        playheadWrapCountRef.current === 2 && playheadClockRef.beat >= 9 && playheadClockRef.beat < 11
                     );
                 }),
             { timeout: 4_000 }
@@ -775,11 +793,118 @@ async function recordThroughTwoWraps(page: Page, trackId: string): Promise<void>
         .toBe(true);
 }
 
-test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({}, testInfo: TestInfo) => {
+async function waitForCapturedThirdPassFrontier(page: Page): Promise<void> {
+    await expect
+        .poll(
+            async () => {
+                const current = await currentPunchRecordingClock(page);
+                const frame = current.recording;
+                const output = current.output;
+                if (!frame || frame.sampleZeroContextFrame === null || !output || output.wrapCount !== 2) {
+                    return false;
+                }
+                const drift = captureFrameDrift(frame);
+                if (drift === null || Math.abs(drift) > RECORDING_RENDER_QUANTUM_FRAMES) {
+                    return false;
+                }
+                const frontier = compensatedCaptureFrontierBeat({
+                    gestureBeat: output.gestureBeat,
+                    gestureContextFrame: frame.contextFrame,
+                    sampleZeroContextFrame: frame.sampleZeroContextFrame,
+                    capturedFrames: frame.publishedFrames,
+                    sampleRate: frame.sampleRate,
+                    frozenLatencySeconds:
+                        current.admission.baseLatencySeconds +
+                        current.admission.outputLatencySeconds +
+                        current.admission.trackCompensationSeconds,
+                    tempo: TEMPO,
+                });
+                return frontier > 9 + CAPTURE_FRONTIER_BOUND_BEATS && frontier < 11;
+            },
+            { timeout: 5_000 }
+        )
+        .toBe(true);
+}
+
+function capturedThirdPassFrontier(
+    witness: PunchRecordingClockWitness,
+    publishedGestureBeat: number,
+    pcmFrames: number
+): number {
+    const stop = stopClockEvent(witness);
+    const frame = stop.recording!;
+    const capturedFrames = finalCapturedFrames(witness);
+    expect(frame.sampleRate).toBe(MIC_SAMPLE_RATE);
+    expect(pcmFrames, 'the decoded buffer must own every worklet-published frame').toBe(capturedFrames);
+    expect(witness.firstFrame?.recording?.sampleZeroContextFrame).toBe(frame.sampleZeroContextFrame);
+    expect(witness.samples.length).toBeGreaterThan(20);
+    for (const sample of witness.samples) {
+        const drift = sample.recording && captureFrameDrift(sample.recording);
+        expect(drift, 'every sampled input quantum must track the recording context').not.toBeNull();
+        expect(Math.abs(drift!)).toBeLessThanOrEqual(RECORDING_RENDER_QUANTUM_FRAMES);
+    }
+    expect(Math.abs(captureFrameDrift(frame)!)).toBeLessThanOrEqual(RECORDING_RENDER_QUANTUM_FRAMES);
+    const worker = witness.events.find((event) => event.kind === 'worker-wav');
+    expect(worker?.wavBytes).toBe(44 + capturedFrames * Float32Array.BYTES_PER_ELEMENT);
+    expect(worker?.sampleZeroContextFrame).toBe(frame.sampleZeroContextFrame);
+    expect(worker?.sampleRate).toBe(MIC_SAMPLE_RATE);
+    return compensatedCaptureFrontierBeat({
+        gestureBeat: publishedGestureBeat,
+        gestureContextFrame: frame.contextFrame,
+        sampleZeroContextFrame: frame.sampleZeroContextFrame!,
+        capturedFrames,
+        sampleRate: frame.sampleRate,
+        frozenLatencySeconds: frozenRecordingLatency(witness),
+        tempo: TEMPO,
+    });
+}
+
+function assertIndependentClockReferenceControls(): void {
+    const sampleZeroContextFrame = 240_000;
+    const capturedFrames = MIC_SAMPLE_RATE * 4;
+    const gestureContextFrame = sampleZeroContextFrame + capturedFrames;
+    const gestureBeat = 10.4;
+    for (const latency of [0.02, 0.17]) {
+        const frontier = compensatedCaptureFrontierBeat({
+            gestureBeat,
+            gestureContextFrame,
+            sampleZeroContextFrame,
+            capturedFrames,
+            sampleRate: MIC_SAMPLE_RATE,
+            frozenLatencySeconds: latency,
+            tempo: TEMPO,
+        });
+        expect(frontier).toBeCloseTo(gestureBeat - (latency * TEMPO) / 60, 10);
+    }
+    const ignoredCompensation = compensatedCaptureFrontierBeat({
+        gestureBeat,
+        gestureContextFrame,
+        sampleZeroContextFrame,
+        capturedFrames,
+        sampleRate: MIC_SAMPLE_RATE,
+        frozenLatencySeconds: 0,
+        tempo: TEMPO,
+    });
+    expect(Math.abs(ignoredCompensation - (gestureBeat - (0.17 * TEMPO) / 60))).toBeGreaterThan(
+        CAPTURE_FRONTIER_BOUND_BEATS
+    );
+    const missingFrames = 1024;
+    expect(
+        captureFrameDrift({
+            contextFrame: gestureContextFrame,
+            sampleZeroContextFrame,
+            publishedFrames: capturedFrames - missingFrames,
+            sampleRate: MIC_SAMPLE_RATE,
+        })
+    ).toBeGreaterThan(RECORDING_RENDER_QUANTUM_FRAMES);
+}
+
+test('keeps real punch-loop PCM through comp, undo, export and reopen', async (_fixtures, testInfo: TestInfo) => {
+    assertIndependentClockReferenceControls();
     test.setTimeout(240_000);
     const baseURL = testInfo.project.use.baseURL;
     if (typeof baseURL !== 'string') {
-        throw new Error('Punch acceptance needs a private Playwright baseURL');
+        throw new TypeError('Punch acceptance needs a private Playwright baseURL');
     }
     const micWav = testInfo.outputPath('timecoded-fake-microphone.wav');
     await writeFile(micWav, fakeMicrophoneWav());
@@ -812,6 +937,7 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         context.setDefaultNavigationTimeout(45_000);
         const page = await context.newPage();
         activePage = page;
+        await installPunchRecordingClockWitness(page);
         observeConsole(page, 'initial');
         await installBrowserPlaybackObserver(page);
         await installDownloadFallback(page);
@@ -822,8 +948,10 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         await page.locator('input:focus').press('Enter');
 
         const trackId = await configurePunchTrack(page);
+        await bindPunchRecordingClockWitness(page, trackId);
 
         await recordThroughTwoWraps(page, trackId);
+        await waitForCapturedThirdPassFrontier(page);
         await page.getByTestId('transport-stop').click();
         await expect(page.getByTestId('transport-record')).toHaveAttribute('aria-pressed', 'false');
         await expect
@@ -857,6 +985,12 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         expect(committedOwners.raw.lanes).toHaveLength(1);
         const originalPcm = await pcmFingerprint(page, captured.bufferId);
         expect(originalPcm.sampleRate).toBe(MIC_SAMPLE_RATE);
+        const captureWitness = await readPunchRecordingClockWitness(page);
+        const stop = stopClockEvent(captureWitness);
+        expect(stop.output?.wrapCount).toBe(2);
+        const expectedEndBeat = capturedThirdPassFrontier(captureWitness, stop.output!.gestureBeat, originalPcm.frames);
+        expect(Math.abs(passes[2].endBeat - expectedEndBeat)).toBeLessThanOrEqual(CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(passes[2].passSourceEndSeconds).toBeCloseTo(captured.durationSeconds, 6);
         const envelope = await recordedEnvelope(page, captured.bufferId);
         expect(envelope.length).toBeGreaterThan(30);
         expect(Math.max(...envelope)).toBeGreaterThan(0.02);
@@ -899,10 +1033,14 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                     document.addEventListener(
                         type,
                         (event) => {
-                            if (events.length >= 200) return;
+                            if (events.length >= 200) {
+                                return;
+                            }
                             const target = event.target instanceof Element ? event.target : null;
                             const row = target?.closest('[role="row"]');
-                            if (!row) return;
+                            if (!row) {
+                                return;
+                            }
                             events.push({
                                 type,
                                 phase: capture ? 'capture' : 'bubble',
@@ -1122,12 +1260,12 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
     }
 });
 
-test('keeps a live take when Pause is immediately followed by New Project', async ({}, testInfo: TestInfo) => {
+test('keeps a live take when Pause is immediately followed by New Project', async (_fixtures, testInfo: TestInfo) => {
     test.setTimeout(180_000);
     const projectName = 'Punch immediate Pause replacement';
     const baseURL = testInfo.project.use.baseURL;
     if (typeof baseURL !== 'string') {
-        throw new Error('Punch acceptance needs a private Playwright baseURL');
+        throw new TypeError('Punch acceptance needs a private Playwright baseURL');
     }
     const micWav = testInfo.outputPath('pause-timecoded-microphone.wav');
     await writeFile(micWav, fakeMicrophoneWav());
@@ -1151,6 +1289,7 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
     };
     try {
         const page = activePage;
+        await installPunchRecordingClockWitness(page);
         observe(page);
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -1167,6 +1306,7 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
             return id;
         });
         const trackId = await configurePunchTrack(page);
+        await bindPunchRecordingClockWitness(page, trackId);
         await observeClosingRecording(page, trackId, projectId);
         await recordThroughTwoWraps(page, trackId);
 
@@ -1184,8 +1324,9 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
         const closing: RecordingSnapshot = await page.evaluate(() => Reflect.get(window, '__punchClosing'));
         const pause: { projectId: string; beat: number; sessionStatus: string | null; takeIds: string[] } =
             await page.evaluate(() => Reflect.get(window, '__punchPause'));
-        const request: { projectId: string; idle: boolean } =
-            await page.evaluate(() => Reflect.get(window, '__punchReplacementRequest'));
+        const request: { projectId: string; idle: boolean } = await page.evaluate(() =>
+            Reflect.get(window, '__punchReplacementRequest')
+        );
         expect(pause, 'the outgoing transport must publish its Pause position').toBeTruthy();
         expect(request, 'the real New Project click must be observed').toBeTruthy();
         expect(pause.projectId).toBe(projectId);
@@ -1212,9 +1353,17 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
         expect(passes[1].startBeat).toBeCloseTo(LOOP_START, 0);
         expect(passes[1].endBeat).toBeCloseTo(LOOP_END, 0);
         expect(passes[2].startBeat).toBeCloseTo(LOOP_START, 0);
-        expect(passes[2].endBeat).toBeCloseTo(pause.beat, 1);
         expect(passes.every((take) => take.passSourceEndSeconds! <= closing.durationSeconds + 0.1)).toBe(true);
         const originalPcm = await pcmFingerprint(page, null);
+        const captureWitness = await readPunchRecordingClockWitness(page);
+        const pauseClick = captureWitness.events.find((event) => event.kind === 'capture-pause-click');
+        expect(pauseClick?.output?.wrapCount).toBe(2);
+        expect(pauseClick?.output?.isRecording).toBe(true);
+        const stop = stopClockEvent(captureWitness);
+        expect(Math.abs(stop.output!.gestureBeat - pause.beat)).toBeLessThanOrEqual(CAPTURE_FRONTIER_BOUND_BEATS);
+        const expectedEndBeat = capturedThirdPassFrontier(captureWitness, pause.beat, originalPcm.frames);
+        expect(Math.abs(passes[2].endBeat - expectedEndBeat)).toBeLessThanOrEqual(CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(passes[2].passSourceEndSeconds).toBeCloseTo(closing.durationSeconds, 6);
         const envelope = await recordedEnvelope(page, null);
         expect(originalPcm.sampleRate).toBe(MIC_SAMPLE_RATE);
         expect(originalPcm.frames).toBeGreaterThan(MIC_SAMPLE_RATE * 3);
