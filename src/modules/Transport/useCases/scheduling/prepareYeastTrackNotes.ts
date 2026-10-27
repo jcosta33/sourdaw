@@ -1,11 +1,8 @@
-import type { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
-import type { MidiStoreState } from '#/modules/MIDI/stores';
 import { projectCommittedGroove, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
-import type { TransportState } from '../../models/TransportState';
 import {
     getScheduledMidiNoteIndex,
     lowerBoundMidiNoteEnd,
@@ -19,12 +16,16 @@ import {
     type GetScheduledIterationRangeInput,
     type ScheduledIterationRange,
 } from '../../services/midiSchedulerWindowGeometry';
-import type { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
-import type { SchedulerCancellation } from './scheduleMidiNotes';
+
+import type { trackStore } from '#/modules/Arrangement/stores';
+import type { MidiStoreState } from '#/modules/MIDI/stores';
 import type { resolveMidiWindowClips } from './resolveMidiWindowClips';
+import type { SchedulerCancellation } from './scheduleMidiNotes';
+import type { TransportState } from '../../models/TransportState';
+import type { tempoMapStore } from '../../stores/tempoMapStore';
 
 type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number];
 type SelectYeastNotesForSchedulerWindowInput = {
@@ -361,6 +362,154 @@ function getYeastCandidateIterationRange({
     };
 }
 
+function probableYeastNotes(
+    notes: readonly ScheduledMidiNote[],
+    midiState: MidiStoreState,
+    clipId: string,
+    absoluteOccurrenceIndex: number
+): ScheduledMidiNote[] {
+    return notes.filter((note) =>
+        shouldPlayMidiEvent({
+            projectProbabilitySeed: midiState.probabilitySeed,
+            clipId,
+            eventId: note.id,
+            absoluteOccurrenceIndex,
+            probabilityPercent: note.probability ?? 100,
+        })
+    );
+}
+
+function prepareClipYeastIterations(
+    track: SchedulerTrack,
+    clip: ReturnType<typeof resolveMidiWindowClips>[number],
+    midiState: MidiStoreState,
+    fromBeat: number,
+    toBeat: number,
+    cancellation: SchedulerCancellation | undefined,
+    isCurrent: () => boolean,
+    liveYeastIterations: LiveYeastIteration[]
+): string | null | undefined {
+    let activeYeastCarrierRouteId: string | undefined;
+    const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
+
+    const clipVisualLength = clip.endBeat - clip.startBeat;
+    const loopProjection = projectClipLoopExpansion({
+        clipDurationBeats: clipVisualLength,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const loopLength = loopProjection.loopLengthBeats;
+    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+        sourceStartBeat: clip.sourceStartBeat,
+        segmentStartBeat: clip.startBeat,
+        loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const iterationCount = loopProjection.iterationCount;
+    const activeIterationRange = getScheduledIterationRange({
+        clipStartBeat: clip.startBeat,
+        fromBeat,
+        iterationCount,
+        loopEnabled: clip.loopEnabled ?? false,
+        loopLengthBeats: loopLength,
+        toBeat,
+    });
+    const candidateIterationRange = getYeastCandidateIterationRange({
+        clipStartBeat: clip.startBeat,
+        fromBeat,
+        iterationCount,
+        loopEnabled: clip.loopEnabled ?? false,
+        loopLengthBeats: loopLength,
+        midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+        notes: sourceNotes,
+        toBeat,
+    });
+    for (
+        let iteration = candidateIterationRange.startIndex;
+        iteration < candidateIterationRange.endIndex;
+        iteration++
+    ) {
+        if (!isCurrent()) {
+            return null;
+        }
+        const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
+        const iterationStartBeat = clip.startBeat + iteration * loopLength;
+        const iterationEndBeat = Math.min(iterationStartBeat + loopLength, clip.endBeat);
+        const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
+        const candidateNotes = selectYeastNotesForSchedulerWindow({
+            notes: sourceNotes,
+            iterationStartBeat,
+            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+            loopEnabled: clip.loopEnabled ?? false,
+            loopLengthBeats: loopLength,
+            clipStartBeat: clip.startBeat,
+            loopOriginBeat: clip.loopOriginBeat,
+            fromBeat,
+            toBeat,
+        });
+        const isActiveIteration =
+            iteration >= activeIterationRange.startIndex && iteration < activeIterationRange.endIndex;
+        if (!isActiveIteration && candidateNotes.length === 0) {
+            continue;
+        }
+        const iterationDescriptor = {
+            routeId,
+            clipId: clip.id,
+            iterationStartBeat,
+            iterationEndBeat,
+            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+            loopEnabled: clip.loopEnabled ?? false,
+            loopLengthBeats: loopLength,
+            clipStartBeat: clip.startBeat,
+            loopOriginBeat: clip.loopOriginBeat,
+            sourceNotes,
+        } satisfies LiveYeastIteration;
+        cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);
+        liveYeastIterations.push({
+            ...iterationDescriptor,
+            sourceNotes: probableYeastNotes(candidateNotes, midiState, clip.id, absoluteOccurrenceIndex),
+        });
+        if (activeYeastCarrierRouteId === undefined && isActiveIteration) {
+            activeYeastCarrierRouteId = routeId;
+        }
+    }
+    return activeYeastCarrierRouteId;
+}
+
+function appendGeneratedYeastNotes(
+    generatedNotes: readonly LiveYeastNote[],
+    liveYeastIterations: readonly LiveYeastIteration[],
+    liveYeastNotesByRoute: Map<string, LiveYeastNote[]>,
+    trackScopedYeastNoteIds: Set<string>
+): void {
+    for (const note of generatedNotes) {
+        const hasOriginCarrier = liveYeastIterations.some(
+            (iteration) => iteration.iterationStartBeat <= note.startBeat && note.startBeat < iteration.iterationEndBeat
+        );
+        if (!hasOriginCarrier) {
+            continue;
+        }
+        const [projectedNote] = projectCommittedGroove({
+            events: [note],
+            consumerType: 'sequencer',
+            consumerId: 'project',
+        });
+        const carrierIteration = liveYeastIterations.find(
+            (iteration) =>
+                projectedNote &&
+                iteration.iterationStartBeat <= projectedNote.startBeat &&
+                projectedNote.startBeat < iteration.iterationEndBeat
+        );
+        if (!projectedNote || !carrierIteration) {
+            continue;
+        }
+        const carrierNotes = liveYeastNotesByRoute.get(carrierIteration.routeId) ?? [];
+        carrierNotes.push(projectedNote);
+        liveYeastNotesByRoute.set(carrierIteration.routeId, carrierNotes);
+        trackScopedYeastNoteIds.add(projectedNote.id);
+    }
+}
+
 export async function prepareYeastTrackNotes(
     track: SchedulerTrack,
     activeMidiClips: ReturnType<typeof resolveMidiWindowClips>,
@@ -378,96 +527,21 @@ export async function prepareYeastTrackNotes(
 
     if (yeastDevice) {
         for (const clip of activeMidiClips) {
-            const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
-
-            const clipVisualLength = clip.endBeat - clip.startBeat;
-            const loopProjection = projectClipLoopExpansion({
-                clipDurationBeats: clipVisualLength,
-                configuredLoopLengthBeats: clip.loopLength,
-                loopEnabled: clip.loopEnabled ?? false,
-            });
-            const loopLength = loopProjection.loopLengthBeats;
-            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-                sourceStartBeat: clip.sourceStartBeat,
-                segmentStartBeat: clip.startBeat,
-                loopLength,
-                loopEnabled: clip.loopEnabled ?? false,
-            });
-            const iterationCount = loopProjection.iterationCount;
-            const activeIterationRange = getScheduledIterationRange({
-                clipStartBeat: clip.startBeat,
+            const activeRoute = prepareClipYeastIterations(
+                track,
+                clip,
+                midiState,
                 fromBeat,
-                iterationCount,
-                loopEnabled: clip.loopEnabled ?? false,
-                loopLengthBeats: loopLength,
                 toBeat,
-            });
-            const candidateIterationRange = getYeastCandidateIterationRange({
-                clipStartBeat: clip.startBeat,
-                fromBeat,
-                iterationCount,
-                loopEnabled: clip.loopEnabled ?? false,
-                loopLengthBeats: loopLength,
-                midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                notes: sourceNotes,
-                toBeat,
-            });
-            for (
-                let iteration = candidateIterationRange.startIndex;
-                iteration < candidateIterationRange.endIndex;
-                iteration++
-            ) {
-                if (!isCurrent()) {
-                    return null;
-                }
-                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
-                const iterationStartBeat = clip.startBeat + iteration * loopLength;
-                const iterationEndBeat = Math.min(iterationStartBeat + loopLength, clip.endBeat);
-                const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                const candidateNotes = selectYeastNotesForSchedulerWindow({
-                    notes: sourceNotes,
-                    iterationStartBeat,
-                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                    loopEnabled: clip.loopEnabled ?? false,
-                    loopLengthBeats: loopLength,
-                    clipStartBeat: clip.startBeat,
-                    loopOriginBeat: clip.loopOriginBeat,
-                    fromBeat,
-                    toBeat,
-                });
-                const isActiveIteration =
-                    iteration >= activeIterationRange.startIndex && iteration < activeIterationRange.endIndex;
-                if (!isActiveIteration && candidateNotes.length === 0) {
-                    continue;
-                }
-                const iterationDescriptor = {
-                    routeId,
-                    clipId: clip.id,
-                    iterationStartBeat,
-                    iterationEndBeat,
-                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                    loopEnabled: clip.loopEnabled ?? false,
-                    loopLengthBeats: loopLength,
-                    clipStartBeat: clip.startBeat,
-                    loopOriginBeat: clip.loopOriginBeat,
-                    sourceNotes,
-                } satisfies LiveYeastIteration;
-                cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);
-                liveYeastIterations.push({
-                    ...iterationDescriptor,
-                    sourceNotes: candidateNotes.filter((note) =>
-                        shouldPlayMidiEvent({
-                            projectProbabilitySeed: midiState.probabilitySeed,
-                            clipId: clip.id,
-                            eventId: note.id,
-                            absoluteOccurrenceIndex,
-                            probabilityPercent: note.probability ?? 100,
-                        })
-                    ),
-                });
-                if (activeYeastCarrierRouteId === undefined && isActiveIteration) {
-                    activeYeastCarrierRouteId = routeId;
-                }
+                cancellation,
+                isCurrent,
+                liveYeastIterations
+            );
+            if (activeRoute === null) {
+                return null;
+            }
+            if (activeYeastCarrierRouteId === undefined) {
+                activeYeastCarrierRouteId = activeRoute;
             }
         }
     }
@@ -496,33 +570,12 @@ export async function prepareYeastTrackNotes(
             liveYeastNotesByRoute.set(routeId, routeNotes);
         }
         if (yeastResult.generatedNotes.length > 0) {
-            for (const note of yeastResult.generatedNotes) {
-                const hasOriginCarrier = liveYeastIterations.some(
-                    (iteration) =>
-                        iteration.iterationStartBeat <= note.startBeat && note.startBeat < iteration.iterationEndBeat
-                );
-                if (!hasOriginCarrier) {
-                    continue;
-                }
-                const [projectedNote] = projectCommittedGroove({
-                    events: [note],
-                    consumerType: 'sequencer',
-                    consumerId: 'project',
-                });
-                const carrierIteration = liveYeastIterations.find(
-                    (iteration) =>
-                        projectedNote &&
-                        iteration.iterationStartBeat <= projectedNote.startBeat &&
-                        projectedNote.startBeat < iteration.iterationEndBeat
-                );
-                if (!projectedNote || !carrierIteration) {
-                    continue;
-                }
-                const carrierNotes = liveYeastNotesByRoute.get(carrierIteration.routeId) ?? [];
-                carrierNotes.push(projectedNote);
-                liveYeastNotesByRoute.set(carrierIteration.routeId, carrierNotes);
-                trackScopedYeastNoteIds.add(projectedNote.id);
-            }
+            appendGeneratedYeastNotes(
+                yeastResult.generatedNotes,
+                liveYeastIterations,
+                liveYeastNotesByRoute,
+                trackScopedYeastNoteIds
+            );
         }
     }
     return { yeastDevice, liveYeastNotesByRoute, trackScopedYeastNoteIds };

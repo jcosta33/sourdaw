@@ -1,7 +1,8 @@
-import type { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 
 import { selectMidiClipsForSchedulerWindow } from './selectMidiClipsForSchedulerWindow';
+
+import type { trackStore } from '#/modules/Arrangement/stores';
 
 type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number];
 

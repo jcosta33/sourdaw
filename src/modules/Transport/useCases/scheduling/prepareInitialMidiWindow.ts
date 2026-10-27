@@ -1,12 +1,11 @@
-import type { trackStore } from '#/modules/Arrangement/stores';
-import type { midiStore } from '#/modules/MIDI/stores';
-
-import type { TransportState } from '../../models/TransportState';
-import type { tempoMapStore } from '../../stores/tempoMapStore';
-
 import { prepareYeastTrackNotes, type PreparedYeastTrackNotes } from './prepareYeastTrackNotes';
 import { resolveMidiWindowClips } from './resolveMidiWindowClips';
+
+import type { trackStore } from '#/modules/Arrangement/stores';
+import type { midiStore } from '#/modules/MIDI/stores';
 import type { SchedulerCancellation } from './scheduleMidiNotes';
+import type { TransportState } from '../../models/TransportState';
+import type { tempoMapStore } from '../../stores/tempoMapStore';
 
 /** Prepare only the external MIDI work. No controller, note or source is emitted here. */
 export async function prepareInitialMidiWindow(

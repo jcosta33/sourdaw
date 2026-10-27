@@ -10,7 +10,6 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { prepareInitialMidiWindow } from '../scheduling/prepareInitialMidiWindow';
-import type { SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 
 import {
     INITIAL_HIGH_WATER_OFFSET_BEATS,
@@ -18,6 +17,8 @@ import {
     SCHEDULE_AHEAD_SECONDS,
 } from './projectLoopSeamWindow';
 import { schedulerSession } from './schedulerSession';
+
+import type { SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 
 const PROGRAMME_FIELDS = [
     'playheadPosition',

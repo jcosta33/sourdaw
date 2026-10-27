@@ -66,9 +66,7 @@ import { detachSoundingNoteExpression } from './detachSoundingNoteExpression';
 import { holdNoteExpression } from './holdNoteExpression';
 import { keepHeldNoteExpressionOnReceiver } from './keepHeldNoteExpressionOnReceiver';
 import { listMutedMidiClips } from './listMutedMidiClips';
-import type { PreparedInitialMidiWindow } from './prepareInitialMidiWindow';
 import { prepareYeastTrackNotes, type PreparedYeastTrackNotes } from './prepareYeastTrackNotes';
-import type { LiveYeastIteration, LiveYeastNote } from './processLiveYeastTrackBlock';
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
 import { relocateHeldNoteExpression } from './relocateHeldNoteExpression';
 import { resolveChannelBendClips } from './resolveChannelBendClips';
@@ -83,6 +81,9 @@ import { scheduleFrozenTrack } from './scheduleFrozenTrack';
 import { scheduleStoredControllers } from './scheduleStoredControllers';
 import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';
 import { takeHeldNoteExpression } from './takeHeldNoteExpression';
+
+import type { PreparedInitialMidiWindow } from './prepareInitialMidiWindow';
+import type { LiveYeastIteration, LiveYeastNote } from './processLiveYeastTrackBlock';
 
 // Worklet synth device types that share a common noteOn/noteOff controls interface.
 // Each entry maps a device type to the controls property name on the device node
