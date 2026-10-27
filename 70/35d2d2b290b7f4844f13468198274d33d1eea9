@@ -1,0 +1,25 @@
+src/modules/ProofChamber/models/__tests__/ChamberDisclosure.spec.ts
+  s_59e31a5c6f3e31::t_f424dea75ad2ad 3
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberDisclosure.integration.spec.tsx
+  s_59e31a5c6f3e31::t_978c454e2470a0 27-28,95-99,111-115,125-129,142-143,169,177
+src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx
+  s_59e31a5c6f3e31::t_1375e90edc6ecf 122
+src/modules/ProofChamber/useCases/proofChamber/hydrateChamberDisclosureFromProject.ts
+  s_59e31a5c6f3e31::t_767ba3b5c7ceae 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7035d2d2b290b7f4844f13468198274d33d1eea9",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
