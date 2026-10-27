@@ -15,7 +15,6 @@ import {
     queryAgentDiscovery,
     querySemanticProject,
 } from '#/modules/Project/useCases';
-
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';

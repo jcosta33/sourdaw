@@ -1,5 +1,5 @@
-import { type TransientOnsetWorkerRequest } from '../models/TransientOnsetWorker';
 import { detectTransients } from '../models/TransientDetection';
+import { type TransientOnsetWorkerRequest } from '../models/TransientOnsetWorker';
 
 self.onmessage = (event: MessageEvent<TransientOnsetWorkerRequest>): void => {
     try {

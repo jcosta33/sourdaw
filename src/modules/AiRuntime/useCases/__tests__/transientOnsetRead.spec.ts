@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { undoHistoryStore } from '#/modules/Command/stores';
 import {
     captureProjectRevision,
     createCrdtDoc,
@@ -12,19 +13,17 @@ import {
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
 import { getSettledProjectId, projectStore } from '#/modules/Project/stores';
-import { undoHistoryStore } from '#/modules/Command/stores';
 
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
-import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
-import { getProjectContext } from '../getProjectContext';
-import { parsePromptToActions } from '../parsePromptToActions';
 import { encodeWireToolName } from '../../repositories/cloudLlm/cloudInference/encodeWireToolName';
-
 import { getAgentToolCatalogSchemas } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
+import { getProjectContext } from '../getProjectContext';
+import { parsePromptToActions } from '../parsePromptToActions';
 
 const READ = 'analysis.detectTransients';
 

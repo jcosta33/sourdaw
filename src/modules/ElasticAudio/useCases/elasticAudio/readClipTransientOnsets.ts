@@ -68,8 +68,7 @@ function findSource(clipId: string) {
     return found;
 }
 
-/** A whole-source local read. The caller admits work before entering this cache boundary. */
-export async function readClipTransientOnsets(input: {
+type ReadInput = {
     clipId: string;
     sensitivity: number;
     projectId: string;
@@ -80,13 +79,46 @@ export async function readClipTransientOnsets(input: {
     timeoutMs: number;
     signal?: AbortSignal;
     onAnalysisStarted: () => void;
-}): Promise<SourceRead> {
-    const revisionCurrent = (): boolean =>
-        getSettledProjectId() === input.projectId && input.isProjectRevisionCurrent();
+};
+type SourceGeometry = Pick<SourceIdentity, 'sampleRate' | 'frameCount' | 'channelCount'>;
+type CachedSource = { rawBufferId: string; buffer: AudioBuffer; identity: SourceIdentity };
+type PreparedSource = Extract<SourceRead, { status: 'failed' }> | { status: 'ready'; source: CachedSource };
+
+function revisionIsCurrent(input: ReadInput): boolean {
+    return getSettledProjectId() === input.projectId && input.isProjectRevisionCurrent();
+}
+
+function validGeometry({ sampleRate, frameCount, channelCount }: SourceGeometry): boolean {
+    return (
+        Number.isFinite(sampleRate) &&
+        sampleRate > 0 &&
+        Number.isSafeInteger(frameCount) &&
+        frameCount > 0 &&
+        Number.isSafeInteger(channelCount) &&
+        channelCount >= 1
+    );
+}
+
+function validReadLimits(input: ReadInput, found: ReturnType<typeof findSource>[number]): boolean {
+    return (
+        Number.isFinite(input.maxSourceSeconds) &&
+        input.maxSourceSeconds > 0 &&
+        Number.isSafeInteger(input.maxChannelSamples) &&
+        input.maxChannelSamples >= 1 &&
+        Number.isFinite(input.timeoutMs) &&
+        input.timeoutMs > 0 &&
+        Number.isFinite(input.sensitivity) &&
+        input.sensitivity >= 0 &&
+        input.sensitivity <= 1 &&
+        ![input.projectId, input.clipId, found.trackId, found.alternativeId ?? ''].some((id) => id.length > 256)
+    );
+}
+
+function prepareSource(input: ReadInput): PreparedSource {
     if (input.signal?.aborted) {
         return { status: 'failed', code: 'cancelled' };
     }
-    if (!revisionCurrent()) {
+    if (!revisionIsCurrent(input)) {
         return { status: 'failed', code: 'stale-source' };
     }
     const candidates = findSource(input.clipId);
@@ -102,80 +134,91 @@ export async function readClipTransientOnsets(input: {
     if (!buffer || !rawBufferId) {
         return { status: 'failed', code: 'missing-buffer' };
     }
-    const { sampleRate, length: frameCount, numberOfChannels: channelCount } = buffer;
-    if (
-        !Number.isFinite(sampleRate) ||
-        sampleRate <= 0 ||
-        !Number.isSafeInteger(frameCount) ||
-        frameCount <= 0 ||
-        !Number.isSafeInteger(channelCount) ||
-        channelCount < 1 ||
-        !Number.isFinite(input.maxSourceSeconds) ||
-        input.maxSourceSeconds <= 0 ||
-        !Number.isSafeInteger(input.maxChannelSamples) ||
-        input.maxChannelSamples < 1 ||
-        !Number.isFinite(input.timeoutMs) ||
-        input.timeoutMs <= 0 ||
-        !Number.isFinite(input.sensitivity) ||
-        input.sensitivity < 0 ||
-        input.sensitivity > 1 ||
-        [input.projectId, input.clipId, found.trackId, found.alternativeId ?? ''].some((id) => id.length > 256)
-    ) {
+    const geometry = {
+        sampleRate: buffer.sampleRate,
+        frameCount: buffer.length,
+        channelCount: buffer.numberOfChannels,
+    };
+    if (!validGeometry(geometry) || !validReadLimits(input, found)) {
         return { status: 'failed', code: 'invalid-source' };
     }
     if (
-        frameCount / sampleRate > Math.min(input.maxSourceSeconds, 600) ||
-        frameCount * channelCount > Math.min(input.maxChannelSamples, 10_000_000)
+        geometry.frameCount / geometry.sampleRate > Math.min(input.maxSourceSeconds, 600) ||
+        geometry.frameCount * geometry.channelCount > Math.min(input.maxChannelSamples, 10_000_000)
     ) {
         return { status: 'failed', code: 'source-too-large' };
     }
-    const identity: SourceIdentity = {
-        projectId: input.projectId,
-        clipId: input.clipId,
-        trackId: found.trackId,
-        alternativeId: found.alternativeId,
-        activeAlternative: found.activeAlternative,
-        bufferId: digest(rawBufferId),
-        sampleRate,
-        frameCount,
-        channelCount,
+    return {
+        status: 'ready',
+        source: {
+            rawBufferId,
+            buffer,
+            identity: {
+                projectId: input.projectId,
+                clipId: input.clipId,
+                trackId: found.trackId,
+                alternativeId: found.alternativeId,
+                activeAlternative: found.activeAlternative,
+                bufferId: digest(rawBufferId),
+                ...geometry,
+            },
+        },
     };
-    const isCurrent = (): boolean => {
-        if (input.signal?.aborted || !revisionCurrent()) {
-            return false;
+}
+
+function sourceIsCurrent(input: ReadInput, { identity, rawBufferId, buffer }: CachedSource): boolean {
+    if (input.signal?.aborted || !revisionIsCurrent(input)) {
+        return false;
+    }
+    const matches = findSource(input.clipId);
+    const live = matches[0];
+    return (
+        matches.length === 1 &&
+        live !== undefined &&
+        live.clip.type === 'audio' &&
+        live.clip.audioBufferId === rawBufferId &&
+        live.trackId === identity.trackId &&
+        live.alternativeId === identity.alternativeId &&
+        live.activeAlternative === identity.activeAlternative &&
+        audioBufferCache.get(rawBufferId) === buffer &&
+        buffer.sampleRate === identity.sampleRate &&
+        buffer.length === identity.frameCount &&
+        buffer.numberOfChannels === identity.channelCount
+    );
+}
+
+function copySourceChannels({ buffer, identity }: CachedSource): Float32Array[] | null {
+    const channels: Float32Array[] = [];
+    for (let channel = 0; channel < identity.channelCount; channel++) {
+        const samples = buffer.getChannelData(channel);
+        if (samples.length !== identity.frameCount) {
+            return null;
         }
-        const matches = findSource(input.clipId);
-        const live = matches[0];
-        return (
-            matches.length === 1 &&
-            live !== undefined &&
-            live.clip.type === 'audio' &&
-            live.clip.audioBufferId === rawBufferId &&
-            live.trackId === identity.trackId &&
-            live.alternativeId === identity.alternativeId &&
-            live.activeAlternative === identity.activeAlternative &&
-            audioBufferCache.get(rawBufferId) === buffer &&
-            buffer.sampleRate === sampleRate &&
-            buffer.length === frameCount &&
-            buffer.numberOfChannels === channelCount
-        );
-    };
+        channels.push(new Float32Array(samples));
+    }
+    return channels;
+}
+
+/** A whole-source local read. The caller admits work before entering this cache boundary. */
+export async function readClipTransientOnsets(input: ReadInput): Promise<SourceRead> {
+    const prepared = prepareSource(input);
+    if (prepared.status === 'failed') {
+        return prepared;
+    }
+    const { source } = prepared;
+    const isCurrent = (): boolean => sourceIsCurrent(input, source);
     try {
         if (!isCurrent()) {
             return { status: 'failed', code: 'stale-source' };
         }
-        const channels: Float32Array[] = [];
-        for (let channel = 0; channel < channelCount; channel++) {
-            const samples = buffer.getChannelData(channel);
-            if (samples.length !== frameCount) {
-                return { status: 'failed', code: 'invalid-source' };
-            }
-            channels.push(new Float32Array(samples));
+        const channels = copySourceChannels(source);
+        if (channels === null) {
+            return { status: 'failed', code: 'invalid-source' };
         }
         input.onAnalysisStarted();
         const result = await runTransientOnsetWorker({
             channels,
-            sampleRate,
+            sampleRate: source.identity.sampleRate,
             sensitivity: input.sensitivity,
             timeoutMs: input.timeoutMs,
             signal: input.signal,
@@ -186,7 +229,7 @@ export async function readClipTransientOnsets(input: {
         if (!isCurrent()) {
             return { status: 'failed', code: input.signal?.aborted ? 'cancelled' : 'stale-source' };
         }
-        return { status: 'complete', identity, hits: result.hits, isCurrent };
+        return { status: 'complete', identity: source.identity, hits: result.hits, isCurrent };
     } catch {
         return { status: 'failed', code: 'analysis-failed' };
     }
