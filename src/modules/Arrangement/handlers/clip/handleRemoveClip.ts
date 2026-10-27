@@ -416,6 +416,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         let clipSnapshot: MinimalClipShape | null = null;
         let trackId: string | null = null;
         let clipIndex: number | null = null;
+        let clipOrder: string[] = [];
         if (state) {
             for (const track of state.tracks) {
                 const index = track.clips.findIndex((context) => context.id === alpha.payload.clipId);
@@ -424,6 +425,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                     clipSnapshot = structuredClone(clip);
                     trackId = track.id;
                     clipIndex = index;
+                    clipOrder = track.clips.map((candidate) => candidate.id);
                     break;
                 }
             }
@@ -470,6 +472,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                 trackId,
                 clipSnapshot,
                 clipIndex,
+                clipOrder,
                 ripplePlan,
                 midiNotesSnapshot: notes ? structuredClone(notes) : null,
                 midiCcSnapshot: cc ? structuredClone(cc) : null,

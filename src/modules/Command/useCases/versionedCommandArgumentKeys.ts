@@ -891,6 +891,7 @@ const schemaDefinitions = [
             trackId: 0,
             clipSnapshot: 100,
             clipIndex: 1,
+            clipOrder: 20,
             ripplePlan: 118,
             midiNotesSnapshot: 119,
             midiCcSnapshot: 119,
