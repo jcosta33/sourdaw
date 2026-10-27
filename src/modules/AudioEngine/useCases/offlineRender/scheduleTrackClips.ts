@@ -1,7 +1,11 @@
 import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';
-import { projectFrozenMidiTakeWindow, type MidiStoreState } from '#/modules/MIDI/stores';
+import {
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+    type MidiStoreState,
+} from '#/modules/MIDI/stores';
 import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,
@@ -88,6 +92,19 @@ function selectedMidiWindows(clip: ResolvedClip) {
         windows.push({ passHead, passEnd: Math.min(passHead + span, clip.endBeat), value });
     }
     return windows;
+}
+
+function selectedFrozenControllerRows(clip: ResolvedClip, regionStartBeat: number) {
+    const projected = selectedMidiWindows(clip).flatMap(({ value }) => [
+        ...value.controlChanges.map((row) => ({ ...row, closesClip: false })),
+        ...value.closingControlChanges.map((row) => ({ ...row, closesClip: true })),
+    ]);
+    const admitted = projected.filter((row) =>
+        row.closesClip
+            ? row.beat > regionStartBeat && row.beat <= clip.endBeat
+            : row.beat >= regionStartBeat && row.beat < clip.endBeat
+    );
+    return admitted.sort((left, right) => left.beat - right.beat);
 }
 
 /**
@@ -831,7 +848,9 @@ export async function scheduleTrackClips({
                 continue;
             }
             const frozenSource = clip.midiTakeSource;
-            const sourceNotes = frozenSource ? [] : (midi.notesByClipId[clip.id] ?? []);
+            const sourceNotes = frozenSource
+                ? []
+                : selectMidiNotesForRecordingPass(midi.notesByClipId[clip.id] ?? [], clip.midiTakeRecordingPassIndex);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             if (clipVisualLength <= 0) {
                 continue;
@@ -1012,7 +1031,9 @@ export async function scheduleTrackClips({
         if (clip.type === 'midi') {
             // A clip with no note list plays no notes; its stored controllers still play.
             const frozenSource = clip.midiTakeSource;
-            const sourceNotes = frozenSource ? [] : (midi.notesByClipId[clip.id] ?? []);
+            const sourceNotes = frozenSource
+                ? []
+                : selectMidiNotesForRecordingPass(midi.notesByClipId[clip.id] ?? [], clip.midiTakeRecordingPassIndex);
             const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
@@ -1030,17 +1051,7 @@ export async function scheduleTrackClips({
                 const clipControlEvents: { time: number; controller: number; value: number }[] = [];
                 let closingTime: number | undefined;
                 const controllers = frozenSource
-                    ? selectedMidiWindows(clip)
-                          .flatMap(({ value }) => [
-                              ...value.controlChanges.map((row) => ({ ...row, closesClip: false })),
-                              ...value.closingControlChanges.map((row) => ({ ...row, closesClip: true })),
-                          ])
-                          .filter((row) =>
-                              row.closesClip
-                                  ? row.beat > regionStartBeat && row.beat <= clip.endBeat
-                                  : row.beat >= regionStartBeat && row.beat < clip.endBeat
-                          )
-                          .sort((left, right) => left.beat - right.beat)
+                    ? selectedFrozenControllerRows(clip, regionStartBeat)
                     : projectClipControllers({
                           controlChanges: storedControllers ?? [],
                           clip,
@@ -1128,7 +1139,7 @@ export async function scheduleTrackClips({
                     loopLengthBeats: frozenSource?.passLengthBeats ?? loopLen,
                     midiOffsetBeats: frozenSource ? 0 : (clip.midiOffsetBeats ?? 0),
                     loopEnabled: frozenSource ? false : (clip.loopEnabled ?? false),
-                    ...(frozenSource ? { eventsAreAbsolute: true } : {}),
+                    eventsAreAbsolute: frozenSource ? true : undefined,
                     loopOriginBeat: clip.loopOriginBeat,
                     phase: 'complete',
                 });

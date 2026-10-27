@@ -1,7 +1,8 @@
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../models/MidiNote';
-import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
-
 import { projectMidiClipWindow } from '../useCases/midiClipData/projectMidiClipWindow';
+
+import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
+import { selectMidiNotesForRecordingPass } from './selectMidiNotesForRecordingPass';
 
 export { isFrozenMidiTakeSource } from './isFrozenMidiTakeSource';
 export type { FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
@@ -67,21 +68,24 @@ export function projectFrozenMidiTakeWindow({
     }
     const visibleSourceStartBeat = source.sourceEntryBeat + visibleStartBeat - passHeadBeat;
     const visibleSourceEndBeat = source.sourceEntryBeat + visibleEndBeat - passHeadBeat;
+    const window: {
+        beatOffset: number;
+        visibleStartBeat: number;
+        visibleEndBeat: number;
+        closingLineBeat?: number;
+    } = {
+        beatOffset: passHeadBeat - source.sourceEntryBeat,
+        visibleStartBeat: visibleSourceStartBeat,
+        visibleEndBeat: visibleSourceEndBeat,
+    };
+    if (visibleEndBeat === sourcePassEndBeat) {
+        window.closingLineBeat = sourcePassEndBeat;
+    }
     const projected = projectMidiClipWindow({
-        notes: source.rows.notes.value.filter(
-            (note) =>
-                recordingPassIndex === undefined ||
-                note.recordingPassIndex === undefined ||
-                note.recordingPassIndex === recordingPassIndex
-        ),
+        notes: selectMidiNotesForRecordingPass(source.rows.notes.value, recordingPassIndex),
         controlChanges: source.rows.controlChanges.value,
         pitchBends: source.rows.pitchBends.value,
-        window: {
-            beatOffset: passHeadBeat - source.sourceEntryBeat,
-            visibleStartBeat: visibleSourceStartBeat,
-            visibleEndBeat: visibleSourceEndBeat,
-            ...(visibleEndBeat === sourcePassEndBeat ? { closingLineBeat: sourcePassEndBeat } : {}),
-        },
+        window,
     });
     return { ...empty, ...projected };
 }

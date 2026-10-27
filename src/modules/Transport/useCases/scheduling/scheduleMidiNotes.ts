@@ -15,7 +15,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
-import { midiStore, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
+import { midiStore, projectFrozenMidiTakeWindow, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectChannelBend,
@@ -838,7 +838,12 @@ export async function scheduleMidiNotes(
         for (const clip of activeMidiClips) {
             // A clip with no note list plays no notes; its stored controllers still play.
             const frozenSource = clip.midiTakeSource;
-            const notes = frozenSource ? [] : (midiState.notesByClipId[clip.id] ?? []);
+            const notes = frozenSource
+                ? []
+                : selectMidiNotesForRecordingPass(
+                      midiState.notesByClipId[clip.id] ?? [],
+                      clip.midiTakeRecordingPassIndex
+                  );
 
             const clipMidiOffset = frozenSource ? 0 : (clip.midiOffsetBeats ?? 0);
             const synthParams =
