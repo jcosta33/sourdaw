@@ -3423,7 +3423,10 @@ export type HandlerValidationContext = {
     readonly executionMode?: 'isolated-preview';
 };
 
-export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
+export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'> & {
+    /** Previously prepared actions; the full raw caller batch remains in `actions`. */
+    readonly preparedPrefix?: readonly AppAction[];
+};
 
 /** Neutral persisted-history shape supplied to an owning handler after Command
  *  has validated each action against its current operation contract. */

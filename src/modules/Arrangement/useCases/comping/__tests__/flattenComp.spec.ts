@@ -236,7 +236,7 @@ describe('flattenComp', () => {
         });
         seedTrack([sourceClip]);
         seedLane(
-            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 }],
+            [{ id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8, sourceOffsetSeconds: 0 }],
             [{ startBeat: 2, endBeat: 4, takeId: 'take-a' }]
         );
 

@@ -1,4 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    createCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { clearUndoHistory, pushUndoEntry, redo, revertActionGroup, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -8,6 +18,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
 import { removeClip } from '../../../useCases/clip/removeClip';
+import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { hitTestClip } from '../../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { handleCutTool } from '../timelineTools';
 
@@ -18,6 +29,31 @@ vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 type ClipRect = { id: string; startBeat: number; endBeat: number };
+
+beforeEach(() => {
+    configureAutomergeStoragePort(null);
+    resetCrdtProjectAuthority('cut tool command fixture');
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    registerCrdtStorageRuntime();
+    clearHandlerRegistry();
+    registerHandlerMap(getArrangementHandlers());
+    transportStore.set({ ...defaultTransportState });
+    tempoMapStore.set({ changes: [] });
+});
+
+afterEach(() => {
+    clearUndoHistory();
+    clearHandlerRegistry();
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+});
+
+async function cut(beat: number): Promise<void> {
+    const previousEntries = undoHistoryStore.value?.past.length ?? 0;
+    handleCutTool(10, 10, beat);
+    await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(previousEntries + 1));
+}
 
 function clipRects(): ClipRect[] {
     const state = trackStore.value;
@@ -51,8 +87,8 @@ describe('handleCutTool undo/redo', () => {
         vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1' });
     });
 
-    it('splits the hit clip into two halves', () => {
-        handleCutTool(10, 10, 4);
+    it('splits the hit clip into two halves', async () => {
+        await cut(4);
 
         const rects = clipRects();
         expect(rects).toHaveLength(2);
@@ -61,7 +97,7 @@ describe('handleCutTool undo/redo', () => {
     });
 
     it('undo restores exactly one intact clip with its original id and properties', async () => {
-        handleCutTool(10, 10, 4);
+        await cut(4);
         await undo();
 
         const state = trackStore.value;
@@ -79,7 +115,7 @@ describe('handleCutTool undo/redo', () => {
     });
 
     it('redo after undo re-applies the split instead of no-oping', async () => {
-        handleCutTool(10, 10, 4);
+        await cut(4);
         await undo();
         await redo();
 
@@ -102,7 +138,7 @@ describe('handleCutTool redo after an AI plan revert (review chain)', () => {
         vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1' });
     });
 
-    it('redo survives a deterministically inapplicable cut entry and re-executes the AI plan', async () => {
+    it('preserves AI redo when a stale audio cut cannot be undone', async () => {
         const aiRedo1 = vi.fn();
         const aiRedo2 = vi.fn();
 
@@ -121,24 +157,23 @@ describe('handleCutTool redo after an AI plan revert (review chain)', () => {
             aiRedo2,
             { groupId: 'ai-plan-1', groupLabel: 'AI plan' }
         );
-        handleCutTool(10, 10, 4);
+        await cut(4);
 
-        // Revert the plan (clip lineage gone), then undo the cut: its redo can now
-        // never re-apply — the clip it would split no longer exists.
+        // Revert the plan (clip lineage gone). The typed audio cut refuses its
+        // stale inverse instead of recreating a source the plan removed.
         await revertActionGroup('ai-plan-1');
         await undo();
+        expect(clipRects()).toEqual([]);
 
-        // First redo drops the inapplicable cut entry and re-applies AI step 1;
-        // second redo re-applies AI step 2. Before the fix the cut entry pinned
-        // future[0] and the AI plan behind it could never re-execute.
+        // The refused cut leaves both AI steps reachable in their order.
         await redo();
         expect(aiRedo1).toHaveBeenCalledTimes(1);
         await redo();
         expect(aiRedo2).toHaveBeenCalledTimes(1);
 
         expect(notifyUser).toHaveBeenCalledWith(
-            'Failed to redo split clip - the clip no longer spans the split beat',
-            'error'
+            'Cannot undo "Split clip "Test Clip" (c1) at beat 4": project state has changed',
+            'warning'
         );
     });
 });
@@ -186,7 +221,7 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
     });
 
     it('undo reinstates the original notes with their identities, including the straddling note', async () => {
-        handleCutTool(10, 10, 4);
+        await cut(4);
         await undo();
 
         const notes = midiStore.value?.notesByClipId ?? {};
@@ -195,7 +230,7 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
     });
 
     it('undo then redo replays the split with note-level identity on both halves', async () => {
-        handleCutTool(10, 10, 4);
+        await cut(4);
         const firstRightId = rightClipId();
         const firstRightNotes = midiStore.value?.notesByClipId[firstRightId] ?? [];
         // Clip-relative convention: the straddler's right half starts at 0
@@ -224,10 +259,10 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
         });
 
         // First cut at 4 on c1, second cut at 6 on the resulting right half.
-        handleCutTool(10, 10, 4);
+        await cut(4);
         const firstRightId = rightClipId();
         vi.mocked(hitTestClip).mockReturnValue({ clipId: firstRightId, trackId: 't1' });
-        handleCutTool(10, 10, 6);
+        await cut(6);
         const secondRightId = clipIdAtBeat(6);
 
         expect(clipRects()).toEqual([

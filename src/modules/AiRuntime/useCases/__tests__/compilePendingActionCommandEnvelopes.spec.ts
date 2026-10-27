@@ -5,7 +5,9 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { takeLaneStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { ClipDummy } from '#/modules/Arrangement/__tests__/ClipDummy';
+import { TrackDummy } from '#/modules/Arrangement/__tests__/TrackDummy';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -177,6 +179,24 @@ describe('compilePendingActionCommandEnvelopes', () => {
             createCrdtDoc('root');
             registerCrdtStorageRuntime();
             registerHandlerMap(getArrangementHandlers());
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: 'track-1',
+                        kind: 'midi',
+                        clips: lane.takes.map((take) =>
+                            ClipDummy.create({
+                                id: take.clipId,
+                                trackId: 'track-1',
+                                type: 'midi',
+                                startBeat: 0,
+                                endBeat: 8,
+                            })
+                        ),
+                    }),
+                ],
+                selectedTrackId: null,
+            });
             takeLaneStore.set({ lanes: [structuredClone(lane)] });
             flushAutomergeStorageWrites();
             vi.stubGlobal('navigator', {
@@ -250,6 +270,7 @@ describe('compilePendingActionCommandEnvelopes', () => {
             vi.unstubAllGlobals();
             clearHandlerRegistry();
             takeLaneStore.set({ lanes: [] });
+            trackStore.set({ tracks: [], selectedTrackId: null });
             flushAutomergeStorageWrites();
             removeCrdtDoc('root');
             configureAutomergeStoragePort(null);

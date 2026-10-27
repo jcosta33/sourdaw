@@ -161,6 +161,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         '#/modules/Arrangement/useCases'
     );
     return {
+        applyTempoAudioSources: actual.applyTempoAudioSources,
+        canApplyTempoAudioSources: actual.canApplyTempoAudioSources,
+        prepareTempoAudioSources: actual.prepareTempoAudioSources,
         acceptsExternalPluginAutomationParameter: vi.fn(),
         removeClip: vi.fn(),
         setClipAudioAssetStager: vi.fn(),

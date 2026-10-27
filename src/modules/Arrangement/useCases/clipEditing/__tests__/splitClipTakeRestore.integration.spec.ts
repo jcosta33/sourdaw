@@ -5,7 +5,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -98,7 +98,10 @@ describe('splitClipWithUndo take restore', () => {
 
     it('restores a take recorded on the right half when the split is redone', async () => {
         splitClipWithUndo('clip-1', 4);
-        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toHaveLength(2));
+        await vi.waitFor(() => {
+            expect(trackStore.value?.tracks[0]?.clips).toHaveLength(2);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+        });
         const splitRightClipId = rightClipId();
 
         // A take lands on the right half without a local undo entry.
@@ -124,7 +127,10 @@ describe('splitClipWithUndo take restore', () => {
         const originalLane = arrangeCompedTake();
 
         splitClipWithUndo('clip-1', 4);
-        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toHaveLength(2));
+        await vi.waitFor(() => {
+            expect(trackStore.value?.tracks[0]?.clips).toHaveLength(2);
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+        });
         const splitRightClipId = rightClipId();
 
         // The forward split re-keyed the lane: the left fragment keeps the take
@@ -206,11 +212,13 @@ describe('splitClipWithUndo take restore', () => {
         const selected = { ...createTake(clip.id, 'Selected', 0, 4, 0), selected: true };
         const unselected = createTake(clip.id, 'Unselected', 0, 4, 4);
         takeLaneStore.set({
-            lanes: [{
-                ...createTakeLane(track.id),
-                takes: [selected, unselected],
-                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: selected.id }],
-            }],
+            lanes: [
+                {
+                    ...createTakeLane(track.id),
+                    takes: [selected, unselected],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: selected.id }],
+                },
+            ],
         });
         flushAutomergeStorageWrites();
 

@@ -22,6 +22,18 @@ const EMPTY_MIDI_STATE = {
     pitchBendByClipId: {},
 };
 
+function capturedSource(startBeat: number, entrySeconds: number, loopLength: number) {
+    return {
+        startBeat,
+        audioOffsetSeconds: entrySeconds,
+        audioLoopStartSeconds: entrySeconds,
+        audioLoopPassEntrySeconds: entrySeconds,
+        audioLoopPassOriginBeat: startBeat,
+        loopOriginBeat: startBeat,
+        loopLength,
+    };
+}
+
 const CANONICAL_TRACK_KINDS = ['audio', 'midi', 'bus', 'master', 'folder'] as const;
 const TEST_OWNER_INVERSE_PLAN = {
     version: 1 as const,
@@ -1293,8 +1305,8 @@ describe('executeSelectedTimeRangeDeletion', () => {
             { ...spanTake, id: rightTakeId, clipId: 'clip-dtr-12345678', startBeat: 6, endBeat: 10 },
         ]);
         expect(lanes[0]?.activeCompRegions).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: spanTake.id },
-            { startBeat: 6, endBeat: 10, takeId: rightTakeId },
+            { startBeat: 0, endBeat: 2, takeId: spanTake.id, audioSource: capturedSource(0, 0, 10) },
+            { startBeat: 6, endBeat: 10, takeId: rightTakeId, audioSource: capturedSource(0, 0, 10) },
         ]);
         // Before the fix the region kept advancing the comp cursor over [6,10]
         // while its take still named the pre-split geometry: the right
@@ -1432,8 +1444,8 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(clips.map((clip) => clip.id)).toEqual(['span', 'clip-dtr-12345678']);
         expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([spanTake.id, rightTakeId]);
         expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
-            { startBeat: 0, endBeat: 2, takeId: spanTake.id },
-            { startBeat: 6, endBeat: 10, takeId: rightTakeId },
+            { startBeat: 0, endBeat: 2, takeId: spanTake.id, audioSource: capturedSource(0, 0, 10) },
+            { startBeat: 6, endBeat: 10, takeId: rightTakeId, audioSource: capturedSource(0, 0, 10) },
         ]);
         expect(resolveClipsWithComping('target', [...clips]).map((clip) => [clip.startBeat, clip.endBeat])).toEqual([
             [0, 2],
@@ -1494,7 +1506,8 @@ describe('executeSelectedTimeRangeDeletion', () => {
         // gap. The region is already correct on the after side, so the lane
         // emits no transition at all: a content-equal capture would be plan
         // noise on every excise upstream of a parked comped clip.
-        const left = createClip({ id: 'left', trackId: 'target', startBeat: 0, endBeat: 4 });
+        // The trimmed MIDI clip has no physical audio source to promote.
+        const left = createClip({ id: 'left', trackId: 'target', startBeat: 0, endBeat: 4, type: 'midi' });
         const keeper = createClip({ id: 'keeper', trackId: 'target', startBeat: 8, endBeat: 12 });
         setArrangement([createTrack('target', [left, keeper])]);
         const keeperTake = { ...createTake('keeper', 'Keeper take', 8, 12), id: 'take-keeper' };
@@ -1524,7 +1537,8 @@ describe('executeSelectedTimeRangeDeletion', () => {
         // it is already correct on the after side. A guard requiring a
         // strictly-later start would record a content-equal transition — plan
         // noise on every excise beside a parked comp.
-        const left = createClip({ id: 'left', trackId: 'target', startBeat: 0, endBeat: 4 });
+        // The trimmed MIDI clip has no physical audio source to promote.
+        const left = createClip({ id: 'left', trackId: 'target', startBeat: 0, endBeat: 4, type: 'midi' });
         const keeper = createClip({ id: 'keeper', trackId: 'target', startBeat: 6, endBeat: 12 });
         setArrangement([createTrack('target', [left, keeper])]);
         const keeperTake = { ...createTake('keeper', 'Keeper take', 6, 12), id: 'take-keeper' };
@@ -1653,7 +1667,7 @@ describe('executeSelectedTimeRangeDeletion', () => {
 
         expect(takeLaneStore.value?.lanes[0]?.takes).toEqual([{ ...tailTake, clipId: 'clip-dtr-12345678' }]);
         expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
-            { startBeat: 6, endBeat: 10, takeId: tailTake.id },
+            { startBeat: 6, endBeat: 10, takeId: tailTake.id, audioSource: capturedSource(6, 3, 4) },
         ]);
     });
 
@@ -1675,7 +1689,12 @@ describe('executeSelectedTimeRangeDeletion', () => {
         requireApplied(executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] }));
 
         expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([
-            { startBeat: 6, endBeat: 10, takeId: 'take-span:time-delete-right:2:6' },
+            {
+                startBeat: 6,
+                endBeat: 10,
+                takeId: 'take-span:time-delete-right:2:6',
+                audioSource: capturedSource(6, 3, 4),
+            },
         ]);
     });
 });

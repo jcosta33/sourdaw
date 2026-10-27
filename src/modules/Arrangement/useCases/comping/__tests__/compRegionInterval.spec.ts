@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type CompRegion } from '../../../models/TakeLane';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { compRegionInterval } from '../compRegionInterval';
 
 const takes = ['a', 'b', 'c', 'd'].map((id) => ({
@@ -15,6 +17,16 @@ const takes = ['a', 'b', 'c', 'd'].map((id) => ({
     endBeat: 12,
     selected: id === 'a',
 }));
+
+function owningTrack() {
+    return TrackDummy.create({
+        id: 'track-1',
+        kind: 'midi',
+        clips: takes.map((take) =>
+            ClipDummy.create({ id: take.clipId, trackId: 'track-1', type: 'midi', startBeat: 0, endBeat: 12 })
+        ),
+    });
+}
 
 function seed(regions: CompRegion[]): void {
     takeLaneStore.set({
@@ -33,7 +45,7 @@ function replace(startBeat: number, endBeat: number, takeId = 'b'): 'written' | 
 function restoreTrackAction(
     takeLaneSnapshots: readonly { readonly id: string; readonly trackId: string }[]
 ): AppAction {
-    const track = TrackDummy.create({ id: 'track-1' });
+    const track = owningTrack();
     return {
         type: 'restoreTrack',
         payload: {
@@ -62,6 +74,7 @@ function restoreTrackAction(
 describe('compRegionInterval', () => {
     beforeEach(() => {
         takeLaneStore.set({ lanes: [] });
+        trackStore.set({ tracks: [owningTrack()], selectedTrackId: null });
     });
 
     it.each([
@@ -210,6 +223,7 @@ describe('compRegionInterval', () => {
             },
         } satisfies AppAction;
         takeLaneStore.set({ lanes: [] });
+        trackStore.set({ tracks: [], selectedTrackId: null });
         const context = {
             actions: [restoreTrackAction([restoredLane]), inverse],
             actionIndex: 1,

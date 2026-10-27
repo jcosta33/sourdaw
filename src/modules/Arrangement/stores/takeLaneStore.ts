@@ -535,6 +535,7 @@ export const takeLaneStore = createStore<TakeLaneStoreState>({
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTakeLaneStoreState,
         writeMetadata: {
+            captureMode: 'values',
             capture: ({ beforeValue, nextValue }) => captureTakeLaneWriteJournal({ beforeValue, nextValue }),
             reduce: ({ current, captured }) => appendTakeLaneWriteJournal(current, captured),
         },
