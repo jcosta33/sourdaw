@@ -116,7 +116,14 @@ test.describe('Proof device — add to chain', () => {
         try {
             // Remove the live CRDT recovery copy in this isolated browser profile,
             // so the recent-project card must read the explicitly saved snapshot.
-            await reopened.goto(new URL('/src/modules/CrdtDocument/models/CrdtRootLineage.ts', origin).toString());
+            // A static same-origin document keeps the app from reopening the DB,
+            // on both development and production servers.
+            const neutralDocument = await reopened.goto(new URL('/legal/SOURDAW-NOTICE.txt', origin).toString());
+            if (neutralDocument === null) {
+                throw new Error('The saved-project test did not load its neutral document');
+            }
+            expect(neutralDocument.ok()).toBe(true);
+            expect(neutralDocument.headers()['content-type']).toMatch(/^text\/plain(?:;|$)/);
             await reopened.evaluate(async () => {
                 await new Promise<void>((resolve, reject) => {
                     const request = indexedDB.deleteDatabase('sourdaw-crdt-docs');

@@ -137,30 +137,31 @@ describe('Proof cumulative disclosure in project truth', () => {
             ...project,
             tracks: project.tracks.map((track) => ({
                 ...track,
-                devices: track.devices.map((device) =>
-                    device.id === 'a'
-                        ? {
-                              ...device,
-                              parameterValues: { lim_ceiling: -1.1 },
-                              deviceState: { version: 1, data: { disclosureTier: 'lab' } },
-                          }
-                        : device
-                ),
+                devices: track.devices.map((device) => {
+                    if (device.id !== 'a') {
+                        return device;
+                    }
+                    return {
+                        ...device,
+                        parameterValues: { lim_ceiling: -1.1 },
+                        deviceState: { version: 1, data: { disclosureTier: 'lab' } },
+                    };
+                }),
             })),
         });
         flushAutomergeStorageWrites();
         proofStore.set({});
         render(<ProofPanel deviceId="a" />);
 
-        expect(screen.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('slider', { name: 'Mission limiter ceiling', exact: true })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: /^lab$/ })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('slider', { name: /^Mission limiter ceiling$/ })).toHaveAttribute(
             'aria-valuenow',
             '-1.1'
         );
         await selectTier('play');
         act(() => proofStore.set({}));
-        expect(screen.getByRole('button', { name: 'play', exact: true })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('slider', { name: 'Mission limiter ceiling', exact: true })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: /^play$/ })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('slider', { name: /^Mission limiter ceiling$/ })).toHaveAttribute(
             'aria-valuenow',
             '-1.1'
         );
