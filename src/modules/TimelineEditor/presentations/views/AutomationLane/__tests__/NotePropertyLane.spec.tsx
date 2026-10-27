@@ -37,6 +37,8 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: vi.fn(),
+    getExecutableAppActionEffect: vi.fn(),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
 }));

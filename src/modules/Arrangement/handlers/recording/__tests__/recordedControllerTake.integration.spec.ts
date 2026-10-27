@@ -50,6 +50,7 @@ import {
     resetMidiState,
     selectMidiInput,
     setMidiInputTrack,
+    setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -58,11 +59,20 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { admitRecordingMidiExpression } from '../../../useCases/recording/admitRecordingMidiExpression';
+import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
+import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
+import { findOpenRecordingMidiAdmission } from '../../../useCases/recording/findOpenRecordingMidiAdmission';
+import { findOpenRecordingMidiMemberAdmission } from '../../../useCases/recording/findOpenRecordingMidiMemberAdmission';
+import { getRecordingMidiAdmission } from '../../../useCases/recording/getRecordingMidiAdmission';
+import { retireRecordingMidiAdmission } from '../../../useCases/recording/retireRecordingMidiAdmission';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
+import { takeOwnsRecordingRoot } from '../../../useCases/recording/takeOwnsRecordingRoot';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 
 const TRACK_ID = 'track-midi';
+let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -99,6 +109,16 @@ describe('recorded controller take commit', () => {
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+        });
         transportStore.set({
             ...transportStore.value!,
             isRecording: false,
@@ -111,6 +131,7 @@ describe('recorded controller take commit', () => {
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
+        disposeRecordingAdmission();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();

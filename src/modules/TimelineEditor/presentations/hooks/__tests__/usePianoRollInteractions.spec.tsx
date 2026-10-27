@@ -73,6 +73,12 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
+    isFrozenMidiTakeSource: vi.fn(() => {
+        throw new Error('Frozen MIDI take source is outside this piano roll fixture');
+    }),
+    projectFrozenMidiTakeWindow: vi.fn(() => {
+        throw new Error('Frozen MIDI take projection is outside this piano roll fixture');
+    }),
     stepRecordStore: {
         get value() {
             return mocks.stepRecordState;
@@ -81,6 +87,9 @@ vi.mock('#/modules/MIDI/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectMidiClipWindow: vi.fn(() => {
+        throw new Error('MIDI clip projection is outside this piano roll fixture');
+    }),
     sliceMidiTakeNoteForEdit: (note: Note, extent: { fromOffset: number; duration: number }) => ({
         ...note,
         startBeat: note.startBeat + extent.fromOffset,

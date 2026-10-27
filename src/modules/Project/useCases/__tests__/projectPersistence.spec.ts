@@ -123,6 +123,18 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', async () => ({
+    captureEventPositionAt: (await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases'))
+        .captureEventPositionAt,
+    isFrozenMidiTakeSource: (await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases'))
+        .isFrozenMidiTakeSource,
+    replaceFrozenMidiTakeRow: (
+        await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases')
+    ).replaceFrozenMidiTakeRow,
+    sealHeldRecordedMidiNotes: (
+        await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases')
+    ).sealHeldRecordedMidiNotes,
+    snapshotMidiClipData: (await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases'))
+        .snapshotMidiClipData,
     isExactMidiClipDataActionSnapshot: (
         await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases')
     ).isExactMidiClipDataActionSnapshot,
