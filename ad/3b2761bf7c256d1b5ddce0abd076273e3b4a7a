@@ -1,0 +1,59 @@
+src/modules/Arrangement/handlers/clip/__tests__/audioClipSlipSession.spec.ts
+  s_29d8df116c5b92::t_95151db04dcfca 183-186,233-236
+src/modules/Arrangement/handlers/clip/handleRestoreAudioClipStartTrim.ts
+  s_b3201877f50e8a::t_8a9c9452802913 5
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  s_29d8df116c5b92::t_cb56a96a0a76d1 33-36
+src/modules/Arrangement/services/__tests__/snapSplitBeatToZeroCrossing.spec.ts
+  s_29d8df116c5b92::t_2f957a1291be26 17-22,26-31
+src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts
+  s_b3201877f50e8a::t_157b40263f2e38 9,35-37,47-59,133-136
+src/modules/Arrangement/useCases/clipEditing/audioClipSlipState.ts
+  s_29d8df116c5b92::t_e6f68d123ad047 180,202,224
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_b3201877f50e8a::t_a1f4531cf61820 10-11,14,18,22-23,139-144
+src/modules/Arrangement/useCases/prepareStripSilence.ts
+  s_29d8df116c5b92::t_0820d69d9a6926 110-113
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_b3201877f50e8a::t_9b6d146cd4ad16 18-20,153-158
+src/utils/handlerContract.ts
+  s_b3201877f50e8a::t_bd4b4d567f04c3 15
+src/utils/isTempoAudioSourcePromotion.ts
+  s_26f70b851e8f7a::t_35a2f8fa542572 1-409
+src/utils/tempoAudioSourcePromotion.ts
+  s_29d8df116c5b92::t_55e5457ed61148 1-2,4,6,71-78,97,505
+src/utils/tempoSourceClock.ts
+  s_29d8df116c5b92::t_5ab6d82fdff753 1-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad3b2761bf7c256d1b5ddce0abd076273e3b4a7a",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
