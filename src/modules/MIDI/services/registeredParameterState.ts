@@ -484,9 +484,10 @@ export function reconcileHandEditedReturns(
         rows.filter((row) => row.beat <= head.beat + SAME_BEAT_TOLERANCE || isCarriedBendReturnOnEditedHead(row, head)),
         head.channel
     );
-    const target = coarseStands
-        ? withBendRange(cut, afterEdit.bendRangeSemitones ?? STANDARD_BEND_RANGE_SEMITONES)
-        : cut;
+    let target = cut;
+    if (coarseStands) {
+        target = withBendRange(cut, afterEdit.bendRangeSemitones ?? STANDARD_BEND_RANGE_SEMITONES);
+    }
     const targetDeclaration = declareChannelState(target).map((message) => ({ ...message, channel: head.channel }));
     const messages = reconcileRegisteredParameterMessages({
         current: visible

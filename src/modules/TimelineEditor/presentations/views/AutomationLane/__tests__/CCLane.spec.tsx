@@ -2,9 +2,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import {
     addMidiCC,
-    removeHandEditedReturnFamily,
     removeMidiCC,
     moveMidiCC,
     restoreMidiCCPoints,
@@ -43,29 +43,24 @@ vi.mock('#/utils/Styles/cn', () => ({
 
 const laneMocks = vi.hoisted(() => {
     const ccByClipId: Record<string, MidiCC[]> = {};
-    return { midiState: { ccByClipId } };
+    return { midiState: { ccByClipId }, useActualStore: false };
 });
 
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
-    midiStore: {
-        get value() {
-            return laneMocks.midiState;
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/MIDI/stores')>();
+    return {
+        ...original,
+        midiStore: {
+            get value() {
+                if (laneMocks.useActualStore) {
+                    return original.midiStore.value;
+                }
+                return laneMocks.midiState;
+            },
+            set: original.midiStore.set,
         },
-    },
-}));
-
-// Keep the real MIDI editing use cases on the same in-memory rows as the rendered lane.
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
-    midiStore: {
-        get value() {
-            return laneMocks.midiState;
-        },
-        set(next: { ccByClipId: Record<string, MidiCC[]> }) {
-            laneMocks.midiState = next;
-        },
-    },
-}));
+    };
+});
 
 vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
@@ -107,18 +102,6 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
         }
         laneMocks.midiState.ccByClipId[clipId] = restored;
     }),
-    removeHandEditedReturnFamily: vi.fn(
-        (clipId: string, head: { channel: number; beat: number }): readonly MidiCC[] => {
-            // Mirrors the real use case: sweeps the head's return family by its id shape and
-            // returns the rows it removed, so the undo can restore them from its capture.
-            const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
-            const removed = existing.filter(
-                (point) => !(point.beat > head.beat + 0.002 || !point.id.includes('rpn-after-carried'))
-            );
-            laneMocks.midiState.ccByClipId[clipId] = existing.filter((point) => !removed.includes(point));
-            return removed;
-        }
-    ),
     moveMidiCC: vi.fn((clipId: string, ccId: string, beat: number, value: number): void => {
         const existing = laneMocks.midiState.ccByClipId[clipId] ?? [];
         laneMocks.midiState.ccByClipId[clipId] = existing.map((point) =>
@@ -376,7 +359,7 @@ describe('CCLane', () => {
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
         });
 
-        it('sweeps the rewritten return family and restores the pre-gesture rows on undo', () => {
+        it('restores the changed return row and the pre-gesture value on undo', () => {
             const returnRow = {
                 id: 'cc-split:right:rpn-after-carried-0',
                 controller: 6,
@@ -400,11 +383,7 @@ describe('CCLane', () => {
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             undoFn!();
 
-            expect(removeHandEditedReturnFamily).toHaveBeenCalledWith('clip-1', {
-                channel: 0,
-                beat: 0,
-            });
-            expect(vi.mocked(removeMidiCC).mock.calls.map(([, id]) => id)).toEqual(['clicked']);
+            expect(vi.mocked(removeMidiCC).mock.calls.map(([, id]) => id)).toEqual([returnRow.id, 'clicked']);
             expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([unrelated, returnRow]);
             expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [returnRow], [returnRow, unrelated]);
             expect(pushUndoEntry).toHaveBeenCalledTimes(1);
@@ -565,7 +544,9 @@ describe('CCLane', () => {
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             vi.mocked(moveMidiCC).mockClear();
             undoFn!();
-            expect(moveMidiCC).toHaveBeenCalledWith('clip-1', 'cc-a', 0, 20);
+            expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
+            ]);
 
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
             vi.mocked(moveMidiCC).mockClear();
@@ -595,18 +576,12 @@ describe('CCLane', () => {
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
-            // The undo restores the pre-drag rows exactly (sweep + capture) — the revisit is
-            // not an inverse and is deliberately not replayed on the undo direction.
+            // Undo restores the gesture's changed rows; reconciliation is not an inverse.
             vi.mocked(revisitHandEditedCCReturns).mockClear();
-            vi.mocked(removeHandEditedReturnFamily).mockClear();
             undoFn!();
-            expect(removeHandEditedReturnFamily).toHaveBeenCalledWith('clip-1', {
-                channel: 0,
-                beat: 0,
-            });
             expect(restoreMidiCCPoints).toHaveBeenCalledWith(
                 'clip-1',
-                [],
+                [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }],
                 [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }]
             );
             expect(revisitHandEditedCCReturns).not.toHaveBeenCalled();
@@ -972,17 +947,11 @@ describe('CCLane', () => {
                 { editedController: 1, editedRowId: 'cc-a' }
             );
 
-            // The undo restores the pre-delete rows exactly (sweep + capture) — the revisit is
-            // not an inverse and is deliberately not replayed on the undo direction.
+            // Undo restores the gesture's removed row without re-deriving the returns.
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             const redoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[2];
             vi.mocked(revisitHandEditedCCReturns).mockClear();
-            vi.mocked(removeHandEditedReturnFamily).mockClear();
             undoFn!();
-            expect(removeHandEditedReturnFamily).toHaveBeenCalledWith('clip-1', {
-                channel: 0,
-                beat: 0,
-            });
             expect(restoreMidiCCPoints).toHaveBeenCalledWith(
                 'clip-1',
                 [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }],
@@ -1029,7 +998,11 @@ describe('CCLane return-family history with real MIDI edits', () => {
     }
 
     function rows(): MidiCC[] {
-        return laneMocks.midiState.ccByClipId['clip-1'] ?? [];
+        return midiStore.value?.ccByClipId['clip-1'] ?? [];
+    }
+
+    function seed(controlChanges: MidiCC[]): void {
+        midiStore.set({ notesByClipId: {}, ccByClipId: { 'clip-1': controlChanges }, pitchBendByClipId: {} });
     }
 
     function rangeAt(beat: number): number | undefined {
@@ -1053,11 +1026,11 @@ describe('CCLane return-family history with real MIDI edits', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        laneMocks.midiState = { ccByClipId: { 'clip-1': [] } };
+        laneMocks.useActualStore = true;
+        seed([]);
         vi.mocked(addMidiCC).mockImplementation(actualMidiUseCases.addMidiCC);
         vi.mocked(moveMidiCC).mockImplementation(actualMidiUseCases.moveMidiCC);
         vi.mocked(removeMidiCC).mockImplementation(actualMidiUseCases.removeMidiCC);
-        vi.mocked(removeHandEditedReturnFamily).mockImplementation(actualMidiUseCases.removeHandEditedReturnFamily);
         vi.mocked(restoreMidiCCPoints).mockImplementation(actualMidiUseCases.restoreMidiCCPoints);
         vi.mocked(revisitHandEditedCCReturns).mockImplementation(actualMidiUseCases.revisitHandEditedCCReturns);
         vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 80));
@@ -1065,13 +1038,14 @@ describe('CCLane return-family history with real MIDI edits', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        laneMocks.useActualStore = false;
     });
 
     it('restores exact rows and same-beat order after adding, undoing and redoing a hand range', () => {
-        laneMocks.midiState.ccByClipId['clip-1'] = [
+        seed([
             ...headRows(0, 'cc-split:right'),
             { id: 'other-channel', controller: 6, value: 11, beat: 0, channel: 1 },
-        ];
+        ]);
         const before = [...rows()];
         render(<CCLane {...props} />);
         fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
@@ -1088,7 +1062,7 @@ describe('CCLane return-family history with real MIDI edits', () => {
     });
 
     it('restores both heads exactly when a hand range moves between carried return families', () => {
-        laneMocks.midiState.ccByClipId['clip-1'] = [...headRows(0, 'cc-glue:first'), ...headRows(2, 'cc-glue:second')];
+        seed([...headRows(0, 'cc-glue:first'), ...headRows(2, 'cc-glue:second')]);
         actualMidiUseCases.addMidiCC('clip-1', 6, 7, 0, 0, 'hand-coarse');
         const before = [...rows()];
         const view = render(<CCLane {...props} />);
@@ -1107,10 +1081,10 @@ describe('CCLane return-family history with real MIDI edits', () => {
     });
 
     it('restores exact rows after deleting a hand range and redoes the committed family', () => {
-        laneMocks.midiState.ccByClipId['clip-1'] = [
+        seed([
             ...headRows(0, 'cc-split:right'),
             { id: 'other-channel', controller: 6, value: 11, beat: 0, channel: 1 },
-        ];
+        ]);
         actualMidiUseCases.addMidiCC('clip-1', 6, 7, 0, 0, 'hand-coarse');
         actualMidiUseCases.addMidiCC('clip-1', 38, 50, 0, 0, 'hand-fine');
         const before = [...rows()];
@@ -1129,12 +1103,12 @@ describe('CCLane return-family history with real MIDI edits', () => {
 
     it('restores rows a shortened rewritten family no longer holds when the add is undone', () => {
         const head = headRows(0, 'cc-split:right');
-        laneMocks.midiState.ccByClipId['clip-1'] = [
+        seed([
             ...head,
             { id: 'cc-split:right:rpn-after-carried-6', controller: 99, value: 1, beat: tick, channel: 0 },
             { id: 'cc-split:right:rpn-after-carried-7', controller: 98, value: 1, beat: tick, channel: 0 },
             { id: 'peer-controller', controller: 11, value: 64, beat: tick, channel: 0 },
-        ];
+        ]);
         const before = [...rows()];
         render(<CCLane {...props} />);
         fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
@@ -1146,4 +1120,66 @@ describe('CCLane return-family history with real MIDI edits', () => {
         redo();
         expect(rows()).toEqual(committed);
     });
+
+    it('restores the order of a family initially interleaved with another controller', () => {
+        const family = headRows(0, 'cc-split:right');
+        const peer: MidiCC = { id: 'peer', controller: 11, value: 80, beat: tick, channel: 0 };
+        seed([...family.slice(0, 4), peer, ...family.slice(4)]);
+        const before = [...rows()];
+        render(<CCLane {...props} />);
+        fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
+        const committed = [...rows()];
+        expect(committed.indexOf(peer)).not.toBe(before.indexOf(peer));
+        const { undo, redo } = replay();
+        undo();
+        expect(rows()).toEqual(before);
+        redo();
+        expect(rows()).toEqual(committed);
+    });
+
+    it.each([
+        { gesture: 'add', independent: 'update' },
+        { gesture: 'add', independent: 'delete' },
+        { gesture: 'move', independent: 'update' },
+        { gesture: 'move', independent: 'delete' },
+        { gesture: 'remove', independent: 'update' },
+        { gesture: 'remove', independent: 'delete' },
+    ] as const)(
+        'preserves a later independent family $independent when undoing an unrelated $gesture',
+        ({ gesture, independent }) => {
+            const expression: MidiCC = { id: 'expression', controller: 11, value: 7, beat: 0, channel: 0 };
+            seed([...headRows(0, 'cc-split:right'), expression]);
+            const view = render(<CCLane {...props} controller={11} />);
+            if (gesture === 'add') {
+                fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(8, 80) });
+            } else {
+                const point = view.container.querySelector('[title="Beat 0.00: 7"]');
+                expect(point).not.toBeNull();
+                if (gesture === 'move') {
+                    fireEvent.pointerDown(point!, { pointerId: 1, button: 0 });
+                    fireEvent.pointerMove(point!, { pointerId: 1, clientX: 48, clientY: valueToY(9, 80) });
+                    fireEvent.pointerUp(point!, { pointerId: 1 });
+                } else {
+                    fireEvent.doubleClick(point!);
+                }
+            }
+            const { undo, redo } = replay();
+            const familyId = 'cc-split:right:rpn-after-carried-2';
+            if (independent === 'update') {
+                actualMidiUseCases.moveMidiCC('clip-1', familyId, tick, 9);
+            } else {
+                actualMidiUseCases.removeMidiCC('clip-1', familyId);
+            }
+            const independentFamily = actualMidiUseCases.getHandEditedReturnFamily(rows(), { channel: 0, beat: 0 });
+            undo();
+            expect(actualMidiUseCases.getHandEditedReturnFamily(rows(), { channel: 0, beat: 0 })).toEqual(
+                independentFamily
+            );
+            expect(rows().find(({ id }) => id === expression.id)).toEqual(expression);
+            redo();
+            expect(actualMidiUseCases.getHandEditedReturnFamily(rows(), { channel: 0, beat: 0 })).toEqual(
+                independentFamily
+            );
+        }
+    );
 });
