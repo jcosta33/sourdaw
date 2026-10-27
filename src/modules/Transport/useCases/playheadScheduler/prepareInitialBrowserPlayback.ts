@@ -18,7 +18,7 @@ import {
 } from './projectLoopSeamWindow';
 import { schedulerSession } from './schedulerSession';
 
-import type { SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import type { SchedulerCancellation } from '../scheduling/schedulerCancellation';
 
 const PROGRAMME_FIELDS = [
     'playheadPosition',

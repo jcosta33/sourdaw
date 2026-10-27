@@ -40,11 +40,7 @@ import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { BEAT_EPSILON, beatToSamples, samplesToBeat } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
-import {
-    getScheduledMidiNoteIndex,
-    lowerBoundMidiNoteStart,
-    type ScheduledMidiNote,
-} from '../../services/midiNoteWindowIndex';
+import { lowerBoundMidiNoteStart } from '../../services/midiNoteBounds';
 import {
     getScheduledIterationRange,
     getSourceOccurrenceOffset,
@@ -63,6 +59,7 @@ import { tempoMapStore } from '../../stores/tempoMapStore';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { detachSoundingNoteExpression } from './detachSoundingNoteExpression';
+import { getScheduledMidiNoteIndex, type ScheduledMidiNote } from './getScheduledMidiNoteIndex';
 import { holdNoteExpression } from './holdNoteExpression';
 import { keepHeldNoteExpressionOnReceiver } from './keepHeldNoteExpressionOnReceiver';
 import { listMutedMidiClips } from './listMutedMidiClips';
@@ -83,7 +80,8 @@ import { selectMidiNotesForLoopWindow } from './selectMidiNotesForLoopWindow';
 import { takeHeldNoteExpression } from './takeHeldNoteExpression';
 
 import type { PreparedInitialMidiWindow } from './prepareInitialMidiWindow';
-import type { LiveYeastIteration, LiveYeastNote } from './processLiveYeastTrackBlock';
+import type { LiveYeastNote } from './processLiveYeastTrackBlock';
+import type { SchedulerCancellation } from './schedulerCancellation';
 
 // Worklet synth device types that share a common noteOn/noteOff controls interface.
 // Each entry maps a device type to the controls property name on the device node
@@ -305,14 +303,6 @@ function findWithheldNoteVoicingDevice(
     }
     return parentToaster;
 }
-
-export type SchedulerCancellation = {
-    generation: number;
-    /** Semantic timeline identity; unlike generation, loop wraps and jumps advance it without cancellation. */
-    discontinuityEpoch: number;
-    isCurrent: () => boolean;
-    yeastRouteLineage: Map<string, LiveYeastIteration>;
-};
 
 /** Toaster parent-device note controls shape (local — cross-module model isolation). */
 type ToasterControls = {

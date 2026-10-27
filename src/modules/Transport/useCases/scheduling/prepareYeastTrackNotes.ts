@@ -3,12 +3,7 @@ import { projectCommittedGroove, shouldPlayMidiEvent } from '#/modules/MIDI/useC
 import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
-import {
-    getScheduledMidiNoteIndex,
-    lowerBoundMidiNoteEnd,
-    lowerBoundMidiNoteStart,
-    type ScheduledMidiNote,
-} from '../../services/midiNoteWindowIndex';
+import { lowerBoundMidiNoteEnd, lowerBoundMidiNoteStart } from '../../services/midiNoteBounds';
 import {
     getScheduledIterationRange,
     getSourceOccurrenceOffset,
@@ -18,12 +13,13 @@ import {
 } from '../../services/midiSchedulerWindowGeometry';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
+import { getScheduledMidiNoteIndex, type ScheduledMidiNote } from './getScheduledMidiNoteIndex';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
 
 import type { trackStore } from '#/modules/Arrangement/stores';
 import type { MidiStoreState } from '#/modules/MIDI/stores';
 import type { resolveMidiWindowClips } from './resolveMidiWindowClips';
-import type { SchedulerCancellation } from './scheduleMidiNotes';
+import type { SchedulerCancellation } from './schedulerCancellation';
 import type { TransportState } from '../../models/TransportState';
 import type { tempoMapStore } from '../../stores/tempoMapStore';
 

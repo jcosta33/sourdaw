@@ -40,32 +40,3 @@ export function getScheduledMidiNoteIndex(notes: readonly ScheduledMidiNote[]): 
     scheduledMidiNoteIndexes.set(notes, created);
     return created;
 }
-
-export function lowerBoundMidiNoteStart(notes: readonly ScheduledMidiNote[], startBeat: number): number {
-    let low = 0;
-    let high = notes.length;
-    while (low < high) {
-        const middle = low + Math.floor((high - low) / 2);
-        if (notes[middle]!.startBeat < startBeat) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    return low;
-}
-
-export function lowerBoundMidiNoteEnd(notes: readonly ScheduledMidiNote[], endBeat: number): number {
-    let low = 0;
-    let high = notes.length;
-    while (low < high) {
-        const middle = low + Math.floor((high - low) / 2);
-        const note = notes[middle]!;
-        if (note.startBeat + note.duration < endBeat) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    return low;
-}

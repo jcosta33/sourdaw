@@ -118,6 +118,13 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: activeRecordingRefState,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        })),
     discardRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -135,6 +142,12 @@ vi.mock('../transportControls/panicYeastRuntime', () => ({
     panicYeastRuntime: harness.panic_yeast_runtime,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
+    shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
+        if (probabilityPercent <= 0) return false;
+        if (probabilityPercent >= 100) return true;
+        throw new Error('This scheduler fixture requires deterministic note probability');
+    },
     adaptGrooveTemplateForConsumer: vi.fn(),
     getGrooveTemplate: vi.fn(),
     getScopedGrooveAssignment: vi.fn(),

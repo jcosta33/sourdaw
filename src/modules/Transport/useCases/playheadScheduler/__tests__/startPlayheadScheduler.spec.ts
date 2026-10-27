@@ -135,6 +135,13 @@ const evaluateFollowActionsMock = vi.fn<
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        })),
     startRecording: (...args: unknown[]) => (arrangementMocks.startRecording as (...a: unknown[]) => unknown)(...args),
     stopRecording: (...args: unknown[]) => (arrangementMocks.stopRecording as (...a: unknown[]) => unknown)(...args),
     addTakeLane: (...args: unknown[]) => (arrangementMocks.addTakeLane as (...a: unknown[]) => unknown)(...args),
@@ -154,6 +161,12 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
+    shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
+        if (probabilityPercent <= 0) return false;
+        if (probabilityPercent >= 100) return true;
+        throw new Error('This scheduler fixture requires deterministic note probability');
+    },
     adaptGrooveTemplateForConsumer: vi.fn(),
     getGrooveTemplate: vi.fn(),
     getScopedGrooveAssignment: vi.fn(),

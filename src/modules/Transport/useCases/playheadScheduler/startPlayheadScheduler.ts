@@ -39,7 +39,7 @@ import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
-import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../transportControls/recordingLifecycle';
@@ -58,6 +58,7 @@ import { schedulerSession, stopActiveSources } from './schedulerSession';
 import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 
 import type { LiveYeastIteration } from '../scheduling/processLiveYeastTrackBlock';
+import type { SchedulerCancellation } from '../scheduling/schedulerCancellation';
 
 function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
     return `${state.isLooping ? 1 : 0}:${state.loopStart}:${state.loopEnd}`;
