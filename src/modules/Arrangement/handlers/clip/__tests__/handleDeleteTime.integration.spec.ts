@@ -512,16 +512,17 @@ describe('Delete Time take ownership through Command and CRDT', () => {
             const saved = JSON.parse(sessionStorage.getItem('sourdaw-undo-session')!) as { past: SavedDeleteEntry[] };
             const entry = saved.past[0]!;
             const before = { version: 1, entries: [{ clipId: 'peer', gainEnvelope: null, warpState: null }] };
+            let warpState: Project['warpStates']['states'][string] | null = null;
+            if (change === 'warp') {
+                warpState = { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null };
+            }
             const after = {
                 version: 1,
                 entries: [
                     {
                         clipId: 'peer',
                         gainEnvelope: change === 'gain' ? { clipId: 'peer', points: [], enabled: true } : null,
-                        warpState:
-                            change === 'warp'
-                                ? { enabled: true, markers: [], stretchMode: 'repitch', originalTempo: null }
-                                : null,
+                        warpState,
                     },
                 ],
             };

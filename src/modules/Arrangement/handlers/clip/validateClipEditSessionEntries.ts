@@ -393,7 +393,7 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
                 value.rightClipOrder.every((id) => typeof id === 'string' && id.length > 0) &&
                 new Set(value.rightClipOrder).size === value.rightClipOrder.length &&
                 (value.rightClipOrder.length === 0 ||
-                    (value.rightClipOrder.indexOf(clipId) >= 0 &&
+                    (value.rightClipOrder.includes(clipId) &&
                         value.rightClipOrder.indexOf(rightClipId) > value.rightClipOrder.indexOf(clipId))))) &&
         isExactMidiClipDataActionSnapshot(value.sourceMidi) &&
         isExactMidiClipDataActionSnapshot(value.rightMidi) &&

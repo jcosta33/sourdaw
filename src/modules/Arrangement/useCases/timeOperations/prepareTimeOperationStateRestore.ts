@@ -274,10 +274,12 @@ function deletedSatelliteOwners(
             }
             // Only the exact right survivor produced by Delete Time owns the
             // source's satellites. A changed local id alone is no authority.
-            const rightLoopOrigin =
-                clip.type === 'midi'
-                    ? restampLoopOriginEntry(clip, range.startBeat)
-                    : shiftLoopOriginEntry(clip, -duration);
+            let rightLoopOrigin: ReturnType<typeof shiftLoopOriginEntry>;
+            if (clip.type === 'midi') {
+                rightLoopOrigin = restampLoopOriginEntry(clip, range.startBeat);
+            } else {
+                rightLoopOrigin = shiftLoopOriginEntry(clip, -duration);
+            }
             const survivors = nextTrack.clips.filter(
                 (candidate) =>
                     !beforeIds.has(candidate.id) &&
