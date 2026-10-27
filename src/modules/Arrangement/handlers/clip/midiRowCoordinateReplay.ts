@@ -25,6 +25,48 @@ function reverseCapture(capture: Capture): Capture {
         })),
     };
 }
+function isSlipPairCoherent(pair: Pair, inverseCapture: Capture, originalCapture: Capture | undefined): boolean {
+    const { action, inverseAction: inverse, redoAction: redo } = pair;
+    if (action.type === 'slipClipContent' && inverse.type === 'slipClipContent' && redo.type === 'slipClipContent') {
+        return (
+            action.payload.clipType === 'midi' &&
+            inverse.payload.clipType === 'midi' &&
+            redo.payload.clipType === 'midi' &&
+            isFiniteBeat(action.payload.offset) &&
+            isFiniteBeat(inverse.payload.offset) &&
+            isFiniteBeat(inverse.payload.rowLiftBeats) &&
+            inverse.payload.rowLiftBeats === -inverseCapture.beatDelta &&
+            (!hasCapture(action) ||
+                (isFiniteBeat(action.payload.rowLiftBeats) &&
+                    action.payload.rowLiftBeats === -originalCapture!.beatDelta))
+        );
+    }
+    return false;
+}
+
+function isTrimPairCoherent(pair: Pair, inverseCapture: Capture): boolean {
+    const { action, inverseAction: inverse } = pair;
+    if (action.type === 'trimClipStart' && inverse.type === 'trimClipStart') {
+        const startDelta = Math.max(0, action.payload.newStartBeat) - inverse.payload.newStartBeat;
+        const previousOffset = inverse.payload.midiOffsetBeats;
+        return (
+            isFiniteBeat(action.payload.newStartBeat) &&
+            isFiniteBeat(inverse.payload.newStartBeat) &&
+            inverse.payload.newStartBeat >= 0 &&
+            Object.hasOwn(inverse.payload, 'loopOriginBeat') &&
+            (inverse.payload.loopOriginBeat === null || isFiniteBeat(inverse.payload.loopOriginBeat)) &&
+            isFiniteBeat(previousOffset) &&
+            isFiniteBeat(startDelta) &&
+            (!hasCapture(action) ||
+                (isFiniteBeat(action.payload.midiOffsetBeats) &&
+                    Object.hasOwn(action.payload, 'loopOriginBeat') &&
+                    (action.payload.loopOriginBeat === null || isFiniteBeat(action.payload.loopOriginBeat)))) &&
+            isFiniteBeat(previousOffset + startDelta + inverseCapture.beatDelta)
+        );
+    }
+    return false;
+}
+
 function isCompletePair(pair: Pair): boolean {
     const { action, inverseAction: inverse, redoAction: redo } = pair;
     const inverseCapture = inverse.payload.midiRowCoordinates;
@@ -53,39 +95,10 @@ function isCompletePair(pair: Pair): boolean {
     if (!valuesEqual(originalRequest, redoRequest)) {
         return false;
     }
-    if (action.type === 'slipClipContent' && inverse.type === 'slipClipContent' && redo.type === 'slipClipContent') {
-        return (
-            action.payload.clipType === 'midi' &&
-            inverse.payload.clipType === 'midi' &&
-            redo.payload.clipType === 'midi' &&
-            isFiniteBeat(action.payload.offset) &&
-            isFiniteBeat(inverse.payload.offset) &&
-            isFiniteBeat(inverse.payload.rowLiftBeats) &&
-            inverse.payload.rowLiftBeats === -inverseCapture.beatDelta &&
-            (!hasCapture(action) ||
-                (isFiniteBeat(action.payload.rowLiftBeats) &&
-                    action.payload.rowLiftBeats === -originalCapture!.beatDelta))
-        );
+    if (action.type === 'slipClipContent') {
+        return isSlipPairCoherent(pair, inverseCapture, originalCapture);
     }
-    if (action.type === 'trimClipStart' && inverse.type === 'trimClipStart') {
-        const startDelta = Math.max(0, action.payload.newStartBeat) - inverse.payload.newStartBeat;
-        const previousOffset = inverse.payload.midiOffsetBeats;
-        return (
-            isFiniteBeat(action.payload.newStartBeat) &&
-            isFiniteBeat(inverse.payload.newStartBeat) &&
-            inverse.payload.newStartBeat >= 0 &&
-            Object.hasOwn(inverse.payload, 'loopOriginBeat') &&
-            (inverse.payload.loopOriginBeat === null || isFiniteBeat(inverse.payload.loopOriginBeat)) &&
-            isFiniteBeat(previousOffset) &&
-            isFiniteBeat(startDelta) &&
-            (!hasCapture(action) ||
-                (isFiniteBeat(action.payload.midiOffsetBeats) &&
-                    Object.hasOwn(action.payload, 'loopOriginBeat') &&
-                    (action.payload.loopOriginBeat === null || isFiniteBeat(action.payload.loopOriginBeat)))) &&
-            isFiniteBeat(previousOffset + startDelta + inverseCapture.beatDelta)
-        );
-    }
-    return false;
+    return isTrimPairCoherent(pair, inverseCapture);
 }
 
 /**

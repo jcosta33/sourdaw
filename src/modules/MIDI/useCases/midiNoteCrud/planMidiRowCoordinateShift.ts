@@ -53,6 +53,23 @@ function isCoherentChange(before: number, after: number, delta: number): boolean
     );
 }
 
+function isCoordinateChange(value: unknown, delta: number): value is CoordinateChange {
+    return (
+        value !== null &&
+        typeof value === 'object' &&
+        Object.keys(value).length === 4 &&
+        'kind' in value &&
+        isRowKind(value.kind) &&
+        'id' in value &&
+        isIdentity(value.id) &&
+        'beforeBeat' in value &&
+        isFiniteBeat(value.beforeBeat) &&
+        'afterBeat' in value &&
+        isFiniteBeat(value.afterBeat) &&
+        isCoherentChange(value.beforeBeat, value.afterBeat, delta)
+    );
+}
+
 function readCapture(value: unknown, inverseDelta: number): Map<string, CoordinateChange> | null {
     if (
         value === null ||
@@ -69,20 +86,7 @@ function readCapture(value: unknown, inverseDelta: number): Map<string, Coordina
     const changes = new Map<string, CoordinateChange>();
     const entries: unknown[] = value.coordinates;
     for (const entry of entries) {
-        if (
-            entry === null ||
-            typeof entry !== 'object' ||
-            Object.keys(entry).length !== 4 ||
-            !('kind' in entry) ||
-            !isRowKind(entry.kind) ||
-            !('id' in entry) ||
-            !isIdentity(entry.id) ||
-            !('beforeBeat' in entry) ||
-            !isFiniteBeat(entry.beforeBeat) ||
-            !('afterBeat' in entry) ||
-            !isFiniteBeat(entry.afterBeat) ||
-            !isCoherentChange(entry.beforeBeat, entry.afterBeat, value.beatDelta)
-        ) {
+        if (!isCoordinateChange(entry, value.beatDelta)) {
             return null;
         }
         const key = `${entry.kind}:${entry.id}`;
