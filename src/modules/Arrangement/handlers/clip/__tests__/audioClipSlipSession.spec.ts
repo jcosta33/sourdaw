@@ -180,7 +180,10 @@ describe('audio slip exact source session replay', () => {
             const raw = sessionStorage.getItem(sessionKey);
             expect(raw).not.toBeNull();
             const saved: unknown = JSON.parse(raw!);
-            expect(isRecord(saved) && Array.isArray(saved.past) && saved.past.length).toBe(1);
+            if (!isRecord(saved) || !Array.isArray(saved.past)) {
+                throw new Error('Expected saved past entries');
+            }
+            expect(saved.past).toHaveLength(1);
         });
         reload();
         expect(undoHistoryStore.value?.past).toHaveLength(1);
@@ -227,7 +230,10 @@ describe('audio slip exact source session replay', () => {
         expect(undone.lanes[0]!.takes[2]!.id).toBe('peer');
         await vi.waitFor(() => {
             const saved: unknown = JSON.parse(sessionStorage.getItem(sessionKey)!);
-            expect(isRecord(saved) && Array.isArray(saved.future) && saved.future.length).toBe(1);
+            if (!isRecord(saved) || !Array.isArray(saved.future)) {
+                throw new Error('Expected saved future entries');
+            }
+            expect(saved.future).toHaveLength(1);
         });
         reload();
         await redo();

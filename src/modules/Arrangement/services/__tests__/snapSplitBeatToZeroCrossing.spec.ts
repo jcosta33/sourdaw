@@ -14,13 +14,21 @@ function constantTimeline(tempo: number): TempoTimeline {
 
 const changingTimeline: TempoTimeline = {
     secondsAtBeat: (beat) => {
-        if (beat <= 1) return beat / 2;
-        if (beat <= 2) return 0.5 + (beat - 1) / 4;
+        if (beat <= 1) {
+            return beat / 2;
+        }
+        if (beat <= 2) {
+            return 0.5 + (beat - 1) / 4;
+        }
         return 0.75 + (beat - 2) / 2;
     },
     beatAtSeconds: (seconds) => {
-        if (seconds <= 0.5) return seconds * 2;
-        if (seconds <= 0.75) return 1 + (seconds - 0.5) * 4;
+        if (seconds <= 0.5) {
+            return seconds * 2;
+        }
+        if (seconds <= 0.75) {
+            return 1 + (seconds - 0.5) * 4;
+        }
         return 2 + (seconds - 0.75) * 2;
     },
     tempoAtBeat: (beat) => (beat >= 1 && beat < 2 ? 240 : 120),

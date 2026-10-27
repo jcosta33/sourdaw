@@ -177,7 +177,7 @@ function projectLanes(
             if (!target) {
                 return take;
             }
-            const updated = { ...take };
+            const updated = Object.assign({}, take);
             for (const field of ['passOriginBeat', 'passOriginSourceSeconds'] as const) {
                 if (Object.hasOwn(target, field)) {
                     updated[field] = target[field];
@@ -199,7 +199,7 @@ function projectLanes(
             if (!target) {
                 return region;
             }
-            const updated = { ...region };
+            const updated = Object.assign({}, region);
             if (Object.hasOwn(target, 'audioSource')) {
                 updated.audioSource = target.audioSource;
             } else {
@@ -221,7 +221,7 @@ function projectLanes(
 }
 
 function projectClip(live: Clip, replacement: Clip): Clip {
-    const updated = { ...live };
+    const updated = Object.assign({}, live);
     for (const field of optionalFields) {
         if (Object.hasOwn(replacement, field)) {
             updated[field] = replacement[field];

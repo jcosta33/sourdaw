@@ -107,9 +107,10 @@ function timelineRegion(
     const flat = (tempoMapStore.value?.changes ?? []).every((change) => change.tempo === tempo);
     const beatAtSource = (seconds: number) => {
         const elapsed = (seconds - window.sourceStartSeconds) / stretchRatio;
-        return flat
-            ? window.startBeat + (elapsed * tempo) / 60
-            : liveTempoTimeline.beatAtSeconds(passStartSeconds + elapsed);
+        if (flat) {
+            return window.startBeat + (elapsed * tempo) / 60;
+        }
+        return liveTempoTimeline.beatAtSeconds(passStartSeconds + elapsed);
     };
     const sourceStartSeconds = Math.max(window.sourceStartSeconds, region.startSample / sampleRate);
     return {

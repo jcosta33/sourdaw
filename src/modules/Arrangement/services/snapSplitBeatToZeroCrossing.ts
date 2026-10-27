@@ -5,8 +5,8 @@ import {
 } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
-import { type Clip } from '../models/Track';
 import { type TempoTimeline } from '../models/TempoTimeline';
+import { type Clip } from '../models/Track';
 import { findNearestZeroCrossing } from '../transformers/clipDspTransformers';
 
 export type SnapSplitBeatToZeroCrossingInput = {
@@ -32,16 +32,9 @@ export function snapSplitBeatToZeroCrossing(input: SnapSplitBeatToZeroCrossingIn
     return snapSplitPositionToZeroCrossing(input).beat;
 }
 
-/** Retain the selected physical sample instead of reconstructing it from the inverse beat. */
-export function snapSplitPositionToZeroCrossing({
-    clip,
-    splitBeat,
-    channelData,
-    sampleRate,
-    timeline,
-    stretchRatio,
-}: SnapSplitBeatToZeroCrossingInput): ZeroCrossingPosition {
-    if (
+function canSnap(input: SnapSplitBeatToZeroCrossingInput): boolean {
+    const { clip, splitBeat, channelData, sampleRate, stretchRatio } = input;
+    return !(
         clip.type !== 'audio' ||
         !clip.audioBufferId ||
         !Number.isFinite(splitBeat) ||
@@ -51,7 +44,19 @@ export function snapSplitPositionToZeroCrossing({
         !Number.isFinite(stretchRatio) ||
         stretchRatio <= 0 ||
         channelData.length < 2
-    ) {
+    );
+}
+
+/** Retain the selected physical sample instead of reconstructing it from the inverse beat. */
+export function snapSplitPositionToZeroCrossing({
+    clip,
+    splitBeat,
+    channelData,
+    sampleRate,
+    timeline,
+    stretchRatio,
+}: SnapSplitBeatToZeroCrossingInput): ZeroCrossingPosition {
+    if (!canSnap({ clip, splitBeat, channelData, sampleRate, timeline, stretchRatio })) {
         return { beat: splitBeat };
     }
 
@@ -125,7 +130,8 @@ export function snapSplitPositionToZeroCrossing({
                 stretchRatio
             )
     );
-    return Number.isFinite(snappedBeat) && partStartBeat <= snappedBeat && snappedBeat < partEndBeat
-        ? { beat: snappedBeat, sourceSeconds: (firstSample + snappedSample) / sampleRate }
-        : { beat: splitBeat };
+    if (Number.isFinite(snappedBeat) && partStartBeat <= snappedBeat && snappedBeat < partEndBeat) {
+        return { beat: snappedBeat, sourceSeconds: (firstSample + snappedSample) / sampleRate };
+    }
+    return { beat: splitBeat };
 }

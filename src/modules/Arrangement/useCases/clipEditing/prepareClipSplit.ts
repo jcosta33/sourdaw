@@ -7,22 +7,22 @@ import {
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
 
-import { getNextClipId } from '../../repositories/clipIdCounter';
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { type Clip, type Track } from '../../stores/trackStore';
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { getNextClipId } from '../../repositories/clipIdCounter';
+import { getTrackState } from '../../repositories/track/getTrackState';
 import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
-import { liveTempoTimeline } from '../liveTempoTimeline';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { type Clip, type Track } from '../../stores/trackStore';
 import { captureClipSplitTakeReKeyTransitions } from '../comping/captureClipSplitTakeReKey';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 import { resolveZeroCrossingPosition } from '../timelineInteractions/snapToZeroCrossing';
 
-import { consumedStretchFactor } from './consumedStretchFactor';
 import { audioSourceAtBeat } from './audioSourceAtBeat';
+import { consumedStretchFactor } from './consumedStretchFactor';
+import { type PreparedClipSplit } from './preparedClipSplit';
 import { readClipSplitIdentityIds } from './readClipSplitIdentityIds';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
-import { type PreparedClipSplit } from './preparedClipSplit';
 
 function snapshotTakeReKeyTransitions(
     transitions: ReturnType<typeof captureClipSplitTakeReKeyTransitions>
@@ -136,10 +136,12 @@ export function prepareClipSplit({
     }
 
     const timeline = owners?.timeline ?? liveTempoTimeline;
-    const splitPosition: ZeroCrossingPosition =
-        resolvedSplitBeat === undefined
-            ? resolveZeroCrossingPosition(clip, splitBeat, timeline)
-            : { beat: resolvedSplitBeat };
+    let splitPosition: ZeroCrossingPosition;
+    if (resolvedSplitBeat === undefined) {
+        splitPosition = resolveZeroCrossingPosition(clip, splitBeat, timeline);
+    } else {
+        splitPosition = { beat: resolvedSplitBeat };
+    }
     const adjustedSplitBeat = splitPosition.beat;
     if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
         return null;
