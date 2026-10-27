@@ -532,6 +532,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                         audioLoopPassEntrySeconds: pos.audioLoopPassEntrySeconds ?? base.audioLoopPassEntrySeconds,
                         audioLoopPassOriginBeat: pos.audioLoopPassOriginBeat ?? base.audioLoopPassOriginBeat,
                         loopOriginBeat: pos.loopOriginBeat ?? base.loopOriginBeat,
+                        loopLength: pos.loopLength ?? base.loopLength,
                         clipStartTempo: readTempoAtBeat({ beat: pos.startBeat }),
                         midiOffsetBeats: pos.midiOffsetBeats ?? base.midiOffsetBeats,
                     });

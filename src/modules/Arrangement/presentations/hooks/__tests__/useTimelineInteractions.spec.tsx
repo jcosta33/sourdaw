@@ -551,17 +551,20 @@ describe('useTimelineInteractions', () => {
                 midiOffsetBeats: 1.25,
             },
             expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: 3.25 },
+            expectedSource: {},
         },
         {
             name: 'audio clip',
             clip: { id: 'clip-1', trackId: 'track-1', type: 'audio', startBeat: 0, endBeat: 4, audioOffsetBeats: 0.5 },
             expectedOffsets: { audioOffsetBeats: 2.5, midiOffsetBeats: undefined },
+            // The original 0.5-beat offset is .25s; the two-beat trim consumes 1s.
+            expectedSource: { audioOffsetSeconds: 1.25, audioUnwrappedOffsetSeconds: 1.25 },
         },
     ];
 
     it.each(trimOffsetCases)(
         'trim start preview draws a $name at its post-commit content offset',
-        ({ clip, expectedOffsets }) => {
+        ({ clip, expectedOffsets, expectedSource }) => {
             mocks.trackStoreValue.value = { tracks: [{ id: 'track-1', clips: [clip] }] };
             mocks.hitTestClip.mockReturnValue({ clipId: 'clip-1', trackId: 'track-1' });
             mocks.hitTestClipEdge.mockReturnValue({ edge: 'left' });
@@ -590,6 +593,7 @@ describe('useTimelineInteractions', () => {
                 startBeat: 2,
                 endBeat: 4,
                 audioOffsetBeats: expectedOffsets.audioOffsetBeats,
+                ...expectedSource,
                 midiOffsetBeats: expectedOffsets.midiOffsetBeats,
             });
         }

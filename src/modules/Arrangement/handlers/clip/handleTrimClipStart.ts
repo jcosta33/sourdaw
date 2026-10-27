@@ -1,11 +1,39 @@
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { audioClipTrimTimeline, captureAudioClipTrimClock, decodeAudioClipStartTrimPayload, isAudioClipStartTrimSessionEntry } from '../../useCases/clipEditing/audioClipStartTrimState';
+import { audioClipTrimOwnerMatches, captureAudioClipTrimCommitValidation } from '../../useCases/clipEditing/audioClipTrimOwner';
+import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+type AudioTrimCapture = Extract<AppAction, { type: 'restoreAudioClipStartTrim' }>['payload'];
+const preparedAudioTrims = new WeakMap<object, AudioTrimCapture>();
+
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
+    canReportConflict: true,
+    validateSessionEntry: isAudioClipStartTrimSessionEntry,
     execute: (alpha) => {
+        const audio = preparedAudioTrims.get(alpha);
+        if (audio) {
+            // The same live owner and clock that supplied the description must
+            // still authorize the write; unrelated clip facets remain live.
+            const capture = decodeAudioClipStartTrimPayload(audio);
+            if (!capture || !audioClipTrimOwnerMatches(capture.before, audio.clock)) {
+                return { status: 'conflict' };
+            }
+            const proof = captureAudioClipTrimCommitValidation(capture.before, capture.after, audio.clock);
+            if (!proof) {
+                return { status: 'conflict' };
+            }
+            const written = trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat);
+            if (!written) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            return { status: 'written', commitValidation: proof };
+        }
         return toHandlerExecutionResult(
             trimClipStart(
                 alpha.payload.clipId,
@@ -24,6 +52,22 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                 .find((context) => context.id === alpha.payload.clipId);
             if (!clip) {
                 return { label, inverseAction: null };
+            }
+
+            if (clip.type === 'audio' && !Object.hasOwn(alpha.payload, 'loopOriginBeat') && !Object.hasOwn(alpha.payload, 'midiOffsetBeats')) {
+                const before = structuredClone(clip);
+                const clock = captureAudioClipTrimClock();
+                const after = prepareAudioClipStartTrim(before, alpha.payload.newStartBeat, audioClipTrimTimeline(clock));
+                if (!after) {
+                    return { label, inverseAction: null };
+                }
+                const capture: AudioTrimCapture = { clipId: clip.id, before, after, clock, direction: 'restore' };
+                preparedAudioTrims.set(alpha, capture);
+                return {
+                    label,
+                    inverseAction: { type: 'restoreAudioClipStartTrim', payload: capture },
+                    redoAction: { type: 'restoreAudioClipStartTrim', payload: { ...capture, direction: 'apply' } },
+                };
             }
 
             const inversePayload: {

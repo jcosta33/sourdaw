@@ -12,6 +12,7 @@ import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRen
 import { type AudioSourceSnapshot, type AudioSourceTile } from './audioSourceTime';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
 import { type TempoMapEdit, type TempoMapRowPlan } from './tempoMapRowPlan';
+import { type TempoSourceClock } from './tempoAudioSourcePromotion';
 
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
@@ -1648,6 +1649,17 @@ export type AppAction =
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | {
+          /** Internal exact audio-head replay; never a public trim source override. */
+          type: 'restoreAudioClipStartTrim';
+          payload: {
+              clipId: string;
+              before: ClipStateSnapshot;
+              after: ClipStateSnapshot;
+              clock: TempoSourceClock;
+              direction: 'apply' | 'restore';
+          };
+      }
     | {
           type: 'slipClipContent';
           payload: {

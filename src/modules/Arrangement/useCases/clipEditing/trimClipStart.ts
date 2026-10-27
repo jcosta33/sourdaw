@@ -7,6 +7,8 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
 
+import { prepareAudioClipStartTrim } from './prepareAudioClipStartTrim';
+
 /**
  * A looped clip reads its notes at `note.startBeat - midiOffsetBeats` wrapped by
  * the loop length, so scheduling only sees the offset's phase inside
@@ -112,6 +114,9 @@ export function trimClipStart(
             if (target && newStartBeat >= target.clip.endBeat) {
                 return false;
             }
+            if (target?.clip.type === 'audio' && !prepareAudioClipStartTrim(target.clip, newStartBeat)) {
+                return false;
+            }
             // Finite captures can overflow when deriving or applying their row
             // displacement. Refuse before either owner writes: MIDI sanitization
             // would otherwise discard the overflowing rows while the trim succeeds.
@@ -128,6 +133,18 @@ export function trimClipStart(
     }
 
     return updateClip(clipId, (context) => {
+        if (context.type === 'audio') {
+            const trimmed = prepareAudioClipStartTrim(context, newStartBeat);
+            if (!trimmed || restoreAnchorBeat === undefined) {
+                return trimmed ?? context;
+            }
+            if (restoreAnchorBeat === null) {
+                delete trimmed.loopOriginBeat;
+            } else {
+                trimmed.loopOriginBeat = restoreAnchorBeat;
+            }
+            return trimmed;
+        }
         if (newStartBeat < context.endBeat) {
             const startBeat = Math.max(0, newStartBeat);
             const delta = startBeat - context.startBeat;

@@ -14,10 +14,12 @@ export type ClipPreviewPosition = {
     endBeat: number;
     audioOffsetBeats?: number;
     audioOffsetSeconds?: number;
+    audioUnwrappedOffsetSeconds?: number;
     audioLoopStartSeconds?: number;
     audioLoopPassEntrySeconds?: number;
     audioLoopPassOriginBeat?: number;
     loopOriginBeat?: number;
+    loopLength?: number;
     midiOffsetBeats?: number;
 };
 

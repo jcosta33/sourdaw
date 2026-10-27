@@ -12,6 +12,7 @@ import { handleSetClipGainEnvelope } from '../handlers/clipGainEnvelope/handleSe
 import { handleToggleClipGainEnvelope } from '../handlers/clipGainEnvelope/handleToggleClipGainEnvelope';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleRestoreClipStretchState } from '../handlers/clipStretch/handleRestoreClipStretchState';
+import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
 import { handleRestoreCompRegionInterval } from '../handlers/comping/handleRestoreCompRegionInterval';
@@ -217,6 +218,7 @@ export function getArrangementHandlers() {
         setClipStretchMode: handleSetClipStretchMode,
         setClipStretchRatio: handleSetClipStretchRatio,
         restoreClipStretchState: handleRestoreClipStretchState,
+        restoreAudioClipStartTrim: handleRestoreAudioClipStartTrim,
         fitClipToBeats: handleFitClipToBeats,
         loadPreset: handleLoadPreset,
         restorePresetDeviceChain: handleRestorePresetDeviceChain,
