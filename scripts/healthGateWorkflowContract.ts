@@ -109,6 +109,7 @@ const STATIC_SUITE_STEPS = [
 const VALIDATION_STATIC_SUITE_STEPS = [
     STATIC_SUITE_STEPS[0],
     'Hosted installer systemd proof',
+    'Campaign fixture freshness',
     ...STATIC_SUITE_STEPS.slice(1),
 ] as const;
 const NIGHTLY_STATIC_SUITE_STEPS = STATIC_SUITE_STEPS;

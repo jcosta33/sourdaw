@@ -1974,6 +1974,15 @@ function assertReleaseInventoryCommand(job: UnknownRecord): void {
     }
 }
 
+function assertCampaignFixtureCommand(job: UnknownRecord): void {
+    if (
+        stepNamed(job, 'Campaign fixture freshness').run !==
+        "pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2"
+    ) {
+        throw new Error('campaign fixture freshness must run its exact validation case');
+    }
+}
+
 function assertBrowserAiChromiumInstallBounded(job: UnknownRecord): void {
     if (stepNamed(job, 'Install Chromium')['timeout-minutes'] !== 5) {
         throw new Error('Browser AI WebGPU job must bound its Chromium install so a stalled download fails fast');
@@ -4046,6 +4055,36 @@ describe('health gates workflow contract', () => {
         const softened = cloneWorkflows('softened hosted installer proof');
         stepNamed(jobAt(softened.validation, 'static'), 'Hosted installer systemd proof')['continue-on-error'] = true;
         expect(() => assertNoContinueOnError(softened)).toThrow();
+    });
+
+    it('requires campaign fixture freshness for Rust-only changes', () => {
+        const staticJob = jobAt(validationWorkflow, 'static');
+        expect(() => assertCampaignFixtureCommand(staticJob)).not.toThrow();
+        const steps = jobSteps('validation.yml', 'static', staticJob);
+        expect(steps.findIndex((step) => step.name === 'Install dependencies')).toBeLessThan(
+            steps.findIndex((step) => step.name === 'Campaign fixture freshness')
+        );
+        const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            RUST: 'true',
+            BROWSER: 'false',
+        });
+        expect(scope.web).toBe('false');
+        expect(scope.e2e).toBe('false');
+        expect(selectedPrValidationJobs(scope)).toContain('static');
+        expect(arrayAt(jobAt(validationWorkflow, 'validation-gate'), 'needs')).toContain('static');
+
+        const missing = cloneWorkflows('missing campaign fixture freshness');
+        removeStepNamed(jobAt(missing.validation, 'static'), 'Campaign fixture freshness');
+        expect(() => assertStepInventory(missing)).toThrow('validation.yml job static steps drifted');
+        const conditional = cloneWorkflows('conditional campaign fixture freshness');
+        stepNamed(jobAt(conditional.validation, 'static'), 'Campaign fixture freshness').if = 'false';
+        expect(() => assertUnconditionalSteps(conditional)).toThrow();
+        const softened = cloneWorkflows('softened campaign fixture freshness');
+        stepNamed(jobAt(softened.validation, 'static'), 'Campaign fixture freshness')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softened)).toThrow();
+        const wrong = cloneWorkflows('wrong campaign fixture case');
+        stepNamed(jobAt(wrong.validation, 'static'), 'Campaign fixture freshness').run = 'pnpm test:run';
+        expect(() => assertCampaignFixtureCommand(jobAt(wrong.validation, 'static'))).toThrow();
     });
 
     it('runs release inventory on every pull request and nightly with full provenance history', () => {

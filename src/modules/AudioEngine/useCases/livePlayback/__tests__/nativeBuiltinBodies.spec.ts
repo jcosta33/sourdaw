@@ -795,8 +795,8 @@ describe('the proof body', () => {
     // A near-miss of the refusal, so the name is pinned as itself rather than
     // as a substring match: it is neither a prefix nor a suffix of a chain name
     // the body must keep addressing.
-    it('refuses only the graph-owned name itself', () => {
-        expect(bodyOf('proof').addressesParameter('bypassed')).toBe(true);
+    it('refuses unknown near-misses while retaining actual stage bypass', () => {
+        expect(bodyOf('proof').addressesParameter('bypassed')).toBe(false);
         expect(bodyOf('proof').addressesParameter('dyn_bypass')).toBe(true);
     });
 
@@ -1115,6 +1115,20 @@ describe('the scoring body', () => {
         for (const name of probeNames) {
             expect(bodyOf('native-scoring').addressesParameter(name)).toBe(false);
             expect(bodyOf('native-scoring').projectPatch({ [name]: 1 })).toEqual({});
+        }
+    });
+});
+
+describe('Proof canonical native target admission', () => {
+    it('keeps unknown shaped targets visible to native refusal instead of silently losing them', () => {
+        expect(
+            bodyOf('proof').projectPatch({ unknown_proof: 2, target_lufs: -14, target_mode: 0, lim_ceiling: -3 })
+        ).toEqual({ unknown_proof: 2, lim_ceiling: -3 });
+        for (const name of ['unknown_proof', 'eq_band0Xfreq', 'dyn_xover0_extra', 'chain_order_00', 'target_lufs']) {
+            expect(bodyOf('proof').addressesParameter(name), name).toBe(false);
+        }
+        for (const name of ['eq_output_gain', 'dyneq_band3_range', 'match_amount', 'dyn_band2_solo', 'img_xover2']) {
+            expect(bodyOf('proof').addressesParameter(name), name).toBe(true);
         }
     });
 });

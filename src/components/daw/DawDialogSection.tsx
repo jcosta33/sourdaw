@@ -39,7 +39,7 @@ export const DawDialogSection = ({
     children,
     ...props
 }: DawDialogSectionProps): ReactElement => (
-    <section className={cn('overflow-hidden rounded-lg border', TONE_CLASS_NAMES[tone], className)} {...props}>
+    <section className={cn('shrink-0 overflow-hidden rounded-lg border', TONE_CLASS_NAMES[tone], className)} {...props}>
         {title || detail || actions ? (
             <Row justify="between" gap={3} className={cn('border-b px-3 py-2.5', HEADER_TONE_CLASS_NAMES[tone])}>
                 <div className="min-w-0">
