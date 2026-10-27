@@ -30,8 +30,8 @@ import {
     secondsBetweenBeats,
 } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { transportStore } from '../../stores/transportStore';
 import { runWithTempoMapRowWriteIntent, runWithTempoSourcePreservation } from '../../stores/tempoWriteIntent';
+import { transportStore } from '../../stores/transportStore';
 import { applyTempoMapRowPlan } from '../../useCases/tempoMap/applyTempoMapRowPlan';
 import { planTempoMapEdit } from '../../useCases/tempoMap/planTempoMapEdit';
 import { timelineMapTimeStateCodec } from '../../useCases/tempoMap/timelineMapTimeStateCodec';

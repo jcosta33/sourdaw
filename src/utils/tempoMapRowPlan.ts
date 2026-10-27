@@ -263,6 +263,27 @@ function coherentOrder(plan: TempoMapRowPlan): boolean {
     return true;
 }
 
+function validCollision(value: unknown): value is { beat: number; targetId: string | null } {
+    return (
+        exactData(value, ['beat', 'targetId']) &&
+        validBeat(value.beat) &&
+        (value.targetId === null || validId(value.targetId))
+    );
+}
+
+function validOperation(value: unknown): value is TempoMapRowPlan['operation'] {
+    return value === 'add' || value === 'update' || value === 'remove' || value === 'replace';
+}
+
+function validRowChange(before: TempoMapRow[], after: TempoMapRow[]): boolean {
+    return (
+        before.length + after.length > 0 &&
+        !valuesEqual(before, after) &&
+        uniqueIds(before.map((row) => row.id)) &&
+        uniqueIds(after.map((row) => row.id))
+    );
+}
+
 /** Shape and paired-row coherence only. Transport must also admit exact rows
  * against its own bounds; a normalizable row is not an exact saved value. */
 export function decodeTempoMapRowPlan(value: unknown): TempoMapRowPlan | null {
@@ -272,30 +293,22 @@ export function decodeTempoMapRowPlan(value: unknown): TempoMapRowPlan | null {
     }
     if (
         !exactData(value, keys) ||
-        (value.operation !== 'add' &&
-            value.operation !== 'update' &&
-            value.operation !== 'remove' &&
-            value.operation !== 'replace') ||
+        !validOperation(value.operation) ||
         !denseArray(value.before) ||
         !value.before.every(readRow) ||
         !denseArray(value.after) ||
         !value.after.every(readRow) ||
-        value.before.length + value.after.length === 0 ||
-        valuesEqual(value.before, value.after) ||
-        !uniqueIds(value.before.map((row) => row.id)) ||
-        !uniqueIds(value.after.map((row) => row.id)) ||
         !denseArray(value.order) ||
         !value.order.every(readOrder)
     ) {
         return null;
     }
+    if (!validRowChange(value.before, value.after)) {
+        return null;
+    }
     let collision: TempoMapRowPlan['collision'];
     if (value.operation === 'add') {
-        if (
-            !exactData(value.collision, ['beat', 'targetId']) ||
-            !validBeat(value.collision.beat) ||
-            !(value.collision.targetId === null || validId(value.collision.targetId))
-        ) {
+        if (!validCollision(value.collision)) {
             return null;
         }
         collision = { beat: value.collision.beat, targetId: value.collision.targetId };

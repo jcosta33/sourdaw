@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
-import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type CompRegion } from '../../../models/TakeLane';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';

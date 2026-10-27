@@ -19,10 +19,10 @@ import {
 
 import { getTempoAtBeat, samplesToBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { transportStore } from '../../stores/transportStore';
-import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
-import { setTempo } from '../../useCases/setTempo';
 import { runWithTempoSourcePreservation } from '../../stores/tempoWriteIntent';
+import { transportStore } from '../../stores/transportStore';
+import { setTempo } from '../../useCases/setTempo';
+import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type RestoreAction = Extract<AppAction, { type: 'restoreTempoEdit' }>;
@@ -135,6 +135,26 @@ export function tempoAudioSourcesApply(payload: RestoreAction['payload'], contex
     return input !== null && canApplyTempoAudioSources(input, priorActions);
 }
 
+function clockTransitions(actions: readonly AppAction[], actionIndex: number) {
+    const transitions: TempoScalarTransition[] = [];
+    const prior: TempoScalarTransition[] = [];
+    for (const [index, action] of actions.entries()) {
+        if (action.type !== 'setTempo' && action.type !== 'restoreTempoEdit') {
+            continue;
+        }
+        const { tempoChangeId, expectedBpm, bpm } = action.payload;
+        if (tempoChangeId === undefined || expectedBpm === undefined) {
+            return null;
+        }
+        const transition = { tempoChangeId, expectedBpm, bpm };
+        transitions.push(transition);
+        if (index < actionIndex) {
+            prior.push(transition);
+        }
+    }
+    return { transitions, prior };
+}
+
 function capturedClockPath(payload: RestoreAction['payload'], context?: PrefixContext): TempoSourceClockPath | null {
     const actions = context?.actions;
     if (!actions) {
@@ -149,22 +169,11 @@ function capturedClockPath(payload: RestoreAction['payload'], context?: PrefixCo
     ) {
         return null;
     }
-    const transitions: TempoScalarTransition[] = [];
-    const prior: TempoScalarTransition[] = [];
-    for (const [index, action] of actions.entries()) {
-        if (action.type !== 'setTempo' && action.type !== 'restoreTempoEdit') {
-            continue;
-        }
-        const { tempoChangeId, expectedBpm, bpm } = action.payload;
-        if (tempoChangeId === undefined || expectedBpm === undefined) {
-            return null;
-        }
-        const transition = { tempoChangeId, expectedBpm, bpm };
-        transitions.push(transition);
-        if (index < context.actionIndex) {
-            prior.push(transition);
-        }
+    const captured = clockTransitions(actions, context.actionIndex);
+    if (!captured) {
+        return null;
     }
+    const { transitions, prior } = captured;
     const actual = prefixClock([]);
     if (!actual) {
         return null;

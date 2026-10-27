@@ -3,10 +3,11 @@ import {
     AutomergeStorageWriteConflictError,
     createAutomergeStorage,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoWriteIntent } from './tempoWriteIntent';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { defaultTransportState, type TransportState } from '../models/TransportState';
+
+import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoWriteIntent } from './tempoWriteIntent';
 
 export { defaultTransportState, type TransportState };
 

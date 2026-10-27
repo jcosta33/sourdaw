@@ -7,7 +7,7 @@ import {
 import { commandBatchPreflightPort } from './commandBatchPreflightPort';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
-import { isDerivedSourceSupportPath } from './commandArgumentMetadata';
+import { isDerivedSourceSupportPath } from './isDerivedSourceSupportPath';
 
 type CommandBatchAssetReference = {
     assetHash?: string;

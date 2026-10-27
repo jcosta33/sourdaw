@@ -5,7 +5,6 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type VersionedCommandBatchEnvelope } from '../../models/VersionedCommandBatchEnvelope';
-
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';

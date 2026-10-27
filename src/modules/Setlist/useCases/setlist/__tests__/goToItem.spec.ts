@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import type { getTempoWriteTarget } from '#/modules/Transport/useCases';
+
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { goToItem } from '../goToItem';
+
+import type { getTempoWriteTarget } from '#/modules/Transport/useCases';
 
 type TempoWriteTarget = NonNullable<ReturnType<typeof getTempoWriteTarget>>;
 

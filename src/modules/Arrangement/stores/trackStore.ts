@@ -7,15 +7,15 @@ import {
 import { hasValidAudioSourceState } from '#/utils/audioSourceTime';
 import { valuesEqual } from '#/utils/structuralEquality';
 
+import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
+import { normalizeTrack } from '../models/Track';
+
 import {
     captureTempoAudioSourceTrackMetadata,
     projectTempoAudioSourceTrackWrite,
     tempoAudioSourceTrackIntentMatches,
     type TempoAudioSourceWriteIntent,
 } from './tempoAudioSourceWriteIntent';
-
-import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
-import { normalizeTrack } from '../models/Track';
 
 import type {
     AutomationMode,

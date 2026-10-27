@@ -4,6 +4,7 @@ import { prepareMidiClipFanOutState } from '#/modules/MIDI/useCases';
 import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type ResolvedClip } from '../../models/ResolvedClip';
 import { type Clip, type Track } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -11,7 +12,6 @@ import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { restoreClipGlueState } from '../clipEditing/restoreClipGlueState';
-import { type ResolvedClip } from '../../models/ResolvedClip';
 import { resolveClipsWithComping } from '../resolveComping';
 
 import { insertTakeLane } from './insertTakeLane';

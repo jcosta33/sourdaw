@@ -28,8 +28,8 @@ import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { type Clip } from '../../../models/Track';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
+import { type Clip } from '../../../models/Track';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 

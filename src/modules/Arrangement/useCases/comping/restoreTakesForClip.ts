@@ -1,10 +1,9 @@
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type TakeLane } from '../../models/TakeLane';
-
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
-import { getTrackStoreState } from '../getTrackStoreState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 import { laneTrackExists } from './laneTrackExists';
 import { reconcileLane } from './reconcileLane';

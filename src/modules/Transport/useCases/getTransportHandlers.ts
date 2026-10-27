@@ -1,8 +1,11 @@
 import { handleAddTimeSignatureChange } from '../handlers/transport/handleAddTimeSignatureChange';
+import { handleEditTempoMap } from '../handlers/transport/handleEditTempoMap';
 import { handleRemoveTimeSignatureChange } from '../handlers/transport/handleRemoveTimeSignatureChange';
 import { handleRestoreLoopRegion } from '../handlers/transport/handleRestoreLoopRegion';
 import { handleRestoreMasterGain } from '../handlers/transport/handleRestoreMasterGain';
 import { handleRestorePunchRegion } from '../handlers/transport/handleRestorePunchRegion';
+import { handleRestoreTempoEdit } from '../handlers/transport/handleRestoreTempoEdit';
+import { handleRestoreTempoMapEdit } from '../handlers/transport/handleRestoreTempoMapEdit';
 import { handleSeekPlayhead } from '../handlers/transport/handleSeekPlayhead';
 import { handleSetCountInBars } from '../handlers/transport/handleSetCountInBars';
 import { handleSetLoopEnabled } from '../handlers/transport/handleSetLoopEnabled';
@@ -16,9 +19,6 @@ import { handleSetPunchEnabled } from '../handlers/transport/handleSetPunchEnabl
 import { handleSetPunchIn } from '../handlers/transport/handleSetPunchIn';
 import { handleSetPunchOut } from '../handlers/transport/handleSetPunchOut';
 import { handleSetTempo } from '../handlers/transport/handleSetTempo';
-import { handleRestoreTempoEdit } from '../handlers/transport/handleRestoreTempoEdit';
-import { handleEditTempoMap } from '../handlers/transport/handleEditTempoMap';
-import { handleRestoreTempoMapEdit } from '../handlers/transport/handleRestoreTempoMapEdit';
 import { handleSetTimeSignature } from '../handlers/transport/handleSetTimeSignature';
 import { handleStopPlayback } from '../handlers/transport/handleStopPlayback';
 import { handleToggleCountIn } from '../handlers/transport/handleToggleCountIn';

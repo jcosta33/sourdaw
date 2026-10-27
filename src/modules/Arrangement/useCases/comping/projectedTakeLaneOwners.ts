@@ -11,7 +11,8 @@ import { replaceBaseGapAudioSources } from '../../stores/takeLaneWriteJournal';
 import { preparedClipSplits } from '../clipEditing/preparedClipSplit';
 
 import { reconcileLane } from './reconcileLane';
-import { reconcileTransitionBaseGaps, reconcileTransitionRegions } from './reconcileTakeReKeySources';
+import { reconcileTransitionBaseGaps } from './reconcileTakeReKeySources';
+import { reconcileTransitionRegions } from './reconcileTransitionRegions';
 
 type TakeLaneOwners = TakeLane;
 

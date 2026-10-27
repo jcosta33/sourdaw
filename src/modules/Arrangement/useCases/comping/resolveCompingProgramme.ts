@@ -4,18 +4,47 @@ import {
     audioTakeFragmentSource,
     hasCanonicalAudioTakeSource,
 } from '#/utils/audioSourceTime';
-import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 import { compBaseGapWindows } from '#/utils/compBaseGapWindows';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
-import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type ResolvedClip } from '../../models/ResolvedClip';
+import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
 import { type TakeLaneStoreState } from '../../stores/takeLaneStore';
-
 import { resolveTakeMedia } from '../resolveTakeMedia';
 import { withMediaOffsetBeats } from '../withMediaOffsetBeats';
+
 import { resolveCompBaseGapWindow } from './resolveCompBaseGapWindow';
+
+function resolveRegionAudioSource(
+    sourceClip: Clip,
+    region: TakeLaneStoreState['lanes'][number]['activeCompRegions'][number],
+    take: TakeLaneStoreState['lanes'][number]['takes'][number],
+    media: NonNullable<ReturnType<typeof resolveTakeMedia>>,
+    overlapStart: number,
+    timeline: TempoTimeline
+) {
+    let audioSource: ReturnType<typeof audioSourceSnapshotAtBeat> | ReturnType<typeof audioTakeFragmentSource> = null;
+    if (sourceClip.type === 'audio') {
+        if (region.audioSource && take.passAnchorSeconds === undefined) {
+            let rate = 1;
+            if (sourceClip.stretchMode && sourceClip.stretchMode !== 'off') {
+                rate = boundStretchRatio(sourceClip.stretchRatio ?? 1);
+            }
+            audioSource = audioSourceSnapshotAtBeat(
+                region.audioSource,
+                overlapStart,
+                rate,
+                sourceClip.loopEnabled ?? false,
+                timeline.secondsAtBeat
+            );
+        } else if (hasCanonicalAudioTakeSource(take, sourceClip) && media.offsetSecondsAt) {
+            audioSource = audioTakeFragmentSource(media.offsetSecondsAt(overlapStart), overlapStart);
+        }
+    }
+    return audioSource;
+}
 
 /** Private value projection used while materializing a prefix's source owners. */
 export function resolveCompingProgramme(
@@ -95,25 +124,7 @@ export function resolveCompingProgramme(
         // there unchanged.
         const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
         const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
-        let audioSource: ReturnType<typeof audioSourceSnapshotAtBeat> | ReturnType<typeof audioTakeFragmentSource> =
-            null;
-        if (sourceClip.type === 'audio') {
-            if (region.audioSource && take.passAnchorSeconds === undefined) {
-                let rate = 1;
-                if (sourceClip.stretchMode && sourceClip.stretchMode !== 'off') {
-                    rate = boundStretchRatio(sourceClip.stretchRatio ?? 1);
-                }
-                audioSource = audioSourceSnapshotAtBeat(
-                    region.audioSource,
-                    overlapStart,
-                    rate,
-                    sourceClip.loopEnabled ?? false,
-                    timeline.secondsAtBeat
-                );
-            } else if (hasCanonicalAudioTakeSource(take, sourceClip) && media.offsetSecondsAt) {
-                audioSource = audioTakeFragmentSource(media.offsetSecondsAt(overlapStart), overlapStart);
-            }
-        }
+        const audioSource = resolveRegionAudioSource(sourceClip, region, take, media, overlapStart, timeline);
         resolved.push({
             ...takeFragmentBasis,
             ...audioSource,

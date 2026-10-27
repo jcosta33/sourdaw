@@ -1,6 +1,6 @@
 import { type AudioSourceTile } from '#/utils/audioSourceTime';
-import { valuesEqual } from '#/utils/structuralEquality';
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type TakeLane } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';

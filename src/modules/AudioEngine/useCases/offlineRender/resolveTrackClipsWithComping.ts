@@ -8,6 +8,7 @@ import {
     hasCanonicalAudioTakeSource,
 } from '#/utils/audioSourceTime';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+import { compBaseGapWindows } from '#/utils/compBaseGapWindows';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { liveTempoTimeline, type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
@@ -220,57 +221,12 @@ function withMediaOffsetBeats(clip: TrackClip, offsetBeats: number): TrackClip {
     return { ...clip, midiOffsetBeats: offsetBeats };
 }
 
-/**
- * The clip set a track actually plays: comped takes where a take lane has
- * active regions, gap fills where the original clip still shows through, and
- * the clips unchanged when no comping applies.
- *
- * Shared by both renderers (#2225): the Web Audio scheduler
- * (`scheduleTrackClips`) and the native export path must schedule exactly the
- * same clip set — comped takes and gap fills included — for the two to be
- * interchangeable. `timeline` is the tempo map the caller's readers convert
- * each resolved offset against: a render passes its own, and a live producer
- * reads the session's.
- */
-export function resolveTrackClipsWithComping(
-    trackId: string,
+function appendTakeFragments(
+    lane: TakeLaneStoreState['lanes'][number],
     clips: Track['clips'],
-    laneState = takeLaneStore.value,
-    timeline: ResolutionTempoTimeline = liveTempoTimeline
-): ResolvedClip[] {
-    if (!laneState) {
-        return clips.map((clip) => ({
-            ...clip,
-            regionStartBeat: clip.startBeat,
-            regionEndBeat: clip.endBeat,
-            // The pass count measures from the loop anchor, not the current
-            // placement: a start trim must not re-roll which passes sound
-            // (#4988). Unanchored clips anchor at their current start, which is
-            // exactly the pre-anchor reading.
-            sourceStartBeat: resolveLoopAnchoredStartBeat({
-                startBeat: clip.startBeat,
-                loopOriginBeat: clip.loopOriginBeat,
-                loopEnabled: clip.loopEnabled ?? false,
-            }),
-        }));
-    }
-
-    const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
-    if (!lane || (lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length)) {
-        return clips.map((clip) => ({
-            ...clip,
-            regionStartBeat: clip.startBeat,
-            regionEndBeat: clip.endBeat,
-            sourceStartBeat: resolveLoopAnchoredStartBeat({
-                startBeat: clip.startBeat,
-                loopOriginBeat: clip.loopOriginBeat,
-                loopEnabled: clip.loopEnabled ?? false,
-            }),
-        }));
-    }
-
-    const resolvedClips: ResolvedClip[] = [];
-
+    timeline: ResolutionTempoTimeline,
+    resolvedClips: ResolvedClip[]
+): void {
     for (const region of lane.activeCompRegions) {
         const take = lane.takes.find((candidateTake) => candidateTake.id === region.takeId);
         if (!take) {
@@ -337,32 +293,24 @@ export function resolveTrackClipsWithComping(
             sourceStartBeat: media.sourceStartBeat,
         });
     }
+}
 
+function appendBaseFragments(
+    lane: TakeLaneStoreState['lanes'][number],
+    clips: Track['clips'],
+    timeline: ResolutionTempoTimeline,
+    resolvedClips: ResolvedClip[]
+): void {
     const sortedRegions = lane.activeCompRegions;
 
     for (const clip of clips) {
-        const gaps: { start: number; end: number }[] = [];
-        let cursor = clip.startBeat;
-
-        for (const region of sortedRegions) {
-            if (region.endBeat <= clip.startBeat || region.startBeat >= clip.endBeat) {
-                continue;
-            }
-            const regionStart = Math.max(region.startBeat, clip.startBeat);
-            if (cursor < regionStart) {
-                gaps.push({ start: cursor, end: regionStart });
-            }
-            cursor = Math.max(cursor, Math.min(region.endBeat, clip.endBeat));
-        }
-        if (cursor < clip.endBeat) {
-            gaps.push({ start: cursor, end: clip.endBeat });
-        }
+        const gaps = compBaseGapWindows(clip, sortedRegions);
 
         for (const gap of gaps) {
             const windows = partitionAudioSourceTiles(
                 clip.id,
-                gap.start,
-                gap.end,
+                gap.startBeat,
+                gap.endBeat,
                 clip.type === 'audio' ? (lane.baseGapAudioSources ?? []) : []
             );
             for (const window of windows) {
@@ -402,6 +350,62 @@ export function resolveTrackClipsWithComping(
             }
         }
     }
+}
+
+/**
+ * The clip set a track actually plays: comped takes where a take lane has
+ * active regions, gap fills where the original clip still shows through, and
+ * the clips unchanged when no comping applies.
+ *
+ * Shared by both renderers (#2225): the Web Audio scheduler
+ * (`scheduleTrackClips`) and the native export path must schedule exactly the
+ * same clip set — comped takes and gap fills included — for the two to be
+ * interchangeable. `timeline` is the tempo map the caller's readers convert
+ * each resolved offset against: a render passes its own, and a live producer
+ * reads the session's.
+ */
+export function resolveTrackClipsWithComping(
+    trackId: string,
+    clips: Track['clips'],
+    laneState = takeLaneStore.value,
+    timeline: ResolutionTempoTimeline = liveTempoTimeline
+): ResolvedClip[] {
+    if (!laneState) {
+        return clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            // The pass count measures from the loop anchor, not the current
+            // placement: a start trim must not re-roll which passes sound
+            // (#4988). Unanchored clips anchor at their current start, which is
+            // exactly the pre-anchor reading.
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: clip.startBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: clip.loopEnabled ?? false,
+            }),
+        }));
+    }
+
+    const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
+    if (!lane || (lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length)) {
+        return clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: resolveLoopAnchoredStartBeat({
+                startBeat: clip.startBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: clip.loopEnabled ?? false,
+            }),
+        }));
+    }
+
+    const resolvedClips: ResolvedClip[] = [];
+
+    appendTakeFragments(lane, clips, timeline, resolvedClips);
+
+    appendBaseFragments(lane, clips, timeline, resolvedClips);
 
     return resolvedClips.sort((leftClip, rightClip) => leftClip.startBeat - rightClip.startBeat);
 }

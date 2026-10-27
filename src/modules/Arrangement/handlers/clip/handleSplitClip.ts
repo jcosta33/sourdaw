@@ -1,19 +1,19 @@
 import { createHandler } from '#/utils/createHandler';
-import { valuesEqual } from '#/utils/structuralEquality';
 import {
     type AppAction,
     type HandlerMaterializationContext,
     type RetiredTakeLaneSnapshot,
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
 import { preparedClipSplits } from '../../useCases/clipEditing/preparedClipSplit';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
-import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { splitClip } from '../../useCases/clipEditing/splitClip';
+import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { resolveZeroCrossingPosition } from '../../useCases/timelineInteractions/snapToZeroCrossing';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 

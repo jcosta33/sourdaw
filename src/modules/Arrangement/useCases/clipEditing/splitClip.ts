@@ -9,8 +9,8 @@ import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureClipSplitTakeReKeyTransitions } from '../comping/captureClipSplitTakeReKey';
-import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 import { reKeyedTakeLaneOwnersMatchStore } from '../comping/reKeyedTakeLaneOwnersMatchStore';
+import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
 import { prepareClipSplit } from './prepareClipSplit';
 
@@ -45,6 +45,28 @@ function cloneClipStateSnapshot(snapshot: ClipStateSnapshot): Clip {
     return clip;
 }
 
+function validSplitArguments(splitBeat: number, rightClipId?: string): boolean {
+    return (
+        Number.isFinite(splitBeat) &&
+        (rightClipId === undefined || (typeof rightClipId === 'string' && rightClipId.length > 0))
+    );
+}
+
+function splitStillOwned(
+    state: NonNullable<ReturnType<typeof getTrackState>>,
+    plan: NonNullable<ReturnType<typeof prepareClipSplit>>,
+    clipId: string
+): boolean {
+    const track = state.tracks.find((candidate) => candidate.id === plan.previous.trackId);
+    const current = track?.clips.find((candidate) => candidate.id === clipId);
+    return Boolean(
+        current &&
+        valuesEqual(current, plan.previous.leftClip) &&
+        !state.tracks.some((candidate) => candidate.clips.some((clip) => clip.id === plan.rightClipId)) &&
+        (!plan.takeReKeyTransitions || reKeyedTakeLaneOwnersMatchStore(plan.takeReKeyTransitions, 'apply'))
+    );
+}
+
 /**
  * Split a clip at `splitBeat` (zero-crossing snapped for audio). The left half
  * keeps the original clip id; the right half gets a fresh id unless
@@ -60,10 +82,7 @@ export function splitClip(
     resolvedSplitBeat?: number,
     options?: SplitClipOptions
 ): string | null {
-    if (!Number.isFinite(splitBeat)) {
-        return null;
-    }
-    if (rightClipId !== undefined && (typeof rightClipId !== 'string' || rightClipId.length === 0)) {
+    if (!validSplitArguments(splitBeat, rightClipId)) {
         return null;
     }
 
@@ -76,14 +95,7 @@ export function splitClip(
     if (!plan || !state || !plan.next.rightClip) {
         return null;
     }
-    const track = state.tracks.find((candidate) => candidate.id === plan.previous.trackId);
-    const current = track?.clips.find((candidate) => candidate.id === clipId);
-    if (
-        !current ||
-        !valuesEqual(current, plan.previous.leftClip) ||
-        state.tracks.some((candidate) => candidate.clips.some((clip) => clip.id === plan.rightClipId)) ||
-        (plan.takeReKeyTransitions && !reKeyedTakeLaneOwnersMatchStore(plan.takeReKeyTransitions, 'apply'))
-    ) {
+    if (!splitStillOwned(state, plan, clipId)) {
         return null;
     }
     // #5048 — splitting changes no audio: takes and comp regions re-key onto

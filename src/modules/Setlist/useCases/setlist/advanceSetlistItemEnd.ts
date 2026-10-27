@@ -1,6 +1,6 @@
+import { logger } from '#/infra/logger/appLogger';
 import { playheadPositionRef, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { secondsBetweenBeats, stopPlayback } from '#/modules/Transport/useCases';
-import { logger } from '#/infra/logger/appLogger';
 
 import { setlistStore } from '../../stores/setlistStore';
 

@@ -1,7 +1,6 @@
+import { type TakeLane } from '../../models/TakeLane';
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { getTrackStoreState } from '../getTrackStoreState';
-
-import { type TakeLane } from '../../models/TakeLane';
 
 import { takesWithLiveClips } from './takesWithLiveClips';
 

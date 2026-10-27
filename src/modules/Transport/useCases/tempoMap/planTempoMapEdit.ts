@@ -13,60 +13,55 @@ import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';
 
 type Result = { readonly status: 'ready'; readonly plan: TempoMapRowPlan } | { readonly status: 'no-op' | 'rejected' };
 
-/** Prepare immutable row ownership without publishing stores. The application
- * supplies its existing row producer once; replay consumes only captured ids. */
-export function planTempoMapEdit(input: {
-    readonly changes: readonly TempoMapRow[] | null;
-    readonly edit: TempoMapEdit;
-    readonly createRow?: (beat: number, tempo: number, curve: TempoMapRow['curve']) => TempoMapRow;
-}): Result {
-    const { edit } = input;
-    if (!input.changes && edit.type !== 'replace') {
-        return { status: 'no-op' };
-    }
-    const changes = input.changes ?? [];
+type EditRows = {
+    before: readonly TempoMapRow[];
+    after: readonly TempoMapRow[];
+    next: readonly TempoMapRow[];
+    collision?: TempoMapRowPlan['collision'];
+};
+function prepareReplacement(
+    input: Input,
+    changes: readonly TempoMapRow[],
+    edit: Extract<TempoMapEdit, { type: 'replace' }>
+): EditRows | Result {
     if (
-        new Set(changes.map((row) => row.id)).size !== changes.length ||
-        !timelineMapTimeStateCodec.encodeState({
-            tempoState: { changes: [...changes] },
-            timeSignatureState: { changes: [] },
+        edit.changes.some(
+            (row) =>
+                !Number.isFinite(row.beat) ||
+                row.beat < 0 ||
+                !Number.isFinite(row.tempo) ||
+                row.tempo < MIN_TEMPO_MAP_TEMPO ||
+                row.tempo > MAX_TEMPO_MAP_TEMPO ||
+                (row.curve !== 'instant' && row.curve !== 'linear')
+        ) ||
+        (edit.changes.length > 0 && !input.createRow)
+    ) {
+        return { status: 'rejected' };
+    }
+    const before = changes;
+    const after = edit.changes.map((row) => input.createRow!(row.beat, row.tempo, row.curve));
+    if (
+        after.some((row, index) => {
+            const requested = edit.changes[index]!;
+            return !valuesEqual(
+                { beat: row.beat, tempo: row.tempo, curve: row.curve },
+                { beat: requested.beat, tempo: requested.tempo, curve: requested.curve }
+            );
         })
     ) {
         return { status: 'rejected' };
     }
+    return { before, after, next: after };
+}
+
+function prepareEditedRows(input: Input, changes: readonly TempoMapRow[]): EditRows | Result {
+    const { edit } = input;
     let before: readonly TempoMapRow[];
     let after: readonly TempoMapRow[];
     let next: readonly TempoMapRow[];
     let collision: TempoMapRowPlan['collision'];
     if (edit.type === 'replace') {
-        if (
-            edit.changes.some(
-                (row) =>
-                    !Number.isFinite(row.beat) ||
-                    row.beat < 0 ||
-                    !Number.isFinite(row.tempo) ||
-                    row.tempo < MIN_TEMPO_MAP_TEMPO ||
-                    row.tempo > MAX_TEMPO_MAP_TEMPO ||
-                    (row.curve !== 'instant' && row.curve !== 'linear')
-            ) ||
-            (edit.changes.length > 0 && !input.createRow)
-        ) {
-            return { status: 'rejected' };
-        }
-        before = changes;
-        after = edit.changes.map((row) => input.createRow!(row.beat, row.tempo, row.curve));
-        if (
-            after.some((row, index) => {
-                const requested = edit.changes[index]!;
-                return !valuesEqual(
-                    { beat: row.beat, tempo: row.tempo, curve: row.curve },
-                    { beat: requested.beat, tempo: requested.tempo, curve: requested.curve }
-                );
-            })
-        ) {
-            return { status: 'rejected' };
-        }
-        next = after;
+        return prepareReplacement(input, changes, edit);
     } else if (edit.type === 'add') {
         if (!Number.isFinite(edit.beat) || edit.beat < 0 || !Number.isFinite(edit.tempo)) {
             return { status: 'rejected' };
@@ -117,6 +112,37 @@ export function planTempoMapEdit(input: {
             next = changes.map((row) => (row.id === edit.id ? after[0]! : row));
         }
     }
+    return { before, after, next, collision };
+}
+
+/** Prepare immutable row ownership without publishing stores. The application
+ * supplies its existing row producer once; replay consumes only captured ids. */
+type Input = {
+    readonly changes: readonly TempoMapRow[] | null;
+    readonly edit: TempoMapEdit;
+    readonly createRow?: (beat: number, tempo: number, curve: TempoMapRow['curve']) => TempoMapRow;
+};
+
+export function planTempoMapEdit(input: Input): Result {
+    const { edit } = input;
+    if (!input.changes && edit.type !== 'replace') {
+        return { status: 'no-op' };
+    }
+    const changes = input.changes ?? [];
+    if (
+        new Set(changes.map((row) => row.id)).size !== changes.length ||
+        !timelineMapTimeStateCodec.encodeState({
+            tempoState: { changes: [...changes] },
+            timeSignatureState: { changes: [] },
+        })
+    ) {
+        return { status: 'rejected' };
+    }
+    const edited = prepareEditedRows(input, changes);
+    if ('status' in edited) {
+        return edited;
+    }
+    const { before, after, next, collision } = edited;
     if (valuesEqual(before, after)) {
         return { status: 'no-op' };
     }

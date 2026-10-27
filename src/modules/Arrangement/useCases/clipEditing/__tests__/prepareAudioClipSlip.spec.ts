@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type TakeLane } from '../../../models/TakeLane';
 import { resolveCompingProgramme } from '../../comping/resolveCompingProgramme';
-import { audioClipSlipOffsetBeats, prepareAudioClipSlip } from '../prepareAudioClipSlip';
+import { audioClipSlipOffsetBeats } from '../audioClipSlipOffsetBeats';
+import { prepareAudioClipSlip } from '../prepareAudioClipSlip';
 
 const timeline = {
     secondsAtBeat: (beat: number) => beat / 2,

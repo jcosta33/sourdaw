@@ -19,8 +19,8 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { cn } from '#/utils/Styles/cn';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { cn } from '#/utils/Styles/cn';
 
 import { setlistStore, type SetlistState } from '../../stores/setlistStore';
 import { addSetlistItem } from '../../useCases/setlist/addSetlistItem';

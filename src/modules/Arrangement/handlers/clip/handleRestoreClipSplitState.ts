@@ -69,6 +69,17 @@ function clipAutomationLanesMatch(
  *  `restoreMidiClipSplitState` and `execute`'s own satellite guard exactly, reused by
  *  `validate` so a batch preflight refuses a diverged clip instead of executing into a
  *  conflict. */
+function changesTempo(action: AppAction): boolean {
+    return action.type === 'setTempo' || action.type === 'restoreTempoEdit';
+}
+
+function expectedSatellitesMatch(action: RestoreClipSplitStateAction, priorActions: readonly AppAction[]): boolean {
+    return (
+        action.payload.expected.clipSatellites === undefined ||
+        clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)
+    );
+}
+
 function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: HandlerValidationContext): boolean {
     const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
     const projected = projectClipReplayPrefix(priorActions);
@@ -82,7 +93,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         })) ?? [];
     let takePriorActions = priorActions;
     let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
-    if (priorActions.some((action) => action.type === 'setTempo' || action.type === 'restoreTempoEdit')) {
+    if (priorActions.some(changesTempo)) {
         if (!projected.tracks) {
             return false;
         }
@@ -112,8 +123,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
             undefined,
             priorActions
         ) &&
-        (action.payload.expected.clipSatellites === undefined ||
-            clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)) &&
+        expectedSatellitesMatch(action, priorActions) &&
         clipAutomationLanesMatch(action, projected)
     );
 }

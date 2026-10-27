@@ -1,6 +1,7 @@
-import { prepareTempoAudioSourceWrite } from './comping/prepareTempoAudioSourceWrite';
 import { type AppAction } from '#/utils/handlerContract';
+
 import { projectClipReplayPrefix } from './clipEditing/projectClipReplayPrefix';
+import { prepareTempoAudioSourceWrite } from './comping/prepareTempoAudioSourceWrite';
 
 export function canApplyTempoAudioSources(
     input: Parameters<typeof prepareTempoAudioSourceWrite>[0],

@@ -33,8 +33,8 @@ import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
-import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
 import { prepareAudioClipSlip } from './clipEditing/prepareAudioClipSlip';
+import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;

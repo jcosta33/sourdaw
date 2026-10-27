@@ -1,8 +1,9 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { assertTempoWriteBpm } from '../../useCases/assertTempoWriteBpm';
+import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
+
 import {
     isRestoreTempoEditPayload,
     tempoAudioSourcesApply,
