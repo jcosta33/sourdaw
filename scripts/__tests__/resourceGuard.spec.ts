@@ -1080,6 +1080,16 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         expect(resolveDefaultMaxRssBytes({ profile, command, args })).toBe(expected);
     });
 
+    it('uses the focused ceiling for a dependency add', () => {
+        expect(
+            resolveDefaultMaxRssBytes({
+                profile: 'focused',
+                command: 'pnpm',
+                args: ['--dir', 'packages/app', 'add', '-D', 'vite@8.3.5'],
+            })
+        ).toBe(4 * 1024 ** 3);
+    });
+
     it('wires the resolved default budget through runGuardedCommand', async () => {
         const root = fixtureRoot('default-budget');
         try {
