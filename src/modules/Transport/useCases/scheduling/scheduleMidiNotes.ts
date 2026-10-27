@@ -966,6 +966,66 @@ async function prepareYeastTrackNotes(
 
     if (yeastDevice) {
         for (const clip of activeMidiClips) {
+            const frozenSource = clip.midiTakeSource;
+            if (frozenSource) {
+                const span = frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat;
+                const first = Math.max(
+                    0,
+                    Math.floor((fromBeat - frozenSource.phaseHeadBeat - span) / frozenSource.passLengthBeats)
+                );
+                const last = Math.ceil((toBeat - frozenSource.phaseHeadBeat) / frozenSource.passLengthBeats);
+                for (let absoluteOccurrenceIndex = first; absoluteOccurrenceIndex < last; absoluteOccurrenceIndex++) {
+                    if (!isCurrent()) {
+                        return null;
+                    }
+                    const window = projectFrozenMidiTakeWindow({
+                        source: frozenSource,
+                        absoluteOccurrenceIndex,
+                        fromBeat: clip.startBeat,
+                        toBeat: clip.endBeat,
+                    });
+                    if (!window) {
+                        throw new Error('Invalid frozen MIDI take window');
+                    }
+                    const passHead =
+                        frozenSource.phaseHeadBeat + absoluteOccurrenceIndex * frozenSource.passLengthBeats;
+                    const passEnd = Math.min(passHead + span, clip.endBeat);
+                    const isActive = passHead < toBeat && passEnd > fromBeat;
+                    if (!isActive && window.notes.length === 0) {
+                        continue;
+                    }
+                    const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
+                    const sourceNotes = window.notes.map((note) => ({ ...note, startBeat: note.startBeat - passHead }));
+                    const descriptor = {
+                        routeId,
+                        clipId: frozenSource.sourceClipId,
+                        iterationStartBeat: passHead,
+                        iterationEndBeat: passEnd,
+                        midiOffsetBeats: 0,
+                        loopEnabled: false,
+                        loopLengthBeats: frozenSource.passLengthBeats,
+                        clipStartBeat: clip.startBeat,
+                        sourceNotes,
+                    } satisfies LiveYeastIteration;
+                    cancellation?.yeastRouteLineage.set(routeId, descriptor);
+                    liveYeastIterations.push({
+                        ...descriptor,
+                        sourceNotes: sourceNotes.filter((note) =>
+                            shouldPlayMidiEvent({
+                                projectProbabilitySeed: midiState.probabilitySeed,
+                                clipId: frozenSource.sourceClipId,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex,
+                                probabilityPercent: note.probability ?? 100,
+                            })
+                        ),
+                    });
+                    if (activeYeastCarrierRouteId === undefined && isActive) {
+                        activeYeastCarrierRouteId = routeId;
+                    }
+                }
+                continue;
+            }
             const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
 
             const clipVisualLength = clip.endBeat - clip.startBeat;
