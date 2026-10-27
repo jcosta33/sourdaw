@@ -36,6 +36,23 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
+
+Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
+Stop stopped it and natural completion cleared UI state, without disconnect or engine-lifetime
+cleanup. GitHub's commit-to-PR lookup returns no associated PR. PR #187
+(`8c11c40674b32074a12a209b308d3361e93fe873`) moved that behavior into AudioEngine's cached
+preview helper. Historical private review prompts and tiers are unavailable.
+
+Start a cached preview through its real owner, then reset or dispose the engine. Require the source
+to stop and disconnect before the outgoing graph is retired, with one completion notification and
+no admission against the outgoing lifetime. Start a successor during an old callback and deliver
+the old completion and release afterward; the successor must survive. Pair nested reset, cleanup
+failure and disposed-engine refusal with ordinary previews that still coexist. Removing reset
+invalidation or the disposed-owner guard must fail those cases. Intent currentness permits
+preparation only; native monitoring readiness, programme isolation and audible A/B need their own
+evidence.
+
 ### 2026-10-22 — a store hydrate on a sync reset the runtime-only fields (introduced by PR #171)
 
 PR #171 (commit `d764229f1`) gave `transportStore` a `fromCrdt` that expands the partial document slot to a
