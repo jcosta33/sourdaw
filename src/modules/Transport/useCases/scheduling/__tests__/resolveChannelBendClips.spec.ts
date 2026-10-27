@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type Clip } from '#/modules/Arrangement/stores';
+import { projectChannelBend } from '#/modules/MIDI/useCases';
 
 import { resolveChannelBendClips } from '../resolveChannelBendClips';
 
@@ -56,6 +57,10 @@ describe('resolveChannelBendClips', () => {
         expect(clips.map(({ controlChanges }) => controlChanges.some(({ id }) => id === 'range'))).toEqual([
             true,
             true,
+        ]);
+        expect(projectChannelBend({ clips, frameAtBeat: (beat) => beat * 24_000 })).toEqual([
+            expect.objectContaining({ beat: 0.5, value: 8191, rangeSemitones: 12 }),
+            expect.objectContaining({ beat: 4.5, value: 8191, rangeSemitones: 12 }),
         ]);
     });
     // A clip split, copied, duplicated or pasted from a controller-only one has rows and no note list, and the
