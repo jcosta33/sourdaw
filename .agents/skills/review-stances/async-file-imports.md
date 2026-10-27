@@ -17,6 +17,12 @@ alone does not authorize an older request to publish its result.
   Removing the request-identity conjunct must fail the same-project inverse-completion case;
   removing the project-lifetime conjunct must fail the replacement case. Observe the stored
   tuning and notices, rather than only parser calls or the promise's completion.
+- Run a successful import against the real normalized project store, CRDT adapter, and installed
+  dirty tracker. Flush the actual write and require both the imported table and dirty state;
+  prove the tracker is active with its normal positive control. Cancellation, malformed input,
+  supersession, and project replacement must leave a clean current project clean. Preserve the
+  loading guard and recheck request ownership before bookkeeping and after synchronous dirty
+  subscribers, before publishing success. A mocked store cannot prove autosave admission.
 
 ## Escape: a project-lifetime fence did not order Scala imports
 
@@ -28,3 +34,16 @@ authority. A's delayed completion could overwrite B's completed choice. PR #5516
 picker, read, parse, write, and notice routes. The missed stance was inverse completion within
 one project, independently of project replacement. Historical private prompts and reviewer tiers
 are unknown; the public finding does not establish them.
+
+## Escape: a stored Scala import remained ineligible for autosave
+
+The Scala import added in `0960a493392c6c94697401d3c4a4ebea10b68e51` wrote project
+tuning without calling `markDirty`; no associated PR was found. PR #4883 removed the false
+instrument-retuning claim, and #5397 added lifetime checks, but both retained this omission.
+PR #5761's review at `2c845ad3e0d2f5b1f36127e1e79f9eba0a13e24e` found that a valid
+browser import reached the real store and CRDT while leaving `dirty: false`. The installed
+tracker watches tracks and tempo, so their positive controls do not prove import bookkeeping;
+autosave admits only dirty projects. The missed stance was the completed file import's real
+storage and autosave-admission boundary. Mocked tuning-write and notice assertions missed it.
+Historical private prompts and tiers are unknown. This source and controlled-state evidence
+does not establish a live save/reopen loss.

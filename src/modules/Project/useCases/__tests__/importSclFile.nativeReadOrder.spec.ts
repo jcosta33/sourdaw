@@ -121,7 +121,16 @@ describe('importSclFile native selected-file reads', () => {
         expect(mocks.invokeBinaryResponse).toHaveBeenNthCalledWith(2, 'read_file_bytes', ['/scales/B.scl']);
         expect(mocks.invokeBinaryResponse).toHaveBeenCalledTimes(2);
         expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('parse_scl', [second.content, 69, 440]);
-        expect(mocks.projectStore.set).toHaveBeenCalledOnce();
+        expect(mocks.projectStore.set).toHaveBeenCalledTimes(2);
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(1, {
+            ...createProjectState(),
+            tuning: { name: second.name, frequencies: second.frequencies },
+        });
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(2, {
+            ...createProjectState(),
+            dirty: true,
+            tuning: { name: second.name, frequencies: second.frequencies },
+        });
         expectExactFrequencies(mocks.projectStore.value!.tuning.frequencies, second.frequencies);
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
             'Imported scale "Unnamed" — stored on the project; no instrument consumes project tuning yet',
@@ -160,7 +169,16 @@ describe('importSclFile native selected-file reads', () => {
         expect(mocks.invokeBinaryResponse).toHaveBeenNthCalledWith(2, 'read_file_bytes', ['/scales/B.scl']);
         expect(mocks.invokeBinaryResponse).toHaveBeenCalledTimes(2);
         expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('parse_scl', [second.content, 69, 440]);
-        expect(mocks.projectStore.set).toHaveBeenCalledOnce();
+        expect(mocks.projectStore.set).toHaveBeenCalledTimes(2);
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(1, {
+            ...createProjectState(),
+            tuning: { name: second.name, frequencies: second.frequencies },
+        });
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(2, {
+            ...createProjectState(),
+            dirty: true,
+            tuning: { name: second.name, frequencies: second.frequencies },
+        });
         expectExactFrequencies(mocks.projectStore.value!.tuning.frequencies, second.frequencies);
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
             'Imported scale "Unnamed" — stored on the project; no instrument consumes project tuning yet',

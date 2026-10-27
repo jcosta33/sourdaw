@@ -5,6 +5,7 @@ import { projectStore } from '../stores/projectStore';
 
 import { pickFiles } from './fileDialog';
 import { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
+import { markDirty } from './projectPersistence/saveProject/markDirty';
 
 let latestImportRequest = 0;
 
@@ -59,6 +60,11 @@ export async function importSclFile(): Promise<void> {
                 frequencies: result.frequencies,
             },
         });
+        if (!isCurrent()) {
+            return;
+        }
+
+        markDirty();
         if (!isCurrent()) {
             return;
         }

@@ -135,7 +135,17 @@ describe('importSclFile browser', () => {
         expect(picker).toHaveBeenCalledOnce();
         expect(readFile).toHaveBeenCalledOnce();
         expect(console.error).not.toHaveBeenCalled();
-        expect(mocks.projectStore.set).toHaveBeenCalledOnce();
+        expect(mocks.projectStore.set).toHaveBeenCalledTimes(2);
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(1, {
+            ...createProjectState(),
+            tuning: { name: reference.name, frequencies: expect.any(Array) },
+        });
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(2, {
+            ...createProjectState(),
+            dirty: true,
+            tuning: { name: reference.name, frequencies: expect.any(Array) },
+        });
+        expect(mocks.projectStore.value?.dirty).toBe(true);
         expect(mocks.projectStore.value?.tuning.name).toBe(reference.name);
         expectFrequencies(mocks.projectStore.value!.tuning.frequencies, reference.frequencies);
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
@@ -183,8 +193,14 @@ describe('importSclFile browser', () => {
         await firstImport;
 
         expect(picker).toHaveBeenCalledTimes(2);
-        expect(mocks.projectStore.set).toHaveBeenCalledExactlyOnceWith({
+        expect(mocks.projectStore.set).toHaveBeenCalledTimes(2);
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(1, {
             ...createProjectState(),
+            tuning: { name: secondReference.name, frequencies: expect.any(Array) },
+        });
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(2, {
+            ...createProjectState(),
+            dirty: true,
             tuning: { name: secondReference.name, frequencies: expect.any(Array) },
         });
         expectFrequencies(mocks.projectStore.value!.tuning.frequencies, secondReference.frequencies);
