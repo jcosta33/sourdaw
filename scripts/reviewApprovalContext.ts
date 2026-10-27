@@ -121,8 +121,7 @@ export function readLiveApprovalContext(
         baseSha: git(['merge-base', pr.baseRefOid, head]),
     };
     assertSameApprovalContext(readReviewBundleContext(bundle), context);
-    const marker = git(['config', '--get', '--default', '', `branch.${pr.headRefName}.sourdaw-stack-fork`]);
-    const descriptor = readRegisteredLaneStack(primaryRoot, pr.headRefName, marker);
+    const descriptor = readRegisteredLaneStack(primaryRoot, pr.headRefName, git);
     if (descriptor !== undefined) {
         if (descriptor.parentPullRequest === undefined) {
             fail('approval requires a pinned stack parent pull request');
