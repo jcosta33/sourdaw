@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type Device } from '../../models/TrackViewTypes';
 import { createOfflineGrinderSetupError } from '../../errors/OfflineGrinderSetupError';
+import { type Device } from '../../models/TrackViewTypes';
 import { UnsupportedDeviceTypeError } from '../../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { buildDeviceChain } from '../buildDeviceChain';
 
