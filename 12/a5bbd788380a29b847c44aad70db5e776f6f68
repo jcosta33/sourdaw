@@ -1,0 +1,20 @@
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/grinderOfflineTargetAdmission.integration.spec.ts
+  s_b3201877f50e8a::t_fe55cfc0593204 1-48,50-59,68,86,90,110,112,133
+  s_b3201877f50e8a::t_992010ddbfffca 49,60-67,69-85,87-89,91-109,111,113-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "12a5bbd788380a29b847c44aad70db5e776f6f68",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
