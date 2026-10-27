@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
