@@ -14,7 +14,8 @@ import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers'
 import { activeNotes } from '../../repositories/webMidi/state';
 
 import { captureCompensatedRecordingPosition } from './captureCompensatedRecordingPosition';
-import { captureEventBeatAt, captureEventPositionAt } from './captureEventBeat';
+import { captureEventPositionAt } from './captureEventBeat';
+import { captureEventBeatAt } from './captureEventBeatAt';
 import { captureRecordingMemberExpression } from './captureRecordingMemberExpression';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';

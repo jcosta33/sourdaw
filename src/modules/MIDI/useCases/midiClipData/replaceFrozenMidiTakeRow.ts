@@ -5,7 +5,7 @@ import {
 } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './projectFrozenMidiTakeWindow';
+import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from '../../stores/isFrozenMidiTakeSource';
 
 type SlotPresence = { readonly expectedSlotPresent?: boolean; readonly replacementSlotPresent?: boolean };
 type FrozenMidiTakeRowEdit = SlotPresence &

@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    type FrozenMidiTakeSource,
-    isFrozenMidiTakeSource,
-    projectFrozenMidiTakeWindow,
-} from '../projectFrozenMidiTakeWindow';
+import { isFrozenMidiTakeSource } from '../../../stores/isFrozenMidiTakeSource';
+import { type FrozenMidiTakeSource, projectFrozenMidiTakeWindow } from '../projectFrozenMidiTakeWindow';
 
 function source(): FrozenMidiTakeSource {
     return {

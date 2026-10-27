@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { takeLaneStore } from '../../../stores/takeLaneStore';
-
 import { replaceOriginalMidiTakeRow } from '../replaceOriginalMidiTakeRow';
 
 const original = { id: 'note-1', pitch: 60, startBeat: 5.5, duration: 1, velocity: 90 };

@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as downloadFile from '#/utils/downloadFile';
-
 import {
     defaultGrooveTemplateState,
     defaultMidiStoreState,
@@ -14,6 +12,7 @@ import {
     projectClipControllerEvents,
     projectClipMidiEvents,
 } from '#/modules/MIDI/useCases';
+import * as downloadFile from '#/utils/downloadFile';
 
 import { exportMidiClip } from '../exportMidiClip';
 

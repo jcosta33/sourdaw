@@ -5,7 +5,8 @@ import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { createTake } from '../../../models/TakeLane';
 import { type TempoTimeline } from '../../../models/TempoTimeline';
-import { prepareMidiTakeSourceCapture, relocateMidiTakeSource } from '../prepareMidiTakeSourceCapture';
+import { prepareMidiTakeSourceCapture } from '../prepareMidiTakeSourceCapture';
+import { relocateMidiTakeSource } from '../relocateMidiTakeSource';
 
 const timeline: TempoTimeline = {
     secondsAtBeat: (beat) => beat / 2,

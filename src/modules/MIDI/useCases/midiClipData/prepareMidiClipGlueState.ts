@@ -2,10 +2,10 @@ import { type MidiClipDataActionSnapshot, type MidiClipGlueActionSnapshot } from
 import { DEFAULT_NOTE_PROBABILITY } from '#/utils/midiData';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
+import { projectMidiClipWindow } from '../../services/projectMidiClipWindow';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
 import { declareGluedRegisteredParameters } from './declareGluedRegisteredParameters';
-import { projectMidiClipWindow } from '../../services/projectMidiClipWindow';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiGlueSource = {

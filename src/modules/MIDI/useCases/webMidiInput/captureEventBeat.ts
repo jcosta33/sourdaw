@@ -296,7 +296,3 @@ export function captureEventPositionAt({ audioTime }: CaptureEventBeatInput): { 
         passIndex: Math.max(0, wrapsSinceEpoch - passesBack),
     };
 }
-
-export function captureEventBeatAt(input: CaptureEventBeatInput): number {
-    return captureEventPositionAt(input).beat;
-}

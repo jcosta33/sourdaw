@@ -8,14 +8,18 @@ function isFiniteBeat(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function hasExactSourceKeys(value: object): boolean {
+    const keys = Reflect.ownKeys(value);
+    const allowed = ['sourceClipId', 'rows', 'sourceEntryBeat', 'sourceEndBeat', 'phaseHeadBeat', 'passLengthBeats'];
+    return keys.length === allowed.length && keys.every((key) => typeof key === 'string' && allowed.includes(key));
+}
+
 /** Presence is authoritative: an absent legacy source is handled by the caller. */
 export function isFrozenMidiTakeSource(value: unknown): value is FrozenMidiTakeSource {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return false;
     }
-    const keys = Reflect.ownKeys(value);
-    const allowed = ['sourceClipId', 'rows', 'sourceEntryBeat', 'sourceEndBeat', 'phaseHeadBeat', 'passLengthBeats'];
-    if (keys.length !== allowed.length || !keys.every((key) => typeof key === 'string' && allowed.includes(key))) {
+    if (!hasExactSourceKeys(value)) {
         return false;
     }
     if (!('sourceClipId' in value) || typeof value.sourceClipId !== 'string' || value.sourceClipId.length === 0) {

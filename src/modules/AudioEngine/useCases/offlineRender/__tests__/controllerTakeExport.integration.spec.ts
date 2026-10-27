@@ -26,6 +26,14 @@ import {
     getArrangementHandlers,
     startRecording,
     stopRecording,
+    admitRecordingMidiExpression,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiNoteOn,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    retireRecordingMidiAdmission,
+    takeOwnsRecordingRoot,
 } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -47,6 +55,7 @@ import {
     initWebMidi,
     projectClipControllerEvents,
     setMidiInputTrack,
+    setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -61,6 +70,7 @@ const TRACK_ID = 'track-midi';
 const DEVICE_ID = 'gb-1';
 /** At 120 BPM and 48 kHz a beat is 24 000 frames. */
 const BEAT_FRAMES = 24_000;
+let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -108,6 +118,16 @@ describe('a recorded controller-only take, rendered by the offline export schedu
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+        });
         transportStore.set({
             ...transportStore.value!,
             isRecording: false,
@@ -120,6 +140,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
+        disposeRecordingAdmission();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();

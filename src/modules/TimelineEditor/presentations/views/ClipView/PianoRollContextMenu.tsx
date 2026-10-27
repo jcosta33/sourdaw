@@ -24,12 +24,11 @@ import {
     getGrooveTemplate,
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
-import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 import {
     copyPianoRollTakeNotes,
     cutPianoRollTakeNotes,
@@ -38,6 +37,7 @@ import {
     pastePianoRollTakeNotes,
     transformPianoRollTakeNotes,
 } from '../../helpers/applyPianoRollTakeMenuAction';
+import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';

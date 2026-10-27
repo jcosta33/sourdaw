@@ -20,9 +20,9 @@ import {
     snapClipToScale,
     strumNotes,
 } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 
 vi.mock('#/components/daw/DawContextMenuSurface', () => ({
     DawContextMenuSurface: ({

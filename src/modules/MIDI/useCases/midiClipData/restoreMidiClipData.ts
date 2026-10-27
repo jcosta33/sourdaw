@@ -1,7 +1,6 @@
+import { decodeMidiClipDataSnapshots } from '../../services/decodeMidiClipDataSnapshots';
 import { midiStore } from '../../stores/midiStore';
 import { cloneMidiNoteForAdmission } from '../../transformers/cloneMidiNoteForAdmission';
-
-import { decodeMidiClipDataSnapshots } from '../../services/decodeMidiClipDataSnapshots';
 
 const INVALID_MIDI_CLIP_DATA_SNAPSHOT = 'Invalid MIDI clip data snapshot';
 

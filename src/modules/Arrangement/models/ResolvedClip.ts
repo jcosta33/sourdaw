@@ -1,5 +1,5 @@
-import { type Clip } from './Track';
 import { type MidiTakeSource } from './TakeLane';
+import { type Clip } from './Track';
 
 export type ResolvedClip = Clip & {
     regionStartBeat: number;

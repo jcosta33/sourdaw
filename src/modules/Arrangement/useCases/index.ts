@@ -110,7 +110,8 @@ export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedB
 
 export { copySelectedClip } from './clipboard/copySelectedClip';
 export { copySelectedNotes } from './clipboard/copySelectedNotes';
-export { copyPianoRollNotes, getCopiedPianoRollNotes } from './clipboard/copyPianoRollNotes';
+export { copyPianoRollNotes } from './clipboard/copyPianoRollNotes';
+export { getCopiedPianoRollNotes } from './clipboard/getCopiedPianoRollNotes';
 export { cutSelectedClip } from './clipboard/cutSelectedClip';
 export { pasteClip } from './clipboard/pasteClip';
 export { pasteNotes } from './clipboard/pasteNotes';

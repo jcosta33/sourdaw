@@ -183,6 +183,38 @@ function closeRecordedTakes(input: {
 
 type RecordingEnd = { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number };
 
+function captureMidiStopState(
+    clipIds: readonly string[],
+    tracks: NonNullable<ReturnType<typeof getTrackState>>['tracks'],
+    ending?: RecordingEnd
+): {
+    midiSourceEndBeats: Map<string, number | null>;
+    finalMidiPassOffsets: ReadonlyMap<string, FinalMidiPassOffset>;
+} {
+    const midiClipIds = tracks.flatMap((track) =>
+        track.clips
+            .filter(
+                (clip) =>
+                    clip.type === 'midi' &&
+                    clipIds.includes(clip.id) &&
+                    recordingPassTiming.isCurrent(clip.id, clip.type)
+            )
+            .map((clip) => clip.id)
+    );
+    const midiSourceEndBeats = new Map<string, number | null>();
+    if (midiClipIds.length === 0) {
+        return { midiSourceEndBeats, finalMidiPassOffsets: new Map() };
+    }
+    const stopPosition = captureEventPositionAt({ audioTime: ending?.contextSeconds ?? 0 });
+    for (const clipId of midiClipIds) {
+        midiSourceEndBeats.set(clipId, recordingMidiSourceBeatAt(clipId, stopPosition));
+    }
+    return {
+        midiSourceEndBeats,
+        finalMidiPassOffsets: finalMidiPassOffsetsAtStop(midiClipIds, stopPosition.passIndex),
+    };
+}
+
 function finishAudioRecordingPasses(
     tracks: NonNullable<ReturnType<typeof getTrackState>>['tracks'],
     clipIds: ReadonlySet<string>,
@@ -253,26 +285,11 @@ export async function stopRecording(
     const captureRootIdentity = activeRecordingRef.capturedRootIdentity ?? null;
     const midiAdmissions = activeRecordingRef.midiAdmissions;
     const trackState = getTrackState();
-    const midiClipIds =
-        trackState?.tracks.flatMap((track) =>
-            track.clips
-                .filter(
-                    (clip) =>
-                        clip.type === 'midi' &&
-                        clipIds.includes(clip.id) &&
-                        recordingPassTiming.isCurrent(clip.id, clip.type)
-                )
-                .map((clip) => clip.id)
-        ) ?? [];
-    const midiSourceEndBeats = new Map<string, number | null>();
-    let finalMidiPassOffsets: ReadonlyMap<string, FinalMidiPassOffset> = new Map();
-    if (midiClipIds.length > 0) {
-        const stopPosition = captureEventPositionAt({ audioTime: ending?.contextSeconds ?? 0 });
-        for (const clipId of midiClipIds) {
-            midiSourceEndBeats.set(clipId, recordingMidiSourceBeatAt(clipId, stopPosition));
-        }
-        finalMidiPassOffsets = finalMidiPassOffsetsAtStop(midiClipIds, stopPosition.passIndex);
-    }
+    const { midiSourceEndBeats, finalMidiPassOffsets } = captureMidiStopState(
+        clipIds,
+        trackState?.tracks ?? [],
+        ending
+    );
     activeRecordingRef.current = [];
     activeRecordingRef.capturedRootIdentity = null;
     activeRecordingRef.midiAdmissions = [];

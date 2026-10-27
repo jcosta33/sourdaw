@@ -1,5 +1,4 @@
 export {
-    isFrozenMidiTakeSource,
     projectFrozenMidiTakeWindow,
     type FrozenMidiTakeSource,
     type FrozenMidiTakeWindow,

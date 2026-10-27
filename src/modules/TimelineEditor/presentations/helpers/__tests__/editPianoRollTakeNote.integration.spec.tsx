@@ -41,11 +41,11 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
-import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
-import { cutPianoRollTakeNotes, transformPianoRollTakeNotes } from '../applyPianoRollTakeMenuAction';
-import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollContextMenu } from '../../views/ClipView/PianoRollContextMenu';
+import { cutPianoRollTakeNotes, transformPianoRollTakeNotes } from '../applyPianoRollTakeMenuAction';
+import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
+import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
 
 const original = {
     id: 'original-row',
@@ -239,14 +239,16 @@ function SelectedNoteEditor({
         rubberBandRef: { current: null },
         dragPreviewRef: { current: null },
     });
-    return createElement('canvas', {
-        'aria-label': 'selected-note-editor',
-        ref: canvasRef,
-        onKeyDown: handlers.handleKeyDown,
-        onMouseDown: handlers.handleMouseDown,
-        onMouseMove: handlers.handleMouseMove,
-        onMouseUp: handlers.handleMouseUp,
-    });
+    return (
+        <canvas
+            aria-label="selected-note-editor"
+            ref={canvasRef}
+            onKeyDown={handlers.handleKeyDown}
+            onMouseDown={handlers.handleMouseDown}
+            onMouseMove={handlers.handleMouseMove}
+            onMouseUp={handlers.handleMouseUp}
+        />
+    );
 }
 
 describe('selected piano roll Command callbacks', () => {

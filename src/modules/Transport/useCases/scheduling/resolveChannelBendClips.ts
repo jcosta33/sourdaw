@@ -1,7 +1,7 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
-import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
+import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 
 type ResolveChannelBendClipsInput = {
     trackId: string;

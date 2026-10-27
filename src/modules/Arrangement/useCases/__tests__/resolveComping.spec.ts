@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { type Clip } from '../../models/Track';
 import { type MidiTakeSource } from '../../models/TakeLane';
+import { type Clip } from '../../models/Track';
 import { type TakeLaneStoreState } from '../../stores/takeLaneStore';
 import { resolveClipsWithComping } from '../resolveComping';
 

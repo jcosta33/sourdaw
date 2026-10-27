@@ -20,7 +20,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
-import { resolveAdmittedEventPosition } from './resolveAdmittedEventBeat';
+import { resolveAdmittedEventPosition } from './resolveAdmittedEventPosition';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveChannelBendAtNoteStart } from './resolveChannelBendAtNoteStart';
 import { resolveDeviceNode } from './resolveDeviceNode';

@@ -38,9 +38,9 @@ import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
+import { prepareInitialMidiWindow } from '../prepareInitialMidiWindow';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
-import { prepareInitialMidiWindow } from '../prepareInitialMidiWindow';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 import type { SchedulerCancellation } from '../schedulerCancellation';

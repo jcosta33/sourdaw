@@ -15,7 +15,8 @@ import { type Clip } from '../../models/Track';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
-import { prepareMidiTakeSourceCapture, relocateMidiTakeSource } from './prepareMidiTakeSourceCapture';
+import { prepareMidiTakeSourceCapture } from './prepareMidiTakeSourceCapture';
+import { relocateMidiTakeSource } from './relocateMidiTakeSource';
 import { resolveCompingProgramme } from './resolveCompingProgramme';
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 

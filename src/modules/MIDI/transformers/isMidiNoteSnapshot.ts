@@ -28,6 +28,17 @@ function isOptionalFiniteNumber(value: JsonRecord, key: (typeof MIDI_NOTE_OPTION
     return !Object.hasOwn(value, key) || value[key] === undefined || isFiniteNumber(value[key]);
 }
 
+function hasValidOptionalNumbers(value: JsonRecord): boolean {
+    return (
+        isOptionalFiniteNumber(value, 'probability') &&
+        isOptionalFiniteNumber(value, 'pressure') &&
+        isOptionalFiniteNumber(value, 'slide') &&
+        isOptionalFiniteNumber(value, 'pitchBend') &&
+        isOptionalFiniteNumber(value, 'pitchBendRangeSemitones') &&
+        isOptionalFiniteNumber(value, 'channel')
+    );
+}
+
 function isMidiNote(value: unknown): value is MidiNote {
     return (
         isRecord(value) &&
@@ -38,12 +49,7 @@ function isMidiNote(value: unknown): value is MidiNote {
         isFiniteNumber(value.startBeat) &&
         isFiniteNumber(value.duration) &&
         isFiniteNumber(value.velocity) &&
-        isOptionalFiniteNumber(value, 'probability') &&
-        isOptionalFiniteNumber(value, 'pressure') &&
-        isOptionalFiniteNumber(value, 'slide') &&
-        isOptionalFiniteNumber(value, 'pitchBend') &&
-        isOptionalFiniteNumber(value, 'pitchBendRangeSemitones') &&
-        isOptionalFiniteNumber(value, 'channel') &&
+        hasValidOptionalNumbers(value) &&
         (!Object.hasOwn(value, 'recordingPassIndex') ||
             (typeof value.recordingPassIndex === 'number' &&
                 Number.isSafeInteger(value.recordingPassIndex) &&

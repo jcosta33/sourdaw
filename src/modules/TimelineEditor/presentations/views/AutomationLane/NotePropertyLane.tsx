@@ -41,8 +41,8 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
-import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
+import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
 

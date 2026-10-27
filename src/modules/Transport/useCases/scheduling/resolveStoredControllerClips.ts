@@ -1,5 +1,5 @@
-import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
+import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 import { type RestoreStoredControllersInput } from './restoreStoredControllers';
 
 type ResolveStoredControllerClipsInput = {

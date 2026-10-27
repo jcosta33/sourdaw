@@ -73,7 +73,10 @@ describe('writeTakeReKeyTransitions', () => {
         const source = {
             sourceClipId: 'clip-1',
             rows: {
-                notes: { present: true as const, value: [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 1, velocity: 90 }] },
+                notes: {
+                    present: true as const,
+                    value: [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 1, velocity: 90 }],
+                },
                 controlChanges: { present: true as const, value: [] },
                 pitchBends: { present: true as const, value: [] },
             },
