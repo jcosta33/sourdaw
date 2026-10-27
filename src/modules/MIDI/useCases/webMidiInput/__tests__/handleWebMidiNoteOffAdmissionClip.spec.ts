@@ -2,9 +2,29 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
+import type { RecordingMidiAdmission } from '#/modules/Arrangement/stores';
+
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const get_track_strip = vi.hoisted(() => vi.fn());
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
+const recording_admission = vi.hoisted(() => ({
+    get: vi.fn<() => RecordingMidiAdmission | undefined>(() => undefined),
+    retire: vi.fn<(id: string) => void>(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getRecordingMidiAdmission: recording_admission.get,
+    retireRecordingMidiAdmission: recording_admission.retire,
+    takeOwnsRecordingRoot: () => true,
+}));
+
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        getRecordingMidiAdmission: recording_admission.get,
+        retireRecordingMidiAdmission: recording_admission.retire,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
@@ -98,6 +118,58 @@ describe('handleWebMidiNoteOff recorded-note destination clip', () => {
         audio_clock.currentTime = 2;
         audio_clock.baseLatency = 0;
         audio_clock.outputLatency = 0;
+        recording_admission.get.mockReset().mockReturnValue(undefined);
+        recording_admission.retire.mockReset();
+    });
+
+    it('finishes an admitted seam note at its owner source beat with its admitted expression', async () => {
+        const admitted: RecordingMidiAdmission = {
+            id: 'admission-seam',
+            clipId: 'clip-early',
+            trackId: 'track-1',
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            onsetAudioTime: 1,
+            onsetSourceBeat: 7.5,
+            releaseAudioTime: 2,
+            releaseSourceBeat: 9,
+            initialExpression: { pressure: 20 },
+            expressionChanges: [{ dimension: 'pressure', value: 80, audioTime: 1.5, sourceBeat: 8.5 }],
+        };
+        recording_admission.get.mockReturnValue(admitted);
+        const append_recorded_midi_note =
+            vi.fn<NonNullable<HandleWebMidiNoteOffDependencies['appendRecordedMidiNote']>>();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                appendRecordedMidiNote: append_recorded_midi_note,
+                playheadPositionRef: { current: 2 },
+            })
+        );
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 3.5,
+            recordingAdmissionId: admitted.id,
+        });
+
+        await fn(0, 60, 0);
+
+        expect(append_recorded_midi_note).toHaveBeenCalledWith({
+            clipId: 'clip-early',
+            note: expect.objectContaining({
+                pitch: 60,
+                startBeat: 7.5,
+                duration: 1.5,
+                pressure: 20,
+                expression: { pressure: [{ offsetBeats: 1, value: 80 }] },
+            }),
+        });
+        expect(recording_admission.retire).toHaveBeenCalledWith(admitted.id);
     });
 
     it('commits a note to the clip holding its admitted onset, not the clip containing the playhead at release', async () => {

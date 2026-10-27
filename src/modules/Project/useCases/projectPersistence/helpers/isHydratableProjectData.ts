@@ -1,5 +1,10 @@
 import { isValidTakePlacement } from '#/modules/Arrangement/stores';
-import { isChordTrackState, isGrooveTemplateState, isValidMidiNoteExpression } from '#/modules/MIDI/stores';
+import {
+    isChordTrackState,
+    isFrozenMidiTakeSource,
+    isGrooveTemplateState,
+    isValidMidiNoteExpression,
+} from '#/modules/MIDI/stores';
 import { hasValidAudioSourceTiles, hasValidAudioSourceState, isAudioSourceSnapshot } from '#/utils/audioSourceTime';
 
 import { isProductionBrief } from '../../../models/ProductionBrief';
@@ -673,7 +678,12 @@ function isTake(value: unknown): boolean {
         hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&
         hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
         typeof value.selected === 'boolean' &&
-        isValidTakePlacement(value)
+        isValidTakePlacement(value) &&
+        (!('recordingPassIndex' in value) ||
+            (typeof value.recordingPassIndex === 'number' &&
+                Number.isSafeInteger(value.recordingPassIndex) &&
+                value.recordingPassIndex >= 0)) &&
+        (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
     );
 }
 

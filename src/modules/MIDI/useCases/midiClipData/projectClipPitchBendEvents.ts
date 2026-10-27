@@ -1,7 +1,7 @@
 import { type MidiPitchBend } from '../../models/MidiNote';
+import { projectMidiClipWindow } from '../../services/projectMidiClipWindow';
 
 import { listClipControllerPasses, type ControllerProjectionClip } from './listClipControllerPasses';
-import { projectMidiClipWindow } from './projectMidiClipWindow';
 
 type ProjectClipPitchBendEventsInput = {
     pitchBends: readonly MidiPitchBend[];

@@ -1,25 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { midiStore } from '#/modules/MIDI/stores';
+import * as midiUseCases from '#/modules/MIDI/useCases';
 import { appendMidiNotes, splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 
 import { setNoteClipboard } from '../../../stores/clipboardStore';
 import { copySelectedNotes } from '../copySelectedNotes';
 import { pasteNotes } from '../pasteNotes';
 
+const appendMidiNotesActual = midiUseCases.appendMidiNotes;
+
 const mocks = vi.hoisted(() => ({
     appendMidiNotes: vi.fn(),
-}));
-
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    appendMidiNotes: mocks.appendMidiNotes,
 }));
 
 describe('pasteNotes', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         mocks.appendMidiNotes.mockReset();
+        vi.spyOn(midiUseCases, 'appendMidiNotes').mockImplementation(mocks.appendMidiNotes);
         setNoteClipboard(null);
         midiStore.set({
             notesByClipId: {},
@@ -150,9 +149,7 @@ describe('pasteNotes', () => {
     });
 
     it('pastes a real split note copied through the Arrangement clipboard', async () => {
-        const actualMidiUseCases =
-            await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
-        mocks.appendMidiNotes.mockImplementation(actualMidiUseCases.appendMidiNotes);
+        mocks.appendMidiNotes.mockImplementation(appendMidiNotesActual);
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
             .mockReturnValueOnce('22222222-2222-4222-8222-222222222222');

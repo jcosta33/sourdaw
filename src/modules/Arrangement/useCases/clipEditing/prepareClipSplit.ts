@@ -183,7 +183,7 @@ export function prepareClipSplit({
         rightSource.audioOffsetSeconds = splitPosition.sourceSeconds;
     }
     let contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
-    if (capturesAudioSource) {
+    if (capturesAudioSource || clip.type === 'midi') {
         const startTempo = timeline.tempoAtBeat(clip.startBeat);
         const linearSourceSeconds = getAudioSourcePositionSeconds(
             resolveAudioSourceOffsetSeconds(clip, startTempo),
@@ -317,6 +317,7 @@ export function prepareClipSplit({
                     clipEndBeat: clip.endBeat,
                     lanes: owners?.takeLanes,
                     timeline,
+                    sourceMidi: midiPlan.previousSource,
                 })
             ),
         };

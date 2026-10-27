@@ -1,22 +1,37 @@
 import { logger } from '#/infra/logger/appLogger';
 import { transportStore } from '#/modules/Transport/stores';
+import { PITCH_BEND_CENTER } from '#/utils/midiData';
 
 import { CC_RESET_ALL_CONTROLLERS } from '../../models/MidiControllerState';
-import { createWebMidiNoteKey, type WebMidiInputMessage } from '../../models/WebMidiTypes';
+import { createWebMidiNoteKey, MPE_SLIDE_CC, type WebMidiInputMessage } from '../../models/WebMidiTypes';
 import { admitPitchBend } from '../../repositories/webMidi/admitPitchBend';
 import { admitResetAllControllers } from '../../repositories/webMidi/admitResetAllControllers';
 import { captureAdmittedWheels } from '../../repositories/webMidi/captureAdmittedWheels';
+import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { memberExpressionGeneration } from '../../repositories/webMidi/memberExpressionGeneration';
 import { parseWebMidiMessage } from '../../repositories/webMidi/messageHandlers';
 import { activeNotes } from '../../repositories/webMidi/state';
 
-import { captureEventBeatAt } from './captureEventBeat';
+import { captureCompensatedRecordingPosition } from './captureCompensatedRecordingPosition';
+import { captureEventPositionAt } from './captureEventBeat';
+import { captureRecordingMemberExpression } from './captureRecordingMemberExpression';
 import { handleWebMidiCC } from './handleWebMidiCC';
 import { handleWebMidiChannelPressure } from './handleWebMidiChannelPressure';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
+import { recordingMidiAdmissionPort } from './recordingMidiAdmissionPort';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveInputEventTime, type CapturedInputEventTime } from './resolveInputEventTime';
+
+const {
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+} = recordingMidiAdmissionPort;
 
 /**
  * Serial tail for note events.
@@ -144,15 +159,96 @@ function dispatchExpressionHandler(channel: number, handler: () => void): Promis
 }
 
 /**
- * Pins a recording take's controller event to the beat of its own arrival, as
- * a note-on is pinned, so a queue wait cannot move it. Only a recording
- * transport needs the beat; any other skips the capture.
+ * Pins a recording take's controller event to the position of its own arrival,
+ * as a note-on is pinned, so a queue wait cannot move it to another pass.
  */
 function admitControllerTime(timeStamp: CapturedInputEventTime): CapturedInputEventTime {
     if (transportStore.value?.isRecording !== true) {
         return timeStamp;
     }
-    return { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
+    const position = captureEventPositionAt(timeStamp);
+    return { ...timeStamp, recordingBeat: position.beat, recordingPassIndex: position.passIndex };
+}
+
+function admitMemberExpression(
+    channel: number,
+    dimension: 'pressure' | 'slide' | 'pitchBend',
+    value: number,
+    timeStamp: CapturedInputEventTime
+): void {
+    if (transportStore.value?.isRecording !== true || channel < 1 || !getMpeEnabled()) {
+        return;
+    }
+    const admitted = findOpenRecordingMidiMemberAdmission(channel);
+    if (!admitted) {
+        return;
+    }
+    const expression: Parameters<typeof admitRecordingMidiExpression>[0] = {
+        channel,
+        dimension,
+        value,
+        audioTime: timeStamp.audioTime,
+        position: captureCompensatedRecordingPosition(admitted.trackId, timeStamp.audioTime),
+    };
+    if (dimension === 'pitchBend') {
+        expression.bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled: true });
+    }
+    admitRecordingMidiExpression(expression);
+}
+
+function handleAdmittedNoteOn(
+    message: Extract<NonNullable<ReturnType<typeof parseWebMidiMessage>>, { type: 'noteOn' }>,
+    timeStamp: CapturedInputEventTime
+): Promise<void> | void {
+    const channel = message.channel;
+    // The recorded onset is the beat of the EVENT's own instant, not of
+    // this callback's turn on the main thread (#4875).
+    const position = captureEventPositionAt(timeStamp);
+    const trackId = getTargetTrackId();
+    if (message.velocity === 0) {
+        const opened = findOpenRecordingMidiAdmission(channel, message.note);
+        if (opened) {
+            admitRecordingMidiNoteOff({
+                channel,
+                note: message.note,
+                audioTime: timeStamp.audioTime,
+                position: captureCompensatedRecordingPosition(opened.trackId, timeStamp.audioTime),
+            });
+        }
+    }
+    let admission: ReturnType<typeof admitRecordingMidiNoteOn> = null;
+    if (message.velocity > 0 && trackId) {
+        admission = admitRecordingMidiNoteOn({
+            trackId,
+            channel,
+            note: message.note,
+            velocity: message.velocity,
+            audioTime: timeStamp.audioTime,
+            position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
+            initialExpression: captureRecordingMemberExpression(channel),
+        });
+    }
+    const admittedTime: {
+        audioTime: number;
+        recordingBeat: number;
+        recordingPassIndex: number;
+        recordingAdmissionId?: string;
+    } = {
+        ...timeStamp,
+        recordingBeat: position.beat,
+        recordingPassIndex: position.passIndex,
+    };
+    if (admission) {
+        admittedTime.recordingAdmissionId = admission.id;
+    }
+    // The wheels it is struck under are those at arrival: bends admitted
+    // while it waits in the queue move the note at their own frame.
+    const admittedWheels = captureAdmittedWheels(channel);
+    return dispatchNoteHandler(
+        channel,
+        () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime, admittedWheels),
+        message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
+    );
 }
 
 /** Completion of accepted work, when that message had to wait in a queue. */
@@ -167,20 +263,18 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
     const channel = message.channel;
 
     switch (message.type) {
-        case 'noteOn': {
-            // The recorded onset is the beat of the EVENT's own instant, not of
-            // this callback's turn on the main thread (#4875).
-            const admittedTime = { ...timeStamp, recordingBeat: captureEventBeatAt(timeStamp) };
-            // The wheels it is struck under are those at arrival: bends admitted
-            // while it waits in the queue move the note at their own frame.
-            const admittedWheels = captureAdmittedWheels(channel);
-            return dispatchNoteHandler(
-                channel,
-                () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime, admittedWheels),
-                message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
-            );
-        }
-        case 'noteOff':
+        case 'noteOn':
+            return handleAdmittedNoteOn(message, timeStamp);
+        case 'noteOff': {
+            const opened = findOpenRecordingMidiAdmission(channel, message.note);
+            if (opened) {
+                admitRecordingMidiNoteOff({
+                    channel,
+                    note: message.note,
+                    audioTime: timeStamp.audioTime,
+                    position: captureCompensatedRecordingPosition(opened.trackId, timeStamp.audioTime),
+                });
+            }
             return dispatchNoteHandler(
                 channel,
                 async () => {
@@ -188,7 +282,11 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
                 },
                 admittedRelease(channel, message.note)
             );
+        }
         case 'cc': {
+            if (message.cc === MPE_SLIDE_CC) {
+                admitMemberExpression(channel, 'slide', message.value, timeStamp);
+            }
             if (message.cc === CC_RESET_ALL_CONTROLLERS) {
                 admitResetAllControllers(channel);
             }
@@ -198,10 +296,17 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
             });
         }
         case 'channelPressure':
+            admitMemberExpression(channel, 'pressure', message.pressure, timeStamp);
             return dispatchExpressionHandler(channel, () =>
                 handleWebMidiChannelPressure(channel, message.pressure, timeStamp)
             );
         case 'pitchBend': {
+            admitMemberExpression(
+                channel,
+                'pitchBend',
+                ((message.msb << 7) | message.lsb) - PITCH_BEND_CENTER,
+                timeStamp
+            );
             admitPitchBend(channel, message.lsb, message.msb);
             const admittedTime = admitControllerTime(timeStamp);
             return dispatchExpressionHandler(channel, () => {
