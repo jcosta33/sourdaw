@@ -1,0 +1,38 @@
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  h_beb54bf43b47b7 40-41
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  h_beb54bf43b47b7 2,4,8,15-32,38-63,92,94-102,112-132,135
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  h_beb54bf43b47b7 294-337
+src/modules/Arrangement/useCases/clipEditing/prepareLegacyAudioClipStartTrim.ts
+  h_beb54bf43b47b7 1-39
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  h_beb54bf43b47b7 4,75-84,128-132,151
+src/modules/Command/useCases/__tests__/commitRedoInverseCapture.spec.ts
+  h_beb54bf43b47b7 25,67-76
+src/modules/Command/useCases/__tests__/legacyMidiTrimReplay.integration.spec.ts
+  h_beb54bf43b47b7 277-382
+src/modules/Command/useCases/captureRecordedRedoContext.ts
+  h_beb54bf43b47b7 1-21
+src/modules/Command/useCases/commitRedoInverseCapture.ts
+  h_beb54bf43b47b7 7-8,125,133
+src/modules/Command/useCases/executeAppAction.ts
+  h_beb54bf43b47b7 25,147,278-282
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_beb54bf43b47b7 29,604-612,773,777-782
+src/modules/Command/useCases/findPendingRedoEntry.ts
+  h_beb54bf43b47b7 1-11
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 3494-3498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c4d455816256e62002906df85eec2b152214496",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
