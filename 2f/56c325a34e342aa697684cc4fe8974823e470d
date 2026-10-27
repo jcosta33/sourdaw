@@ -1,0 +1,31 @@
+src/modules/Arrangement/useCases/device/applyDeviceChainRuntimeDelta.ts
+  s_b3201877f50e8a::t_e727a689db3b29 38,109-111,136,139,143,179-180
+  s_b3201877f50e8a::t_e54f605e00ffcc 52-53,138,154-174
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  s_b3201877f50e8a::t_73e613c17ed409 306,375,390,410,444-464,501-502
+  s_b3201877f50e8a::t_64a8ce050e41d2 503-504,559
+src/modules/AudioEngine/useCases/livePlayback/mirrorDeviceChainDelta.ts
+  s_b3201877f50e8a::t_8e8e10fc755eb0 190-193
+  s_b3201877f50e8a::t_2c4c8d5402c17e 270-277
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeDeviceChainObligation.integration.spec.ts
+  s_b3201877f50e8a::t_f7ba4c453a2a3d 1-278
+src/modules/AudioEngine/useCases/livePlayback/__tests__/mirrorDeviceChainDelta.spec.ts
+  s_b3201877f50e8a::t_01afe592188d96 255-264
+  s_b3201877f50e8a::t_e2041997d37576 245-254
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f56c325a34e342aa697684cc4fe8974823e470d",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
