@@ -190,6 +190,21 @@ describe('Record from stopped when playback setup fails', () => {
         expect(fixture.state.current).toMatchObject({ isPlaying: false, isRecording: true });
     });
 
+    it('does not close a successor capture admitted on the same root during flush', async () => {
+        fixture.stopAudioRecording.mockImplementation(async () => {
+            recordingLifecycle.beginPendingRecordingStart();
+            fixture.activeRecordingRef.current = ['successor-take'];
+        });
+
+        toggleRecording();
+
+        await vi.waitFor(() => expect(fixture.stopAudioRecording).toHaveBeenCalledOnce());
+        await recordingLifecycle.waitForClosing();
+        expect(fixture.stopRecording).not.toHaveBeenCalled();
+        expect(fixture.activeRecordingRef.current).toEqual(['successor-take']);
+        expect(fixture.state.current).toMatchObject({ isPlaying: false, isRecording: true });
+    });
+
     it('does not clear a successor Play admitted while the old take closes', async () => {
         fixture.stopRecording.mockImplementation(async () => {
             fixture.activeRecordingRef.current = [];
