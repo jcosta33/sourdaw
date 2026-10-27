@@ -161,12 +161,16 @@ describe('playwright config port derivation', () => {
         const reservation = createServer();
         await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve));
         const address = reservation.address();
-        if (address === null || typeof address === 'string') throw new Error('missing reserved port');
+        if (address === null || typeof address === 'string') {
+            throw new Error('missing reserved port');
+        }
         await new Promise<void>((resolve, reject) => reservation.close((error) => (error ? reject(error) : resolve())));
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, String(address.port));
         vi.stubEnv('CI', undefined);
         const command = requiredSingleWebServer(await loadPlaywrightConfig()).command;
-        if (!command?.startsWith('pnpm dev ')) throw new Error('expected Vite dev server command');
+        if (!command?.startsWith('pnpm dev ')) {
+            throw new Error('expected Vite dev server command');
+        }
         const child = spawn(process.execPath, ['node_modules/vite/bin/vite.js', ...command.slice(9).split(' ')], {
             env: { ...process.env, NODE_OPTIONS: '--dns-result-order=ipv6first' },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -176,7 +180,9 @@ describe('playwright config port derivation', () => {
                 let output = '';
                 child.stdout.on('data', (chunk: Buffer) => {
                     output += chunk.toString();
-                    if (output.includes('ready in')) resolve();
+                    if (output.includes('ready in')) {
+                        resolve();
+                    }
                 });
                 child.once('error', reject);
                 child.once('exit', (code) => reject(new Error(`Vite exited before readiness: ${code}`)));

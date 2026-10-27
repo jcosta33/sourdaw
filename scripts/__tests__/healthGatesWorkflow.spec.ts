@@ -429,6 +429,10 @@ const DEVICE_WRITE_BOUNDARY_CENSUS_RUN =
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
+const lockfile = asRecord(
+    parseDocument(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).toJS(),
+    'lockfile'
+);
 const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
 function loadWorkflow(fileName: string): { document: ReturnType<typeof parseDocument>; parsed: UnknownRecord } {
     const document = parseDocument(readFileSync(join(repositoryRoot, '.github/workflows', fileName), 'utf8'));
@@ -802,11 +806,7 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
 }
 
 function assertContainerBrowserRuntime(job: UnknownRecord, label: string, jobMinutes: number): void {
-    const lock = asRecord(
-        parseDocument(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).toJS(),
-        'lockfile'
-    );
-    const importer = recordAt(recordAt(lock, 'importers'), '.');
+    const importer = recordAt(recordAt(lockfile, 'importers'), '.');
     const version = stringAt(recordAt(recordAt(importer, 'devDependencies'), 'playwright'), 'version');
     const image = `mcr.microsoft.com/playwright:v${version}-noble@${PLAYWRIGHT_IMAGE_DIGEST}`;
     if (JSON.stringify(job.container) !== JSON.stringify({ image, options: '--init --ipc=host' })) {
@@ -3687,11 +3687,13 @@ describe('health gates workflow contract', () => {
                 'apt-get install -y libnss3',
             ]) {
                 const acquisition = structuredClone(workflow);
-                stepNamed(jobAt(acquisition, job), 'Install dependencies').run += `\n${command}`;
+                const install = stepNamed(jobAt(acquisition, job), 'Install dependencies');
+                install.run = `${stringAt(install, 'run')}\n${command}`;
                 expect(() => check(acquisition)).toThrow('must not acquire browser packages or binaries at runtime');
             }
             const privileged = structuredClone(workflow);
-            recordAt(jobAt(privileged, job), 'container').options += ' --privileged';
+            const container = recordAt(jobAt(privileged, job), 'container');
+            container.options = `${stringAt(container, 'options')} --privileged`;
             expect(() => check(privileged)).toThrow('without extra container authority');
             const wrongShell = structuredClone(workflow);
             jobAt(wrongShell, job).defaults = { run: { shell: 'sh' } };
