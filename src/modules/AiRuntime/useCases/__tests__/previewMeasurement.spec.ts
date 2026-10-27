@@ -31,6 +31,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type IntentResult } from '../../models/IntentResult';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -659,7 +660,9 @@ describe('a measured preview through proposal and approval', () => {
             failedReads: [],
         });
         expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
-        const replay = vi.mocked(generateToolPlanningOutcome).mock.calls.at(-1)?.[9]?.history;
+        const replay: HostedTurnHistory | undefined = vi
+            .mocked(generateToolPlanningOutcome)
+            .mock.calls.at(-1)?.[9]?.history;
         expect(replay?.flatMap((turn) => turn.receipts).map((receipt) => receipt.callId)).toEqual(
             receipts.map((receipt) => receipt.callId)
         );
