@@ -1587,7 +1587,7 @@ test('strips literal source islands through interior tempo at rate2 and preserve
         expect(satellites.envelopes[child.id]).toEqual({
             clipId: child.id,
             enabled: originalEnvelope.enabled,
-            points: originalEnvelope.points.map((gain) => ({ ...gain, beatOffset: gain.beatOffset - start })),
+            points: originalEnvelope.points.map((gain) => ({ ...gain, beatOffset: gain.beatOffset - child.startBeat })),
         });
     }
     await observeStarts(
