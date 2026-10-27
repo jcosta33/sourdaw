@@ -1,6 +1,8 @@
 import {
+    CC_DATA_DECREMENT,
     CC_DATA_ENTRY_LSB,
     CC_DATA_ENTRY_MSB,
+    CC_DATA_INCREMENT,
     CC_NRPN_LSB,
     CC_NRPN_MSB,
     CC_RPN_LSB,
@@ -15,6 +17,7 @@ import {
     isPitchBendSensitivitySelected,
     type MidiChannelControllerState,
 } from '../models/MidiControllerState';
+import { type MidiCC } from '../models/MidiNote';
 import { SAME_BEAT_TOLERANCE } from '../models/SameBeatTolerance';
 import { SEQUENCER_TICK_BEATS } from '../models/SequencerTick';
 
@@ -283,4 +286,251 @@ export function carriedBendReturnBeat(head: EditedClipHead): number {
         (returnBeat, { beat }) => (beat > head.beat + SAME_BEAT_TOLERANCE ? Math.min(returnBeat, beat) : returnBeat),
         head.beat + SEQUENCER_TICK_BEATS
     );
+}
+
+/** The id key of the rows that return a channel to the state at the cut, which the cut itself derives (`carriedBendReturnBeat`). */
+const CARRIED_BEND_RETURN_ID_KEY = 'rpn-after-carried';
+const CARRIED_BEND_RETURN_ID = new RegExp(`:${CARRIED_BEND_RETURN_ID_KEY}-\\d+$`);
+const CARRIED_BEND_RETURN_ID_INDEX = new RegExp(`:${CARRIED_BEND_RETURN_ID_KEY}-(\\d+)$`);
+
+/** The id key of the `index`th row that returns a channel to the state at the cut. */
+export function carriedBendReturnIdKey(index: number): string {
+    return `${CARRIED_BEND_RETURN_ID_KEY}-${index}`;
+}
+
+type StoredRegisteredParameterRow = { channel: number; beat: number; controller: number; value: number };
+
+/** The controllers that set or step the bend range of an RPN 0 selected when they arrive. */
+function isBendRangeDataController(controller: number): boolean {
+    return controller === CC_DATA_ENTRY_MSB || controller === CC_DATA_INCREMENT || controller === CC_DATA_DECREMENT;
+}
+
+/**
+ * Whether `edit`, a point set by hand, changes RPN 0's bend range where it lands: it is a Data Entry MSB, Data
+ * Increment or Decrement and RPN 0 is selected when it arrives. A select, the Null RPN and Data Entry LSB (cents)
+ * set no range, and a Data Entry the state machine ignores (a Null RPN or an NRPN is selected, which is how a
+ * recorded state usually ends) changes nothing, so an edit like those leaves later bends at the state at the cut.
+ *
+ * The selection is the one `createStoredBendRangeReader` reads there: the channel's `stored` registered-parameter
+ * rows up to the edit's beat, in beat order with list order breaking ties, run through the one state machine. The
+ * edit goes last on its beat, as `addMidiCC` appends it, and the rows it replaces are left out.
+ */
+export function editSetsBendRangeWhereItLands(
+    stored: readonly StoredRegisteredParameterRow[],
+    edit: StoredRegisteredParameterRow
+): boolean {
+    if (!isBendRangeDataController(edit.controller)) {
+        return false;
+    }
+    const replacedByEdit = (row: StoredRegisteredParameterRow) =>
+        row.beat === edit.beat && row.controller === edit.controller;
+    const state = replayInReaderOrder(
+        stored.filter((row) => row.beat <= edit.beat && !replacedByEdit(row)),
+        edit.channel
+    );
+    return isPitchBendSensitivitySelected(state);
+}
+
+/** The state a channel is in after its registered-parameter rows of `rows`, in beat order with list order breaking ties. */
+function replayInReaderOrder(
+    rows: readonly StoredRegisteredParameterRow[],
+    channel: number
+): MidiChannelControllerState {
+    const state = createMidiChannelControllerState();
+    const arrived = rows
+        .filter((row) => row.channel === channel && isRegisteredParameterController(row.controller))
+        .toSorted((first, second) => first.beat - second.beat);
+    for (const { controller, value } of arrived) {
+        applyRegisteredParameterChange(state, controller, value);
+    }
+    return state;
+}
+
+/**
+ * Whether `row` is a return a split or a glue wrote for a carried bend, from the head `edit` lands on: on the head
+ * itself or up to one return tick after it. Such a return re-sends the state at the cut (`landEditOnRows`).
+ */
+export function isCarriedBendReturnOnEditedHead(
+    row: { id: string; channel: number; beat: number },
+    edit: { channel: number; beat: number }
+): boolean {
+    if (row.channel !== edit.channel || !CARRIED_BEND_RETURN_ID.test(row.id)) {
+        return false;
+    }
+    const afterEdit = row.beat - edit.beat;
+    return afterEdit >= -SAME_BEAT_TOLERANCE && afterEdit <= SEQUENCER_TICK_BEATS + SAME_BEAT_TOLERANCE;
+}
+
+/** `state` with RPN 0's range replaced by `semitones`; the selection and every other parameter stay as they are. */
+function withBendRange(state: MidiChannelControllerState, semitones: number): MidiChannelControllerState {
+    const replaced = { ...state, bendRangeSemitones: semitones };
+    if (!isPitchBendSensitivitySelected(state)) {
+        return replaced;
+    }
+    const { msb, lsb } = encodeBendRange(semitones);
+    return { ...replaced, dataEntryMsb: msb, dataEntryLsb: lsb };
+}
+
+/** One past the highest return index the rows hold, whatever the channel, so a new return never takes an id in use. */
+function nextCarriedBendReturnIndex(rows: readonly { id: string }[]): number {
+    let next = 0;
+    for (const { id } of rows) {
+        const index = CARRIED_BEND_RETURN_ID_INDEX.exec(id)?.[1];
+        if (index !== undefined) {
+            next = Math.max(next, Number(index) + 1);
+        }
+    }
+    return next;
+}
+
+/**
+ * The clip's rows after `edit`, a point set by hand, lands on `stored`: the rows at the edit's key are replaced and
+ * the edit goes last, as `addMidiCC` appends it.
+ *
+ * A split or glue that carries a bend onto its head also writes, just after it, returns that restore the state at
+ * the cut: its range, but also the selection (an NRPN, the Null RPN, RPN 0) and the data bytes. An edit that changes
+ * RPN 0's range where it lands (`editSetsBendRangeWhereItLands`) must govern every later bend, and a Data Entry LSB
+ * beside a coarse one completes the fractional range the returns carry, so both revisit the returns through
+ * `reconcileHandEditedReturns`; every other edit leaves them as they are.
+ */
+export function landEditOnRows(stored: readonly MidiCC[], edit: MidiCC): MidiCC[] {
+    const kept = stored.filter(
+        (row) => !(row.beat === edit.beat && row.channel === edit.channel && row.controller === edit.controller)
+    );
+    const setsRange = editSetsBendRangeWhereItLands(stored, edit);
+    if (!setsRange && edit.controller !== CC_DATA_ENTRY_LSB) {
+        return [...kept, edit];
+    }
+    const revisited = reconcileHandEditedReturns(
+        [...kept, edit],
+        { channel: edit.channel, beat: edit.beat },
+        {
+            fineOnlyEdit: !setsRange,
+        }
+    );
+    if (revisited === null) {
+        return [...kept, edit];
+    }
+    return [...revisited];
+}
+
+/**
+ * The rows after a hand edit touched the point at a clip's head, with the returns a split or glue wrote just after
+ * that head reconciled to what the rows now set there: they keep restoring the cut state with only RPN 0's range
+ * replaced by the one the visible rows leave, rewritten in place under the standing family's own ids — reused in
+ * order, minted from the next free index only for rows beyond it, which is why an undo sweeps the family by shape
+ * (`removeHandEditedReturnFamily`) instead of capturing ids. The returns are the last word the reader replays at
+ * the head, so an edit that leaves them carrying a range neither a visible point nor the cut state sets would
+ * govern every later bend wrongly. `fineOnlyEdit` marks an edit of a Data Entry LSB, which sets no coarse range
+ * alone: it refines the returns only when a hand coarse stands at the head for it to complete, and is a no-op
+ * otherwise. No edit of a writer row (ids carrying `:rpn-`) reaches this function: those rows are what the
+ * returns exist to override, not hand edits of the range.
+ *
+ * A lone Data Entry LSB among the visible rows sets no range either — the coarse it would refine is gone — so the
+ * target is then the cut state the returns restore, untouched. The family is never emptied: a revisit that finds
+ * the returns gone could never restore them, so a rewrite with nothing to reconcile re-declares the target state.
+ *
+ * A no-op — signalled by `null` — when the head carries no returns, when RPN 0 is not selected after the visible
+ * rows, when a fine-only edit finds no hand coarse at the head to complete, or when the returns already restore
+ * exactly the target state.
+ */
+export function reconcileHandEditedReturns(
+    rows: readonly MidiCC[],
+    head: { channel: number; beat: number },
+    options: { fineOnlyEdit?: boolean } = {}
+): readonly MidiCC[] | null {
+    const returns = rows.filter((row) => isCarriedBendReturnOnEditedHead(row, head));
+    const [firstReturn] = returns;
+    if (firstReturn === undefined) {
+        return null;
+    }
+    const kept = rows.filter((row) => !returns.includes(row));
+    const visible = kept.filter((row) => row.beat <= head.beat);
+    const afterEdit = replayInReaderOrder(visible, head.channel);
+    if (!isPitchBendSensitivitySelected(afterEdit)) {
+        return null;
+    }
+    if (options.fineOnlyEdit === true) {
+        // A Data Entry LSB sets no coarse range alone, and the returns deliberately restore the cut's
+        // range over the writer's declaration and carried rows at the head (their ids carry `:rpn-`).
+        // The fine half refines the returns only when a hand coarse stands at the head for it to
+        // complete; otherwise the returns keep restoring the cut as they are.
+        const handCoarseStands = visible.some(
+            (row) => isBendRangeDataController(row.controller) && !row.id.includes(':rpn-')
+        );
+        if (!handCoarseStands) {
+            return null;
+        }
+    }
+    // A hand coarse Data Entry is what sets the range the returns must carry: the writer's
+    // declaration and carried coarses (ids carrying `:rpn-`) are the rows the returns exist to
+    // override, and a lone Data Entry LSB refines nothing. The range provenance runs through the
+    // full replay — a hand coarse only sets the range under the selection the writer rows left —
+    // tracking which row last moved it.
+    let rangeSourceId: string | undefined;
+    const rangeState = createMidiChannelControllerState();
+    for (const row of visible
+        .filter((row) => row.channel === head.channel)
+        .toSorted((first, second) => first.beat - second.beat)) {
+        const before = rangeState.bendRangeSemitones;
+        applyRegisteredParameterChange(rangeState, row.controller, row.value);
+        if (rangeState.bendRangeSemitones !== before && row.controller !== CC_DATA_ENTRY_LSB) {
+            // A Data Entry LSB refines a range a coarse authored; it never authors one alone.
+            rangeSourceId = row.id;
+        }
+    }
+    const coarseStands = rangeSourceId !== undefined && !rangeSourceId.includes(':rpn-');
+    const cut = replayInReaderOrder(
+        rows.filter((row) => row.beat <= head.beat + SAME_BEAT_TOLERANCE || isCarriedBendReturnOnEditedHead(row, head)),
+        head.channel
+    );
+    let target = cut;
+    if (coarseStands) {
+        target = withBendRange(cut, afterEdit.bendRangeSemitones ?? STANDARD_BEND_RANGE_SEMITONES);
+    }
+    const targetDeclaration = declareChannelState(target).map((message) => ({ ...message, channel: head.channel }));
+    const messages = reconcileRegisteredParameterMessages({
+        current: visible
+            .filter((row) => row.channel === head.channel)
+            .toSorted((first, second) => first.beat - second.beat),
+        target: targetDeclaration,
+    });
+    // The returns are a no-op when they already restore the target state; the family is never
+    // emptied, because a revisit that later finds no returns could not restore them.
+    const rewrittenSource = messages.length > 0 ? messages : targetDeclaration;
+
+    // The rewritten rows reuse the standing family's ids in order, minting only for rows beyond
+    // it: every later revisit then rewrites the same ids, so an undo entry that captured the
+    // family at add time removes exactly the rows that stand when the undo runs.
+    const idPrefix = firstReturn.id.replace(CARRIED_BEND_RETURN_ID, ':');
+    const firstIndex = nextCarriedBendReturnIndex(rows);
+    const rewritten: MidiCC[] = rewrittenSource.map(({ controller, value, channel }, index) => {
+        const standing = returns[index];
+        const id = standing !== undefined ? standing.id : `${idPrefix}${carriedBendReturnIdKey(firstIndex + index)}`;
+        return { id, controller, value, beat: firstReturn.beat, channel };
+    });
+    const restoredState = declareChannelState(
+        replayInReaderOrder(
+            returns.filter((row) => row.channel === head.channel),
+            head.channel
+        )
+    ).map((message) => ({ ...message, channel: head.channel }));
+    if (JSON.stringify(restoredState) === JSON.stringify(targetDeclaration)) {
+        return null;
+    }
+    // The rewritten rows take the first return's position and the rest of the family is dropped, so
+    // the returns stay contiguous wherever an earlier row pulled the family ahead of the tick.
+    const result: MidiCC[] = [];
+    let inserted = false;
+    for (const row of rows) {
+        if (returns.includes(row)) {
+            if (!inserted) {
+                result.push(...rewritten);
+                inserted = true;
+            }
+            continue;
+        }
+        result.push(row);
+    }
+    return result;
 }
