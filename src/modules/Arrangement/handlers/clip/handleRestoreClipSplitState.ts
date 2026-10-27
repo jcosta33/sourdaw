@@ -183,6 +183,36 @@ function restoreSplitOwners(payload: RestoreClipSplitStateAction['payload']): bo
     return true;
 }
 
+/** History arrays live outside the transaction and publish only with their owning durable write. */
+function prepareSplitHistoryCapturePublication(
+    action: RestoreClipSplitStateAction,
+    capture: ReturnType<typeof removeTakesForClips> | undefined,
+    orderCapture: string[] | undefined,
+    stagedOrder: readonly string[],
+    readRetired: () => ReturnType<typeof removeTakesForClips>
+) {
+    const hasCapture = Boolean(capture || orderCapture);
+    const documentBeforeReplay = hasCapture ? captureDurableDocumentWitness() : null;
+    const ownsPublication = hasCapture ? captureProjectMutationAuthorization() : null;
+    // Bind inside this handler's storage transaction, before any owner writes.
+    ownsPublication?.();
+    return {
+        hasCapture,
+        install: () => {
+            createdClipMidiCapture({ phase: 'discard', action });
+            if (
+                hasCapture &&
+                getCrdtDoc('root') &&
+                captureDurableDocumentWitness() !== documentBeforeReplay &&
+                ownsPublication?.()
+            ) {
+                capture?.splice(0, capture.length, ...readRetired());
+                orderCapture?.splice(0, orderCapture.length, ...stagedOrder);
+            }
+        },
+    };
+}
+
 export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'>({
     validateSessionActionArguments: isRestoreClipSplitSessionPayload,
     // `expected`/`replacement` are mandatory on this payload, so every instance carries a real
@@ -210,23 +240,14 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         try {
             createdMidi = prepareCreatedMidi(action);
             createdMidi?.stage(action.payload.replacement.rightMidi);
-            const documentBeforeReplay = capture || orderCapture ? captureDurableDocumentWitness() : null;
-            const ownsPublication = capture || orderCapture ? captureProjectMutationAuthorization() : null;
-            // Bind inside this handler's storage transaction, before any owner writes.
-            ownsPublication?.();
             let stagedRetired: ReturnType<typeof removeTakesForClips> = [];
-            const installCapture = () => {
-                createdClipMidiCapture({ phase: 'discard', action });
-                if (
-                    (capture || orderCapture) &&
-                    getCrdtDoc('root') &&
-                    captureDurableDocumentWitness() !== documentBeforeReplay &&
-                    ownsPublication?.()
-                ) {
-                    capture?.splice(0, capture.length, ...stagedRetired);
-                    orderCapture?.splice(0, orderCapture.length, ...stagedOrder);
-                }
-            };
+            const publication = prepareSplitHistoryCapturePublication(
+                action,
+                capture,
+                orderCapture,
+                stagedOrder,
+                () => stagedRetired
+            );
             if (!restoreSplitOwners(action.payload)) {
                 return conflict();
             }
@@ -237,12 +258,12 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             }
             // The paired arrays belong to history, outside the project transaction.
             // Publish their staged capture only once this exact owner committed.
-            if (capture || orderCapture || createdMidi) {
+            if (publication.hasCapture || createdMidi) {
                 return {
                     status: 'written',
                     commitValidation: proof?.validation,
-                    afterCommit: installCapture,
-                    afterAmbiguousCommit: installCapture,
+                    afterCommit: publication.install,
+                    afterAmbiguousCommit: publication.install,
                 };
             }
             return { status: 'written', commitValidation: proof?.validation };
