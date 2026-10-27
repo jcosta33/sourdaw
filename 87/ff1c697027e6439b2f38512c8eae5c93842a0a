@@ -1,0 +1,153 @@
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_343342a5754a7e 25-33,1393-1408
+.agents/skills/review-stances/README.md
+  s_3168504f6ce387::t_ecf8c8efb88f73 43-44,46
+.agents/skills/review-stances/security-and-platform.md
+  s_3168504f6ce387::t_7e4fa6492f3f5d 59-64
+.github/workflows/validation.yml
+  s_3168504f6ce387::t_3074d00d119042 338-340
+crates/daw-dsp/src/proof/chain.rs
+  s_3168504f6ce387::t_8fdaa1a4a28622 254-286,288-289,291-311,1267-1341
+crates/daw-dsp/src/proof/dither.rs
+  s_3168504f6ce387::t_334058e5540288 115-123
+crates/daw-dsp/src/proof/dynamic_eq.rs
+  s_3168504f6ce387::t_5d3ac1c91e455e 181-201
+crates/daw-dsp/src/proof/eq.rs
+  s_3168504f6ce387::t_2e7eada22c1d3c 116-136
+crates/daw-dsp/src/proof/exciter.rs
+  s_3168504f6ce387::t_badf3e20f59b9a 164-179
+crates/daw-dsp/src/proof/imager.rs
+  s_3168504f6ce387::t_c30ec5960e8be4 75-89
+crates/daw-dsp/src/proof/limiter.rs
+  s_3168504f6ce387::t_b20c0fdcff060e 205-215
+crates/daw-dsp/src/proof/match_eq.rs
+  s_3168504f6ce387::t_0449211e7fc372 192-202
+crates/daw-dsp/src/proof/mod.rs
+  s_3168504f6ce387::t_8683feef30796e 22,96
+crates/daw-dsp/src/proof/multiband.rs
+  s_3168504f6ce387::t_6672fc59093308 119-145
+crates/daw-dsp/src/proof/parameter_registry.rs
+  s_3168504f6ce387::t_6d5975c314dc39 1-2567
+crates/daw-dsp/tests/proof_parameter_registry.rs
+  s_3168504f6ce387::t_17ca56af3deac0 1-265
+crates/daw-engine/src/scheduler.rs
+  s_3168504f6ce387::t_f92e56842c02b4 38,3275-3282,3286-3288,3290,4553,12698-12700,24780-24827
+crates/sourdaw-native/src/commands/graph.rs
+  s_3168504f6ce387::t_4d56fb5ca64213 158-160,2317-2384,2409-2416,2464-2471,2839-2844,3798-3831,15997-16393
+evidence/agent-campaign/manifest.json
+  s_3168504f6ce387::t_b278d86f3a0b5c 623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_3168504f6ce387::t_02ae36d09358bd 1,1041-1043,1181-1294,1358-1373
+public/wasm/daw-dsp/daw_dsp.js
+  s_3168504f6ce387::t_a019e14c871eab 2232
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_3168504f6ce387::t_5ca7dd8c21e5ca 1,49-162,226-241
+public/wasm/manifest.json
+  s_3168504f6ce387::t_9e99cdadf2fe0a 12,15-18,20-21
+release/open-source-inventory.json
+  s_3168504f6ce387::t_44d76efb101627 1345,1351,1771
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_3168504f6ce387::t_e1a443dc0390f5 714-717
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_3168504f6ce387::t_a0debaa97cbba7 1996-2004,4667-4696
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_3168504f6ce387::t_f2b8b46368adae 39,2749-2974,4543-4547,4577-4586,5047-5052
+scripts/healthGateWorkflowContract.ts
+  s_3168504f6ce387::t_a6ce219811f2f6 109-113,190
+scripts/resourceGuard.ts
+  s_3168504f6ce387::t_a123d319e8ef40 151-152,1179,1185-1186,1213-1215,1649-1650,1652,1701,1727,1729-1732,1818-1820
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_3168504f6ce387::t_0845b7b2e4c4df 15,158-162
+src/modules/AudioEngine/engine/__tests__/ProofNode.spec.ts
+  s_3168504f6ce387::t_8f965442b34f09 209-242
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_3168504f6ce387::t_209b4e34fe9381 408,412,422,441,443,445
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_3168504f6ce387::t_790edbbb6f39d5 125-165
+src/modules/AudioEngine/models/ProofRuntimeControl.ts
+  s_3168504f6ce387::t_0c5963d1475cdb 1-7,16-54
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_3168504f6ce387::t_ddfe9f3388bdcc 138-141
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_3168504f6ce387::t_c3748c2d10468f 315-358
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_3168504f6ce387::t_f4e68494bffeb8 512-540,545,549,614,624,673,683,779-780,805-835,866-870,872-896,972,975
+src/modules/AudioEngine/services/proofAppliedParameterContract.json
+  s_3168504f6ce387::t_ad6760c3585410 1-2441
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_3168504f6ce387::t_59c3366ec9d276 12-16,133,342-346,362-364
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_3168504f6ce387::t_2434a1b4b68369 798-799,1121-1134
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_3168504f6ce387::t_a7e710f106970a 47,452-453,455-461
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_3168504f6ce387::t_6e08ec27836860 1,1041-1043,1181-1294,1358-1373
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_3168504f6ce387::t_008dfa8cc1d106 2409
+src/modules/ControlSurface/presentations/views/MidiLearnButton.tsx
+  s_3168504f6ce387::t_8b4808db21ecc0 6,55-56,74-77,82,90,102
+src/modules/ControlSurface/presentations/views/MidiLearnRotaryKnob.tsx
+  s_3168504f6ce387::t_a62eb5f5be249b 5,55-60,84-87,97
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnButton.spec.tsx
+  s_3168504f6ce387::t_d7f49cca6ec22d 4-11,62-63,186-212
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnRotaryKnob.spec.tsx
+  s_3168504f6ce387::t_f11225e0a634fd 4-11,47-48,167-200
+src/modules/ControlSurface/presentations/views/__tests__/midiLearnCapability.integration.spec.tsx
+  s_3168504f6ce387::t_d5e70e055d34ad 1-236
+src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts
+  s_3168504f6ce387::t_8db1c70103a96c 1,6,16-39,65-66,69,78-87,104,122-143
+src/modules/ControlSurface/useCases/midiLearn/__tests__/startMidiLearn.spec.ts
+  s_3168504f6ce387::t_c5e0b949e7960e 3-9,17,40-58
+src/modules/ControlSurface/useCases/midiLearn/startMidiLearn.ts
+  s_3168504f6ce387::t_78024d46f910ea 3,29-31
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/legacyPersistedIdCleanup.spec.ts
+  s_3168504f6ce387::t_446ac58a18d139 22-26
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/nativeMidiPortsChanged.spec.ts
+  s_3168504f6ce387::t_fa7719f196713b 32-36
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiCapabilityIntegration.spec.ts
+  s_3168504f6ce387::t_d0d013fac60845 1-174
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_3168504f6ce387::t_3b807695e643c0 25-27,56-59,115-121,278,694-696
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_3168504f6ce387::t_f0425a8abccf93 2-3,283,292,294,331-334,339,402
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_3168504f6ce387::t_8ff9fd89d5a8df 5,45
+src/modules/Proof/services/__tests__/getProofPatchParameterValues.spec.ts
+  s_3168504f6ce387::t_0fcacaa13c8f9b 1-2,4-11,14-23,204-270
+src/modules/Proof/useCases/__tests__/prepareOfflineProof.spec.ts
+  s_3168504f6ce387::t_28d5f29070c112 17-51
+src/modules/Proof/useCases/__tests__/proofParamBridge.spec.ts
+  s_3168504f6ce387::t_29d3bed65190b9 26,28
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParam.spec.ts
+  s_3168504f6ce387::t_535d987c17fff4 43-60
+src/modules/Proof/useCases/proofParamBridge/setProofParam.ts
+  s_3168504f6ce387::t_9efda876cf86d5 3-5,26-57,59-61
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_3168504f6ce387::t_7372b43599f6b9 48
+src/modules/WorkspaceShell/presentations/views/MidiStatusBadge.tsx
+  s_3168504f6ce387::t_9f753dc113204a 9,33-37,40-54
+src/modules/WorkspaceShell/presentations/views/__tests__/MidiStatusBadge.spec.tsx
+  s_3168504f6ce387::t_5da6cb66b894d3 41-42,44-64,66-76,80-85,97,111,125,134
+src/utils/__tests__/platformCapabilities.spec.ts
+  s_3168504f6ce387::t_492616ca7db2d4 1,8-39
+src/utils/platformCapabilities.ts
+  s_3168504f6ce387::t_6c0a65b89a8302 17-19,27-28,31-35,51-55,60-61,65
+tests/e2e/controlSurface.spec.ts
+  s_3168504f6ce387::t_e7e6a8a95a9a32 88-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87ff1c697027e6439b2f38512c8eae5c93842a0a",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
