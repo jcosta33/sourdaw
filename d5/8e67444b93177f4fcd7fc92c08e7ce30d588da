@@ -1,0 +1,43 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_29d8df116c5b92::t_6fac285929d9e9 59-64
+src/components/daw/DawDialogSection.tsx
+  s_29d8df116c5b92::t_5ce4fc7586f100 42
+src/components/ui/button.tsx
+  s_29d8df116c5b92::t_feccfdf3a05fb6 20
+src/modules/ControlSurface/presentations/views/MidiLearnButton.tsx
+  s_29d8df116c5b92::t_84c3abaeca49d5 6,55-56,74-77,82,90,102
+src/modules/ControlSurface/presentations/views/MidiLearnRotaryKnob.tsx
+  s_29d8df116c5b92::t_f78cf0c44bf2d6 5,55-60,84-87,97
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnButton.spec.tsx
+  s_29d8df116c5b92::t_d20b33dc79a351 4-11,62-63,186-212
+src/modules/ControlSurface/presentations/views/__tests__/MidiLearnRotaryKnob.spec.tsx
+  s_29d8df116c5b92::t_89d46d63b77f23 4-11,47-48,167-200
+src/modules/ControlSurface/presentations/views/__tests__/midiLearnCapability.integration.spec.tsx
+  s_29d8df116c5b92::t_9e6bcf8d8c1bde 1-236
+src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts
+  s_29d8df116c5b92::t_6d6da4e026d4d1 1,6,16-39,65-66,69,78-87,104,122-143
+src/modules/ControlSurface/useCases/midiLearn/__tests__/startMidiLearn.spec.ts
+  s_29d8df116c5b92::t_279ef649a47f2d 3-9,17,40-58
+src/modules/ControlSurface/useCases/midiLearn/startMidiLearn.ts
+  s_29d8df116c5b92::t_26b1cf83db60e6 3,29-31
+tests/e2e/bakeryControlGeometry.spec.ts
+  s_29d8df116c5b92::t_6b6c84cc768bc9 1-92
+tests/e2e/controlSurface.spec.ts
+  s_29d8df116c5b92::t_c54482ddbea002 88-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d58e67444b93177f4fcd7fc92c08e7ce30d588da",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
