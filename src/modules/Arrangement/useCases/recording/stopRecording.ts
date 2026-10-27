@@ -261,11 +261,27 @@ export async function stopRecording(
     const clipIds = activeRecordingRef.current;
     const captureRootIdentity = activeRecordingRef.capturedRootIdentity ?? null;
     const midiAdmissions = activeRecordingRef.midiAdmissions;
-    const stopPosition = captureEventPositionAt({ audioTime: ending?.contextSeconds ?? 0 });
-    const midiSourceEndBeats = new Map(
-        clipIds.map((clipId) => [clipId, recordingMidiSourceBeatAt(clipId, stopPosition)])
-    );
-    const finalMidiPassOffsets = finalMidiPassOffsetsAtStop(clipIds, stopPosition.passIndex);
+    const trackState = getTrackState();
+    const midiClipIds =
+        trackState?.tracks.flatMap((track) =>
+            track.clips
+                .filter(
+                    (clip) =>
+                        clip.type === 'midi' &&
+                        clipIds.includes(clip.id) &&
+                        recordingPassTiming.isCurrent(clip.id, clip.type)
+                )
+                .map((clip) => clip.id)
+        ) ?? [];
+    const midiSourceEndBeats = new Map<string, number | null>();
+    let finalMidiPassOffsets: ReadonlyMap<string, FinalMidiPassOffset> = new Map();
+    if (midiClipIds.length > 0) {
+        const stopPosition = captureEventPositionAt({ audioTime: ending?.contextSeconds ?? 0 });
+        for (const clipId of midiClipIds) {
+            midiSourceEndBeats.set(clipId, recordingMidiSourceBeatAt(clipId, stopPosition));
+        }
+        finalMidiPassOffsets = finalMidiPassOffsetsAtStop(midiClipIds, stopPosition.passIndex);
+    }
     activeRecordingRef.current = [];
     activeRecordingRef.capturedRootIdentity = null;
     activeRecordingRef.midiAdmissions = [];
@@ -286,7 +302,6 @@ export async function stopRecording(
         return 'refused';
     }
 
-    const trackState = getTrackState();
     const transportState = transportStore.value;
     if (!trackState || !transportState) {
         return 'closed';
