@@ -2,7 +2,7 @@
  * Internal mutable state for the Web MIDI repository.
  * Singleton module — shared across all split files via imports.
  */
-import { isDesktopRuntime } from '#/utils/desktopBridge';
+import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 
 import {
     type WebMidiState,
@@ -12,8 +12,6 @@ import {
 } from '../../models/WebMidiTypes';
 
 export type WebMidiSubscriber = () => void;
-
-const webMidiSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
 
 export const activeNotes = new Map<WebMidiNoteKey, ActiveNoteData>();
 export const channelToNote = new Map<number, WebMidiNoteKey>();
@@ -44,7 +42,7 @@ export const webMidiRuntime = {
 
 export const webMidiState: { current: WebMidiState } = {
     current: {
-        isSupported: webMidiSupported || isDesktopRuntime(),
+        isSupported: getPlatformCapabilities().hasMidiInput,
         inputs: [],
         // Seeded null: which identity scheme owns the persisted id is not
         // known until a transport branch runs, so no storage read may happen

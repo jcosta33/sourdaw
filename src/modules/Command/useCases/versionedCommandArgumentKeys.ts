@@ -2013,6 +2013,7 @@ const schemaDefinitions = [
             leftClip: 241,
             rightClip: 242,
             rightClipIndex: 1,
+            rightClipOrder: 20,
             sourceMidi: 255,
             rightMidi: 255,
             clipSatellites: 71,

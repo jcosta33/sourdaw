@@ -2,7 +2,7 @@ import { type Heads } from '@automerge/automerge';
 
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
-import { readChangeHashesSinceHeads } from '../repositories/readChangeHashesSinceHeads';
+import { readChangesSinceHeads } from '../repositories/readChangesSinceHeads';
 
 import { captureProjectRevision } from './captureProjectRevision';
 
@@ -109,8 +109,10 @@ function readProjectedRootAtHeads(heads: Heads): Record<string, unknown> | null 
  * Comparing the live document against the expected view is not enough on its
  * own: an edit that is reverted afterwards — tempo 120 -> 128 -> 120, or a
  * field added and deleted again — leaves those two snapshots equal on heads
- * that moved for a musician-visible reason. The state after each change on the
- * path is compared instead, so the value the revert discarded is still seen.
+ * that moved for a musician-visible reason. Compare each change against its
+ * own dependency frontier so reverted and conflict-losing edits are still seen.
+ * A branch need not contain every captured sibling head: comparing its isolated
+ * state with the merged capture would mistake missing sibling truth for an edit.
  */
 function rootAdvancedOnlyByCommandCheckpoint(expectedHeads: Heads): boolean {
     const expectedProjection = readProjectedRootAtHeads(expectedHeads);
@@ -118,13 +120,14 @@ function rootAdvancedOnlyByCommandCheckpoint(expectedHeads: Heads): boolean {
     if (!expectedProjection || !liveProjection || !snapshotsEqual(liveProjection, expectedProjection)) {
         return false;
     }
-    const changeHashes = readChangeHashesSinceHeads(DOC_PREFIX_ROOT, expectedHeads);
-    if (!changeHashes) {
+    const changes = readChangesSinceHeads(DOC_PREFIX_ROOT, expectedHeads);
+    if (!changes) {
         return false;
     }
-    return changeHashes.every((hash) => {
-        const projection = readProjectedRootAtHeads([hash]);
-        return projection !== null && snapshotsEqual(projection, expectedProjection);
+    return changes.every(({ hash, deps }) => {
+        const before = readProjectedRootAtHeads(deps);
+        const after = readProjectedRootAtHeads([hash]);
+        return before !== null && after !== null && snapshotsEqual(before, after);
     });
 }
 

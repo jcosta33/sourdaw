@@ -175,9 +175,9 @@ export function prepareClipSplit({
     }
 
     let reservedIdentityIds: ReadonlySet<string> | undefined;
-    let rightClipIndex = track.clips.length;
+    const rightClipOrder = [...track.clips.map((clip) => clip.id), effectiveRightClipId];
+    const rightClipIndex = track.clips.length;
     if (owners) {
-        rightClipIndex = track.clips.length;
         reservedIdentityIds = readClipSplitIdentityIds(
             owners.automationLanes,
             tracks.flatMap((candidate) => candidate.clips)
@@ -250,6 +250,7 @@ export function prepareClipSplit({
             leftClip: structuredClone(clip),
             rightClip: null,
             rightClipIndex,
+            rightClipOrder,
             sourceMidi: midiPlan.previousSource,
             rightMidi: midiPlan.previousRight,
             clipSatellites: satellites.previous,
@@ -266,6 +267,7 @@ export function prepareClipSplit({
             leftClip: structuredClone(leftClip),
             rightClip: structuredClone(rightClip),
             rightClipIndex,
+            rightClipOrder,
             sourceMidi: midiPlan.nextSource,
             rightMidi: midiPlan.nextRight,
             clipSatellites: satellites.next,

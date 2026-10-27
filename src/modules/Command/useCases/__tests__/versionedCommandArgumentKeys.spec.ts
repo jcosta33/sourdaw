@@ -224,3 +224,21 @@ it('admits the published optional restoreClip slot contract without imposing dom
     expect(validateVersionedCommandArguments('restoreClip', { ...payload, clipIndex: 1.5 })).toBe(true);
     expect(validateVersionedCommandArguments('restoreClip', { ...payload, clipIndex: '0' })).toBe(false);
 });
+describe('versionedCommandArgumentKeys — guarded solo replay (#5643)', () => {
+    it('admits the expected solo state in persisted soloTrack arguments', () => {
+        expect(
+            validateVersionedCommandArguments('soloTrack', {
+                trackId: 'track-a',
+                soloed: true,
+                expectedSoloed: false,
+            })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('soloTrack', {
+                trackId: 'track-a',
+                soloed: true,
+                expectedSoloed: 'false',
+            })
+        ).toBe(false);
+    });
+});

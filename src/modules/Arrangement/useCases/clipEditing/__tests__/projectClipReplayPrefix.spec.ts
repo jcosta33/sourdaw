@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type AppAction, type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ClipAutomationLaneSnapshot, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -43,6 +43,52 @@ const geometryOnlyRestore: AppAction = {
 };
 
 describe('projectClipReplayPrefix source completeness', () => {
+    it('keeps source tracks and replay owners in the same witnessed order after peers prepend', () => {
+        const left = { ...existingClip, audioOffsetSeconds: 0 };
+        const right = ClipDummy.create({
+            id: 'right',
+            trackId: 'track',
+            startBeat: 4,
+            endBeat: 8,
+            audioOffsetSeconds: 2,
+        });
+        const emptyMidi = {
+            notes: { present: false, value: [] },
+            controlChanges: { present: false, value: [] },
+            pitchBends: { present: false, value: [] },
+        };
+        const expected: ClipSplitActionSnapshot = {
+            trackId: 'track',
+            leftClip: left,
+            rightClip: null,
+            rightClipIndex: 1,
+            rightClipOrder: ['existing', 'right'],
+            sourceMidi: emptyMidi,
+            rightMidi: emptyMidi,
+        };
+        const action: AppAction = {
+            type: 'restoreClipSplitState',
+            payload: {
+                clipId: 'existing',
+                rightClipId: 'right',
+                expected,
+                replacement: { ...expected, rightClip: right },
+            },
+        };
+        const peers = ['peer-one', 'peer-two'].map((id) =>
+            ClipDummy.create({ id, trackId: 'track', startBeat: 12, endBeat: 16 })
+        );
+        const projected = projectClipReplayPrefix([action], {
+            ...initial,
+            tracks: [TrackDummy.create({ id: 'track', clips: [...peers, left] })],
+        });
+        const order = ['peer-one', 'peer-two', 'existing', 'right'];
+        expect(projected?.clips.map((owner) => owner.clip.id)).toEqual(order);
+        expect(projected?.tracks?.[0]?.clips.map((clip) => clip.id)).toEqual(order);
+        expect(projected?.tracks?.[0]?.clips[2]).toEqual(left);
+        expect(projected?.tracks?.[0]?.clips[3]).toEqual(right);
+    });
+
     it('retains geometry and automation after a geometry-only restore while marking rich tracks incomplete', () => {
         const projected = projectClipReplayPrefix([geometryOnlyRestore], initial);
 

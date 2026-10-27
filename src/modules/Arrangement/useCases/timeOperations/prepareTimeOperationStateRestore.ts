@@ -1,4 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -9,6 +10,7 @@ import { planTakeRetirement } from '../comping/planTakeRetirement';
 import { reconcileTransitionBaseGaps } from '../comping/reconcileTakeReKeySources';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
+import { clipSatelliteStateCodec } from './clipSatelliteStateCodec';
 import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
@@ -248,6 +250,82 @@ function takeRetirementsMatchDeletedRange(
     );
 }
 
+/** Satellite writes follow erased clips and surviving re-keyed sources, never every shifted clip. */
+function deletedSatelliteOwners(
+    before: TrackState,
+    after: TrackState,
+    range: { startBeat: number; endBeat: number }
+): ReadonlySet<string> {
+    const owners = new Set<string>();
+    const beforeIds = collectLiveClipIds(before.tracks);
+    const afterIds = collectLiveClipIds(after.tracks);
+    const duration = range.endBeat - range.startBeat;
+    for (const track of before.tracks) {
+        const nextTrack = after.tracks.find((candidate) => candidate.id === track.id);
+        if (!nextTrack) {
+            continue;
+        }
+        for (const clip of track.clips) {
+            if (afterIds.has(clip.id) || clip.startBeat < range.startBeat || clip.startBeat >= range.endBeat) {
+                continue;
+            }
+            if (clip.endBeat <= range.endBeat) {
+                owners.add(clip.id);
+                continue;
+            }
+            // Only the exact right survivor produced by Delete Time owns the
+            // source's satellites. A changed local id alone is no authority.
+            const rightLoopOrigin =
+                clip.type === 'midi'
+                    ? restampLoopOriginEntry(clip, range.startBeat)
+                    : shiftLoopOriginEntry(clip, -duration);
+            const survivors = nextTrack.clips.filter(
+                (candidate) =>
+                    !beforeIds.has(candidate.id) &&
+                    timeOperationStateCodec.valuesEqual(candidate, {
+                        ...clip,
+                        id: candidate.id,
+                        startBeat: range.startBeat,
+                        endBeat: clip.endBeat - duration,
+                        audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (range.endBeat - clip.startBeat),
+                        midiOffsetBeats: 0,
+                        ...rightLoopOrigin,
+                    })
+            );
+            if (survivors.length === 1) {
+                owners.add(clip.id);
+                owners.add(survivors[0]!.id);
+            }
+        }
+    }
+    return owners;
+}
+
+function satelliteWritesMatchDeletedRange(
+    plan: CombinedStateRestorePlan,
+    range: { startBeat: number; endBeat: number }
+): boolean {
+    if (plan.clipSatellites === null) {
+        return true;
+    }
+    const satellites = clipSatelliteStateCodec.decodeRestorePlan(plan.clipSatellites);
+    const expected = timeOperationStateCodec.decodeTrackState(plan.local.expected.trackState);
+    const replacement = timeOperationStateCodec.decodeTrackState(plan.local.replacement.trackState);
+    if (!satellites || !expected || !replacement) {
+        return false;
+    }
+    const writes = satellites.expected.entries.filter(
+        (entry, index) => !timeOperationStateCodec.valuesEqual(entry, satellites.replacement.entries[index])
+    );
+    // The same saved plan runs in either direction. Each direction must be
+    // justified by one complete captured deletion, rather than unioning ids
+    // from contradictory interpretations of the two snapshots.
+    return [
+        deletedSatelliteOwners(expected, replacement, range),
+        deletedSatelliteOwners(replacement, expected, range),
+    ].some((owners) => writes.every((entry) => owners.has(entry.clipId)));
+}
+
 function validateCombinedPlanUnchecked(value: unknown): CombinedStateRestorePlan | null {
     const cloned = timeOperationStateCodec.cloneJsonPlan(value);
     const properties =
@@ -327,7 +405,9 @@ export const timeOperationRestorePlan = {
         const plan = validateCombinedPlan(value);
         return (
             plan !== null &&
-            (deletedRange === undefined || takeRetirementsMatchDeletedRange(plan, deletedRange)) &&
+            (deletedRange === undefined ||
+                (takeRetirementsMatchDeletedRange(plan, deletedRange) &&
+                    satelliteWritesMatchDeletedRange(plan, deletedRange))) &&
             (plan.automation === null || validators.automation(plan.automation)) &&
             (plan.midi === null || validators.midi(plan.midi)) &&
             (plan.timelineMap === null || validators.timelineMap(plan.timelineMap)) &&
