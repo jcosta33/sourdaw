@@ -1,0 +1,23 @@
+src/modules/AudioEngine/services/__tests__/scoringProcessor.spec.ts
+  s_b3201877f50e8a::t_fc044872b38abc 195,199,204-291,604-618
+src/modules/AudioEngine/services/__tests__/scoringProcessorShippedMalloc.spec.ts
+  s_b3201877f50e8a::t_27375e5be344de 121-206
+src/modules/AudioEngine/services/__tests__/scoringProcessorWasmViews.spec.ts
+  s_b3201877f50e8a::t_3cb94aec7de798 6-7,119-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97029656e94a45e40a63bafba6c96d8592f6113b",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
