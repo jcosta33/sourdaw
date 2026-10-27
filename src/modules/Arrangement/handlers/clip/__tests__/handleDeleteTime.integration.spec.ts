@@ -515,9 +515,114 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         }
     );
 
-    it.each(['gain', 'warp', 'unchanged'] as const)(
-        'binds saved Delete Time satellite writes to its affected clips: %s',
-        async (change) => {
+    it.each([
+        ['global', 'right', 3, 8, 0.25, 0.75, 0.75, 2, 6],
+        ['selected', 'right', 3, 8, 0.25, 0.75, 0.75, 4, 8],
+        ['global', 'spanning', 0, 8, 0.25, 2.25, 2.25, 2, 6],
+        ['selected', 'spanning', 0, 8, 0.25, 2.25, 2.25, 4, 8],
+        ['global', 'left', 0, 3, 0.25, 0.25, 0.25, 0, 2],
+        ['selected', 'left', 0, 3, 0.25, 0.25, 0.25, 0, 2],
+        ['global', 'shifted', 6, 8, 0.25, 0.25, 0.25, 4, 6],
+        ['selected', 'shifted', 6, 8, 0.25, 0.25, 0.25, 6, 8],
+        ['global', 'signed', 3, 8, -1, -0.5, -0.5, 2, 6],
+        ['selected', 'signed', 3, 8, -1, -0.5, -0.5, 4, 8],
+        ['global', 'loop', 3, 11, 0.25, 1.25, 0.75, 2, 9],
+        ['selected', 'loop', 3, 11, 0.25, 1.25, 0.75, 4, 11],
+        ['global', 'implicit loop', 3, 11, 0.25, 1.25, 0.75, 2, 9],
+        ['selected', 'implicit loop', 3, 11, 0.25, 1.25, 0.75, 4, 11],
+        ['global', 'spanning loop', 0, 8, 0.25, 0.25, 2.25, 2, 6],
+        ['selected', 'spanning loop', 0, 8, 0.25, 0.25, 2.25, 4, 8],
+        ['global', 'tempo map', 3, 8, 0.25, 1.25, 1.25, 2, 6],
+        ['selected', 'tempo map', 3, 8, 0.25, 1.25, 1.25, 4, 8],
+    ] as const)(
+        'keeps canonical source entry through %s %s deletion and replay',
+        async (route, effect, startBeat, endBeat, entry, expectedEntry, expectedUnwrapped, nextStart, nextEnd) => {
+            hydrateProductionContracts();
+            arrangeComp(startBeat, endBeat);
+            takeLaneStore.set({ lanes: [] });
+            midiStore.set(defaultMidiStoreState);
+            automationStore.set({ lanes: [] });
+            gainEnvelopeStore.set({ envelopes: {} });
+            warpStateStore.set({ states: {} });
+            if (effect === 'tempo map') {
+                tempoMapStore.set({
+                    changes: [
+                        { id: 'old', beat: 0, tempo: 120, curve: 'instant' },
+                        { id: 'slow', beat: 3, tempo: 60, curve: 'instant' },
+                    ],
+                });
+            }
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) => ({
+                    ...track,
+                    clips: track.clips.map((clip) => ({
+                        ...clip,
+                        audioOffsetBeats: 7,
+                        audioOffsetSeconds: entry,
+                        audioUnwrappedOffsetSeconds: entry,
+                        ...(effect.endsWith('loop')
+                            ? {
+                                  loopEnabled: true,
+                                  ...(effect === 'implicit loop' ? {} : { loopLength: 4 }),
+                                  loopOriginBeat: startBeat,
+                                  audioLoopStartSeconds: entry,
+                                  audioLoopPassEntrySeconds: entry,
+                                  audioLoopPassOriginBeat: startBeat,
+                                  stretchMode: 'timestretch' as const,
+                                  stretchRatio: 2,
+                              }
+                            : {}),
+                    })),
+                })),
+            });
+            flushAutomergeStorageWrites();
+            const original = durableOwners();
+            const changes = route !== 'selected' || effect !== 'shifted';
+            if (changes) {
+                await removeTime(route, 2, 4);
+            } else {
+                deleteTimeRange(2, 4, ['track-1']);
+                flushAutomergeStorageWrites();
+                expect(undoStore.value?.past).toHaveLength(0);
+            }
+            const survivor = clips().find((clip) => clip.startBeat === nextStart && clip.endBeat === nextEnd);
+            expect(survivor).toMatchObject({
+                audioOffsetSeconds: expectedEntry,
+                audioUnwrappedOffsetSeconds: expectedUnwrapped,
+            });
+            if (effect.endsWith('loop')) {
+                expect(survivor).toMatchObject({
+                    loopLength: effect === 'implicit loop' ? 8 : 4,
+                    loopOriginBeat: route === 'global' ? startBeat - 2 : startBeat,
+                    audioLoopPassOriginBeat: route === 'global' ? startBeat - 2 : startBeat,
+                    audioLoopStartSeconds: entry,
+                    audioLoopPassEntrySeconds: entry,
+                });
+            }
+            if (!changes) {
+                expectDurableOwners(original);
+                return;
+            }
+            const deleted = durableOwners();
+            expect((await undo()).headConsumed).toBe(true);
+            flushAutomergeStorageWrites();
+            expectDurableOwners(original);
+            await redo();
+            flushAutomergeStorageWrites();
+            expectDurableOwners(deleted);
+        }
+    );
+
+    it.each([
+        ['gain', false],
+        ['warp', false],
+        ['unchanged', false],
+        ['gain', true],
+        ['warp', true],
+    ] as const)(
+        'binds saved Delete Time satellite writes to its affected clips: %s modern=%s',
+        async (change, modern) => {
             hydrateProductionContracts();
             arrangeComp(2, 4);
             trackStore.set({
@@ -532,6 +637,7 @@ describe('Delete Time take ownership through Command and CRDT', () => {
                                 type: 'audio',
                                 startBeat: 0,
                                 endBeat: 1,
+                                ...(modern ? { audioOffsetSeconds: 0.25 } : {}),
                             }),
                             ClipDummy.create({
                                 id: 'erased',

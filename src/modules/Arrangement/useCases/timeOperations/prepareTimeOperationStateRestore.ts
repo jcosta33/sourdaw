@@ -1,5 +1,7 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -19,6 +21,8 @@ import { type TakeLaneTransitionPlan } from './takeLaneTransitionPlan';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 import { validateTakeLaneTransitionPlan } from './validateTakeLaneTransitionPlan';
+
+import { type Clip } from '../../models/Track';
 
 type PreparedHandle = {
     name: string;
@@ -251,6 +255,38 @@ function takeRetirementsMatchDeletedRange(
 }
 
 /** Satellite writes follow erased clips and surviving re-keyed sources, never every shifted clip. */
+function rightSurvivorMatches(candidate: Clip, original: Clip, expected: Clip): boolean {
+    if (!hasExactAudioSourceFields(original) || !hasExactAudioSourceFields(candidate)) {
+        return false;
+    }
+    if (original.type !== 'audio' || !Object.hasOwn(original, 'audioOffsetSeconds')) {
+        return timeOperationStateCodec.valuesEqual(candidate, expected);
+    }
+    if (!Object.hasOwn(candidate, 'audioOffsetSeconds')) {
+        return false;
+    }
+    const sourceFields = new Set([
+        'audioOffsetSeconds',
+        'audioUnwrappedOffsetSeconds',
+        'audioLoopStartSeconds',
+        'audioLoopPassEntrySeconds',
+        'audioLoopPassOriginBeat',
+    ]);
+    const ownerFacets = (clip: Clip) =>
+        Object.fromEntries(Object.entries(clip).filter(([key]) => !sourceFields.has(key)));
+    const expectedOwner = { ...expected };
+    if (original.loopEnabled) {
+        expectedOwner.loopLength = projectClipLoopExpansion({
+            clipDurationBeats: original.endBeat - original.startBeat,
+            configuredLoopLengthBeats: original.loopLength,
+            loopEnabled: true,
+        }).loopLengthBeats;
+    }
+    // The saved clock may no longer exist. Source-cut production proves source
+    // seconds; satellite authority proves this exact range-derived owner.
+    return timeOperationStateCodec.valuesEqual(ownerFacets(candidate), ownerFacets(expectedOwner));
+}
+
 function deletedSatelliteOwners(
     before: TrackState,
     after: TrackState,
@@ -259,6 +295,12 @@ function deletedSatelliteOwners(
     const owners = new Set<string>();
     const beforeIds = collectLiveClipIds(before.tracks);
     const afterIds = collectLiveClipIds(after.tracks);
+    const afterIdCounts = new Map<string, number>();
+    for (const track of after.tracks) {
+        for (const clip of track.clips) {
+            afterIdCounts.set(clip.id, (afterIdCounts.get(clip.id) ?? 0) + 1);
+        }
+    }
     const duration = range.endBeat - range.startBeat;
     for (const track of before.tracks) {
         const nextTrack = after.tracks.find((candidate) => candidate.id === track.id);
@@ -267,6 +309,9 @@ function deletedSatelliteOwners(
         }
         for (const clip of track.clips) {
             if (afterIds.has(clip.id) || clip.startBeat < range.startBeat || clip.startBeat >= range.endBeat) {
+                continue;
+            }
+            if (!hasExactAudioSourceFields(clip)) {
                 continue;
             }
             if (clip.endBeat <= range.endBeat) {
@@ -282,7 +327,8 @@ function deletedSatelliteOwners(
             const survivors = nextTrack.clips.filter(
                 (candidate) =>
                     !beforeIds.has(candidate.id) &&
-                    timeOperationStateCodec.valuesEqual(candidate, {
+                    afterIdCounts.get(candidate.id) === 1 &&
+                    rightSurvivorMatches(candidate, clip, {
                         ...clip,
                         id: candidate.id,
                         startBeat: range.startBeat,

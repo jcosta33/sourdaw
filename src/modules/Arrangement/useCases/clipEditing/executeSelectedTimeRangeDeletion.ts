@@ -1,5 +1,7 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -20,12 +22,14 @@ import { restoreTakeReKeyTransitions } from '../comping/restoreTakeReKeyTransiti
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 import { createTakeLaneTransitionPlan } from '../timeOperations/createTakeLaneTransitionPlan';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
+import { prepareAudioClipCutFields } from './prepareAudioClipCutFields';
 
 type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
 type MidiReplayPlan = MidiPreparation['replayPlan'];
@@ -343,7 +347,7 @@ function validateClip(clip: unknown): boolean {
     if (clip.midiOffsetBeats !== undefined && !isFiniteNumber(clip.midiOffsetBeats)) {
         return false;
     }
-    return true;
+    return hasExactAudioSourceFields(clip);
 }
 
 function validateStore(state: TrackState): NormalizedStore | null {
@@ -388,6 +392,19 @@ function isValidComputedOffset(value: number): boolean {
  *  conversion the ordinary split applies to both the audio and warp axes. */
 function contentBeatsConsumed(clip: Clip, timelineBeats: number): number {
     return timelineBeats * consumedStretchFactor(clip);
+}
+
+function sourceContentBeatAt(clip: Clip, beat: number): number {
+    if (clip.type !== 'audio' || clip.audioOffsetSeconds === undefined) {
+        return (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, beat - clip.startBeat);
+    }
+    const tempo = liveTempoTimeline.tempoAtBeat(clip.startBeat);
+    const seconds = getAudioSourcePositionSeconds(
+        resolveAudioSourceOffsetSeconds(clip, tempo),
+        liveTempoTimeline.secondsAtBeat(beat) - liveTempoTimeline.secondsAtBeat(clip.startBeat),
+        consumedStretchFactor(clip)
+    );
+    return (seconds * tempo) / 60;
 }
 
 function isValidComputedBeat(value: number): boolean {
@@ -637,6 +654,11 @@ function planTrack(
             continue;
         }
         if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
+            const leftSource = prepareAudioClipCutFields(clip, clip.startBeat, 0);
+            const rightSource = prepareAudioClipCutFields(clip, operation.endBeat, 0);
+            if (!leftSource || !rightSource) {
+                return null;
+            }
             const identity = getClipIdentity(identities, identityIndex, owner, clip);
             if (!identity) {
                 return null;
@@ -646,6 +668,7 @@ function planTrack(
                 ...clip,
                 endBeat: operation.startBeat,
                 name: `${clip.name} (L)`,
+                ...leftSource,
             };
             // The fragment anchor follows the basis it creates (#4988). The
             // MIDI fragment re-bases its notes by −splitBeat under
@@ -668,9 +691,11 @@ function planTrack(
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
             const rightLoopOriginEntry =
-                clip.type === 'midi'
-                    ? restampLoopOriginEntry(clip, operation.endBeat)
-                    : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
+                clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
+                    ? {}
+                    : clip.type === 'midi'
+                      ? restampLoopOriginEntry(clip, operation.endBeat)
+                      : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
             const rightClip: Clip = {
                 ...clip,
                 id: identity.targetClipId,
@@ -682,6 +707,7 @@ function planTrack(
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
                 midiOffsetBeats: 0,
                 ...rightLoopOriginEntry,
+                ...rightSource,
             };
             finalClips.push(leftClip, rightClip);
             if (clip.type === 'midi') {
@@ -701,19 +727,26 @@ function planTrack(
                 // ordinary split's warp axis performs. Without it the cut
                 // lands short by the ratio and the fragment inherits markers
                 // for audio the deleted span carried.
-                contentSplitBeats:
-                    (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, operation.endBeat - clip.startBeat),
+                contentSplitBeats: sourceContentBeatAt(clip, operation.endBeat),
                 absoluteSplitBeats: operation.endBeat,
             });
             changed = true;
             continue;
         }
         if (clip.startBeat < operation.startBeat && clip.endBeat > operation.startBeat) {
-            finalClips.push({ ...clip, endBeat: operation.startBeat });
+            const source = prepareAudioClipCutFields(clip, clip.startBeat, 0);
+            if (!source) {
+                return null;
+            }
+            finalClips.push({ ...clip, endBeat: operation.startBeat, ...source });
             changed = true;
             continue;
         }
         if (clip.startBeat < operation.endBeat && clip.endBeat > operation.endBeat) {
+            const source = prepareAudioClipCutFields(clip, operation.endBeat, 0);
+            if (!source) {
+                return null;
+            }
             // The anchor treatment follows the basis the trim creates
             // (#4988). The MIDI side keeps its notes and content offset —
             // a whole-clip relocation by (endBeat − startBeat) — so the
@@ -733,9 +766,11 @@ function planTrack(
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
             const trimLoopOriginEntry =
-                clip.type === 'midi'
-                    ? shiftLoopOriginEntry(clip, timelineDelta)
-                    : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
+                clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
+                    ? {}
+                    : clip.type === 'midi'
+                      ? shiftLoopOriginEntry(clip, timelineDelta)
+                      : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
@@ -744,6 +779,7 @@ function planTrack(
                 // plays.
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
                 ...trimLoopOriginEntry,
+                ...source,
             });
             changed = true;
             continue;
