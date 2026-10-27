@@ -251,6 +251,46 @@ describe('NotePropertyLane', () => {
             expect(liveSetValue).toHaveBeenLastCalledWith('clip-1', 'n1', 100);
         });
 
+        it('commits a selected frozen occurrence through its owner callback without a base write or second undo entry', () => {
+            const sourceRow = makeNote('original', 5.5, 90);
+            const viewNote = makeNote('view-first', 2, 90);
+            const setFrozenValue = vi.fn();
+            const projection = {
+                notes: [viewNote],
+                ownersByViewId: new Map([
+                    [
+                        viewNote.id,
+                        {
+                            laneId: 'lane',
+                            takeId: 'selected',
+                            sourceClipId: 'source',
+                            row: sourceRow,
+                            occurrenceIndex: 0,
+                            displayedStartBeat: 2,
+                            displayedDuration: 1,
+                        },
+                    ],
+                ]),
+                coveredWindows: [{ startBeat: 0, endBeat: 4 }],
+                insertOwnerAtBeat: () => null,
+            };
+            render(
+                <NotePropertyLane
+                    {...defaultProps}
+                    primaryClipNotes={[viewNote]}
+                    takeProjections={new Map([['clip-1', projection]])}
+                    setFrozenValue={setFrozenValue}
+                    setValue={liveSetValue}
+                />
+            );
+            const canvas = getCanvas();
+            fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 90, clientY: 2 });
+            fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 90, clientY: 2 });
+            expect(setFrozenValue).toHaveBeenCalledWith(viewNote.id, 127);
+            expect(liveSetValue).not.toHaveBeenCalled();
+            expect(pushUndoEntry).not.toHaveBeenCalled();
+        });
+
         it('hit-tests the topmost (last-painted) note when notes overlap', () => {
             // n1 and n2 share the same startBeat and fully overlap on screen.
             // The paint loop draws array order, so n2 renders on top — the hit

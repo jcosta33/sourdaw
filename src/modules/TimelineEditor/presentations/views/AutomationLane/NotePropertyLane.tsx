@@ -42,6 +42,7 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
+import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
 
@@ -144,12 +145,13 @@ const selectionTouchedClipIds = (
 const buildLaneNotes = (
     clipId: string | null,
     notesByClipId: Record<string, MidiNote[]>,
+    primaryClipNotes: MidiNote[] | undefined,
     openedClipNotes: Record<string, MidiNote[]> | undefined,
     selectedNoteIds: Set<string>
 ): LaneNoteEntry[] => {
     const entries: LaneNoteEntry[] = [];
     if (clipId) {
-        for (const note of notesByClipId[clipId] ?? []) {
+        for (const note of primaryClipNotes ?? notesByClipId[clipId] ?? []) {
             entries.push({ note, clipId });
         }
     }
@@ -222,6 +224,9 @@ const replayChanges = (
 
 type NotePropertyLaneProps = {
     clipId: string | null;
+    primaryClipNotes?: MidiNote[];
+    takeProjections?: ReadonlyMap<string, PianoRollTakeNotes>;
+    setFrozenValue?: (viewId: string, value: number) => void;
     /**
      * Track of the primary clip. Kept in the shared lane-props shape every
      * property lane wrapper passes; this lane itself resolves colors per clip
@@ -263,6 +268,9 @@ type NotePropertyLaneProps = {
 
 export const NotePropertyLane = ({
     clipId,
+    primaryClipNotes,
+    takeProjections,
+    setFrozenValue,
     selectedNoteIds,
     openedClipNotes,
     beatWidth,
@@ -289,7 +297,45 @@ export const NotePropertyLane = ({
         selectedTrackId: null,
     });
 
-    const laneNotes = buildLaneNotes(clipId, midiState.notesByClipId, openedClipNotes, selectedNoteIds);
+    const laneNotes = buildLaneNotes(
+        clipId,
+        midiState.notesByClipId,
+        primaryClipNotes,
+        openedClipNotes,
+        selectedNoteIds
+    );
+    const pendingFrozenValues = useRef(new Map<string, number>());
+    const frozenOwner = (viewId: string) => {
+        for (const projection of takeProjections?.values() ?? []) {
+            const owner = projection.ownersByViewId.get(viewId);
+            if (owner) {
+                return owner;
+            }
+        }
+        return undefined;
+    };
+    const writeValue = (ownerClipId: string, viewId: string, value: number): void => {
+        if (frozenOwner(viewId)) {
+            pendingFrozenValues.current.set(viewId, value);
+        } else {
+            setValue(ownerClipId, viewId, value);
+        }
+    };
+    const commitFrozenValues = (): void => {
+        const committedRows = new Set<string>();
+        for (const [viewId, value] of pendingFrozenValues.current) {
+            const owner = frozenOwner(viewId);
+            if (!owner) {
+                continue;
+            }
+            const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
+            if (!committedRows.has(key)) {
+                committedRows.add(key);
+                setFrozenValue?.(viewId, value);
+            }
+        }
+        pendingFrozenValues.current.clear();
+    };
 
     // Every clip in scope resolves its own color, the same lookup the piano
     // roll's renderer uses for opened clips — a secondary clip's bars must not
@@ -508,7 +554,7 @@ export const NotePropertyLane = ({
                         const time = (node.startBeat - firstNote.startBeat) / beatSpan;
                         interpolated = startVal + (endVal - startVal) * time;
                     }
-                    setValue(ownerClipId, node.id, Math.round(interpolated));
+                    writeValue(ownerClipId, node.id, Math.round(interpolated));
                 }
             };
 
@@ -517,6 +563,7 @@ export const NotePropertyLane = ({
             };
 
             const onCommit = (): void => {
+                commitFrozenValues();
                 const changes = collectUndoChanges(initialValues, getValue);
                 if (changes.length > 0) {
                     pushUndoEntry(
@@ -555,11 +602,12 @@ export const NotePropertyLane = ({
             // Paint the note currently under the cursor (horizontal movement)
             const entryAtX = hitNoteAtX(point.x);
             if (entryAtX) {
-                setValue(entryAtX.clipId, entryAtX.note.id, valueFromLaneY(point.y, h));
+                writeValue(entryAtX.clipId, entryAtX.note.id, valueFromLaneY(point.y, h));
             }
         };
 
         const onCommit = (): void => {
+            commitFrozenValues();
             const changes = collectUndoChanges(origValues, getValue);
             if (changes.length > 0) {
                 pushUndoEntry(
@@ -584,7 +632,7 @@ export const NotePropertyLane = ({
             move: onMove,
             commit: onCommit,
         });
-        setValue(pressedEntry.clipId, pressedEntry.note.id, valueAt(event));
+        writeValue(pressedEntry.clipId, pressedEntry.note.id, valueAt(event));
     };
 
     const handleRampDrag = (side: 'left' | 'right', event: PointerEvent<HTMLDivElement>) => {
@@ -628,11 +676,12 @@ export const NotePropertyLane = ({
                     const time = (node.startBeat - firstNote.note.startBeat) / beatSpan;
                     interpolated = currentLeft + (currentRight - currentLeft) * time;
                 }
-                setValue(ownerClipId, node.id, Math.round(interpolated));
+                writeValue(ownerClipId, node.id, Math.round(interpolated));
             }
         };
 
         const onCommit = () => {
+            commitFrozenValues();
             const changes = collectUndoChanges(initialValues, getValue);
 
             if (changes.length > 0) {

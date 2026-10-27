@@ -3,6 +3,8 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { executeUserAppAction } from '#/modules/Command/useCases';
+
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 const mocks = vi.hoisted(() => {
@@ -257,6 +259,124 @@ describe('usePianoRollInteractions', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    describe('selected frozen take callbacks', () => {
+        const original = { ...makeNote('original-row', 60, 5.5, 2, 90), recordingPassIndex: 0 };
+        const anotherPass = { ...makeNote('other-row', 62, 9.5, 1, 85), recordingPassIndex: 1 };
+        const firstView = makeNote('view-first', 60, 2, 2, 90);
+        const repeatView = makeNote('view-repeat', 60, 6, 2, 90);
+        const otherView = makeNote('view-other', 62, 4, 1, 85);
+        const projection = {
+            notes: [firstView, repeatView, otherView],
+            ownersByViewId: new Map([
+                [
+                    firstView.id,
+                    {
+                        laneId: 'lane',
+                        takeId: 'first',
+                        sourceClipId: 'source',
+                        row: original,
+                        occurrenceIndex: 0,
+                        displayedStartBeat: 2,
+                        displayedDuration: 2,
+                    },
+                ],
+                [
+                    repeatView.id,
+                    {
+                        laneId: 'lane',
+                        takeId: 'first',
+                        sourceClipId: 'source',
+                        row: original,
+                        occurrenceIndex: 1,
+                        displayedStartBeat: 6,
+                        displayedDuration: 2,
+                    },
+                ],
+                [
+                    otherView.id,
+                    {
+                        laneId: 'lane',
+                        takeId: 'second',
+                        sourceClipId: 'source',
+                        row: anotherPass,
+                        occurrenceIndex: 1,
+                        displayedStartBeat: 4,
+                        displayedDuration: 1,
+                    },
+                ],
+            ]),
+            coveredWindows: [{ startBeat: 0, endBeat: 8 }],
+            insertOwnerAtBeat: (beat: number) =>
+                beat === 4
+                    ? {
+                          laneId: 'lane',
+                          takeId: 'second',
+                          sourceClipId: 'source',
+                          sourceBeat: 9.5,
+                          recordingPassIndex: 1,
+                          slotPresent: true,
+                      }
+                    : null,
+        };
+
+        it('moves repeated views through one original row action, preserving source coordinates', () => {
+            const { canvas } = renderRoll({
+                notes: [firstView, repeatView],
+                selectedNoteIds: new Set([firstView.id, repeatView.id]),
+                takeProjections: new Map([['clip-1', projection]]),
+            });
+            fireEvent.mouseDown(canvas, { clientX: 100, clientY: yForPitch(60) });
+            fireEvent.mouseMove(canvas, { clientX: 140, clientY: yForPitch(60) });
+            fireEvent.mouseUp(canvas, { clientX: 140, clientY: yForPitch(60) });
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({
+                    takeId: 'first',
+                    rowId: original.id,
+                    expected: original,
+                    replacement: { ...original, startBeat: 6.5 },
+                }),
+            });
+            expect(mocks.moveMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('resizes and deletes the selected original instead of the base clip row', () => {
+            const { canvas } = renderRoll({ notes: [firstView], takeProjections: new Map([['clip-1', projection]]) });
+            fireEvent.mouseDown(canvas, { clientX: 155, clientY: yForPitch(60) });
+            fireEvent.mouseMove(canvas, { clientX: 195, clientY: yForPitch(60) });
+            fireEvent.mouseUp(canvas, { clientX: 195, clientY: yForPitch(60) });
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({ rowId: original.id, replacement: { ...original, duration: 3 } }),
+            });
+            fireEvent.doubleClick(canvas, { clientX: 100, clientY: yForPitch(60) });
+            expect(executeUserAppAction).toHaveBeenLastCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({ rowId: original.id, replacement: null }),
+            });
+            expect(mocks.resizeMidiNote).not.toHaveBeenCalled();
+            expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+        });
+
+        it('inserts into the selected second pass through its original source beat', () => {
+            const { canvas } = renderRoll({ notes: [], takeProjections: new Map([['clip-1', projection]]) });
+            fireEvent.mouseDown(canvas, { clientX: 165, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 165, clientY: yForPitch(70) });
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({
+                    takeId: 'second',
+                    expected: null,
+                    replacement: expect.objectContaining({ startBeat: 9.5, recordingPassIndex: 1, pitch: 70 }),
+                }),
+            });
+            expect(mocks.addMidiNote).not.toHaveBeenCalled();
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        });
     });
 
     // Issue #2299. The canvas covers the viewport, not the arrangement: it is

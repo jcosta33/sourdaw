@@ -25,9 +25,10 @@ import { DawSideRail } from '#/components/daw/DawSideRail';
 import { Row, Stack } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { logger } from '#/infra/logger/appLogger';
+import { takeLaneStore, trackStore, type Clip } from '#/modules/Arrangement/stores';
 import { CANVAS_EDITOR_COMMAND_EVENT, isCanvasEditorCommandRequest } from '#/modules/CommandInterface/useCases';
-import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { midiStore, stepRecordStore, type MidiNote, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     setNoteVelocity,
     setNotePressure,
@@ -54,6 +55,8 @@ import {
 } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
+import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
+import { editPianoRollTakeNote } from '../../helpers/editPianoRollTakeNote';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
 import { PianoRollContextMenu } from './PianoRollContextMenu';
@@ -204,12 +207,12 @@ export const PianoRoll = ({
     }
 
     // ── Store subscriptions ──────────────────────────────────────────
-    const notes = useStoreSelector(
+    const baseNotes = useStoreSelector(
         midiStore,
         (state: MidiStoreState | null) => state?.notesByClipId[clipId] ?? EMPTY_NOTES
     );
     // A9: build notes map for all simultaneously-open clips (excludes primary clipId)
-    const openedClipNotes = useStoreSelector(
+    const baseOpenedClipNotes = useStoreSelector(
         midiStore,
         (state: MidiStoreState | null) =>
             openedClipIds && openedClipIds.length > 0
@@ -219,6 +222,41 @@ export const PianoRoll = ({
                 : undefined,
         areOpenedClipNotesEqual
     );
+    const laneState = useStore(takeLaneStore);
+    const trackState = useStore(trackStore);
+    const ids = new Set([clipId, ...(openedClipIds ?? [])]);
+    const editedClips = new Map<string, Clip>();
+    for (const track of trackState?.tracks ?? []) {
+        for (const clip of track.clips) {
+            if (ids.has(clip.id)) {
+                editedClips.set(clip.id, clip);
+            }
+        }
+    }
+    const takeProjections = new Map<string, PianoRollTakeNotes>();
+    for (const [id, clip] of editedClips) {
+        if (clip.type === 'midi') {
+            takeProjections.set(id, projectPianoRollTakeNotes(clip, clip.trackId, laneState));
+        }
+    }
+    const visibleNotes = (id: string, original: MidiNote[]): MidiNote[] => {
+        const clip = editedClips.get(id);
+        const projection = takeProjections.get(id);
+        if (!clip || !projection || projection.coveredWindows.length === 0) {
+            return original;
+        }
+        const baseOutsideSelected = original.filter((note) => {
+            const beat = clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0);
+            return !projection.coveredWindows.some((window) => beat >= window.startBeat && beat < window.endBeat);
+        });
+        return [...baseOutsideSelected, ...projection.notes];
+    };
+    const notes = visibleNotes(clipId, baseNotes);
+    const openedClipNotes = baseOpenedClipNotes
+        ? Object.fromEntries(
+              Object.entries(baseOpenedClipNotes).map(([id, original]) => [id, visibleNotes(id, original)])
+          )
+        : undefined;
     // Length of the primary clip plus every clip opened alongside it, read
     // from the Arrangement module's own store (foreign modules may read
     // another module's store directly — see AGENTS.md §Architecture). Drives
@@ -347,6 +385,7 @@ export const PianoRoll = ({
         trackId,
         notes,
         openedClipNotes,
+        takeProjections,
         focusedClipId,
         beatWidth,
         gridSnap,
@@ -551,6 +590,32 @@ export const PianoRoll = ({
                             <div style={{ width: contentWidth, height: '100%' }}>
                                 <NotePropertyLane
                                     clipId={clipId}
+                                    primaryClipNotes={notes}
+                                    takeProjections={takeProjections}
+                                    setFrozenValue={(viewId, value) => {
+                                        const projection = [...takeProjections.values()].find((candidate) =>
+                                            candidate.ownersByViewId.has(viewId)
+                                        );
+                                        if (!projection) {
+                                            return;
+                                        }
+                                        const change =
+                                            activeExpressionLane === 'velocity'
+                                                ? { velocity: value }
+                                                : activeExpressionLane === 'pressure'
+                                                  ? { pressure: value }
+                                                  : activeExpressionLane === 'slide'
+                                                    ? { slide: value }
+                                                    : {
+                                                          pitchBend:
+                                                              Math.round(
+                                                                  (value / MAX_MIDI_DATA_7BIT) * HIGH_RESOLUTION_MAX
+                                                              ) - PITCH_BEND_CENTER,
+                                                      };
+                                        void editPianoRollTakeNote(projection, viewId, change).catch((error) =>
+                                            logger.warn('Could not edit selected MIDI note property', error)
+                                        );
+                                    }}
                                     trackId={trackId}
                                     selectedNoteIds={selectedNoteIds}
                                     openedClipNotes={openedClipNotes}
