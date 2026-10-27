@@ -1,0 +1,63 @@
+src/modules/AudioEngine/services/audioPreview/__tests__/createAudioPreviewIntents.spec.ts
+  s_3168504f6ce387::t_f243825ac75ad3 1-194
+src/modules/AudioEngine/services/audioPreview/createAudioPreviewIntents.ts
+  s_3168504f6ce387::t_a55288ffe26a16 2-74
+  s_3168504f6ce387::t_5f824b15023303 1
+src/modules/AudioEngine/models/AudioPreviewIntent.ts
+  s_3168504f6ce387::t_61265f84a4d84e 1-5
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_3168504f6ce387::t_1777c08a9b11be 523-525
+  s_3168504f6ce387::t_ba2678e0c16dd2 1
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_3168504f6ce387::t_b8aefa7d038745 1821-1903
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_3168504f6ce387::t_b36b9f5db302be 33,409-410,2650-2657,2659-2671
+src/modules/AudioEngine/useCases/__tests__/playCachedAudioBufferPreview.spec.ts
+  s_3168504f6ce387::t_8354c023a8b1a0 3,6-18,21,25-32,34-38,45,68-69,73,107,112-133,135-150,152-215,217-259
+  s_3168504f6ce387::t_bbaf1bae0cd506 33,57-64,134,151,216
+src/modules/AudioEngine/useCases/playCachedAudioBufferPreview.ts
+  s_3168504f6ce387::t_1ad09c74cf1d70 1-2,5,27-30,32-43,45-87
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_3168504f6ce387::t_12ae87b9d319e2 15,140-142,145,148,150-151,245-246,290,292,306-307
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_3168504f6ce387::t_66c901fe74ddd6 414,430
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_3168504f6ce387::t_d2ed250fb4e057 11,136-137,141-143,217
+src/modules/AudioEngine/stores/__tests__/aiPreviewHandoffOwnership.spec.tsx
+  s_3168504f6ce387::t_7905861eb91305 39,48-49,60-63,74,177-179,181-187
+src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts
+  s_3168504f6ce387::t_978b31916548f1 26-33,587,610-612,617-631
+src/modules/AudioEngine/stores/__tests__/aiPreviewUndoOwnership.spec.tsx
+  s_3168504f6ce387::t_978b31916548f1 47,56-57,68-71,82,216-218,220-226
+evidence/agent-campaign/manifest.json
+  s_3168504f6ce387::t_d781c139670e4a 627
+.agents/skills/review-stances/session-lifecycle.md
+  s_3168504f6ce387::t_b3efd9c4638260 42-43
+  s_3168504f6ce387::t_4d01265c159376 39-41,44-55
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_4d01265c159376 9-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "45c4bdb70a87407fc542bebce904bc42035f8282",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
