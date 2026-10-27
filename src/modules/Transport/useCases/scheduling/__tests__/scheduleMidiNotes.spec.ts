@@ -4728,6 +4728,55 @@ describe('scheduleMidiNotes', () => {
         });
 
         describe('stored controllers through the real projection and release', () => {
+            it('posts selected frozen pedal rows on first and rolling pass windows instead of ordinary rows', async () => {
+                useRealProjections();
+                const handleCc = vi.fn();
+                stripWith({
+                    type: 'levain',
+                    deviceId: 'lv-1',
+                    levainControls: { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc },
+                });
+                const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+                const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'lv-1', type: 'levain' }] });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': [] },
+                    ccByClipId: { 'clip-1': [storedController('ordinary', 64, 0, 1)] },
+                    pitchBendByClipId: {},
+                };
+                vi.mocked(resolveClipsWithComping).mockReturnValue([
+                    {
+                        ...sourceClip,
+                        regionStartBeat: 0,
+                        regionEndBeat: 8,
+                        sourceStartBeat: 0,
+                        midiTakeId: 'selected',
+                        midiTakeSource: {
+                            sourceClipId: 'clip-1',
+                            sourceEntryBeat: 5,
+                            sourceEndBeat: 9,
+                            phaseHeadBeat: 0,
+                            passLengthBeats: 4,
+                            rows: {
+                                notes: { present: true, value: [] },
+                                controlChanges: {
+                                    present: true,
+                                    value: [storedController('selected', 64, 127, 5.25)],
+                                },
+                                pitchBends: { present: true, value: [] },
+                            },
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120);
+                await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(handleCc.mock.calls).toEqual([
+                    [64, 127, BEAT_FRAMES / 4, true],
+                    [64, 127, BEAT_FRAMES / 4, true],
+                ]);
+            });
             it('releases every pedal and controller a real schedule left engaged, on stop', async () => {
                 const levain = { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc: vi.fn() };
                 const grandBoule = {
