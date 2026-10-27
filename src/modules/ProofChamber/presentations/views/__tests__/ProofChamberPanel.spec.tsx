@@ -119,7 +119,7 @@ describe('ProofChamberPanel', () => {
         const { queryAllByRole } = render(<ProofChamberPanel deviceId="test-device" />);
         const buttons = queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(5);
-        expect(screen.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'lab' })).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('dispatches a decay-EQ band change with the contract `value` field', () => {

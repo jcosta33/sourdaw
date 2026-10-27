@@ -24,10 +24,8 @@ function deviceState(id: string) {
 
 async function selectTier(name: string): Promise<void> {
     const selector = screen.getByRole('group', { name: 'Effect control detail' });
-    fireEvent.click(within(selector).getByRole('button', { name, exact: true }));
-    await waitFor(() =>
-        expect(within(selector).getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'true')
-    );
+    fireEvent.click(within(selector).getByRole('button', { name }));
+    await waitFor(() => expect(within(selector).getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true'));
 }
 
 describe('Dutch Oven cumulative disclosure through the real project action', () => {
@@ -94,8 +92,11 @@ describe('Dutch Oven cumulative disclosure through the real project action', () 
             await selectTier(tier);
             for (const [floor, headings] of sections.entries()) {
                 for (const heading of headings) {
-                    if (floor <= level) expect(screen.getByText(heading)).toBeVisible();
-                    else expect(screen.queryByText(heading)).toBeNull();
+                    if (floor <= level) {
+                        expect(screen.getByText(heading)).toBeVisible();
+                    } else {
+                        expect(screen.queryByText(heading)).toBeNull();
+                    }
                 }
             }
             const knobFloors = [
@@ -107,8 +108,11 @@ describe('Dutch Oven cumulative disclosure through the real project action', () 
             ];
             for (const [floor, names] of knobFloors.entries()) {
                 for (const name of names) {
-                    if (floor <= level) expect(screen.getByRole('slider', { name, exact: true })).toBeVisible();
-                    else expect(screen.queryByRole('slider', { name, exact: true })).toBeNull();
+                    if (floor <= level) {
+                        expect(screen.getByRole('slider', { name })).toBeVisible();
+                    } else {
+                        expect(screen.queryByRole('slider', { name })).toBeNull();
+                    }
                 }
             }
             for (const [floor, names] of [
@@ -118,8 +122,11 @@ describe('Dutch Oven cumulative disclosure through the real project action', () 
                 [4, ['Modern', '80s', '70s']],
             ] as const) {
                 for (const name of names) {
-                    if (floor <= level) expect(screen.getAllByRole('button', { name, exact: true })[0]).toBeVisible();
-                    else expect(screen.queryByRole('button', { name, exact: true })).toBeNull();
+                    if (floor <= level) {
+                        expect(screen.getAllByRole('button', { name })[0]).toBeVisible();
+                    } else {
+                        expect(screen.queryByRole('button', { name })).toBeNull();
+                    }
                 }
             }
         }
@@ -132,8 +139,8 @@ describe('Dutch Oven cumulative disclosure through the real project action', () 
         const panel = render(<ProofChamberPanel deviceId="a" />);
         const before = structuredClone(trackStore.value?.tracks[0]?.devices[0]?.parameterValues);
         await selectTier('route');
-        fireEvent.click(screen.getByRole('button', { name: 'Decay EQ', exact: true }));
-        fireEvent.click(screen.getByRole('button', { name: 'Flow', exact: true }));
+        fireEvent.click(screen.getByRole('button', { name: 'Decay EQ' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Flow' }));
         expect(panel.container.querySelector('canvas.absolute')).not.toBeNull();
         expect(screen.getByText('Signal flow')).toBeVisible();
         await selectTier('shape');
@@ -159,7 +166,7 @@ describe('Dutch Oven cumulative disclosure through the real project action', () 
         act(() => chamberStore.set({ activeInstanceId: null, instances: {} }));
         const restored = render(<ProofChamberPanel deviceId="a" />);
         await waitFor(() =>
-            expect(screen.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute('aria-pressed', 'true')
+            expect(screen.getByRole('button', { name: 'lab' })).toHaveAttribute('aria-pressed', 'true')
         );
         await selectTier('play');
         expect(screen.queryByRole('slider', { name: 'Width' })).toBeNull();
@@ -167,7 +174,7 @@ describe('Dutch Oven cumulative disclosure through the real project action', () 
         expect(screen.getByRole('slider', { name: 'Width' })).toHaveAttribute('aria-valuenow', '1.37');
         restored.rerender(<ProofChamberPanel deviceId="b" />);
         await waitFor(() =>
-            expect(screen.getByRole('button', { name: 'shape', exact: true })).toHaveAttribute('aria-pressed', 'true')
+            expect(screen.getByRole('button', { name: 'shape' })).toHaveAttribute('aria-pressed', 'true')
         );
         expect(trackStore.value?.tracks[0]?.devices.map((device) => device.parameterValues)).toEqual(
             before?.tracks[0]?.devices.map((device) => device.parameterValues)

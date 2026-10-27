@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { chamberDisclosureLevelFromState } from '../../models/chamberDisclosureLevelFromState';
+import { chamberDisclosureLevelFromState } from '../../models/ChamberDisclosure';
 import { chamberStore } from '../../stores/chamberStore';
 
 /** Project UI metadata changes no engine parameter or live audio state. */

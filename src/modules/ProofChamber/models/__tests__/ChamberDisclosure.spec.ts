@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { chamberDisclosureLevelFromState } from '../chamberDisclosureLevelFromState';
+import { chamberDisclosureLevelFromState } from '../ChamberDisclosure';
 
 describe('Dutch Oven saved disclosure', () => {
     it.each([1, 2, 3, 4, 5] as const)('maps legacy numeric level %s without mutating its chunk', (level) => {
