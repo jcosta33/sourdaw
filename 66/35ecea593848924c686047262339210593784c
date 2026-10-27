@@ -1,0 +1,47 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_29d8df116c5b92::t_e05d98b876250c 455-457,1992-1993
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_29d8df116c5b92::t_1f88820a686e8a 55,559-579,631-640,647,1530,1534-1538
+src/modules/Arrangement/handlers/comping/__tests__/audioCompSourceInterval.integration.spec.ts
+  s_29d8df116c5b92::t_73a2b1da443bd3 5,10-11,42-47,52,58,738-744,793-799
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_29d8df116c5b92::t_cee711da736311 44-50
+src/modules/Arrangement/presentations/helpers/__tests__/handleCutToolUndo.spec.ts
+  s_29d8df116c5b92::t_84c8c74790b025 5,13,40
+src/modules/Arrangement/presentations/renderers/__tests__/audioWaveformSpan.spec.ts
+  s_29d8df116c5b92::t_9dd01828e8e610 16-17,22
+src/modules/Arrangement/presentations/renderers/audioWaveformSpan.ts
+  s_29d8df116c5b92::t_dadbb9cb2affd8 247
+src/modules/Arrangement/stores/__tests__/takeLaneSourcePrefixProjection.spec.ts
+  s_29d8df116c5b92::t_88c1ce09f6ccc2 47-66
+src/modules/Arrangement/stores/projectAudioSourcePrefixTracks.ts
+  s_29d8df116c5b92::t_d5d023749ea54f 27
+src/modules/Arrangement/useCases/comping/captureCompAudioSourceAuthorizations.ts
+  s_29d8df116c5b92::t_0ab052ba910d87 14-15,48-72
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_29d8df116c5b92::t_55f7e04167a229 11-12,16,262-267
+src/modules/Setlist/useCases/setlist/__tests__/setlistTempoCommand.integration.spec.ts
+  s_29d8df116c5b92::t_952d39524dc911 7,136-141,148,223,230
+src/modules/Transport/handlers/transport/__tests__/tempoSourcePrefix.integration.spec.ts
+  s_29d8df116c5b92::t_3345e079ea8e46 137,246,293,296-300,341-345,347-348,404-409
+src/modules/Transport/handlers/transport/handleSetTempo.ts
+  s_29d8df116c5b92::t_d69a2b9d489bcc 5,8,76-82
+src/utils/__tests__/tempoAudioSourcePromotion.spec.ts
+  s_29d8df116c5b92::t_6fc8e38e48c2e4 117-130,219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6635ecea593848924c686047262339210593784c",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
