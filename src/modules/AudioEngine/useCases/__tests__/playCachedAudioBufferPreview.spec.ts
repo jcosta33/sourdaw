@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => {
         start: vi.fn(),
         stop: vi.fn(),
         disconnect: vi.fn(),
-        beginAudioPreviewIntent: vi.fn(),
+        beginAudioPreviewIntent: vi.fn<() => ReturnType<typeof owner.beginOrdinary>>(),
         destination: {},
         buffer: {},
         source,
@@ -53,6 +53,14 @@ vi.mock('../../stores/audioBufferCache', () => ({
         get: mocks.audioBufferCacheGet,
     },
 }));
+
+function admittedIntent(): ReturnType<typeof owner.beginOrdinary> {
+    const admission = mocks.beginAudioPreviewIntent.mock.results.at(-1);
+    if (admission?.type !== 'return') {
+        throw new Error('The preview must have acquired its own intent.');
+    }
+    return admission.value;
+}
 
 describe('playCachedAudioBufferPreview', () => {
     beforeEach(() => {
@@ -123,6 +131,7 @@ describe('playCachedAudioBufferPreview', () => {
         playback.stop();
         playback.stop();
         ended();
+        expect(admittedIntent().isCurrent()).toBe(false);
         expect(mocks.stop).toHaveBeenCalledTimes(1);
         expect(mocks.disconnect).toHaveBeenCalledTimes(1);
         expect(onEnded).toHaveBeenCalledTimes(1);
@@ -139,6 +148,7 @@ describe('playCachedAudioBufferPreview', () => {
         ended();
         playback.stop();
         ended();
+        expect(admittedIntent().isCurrent()).toBe(false);
         expect(mocks.stop).not.toHaveBeenCalled();
         expect(mocks.disconnect).toHaveBeenCalledTimes(1);
         expect(onEnded).toHaveBeenCalledTimes(1);
@@ -203,12 +213,7 @@ describe('playCachedAudioBufferPreview', () => {
             throw failure;
         });
         expect(() => playCachedAudioBufferPreview({ bufferId: 'preview', onEnded })).toThrow(failure);
-        const admission = mocks.beginAudioPreviewIntent.mock.results.at(-1);
-        if (admission?.type !== 'return') {
-            throw new Error('The preview must have acquired its own intent.');
-        }
-        const intent: ReturnType<typeof owner.beginOrdinary> = admission.value;
-        expect(intent.isCurrent()).toBe(false);
+        expect(admittedIntent().isCurrent()).toBe(false);
         expect(onEnded).not.toHaveBeenCalled();
     });
 
