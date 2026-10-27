@@ -1,0 +1,34 @@
+src/modules/Arrangement/useCases/comping/prepareOriginalMidiTakeRowReplacement.ts
+  s_29d8df116c5b92::t_86c172b86c8114 1-140
+src/modules/Arrangement/handlers/takeLane/replaceOriginalMidiTakeRow.ts
+  s_29d8df116c5b92::t_0d808e243f0436 43
+  s_29d8df116c5b92::t_66be04f24b143c 48-51
+  s_29d8df116c5b92::t_83f31b109eb36a 12
+src/modules/MIDI/useCases/webMidiInput/sealHeldRecordedMidiNotes.ts
+  s_29d8df116c5b92::t_0d808e243f0436 2-3,6,10
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_29d8df116c5b92::t_0d808e243f0436 4,16,18
+  s_29d8df116c5b92::t_66be04f24b143c 385
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_29d8df116c5b92::t_a453d60a75759a 26,46,57
+src/modules/Arrangement/useCases/comping/replaceOriginalMidiTakeRow.ts
+  s_29d8df116c5b92::t_c1995261bbe405 3,5
+src/modules/MIDI/useCases/webMidiInput/createRecordedAdmittedMidiNote.ts
+  s_29d8df116c5b92::t_8243e225dace63 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "80960ed490270a2b1985d5a1b066f439754d077f",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
