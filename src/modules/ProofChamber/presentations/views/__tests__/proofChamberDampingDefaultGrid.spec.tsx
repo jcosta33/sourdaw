@@ -40,6 +40,8 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
+    // Unread graph stub: disclosure's project-identity import also reaches reset helpers.
+    resetActionReplayAuthority: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
