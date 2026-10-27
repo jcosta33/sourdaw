@@ -274,16 +274,17 @@ function changedMidiRows<Row extends { readonly id: string }>(
         const changed = previous.flatMap((row, index) =>
             valuesEqual(row, following[index]) ? [] : [{ expected: row, replacement: following[index]! }]
         );
-        return changed.length === 1
-            ? [
-                  operation(
-                      cloneValue(changed[0]!.expected),
-                      cloneValue(changed[0]!.replacement),
-                      before.present,
-                      next.present
-                  ),
-              ]
-            : null;
+        if (changed.length !== 1) {
+            return null;
+        }
+        return [
+            operation(
+                cloneValue(changed[0]!.expected),
+                cloneValue(changed[0]!.replacement),
+                before.present,
+                next.present
+            ),
+        ];
     }
     if (following.length === previous.length + 1 && valuesEqual(previous, following.slice(0, -1))) {
         return [operation(null, cloneValue(following[following.length - 1]!), before.present, next.present)];
@@ -718,9 +719,10 @@ function replaceCapturedMidiRow<Row extends { readonly id: string }>(
         return null;
     }
     if (expected === null) {
-        return replacement && !rows.some((row) => row.id === replacement.id)
-            ? [...rows, cloneValue(replacement)]
-            : null;
+        if (!replacement || rows.some((row) => row.id === replacement.id)) {
+            return null;
+        }
+        return [...rows, cloneValue(replacement)];
     }
     if (replacement !== null && expected.id !== replacement.id) {
         return null;

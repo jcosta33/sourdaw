@@ -49,7 +49,7 @@ export function prepareOriginalMidiBaseRowReplacement(
     if (!payload.replacementSlotPresent && nextRows.length > 0) {
         return null;
     }
-    const notesByClipId = { ...state.notesByClipId };
+    const notesByClipId = { ...state.notesByClipId, [payload.clipId]: nextRows };
     if (payload.replacementSlotPresent) {
         notesByClipId[payload.clipId] = nextRows;
     } else {

@@ -1662,7 +1662,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
                 event.preventDefault();
-                const ids = [...new Set([...selectedNoteIds].map(storedNoteId))];
+                const ids = [...new Set(Array.from(selectedNoteIds, storedNoteId))];
                 const snapshotBefore = snapshotClipNotes(singleClip);
                 legatoNotes(singleClip, ids);
                 const snapshotAfter = snapshotClipNotes(singleClip);
@@ -1685,7 +1685,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 if (splitBeat !== undefined) {
                     event.preventDefault();
                     event.stopPropagation();
-                    const ids = [...new Set([...selectedNoteIds].map(storedNoteId))];
+                    const ids = [...new Set(Array.from(selectedNoteIds, storedNoteId))];
                     const snapshotBefore = snapshotClipNotes(singleClip);
                     splitNoteAtBeat(singleClip, ids, splitBeat);
                     const snapshotAfter = snapshotClipNotes(singleClip);
@@ -1709,7 +1709,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
                 event.preventDefault();
-                const ids = [...new Set([...selectedNoteIds].map(storedNoteId))];
+                const ids = [...new Set(Array.from(selectedNoteIds, storedNoteId))];
                 const snapshotBefore = snapshotClipNotes(singleClip);
                 joinNotes(singleClip, ids);
                 const snapshotAfter = snapshotClipNotes(singleClip);

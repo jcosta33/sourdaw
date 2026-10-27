@@ -36,9 +36,10 @@ function replaceRow<Row extends { readonly id: string }>(
         return null;
     }
     if (expected === null) {
-        return replacement && !rows.some((row) => row.id === replacement.id)
-            ? [...rows, structuredClone(replacement)]
-            : null;
+        if (!replacement || rows.some((row) => row.id === replacement.id)) {
+            return null;
+        }
+        return [...rows, structuredClone(replacement)];
     }
     if (replacement !== null && expected.id !== replacement.id) {
         return null;

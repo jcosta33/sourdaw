@@ -1,6 +1,6 @@
 import { isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
 
-import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
+import { type resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 
 type PlayedClip = ReturnType<typeof resolvePlayedMidiClips>[number];
 

@@ -43,12 +43,13 @@ export function projectMidiNoteMenuTransform(notes: readonly MidiNote[], transfo
             return setMidiVelocities({ notes, velocity: transform.velocity });
         case 'snap-scale': {
             const project = projectStore.value;
-            return project
-                ? notes.map((note) => ({
-                      ...note,
-                      pitch: quantizeMidiNoteToScale(note.pitch, project.keyRoot, project.scaleName),
-                  }))
-                : notes.map((note) => ({ ...note }));
+            if (!project) {
+                return notes.map((note) => Object.assign({}, note));
+            }
+            return notes.map((note) => ({
+                ...note,
+                pitch: quantizeMidiNoteToScale(note.pitch, project.keyRoot, project.scaleName),
+            }));
         }
         case 'humanize': {
             const random = createSeededRandom(transform.seed);
