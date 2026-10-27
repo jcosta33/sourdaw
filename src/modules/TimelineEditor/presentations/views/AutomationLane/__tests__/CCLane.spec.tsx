@@ -604,7 +604,11 @@ describe('CCLane', () => {
                 channel: 0,
                 beat: 0,
             });
-            expect(restoreMidiCCPoints).toHaveBeenCalledWith('clip-1', [], []);
+            expect(restoreMidiCCPoints).toHaveBeenCalledWith(
+                'clip-1',
+                [],
+                [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }]
+            );
             expect(revisitHandEditedCCReturns).not.toHaveBeenCalled();
             redoFn!();
             expect(revisitHandEditedCCReturns).toHaveBeenCalledWith(
@@ -981,9 +985,7 @@ describe('CCLane', () => {
             });
             expect(restoreMidiCCPoints).toHaveBeenCalledWith(
                 'clip-1',
-                [
-                    { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
-                ],
+                [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }],
                 [{ id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 }]
             );
             expect(revisitHandEditedCCReturns).not.toHaveBeenCalled();
@@ -997,7 +999,6 @@ describe('CCLane', () => {
     });
 });
 
-
 const actualMidiUseCases = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
 
 describe('CCLane return-family history with real MIDI edits', () => {
@@ -1008,7 +1009,16 @@ describe('CCLane return-family history with real MIDI edits', () => {
         return [
             { id: `${key}:rpn-0`, controller: 101, value: 0, beat, channel: 0 },
             { id: `${key}:rpn-1`, controller: 100, value: 0, beat, channel: 0 },
-            ...[[101, 0], [100, 0], [6, 2], [38, 0], [99, 1], [98, 1]].map(([controller, value], index) => ({
+            ...(
+                [
+                    [101, 0],
+                    [100, 0],
+                    [6, 2],
+                    [38, 0],
+                    [99, 1],
+                    [98, 1],
+                ] as const
+            ).map(([controller, value], index) => ({
                 id: `${key}:rpn-after-carried-${index}`,
                 controller,
                 value,
@@ -1020,6 +1030,19 @@ describe('CCLane return-family history with real MIDI edits', () => {
 
     function rows(): MidiCC[] {
         return laneMocks.midiState.ccByClipId['clip-1'] ?? [];
+    }
+
+    function rangeAt(beat: number): number | undefined {
+        return actualMidiUseCases.projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 0, endBeat: 8 },
+                    controlChanges: rows(),
+                    pitchBends: [{ id: 'later-bend', value: 4096, beat, channel: 0 }],
+                },
+            ],
+            frameAtBeat: (value) => value * 24_000,
+        })[0]?.rangeSemitones;
     }
 
     function replay(): { undo: () => void; redo: () => void } {
@@ -1045,17 +1068,23 @@ describe('CCLane return-family history with real MIDI edits', () => {
     });
 
     it('restores exact rows and same-beat order after adding, undoing and redoing a hand range', () => {
-        laneMocks.midiState.ccByClipId['clip-1'] = headRows(0, 'cc-split:right');
+        laneMocks.midiState.ccByClipId['clip-1'] = [
+            ...headRows(0, 'cc-split:right'),
+            { id: 'other-channel', controller: 6, value: 11, beat: 0, channel: 1 },
+        ];
         const before = [...rows()];
         render(<CCLane {...props} />);
         fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
         const committed = [...rows()];
         expect(committed).not.toEqual(before);
+        expect(rangeAt(3)).toBe(7);
         const { undo, redo } = replay();
         undo();
         expect(rows()).toEqual(before);
+        expect(rangeAt(3)).toBe(2);
         redo();
         expect(rows()).toEqual(committed);
+        expect(rangeAt(3)).toBe(7);
     });
 
     it('restores both heads exactly when a hand range moves between carried return families', () => {
@@ -1078,7 +1107,10 @@ describe('CCLane return-family history with real MIDI edits', () => {
     });
 
     it('restores exact rows after deleting a hand range and redoes the committed family', () => {
-        laneMocks.midiState.ccByClipId['clip-1'] = headRows(0, 'cc-split:right');
+        laneMocks.midiState.ccByClipId['clip-1'] = [
+            ...headRows(0, 'cc-split:right'),
+            { id: 'other-channel', controller: 6, value: 11, beat: 0, channel: 1 },
+        ];
         actualMidiUseCases.addMidiCC('clip-1', 6, 7, 0, 0, 'hand-coarse');
         actualMidiUseCases.addMidiCC('clip-1', 38, 50, 0, 0, 'hand-fine');
         const before = [...rows()];
@@ -1088,6 +1120,26 @@ describe('CCLane return-family history with real MIDI edits', () => {
         fireEvent.doubleClick(point!);
         const committed = [...rows()];
         expect(committed).not.toEqual(before);
+        const { undo, redo } = replay();
+        undo();
+        expect(rows()).toEqual(before);
+        redo();
+        expect(rows()).toEqual(committed);
+    });
+
+    it('restores rows a shortened rewritten family no longer holds when the add is undone', () => {
+        const head = headRows(0, 'cc-split:right');
+        laneMocks.midiState.ccByClipId['clip-1'] = [
+            ...head,
+            { id: 'cc-split:right:rpn-after-carried-6', controller: 99, value: 1, beat: tick, channel: 0 },
+            { id: 'cc-split:right:rpn-after-carried-7', controller: 98, value: 1, beat: tick, channel: 0 },
+            { id: 'peer-controller', controller: 11, value: 64, beat: tick, channel: 0 },
+        ];
+        const before = [...rows()];
+        render(<CCLane {...props} />);
+        fireEvent.click(screen.getByRole('group'), { clientX: 8, clientY: valueToY(7, 80) });
+        const committed = [...rows()];
+        expect(actualMidiUseCases.getHandEditedReturnFamily(committed, { channel: 0, beat: 0 })).toHaveLength(6);
         const { undo, redo } = replay();
         undo();
         expect(rows()).toEqual(before);

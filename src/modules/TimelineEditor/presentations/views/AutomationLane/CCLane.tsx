@@ -7,6 +7,7 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
     addMidiCC,
+    getHandEditedReturnFamily,
     removeHandEditedReturnFamily,
     removeMidiCC,
     moveMidiCC,
@@ -95,14 +96,13 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                 // The sweep runs first and returns what it removed: a rewrite reuses the family's
                 // own ids (so the family never shows up in the click-time displaced capture), and
                 // the undo restores those rows from the pre-click list after removing the point.
-                const removedFamily = removeHandEditedReturnFamily(clipId, head);
+                removeHandEditedReturnFamily(clipId, head);
                 removeMidiCC(clipId, cc.id);
-                // The swept rows carry their standing ids; their pre-gesture values live in the
-                // click capture, so the restore maps the swept ids back onto the captured rows.
-                const removedIds = new Set(removedFamily.map((row) => row.id));
+                // The rewrite may shorten the family, so restore every captured family row,
+                // including ids that no longer stand when the undo sweeps it.
                 restoreMidiCCPoints(
                     clipId,
-                    [...preClickPoints, ...allCc.filter((context: MidiCC) => removedIds.has(context.id))].filter(
+                    [...preClickPoints, ...getHandEditedReturnFamily(allCc, head)].filter(
                         (context: MidiCC, index, list) => list.findIndex((row) => row.id === context.id) === index
                     ),
                     allCc
@@ -149,8 +149,8 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                 const finalBeat = finalPoint.beat;
                 const finalValue = finalPoint.value;
                 // Moving a hand point off or along a clip's head changes what its returns must restore, so
-                // both the head it left and the one it joined are revisited; the undo and redo replay the
-                // same revisits after the move, and a revisit that finds nothing to change is a no-op.
+                // both the head it left and the one it joined are revisited on commit and redo.
+                // Undo restores their captured rows because a revisit is not an inverse.
                 const edited = { editedController: finalPoint.controller, editedRowId: finalPoint.id };
                 const revisitBothEnds = (): void => {
                     revisitHandEditedCCReturns(clipId, { channel: finalPoint.channel, beat: origBeat }, edited);
@@ -164,14 +164,16 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                         // The undo restores the pre-drag rows exactly: the sweep takes whatever
                         // family the commit's revisit left standing, and the pre-drag capture
                         // hands back the rows those ids replaced. The revisit is not an inverse.
-                        const swept = removeHandEditedReturnFamily(clipId, {
-                            channel: finalPoint.channel,
-                            beat: origBeat,
-                        });
-                        const sweptIds = new Set(swept.map((row) => row.id));
+                        const heads = [origBeat, finalBeat].map((beat) => ({ channel: finalPoint.channel, beat }));
+                        for (const head of heads) {
+                            removeHandEditedReturnFamily(clipId, head);
+                        }
+                        const capturedIds = new Set(
+                            heads.flatMap((head) => getHandEditedReturnFamily(preDragRows, head).map((row) => row.id))
+                        );
                         restoreMidiCCPoints(
                             clipId,
-                            preDragRows.filter((context: MidiCC) => sweptIds.has(context.id)),
+                            preDragRows.filter((context: MidiCC) => capturedIds.has(context.id)),
                             preDragRows
                         );
                     },
@@ -202,8 +204,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             // Undo re-inserts just the removed point by id: a sibling sharing its
             // key survives, and rows other controllers hold are never overwritten.
             // Deleting the head's hand point changes what its returns must restore,
-            // so every gesture direction ends in a revisit; one that finds nothing
-            // to change is a no-op.
+            // so removal and redo revisit it. Undo restores its captured rows exactly.
             const head = { channel: point.channel, beat: point.beat };
             const edited = { editedController: point.controller, editedRowId: point.id };
             // The pre-delete rows ride the undo: a same-beat sibling the point preceded must
@@ -215,11 +216,10 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             pushUndoEntry(
                 'Remove CC point',
                 () => {
-                    const swept = removeHandEditedReturnFamily(clipId, head);
-                    const sweptIds = new Set(swept.map((row) => row.id));
+                    removeHandEditedReturnFamily(clipId, head);
                     restoreMidiCCPoints(
                         clipId,
-                        [point, ...preDeleteRows.filter((context: MidiCC) => sweptIds.has(context.id))],
+                        [point, ...getHandEditedReturnFamily(preDeleteRows, head)],
                         preDeleteRows
                     );
                 },
