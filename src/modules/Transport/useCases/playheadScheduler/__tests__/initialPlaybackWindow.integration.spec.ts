@@ -282,7 +282,11 @@ function midiTrack(id: string, clipId: string, yeast: boolean, startBeat = 1.5) 
     };
 }
 
-function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[number], audioStartBeat = 1.5) {
+function programmeTracks(
+    recordingClip?: ReturnType<typeof startRecording>[number],
+    audioStartBeat = 1.5,
+    midiStartBeat = 1.5
+) {
     const audio = {
         id: 'audio',
         type: 'audio',
@@ -298,7 +302,9 @@ function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[numbe
         fadeOutBeats: 0,
         gain: 1,
     };
-    const plainClips: Array<ReturnType<typeof midiClip> | NonNullable<typeof recordingClip>> = [midiClip('plain-midi')];
+    const plainClips: Array<ReturnType<typeof midiClip> | NonNullable<typeof recordingClip>> = [
+        midiClip('plain-midi', midiStartBeat),
+    ];
     const audioClips: Array<typeof audio | NonNullable<typeof recordingClip>> = [audio];
     if (recordingClip?.trackId === 'plain-track') {
         plainClips.push(recordingClip);
@@ -312,7 +318,7 @@ function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[numbe
             armed: recordingClip?.trackId === 'plain-track',
             clips: plainClips,
         },
-        midiTrack('yeast-track', 'yeast-midi', true),
+        midiTrack('yeast-track', 'yeast-midi', true, midiStartBeat),
         {
             id: 'audio-track',
             kind: 'audio',
@@ -326,8 +332,8 @@ function programmeTracks(recordingClip?: ReturnType<typeof startRecording>[numbe
     ];
 }
 
-function seedProject(): void {
-    trackStoreState.value = { tracks: programmeTracks() };
+function seedProject(position = 1.5): void {
+    trackStoreState.value = { tracks: programmeTracks(undefined, position, position) };
     const note = (id: string, pitch: number, startBeat: number) => ({
         id,
         pitch,
@@ -346,7 +352,7 @@ function seedProject(): void {
     transportStoreState.value = {
         ...defaultTransportState,
         tempo: 120,
-        playheadPosition: 1.5,
+        playheadPosition: position,
         isPlaying: false,
         preRollEnabled: false,
     };
@@ -405,6 +411,28 @@ describe('initial browser playback window', () => {
         disposePlayheadScheduler();
         vi.unstubAllGlobals();
     });
+
+    it.each([
+        { tempo: 100, position: 0 },
+        { tempo: 123, position: 0.125 },
+        { tempo: 140, position: 0.25 },
+    ])(
+        'emits the first prepared MIDI and audio window at $tempo BPM from beat $position',
+        async ({ tempo, position }) => {
+            seedProject(position);
+            transportStoreState.value = { ...transportStoreState.value!, tempo };
+            playheadClockRef.beat = position;
+            const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
+
+            await startPlayback(onRoll);
+
+            expect(onRoll).toHaveBeenCalledExactlyOnceWith(8.1, position);
+            expect(transportStoreState.value?.isPlaying).toBe(true);
+            expect(sources).toHaveLength(1);
+            expect(sources[0]!.start.mock.calls[0]?.[0]).toBe(8.1);
+            expect(notes.map(({ pitch }) => pitch)).toEqual([60, 62, 67]);
+        }
+    );
 
     it('prepares pending Yeast before one shared roll and preserves the attack despite a delayed first Worker tick', async () => {
         const ready = Promise.withResolvers<void>();
