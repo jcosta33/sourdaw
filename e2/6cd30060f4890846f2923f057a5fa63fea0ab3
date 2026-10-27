@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_29d8df116c5b92::t_8c573a7de7178c 23-33,97
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_29d8df116c5b92::t_9548912662795f 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e26cd30060f4890846f2923f057a5fa63fea0ab3",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

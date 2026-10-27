@@ -1,0 +1,29 @@
+src/modules/Command/useCases/__tests__/commitRedoInverseCapture.spec.ts
+  s_29d8df116c5b92::t_e27aebae98024d 25-26
+src/modules/Command/useCases/captureRecordedRedoContext.ts
+  s_29d8df116c5b92::t_93b591395655a1 1-21
+src/modules/Command/useCases/commitRedoInverseCapture.ts
+  s_29d8df116c5b92::t_ced96b1b0052a7 2,7-8,125,133
+src/modules/Command/useCases/executeAppAction.ts
+  s_29d8df116c5b92::t_bd6f9495368f46 25-26
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_29d8df116c5b92::t_1b68789097bfa6 30-31
+src/modules/Command/useCases/findPendingRedoEntry.ts
+  s_29d8df116c5b92::t_433d280f43d7c7 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "92beb17594465de7a5e8d618fa1618b0ace81449",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+src/modules/Arrangement/useCases/device/__tests__/coldImportedDeviceEdits.integration.spec.ts
+  s_b3201877f50e8a::t_e3b48b43a89a81 259-261,269-272
+  s_b3201877f50e8a::t_b7e67f42426c31 233-236,238-258,262-268,273-280
+  s_b3201877f50e8a::t_9f6ab3379adcdd 237
+src/modules/Arrangement/useCases/device/restoreDevice.ts
+  s_b3201877f50e8a::t_4101b7e9580c23 7,110,112,115-116,118,140-146,148-151,155-156,158,160
+src/modules/Arrangement/useCases/device/__tests__/restoreDevice.spec.ts
+  s_b3201877f50e8a::t_7a54861fcbfea5 142-245
+  s_b3201877f50e8a::t_a6060634afdeef 9,27-29,40-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ff1a6e0c0babdae01c6edb697fd0612c3fa493d",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

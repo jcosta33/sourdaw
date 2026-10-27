@@ -1,0 +1,27 @@
+.github/workflows/validation.yml
+  s_b3201877f50e8a::t_38d73b6706b57f 631-634,636,639-641,644-645
+  s_b3201877f50e8a::t_f740957a8c1079 642-643
+  s_b3201877f50e8a::t_8107c2841e6fd0 635,637-638
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_b3201877f50e8a::t_f740957a8c1079 82-83
+  s_b3201877f50e8a::t_334fe27d80b1e5 74,76,79-81,84-86
+  s_b3201877f50e8a::t_8107c2841e6fd0 75,77-78
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_b3201877f50e8a::t_5c1f5fff954196 1030-1033
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef8e137b69e362d8fc8e5b8bba15bf4e9656a2df",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
