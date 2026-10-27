@@ -74,6 +74,9 @@ vi.mock('#/infra/di/Container', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
     getTrackEligibility: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
     readMusicalRangeInputs: vi.fn(() => []),
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),

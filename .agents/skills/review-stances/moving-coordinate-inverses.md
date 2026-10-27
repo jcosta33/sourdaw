@@ -40,3 +40,28 @@ finite extremes, then overflow each row type separately with a finite displaceme
 owner refusal, handler `no-write`, and unchanged clip and all row types; exercise raw-document
 and history preservation through the real command wherever the fixture codec admits the input.
 Keep ordinary and zero captures, the configured-loop control and keyless replay behavior intact.
+
+## Legacy inverse admission after a coordinate-capture repair
+
+PR #5022 introduced the moving loop basis described above. PR #5578 captures the old
+offset for new trims, but historical trim inverses produced before that repair carry no
+`midiOffsetBeats`. A loop phase cannot recover the discarded quotient or the original row
+displacement. Replaying the opposite trim can therefore consume Undo while restoring the
+wrong offset and rows. Historical review prompts and model tiers are unverified.
+
+Produce the old inverse with the real historical Command handler, preserve its original
+document and session-history bytes, then hydrate through the current production reader.
+Require an unauthenticated MIDI inverse to leave the document, rows and pending history
+unchanged, with a warning. Zero distance is not proof of preservation: slip to an
+unnormalized whole-loop offset while looping is off, enable looping, then trim at the
+unchanged start. The forward trim can normalize the offset and translate every row;
+its present normalized phase cannot authenticate the original figures. Refuse both
+normalized and unnormalized legacy zero-distance inverses without a capture.
+The current loop mode cannot authenticate the old mode: a peer can disable looping
+after a trim has already wrapped its coordinates. Disable looping on the genuinely
+saved duration-derived case, then require the same refusal with the peer state intact.
+Keep the original loop-disabled MIDI fixture as a conservative refusal control.
+Preserve audio and current capture-bearing zero-distance Undo/Redo controls, including
+zero captures and whole-loop captures. Removing replay admission must fail the unsafe
+historical case; deleting a capture field from a modern fixture cannot establish
+historical compatibility.

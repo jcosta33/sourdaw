@@ -6,6 +6,47 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — start-only preview checks missed resource and owner teardown (preserved by PR #187)
+
+PR #187 (`8c11c40674b32074a12a209b308d3361e93fe873`) extracted the cached-preview helper
+with cases for starting a source and a missing buffer. Those checks did not observe disconnect,
+repeated Stop, natural completion or engine reset/disposal. The stop-only source behavior already
+existed in commit `454de02a76069e5cec5fcee104eb9a64521e2f97`, for which GitHub reports no
+associated PR; exact historical private reviewer prompts and tiers are unknown.
+
+Capture a real playback handle and its ended callback. Deliver Stop twice and then the old callback;
+require one stop, disconnect, release and completion notification. Natural completion must release
+without stopping an already-ended source. Throw from stop and disconnect and still require owner
+release. Exercise actual engine reset/dispose and reentrant callbacks, not only an intent stub.
+Remove the abort subscription, disconnect, release or reset invalidation separately; each named
+spec must fail its corresponding probe while the ordinary-preview control survives. Keep the
+offline/live graph, drag-handoff PCM and Undo/Redo fixtures using the real intent registry and
+explicit playback cleanup when the engine contract changes.
+
+### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
+
+PR #5388 changed a declared campaign fixture while the web-gated unit matrix skipped its
+freshness assertion. The cross-language validation obligation was missed; historical private
+review prompts and models are unavailable. Require the existing freshness case in required
+static validation without broadening web or browser selection. Change a real declared fixture
+without restamping its digest and require the case to fail on that path and digest; separately
+remove the static step and require the workflow contract to fail.
+
+### 2026-10-26 — argument-forwarding mocks accepted a stale rewrite destination (introduced by PR #4271)
+
+PR #4271 (`c5bfeda9bfeb68c934479536f3103221a853d940`) asserted that delivery forwarded the
+PR snapshot's cached base to git-ai. It never built the advanced-main graph that makes that input
+wrong: a three-commit feature squashed after unrelated main commits can take git-ai 1.7.5's rebase
+route and select those unrelated commits (#5711). Historical private reviewer model, tier, and stance
+are unknown; the public approval names refspec and skip-push probes, not destination ancestry.
+
+Exercise the actual delivery shell adapter over a real Git graph, with main advanced both before and
+after the squash. The emitted destination must equal the raw landed commit's sole available parent,
+and restoring cached-base forwarding must redden the case. Keep unavailable, zero, multiple, and
+malformed parent refusals observable before any rewrite or notes push. A portable adapter test proves
+argument selection and admission only; separately exercise the installed tool in a hermetic repository
+to prove its classification, full source-note union, and preservation of unrelated note blobs.
+
 ### 2026-10-25 — current-ref fixtures omitted the old child's historical dependency (introduced by PR #5615)
 
 PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) tested branch/ref identity while
@@ -1350,3 +1391,58 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+## Historical replay fixtures must retain the real producer and reader
+
+PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
+that old saved inverses remain safe. Generate historical actions, document records and the
+witness-stamped session mirror with the untouched historical producer. Keep those bytes
+and hydrate them with the current production reader before invoking real Undo. A `.sdaw`
+file alone does not contain the session Undo mirror. Historical review prompts and model
+tiers are unverified; the missing proof joined historical production, current hydration and real Undo.
+
+Assert the actual pending entry, tree cursor and settled mirror alongside raw project
+contents. Reverting admission must consume the unsafe entry or alter its coordinates and
+fail the named case. Preserve independently produced compatible controls. Historical
+trim/slip handlers are singleton handlers, and hydration excludes internal restore
+prefixes; synthetic direct groups test defensive APIs, not supported saved grouped history.
+
+Derive hydrated entry counts from the saved mirror: the historical producer may run
+setup commands without retaining them in that mirror. Admit the genuine trim and its
+keyless inverse unconditionally before checking refusal. A zero-distance regression
+must include an unnormalized offset produced with looping off, then enable a loop and
+trim at the same start. Preserve its exact saved bytes and require the old reader's
+consumed history, absent warning and displaced raw rows to fail the new refusal oracle.
+The normalized zero-distance control is also a conservative refusal, not proof that
+the current phase identifies the old offset. Keep real current captures of zero and
+a whole-loop offset and compare raw owner coordinates through Undo and Redo.
+
+Current loop mode cannot stand in for historical mode. Load the authentic looping
+fixture, disable looping through a peer mutation and real projection, then require
+visible refusal with all peer state and pending history intact. The original loop-off
+MIDI fixture is also a conservative refusal; genuine audio remains the replay control.
+When broader refusal makes a former post-wait or prefix test reject from its starting
+state, replace that test with an eligible audio target. Hold the actual snapshot wait,
+remove the target through public CRDT mutation and projection, and capture the peer
+snapshot before releasing the transaction. Moving admission before the wait must
+consume history and fail the case. In a synthetic direct unit, a callback prefix that
+removes the audio target must remain uncalled: removing only its early guard must fail
+full state preservation even though later admission still throws the same error class.
+Snapshot all action payloads, history IDs and tree entries while retaining callback
+function identity; do not drop callback members or attempt to structured-clone them.
+
+### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
+
+PR #5274 (`40baa0716b`) introduced fail-closed file-inspection diagnostics; PR #5365 (`75b10ca71b`)
+refreshed whole and scoped catalogs for missing descriptor types while diagnostics still stopped
+immediately. Exact historical private reviewer prompts and tiers are unknown. Before merge, #5730's
+initial repair retained the diagnostic only at expiry: a later failed process list instead reported
+transient-eligible `process-users-unavailable`, without complete replacement proof.
+
+Run `refreshes an incomplete Darwin` whole/scoped cases with complete clear and holder replacements,
+persistent diagnostics, and later omissions. Run `keeps a Darwin ... diagnostic stable after` sequence
+cases with failed/unusable opening and closing process lists, missing/changed-UID identity, and later
+whole/scoped/parent inspection failures. Require retained storage and a stable, non-transient reason
+on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
+or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
+or add inspection diagnostics to the warning-success allowlist.

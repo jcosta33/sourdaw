@@ -1,7 +1,7 @@
 /**
  * Pull-model seam for durable audio ownership (issue #3777): the provider the
- * collectors call to fetch the buffer ids durably owned by saved named
- * projects and retained checkpoints/branches.
+ * collectors call to fetch saved named owners and the open project's live
+ * references. Checkpoint and prepared ownership are checked separately.
  *
  * Ownership is enumerated from the persisted project data at collection time
  * rather than recorded into a second registry, so it cannot drift from what
@@ -14,7 +14,16 @@
  * unknown, so destructive storage operations refuse primary deletion because
  * no buffer can be proven unowned.
  */
-export type DurableAudioBufferOwnershipProvider = () => Promise<readonly string[]>;
+export type DurableAudioBufferOwnershipSnapshot = {
+    ids: readonly string[];
+    /** Local admission witness, rechecked after asynchronous reads. It does
+     * not synchronize another renderer or prevent changes during IDB commit. */
+    isCurrent: () => boolean;
+};
+
+export type DurableAudioBufferOwnershipProvider = () => Promise<
+    readonly string[] | DurableAudioBufferOwnershipSnapshot
+>;
 
 let provider: DurableAudioBufferOwnershipProvider | null = null;
 
@@ -24,6 +33,6 @@ export function setDurableAudioBufferOwnershipProvider(next: DurableAudioBufferO
 
 /** Resolves the durable owned-id set, or `null` when no provider is
  * registered. A provider rejection propagates to the caller. */
-export function fetchDurableOwnedAudioBufferIds(): Promise<readonly string[]> | null {
+export function fetchDurableOwnedAudioBufferIds(): ReturnType<DurableAudioBufferOwnershipProvider> | null {
     return provider?.() ?? null;
 }
