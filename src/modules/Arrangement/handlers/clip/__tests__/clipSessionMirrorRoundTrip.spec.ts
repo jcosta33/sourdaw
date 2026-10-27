@@ -47,6 +47,7 @@ import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases'
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { resolveAudioTakeSource } from '#/utils/audioSourceTime';
 import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { type AppAction } from '#/utils/handlerContract';
 import {
@@ -1921,8 +1922,37 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
             );
             expect(takeLaneStore.value?.lanes.find((lane) => lane.id === 'sole-rekey-lane')?.takes).toEqual([
-                { ...rightTake, clipId: 'split-right', endBeat: 4 },
+                {
+                    ...rightTake,
+                    clipId: 'split-right',
+                    endBeat: 4,
+                    passOriginBeat: 0,
+                    passOriginSourceSeconds: 2,
+                },
             ]);
+            const expectRightPhysicalSource = () => {
+                const take = takeLaneStore.value?.lanes
+                    .find((lane) => lane.id === 'sole-rekey-lane')
+                    ?.takes.find((take) => take.id === rightTake.id);
+                const clip = clipOnTrack(TRACK_ID, 'split-right');
+                if (!take || !clip) {
+                    throw new Error('Expected the surviving right take and its owner clip');
+                }
+                const physical = resolveAudioTakeSource(take, clip, {
+                    secondsAtBeat: (beat) => beat / 2,
+                    beatAtSeconds: (seconds) => seconds * 2,
+                    tempoAtBeat: () => 120,
+                });
+                if (!physical || 'status' in physical) {
+                    throw new Error('Expected the captured placed pass to resolve its physical source');
+                }
+                // At 120 BPM the original four-beat media entry is 2s. Ripple
+                // moves its origin to beat 0; the pass begins at -2.5s, so its
+                // 2s depth reads source 5.5s–6.5s over the right fragment [2, 4).
+                expect(physical.offsetSecondsAt(2)).toBe(5.5);
+                expect(physical.offsetSecondsAt(4)).toBe(6.5);
+            };
+            expectRightPhysicalSource();
             const late = {
                 ...createTake('split-right', 'Late right pass', 2, 4, 0.5),
                 id: 'late-right-take',
@@ -1967,12 +1997,14 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 const takes = takeLaneStore.value!.lanes.flatMap((lane) => lane.takes);
                 expect(new Set(takes.map((take) => take.id)).size).toBe(takes.length);
                 expect(takes.every((take) => liveClipIds.has(take.clipId))).toBe(true);
+                expectRightPhysicalSource();
                 expect(takeLaneStore.value?.lanes.find((lane) => lane.id === peerLane.id)).toEqual(peerLane);
                 await vi.waitFor(() =>
                     expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
                 );
                 reloadSavedProject();
                 expect(ownerProjections()).toEqual(forward);
+                expectRightPhysicalSource();
             }
         }
     );
