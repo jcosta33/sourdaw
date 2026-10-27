@@ -1,0 +1,33 @@
+package.json
+  s_567a084d0540c4::t_e37813009fbcaf 191
+pnpm-lock.yaml
+  s_567a084d0540c4::t_572526b9cd0d07 113,119,125,158,241-242,245,5560-5561,5566,7489,7496,7678,7683,7739,7748,7752,7892,8253,8256,8258,8271,8279,8286,11226,11235,11315,11330,11333,11344
+public/legal/DEPENDENCY-LICENSES.txt
+  s_567a084d0540c4::t_88c9458f05d8f4 10
+release/dependency-license-proofs.json
+  s_567a084d0540c4::t_99b06fbe6a86fd 64
+release/open-source-inventory.json
+  s_567a084d0540c4::t_44e18e034029ad 169-170,280,1743,1755
+scripts/__tests__/fixtures/viteUpgradeReset.mjs
+  s_567a084d0540c4::t_ecfc389be4d0ef 1-21
+scripts/__tests__/viteUpgradeReset.spec.ts
+  s_567a084d0540c4::t_eb1fc3c40d0343 1-102
+scripts/resourceGuard.ts
+  s_567a084d0540c4::t_667ec7541d83a6 153-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13134b0f8ddb2f742b84f7e9419ba8aa9b6c4b66",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
