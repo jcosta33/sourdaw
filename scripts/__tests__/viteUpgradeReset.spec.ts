@@ -57,7 +57,7 @@ it('keeps Vite serving after an unmatched websocket upgrade is reset', async () 
                 `Host: 127.0.0.1:${port}`,
                 'Connection: Upgrade',
                 'Upgrade: websocket',
-                'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+                `Sec-WebSocket-Key: ${Buffer.from('the sample nonce').toString('base64')}`,
                 'Sec-WebSocket-Version: 13',
                 '',
                 '',
