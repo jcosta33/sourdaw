@@ -26,6 +26,7 @@ import { registerActionReplayCapabilities, revokeActionReplayCapability } from '
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntries } from './commitUndoEntries';
@@ -600,6 +601,15 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             actions: readonly AppAction[],
             options?: ExecuteAppActionBatchOptions
         ): Promise<ExecuteAppActionBatchResult> {
+            const recordedRedos = new Map<AppAction, HandlerValidationContext['recordedRedo']>();
+            if (options?.skipUndo) {
+                for (const action of actions) {
+                    const replay = captureRecordedRedoContext(action);
+                    if (replay) {
+                        recordedRedos.set(action, replay);
+                    }
+                }
+            }
             if (actions.length === 0) {
                 return { status: 'no-op', actions: [] };
             }
@@ -760,11 +770,16 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 try {
                     description = null;
                     if (handler.undoable || handler.executionKind === 'runtime') {
-                        description = handler.describe(action, {
+                        let context: HandlerValidationContext = {
                             actions: canonicalActions,
                             actionIndex: index,
                             signal: options?.signal,
-                        });
+                        };
+                        const recordedRedo = recordedRedos.get(canonicalized.requestedAction);
+                        if (recordedRedo) {
+                            context = { ...context, recordedRedo };
+                        }
+                        description = handler.describe(action, context);
                     }
                 } catch (error) {
                     return {

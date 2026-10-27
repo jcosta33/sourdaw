@@ -22,6 +22,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
 import { type AbortCompensation, compensateAbortedActions } from './compensateAbortedActions';
@@ -143,6 +144,7 @@ function coalesceTargetsMatch(previous: AppAction, next: AppAction): boolean {
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
+            const recordedRedo = options?.skipUndo ? captureRecordedRedoContext(action) : undefined;
             const materialized = options?.commandEnvelope
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
@@ -273,7 +275,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 redoAction?: AppAction;
             } | null = null;
             if (handler.undoable) {
-                undoResult = handler.describe(action);
+                if (recordedRedo) {
+                    undoResult = handler.describe(action, { actions: [action], actionIndex: 0, recordedRedo });
+                } else {
+                    undoResult = handler.describe(action);
+                }
             }
 
             const command = options?.commandEnvelope
