@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureGestureBeat } from '../captureGestureBeat';
 import { type GestureClockSource } from '../gestureClockSource';
-import { playheadClockRef } from '../playheadClockRef';
+import { holdPlayheadClock, playheadClockRef, releasePlayheadClockHold } from '../playheadClockRef';
 import { playheadPositionRef } from '../playheadPositionRef';
 import { tempoMapStore } from '../tempoMapStore';
 import { defaultTransportState, transportStore } from '../transportStore';
@@ -37,6 +37,7 @@ describe('captureGestureBeat', () => {
         tempoMapStore.set({ changes: [] });
         playheadClockRef.beat = 2;
         playheadClockRef.audioTimeSeconds = 10;
+        playheadClockRef.hold = null;
         playheadPositionRef.current = 2;
         mocks.source = {
             getAudioTimeSeconds: () => 10,
@@ -48,6 +49,30 @@ describe('captureGestureBeat', () => {
         transportStore.set({ ...transportStore.value!, isPlaying: false, playheadPosition: 7.5 });
 
         expect(captureGestureBeat()).toBe(7.5);
+    });
+
+    it('holds the requested beat while browser admission owns the clock', () => {
+        holdPlayheadClock(12, 7.5);
+        mocks.source = { getAudioTimeSeconds: () => 100, readNativeCursorBeats: () => 99 };
+        expect(captureGestureBeat()).toBe(7.5);
+        expect(playheadClockRef.beat).toBe(2);
+        expect(playheadClockRef.audioTimeSeconds).toBe(10);
+    });
+
+    it('does not let an outgoing generation release a newer hold', () => {
+        holdPlayheadClock(12, 4);
+        holdPlayheadClock(13, 8);
+        releasePlayheadClockHold(12);
+        expect(captureGestureBeat()).toBe(8);
+        releasePlayheadClockHold(13);
+        expect(playheadClockRef.hold).toBeNull();
+        expect(captureGestureBeat()).toBe(2);
+    });
+
+    it('keeps a future admitted anchor at its beat until audio reaches it', () => {
+        playheadClockRef.audioTimeSeconds = 10.1;
+        mocks.source = { getAudioTimeSeconds: () => 10.05, readNativeCursorBeats: () => null };
+        expect(captureGestureBeat()).toBe(2);
     });
 
     it('degrades to the committed anchor beat when no clock source is registered', () => {

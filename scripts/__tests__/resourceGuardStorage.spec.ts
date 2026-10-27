@@ -1,18 +1,21 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
-    existsSync,
+    appendFileSync,
     chmodSync,
+    existsSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
     readdirSync,
+    renameSync,
     realpathSync,
     rmSync,
     symlinkSync,
     statSync,
     writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -33,6 +36,7 @@ import {
     startTimeExcuseSupervisor,
     storageRecoveryPorts,
 } from '../resourceGuard';
+import { areTransientProofReasons } from '../resourceGuardProofReasons';
 import {
     createGuardStorage,
     diskStorageFailure,
@@ -55,6 +59,8 @@ const abundantMemoryBytes = 128 * 1024 ** 3;
 const linuxCensusObservationLimit = 32;
 const guardPath = resolve('scripts/resourceGuard.ts');
 const storagePath = resolve('scripts/resourceGuardStorage.ts');
+const atomicJsonMarkerPath = resolve('scripts/__tests__/fixtures/atomicJsonMarker.cjs');
+const { publishJson: publishFixtureJson } = createRequire(import.meta.url)(atomicJsonMarkerPath);
 
 function fixture(): string {
     const fixtures = resolve('.agents/guard-storage-fixtures');
@@ -131,6 +137,39 @@ afterEach(async () => {
         rmSync(root, { recursive: true, force: true });
     }
     roots.length = 0;
+});
+
+describe('atomic JSON fixture markers', () => {
+    it('keeps the readiness marker absent until all JSON bytes are written', () => {
+        const root = fixture();
+        const marker = join(root, 'started.json');
+        const record = { pid: 12345, tmp: join(root, 'tmp') };
+        let observedPartialWrite = false;
+        const filesystem = {
+            writeFileSync(
+                path: string,
+                contents: string,
+                options: { encoding: BufferEncoding; flag: string; mode: number }
+            ) {
+                const splitAt = Math.floor(contents.length / 2);
+                writeFileSync(path, contents.slice(0, splitAt), options);
+                expect(path).not.toBe(marker);
+                expect(existsSync(marker)).toBe(false);
+                expect(() => JSON.parse(readFileSync(path, 'utf8'))).toThrow();
+                expect(existsSync(marker)).toBe(false);
+                observedPartialWrite = true;
+                appendFileSync(path, contents.slice(splitAt), 'utf8');
+                expect(existsSync(marker)).toBe(false);
+            },
+            renameSync,
+        };
+
+        publishFixtureJson(marker, record, filesystem);
+
+        expect(observedPartialWrite).toBe(true);
+        expect(existsSync(marker)).toBe(true);
+        expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual(record);
+    });
 });
 
 function proofDiagnostic(result: Awaited<ReturnType<typeof runGuardedCommand>>): string {
@@ -988,8 +1027,8 @@ setInterval(() => {}, 1000);
                 descendantPath,
                 [
                     "const fs = require('node:fs');",
-                    'const [marker] = process.argv.slice(2);',
-                    "fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, tmp: require('node:os').tmpdir() }));",
+                    'const [marker, , markerWriter] = process.argv.slice(2);',
+                    "require(markerWriter).publishJson(marker, { pid: process.pid, tmp: require('node:os').tmpdir() });",
                     'setInterval(() => {}, 1000);',
                 ].join(program === 'multiline program' ? '\n' : ' ')
             );
@@ -1003,9 +1042,9 @@ setInterval(() => {}, 1000);
             // run while the descendant lives under a still-alive parent.
             const parent = [
                 "const fs = require('node:fs');",
-                'const [descendantPath, marker, rootMarker, programExtra, exitWhenMarker] = process.argv.slice(1);',
+                'const [descendantPath, marker, rootMarker, programExtra, exitWhenMarker, markerWriter] = process.argv.slice(1);',
                 'fs.writeFileSync(rootMarker, String(process.pid));',
-                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker, programExtra], { detached: true, stdio: "ignore", env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 2_000);',
+                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker, programExtra, markerWriter], { detached: true, stdio: "ignore", env: { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP, PATH: process.env.PATH } }); child.unref(); }, 2_000);',
                 'const timer = setInterval(() => { if (fs.existsSync(marker) && exitWhenMarker === "true") { clearInterval(timer); process.exit(0); } }, 5);',
             ].join(' ');
             // The multiline variant rides a newline-containing argument on the descendant's command
@@ -1022,6 +1061,7 @@ setInterval(() => {}, 1000);
                     rootMarker,
                     programExtra,
                     String(scenario === 'parent exit'),
+                    atomicJsonMarkerPath,
                 ],
                 profile: 'focused',
                 availableMemoryBytes: abundantMemoryBytes,
@@ -1114,12 +1154,12 @@ setInterval(() => {}, 1000);
                 descendantPath,
                 [
                     "const fs = require('node:fs');",
-                    'const [marker, heartbeat, holdsFile] = process.argv.slice(2);',
+                    'const [marker, heartbeat, holdsFile, markerWriter] = process.argv.slice(2);',
                     'const tmp = process.cwd();',
                     "const fd = fs.openSync('held', 'w');",
                     'if (holdsFile === "open file") process.chdir("/");',
                     'else fs.closeSync(fd);',
-                    'fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, tmp }));',
+                    'require(markerWriter).publishJson(marker, { pid: process.pid, tmp });',
                     'let n = 0;',
                     'setInterval(() => {',
                     '  if (holdsFile === "open file") fs.writeSync(fd, "x");',
@@ -1134,9 +1174,9 @@ setInterval(() => {}, 1000);
             // 60-second `sampleIntervalMs` override below removes every later sample tick outright.
             const parent = [
                 "const fs = require('node:fs');",
-                'const [descendantPath, marker, heartbeat, rootMarker, holdsFile, exitWhenMarker] = process.argv.slice(1);',
+                'const [descendantPath, marker, heartbeat, rootMarker, holdsFile, exitWhenMarker, markerWriter] = process.argv.slice(1);',
                 'fs.writeFileSync(rootMarker, String(process.pid));',
-                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker, heartbeat, holdsFile], { detached: true, stdio: "ignore", cwd: process.env.TMPDIR, env: { PATH: process.env.PATH } }); child.unref(); }, 2_000);',
+                'setTimeout(() => { const child = require("node:child_process").spawn(process.execPath, [descendantPath, marker, heartbeat, holdsFile, markerWriter], { detached: true, stdio: "ignore", cwd: process.env.TMPDIR, env: { PATH: process.env.PATH } }); child.unref(); }, 2_000);',
                 'setInterval(() => { if (fs.existsSync(marker) && exitWhenMarker === "true") process.exit(0); }, 5);',
             ].join(' ');
             const options = {
@@ -1150,6 +1190,7 @@ setInterval(() => {}, 1000);
                     rootMarker,
                     consumer,
                     String(scenario === 'parent exit'),
+                    atomicJsonMarkerPath,
                 ],
                 profile: 'focused',
                 // The guard samples the tree at spawn and then per interval; a sample taken while the
@@ -2704,6 +2745,232 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             }
         }
     );
+
+    it.skipIf(process.getuid === undefined).each([
+        { route: 'whole', ending: 'clear', state: 'dead', samples: 2, scopedSamples: 0 },
+        { route: 'whole', ending: 'holder', state: 'alive', samples: 2, scopedSamples: 0 },
+        { route: 'whole', ending: 'diagnostic', state: 'unknown', samples: 50, scopedSamples: 0 },
+        { route: 'whole', ending: 'omission', state: 'unknown', samples: 50, scopedSamples: 0 },
+        { route: 'scoped', ending: 'clear', state: 'dead', samples: 2, scopedSamples: 1 },
+        { route: 'scoped', ending: 'holder', state: 'alive', samples: 2, scopedSamples: 1 },
+        { route: 'scoped', ending: 'diagnostic', state: 'unknown', samples: 25, scopedSamples: 25 },
+        { route: 'scoped', ending: 'omission', state: 'unknown', samples: 49, scopedSamples: 1 },
+    ])(
+        'refreshes an incomplete Darwin $route inspection until $ending proof',
+        async ({ route, ending, state, samples, scopedSamples }) => {
+            const root = fixture();
+            chmodSync(root, 0o700);
+            // Use the real parser, census and storage release with a deterministic clock.
+            // Every lsof read costs 100 ms; ps reads leave time unchanged.
+            const program = `
+                import childProcess from 'node:child_process';
+                import os from 'node:os';
+                import {syncBuiltinESMExports} from 'node:module';
+                import {existsSync} from 'node:fs';
+                const route=${JSON.stringify(route)},ending=${JSON.stringify(ending)};
+                const uid=process.getuid(),pid=process.pid,missed=pid+100000;
+                let now=0,samples=0,scopedSamples=0,processSamples=0,temp;
+                let reads=[],timeouts=[];
+                os.platform=()=> 'darwin';
+                Date.now=()=>now;
+                process.kill=()=>true;
+                const entry=(pid,path)=>'p'+pid+'\\0\\nfcwd\\0tDIR\\0n'+path+'\\0\\n';
+                const diagnostic=(pid)=>'p'+pid+'\\0\\nf3\\0tREG\\0nPermission denied\\0\\n';
+                const omission=(pid)=>'p'+pid+'\\0\\nf3\\0nFD unavailable\\0\\n';
+                childProcess.spawnSync=(command,args,options)=>{
+                    let stdout;
+                    if(command==='ps'){
+                        if(args[0]==='-p')stdout=uid+' S\\n';
+                        else{
+                            processSamples++;
+                            stdout=pid+' '+uid+'\\n'+(route==='scoped'?missed+' '+uid+'\\n':'');
+                        }
+                    }else if(command==='lsof'){
+                        const scoped=args.includes('-p');
+                        reads.push(scoped?'scoped':'whole');
+                        timeouts.push(options.timeout);
+                        now+=100;
+                        if(scoped){
+                            scopedSamples++;
+                            stdout=diagnostic(missed);
+                        }else{
+                            samples++;
+                            if(ending==='omission'&&samples>1)stdout=omission(pid);
+                            else if(route==='whole'&&(samples===1||ending==='diagnostic')){
+                                // A path before the diagnostic must not survive the discarded catalog.
+                                stdout=entry(pid,temp)+diagnostic(missed);
+                            }else{
+                                stdout=entry(pid,'/outside');
+                                if(route==='scoped'&&samples>1&&ending!=='diagnostic')stdout+=entry(missed,ending==='holder'?temp:'/outside');
+                                if(route==='whole'&&ending==='holder')stdout=entry(pid,temp);
+                            }
+                        }
+                    }else throw Error('unexpected command '+command);
+                    return {status:0,stdout,stderr:''};
+                };
+                syncBuiltinESMExports();
+                const {storageFileState}=await import(${JSON.stringify(guardPath)});
+                const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+                const reasons=[];
+                const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
+                const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+                temp=storage.tempDirectory;
+                const state=storageFileState([temp],[],reason=>reasons.push(reason));
+                const initial={state,reasons:[...reasons],samples,scopedSamples,processSamples,reads:[...reads],timeouts:[...timeouts],elapsed:now};
+                now=0;samples=0;scopedSamples=0;processSamples=0;reads=[];timeouts=[];
+                const released=await storage.release(true);
+                console.log(JSON.stringify({initial,released,retained:existsSync(temp)}));
+            `;
+            const observed: {
+                initial: {
+                    state: string;
+                    reasons: string[];
+                    samples: number;
+                    scopedSamples: number;
+                    processSamples: number;
+                    reads: string[];
+                    timeouts: number[];
+                    elapsed: number;
+                };
+                released: boolean;
+                retained: boolean;
+            } = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    timeout: 10_000,
+                })
+            );
+            const initial = observed.initial;
+            expect(initial.state).toBe(state);
+            expect(initial.samples).toBe(samples);
+            expect(initial.scopedSamples).toBe(scopedSamples);
+            expect(initial.timeouts).toEqual(
+                Array.from({ length: samples + scopedSamples }, (_, index) => 5000 - index * 100)
+            );
+            expect(initial.elapsed).toBe(state === 'unknown' ? 5000 : (samples + scopedSamples) * 100);
+            const reason = `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`;
+            expect(initial.reasons).toEqual(state === 'unknown' ? [reason] : []);
+            expect(observed.released).toBe(state === 'dead');
+            expect(observed.retained).toBe(state !== 'dead');
+            if (state !== 'unknown') {
+                expect(initial.reads).toEqual(route === 'whole' ? ['whole', 'whole'] : ['whole', 'scoped', 'whole']);
+                // Both the opening and closing list belong to the complete replacement catalog.
+                let expectedProcessSamples = 2;
+                if (route === 'scoped') {
+                    expectedProcessSamples += 1;
+                }
+                if (state === 'dead') {
+                    expectedProcessSamples += 1;
+                }
+                expect(initial.processSamples).toBe(expectedProcessSamples);
+            }
+        }
+    );
+
+    it
+        .skipIf(process.getuid === undefined)
+        .each(
+            ['whole', 'scoped'].flatMap((route) =>
+                [
+                    'opening ps command',
+                    'opening ps fields',
+                    'closing ps command',
+                    'closing ps fields',
+                    'missing identity',
+                    'changed UID',
+                    'whole command',
+                    'whole fields',
+                    'scoped command',
+                    'scoped fields',
+                    'parent command',
+                    'parent fields',
+                    'thrown command',
+                ].map((failure) => ({ route, failure }))
+            )
+        )('keeps a Darwin $route diagnostic stable after $failure fails', ({ route, failure }) => {
+        const root = fixture();
+        chmodSync(root, 0o700);
+        const program = `
+            import childProcess from 'node:child_process';
+            import os from 'node:os';
+            import {syncBuiltinESMExports} from 'node:module';
+            import {existsSync} from 'node:fs';
+            const route=${JSON.stringify(route)},failure=${JSON.stringify(failure)};
+            const uid=process.getuid(),pid=process.pid,missed=pid+100000;
+            let diagnosed=false,userLists=0,failureReached=false;
+            os.platform=()=> 'darwin';
+            process.kill=()=>true;
+            const entry=(pid)=>'p'+pid+'\\0\\nfcwd\\0tDIR\\0n/outside\\0\\n';
+            const diagnostic=()=>{diagnosed=true;return 'p'+missed+'\\0\\nf3\\0tREG\\0nPermission denied\\0\\n'};
+            const failed=(command)=>{failureReached=true;return {status:command?2:0,stdout:command?'':'malformed\\n',stderr:''}};
+            childProcess.spawnSync=(command,args)=>{
+                let stdout;
+                if(command==='ps'){
+                    if(args[0]==='-p'){
+                        if(diagnosed&&failure==='missing identity')return failed(true);
+                        if(diagnosed&&failure==='changed UID'){failureReached=true;stdout=(uid+1)+' S\\n'}
+                        else stdout=uid+' S\\n';
+                    }else if(args[1]==='pid=,ppid=,uid='){
+                        if(failure==='parent command')return failed(true);
+                        if(failure==='parent fields')return failed(false);
+                        throw Error('unexpected successful parent list');
+                    }else{
+                        if(diagnosed){
+                            userLists++;
+                            const stage=userLists===1?'opening':'closing';
+                            if(failure===stage+' ps command')return failed(true);
+                            if(failure===stage+' ps fields')return failed(false);
+                        }
+                        stdout=pid+' '+uid+'\\n'+missed+' '+uid+'\\n';
+                    }
+                }else if(command==='lsof'){
+                    const scoped=args.includes('-p');
+                    if(!diagnosed){
+                        stdout=route==='whole'?entry(pid)+diagnostic():scoped?diagnostic():entry(pid);
+                    }else if(scoped){
+                        if(failure==='scoped command')return failed(true);
+                        if(failure==='scoped fields')return failed(false);
+                        stdout=entry(missed);
+                    }else{
+                        if(failure==='whole command')return failed(true);
+                        if(failure==='whole fields')return failed(false);
+                        if(failure==='thrown command'){failureReached=true;throw Error('inspection unavailable')}
+                        const missing=['missing identity','changed UID','scoped command','scoped fields','parent command','parent fields'].includes(failure);
+                        stdout=entry(pid)+(missing?'':entry(missed));
+                    }
+                }else throw Error('unexpected command '+command);
+                return {status:0,stdout,stderr:''};
+            };
+            syncBuiltinESMExports();
+            const {storageFileState}=await import(${JSON.stringify(guardPath)});
+            const {createGuardStorage}=await import(${JSON.stringify(storagePath)});
+            const {areTransientProofReasons}=await import(${JSON.stringify(resolve('scripts/resourceGuardProofReasons.ts'))});
+            const reasons=[];
+            const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
+            const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
+            const state=storageFileState([storage.tempDirectory],[],reason=>reasons.push(reason));
+            const initial={state,reasons:[...reasons],failureReached,transient:areTransientProofReasons(reasons)};
+            diagnosed=false;userLists=0;failureReached=false;
+            const released=await storage.release(true);
+            console.log(JSON.stringify({initial,released,retained:existsSync(storage.tempDirectory)}));
+        `;
+        const observed = JSON.parse(
+            execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                cwd: root,
+                encoding: 'utf8',
+                timeout: 10_000,
+            })
+        );
+        expect(observed.initial).toEqual({
+            state: 'unknown',
+            reasons: [`lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`],
+            failureReached: true,
+            transient: false,
+        });
+        expect(observed.released).toBe(false);
+        expect(observed.retained).toBe(true);
+    });
 
     // Each newborn is first missed by a whole catalog and by its PID-scoped read, so only a later
     // whole catalog covers it. Every simulated lsof call costs 100 ms of the five-second deadline.
@@ -4273,6 +4540,11 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         const reasons: string[] = [];
         expect(parseLsofCensus(missingType, (reason) => reasons.push(reason))).toBeUndefined();
         expect(reasons).toEqual(['descriptor-type-missing']);
+        const diagnosticReasons: string[] = [];
+        expect(
+            parseLsofCensus(`${valid}f4\0tREG\0nPermission denied\0\n`, (reason) => diagnosticReasons.push(reason))
+        ).toBeUndefined();
+        expect(diagnosticReasons).toEqual(['file-inspection-diagnostic']);
         for (const invalid of [
             `${missingType}f4\0tunknown\0n/owned/tmp\0\n`,
             `${missingType}f4\0tREG\0\n`,
@@ -4300,6 +4572,16 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         expect(referencesStoragePath('/owned/tmp/held', ['/owned/tmp'])).toBe(true);
         expect(referencesStoragePath('/claim/run/tmp/held (deleted)', ['/owned/tmp', '/claim/run/tmp'])).toBe(true);
         expect(referencesStoragePath('/owned/tmp-sibling/held', ['/owned/tmp'])).toBe(false);
+    });
+
+    it('keeps whole and scoped inspection diagnostics outside warning-success proof reasons', () => {
+        for (const reason of [
+            'lsof-fields-unusable:file-inspection-diagnostic',
+            'lsof-scoped-fields-unusable:file-inspection-diagnostic',
+        ]) {
+            expect(areTransientProofReasons([reason])).toBe(false);
+            expect(areTransientProofReasons(['file-census-time-bound', reason])).toBe(false);
+        }
     });
 
     it.skipIf(process.platform !== 'darwin').each([
@@ -4761,6 +5043,12 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             script: 'process.exitCode=0',
             host: censusReporting('unknown', 'lsof-fields-unusable:file-inspection-diagnostic'),
             census: 'unknown lsof-fields-unusable:file-inspection-diagnostic',
+        },
+        {
+            name: 'a stable unusable scoped-inspection reason',
+            script: 'process.exitCode=0',
+            host: censusReporting('unknown', 'lsof-scoped-fields-unusable:file-inspection-diagnostic'),
+            census: 'unknown lsof-scoped-fields-unusable:file-inspection-diagnostic',
         },
         {
             name: 'a transient reason mixed with a stable one',

@@ -25,6 +25,9 @@ type MasterGainControlProps = {
     onChange: (value: number, isTransient?: boolean) => void;
     onEnterValue: (value: number) => void;
     onResetToDefault: () => void;
+    onCopyValue: () => void;
+    onPasteValue: () => void;
+    onInvalidatePendingValue: () => void;
 };
 
 type MasterGainMenuProps = {
@@ -33,6 +36,8 @@ type MasterGainMenuProps = {
     onClose: () => void;
     onReset: () => void;
     onEnterValue: () => void;
+    onCopyValue: () => void;
+    onPasteValue: () => void;
 };
 
 type MasterGainFaderProps = Pick<MasterGainControlProps, 'value' | 'onChange'>;
@@ -89,7 +94,15 @@ const MasterGainFader = ({ value, onChange }: MasterGainFaderProps): ReactElemen
     />
 );
 
-const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: MasterGainMenuProps): ReactElement => {
+const MasterGainMenu = ({
+    position,
+    menuRef,
+    onClose,
+    onReset,
+    onEnterValue,
+    onCopyValue,
+    onPasteValue,
+}: MasterGainMenuProps): ReactElement => {
     useEffect(() => {
         menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
     }, [menuRef]);
@@ -133,57 +146,63 @@ const MasterGainMenu = ({ position, menuRef, onClose, onReset, onEnterValue }: M
             <DawMenuButton role="menuitem" onClick={onEnterValue}>
                 Enter Value
             </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={onCopyValue}>
+                Copy Value
+            </DawMenuButton>
+            <DawMenuButton role="menuitem" onClick={onPasteValue}>
+                Paste Value
+            </DawMenuButton>
         </DawContextMenuSurface>
     );
 };
 
-export const MasterGainControl = ({
-    value,
-    onChange,
-    onEnterValue,
-    onResetToDefault,
-}: MasterGainControlProps): ReactElement => {
-    const [masterGainMenu, setMasterGainMenu] = useState<{ x: number; y: number } | null>(null);
-    const masterGainControlRef = useRef<HTMLDivElement>(null);
-    const masterGainMenuRef = useRef<HTMLDivElement>(null);
-    const { latestPrompt, mounted, invalidatePrompt, restoreFocus } = useMasterGainPromptFocus(masterGainControlRef);
+function useMasterGainMenu(controlRef: RefObject<HTMLDivElement | null>) {
+    const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const close = (): void => setMenu(null);
+    useContextMenuDismiss(menuRef, close);
 
-    const closeMasterGainMenu = (): void => setMasterGainMenu(null);
-    useContextMenuDismiss(masterGainMenuRef, closeMasterGainMenu);
-
-    const openMasterGainMenu = (x: number, y: number): void => {
-        masterGainControlRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
-        setMasterGainMenu({ x, y });
+    const open = (x: number, y: number): void => {
+        controlRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
+        setMenu({ x, y });
     };
-
-    const handleMasterGainContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
+    const onContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
         event.preventDefault();
         event.stopPropagation();
-        openMasterGainMenu(event.clientX, event.clientY);
+        open(event.clientX, event.clientY);
     };
-
-    const handleMasterGainMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
         if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) {
             return;
         }
-
         event.preventDefault();
         event.stopPropagation();
-        const bounds = masterGainControlRef.current?.querySelector('[role="slider"]')?.getBoundingClientRect();
-        openMasterGainMenu(bounds?.left ?? 0, bounds?.bottom ?? 0);
+        const bounds = controlRef.current?.querySelector('[role="slider"]')?.getBoundingClientRect();
+        open(bounds?.left ?? 0, bounds?.bottom ?? 0);
     };
+    return { menu, menuRef, close, onContextMenu, onKeyDown };
+}
+
+function useMasterGainActions(
+    props: MasterGainControlProps,
+    controlRef: RefObject<HTMLDivElement | null>,
+    closeMenu: () => void
+) {
+    const { value, onChange, onEnterValue, onResetToDefault, onCopyValue, onPasteValue, onInvalidatePendingValue } =
+        props;
+    const { latestPrompt, mounted, invalidatePrompt, restoreFocus } = useMasterGainPromptFocus(controlRef);
 
     const handleFaderChange = (gain: number, isTransient?: boolean): void => {
         invalidatePrompt();
         onChange(gain, isTransient);
     };
-
     const enterValue = async (): Promise<void> => {
         invalidatePrompt();
+        onInvalidatePendingValue();
         const request = latestPrompt.current;
         const authority = captureProjectTransitionAuthority();
         const initialValue = `${formatGainDb(value)} dB`;
-        closeMasterGainMenu();
+        closeMenu();
         const input = await promptUser({
             title: 'Enter Master Gain',
             message: `Enter master gain from ${TRACK_FADER_LAW.floorDb} to +${TRACK_FADER_LAW.ceilingDb} dB; -∞ for silence.`,
@@ -194,12 +213,7 @@ export const MasterGainControl = ({
             return;
         }
         restoreFocus(request, authority);
-        if (input === null) {
-            return;
-        }
-        // The readout rounds to one decimal; submitting it untouched must not
-        // replace the more precise gain already in project truth.
-        if (input === initialValue) {
+        if (input === null || input === initialValue) {
             return;
         }
         const gain = parseMasterGainEntry(input);
@@ -212,12 +226,33 @@ export const MasterGainControl = ({
         }
         onEnterValue(gain);
     };
-
     const resetGain = (): void => {
         invalidatePrompt();
+        onInvalidatePendingValue();
         onResetToDefault();
-        closeMasterGainMenu();
+        closeMenu();
     };
+    const copyValue = (): void => {
+        invalidatePrompt();
+        onCopyValue();
+        closeMenu();
+    };
+    const pasteValue = (): void => {
+        invalidatePrompt();
+        onPasteValue();
+        closeMenu();
+    };
+    return { handleFaderChange, enterValue, resetGain, copyValue, pasteValue };
+}
+
+export const MasterGainControl = ({ ...props }: MasterGainControlProps): ReactElement => {
+    const masterGainControlRef = useRef<HTMLDivElement>(null);
+    const { menu, menuRef, close, onContextMenu, onKeyDown } = useMasterGainMenu(masterGainControlRef);
+    const { handleFaderChange, enterValue, resetGain, copyValue, pasteValue } = useMasterGainActions(
+        props,
+        masterGainControlRef,
+        close
+    );
 
     return (
         <>
@@ -226,18 +261,20 @@ export const MasterGainControl = ({
                 className="shrink-0"
                 data-testid="master-gain"
                 role="presentation"
-                onContextMenu={handleMasterGainContextMenu}
-                onKeyDown={handleMasterGainMenuKeyDown}
+                onContextMenu={onContextMenu}
+                onKeyDown={onKeyDown}
             >
-                <MasterGainFader value={value} onChange={handleFaderChange} />
+                <MasterGainFader value={props.value} onChange={handleFaderChange} />
             </div>
-            {masterGainMenu ? (
+            {menu ? (
                 <MasterGainMenu
-                    position={masterGainMenu}
-                    menuRef={masterGainMenuRef}
-                    onClose={closeMasterGainMenu}
+                    position={menu}
+                    menuRef={menuRef}
+                    onClose={close}
                     onReset={resetGain}
                     onEnterValue={() => void enterValue()}
+                    onCopyValue={copyValue}
+                    onPasteValue={pasteValue}
                 />
             ) : null}
         </>

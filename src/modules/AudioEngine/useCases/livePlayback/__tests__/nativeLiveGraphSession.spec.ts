@@ -42,6 +42,7 @@ import {
 import { noteLiveMidiControl } from '../../../services/liveMidiControlLatch';
 import { updateDeviceParam } from '../../deviceControls/updateDeviceParam';
 import { masterGainState } from '../../engineAccess/masterGainState';
+import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
 import { isDeviceCarriedByNativeSession } from '../isDeviceCarriedByNativeSession';
 import { isDeviceHeldByNativeSession } from '../isDeviceHeldByNativeSession';
@@ -654,6 +655,7 @@ function attachReportedInstancesInStore(): void {
 }
 
 beforeEach(async () => {
+    disarmNativeLiveAutomationWriter();
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
     mocks.onProgrammeRead.mockReset();
@@ -739,6 +741,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+    disarmNativeLiveAutomationWriter();
     trackStore.set(null);
     disarmNativeLiveMidiWriter();
     offlinePpqEndpointProjectorState.project = null;
