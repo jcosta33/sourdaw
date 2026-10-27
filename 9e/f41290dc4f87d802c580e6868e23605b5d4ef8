@@ -1,0 +1,78 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_6a00c48b593680 94-101,205-211,227-245,249-257
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_29d8df116c5b92::t_7d33c33d5aca01 22,26,127,170-181,494-502
+  s_29d8df116c5b92::t_d9d48b8be5e54c 503-504
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_7e5ce25fc818a8 45,63-68,275-283,290,317,697-707,1611,1613,1615-1616,1622-1624,1635
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_f8a535a71e275a 103-110,124-130,155-168,181-189
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_5bad5acf1e0e32 1211-1212,1345,1351,1771
+src/modules/Transport/services/midiNoteBounds.ts
+  s_29d8df116c5b92::t_70fec20d4b9f68 1-30
+src/modules/Transport/services/midiSchedulerWindowGeometry.ts
+  s_29d8df116c5b92::t_6e59c83bcd4a17 1-64
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_052b3f919143e2 3-6,8-10,14-15,52-56,307-314,319,329,399-401,483-489,593-597,682-686,757-761
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_29d8df116c5b92::t_88828e53f70bfb 44-50,95-98,136-144,196-197
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_29d8df116c5b92::t_766506646dc1fe 91-97,148-151,188-196,249-250
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_29d8df116c5b92::t_f2a8310c2eda67 51-57,104-107,146-154,206-207
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_29d8df116c5b92::t_a73313f1a05277 53-59,110-113,173-181,240-241
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_29d8df116c5b92::t_a2e45aa591daf8 43-49,94-97,135-143,195-196
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_29d8df116c5b92::t_b20efcb903d94f 54-60,107-110,157-165,213-214
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_29d8df116c5b92::t_82df4a0b4bb6d0 162-168,215-218,252-260,305-306
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_29d8df116c5b92::t_6185c50ebdd439 67-73,110-113,146-154,197-198
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTempoChangePosition.spec.ts
+  s_29d8df116c5b92::t_903dac6bbf17e8 44-50,95-98,136-144,196-197
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_3fb6fc3907da85 2-3,12,21-22,106-112
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_29d8df116c5b92::t_e829ec57180f6a 43-45
+src/modules/Transport/useCases/scheduling/getScheduledMidiNoteIndex.ts
+  s_29d8df116c5b92::t_691319349b0f66 1-42
+src/modules/Transport/useCases/scheduling/prepareInitialMidiWindow.ts
+  s_29d8df116c5b92::t_f2a1afced20d41 1-63
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_29d8df116c5b92::t_f7e152793b8aa2 1-580
+src/modules/Transport/useCases/scheduling/resolveMidiWindowClips.ts
+  s_29d8df116c5b92::t_4f5b0761bc2bbd 1-17
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_29d8df116c5b92::t_c24b47fb9d8c48 418-421
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_29d8df116c5b92::t_69f9c0954fe88c 3,18,30,43-48,62,66,72,82-85
+src/modules/Transport/useCases/scheduling/schedulerCancellation.ts
+  s_29d8df116c5b92::t_d6568ec5da69af 1-9
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_29d8df116c5b92::t_4ca25cbf2a0609 60-63,75-77,91-105,130-139
+src/modules/Transport/useCases/transportControls/__tests__/pauseStart.spec.ts
+  s_29d8df116c5b92::t_a2e1fd6ed4c1f2 6-9,132
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_29d8df116c5b92::t_39141d93f83781 12,16-17
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_29d8df116c5b92::t_2f45d39087cc43 4,9,16,31-43,71,89,134-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ef41290dc4f87d802c580e6868e23605b5d4ef8",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
