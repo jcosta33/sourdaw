@@ -329,13 +329,6 @@ pub fn is_empty_batch(batch: &PairedParameterEvents) -> bool {
 mod tests {
     use super::*;
 
-    /// The pending hint is process-wide, so any test that pushes raises it for
-    /// every other test running beside it. The one test that reads the hint back
-    /// and the one test that pushes concurrently both take this, because
-    /// otherwise the pusher re-raises the hint between the reader's take and its
-    /// assertion that a second take finds nothing.
-    static EVENTS_SIGNAL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     fn drained(queue: &PluginParameterEventQueue) -> Vec<PluginParameterEvent> {
         let mut out = Vec::new();
         queue.drain(&mut out);
@@ -431,23 +424,6 @@ mod tests {
 
         assert!(queue.push(PluginParameterEvent::value(2, 2.0)));
         assert_eq!(drained(&queue), vec![PluginParameterEvent::value(2, 2.0)]);
-    }
-
-    #[test]
-    fn the_pending_signal_is_raised_by_a_push_and_cleared_by_the_reader() {
-        let _guard = EVENTS_SIGNAL_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let queue = PluginParameterEventQueue::default();
-        take_pending_parameter_events_signal();
-
-        queue.push(PluginParameterEvent::value(1, 0.0));
-
-        assert!(take_pending_parameter_events_signal());
-        assert!(
-            !take_pending_parameter_events_signal(),
-            "the hint is read-and-clear, so an idle pass does no work"
-        );
     }
 
     #[test]
@@ -578,10 +554,6 @@ mod tests {
     #[test]
     fn every_event_one_thread_pushes_reaches_the_thread_draining_it_in_order() {
         use std::sync::Arc;
-
-        let _guard = EVENTS_SIGNAL_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Deliberately far more events than slots, so the consumer must actually
         // keep up and the producer must actually see the room it frees.

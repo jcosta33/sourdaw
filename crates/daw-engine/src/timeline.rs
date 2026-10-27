@@ -853,6 +853,21 @@ impl DeviceParamQueue {
         self.len == 0
     }
 
+    /// Cancel only this parameter's old tail. A control operation consumes no
+    /// event slot and never invents a value at the cancellation boundary.
+    pub fn hold(&mut self, param: DeviceParamTarget, at_frame: u64) {
+        let mut retained = 0;
+        for index in 0..self.len {
+            let event = self.events[index];
+            if event.param == param && event.at_frame >= at_frame {
+                continue;
+            }
+            self.events[retained] = event;
+            retained += 1;
+        }
+        self.len = retained;
+    }
+
     /// Queue a change in stamp order. Returns `false` when the queue is full;
     /// the caller counts the refusal.
     pub fn schedule(&mut self, event: DeviceParamEvent) -> bool {
@@ -3862,6 +3877,53 @@ mod tests {
             at_frame: 100,
         }));
         assert_eq!(queue.len(), DEVICE_PARAM_QUEUE_CAPACITY);
+    }
+
+    #[test]
+    fn device_hold_compacts_only_the_old_canonical_tail_without_a_slot_or_value() {
+        let a = DeviceParamTarget::Hosted { id: 4 };
+        let b = DeviceParamTarget::Hosted { id: 7 };
+        let mut queue = DeviceParamQueue::new();
+        queue.hold(a, 0);
+        assert!(queue.is_empty());
+        for index in 0..DEVICE_PARAM_QUEUE_CAPACITY {
+            assert!(queue.schedule(DeviceParamEvent {
+                param: if index % 2 == 0 { a } else { b },
+                at_frame: index as u64 / 2,
+                value: index as f64 + 0.123_456_789_012_345,
+            }));
+        }
+        queue.hold(a, 1);
+        queue.hold(a, 1);
+        assert_eq!(queue.len(), 33);
+        assert!(queue.schedule(DeviceParamEvent {
+            param: a,
+            at_frame: 1,
+            value: 0.75,
+        }));
+        let mut actual = Vec::new();
+        while let Some(event) = queue.pop_due(u64::MAX) {
+            actual.push((event.param, event.at_frame, event.value));
+        }
+        assert_eq!(actual[0], (a, 0, 0.123_456_789_012_345));
+        assert_eq!(actual[1], (b, 0, 1.123_456_789_012_345));
+        assert_eq!(actual[2], (b, 1, 3.123_456_789_012_345));
+        assert_eq!(actual[3], (a, 1, 0.75));
+        assert!(actual[4..].iter().all(|event| event.0 == b));
+        assert!(queue.schedule(DeviceParamEvent {
+            param: b,
+            at_frame: 0,
+            value: 0.4,
+        }));
+        assert!(queue.schedule(DeviceParamEvent {
+            param: a,
+            at_frame: 0,
+            value: 0.5,
+        }));
+        queue.hold(b, 0);
+        let retained = queue.pop_due(u64::MAX).unwrap();
+        assert_eq!((retained.param, retained.value), (a, 0.5));
+        assert!(queue.is_empty());
     }
 
     #[test]

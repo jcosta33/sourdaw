@@ -156,6 +156,8 @@ Real-time audio processing graph, CPAL/WASAPI device drivers, audio thread prior
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-cargo test --package daw-engine
+pnpm cargo:test --package daw-engine <filter>
 ```

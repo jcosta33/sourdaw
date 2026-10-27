@@ -134,6 +134,7 @@ export { addTake } from './comping/addTake';
 export { addTakeLane } from './comping/addTakeLane';
 export { captureRetiredTakeLanes } from './comping/captureRetiredTakeLanes';
 export { flattenComp } from './comping/flattenComp';
+export { migrateTrimmedClipPassTakes } from './comping/migrateTrimmedClipPassTakes';
 export { restoreTakesForClip } from './comping/restoreTakesForClip';
 export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';
@@ -206,6 +207,7 @@ export { discardRecording } from './recording/discardRecording';
 export { stageRecordingTake } from './recording/stageRecordingTake';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
+export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';

@@ -17,7 +17,7 @@ const buttonVariants = cva(
                 outline:
                     'border border-border-soft border-t-[var(--color-light-edge)] bg-black/10 text-text-secondary hover:bg-surface-raised/70 hover:text-text-primary active:daw-inset-surface active:translate-y-px',
                 secondary: 'daw-inset-surface text-white/92 hover:text-white',
-                ghost: 'text-text-secondary hover:bg-surface-raised/75 hover:text-text-primary active:daw-inset-surface active:translate-y-px',
+                ghost: 'border border-transparent text-text-secondary hover:bg-surface-raised/75 hover:text-text-primary active:daw-inset-surface active:translate-y-px',
                 link: 'text-accent-cyan underline-offset-4 hover:underline',
 
                 // --- DAW Specific Custom Variants ---

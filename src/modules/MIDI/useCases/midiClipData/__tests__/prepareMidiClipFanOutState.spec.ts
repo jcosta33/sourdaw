@@ -193,7 +193,7 @@ describe('prepareMidiClipFanOutState', () => {
         midiStore.set({
             notesByClipId: { 'source-a': [note('note-1', 1, 60)], 'source-b': [] },
             ccByClipId: { 'source-a': [{ id: 'cc-1', controller: 7, value: 0.5, beat: 0, channel: 0 }] },
-            pitchBendByClipId: { 'source-b': [{ id: 'pb-1', value: 0.25, beat: 2, channel: 0 }] },
+            pitchBendByClipId: { 'source-b': [{ id: 'pb-1', value: 2048, beat: 2, channel: 0 }] },
             migratedAbsoluteNoteClipIds: ['source-a'],
         });
         const start = structuredClone(midiStore.value!);

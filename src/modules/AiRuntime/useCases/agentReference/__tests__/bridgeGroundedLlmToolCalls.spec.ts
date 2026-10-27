@@ -5816,7 +5816,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
-    it('rejects a single removeTrack when a slash-collapsed nested name and a hyphenated literal id are both cited', () => {
+    // No Guitar track is named past the slash, so "Lead/Guitar" states Lead Guitar beside the cited id.
+    it('rejects a single removeTrack when a slash-joined nested name and a hyphenated literal id are both cited', () => {
         const slashNestedNameContext = {
             ...projectContext,
             tracks: [
@@ -5825,36 +5826,19 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 master,
             ],
         };
-        const named = bridge(
-            [{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }],
-            'delete Lead/Guitar and track-lead-guitar',
-            slashNestedNameContext
-        );
-        const literal = bridge(
-            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
-            'delete Lead/Guitar and track-lead-guitar',
-            slashNestedNameContext
-        );
+        const prompt = 'delete Lead/Guitar and track-lead-guitar';
 
-        expect(named.actions).toEqual([]);
-        expect(literal.actions).toEqual([]);
-        expect(named.rejections).toEqual([
-            {
-                index: 0,
-                name: 'removeTrack',
-                reason: 'Target trackId is ambiguous in the user request',
-            },
-        ]);
-        expect(literal.rejections).toEqual([
-            {
-                index: 0,
-                name: 'removeTrack',
-                reason: 'Target trackId is ambiguous in the user request',
-            },
-        ]);
+        for (const trackId of ['track-aux', 'track-lead-guitar']) {
+            expect(bridge([{ name: 'removeTrack', arguments: { trackId } }], prompt, slashNestedNameContext)).toEqual({
+                actions: [],
+                rejections: [
+                    { index: 0, name: 'removeTrack', reason: 'Target trackId is ambiguous in the user request' },
+                ],
+            });
+        }
     });
 
-    it('rejects muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+    it('rejects muteTrack and soloTrack when a slash-joined or spaced nested name and a hyphenated literal id are both cited', () => {
         const dualCitationContext = {
             ...projectContext,
             tracks: [
@@ -5983,7 +5967,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
-    it('rejects compiler-expanded muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+    it('rejects compiler-expanded muteTrack and soloTrack when a slash-joined or spaced nested name and a hyphenated literal id are both cited', () => {
         const dualCitationContext = {
             ...projectContext,
             tracks: [
@@ -8954,5 +8938,38 @@ describe('bridgeGroundedLlmToolCalls', () => {
             expect(result.actions).toEqual([]);
             expect(result.rejections[0]?.reason).toContain('exactly one direct command');
         }
+    });
+});
+
+describe('protected control ownership', () => {
+    const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
+    const context = { ...projectContext, tracks: [...projectContext.tracks, drumBus] };
+    const route = { name: 'setTrackOutput', arguments: { trackId: vocals.id, outputId: drumBus.id } };
+
+    it('allows routing into a bus whose own output is protected', () => {
+        expect(bridge([route], 'route Vocals to Drum Bus', context).actions).toEqual([
+            { type: route.name, payload: { ...route.arguments, expectedOutputId: vocals.outputId } },
+        ]);
+        expect(bridge([route], 'route Vocals to Drum Bus but leave the Drum Bus output alone', context)).toEqual({
+            actions: [{ type: route.name, payload: { ...route.arguments, expectedOutputId: vocals.outputId } }],
+            rejections: [],
+        });
+    });
+
+    it.each(['Vocals', 'Drum Bus'])('refuses changing the protected %s output itself', (name) => {
+        const trackId = name === 'Vocals' ? vocals.id : drumBus.id;
+        const result = bridge(
+            [{ name: 'setTrackOutput', arguments: { trackId, outputId: master.id } }],
+            `route ${name} to Master but leave the ${name} output alone`,
+            context
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain(`"${name}"`);
+    });
+
+    it('keeps whole destination protection distinct from its own output facet', () => {
+        const result = bridge([route], 'route Vocals to Drum Bus but leave Drum Bus alone', context);
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('Drum Bus');
     });
 });

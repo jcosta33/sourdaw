@@ -39,6 +39,7 @@ import {
     type RetainedCompilation,
 } from '../models/RetainedCompilation';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
+import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import {
     AUTO_TOOL_CHOICE,
@@ -164,6 +165,8 @@ export type ApplicationOwnedToolLoopInterpretationAdmission =
     | { status: 'clarify'; reason: string }
     | { status: 'rejected'; reason: string };
 
+export type DeclineAdmission = { status: 'admitted' } | { status: 'refused'; reason: string };
+
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;
     requestTurn: (input: {
@@ -192,6 +195,12 @@ type RunApplicationOwnedToolLoopInput = {
         toolName: string;
         admit: (call: ToolCallResult) => ApplicationOwnedToolLoopInterpretationAdmission;
     };
+    /**
+     * The application's rule for which declines it admits. A refused decline is not the run's
+     * outcome: the loop answers it with a retryable receipt carrying the reason and gives the
+     * planner its next turn, so the refusal spends the turns the run already has and no more.
+     */
+    declineAdmission?: (decline: CommandBatchDecline) => DeclineAdmission;
     /**
      * The measurement read. It renders the project offline, so the caller binds it to the run's
      * revision and the loop executes at most one call to it per turn. Without it the tool stays
@@ -1419,6 +1428,18 @@ function recordSearchedIntents(
     }
 }
 
+/**
+ * The arguments `command.batch.propose` may carry. Whether `refines` names this thread's pending
+ * proposal is the planner's to check against the thread; the loop holds only its shape.
+ */
+const COMMAND_BATCH_PROPOSAL_KEYS: ReadonlySet<string> = new Set([
+    'commands',
+    'list',
+    'plan',
+    'compiledCallIds',
+    'refines',
+]);
+
 function validateCommandBatchProposal(
     call: ToolCallResult,
     disclosedCommandSchemas: ReadonlyMap<string, string>,
@@ -1445,10 +1466,12 @@ function validateCommandBatchProposal(
     const selectedCount = Array.isArray(references)
         ? references.reduce((count, callId) => count + (retainedCompilations.get(callId)?.commands.length ?? 0), 0)
         : 0;
+    const refines = call.arguments.refines;
     if (
-        Object.keys(call.arguments).some(
-            (key) => key !== 'commands' && key !== 'list' && key !== 'plan' && key !== 'compiledCallIds'
-        ) ||
+        Object.keys(call.arguments).some((key) => !COMMAND_BATCH_PROPOSAL_KEYS.has(key)) ||
+        (refines !== undefined &&
+            refines !== null &&
+            (typeof refines !== 'string' || refines.length === 0 || refines.length > PROPOSAL_REFINES_MAX_LENGTH)) ||
         hasPrimitiveCommands === hasStructuredList ||
         (hasStructuredList && normalizeAgentPlanProposal(call.arguments.plan) === null)
     ) {
@@ -1621,16 +1644,20 @@ function validateCatalogTerminalCalls(
     return { status: 'accepted', decline: declineValidation.decline, answer: answerValidation.answer };
 }
 
+/**
+ * A strict reply states every optional property, as `null` when it means none. The proposal drops
+ * those nulls here, so nothing downstream reads a `refines: null` as naming a card: a refinement
+ * is absent in every form, and so are the list and plan beside a primitive command list.
+ */
 function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
-    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME || !Array.isArray(call.arguments.commands)) {
+    if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
         return call;
     }
+    const nullableKeys = Array.isArray(call.arguments.commands) ? ['list', 'plan', 'refines'] : ['refines'];
     return {
         ...call,
         arguments: Object.fromEntries(
-            Object.entries(call.arguments).filter(
-                ([key, value]) => (key !== 'list' && key !== 'plan') || value !== null
-            )
+            Object.entries(call.arguments).filter(([key, value]) => !nullableKeys.includes(key) || value !== null)
         ),
     };
 }
@@ -2166,6 +2193,43 @@ export async function runApplicationOwnedToolLoop(
                 receipts,
                 turns: turn,
             };
+        }
+        const declineRefusal =
+            terminalValidation.decline === null || input.declineAdmission === undefined
+                ? null
+                : input.declineAdmission(terminalValidation.decline);
+        if (declineRefusal?.status === 'refused') {
+            // The final turn has no later turn to correct in, so the refusal ends the run as the
+            // typed rejection it is rather than as a clarification the application would not admit.
+            if (isFinalTurn) {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider declined a request the application plans, and no turn remained to plan it.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            const refusalReceipt = boundReceipt(
+                failureReceipt({
+                    callId: terminalCalls[0]!.callId,
+                    toolName: COMMAND_BATCH_DECLINE_TOOL_NAME,
+                    turn,
+                    code: 'decline-not-admitted',
+                    safeMessage: declineRefusal.reason,
+                    retryable: true,
+                }),
+                limits.maxReceiptBytesPerCall
+            );
+            const refusalOverBudget = admitTurnReceipts([refusalReceipt], turn, outcome, terminalCalls);
+            if (refusalOverBudget !== null) {
+                return {
+                    status: 'rejected',
+                    reason: refusalOverBudget.reason,
+                    receipts: refusalOverBudget.receipts,
+                    turns: turn,
+                };
+            }
+            continue;
         }
         // The final turn forces a terminal tool call; a reply that carries none there is never
         // accepted as an implicit no-op, unlike the same shape on an earlier turn.

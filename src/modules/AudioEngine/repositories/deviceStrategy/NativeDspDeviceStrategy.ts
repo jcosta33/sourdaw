@@ -149,6 +149,10 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
 
     const strategy = new NativeDspDeviceStrategy(result);
     for (const [key, val] of orderDeviceParametersForReplay(device.type, device.parameterValues)) {
+        // A/B is a runtime comparison, so a saved Proof record always starts wet.
+        if (factory?.type === 'proof' && key === 'ab_bypass') {
+            continue;
+        }
         strategy.setParam(key, val);
     }
 

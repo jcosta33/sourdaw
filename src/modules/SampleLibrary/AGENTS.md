@@ -25,6 +25,8 @@ Local and native sample collection indexing, folder tree hierarchies, sample met
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/SampleLibrary
+pnpm test:run <changed-spec>
 ```

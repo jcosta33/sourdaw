@@ -1,5 +1,7 @@
 import { type Track } from '#/modules/Arrangement/stores';
 
+import { nativeTimelineMaterialLeases } from '../../repositories/nativeGraph/nativeTimelineMaterialLeases';
+
 import { type OfflineAudioBufferSource } from './OfflineRenderSource';
 
 /** Own the PCM so cache eviction and in-place edits cannot alter a pending render. */
@@ -29,6 +31,7 @@ export function captureOfflineAudioBuffers(tracks: readonly Track[], sources: Of
         for (let channel = 0; channel < source.numberOfChannels; channel++) {
             buffer.copyToChannel(source.getChannelData(channel), channel);
         }
+        nativeTimelineMaterialLeases.ownSnapshot(id, buffer, source);
         buffers.set(id, buffer);
     }
     return buffers;

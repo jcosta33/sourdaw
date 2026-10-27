@@ -1,4 +1,5 @@
 import { setNotesForClip } from '#/modules/MIDI/useCases';
+import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -222,6 +223,10 @@ export function createAlternativeClips(originalClipId: string, variationsData: V
                 startBeat: currentStart,
                 endBeat: currentEnd,
                 muted: true,
+                // A variation is a whole-clip relocation by its placement
+                // delta, so the loop anchor rides the same delta (#4988) —
+                // key absent for an unanchored source.
+                ...shiftLoopOriginEntry(originalClip, currentStart - originalClip.startBeat),
             },
             notes: globalNotes,
         });

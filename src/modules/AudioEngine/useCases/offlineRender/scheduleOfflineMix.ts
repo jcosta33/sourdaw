@@ -72,6 +72,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
         evaluateAutomationValue,
         resolveArticulationId,
         projectClipControllers,
+        projectChannelBend,
     } = renderContext;
     const { trackStripsById, sendAutomationParamsByTrack, deviceEntriesByTrack } = graph;
     const pendingWorkletEvents: PendingWorkletEvent[] = [];
@@ -112,6 +113,7 @@ export async function scheduleOfflineMix(args: ScheduleInput): Promise<AudioBuff
                 evaluateAutomationValue,
                 resolveArticulationId,
                 projectClipControllers,
+                projectChannelBend,
             },
             onWarning,
             pendingWorkletEvents,

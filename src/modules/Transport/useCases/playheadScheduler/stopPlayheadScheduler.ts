@@ -8,8 +8,9 @@ import {
 import { stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { captureGestureBeat } from '../../stores/captureGestureBeat';
-import { playheadClockRef } from '../../stores/playheadClockRef';
+import { playheadClockRef, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
@@ -17,13 +18,14 @@ import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomat
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 export function stopPlayheadScheduler(): void {
-    schedulerSession.generation += 1;
     // The transport boundary the recorded automation pass must be committed
     // through: where the audible transport actually stands at this stop. Read
     // BEFORE any teardown resets the clock — every caller (stop, pause, seek)
     // reaches here while the position is still live, and each of them assigns
     // the next position only after this returns.
     const boundaryBeat = captureGestureBeat();
+    releasePlayheadClockHold(schedulerSession.generation);
+    schedulerSession.generation += 1;
     stopAutomationRecording(boundaryBeat);
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });
@@ -60,6 +62,8 @@ export function stopPlayheadScheduler(): void {
     // stop and the all-notes-off above, so it is released here for the stop, the
     // pause and the locate that all tear the scheduler down through this one door.
     releaseStoredControllers();
+    // The notes whose later expression changes were parked are over, and a new playback starts none of them.
+    forgetHeldNoteExpression();
     // RT-5: hold each track's fader gain/pan and drop pending automation ramps
     // so a ramp scheduled toward a compensated future time cannot land after
     // playback has stopped (the AudioParam analog of stopActiveSources).
