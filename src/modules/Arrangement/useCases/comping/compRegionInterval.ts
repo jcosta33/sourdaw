@@ -329,7 +329,7 @@ function isCompleteRemoveCompRegionPayload(value: unknown): value is CompRegionI
     );
 }
 
-type TakeLanePrefixContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'> | HandlerMaterializationContext;
+type TakeLanePrefixContext = HandlerMaterializationContext;
 
 type CompSourcePlan = { readonly clips: Clip[]; readonly inputs: CompAudioSourceInputContext };
 
@@ -346,7 +346,7 @@ function sourceInputsAfterPrefix(
     if (currentTracks !== undefined && currentTracks !== null) {
         tracks = [...currentTracks];
     }
-    for (const action of context?.actions.slice(0, limit) ?? []) {
+    for (const action of (context?.preparedPrefix ?? context?.actions)?.slice(0, limit) ?? []) {
         if (action.type === 'removeTrack') {
             tracks = tracks.filter((track) => track.id !== action.payload.trackId);
         }
@@ -396,7 +396,9 @@ function projectTakeLaneStateThroughActionPrefix(
         return initialState;
     }
     let state = structuredClone(initialState);
-    for (const [actionIndex, action] of context.actions.slice(0, context.actionIndex).entries()) {
+    for (const [actionIndex, action] of (context.preparedPrefix ?? context.actions)
+        .slice(0, context.actionIndex)
+        .entries()) {
         if (action.type === 'selectTake') {
             const selected = takeLaneSelection.apply(state, action);
             if (!selected) {
@@ -583,7 +585,7 @@ function supportsSourceCapturePrefix(trackId: string, context: TakeLanePrefixCon
     if (!context) {
         return true;
     }
-    const prefix = context.actions.slice(0, context.actionIndex);
+    const prefix = (context.preparedPrefix ?? context.actions).slice(0, context.actionIndex);
     const sourcePlan = sourceInputsAfterPrefix(trackId, context);
     if (!sourcePlan) {
         return false;

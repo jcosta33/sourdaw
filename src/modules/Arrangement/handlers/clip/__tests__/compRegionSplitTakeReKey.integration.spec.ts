@@ -116,6 +116,18 @@ function clips() {
     return track.clips;
 }
 
+function capturedSource(startBeat: number, entrySeconds: number, loopLength: number) {
+    return {
+        startBeat,
+        audioOffsetSeconds: entrySeconds,
+        audioLoopStartSeconds: entrySeconds,
+        audioLoopPassEntrySeconds: entrySeconds,
+        audioLoopPassOriginBeat: startBeat,
+        loopOriginBeat: startBeat,
+        loopLength,
+    };
+}
+
 /** Resolved comp fragments as plain rows: timeline span, media origin, media offset. */
 function resolvedFragments(): number[][] {
     return resolveClipsWithComping('track-1', clips()).map((clip) => [
@@ -178,8 +190,8 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
             ])
         );
         expect(lane().activeCompRegions).toEqual([
-            { startBeat: 8, endBeat: 14, takeId: compTake.id },
-            { startBeat: 14, endBeat: 16, takeId: mintedTakeId },
+            { startBeat: 8, endBeat: 14, takeId: compTake.id, audioSource: capturedSource(8, 4, 8) },
+            { startBeat: 14, endBeat: 16, takeId: mintedTakeId, audioSource: capturedSource(8, 4, 8) },
         ]);
         // No audio changed: both fragments enter pass 2's media exactly where
         // the unsplit comp did — beats 14-16 keep sounding pass 2.
@@ -213,8 +225,8 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
         ]);
         expect(lane().takes.map((take) => take.id)).toContain(mintedTakeId);
         expect(lane().activeCompRegions).toEqual([
-            { startBeat: 8, endBeat: 14, takeId: compTake.id },
-            { startBeat: 14, endBeat: 16, takeId: mintedTakeId },
+            { startBeat: 8, endBeat: 14, takeId: compTake.id, audioSource: capturedSource(8, 4, 8) },
+            { startBeat: 14, endBeat: 16, takeId: mintedTakeId, audioSource: capturedSource(8, 4, 8) },
         ]);
         expect(resolvedFragments()).toEqual([
             [8, 14, 0, 8],
@@ -254,9 +266,9 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
         expect(lane().takes.find((take) => take.id === leftTake.id)).toEqual(leftTake);
         const mintedTakeId = `${compTake.id}:time-delete-right:14:14`;
         expect(lane().activeCompRegions).toEqual([
-            { startBeat: 8, endBeat: 12, takeId: leftTake.id },
-            { startBeat: 12, endBeat: 14, takeId: compTake.id },
-            { startBeat: 14, endBeat: 16, takeId: mintedTakeId },
+            { startBeat: 8, endBeat: 12, takeId: leftTake.id, audioSource: capturedSource(8, 0, 4) },
+            { startBeat: 12, endBeat: 14, takeId: compTake.id, audioSource: capturedSource(12, 6, 4) },
+            { startBeat: 14, endBeat: 16, takeId: mintedTakeId, audioSource: capturedSource(12, 6, 4) },
         ]);
         expect(resolvedFragments()).toEqual([
             [8, 12, 8, 0],

@@ -4,44 +4,44 @@ import { describe, expect, it } from 'vitest';
 import { projectAudioSourcePrefixTracks } from '../projectAudioSourcePrefixTracks';
 import { sanitizeTrackSnapshot } from '../trackStore';
 
-function slot() {
+function slot(zero = -0) {
     const clip = {
         id: 'clip',
         trackId: 'audio',
         name: 'Audio',
         type: 'audio',
-        startBeat: -0,
+        startBeat: zero,
         endBeat: 8,
-        audioOffsetBeats: -0,
-        audioOffsetSeconds: -0,
-        audioUnwrappedOffsetSeconds: -0,
-        audioLoopStartSeconds: -0,
-        audioLoopPassEntrySeconds: -0,
-        audioLoopPassOriginBeat: -0,
-        midiOffsetBeats: -0,
-        fadeInBeats: -0,
-        fadeOutBeats: -0,
-        gain: -0,
+        audioOffsetBeats: zero,
+        audioOffsetSeconds: zero,
+        audioUnwrappedOffsetSeconds: zero,
+        audioLoopStartSeconds: zero,
+        audioLoopPassEntrySeconds: zero,
+        audioLoopPassOriginBeat: zero,
+        midiOffsetBeats: zero,
+        fadeInBeats: zero,
+        fadeOutBeats: zero,
+        gain: zero,
         color: 'blue',
         locked: false,
         muted: false,
         stretchRatio: 1,
         loopLength: 4,
-        loopOriginBeat: -0,
-        sourceKeyRoot: -0,
+        loopOriginBeat: zero,
+        sourceKeyRoot: zero,
         kneadState: {
-            retuneSpeedMs: -0,
-            humanizePercent: -0,
+            retuneSpeedMs: zero,
+            humanizePercent: zero,
             formantPreserve: true,
             blobs: [
                 {
                     id: 'blob',
-                    startTime: -0,
+                    startTime: zero,
                     endTime: 1,
-                    pitchCenterCents: -0,
-                    originalPitchCenterCents: -0,
-                    pitchCurveCents: [-0, 13],
-                    voicedConfidence: -0,
+                    pitchCenterCents: zero,
+                    originalPitchCenterCents: zero,
+                    pitchCurveCents: [zero, 13],
+                    voicedConfidence: zero,
                 },
             ],
         },
@@ -63,20 +63,17 @@ function slot() {
     };
 }
 
-function oldPrefix(value: unknown) {
-    return sanitizeTrackSnapshot(JSON.parse(JSON.stringify(value))).tracks;
-}
-
 describe('source-prefix track projection', () => {
     it('matches the old clip representation for plain, from-created and binary-loaded documents', () => {
         const plain = slot();
         const raw = from({ tracks: plain });
         const loaded = load<{ tracks: ReturnType<typeof slot> }>(save(raw));
+        const oldRepresentation = sanitizeTrackSnapshot(slot(0)).tracks;
         // This producer retains signed zero; change() is not an equivalent producer.
         expect(Object.is(loaded.tracks.tracks[0]?.clips[0]?.startBeat, -0)).toBe(true);
         for (const input of [plain, raw.tracks, loaded.tracks]) {
             const projected = projectAudioSourcePrefixTracks(input);
-            expect(projected).toStrictEqual(oldPrefix(input));
+            expect(projected).toStrictEqual(oldRepresentation);
             expect(Object.is(projected[0]?.clips[0]?.startBeat, -0)).toBe(false);
             expect(Object.is(projected[0]?.alternatives[0]?.clips[0]?.audioOffsetSeconds, -0)).toBe(false);
             expect(Object.is(projected[0]?.clips[0]?.kneadState?.blobs[0]?.pitchCurveCents[0], -0)).toBe(false);
@@ -88,7 +85,9 @@ describe('source-prefix track projection', () => {
         const raw = from({ tracks: slot() });
         const projected = projectAudioSourcePrefixTracks(raw.tracks);
         const curve = projected[0]?.clips[0]?.kneadState?.blobs[0]?.pitchCurveCents;
-        if (!curve) throw new Error('Expected projected knead curve');
+        if (!curve) {
+            throw new Error('Expected projected knead curve');
+        }
         curve[0] = 99;
         expect(Object.is(raw.tracks.tracks[0]?.clips[0]?.kneadState.blobs[0]?.pitchCurveCents[0], -0)).toBe(true);
     });
@@ -116,7 +115,7 @@ describe('source-prefix track projection', () => {
             ],
         };
         const projected = projectAudioSourcePrefixTracks(plain);
-        expect(projected).toStrictEqual(oldPrefix(plain));
+        expect(projected).toStrictEqual(sanitizeTrackSnapshot(plain).tracks);
         expect(projected[0]?.clips.map((clip) => clip.id)).toEqual(['second', 'first']);
         expect(Object.hasOwn(projected[0]!.clips[0]!, 'audioOffsetSeconds')).toBe(false);
         expect(Object.hasOwn(projected[0]!.clips[0]!, 'kneadState')).toBe(false);

@@ -2,7 +2,7 @@ import { createHandler } from '#/utils/createHandler';
 import { valuesEqual } from '#/utils/structuralEquality';
 import {
     type AppAction,
-    type HandlerValidationContext,
+    type HandlerMaterializationContext,
     type RetiredTakeLaneSnapshot,
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
@@ -33,14 +33,14 @@ type PendingSplitDescription = {
 // after execution completes — ends up with the real capture.
 const pendingDescriptions = new WeakMap<object, PendingSplitDescription>();
 
-function prepareAction(action: SplitClipAction, context?: HandlerValidationContext) {
+function prepareAction(action: SplitClipAction, context?: HandlerMaterializationContext) {
     const captured = preparedClipSplits.get(action);
     if (captured) {
         return captured;
     }
     const rightClipId = action.payload.rightClipId ?? getNextAppActionClipId();
     action.payload.rightClipId = rightClipId;
-    const prefix = projectClipReplayPrefix(context?.actions.slice(0, context.actionIndex));
+    const prefix = projectClipReplayPrefix(context?.preparedPrefix ?? context?.actions.slice(0, context.actionIndex));
     if (!prefix?.tracks) {
         return null;
     }

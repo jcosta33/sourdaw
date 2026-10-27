@@ -71,7 +71,13 @@ export function computeAudioWaveformDrawSpan({
         startSample: Math.max(0, Math.floor(sourceStartSeconds * sampleRate)),
         // Peaks cover every PCM cell intersecting the half-open source span.
         // A fractional end includes its last cell; an integer end excludes it.
-        endSample: Math.max(0, Math.min(bufferLengthSamples ?? Infinity, Math.ceil(sourceEndSeconds * sampleRate))),
+        endSample: Math.max(
+            0,
+            Math.min(
+                bufferLengthSamples ?? Infinity,
+                Math.ceil(sourceStartSeconds * sampleRate + sourceDurationSeconds * sampleRate)
+            )
+        ),
         leadingSilenceBeats: audibleStartBeat - clipStartBeat,
         audibleTimelineBeats,
         sourceStartSeconds,

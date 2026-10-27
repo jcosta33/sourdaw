@@ -188,6 +188,7 @@ describe('handleRestoreClipSplitState — surviving left source', () => {
             loopLength: 4,
             loopOriginBeat: 0,
             audioOffsetSeconds: 0.5,
+            audioUnwrappedOffsetSeconds: 0.5,
             audioLoopStartSeconds: 0.5,
             audioLoopPassEntrySeconds: 0.5,
             audioLoopPassOriginBeat: 0,
@@ -472,7 +473,7 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
             afterAmbiguousCommit: expect.any(Function),
         });
         expect(mockedRemoveTakes).toHaveBeenCalledWith(['c2']);
-        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set());
+        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set(), { preservedBaseGapAudioSources: [] });
         expect(mockedPlanRetirement.mock.invocationCallOrder[0]).toBeLessThan(
             mockedRestoreReKey.mock.invocationCallOrder[0]!
         );
@@ -513,7 +514,9 @@ describe('handleRestoreClipSplitState — take lanes (#4521)', () => {
             },
         };
         expect(handleRestoreClipSplitState.execute(action)).toMatchObject({ status: 'written' });
-        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set([ownedTake.id]));
+        expect(mockedPlanRetirement).toHaveBeenCalledWith(['c2'], new Set([ownedTake.id]), {
+            preservedBaseGapAudioSources: [],
+        });
         expect(retiredTakeLanes).toEqual([]);
     });
 

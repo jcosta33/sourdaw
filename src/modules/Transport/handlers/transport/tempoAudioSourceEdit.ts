@@ -3,7 +3,11 @@ import {
     canApplyTempoAudioSources,
     prepareTempoAudioSources,
 } from '#/modules/Arrangement/useCases';
-import { type AppAction, type HandlerSessionActionEntry, type HandlerValidationContext } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerSessionActionEntry,
+    type HandlerMaterializationContext,
+} from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import {
     isTempoAudioSourcePromotion,
@@ -22,10 +26,10 @@ import { runWithTempoSourcePreservation } from '../../stores/tempoWriteIntent';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type RestoreAction = Extract<AppAction, { type: 'restoreTempoEdit' }>;
-type PrefixContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
+type PrefixContext = HandlerMaterializationContext;
 
 function prefixActions(context?: PrefixContext): readonly AppAction[] {
-    return context?.actions.slice(0, context.actionIndex) ?? [];
+    return context?.preparedPrefix ?? context?.actions.slice(0, context.actionIndex) ?? [];
 }
 
 function prefixClock(actions: readonly AppAction[]): TempoSourceClock | null {

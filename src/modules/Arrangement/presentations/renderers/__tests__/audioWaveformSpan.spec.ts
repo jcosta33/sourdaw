@@ -27,6 +27,31 @@ function capturedTimeline(changes: Parameters<typeof secondsBetweenBeats>[0]) {
 }
 
 describe('waveform exclusive source endpoints', () => {
+    it('keeps an exact PCM boundary after adding a non-dyadic source entry', () => {
+        const span = computeAudioWaveformDrawSpan({
+            offsetBeats: 1,
+            stretchRatio: 2,
+            clipStartBeat: 2,
+            clipBeats: 4,
+            secondsPerBeat: 60 / 90,
+            sampleRate: sampleRate48k,
+        });
+        expect(span.startSample).toBe(32_000);
+        expect(span.endSample).toBe(288_000);
+    });
+
+    it('includes a genuinely fractional final PCM cell', () => {
+        const span = computeAudioWaveformDrawSpan({
+            offsetBeats: 0,
+            offsetSeconds: 0,
+            stretchRatio: 1,
+            clipBeats: 288_000.25 / sampleRate48k,
+            secondsPerBeat: 1,
+            sampleRate: sampleRate48k,
+        });
+        expect(span.endSample).toBe(288_001);
+    });
+
     const clip: ClipRenderModel = {
         id: 'source',
         startBeat: 0,
