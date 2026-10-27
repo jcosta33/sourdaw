@@ -786,14 +786,16 @@
         "needs": "decide",
         "if": "needs.decide.outputs.code == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 20,
+        "timeout-minutes": 45,
         "steps": [
           {
             "name": "Checkout",
+            "timeout-minutes": 5,
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
             "name": "Set up pnpm",
+            "timeout-minutes": 5,
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
               "package_json_file": "package.json"
@@ -801,6 +803,7 @@
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 5,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -809,10 +812,12 @@
           },
           {
             "name": "Install dependencies",
+            "timeout-minutes": 5,
             "run": "pnpm install --frozen-lockfile"
           },
           {
             "name": "Lint",
+            "timeout-minutes": 20,
             "env": {
               "SOURDAW_LINT_CONCURRENCY": "auto",
               "SOURDAW_LINT_THREADS": "0"
