@@ -56,6 +56,12 @@ dispatch.
 
 ## Lessons from escapes
 
+### MIDI Learn armed without an available input route (introduced in `4f410257b2`)
+
+The earliest observed MIDI Learn start route, `4f410257b2` (`src/modules/Track/useCases/midiLearnUseCases.ts`), set learning state and a target without checking platform input capability. Later moves retained the route; #401 and #1853 are retention evidence, not introducing changes. No associated introducing PR or historical reviewer stance is established, and exact historical prompts are unavailable. The missed risk was capability admission across real entries and direct start, not just UI messaging.
+
+Follow platform capability through every real MIDI Learn entry and direct start action. With both input routes unavailable, require a new start to leave learning state and target unchanged and schedule no new learn timeout; pair with browser and native available-route controls. Remove the start guard as a mechanical negative control and require the unsupported-route check to fail. Preserve cancellation of an active learn, mapping removal and ordinary parameter edits. These checks do not establish physical-controller or native-hardware acceptance.
+
 ### 2026-10-25 — a current branch ref substituted an unrelated historical parent (introduced by PR #5615)
 
 PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) bound the child's current base

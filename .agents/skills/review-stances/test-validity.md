@@ -22,6 +22,15 @@ score. Include a duplicate barrel action, an unrelated entity, a wrong value on 
 and typed values whose distinctions JSON serialization would erase. Removing the project-state
 comparison must fail the named acceptance cases while an ordinary intended commit still passes.
 
+### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
+
+PR #5388 changed a declared campaign fixture while the web-gated unit matrix skipped its
+freshness assertion. The cross-language validation obligation was missed; historical private
+review prompts and models are unavailable. Require the existing freshness case in required
+static validation without broadening web or browser selection. Change a real declared fixture
+without restamping its digest and require the case to fail on that path and digest; separately
+remove the static step and require the workflow contract to fail.
+
 ### 2026-10-26 — argument-forwarding mocks accepted a stale rewrite destination (introduced by PR #4271)
 
 PR #4271 (`c5bfeda9bfeb68c934479536f3103221a853d940`) asserted that delivery forwarded the
@@ -1381,3 +1390,19 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
+
+PR #5274 (`40baa0716b`) introduced fail-closed file-inspection diagnostics; PR #5365 (`75b10ca71b`)
+refreshed whole and scoped catalogs for missing descriptor types while diagnostics still stopped
+immediately. Exact historical private reviewer prompts and tiers are unknown. Before merge, #5730's
+initial repair retained the diagnostic only at expiry: a later failed process list instead reported
+transient-eligible `process-users-unavailable`, without complete replacement proof.
+
+Run `refreshes an incomplete Darwin` whole/scoped cases with complete clear and holder replacements,
+persistent diagnostics, and later omissions. Run `keeps a Darwin ... diagnostic stable after` sequence
+cases with failed/unusable opening and closing process lists, missing/changed-UID identity, and later
+whole/scoped/parent inspection failures. Require retained storage and a stable, non-transient reason
+on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
+or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
+or add inspection diagnostics to the warning-success allowlist.
