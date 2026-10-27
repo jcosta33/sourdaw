@@ -22,8 +22,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
-import { DEFAULT_PATCH } from '../../models/GrinderPatch';
 import { grinderDisclosureLevelFromState } from '../../models/GrinderDisclosure';
+import { DEFAULT_PATCH } from '../../models/GrinderPatch';
 import { grinderStore } from '../../stores/grinderStore';
 import { setGrinderPanelUiLevel } from '../setGrinderPanelUiLevel';
 

@@ -25,7 +25,7 @@ import {
 } from '#/utils/UI/effectDisclosureTier';
 
 import {
-    GRINDER_SECTION_TIERS,
+    grinderSectionTier,
     grinderDisclosureLevelFromState,
     grinderVisibleSection,
 } from '../../models/GrinderDisclosure';
@@ -1119,7 +1119,7 @@ function SectionTabs({
 }): ReactElement {
     return (
         <Row align="stretch" wrap gap={1.5} role="group" aria-label="Grinder sections">
-            {SECTION_TABS.filter((tab) => isEffectDisclosureStageVisible(tier, GRINDER_SECTION_TIERS[tab.id])).map(
+            {SECTION_TABS.filter((tab) => isEffectDisclosureStageVisible(tier, grinderSectionTier(tab.id))).map(
                 (tab) => {
                     const Icon = tab.icon;
                     const active = patch.uiSection === tab.id;
@@ -1292,6 +1292,63 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
     );
 }
 
+function GrinderToneControls({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
+    return (
+        <>
+            <GrinderKnob
+                deviceId={deviceId}
+                value={patch.gain}
+                param="gain"
+                label="Gain"
+                min={0}
+                max={10}
+                step={0.1}
+                defaultValue={5}
+            />
+            <GrinderKnob
+                deviceId={deviceId}
+                value={patch.master}
+                param="master"
+                label="Master"
+                min={0}
+                max={10}
+                step={0.1}
+                defaultValue={5}
+            />
+            <GrinderKnob
+                deviceId={deviceId}
+                value={patch.bass}
+                param="bass"
+                label="Bass"
+                min={0}
+                max={10}
+                step={0.1}
+                defaultValue={5}
+            />
+            <GrinderKnob
+                deviceId={deviceId}
+                value={patch.mid}
+                param="mid"
+                label="Mid"
+                min={0}
+                max={10}
+                step={0.1}
+                defaultValue={5}
+            />
+            <GrinderKnob
+                deviceId={deviceId}
+                value={patch.treble}
+                param="treble"
+                label="Treble"
+                min={0}
+                max={10}
+                step={0.1}
+                defaultValue={5}
+            />
+        </>
+    );
+}
+
 function ControlDeck({
     deviceId,
     patch,
@@ -1372,56 +1429,7 @@ function ControlDeck({
     if (patch.uiSection === 'amp') {
         return (
             <Row align="stretch" wrap gap={3}>
-                <GrinderKnob
-                    deviceId={deviceId}
-                    value={patch.gain}
-                    param="gain"
-                    label="Gain"
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    defaultValue={5}
-                />
-                <GrinderKnob
-                    deviceId={deviceId}
-                    value={patch.master}
-                    param="master"
-                    label="Master"
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    defaultValue={5}
-                />
-                <GrinderKnob
-                    deviceId={deviceId}
-                    value={patch.bass}
-                    param="bass"
-                    label="Bass"
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    defaultValue={5}
-                />
-                <GrinderKnob
-                    deviceId={deviceId}
-                    value={patch.mid}
-                    param="mid"
-                    label="Mid"
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    defaultValue={5}
-                />
-                <GrinderKnob
-                    deviceId={deviceId}
-                    value={patch.treble}
-                    param="treble"
-                    label="Treble"
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    defaultValue={5}
-                />
+                <GrinderToneControls deviceId={deviceId} patch={patch} />
                 <GrinderKnob
                     deviceId={deviceId}
                     value={patch.presence}
@@ -1967,19 +1975,7 @@ function ControlDeck({
 
     return (
         <Row align="stretch" wrap gap={3}>
-            {(['gain', 'master', 'bass', 'mid', 'treble'] as const).map((param) => (
-                <GrinderKnob
-                    key={param}
-                    deviceId={deviceId}
-                    value={patch[param]}
-                    param={param}
-                    label={param.charAt(0).toUpperCase() + param.slice(1)}
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    defaultValue={5}
-                />
-            ))}
+            <GrinderToneControls deviceId={deviceId} patch={patch} />
             <Stack gap={2} className="grinder-window min-w-[250px] px-3 py-3">
                 <div className="text-dense uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
                     Current preset

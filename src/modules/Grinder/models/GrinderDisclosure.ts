@@ -10,7 +10,7 @@ import {
 import { type GrinderUiSection } from './GrinderPatch';
 
 /** Every control in a section inherits its minimum tier; sections remain cumulative. */
-export const GRINDER_SECTION_TIERS: Record<GrinderUiSection, EffectDisclosureTier> = {
+const GRINDER_SECTION_TIERS: Record<GrinderUiSection, EffectDisclosureTier> = {
     browse: 'play',
     amp: 'shape',
     drive: 'build',
@@ -18,6 +18,10 @@ export const GRINDER_SECTION_TIERS: Record<GrinderUiSection, EffectDisclosureTie
     neural: 'route',
     lab: 'lab',
 };
+
+export function grinderSectionTier(section: GrinderUiSection): EffectDisclosureTier {
+    return GRINDER_SECTION_TIERS[section];
+}
 
 export function grinderDisclosureLevelFromState(state: unknown): 1 | 2 | 3 | 4 | 5 {
     if (!isRecord(state) || state.version !== 1 || !isRecord(state.data)) {
@@ -31,5 +35,5 @@ export function grinderDisclosureLevelFromState(state: unknown): 1 | 2 | 3 | 4 |
 
 /** A lower tier hides the section without rewriting the patch's remembered navigation. */
 export function grinderVisibleSection(section: GrinderUiSection, tier: EffectDisclosureTier): GrinderUiSection {
-    return isEffectDisclosureStageVisible(tier, GRINDER_SECTION_TIERS[section]) ? section : 'browse';
+    return isEffectDisclosureStageVisible(tier, grinderSectionTier(section)) ? section : 'browse';
 }
