@@ -1,0 +1,20 @@
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  s_29d8df116c5b92::t_bfee9767070879 73-109
+  s_29d8df116c5b92::t_9369b7a9d538c0 110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77687a4be028c945d83c7fe9e392add86f1134e9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
