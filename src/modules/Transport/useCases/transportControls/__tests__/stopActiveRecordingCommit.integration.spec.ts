@@ -900,6 +900,48 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         expect(findClip(provisional.id)?.endBeat).toBe(8);
     });
 
+    it('punch-out seals an admitted MIDI key before its live worker returns', async () => {
+        transportStore.set({
+            ...transportStore.value!,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+            playheadPosition: 4,
+        });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional MIDI clip');
+        }
+        flushAutomergeStorageWrites();
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        playheadClockRef.beat = 6;
+        playheadClockRef.audioTimeSeconds = 1;
+        mocks.audioClock.currentTime = 1;
+        Object.defineProperty(audioEngine.context, 'currentTime', {
+            configurable: true,
+            get: () => mocks.audioClock.currentTime,
+        });
+        const worker = Promise.withResolvers<void>();
+        liveMidiGate.pending = worker.promise;
+        const physical = handleWebMidiMessage({ data: new Uint8Array([0x91, 72, 100]), timeStamp: undefined });
+        expect(activeRecordingRef.midiAdmissions.map((admitted) => admitted.onsetSourceBeat)).toEqual([2]);
+        playheadClockRef.beat = 8;
+        playheadClockRef.audioTimeSeconds = 2;
+        mocks.audioClock.currentTime = 2;
+
+        finalizeAutomaticRecording(8);
+        await stopActiveRecording();
+        worker.resolve();
+        await physical;
+
+        expect(midiStore.value?.notesByClipId[provisional.id]).toEqual([
+            expect.objectContaining({ pitch: 72, startBeat: 2 }),
+        ]);
+        expect(committedEntryCount()).toBe(1);
+        await undo();
+        expect(midiStore.value?.notesByClipId[provisional.id] ?? []).toEqual([]);
+    });
+
     it('retires the provisional MIDI recording when the commit is refused, and tells the user', async () => {
         const [provisional] = startRecording(4);
         if (!provisional) {
