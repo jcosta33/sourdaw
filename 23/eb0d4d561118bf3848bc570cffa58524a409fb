@@ -1,0 +1,29 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_29d8df116c5b92::t_eacfd892ff82c9 35,171-179
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.ts
+  s_29d8df116c5b92::t_a524ebc64b364a 717
+  s_29d8df116c5b92::t_924ae489901075 700,867-869,890-892,901
+  s_29d8df116c5b92::t_3ceac06f043ef7 15,45,701,863-866,870-889,893-900,902-909
+src/modules/TimelineEditor/presentations/helpers/applyPianoRollTakeMenuAction.ts
+  s_29d8df116c5b92::t_be8af8f2cf6465 5,183-186,189-217,238-247,251
+  s_29d8df116c5b92::t_0f9495a3a4929e 248-250
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_29d8df116c5b92::t_b34a5d81e09903 5-10,244-275,280-282,285,289
+  s_29d8df116c5b92::t_e0345ba8197519 276-279,283-284,286-288,290-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23eb0d4d561118bf3848bc570cffa58524a409fb",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
