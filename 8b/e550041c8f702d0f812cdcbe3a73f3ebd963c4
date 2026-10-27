@@ -1,0 +1,21 @@
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_29d8df116c5b92::t_2bfeaf73a63a19 63-91
+  s_29d8df116c5b92::t_58b80397e88737 645-660,662,1026,1030-1047
+  s_29d8df116c5b92::t_158e4d328536bd 1048
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8be550041c8f702d0f812cdcbe3a73f3ebd963c4",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
