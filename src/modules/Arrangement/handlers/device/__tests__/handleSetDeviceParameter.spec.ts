@@ -67,6 +67,37 @@ describe('handleSetDeviceParameter', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
+    it.each([true, false])('keeps canonical settlement independent of current runtime authority %s', (current) => {
+        mocks.setDeviceParameter.mockReturnValue(true);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.8 } }] }],
+        });
+        const action = {
+            type: 'setDeviceParameter' as const,
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        };
+        const owner = Symbol('preview');
+        const context = {
+            actions: [action],
+            actionIndex: 0,
+            deviceParameterRuntimeAuthority: {
+                trackId: 't1',
+                deviceId: 'd1',
+                paramId: 'gain',
+                owner,
+                isCurrent: () => current,
+            },
+        };
+        expect(handleSetDeviceParameter.execute(action, context)).toEqual({ status: 'written' });
+        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5, {
+            automationRecordingPolicy: undefined,
+            runtimeOwner: owner,
+            ...(current ? {} : { projectOnly: true }),
+        });
+        handleSetDeviceParameter.prepareAbort?.(action, context)();
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(current ? 1 : 0);
+    });
+
     it('reports no-write when the authoritative use case rejects the owner', () => {
         mocks.setDeviceParameter.mockReturnValue(false);
 

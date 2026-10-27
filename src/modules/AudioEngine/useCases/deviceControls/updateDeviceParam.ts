@@ -3,7 +3,7 @@ import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
-import { setDeviceParameterRuntimeWriteOwner } from './setDeviceParameterRuntimeWriteOwner';
+import { withDeviceParameterRuntimeWriteOwner } from './setDeviceParameterRuntimeWriteOwner';
 import { writeNativeBuiltinParameters } from './writeNativeBuiltinParameters';
 
 /**
@@ -39,8 +39,9 @@ export function updateDeviceParam(
     runtimeOwner?: symbol
 ): void {
     const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
-    setDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, runtimeOwner);
-    audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
+    withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, runtimeOwner, () => {
+        audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
+    });
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
     if (body) {
         writeNativeBuiltinParameters(trackId, deviceId, { [body.parameterName(paramId)]: clamped });

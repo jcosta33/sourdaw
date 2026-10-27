@@ -16,6 +16,9 @@ import { clampDeviceParamWrite, trackStore, type Device, type Track } from '#/mo
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { sendNativeDeviceParameters } from '../../livePlayback/sendNativeDeviceParameters';
 import { holdWebFallbackDeviceParam } from '../holdWebFallbackDeviceParam';
+import { captureDeviceParameterRuntimeWriteAuthority } from '../captureDeviceParameterRuntimeWriteAuthority';
+import { captureDeviceParameterRuntimeWriteReceipt } from '../setDeviceParameterRuntimeWriteOwner';
+import { updateDeviceParam } from '../updateDeviceParam';
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
@@ -59,6 +62,22 @@ describe('holdWebFallbackDeviceParam', () => {
     afterEach(() => {
         trackStore.set(null);
     });
+
+    it.each([0.25, 0.8])(
+        'invalidates a project-spelled preview after a DSP-spelled fallback effectively writes %s',
+        (value) => {
+            vi.mocked(audioEngine.updateDeviceParam).mockImplementation((trackId, deviceId, paramId) => {
+                captureDeviceParameterRuntimeWriteReceipt(trackId, deviceId, paramId).begin()();
+            });
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'd1', 'filterCutoff');
+            updateDeviceParam('t1', 'd1', 'filterCutoff', 0.25, preview.owner);
+            expect(preview.isCurrent()).toBe(true);
+            holdWebFallbackDeviceParam('t1', 'd1', 'cutoff', value);
+            expect(preview.isCurrent()).toBe(false);
+            expect(preview.canCommit()).toBe(false);
+            vi.mocked(audioEngine.updateDeviceParam).mockReset();
+        }
+    );
 
     it('writes the built-in’s Web Audio node the value the law allowed, and sends nothing natively', () => {
         vi.mocked(clampDeviceParamWrite).mockReturnValue(1);

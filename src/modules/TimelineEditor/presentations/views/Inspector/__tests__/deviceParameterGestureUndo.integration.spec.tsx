@@ -36,6 +36,8 @@ import { defaultTransportState, setGestureClockSource, transportStore } from '#/
 import { applyAutomation } from '#/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { captureDeviceParameterRuntimeWriteReceipt } from '#/modules/AudioEngine/useCases/deviceControls/setDeviceParameterRuntimeWriteOwner';
+
 import { DeviceParameterControl } from '../DeviceParameterControl';
 
 // Command, Arrangement, Automerge and history stay real. This is the engine's
@@ -273,7 +275,9 @@ describe('Inspector continuous parameter gestures through real history', () => {
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
         vi.spyOn(audioEngine, 'updateDeviceParam').mockImplementation(
             (trackId: string, deviceId: string, paramId: string, value: number) => {
+                const complete = captureDeviceParameterRuntimeWriteReceipt(trackId, deviceId, paramId).begin();
                 engineWrites.push({ trackId, deviceId, paramId, value });
+                complete();
                 afterEngineWrite?.();
             }
         );
@@ -681,6 +685,28 @@ describe('Inspector continuous parameter gestures through real history', () => {
         expect(depth()).toBe(0);
     });
 
+    it.each(['absent-target', 'throwing-controller'])(
+        'retains restoration authority after a later %s attempt',
+        (refusal) => {
+            const view = render(<Control />);
+            beginKnob();
+            moveKnob(85);
+            vi.mocked(audioEngine.updateDeviceParam).mockImplementationOnce(() => {
+                if (refusal === 'throwing-controller') {
+                    throw new Error('controller refused write');
+                }
+            });
+            if (refusal === 'throwing-controller') {
+                expect(() => updateDeviceParam('track-1', synth.id, 'detune', 65)).toThrow('controller refused write');
+            } else {
+                updateDeviceParam('track-1', synth.id, 'detune', 65);
+            }
+            view.unmount();
+            expect(writes()).toEqual([25, 5]);
+            expect(depth()).toBe(0);
+        }
+    );
+
     it.each([65, 25])('commits one edit without overtaking a newer runtime producer at %s', async (laterValue) => {
         render(<Control />);
         beginKnob();
@@ -725,6 +751,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
             parameterValues: { gain: 5 },
         };
         trackStore.set({ ...trackStore.value!, tracks: [testTrack([grinder])] });
+        settlePendingProjectWritesAndCaptureRevision();
         const view = render(<Control deviceId={grinder.id} paramId="gain" />);
         const control = screen.getByRole('slider', { name: 'Gain' });
         beginKnob(control);

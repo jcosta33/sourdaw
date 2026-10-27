@@ -4,6 +4,7 @@ import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { nativeBuiltinBody } from '../livePlayback/nativeBuiltinBodies';
 
 import { deviceTypeOnStrip } from './deviceTypeOnStrip';
+import { withDeviceParameterRuntimeWriteOwner } from './setDeviceParameterRuntimeWriteOwner';
 
 /**
  * Keep a carried built-in's Web Audio node on the automation curve without
@@ -29,5 +30,7 @@ export function holdWebFallbackDeviceParam(trackId: string, deviceId: string, pa
     if (type === null || !nativeBuiltinBody(type)) {
         return;
     }
-    audioEngine.updateDeviceParam(trackId, deviceId, paramId, clampDeviceParamWrite({ deviceId, paramId, value }));
+    withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, undefined, () => {
+        audioEngine.updateDeviceParam(trackId, deviceId, paramId, clampDeviceParamWrite({ deviceId, paramId, value }));
+    });
 }

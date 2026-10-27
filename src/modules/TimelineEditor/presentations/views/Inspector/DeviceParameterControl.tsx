@@ -494,6 +494,13 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             },
             {
                 shouldExecute: gesture.authority.isCurrent,
+                deviceParameterRuntimeAuthority: {
+                    trackId: gesture.trackId,
+                    deviceId: gesture.deviceId,
+                    paramId: gesture.paramId,
+                    owner: gesture.runtimeAuthority.owner,
+                    isCurrent: gesture.runtimeAuthority.canCommit,
+                },
                 onCommitted: () => {
                     gesture.committed = true;
                 },

@@ -8,7 +8,12 @@ import {
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
-import { type AppAction, type ExecuteOptions, type HandlerExecutionResult } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type ExecuteOptions,
+    type HandlerExecutionResult,
+    type HandlerValidationContext,
+} from '#/utils/handlerContract';
 
 import {
     AppActionCommittedError,
@@ -39,6 +44,7 @@ import { traceAppAction } from './traceAppAction';
 export type ExecuteAppActionOptions = ExecuteOptions & {
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
+    deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
 };
 
 type ExecuteAppAction = (action: AppAction, options?: ExecuteAppActionOptions) => Promise<void>;
@@ -194,6 +200,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                         signal: options?.signal,
                         onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                         workOwner: options?.workOwner,
+                        ...(options?.deviceParameterRuntimeAuthority
+                            ? { deviceParameterRuntimeAuthority: options.deviceParameterRuntimeAuthority }
+                            : {}),
                     });
                 } catch (error) {
                     logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
@@ -283,7 +292,14 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             const described = undoResult;
             const attempted: AttemptedAction = {
                 actionType: action.type,
-                rollback: handler.prepareAbort?.(action) ?? null,
+                rollback:
+                    handler.prepareAbort?.(action, {
+                        actions: [action],
+                        actionIndex: 0,
+                        ...(options?.deviceParameterRuntimeAuthority
+                            ? { deviceParameterRuntimeAuthority: options.deviceParameterRuntimeAuthority }
+                            : {}),
+                    }) ?? null,
                 readCompensation: () => {
                     const inverseAction = described?.inverseAction ?? null;
                     return {
@@ -314,6 +330,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     signal: options?.signal,
                     onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                     workOwner: options?.workOwner,
+                    ...(options?.deviceParameterRuntimeAuthority
+                        ? { deviceParameterRuntimeAuthority: options.deviceParameterRuntimeAuthority }
+                        : {}),
                 })
             );
             if (storage_transaction.status === 'threw') {
