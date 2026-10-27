@@ -344,6 +344,38 @@ describe('native historical reflog byte bound', () => {
 });
 
 describe('historical stack native admission', () => {
+    it('selects immutable author IDs only on concrete Actor types in the native query', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-historical-query-'));
+        const queries: string[] = [];
+        const port = historicalAdmissionShellPort(
+            {
+                lane: '/owned/child',
+                branch: childBranch,
+                primaryRoot: '/primary',
+                gitPath: 'git',
+                ghPath: 'gh',
+                localEnv: {},
+                session: { configDir: root, env: {}, dispose: () => undefined },
+                capture: (command, args) => {
+                    expect(command).toBe('gh');
+                    expect(args.slice(0, 3)).toEqual(['api', 'graphql', '-f']);
+                    queries.push(args[3] ?? '');
+                    throw new Error('captured historical query');
+                },
+            },
+            { childPullRequest: 5438, parentPullRequest: 5425, expectedHead: child }
+        );
+
+        expect(() => port.observe()).toThrow('captured historical query');
+        expect(queries).toHaveLength(1);
+        const query = queries[0] ?? '';
+        expect(query).toContain('child:pullRequest(number:5438)');
+        expect(query).toContain('parent:pullRequest(number:5425)');
+        // Actor has no id field; identity must be selected on supported concrete Node types.
+        const authors = [...query.matchAll(/author\s*\{(.*?)\}\s*repository/g)].map((match) => match[1]?.trim());
+        expect(authors).toEqual(['... on Bot { id } ... on User { id }', '... on Bot { id } ... on User { id }']);
+    });
+
     it('replays when two matching resumes both observed the missing marker', () => {
         const f = fixture();
         const expected = admitHistoricalStack(f.input, f.port);
@@ -800,6 +832,14 @@ describe('historical stack native admission', () => {
                 parents
             )
         ).toThrow(/errors/);
+        for (const author of [null, {}, { login: 'hplovecraft208' }, { id: '' }]) {
+            expect(() =>
+                parseHistoricalStackObservation(raw({ ...core, child: { ...core.child, author } }), children, parents)
+            ).toThrow(/historical/);
+            expect(() =>
+                parseHistoricalStackObservation(raw({ ...core, parent: { ...core.parent, author } }), children, parents)
+            ).toThrow(/historical/);
+        }
     });
     it('blocks every normal registered-lineage reader during a receipt-only crash and accepts only matching completion', () => {
         const f = fixture();
