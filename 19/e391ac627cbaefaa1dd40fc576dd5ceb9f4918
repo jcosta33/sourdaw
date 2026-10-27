@@ -1,0 +1,45 @@
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  s_29d8df116c5b92::t_5a3e26adab662f 21-22
+src/modules/MIDI/useCases/webMidiInput/sealHeldRecordedMidiNotes.ts
+  s_29d8df116c5b92::t_5a3e26adab662f 48-50
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_29d8df116c5b92::t_efa85fcab22076 14,40-45,72,82-86,95-97,117-125
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_efa85fcab22076 265
+src/modules/Arrangement/useCases/recording/recordingMidiAdmission.ts
+  s_29d8df116c5b92::t_5a3e26adab662f 10-14,17-18,70-73,83
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_29d8df116c5b92::t_90467fed8516dc 125
+  s_29d8df116c5b92::t_95914fd35f8c05 222
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_90467fed8516dc 942
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_29d8df116c5b92::t_77ba22876bd757 117
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_29d8df116c5b92::t_5f6d9e0ac3b4bd 14,607-615,624-632,660-666
+  s_3168504f6ce387::t_6db80edbac9d96 667
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19e391ac627cbaefaa1dd40fc576dd5ceb9f4918",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
