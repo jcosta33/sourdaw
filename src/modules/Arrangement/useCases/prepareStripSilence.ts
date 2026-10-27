@@ -1,7 +1,9 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { readTempoAtBeat } from '#/modules/Transport/stores';
-import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { tempoMapStore } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip } from '../models/Track';
 import { type WarpState } from '../models/WarpMarker';
@@ -14,6 +16,8 @@ import { keyMigratedAutomationLanes } from './clip/keyMigratedAutomationLanes';
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from './clip/readClipScopedAutomationLanes';
 import { consumedStretchFactor } from './clipEditing/consumedStretchFactor';
 import { getClipIdCensus } from './clipEditing/getClipIdCensus';
+import { prepareAudioClipCutFields } from './clipEditing/prepareAudioClipCutFields';
+import { liveTempoTimeline } from './liveTempoTimeline';
 
 type PrepareStripSilenceInput = {
     clipId: string;
@@ -26,68 +30,95 @@ type PrepareStripSilenceInput = {
 };
 
 type Region = { startSample: number; endSample: number };
+type TimelineRegion = { startBeat: number; endBeat: number; sourceStartSeconds: number };
 
 /** Derived rather than imported: Automation owns the point model. */
 type AutomationLanePoint = AutomationLaneValue['points'][number];
 
-/** The played window of the target buffer, and the constants that map it. */
+/** One continuous source pass; loop resets start a separate window. */
 type PlayedWindow = {
-    /** First buffer sample the clip plays. */
     startSample: number;
-    /** One past the last buffer sample the clip plays. */
     endSample: number;
-    /** Buffer beats per buffer sample — the frame `audioOffsetBeats` lives in. */
-    bufferBeatsPerSample: number;
-    /** The consumed stretch factor: source buffer beats per timeline beat. */
-    stretchRatio: number;
-    /** The clip's own `audioOffsetBeats`, in buffer beats. */
-    audioOffsetBeats: number;
+    startBeat: number;
+    endBeat: number;
+    sourceStartSeconds: number;
+    sourceEndSeconds: number;
 };
 
 function emptySatelliteEntry(clipId: string): ClipSatelliteEntry {
     return { clipId, gainEnvelope: null, warpState: null };
 }
 
-/**
- * The portion of the buffer this clip actually plays, using the canonical
- * clip-to-buffer mapping the waveform span draws with
- * (`presentations/renderers/audioWaveformSpan.ts`): `audioOffsetBeats` is a
- * position in the SOURCE buffer's own beat frame; a negative offset is a
- * silent pre-roll that costs `max(0, -audioOffsetBeats) / stretchRatio`
- * timeline beats of the clip, so playback consumes only
- * `(clipBeats - preRollBeats) * stretchRatio` buffer beats of it —
- * `consumedStretchFactor` source beats per timeline beat, 1x unless stretch
- * is on, the same law the split paths route through. Scanning the whole
- * buffer instead — which is what mapping `clipDurationBeats` onto
- * `channelData.length` amounts to — detects silence in audio a trimmed,
- * stretched, or pre-rolled clip never plays, and mis-scales every derived
- * beat position.
- */
-function resolvePlayedWindow(clip: Clip, buffer: AudioBuffer, bufferLength: number): PlayedWindow | null {
-    const tempo = readTempoAtBeat({ beat: clip.startBeat });
-    const samplesPerBufferBeat = (60 / tempo) * buffer.sampleRate;
-    if (!Number.isFinite(samplesPerBufferBeat) || samplesPerBufferBeat <= 0) {
-        return null;
+/** Read the same signed source intervals and repeat grid as playback. */
+function resolvePlayedWindows(clip: Clip, buffer: AudioBuffer, bufferLength: number): PlayedWindow[] {
+    if (!hasExactAudioSourceFields(clip) || !Number.isFinite(buffer.sampleRate) || buffer.sampleRate <= 0) {
+        return [];
     }
-    const audioOffsetBeats = clip.audioOffsetBeats ?? 0;
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
     const stretchRatio = consumedStretchFactor(clip);
-    const clipBeats = clip.endBeat - clip.startBeat;
-    const startSample = Math.max(0, Math.floor(audioOffsetBeats * samplesPerBufferBeat));
-    const preRollBeats = Math.max(0, -audioOffsetBeats) / stretchRatio;
-    const audibleTimelineBeats = clipBeats - preRollBeats;
-    const consumedSamples = audibleTimelineBeats * stretchRatio * samplesPerBufferBeat;
-    // The buffer end caps the window: past it the clip plays nothing, so there
-    // is no silence there to strip.
-    const endSample = Math.min(bufferLength, Math.floor(startSample + consumedSamples));
-    if (endSample <= startSample) {
-        return null;
-    }
-    return {
-        startSample,
-        endSample,
-        bufferBeatsPerSample: 1 / samplesPerBufferBeat,
+    const windows: PlayedWindow[] = [];
+    for (const part of projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: loop.loopLengthBeats,
+        iterationStartBeat: clip.startBeat,
+        iterationEndBeat: clip.endBeat,
         stretchRatio,
-        audioOffsetBeats,
+        tempoAtClipStart: liveTempoTimeline.tempoAtBeat(clip.startBeat),
+        secondsAtBeat: liveTempoTimeline.secondsAtBeat,
+    })) {
+        const startBeat = clip.startBeat + part.startOffsetBeats;
+        const endBeat = clip.startBeat + part.endOffsetBeats;
+        const sourceEndSeconds =
+            part.sourceStartSeconds +
+            stretchRatio * (liveTempoTimeline.secondsAtBeat(endBeat) - liveTempoTimeline.secondsAtBeat(startBeat));
+        // Sample n represents [n/rate, (n+1)/rate). Include partial edge samples,
+        // then clamp their detected regions to the actual signed pass below.
+        const startSample = Math.max(0, Math.floor(part.sourceStartSeconds * buffer.sampleRate));
+        const endSample = Math.min(bufferLength, Math.ceil(sourceEndSeconds * buffer.sampleRate));
+        if (endSample > startSample) {
+            windows.push({
+                startSample,
+                endSample,
+                startBeat,
+                endBeat,
+                sourceStartSeconds: part.sourceStartSeconds,
+                sourceEndSeconds,
+            });
+        }
+    }
+    return windows;
+}
+
+function timelineRegion(
+    region: Region,
+    window: PlayedWindow,
+    sampleRate: number,
+    stretchRatio: number
+): TimelineRegion {
+    const passStartSeconds = liveTempoTimeline.secondsAtBeat(window.startBeat);
+    const tempo = liveTempoTimeline.tempoAtBeat(window.startBeat);
+    // The direct inverse preserves exact legacy positions only when the whole
+    // governing map is flat. Equal endpoint tempos and total duration cannot
+    // establish that: faster and slower interior spans can cancel each other.
+    const flat = (tempoMapStore.value?.changes ?? []).every((change) => change.tempo === tempo);
+    const beatAtSource = (seconds: number) => {
+        const elapsed = (seconds - window.sourceStartSeconds) / stretchRatio;
+        return flat
+            ? window.startBeat + (elapsed * tempo) / 60
+            : liveTempoTimeline.beatAtSeconds(passStartSeconds + elapsed);
+    };
+    const sourceStartSeconds = Math.max(window.sourceStartSeconds, region.startSample / sampleRate);
+    return {
+        startBeat: Math.max(window.startBeat, beatAtSource(sourceStartSeconds)),
+        endBeat: Math.min(
+            window.endBeat,
+            beatAtSource(Math.min(window.sourceEndSeconds, region.endSample / sampleRate))
+        ),
+        sourceStartSeconds,
     };
 }
 
@@ -252,18 +283,14 @@ function detectSoundRegions(
     return regions;
 }
 
-function mergeCloseRegions(
-    regions: readonly Region[],
-    minSilenceBeats: number,
-    timelineBeatsPerSample: number
-): Region[] {
-    const merged: Region[] = [];
+function mergeCloseRegions(regions: readonly TimelineRegion[], minSilenceBeats: number): TimelineRegion[] {
+    const merged: TimelineRegion[] = [];
     for (const region of regions) {
         const last = merged[merged.length - 1];
         if (last) {
-            const gapBeats = (region.startSample - last.endSample) * timelineBeatsPerSample;
-            if (gapBeats < minSilenceBeats) {
-                last.endSample = region.endSample;
+            const gapBeats = region.startBeat - last.endBeat;
+            if (gapBeats <= 0 || gapBeats < minSilenceBeats) {
+                last.endBeat = region.endBeat;
                 continue;
             }
         }
@@ -336,18 +363,20 @@ export function prepareStripSilence({
 
     const thresholdLinear = 10 ** (threshold / 20);
     const channelData = buffer.getChannelData(0);
-    const playedWindow = resolvePlayedWindow(targetClip, buffer, channelData.length);
-    if (!playedWindow) {
-        return null;
-    }
-    const timelineBeatsPerSample = playedWindow.bufferBeatsPerSample / playedWindow.stretchRatio;
-
-    const regions = detectSoundRegions(channelData, thresholdLinear, buffer.sampleRate, playedWindow);
+    const playedWindows = resolvePlayedWindows(targetClip, buffer, channelData.length);
+    const stretchRatio = consumedStretchFactor(targetClip);
+    const regions = playedWindows
+        .flatMap((window) =>
+            detectSoundRegions(channelData, thresholdLinear, buffer.sampleRate, window).map((region) =>
+                timelineRegion(region, window, buffer.sampleRate, stretchRatio)
+            )
+        )
+        .filter((region) => region.endBeat > region.startBeat);
     if (regions.length <= 1) {
         return null;
     }
 
-    const mergedRegions = mergeCloseRegions(regions, minDuration, timelineBeatsPerSample);
+    const mergedRegions = mergeCloseRegions(regions, minDuration);
     if (mergedRegions.length <= 1) {
         return null;
     }
@@ -364,39 +393,20 @@ export function prepareStripSilence({
     const newClipSatellites: ClipSatelliteEntry[] = [];
     for (const [index, region] of mergedRegions.entries()) {
         const newClipId = resolvedSegmentClipIds[index]!;
-        // The region is measured in the buffer's own beat frame; the segment's
-        // timeline position is where that audio already played — source beats
-        // over the stretch factor — so the clip's own offset comes back out
-        // and the segment reads from the detected buffer beats verbatim.
-        const regionStartBeats = region.startSample * playedWindow.bufferBeatsPerSample;
-        const regionEndBeats = region.endSample * playedWindow.bufferBeatsPerSample;
-        const startBeat =
-            targetClip.startBeat + (regionStartBeats - playedWindow.audioOffsetBeats) / playedWindow.stretchRatio;
-        const endBeat =
-            targetClip.startBeat + (regionEndBeats - playedWindow.audioOffsetBeats) / playedWindow.stretchRatio;
+        const { startBeat, endBeat } = region;
+        const source = prepareAudioClipCutFields(targetClip, startBeat, 0);
+        if (!source || source.audioOffsetSeconds === undefined) {
+            return null;
+        }
         const shift = startBeat - targetClip.startBeat;
-        // The segment's loop anchor follows its media basis (#4988), the same
-        // law `prepareClipSplit`'s `fragmentLoopOriginEntry` applies to the
-        // audio fragment: the offset advances by the stretched media delta
-        // `regionStartBeats - audioOffsetBeats` while the start advances by
-        // the raw timeline delta, so the carried anchor shifts by
-        // `timelineDelta - contentDelta` — zero at stretch 1 — and the region
-        // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the source's
-        // own at any ratio. Carried verbatim through the spread, a stretched
-        // strip displaces the derived region by
-        // `timelineDelta * (stretch - 1)` source beats and each segment cycles
-        // material the loop never covered. An unanchored source keeps the key
-        // absent.
         newClips.push({
             ...targetClip,
             id: newClipId,
             startBeat,
             endBeat,
-            audioOffsetBeats: regionStartBeats,
-            ...shiftLoopOriginEntry(
-                targetClip,
-                startBeat - targetClip.startBeat - (regionStartBeats - playedWindow.audioOffsetBeats)
-            ),
+            // Compatibility only; canonical seconds and the original pass anchors govern playback.
+            audioOffsetBeats: (region.sourceStartSeconds * liveTempoTimeline.tempoAtBeat(targetClip.startBeat)) / 60,
+            ...source,
         });
         newClipSatellites.push({
             clipId: newClipId,
