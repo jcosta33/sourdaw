@@ -1,0 +1,21 @@
+tests/e2e/proofPanelTestId.spec.ts
+  s_59e31a5c6f3e31::t_7358bf6fe9ee2f 119-126
+src/modules/Proof/presentations/views/__tests__/ProofDisclosure.integration.spec.tsx
+  s_59e31a5c6f3e31::t_26815e913f3f7b 140-149,156-157,163-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f86408b493ff2bf34eeff9caea1059f8fa514235",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
