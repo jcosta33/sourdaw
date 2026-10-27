@@ -24,7 +24,7 @@
  * about to deliver, and the echoed position this side windows from is a frame
  * or two behind the engine's own.
  *
- * A looping pass keeps exact resident event identities across the seam. Its
+ * Every pass keeps exact resident event identities; a looping pass also keeps them across the seam. Its
  * ahead window and spent trail shrink to fit the same fixed store; entries
  * already prefetched for replay survive clearing and are never sent twice.
  * Real offs reserved with their ons remain while the key may be sounding,
@@ -72,17 +72,17 @@ export type LiveMidiWriterTarget = {
     trackName: string;
     /** This target's events for its span, ascending by time. */
     events: readonly AudioGraphMidiNoteEvent[];
-    /** Prepared once on a looping arm; owned and invalidated with this programme. */
+    /** Prepared once on every arm; owned and invalidated with this programme. */
     loopFrameGroups?: readonly LiveMidiFrameGroup[];
     /** Real on/off partners after the programme's same-key normalization. */
     loopNotePartners?: readonly (number | undefined)[];
     /** Replacement offs spanning an opening position; no note chase is implied. */
     loopOpeningNoteOffIndices?: readonly number[];
-    /** Accepted event count; the contiguous prefix cursor for a non-looping pass. */
+    /** Cumulative event count accepted by the host for this pass. */
     cursor: number;
     /** Entries this side believes the engine's store still holds: sent minus cleared. */
     held: number;
-    /** Exact resident entries for a circular pass; non-looping passes use the prefix cursor. */
+    /** Exact entries the producer has queued into the persistent store. */
     heldEventIndices?: readonly number[];
     /** Whether this pass has already reported this target's store full. */
     saturationReported: boolean;
@@ -139,7 +139,7 @@ export type MidiAdmission = Readonly<{
     slot: LiveMidiWriterTarget;
     /** How many new entries this batch carried for the target. */
     admitted: number;
-    /** What its store holds once the batch's clear and its notes are both taken. */
+    /** What the producer expects the store to hold after its queued clears and notes. */
     heldAfter: number;
     heldEventIndicesAfter?: readonly number[];
 }>;

@@ -55,23 +55,16 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type Track } from '#/modules/Arrangement/stores';
 
-import {
-    type AudioGraphCommand,
-    type AudioGraphDeviceTarget,
-    type AudioGraphMidiNoteEvent,
-} from '../../models/AudioGraphBackend';
+import { type AudioGraphDeviceTarget, type AudioGraphMidiNoteEvent } from '../../models/AudioGraphBackend';
 
-import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
 import { loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
-    MIDI_WINDOW_SECONDS,
     nativeLiveMidiWriter,
     type LiveMidiFrameGroup,
     type LiveMidiWriterPass,
     type LiveMidiWriterTarget,
-    type MidiAdmission,
     type MidiWriterBatch,
 } from './nativeLiveMidiWriterState';
 import { type LiveMidiProgrammeExclusion, type LiveMidiSpan } from './projectLiveMidiProgramme';
@@ -149,7 +142,9 @@ function indexLoopMidiNotePartners(events: readonly AudioGraphMidiNoteEvent[]): 
 function passSpan(input: ArmNativeLiveMidiWriterInput): PassSpan {
     const { loopRegion, loopEnabled } = nativeLiveGraphSession;
     if (!loopEnabled || !loopRegion || input.positionSeconds >= loopRegion.endSeconds) {
-        return { startSeconds: input.positionSeconds, endSeconds: Number.POSITIVE_INFINITY, looping: false };
+        // Keep the source identity of already-sounding notes so a rewrite can
+        // reserve their real releases. The window admits no past note-ons.
+        return { startSeconds: 0, endSeconds: Number.POSITIVE_INFINITY, looping: false };
     }
     return {
         startSeconds: Math.min(input.positionSeconds, loopRegion.startSeconds),
@@ -213,39 +208,14 @@ function recordAbandonedTargets(
 
 /** The opening batch: every target's store wiped, then filled to the horizon. */
 function openingBatch(pass: LiveMidiWriterPass, positionSeconds: number): MidiWriterBatch {
-    if (pass.looping) {
-        return loopMidiWindowBatch(pass, positionSeconds, null, true);
-    }
-    const horizonSeconds = positionSeconds + MIDI_WINDOW_SECONDS;
-    const commands: AudioGraphCommand[] = [];
-    const admissions: MidiAdmission[] = [];
-    for (const slot of pass.targets) {
-        // Cleared even when nothing is admitted: this target's store may hold
-        // the previous pass's notes while this one owes it none.
-        commands.push({ kind: 'clear-midi', target: slot.target, fromTime: 0, toTime: null });
-        const admitted = admitMidiEvents(slot, { horizonSeconds, heldAfterClear: 0 });
-        if (admitted > 0) {
-            commands.push({
-                kind: 'schedule-midi',
-                target: slot.target,
-                probabilitySeed: pass.probabilitySeed,
-                notes: slot.events.slice(slot.cursor, slot.cursor + admitted),
-            });
-        }
-        admissions.push({ slot, admitted, heldAfter: admitted });
-    }
-    return { commands, admissions };
+    return loopMidiWindowBatch(pass, positionSeconds, null, true);
 }
 
 function prepareLoopMidi(
     events: readonly AudioGraphMidiNoteEvent[],
-    looping: boolean,
     positionSeconds: number,
     sampleRate: number
 ): Pick<LiveMidiWriterTarget, 'loopFrameGroups' | 'loopNotePartners' | 'loopOpeningNoteOffIndices'> {
-    if (!looping) {
-        return {};
-    }
     const partners = indexLoopMidiNotePartners(events);
     const position = Math.round(positionSeconds * sampleRate);
     const spanningOffs: number[] = [];
@@ -311,10 +281,10 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
                 deviceName: device?.name ?? entry.target.deviceId,
                 trackName: trackNameById.get(entry.target.trackId) ?? entry.target.trackId,
                 events: entry.events,
-                ...prepareLoopMidi(entry.events, span.looping, input.positionSeconds, input.sampleRate),
+                ...prepareLoopMidi(entry.events, input.positionSeconds, input.sampleRate),
                 cursor: 0,
                 held: 0,
-                heldEventIndices: span.looping ? [] : undefined,
+                heldEventIndices: [],
                 saturationReported: false,
             };
         }),

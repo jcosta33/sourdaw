@@ -7,12 +7,12 @@
  * law, and a second copy of it would be a second belief about a store there is
  * only one of.
  *
- * A cursor is a claim that the engine accepted those events. A refusal is
- * whole-batch — `try_extend` pushes nothing before it decides — so nothing
- * moves and the same events are offered again on the next tick, rather than a
- * shorter run that stepped over what never landed. The refusal is said once per
- * pass, because it arrives on every animation frame for as long as its cause
- * stands.
+ * A control-side refusal queues none of these commands, so producer state
+ * stays unchanged and the next tick offers them again. A host applied response
+ * records queue admission, not callback success: native may later apply a clear
+ * and refuse its following note command. The producer must bound every window
+ * against capacity itself; this response cannot repair callback overflow.
+ * Refusals are reported once per pass while their cause stands.
  *
  * Applied directly rather than through `queueOnNativeLiveGraphSession`: both
  * senders are reached from inside that chain — the arm from the session start,

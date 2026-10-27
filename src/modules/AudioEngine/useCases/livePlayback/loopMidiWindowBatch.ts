@@ -1,7 +1,7 @@
 /**
- * A persistent native note store holds a circular window, not a whole loop.
+ * A persistent native note store holds a bounded window in either playback mode.
  * Reserve half its entries for upcoming events, then keep as much spent trail
- * as fits. Dense loops therefore shorten the time window instead of losing
+ * as fits. Dense parts therefore shorten the time window instead of losing
  * their tail. The clock must be sampled before that admitted horizon runs out;
  * this control-side writer cannot recover frames the engine already rendered.
  */
@@ -44,6 +44,7 @@ type AheadWindow = Readonly<{
     end: number;
     firstAtPosition: number;
     horizonFrames: number;
+    looping: boolean;
 }>;
 
 function takeAhead(
@@ -87,7 +88,7 @@ function takeAhead(
     }
     // The native store replays this second range after the seam. Before the
     // region's first entry, the first range already includes its whole head.
-    for (let index = loopFirst; index < Math.min(window.firstAtPosition, loopEnd); index += 1) {
+    for (let index = loopFirst; window.looping && index < Math.min(window.firstAtPosition, loopEnd); index += 1) {
         const group = groups[index];
         if (!group || !admit(group, window.end - window.position + group.frame - window.start)) {
             break;
@@ -231,15 +232,12 @@ export function loopMidiWindowBatch(
     opening = false
 ): MidiWriterBatch {
     const region = pass.loopRegion;
-    if (!region) {
-        return { commands: [], admissions: [] };
-    }
     const position = Math.round(positionSeconds * pass.sampleRate);
-    const start = Math.round(region.startSeconds * pass.sampleRate);
-    const end = Math.round(region.endSeconds * pass.sampleRate);
-    const wrapped = loopWraps !== pass.lastLoopWraps;
+    const start = Math.round((region?.startSeconds ?? 0) * pass.sampleRate);
+    const end = region ? Math.round(region.endSeconds * pass.sampleRate) : Infinity;
+    const wrapped = pass.looping && loopWraps !== pass.lastLoopWraps;
     // A wrap can be missed between polls even when the next position is larger.
-    const floor = wrapped ? region.startSeconds : pass.lastClearedBeforeSeconds;
+    const floor = wrapped ? (region?.startSeconds ?? 0) : pass.lastClearedBeforeSeconds;
     const trailFloor = Math.max(floor, positionSeconds - MIDI_TRAIL_SECONDS);
     let clearedBefore = positionSeconds;
     const commands: AudioGraphCommand[] = [];
@@ -247,7 +245,7 @@ export function loopMidiWindowBatch(
     for (const slot of pass.targets) {
         const groups = slot.loopFrameGroups;
         if (!groups) {
-            throw new Error('a looping MIDI target must be indexed by its arm');
+            throw new Error('a MIDI target must be indexed by its arm');
         }
         const firstAtPosition = firstGroupAtFrame(groups, position);
         const held = new Set(opening ? [] : slot.heldEventIndices);
@@ -255,7 +253,14 @@ export function loopMidiWindowBatch(
         const ahead = takeAhead(
             slot,
             groups,
-            { position, start, end, firstAtPosition, horizonFrames: MIDI_WINDOW_SECONDS * pass.sampleRate },
+            {
+                position,
+                start,
+                end,
+                firstAtPosition,
+                horizonFrames: MIDI_WINDOW_SECONDS * pass.sampleRate,
+                looping: pass.looping,
+            },
             releases
         );
         const retained = new Set(ahead);
@@ -304,5 +309,10 @@ export function loopMidiWindowBatch(
             heldEventIndicesAfter: [...heldAfter],
         });
     }
-    return { commands, admissions, lastClearedBeforeSeconds: Math.max(region.startSeconds, clearedBefore), loopWraps };
+    return {
+        commands,
+        admissions,
+        lastClearedBeforeSeconds: Math.max(region?.startSeconds ?? 0, clearedBefore),
+        loopWraps,
+    };
 }

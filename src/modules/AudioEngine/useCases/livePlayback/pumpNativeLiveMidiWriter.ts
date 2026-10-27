@@ -9,42 +9,19 @@
  * `position - MIDI_TRAIL_SECONDS`, because the store is finite and the engine
  * never consumes an entry: nothing but an explicit clear frees a slot.
  *
- * A looping pass uses an adaptive circular window: the resident event indices
- * distinguish prefetched replay entries from spent trail, including at a seam.
+ * Both modes use an adaptive indexed window. Exact resident identities and
+ * reserved real releases let a dense part shorten its spent trail before the
+ * next notes run out of room. A loop additionally prefetches its head across
+ * the seam; a linear pass never revisits entries behind its playhead.
  *
- * ── Why a non-looping trail is not cleared every tick ─────────────────────
- *
- * A clear is a command the engine takes under its fence, and the playhead feed
- * ticks on the animation frame. Clearing a few milliseconds of trail sixty
- * times a second would spend a batch to free almost nothing, so the trail is
- * cut only once it has grown past a second of unclaimed store.
- *
- * ── Why the position may be behind ────────────────────────────────────────
- *
- * The reading is an echo, a frame or two old. That is why the trail keeps its
- * margin: a clear that reached the engine's true playhead would delete a note
- * about to be delivered. Extending ahead has no such hazard — a note already in
- * the store is simply not re-sent, since the cursor never walks back.
+ * The position is an echo, a frame or two old. Upcoming entries already in
+ * the store remain resident while new events are admitted before their frames.
  */
 
-import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
-
-import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
 import { loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
-import {
-    MIDI_TRAIL_SECONDS,
-    MIDI_WINDOW_SECONDS,
-    nativeLiveMidiWriter,
-    type LiveMidiWriterPass,
-    type LiveMidiWriterTarget,
-    type MidiAdmission,
-    type MidiWriterBatch,
-} from './nativeLiveMidiWriterState';
-
-/** How much trail has to have accumulated before a clear is worth a command. */
-const MIN_TRAIL_CLEAR_SECONDS = 1;
+import { nativeLiveMidiWriter } from './nativeLiveMidiWriterState';
 
 export type PumpNativeLiveMidiWriterInput = Readonly<{
     /** Where the engine reported itself, on its own clock. */
@@ -54,75 +31,6 @@ export type PumpNativeLiveMidiWriterInput = Readonly<{
     /** The pass the caller read before it took the reading. */
     writerEpoch: number;
 }>;
-
-/**
- * How far behind the playhead this tick may clear, or `null` when the trail is
- * not yet worth a command.
- */
-function trailClearBefore(pass: LiveMidiWriterPass, positionSeconds: number): number | null {
-    const trailEnd = positionSeconds - MIDI_TRAIL_SECONDS;
-    if (trailEnd <= pass.lastClearedBeforeSeconds + MIN_TRAIL_CLEAR_SECONDS) {
-        return null;
-    }
-    return trailEnd;
-}
-
-/**
- * How many of a target's already-sent events the trail clear takes back.
- *
- * Counted from the events themselves rather than assumed: the clear is
- * half-open on engine time, and only the entries whose note-on falls inside it
- * were ever in the store this side is accounting for.
- */
-function clearedByTrail(slot: LiveMidiWriterTarget, fromSeconds: number, toSeconds: number): number {
-    let count = 0;
-    for (let index = slot.cursor - slot.held; index < slot.cursor; index += 1) {
-        const event = slot.events[index];
-        if (event && event.time >= fromSeconds && event.time < toSeconds) {
-            count += 1;
-        }
-    }
-    return count;
-}
-
-/** This tick's batch: the trail dropped, then the window extended. */
-function windowBatch(pass: LiveMidiWriterPass, positionSeconds: number): MidiWriterBatch {
-    const horizonSeconds = positionSeconds + MIDI_WINDOW_SECONDS;
-    const clearBefore = trailClearBefore(pass, positionSeconds);
-    const commands: AudioGraphCommand[] = [];
-    const admissions: MidiAdmission[] = [];
-    for (const slot of pass.targets) {
-        const cleared = clearBefore === null ? 0 : clearedByTrail(slot, pass.lastClearedBeforeSeconds, clearBefore);
-        // The clear travels whether or not it takes anything from this target:
-        // the trail is a property of the pass, and a target left out of one
-        // round would keep entries the next round's span no longer covers.
-        if (clearBefore !== null) {
-            commands.push({
-                kind: 'clear-midi',
-                target: slot.target,
-                fromTime: pass.lastClearedBeforeSeconds,
-                toTime: clearBefore,
-            });
-        }
-        const heldAfterClear = slot.held - cleared;
-        const admitted = admitMidiEvents(slot, { horizonSeconds, heldAfterClear });
-        if (admitted > 0) {
-            commands.push({
-                kind: 'schedule-midi',
-                target: slot.target,
-                probabilitySeed: pass.probabilitySeed,
-                notes: slot.events.slice(slot.cursor, slot.cursor + admitted),
-            });
-        }
-        if (clearBefore !== null || admitted > 0) {
-            admissions.push({ slot, admitted, heldAfter: heldAfterClear + admitted });
-        }
-    }
-    if (commands.length === 0 || clearBefore === null) {
-        return { commands, admissions };
-    }
-    return { commands, admissions, lastClearedBeforeSeconds: clearBefore };
-}
 
 export async function pumpNativeLiveMidiWriter(input: PumpNativeLiveMidiWriterInput): Promise<void> {
     const pass = nativeLiveMidiWriter.pass;
@@ -137,12 +45,7 @@ export async function pumpNativeLiveMidiWriter(input: PumpNativeLiveMidiWriterIn
     if (!nativeLiveGraphSession.backend) {
         return;
     }
-    let batch: MidiWriterBatch;
-    if (pass.looping) {
-        batch = loopMidiWindowBatch(pass, input.positionSeconds, input.loopWraps);
-    } else {
-        batch = windowBatch(pass, input.positionSeconds);
-    }
+    const batch = loopMidiWindowBatch(pass, input.positionSeconds, pass.looping ? input.loopWraps : null);
     if (batch.commands.length === 0) {
         return;
     }
