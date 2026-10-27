@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -21,6 +22,12 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -109,6 +116,13 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        setNotificationEventBus(
+            createEventBus<{
+                'ui.notify': NotifyPayload;
+                'ui.confirm': ConfirmPayload;
+                'ui.prompt': PromptPayload;
+            }>()
+        );
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         takeLaneStore.set({
             lanes: [
@@ -196,8 +210,7 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
     it('refuses stale row and source owner without consuming command history', async () => {
         const before = structuredClone(takeLaneStore.value);
         const beforeCount = undoHistoryStore.value?.past.length;
-        await expect(
-            executeUserAppAction({
+        await executeUserAppAction({
                 type: 'replaceOriginalMidiTakeRow',
                 payload: {
                     laneId: 'lane',
@@ -210,8 +223,7 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
                     expectedSlotPresent: true,
                     replacementSlotPresent: true,
                 },
-            })
-        ).rejects.toThrow();
+            });
         expect(takeLaneStore.value).toEqual(before);
         expect(undoHistoryStore.value?.past.length).toBe(beforeCount);
     });
@@ -244,5 +256,141 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         expect(frozenRows()?.map((rows) => rows?.some((note) => note.id === added.id))).toEqual([false, false]);
         await redo();
         expect(frozenRows()?.map((rows) => rows?.at(-1)?.recordingPassIndex)).toEqual([1, 1]);
+    });
+
+    it('returns an originally absent note slot to absence when the inserted note is undone', async () => {
+        const state = takeLaneStore.value;
+        if (!state) {
+            throw new Error('Expected take lane state');
+        }
+        takeLaneStore.set({
+            lanes: state.lanes.map((lane) => ({
+                ...lane,
+                takes: lane.takes.map((take) => {
+                    const captured = take.midiSource;
+                    return captured
+                        ? {
+                              ...take,
+                              midiSource: {
+                                  ...captured,
+                                  rows: { ...captured.rows, notes: { present: false, value: [] } },
+                              },
+                          }
+                        : take;
+                }),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        const added = {
+            id: 'from-empty',
+            pitch: 67,
+            startBeat: 7,
+            duration: 0.5,
+            velocity: 100,
+            recordingPassIndex: 1,
+        };
+        const payload = {
+            laneId: 'lane',
+            takeId: 'selected',
+            sourceClipId: 'original',
+            rowId: added.id,
+            rowKind: 'note' as const,
+            expected: null,
+            replacement: added,
+            expectedSlotPresent: false,
+            replacementSlotPresent: true,
+        };
+        await executeUserAppAction({ type: 'replaceOriginalMidiTakeRow', payload });
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource?.rows.notes.present)).toEqual([
+            true,
+            true,
+        ]);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource?.rows.notes)).toEqual([
+            { present: false, value: [] },
+            { present: false, value: [] },
+        ]);
+        await redo();
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource?.rows.notes.value[0]?.id)).toEqual([
+            added.id,
+            added.id,
+        ]);
+    });
+
+    it('refuses a new note assigned to another pass and keeps same-row peer changes outside Undo', async () => {
+        const wrongPass = {
+            id: 'wrong-pass',
+            pitch: 67,
+            startBeat: 7,
+            duration: 0.5,
+            velocity: 100,
+            recordingPassIndex: 0,
+        };
+        const before = structuredClone(takeLaneStore.value);
+        await executeUserAppAction({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: {
+                    laneId: 'lane',
+                    takeId: 'selected',
+                    sourceClipId: 'original',
+                    rowId: wrongPass.id,
+                    rowKind: 'note',
+                    expected: null,
+                    replacement: wrongPass,
+                    expectedSlotPresent: true,
+                    replacementSlotPresent: true,
+                },
+            });
+        expect(takeLaneStore.value).toEqual(before);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+
+        await executeUserAppAction({
+            type: 'replaceOriginalMidiTakeRow',
+            payload: {
+                laneId: 'lane',
+                takeId: 'selected',
+                sourceClipId: 'original',
+                rowId: edited.id,
+                rowKind: 'note',
+                expected: edited,
+                replacement: { ...edited, velocity: 71 },
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
+            },
+        });
+        const state = takeLaneStore.value;
+        if (!state) {
+            throw new Error('Expected take lane state');
+        }
+        takeLaneStore.set({
+            lanes: state.lanes.map((lane) => ({
+                ...lane,
+                takes: lane.takes.map((take) => {
+                    const captured = take.midiSource;
+                    return captured
+                        ? {
+                              ...take,
+                              midiSource: {
+                                  ...captured,
+                                  rows: {
+                                      ...captured.rows,
+                                      notes: {
+                                          present: true,
+                                          value: captured.rows.notes.value.map((note) =>
+                                              note.id === edited.id ? { ...note, velocity: 55 } : note
+                                          ),
+                                      },
+                                  },
+                              },
+                          }
+                        : take;
+                }),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        const peer = structuredClone(takeLaneStore.value);
+        expect(await undo()).toEqual({ headConsumed: false });
+        expect(takeLaneStore.value).toEqual(peer);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
     });
 });
