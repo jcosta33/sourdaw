@@ -51,7 +51,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     appendClipToTrack: vi.fn(),
     clipSelectionStore: { value: null },
     resolveEligibleClipWriteTarget: vi.fn(),
-    updateClipInStore: { value: null },
+    updateClipInStore: vi.fn(() => false),
 
     trackStore: {
         get value() {

@@ -107,7 +107,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     gainEnvelopeStore: { value: null },
     getTrackEligibility: vi.fn(),
     markerStore: { value: null },
-    updateClipInStore: { value: null },
+    updateClipInStore: vi.fn(() => false),
     vcaGroupStore: { value: null },
     warpStateStore: { value: null },
 
