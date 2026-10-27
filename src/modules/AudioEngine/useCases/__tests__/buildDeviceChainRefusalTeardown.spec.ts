@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Device } from '../../models/TrackViewTypes';
+import { createOfflineGrinderSetupError } from '../../errors/OfflineGrinderSetupError';
 import { UnsupportedDeviceTypeError } from '../../repositories/deviceStrategy/unsupportedDeviceTypeError';
 import { buildDeviceChain } from '../buildDeviceChain';
 
@@ -137,5 +138,51 @@ describe('buildDeviceChain — teardown when a refusal aborts the rack', () => {
         expect(failure).toMatchObject({ _tag: 'Export' });
         expect((failure as Error).message).toContain('Bypass or remove the plugin');
         expect(mocks.loggerWarn).toHaveBeenCalledWith(expect.stringContaining('slot already released'));
+    });
+
+    it.each([false, true])(
+        'propagates audible Grinder startup refusal while releasing earlier nodes (teardown throws: %s)',
+        async (throws) => {
+            const refusal = createOfflineGrinderSetupError(new Error('setup acknowledgement timed out'));
+            mocks.createDevice.mockResolvedValueOnce(meteredStrategy()).mockRejectedValueOnce(refusal);
+            if (throws) {
+                mocks.destroy.mockImplementation(() => {
+                    throw new Error('teardown failed');
+                });
+            }
+            const onWarning = vi.fn();
+            await expect(
+                buildDeviceChain(
+                    {} as BaseAudioContext,
+                    [
+                        { id: 'first', name: 'Gluten', type: 'gluten', bypassed: false, parameterValues: {} },
+                        { id: 'grinder', name: 'Grinder', type: 'grinder', bypassed: false, parameterValues: {} },
+                    ],
+                    audioNode(),
+                    audioNode(),
+                    { contributesAudio: true, onWarning }
+                )
+            ).rejects.toBe(refusal);
+            expect(mocks.destroy).toHaveBeenCalledOnce();
+            expect(onWarning).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['ordinary', 'noncontributing'] as const)('preserves degradation for %s failures', async (kind) => {
+        let error: Error = new Error('WASM unavailable');
+        if (kind === 'noncontributing') {
+            error = createOfflineGrinderSetupError(new Error('setup failed'));
+        }
+        mocks.createDevice.mockRejectedValueOnce(error);
+        const onWarning = vi.fn();
+        const result = await buildDeviceChain(
+            {} as BaseAudioContext,
+            [{ id: 'grinder', name: 'Grinder', type: 'grinder', bypassed: false, parameterValues: {} }],
+            audioNode(),
+            audioNode(),
+            { contributesAudio: kind !== 'noncontributing', onWarning }
+        );
+        expect(result).toEqual([]);
+        expect(onWarning).toHaveBeenCalledOnce();
     });
 });

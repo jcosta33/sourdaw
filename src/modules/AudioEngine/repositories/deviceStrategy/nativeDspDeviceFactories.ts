@@ -41,6 +41,8 @@ export type NativeDspNode = {
     ready: Promise<Record<string, unknown>>;
     runtimeFailure?: Promise<never>;
     runtimeHealthCheck?: () => Promise<void>;
+    /** Consumes captured setup before the constructed strategy can admit rendering. */
+    completeOfflineSetup?: () => Promise<void>;
 };
 
 /**

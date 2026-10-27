@@ -39,11 +39,11 @@ const target = {
 describe('offline Grinder startup consumption', () => {
     let queued: unknown[];
     let processor: GrinderProcessorLike;
-    let worklet: {
+    let worklets: Array<{
         port: { onmessage: ((event: MessageEvent<unknown>) => void) | null; close: ReturnType<typeof vi.fn> };
         disconnect: ReturnType<typeof vi.fn>;
         onprocessorerror: (() => void) | null;
-    };
+    }>;
 
     beforeEach(async () => {
         resetGrinderProcessorCalls();
@@ -52,6 +52,7 @@ describe('offline Grinder startup consumption', () => {
         vi.stubGlobal('AudioContext', class {});
         vi.stubGlobal('OfflineAudioContext', OfflineContext);
         queued = [];
+        worklets = [];
         const Processor = await loadGrinderProcessorConstructor();
         class WorkletNode {
             parameters = new Map<string, AudioParam>();
@@ -74,7 +75,7 @@ describe('offline Grinder startup consumption', () => {
                 },
             };
             constructor(_context: BaseAudioContext, _name: string, options: unknown) {
-                worklet = this;
+                worklets.push(this);
                 processor = new Processor(options);
                 processor.port.postMessage = vi.fn((data: unknown) => {
                     this.port.onmessage?.(new MessageEvent('message', { data }));
@@ -95,13 +96,13 @@ describe('offline Grinder startup consumption', () => {
         processor.port.onmessage?.({ data });
     }
 
-    function buildStrategy() {
+    function buildStrategy(parameterValues: Record<string, number> = { neuralCustomOutputTrim: 0.2 }) {
         return createNativeDspStrategy(new OfflineContext() as unknown as BaseAudioContext, {
             id: 'grinder-1',
             name: 'Grinder',
             type: 'grinder',
             bypassed: false,
-            parameterValues: { neuralCustomOutputTrim: 0.2 },
+            parameterValues,
         });
     }
 
@@ -123,5 +124,159 @@ describe('offline Grinder startup consumption', () => {
         const strategy = await building;
         expect(renderStarted).toBe(true);
         strategy.destroy();
+    });
+
+    function record(value: unknown): Record<string, unknown> {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new Error('Expected a control record');
+        }
+        return value as Record<string, unknown>;
+    }
+
+    it('completes an empty captured setup without consuming a control sequence', async () => {
+        const building = buildStrategy({});
+        await vi.waitFor(() => expect(queued).toHaveLength(1));
+        consumeNext();
+        const strategy = await building;
+        expect(grinderSetParamCalls).toEqual([]);
+        strategy.destroy();
+    });
+
+    it.each(['generation', 'target', 'sequence', 'render-started'] as const)(
+        'refuses a setup completion with invalid %s and releases the unusable node',
+        async (invalid) => {
+            const building = buildStrategy();
+            const rejected = expect(building).rejects.toMatchObject({
+                failureKind: 'offline-grinder-setup',
+                cause: expect.objectContaining({ message: expect.stringContaining('not completely consumed') }),
+            });
+            await vi.waitFor(() => expect(queued).toHaveLength(2));
+            consumeNext();
+            const completion = record(queued.shift());
+            if (invalid === 'target') {
+                completion.target = { ...record(completion.target), deviceId: 'other-device' };
+            } else if (invalid === 'render-started') {
+                vi.stubGlobal('currentFrame', 128);
+            } else {
+                const correlation = record(completion.correlation);
+                if (invalid === 'generation') {
+                    correlation.workletGeneration = -1;
+                } else {
+                    correlation.controlSequence = 2;
+                }
+            }
+            processor.port.onmessage?.({ data: completion });
+            await rejected;
+            expect(worklets[0]!.port.close).toHaveBeenCalledOnce();
+            expect(worklets[0]!.disconnect).toHaveBeenCalledOnce();
+            expect(processor.port.postMessage).not.toHaveBeenCalledWith(
+                expect.objectContaining({ phase: 'offline-grinder-setup' })
+            );
+        }
+    );
+
+    it('refuses a skipped invalid setter even when a later valid setter reaches the final sequence', async () => {
+        const building = buildStrategy({ neuralMix: 1, neuralCustomOutputTrim: 0.2 });
+        const rejected = expect(building).rejects.toMatchObject({
+            failureKind: 'offline-grinder-setup',
+            cause: expect.objectContaining({ message: expect.stringContaining('not completely consumed') }),
+        });
+        await vi.waitFor(() => expect(queued).toHaveLength(3));
+        const original = record(queued.shift());
+        const invalid = { ...original, target: { ...record(original.target), deviceId: 'other-device' } };
+        processor.port.onmessage?.({ data: invalid });
+        consumeNext();
+        consumeNext();
+        await rejected;
+        expect(grinderSetParamCalls).toEqual([{ name: 'neuralCustomOutputTrim', value: 0.2 }]);
+    });
+
+    it('preserves the startup cause when releasing the new node throws', async () => {
+        const building = buildStrategy();
+        const rejected = expect(building).rejects.toMatchObject({
+            failureKind: 'offline-grinder-setup',
+            cause: expect.objectContaining({ message: expect.stringContaining('not completely consumed') }),
+        });
+        await vi.waitFor(() => expect(queued).toHaveLength(2));
+        worklets[0]!.port.close.mockImplementation(() => {
+            throw new Error('close failed');
+        });
+        consumeNext();
+        const completion = record(queued.shift());
+        completion.correlation = { ...record(completion.correlation), controlSequence: 2 };
+        processor.port.onmessage?.({ data: completion });
+        await rejected;
+        expect(worklets[0]!.port.close).toHaveBeenCalledOnce();
+    });
+
+    async function startNodeSetup() {
+        const node = await createGrinderNode(
+            new OfflineContext() as unknown as BaseAudioContext,
+            undefined,
+            undefined,
+            target
+        );
+        await node.ready;
+        node.setParam('neuralCustomOutputTrim', 0.2);
+        if (!node.completeOfflineSetup) {
+            throw new Error('Offline node did not expose setup completion');
+        }
+        return { node, checking: node.completeOfflineSetup() };
+    }
+
+    it.each(['generation', 'target'] as const)('rejects a mismatched %s acknowledgement', async (invalid) => {
+        const { node, checking } = await startNodeSetup();
+        const rejected = expect(checking).rejects.toThrow('acknowledgement is invalid');
+        const completion = record(queued[1]);
+        let responseTarget = completion.target;
+        let correlation = completion.correlation;
+        if (invalid === 'target') {
+            responseTarget = { ...target, deviceId: 'other' };
+        } else {
+            correlation = { ...record(completion.correlation), workletGeneration: -1 };
+        }
+        worklets[0]!.port.onmessage?.(
+            new MessageEvent('message', {
+                data: {
+                    ...completion,
+                    type: 'ready',
+                    phase: 'offline-grinder-setup',
+                    sampleFrame: 0,
+                    target: responseTarget,
+                    correlation,
+                },
+            })
+        );
+        await rejected;
+        node.destroy();
+    });
+
+    it.each(['disposed', 'error', 'processorerror'] as const)('rejects %s while setup is pending', async (failure) => {
+        const { node, checking } = await startNodeSetup();
+        const rejected = expect(checking).rejects.toThrow(/destroyed|failed/);
+        if (failure === 'disposed') {
+            node.destroy();
+        } else if (failure === 'error') {
+            worklets[0]!.port.onmessage?.(
+                new MessageEvent('message', { data: { type: 'error', message: 'processor failed' } })
+            );
+        } else {
+            worklets[0]!.onprocessorerror?.();
+        }
+        await rejected;
+        node.destroy();
+        await expect(node.completeOfflineSetup?.()).rejects.toThrow(/destroyed|failed/);
+    });
+
+    it('times out a missing receiver response and reuses the same bounded request', async () => {
+        vi.useFakeTimers();
+        const { node, checking } = await startNodeSetup();
+        expect(node.completeOfflineSetup?.()).toBe(checking);
+        const rejected = expect(checking).rejects.toThrow('offline setup init timeout');
+        await vi.advanceTimersByTimeAsync(10_000);
+        await rejected;
+        expect(queued).toHaveLength(2);
+        node.destroy();
+        expect(vi.getTimerCount()).toBe(0);
     });
 });

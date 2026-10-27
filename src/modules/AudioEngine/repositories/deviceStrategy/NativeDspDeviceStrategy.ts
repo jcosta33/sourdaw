@@ -1,6 +1,7 @@
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { type NoteExpressionControls } from '../../engine/noteExpression';
+import { createOfflineGrinderSetupError } from '../../errors/OfflineGrinderSetupError';
 import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 import { type Device } from '../../models/TrackViewTypes';
 import { isRuntimeDeviceControlId } from '../../services/compileRuntimeDeviceControl';
@@ -157,6 +158,18 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
             continue;
         }
         strategy.setParam(key, val);
+    }
+    if (result.completeOfflineSetup) {
+        try {
+            await result.completeOfflineSetup();
+        } catch (error) {
+            try {
+                strategy.destroy();
+            } catch {
+                // Teardown must not replace the startup failure that refused this render.
+            }
+            throw createOfflineGrinderSetupError(error);
+        }
     }
 
     // `parameterValues` is only the numeric half of a device's state: the setup an

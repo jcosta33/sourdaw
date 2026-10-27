@@ -19,6 +19,26 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
                 if (!crossOriginIsolated || typeof OfflineAudioContext !== 'function') {
                     throw new Error('The public Grinder render requires real isolated Web Audio');
                 }
+                const setupAdmissions: unknown[] = [];
+                const OriginalWorkletNode = AudioWorkletNode;
+                window.AudioWorkletNode = class extends OriginalWorkletNode {
+                    constructor(context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) {
+                        super(context, name, options);
+                        if (context instanceof OfflineAudioContext && name === 'grinder-processor') {
+                            this.port.addEventListener('message', (event: MessageEvent<unknown>) => {
+                                const data = event.data;
+                                if (
+                                    data &&
+                                    typeof data === 'object' &&
+                                    'phase' in data &&
+                                    data.phase === 'offline-grinder-setup'
+                                ) {
+                                    setupAdmissions.push(data);
+                                }
+                            });
+                        }
+                    }
+                };
                 const sampleRate = 48_000;
                 const trackId = crypto.randomUUID();
                 const deviceId = crypto.randomUUID();
@@ -146,16 +166,16 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
                 let repeatDifference = 0;
                 let finite = true;
                 for (let channel = 0; channel < low.length; channel++) {
-                    const lowChannel = low[channel]!;
-                    const highChannel = high[channel]!;
-                    const repeatChannel = repeated[channel]!;
+                    const lowChannel = low[channel];
+                    const highChannel = high[channel];
+                    const repeatChannel = repeated[channel];
                     if (lowChannel.length !== highChannel.length || highChannel.length !== repeatChannel.length) {
                         throw new Error('Repeated public renders changed frame count');
                     }
                     for (let frame = 0; frame < lowChannel.length; frame++) {
-                        const a = lowChannel[frame]!;
-                        const b = highChannel[frame]!;
-                        const c = repeatChannel[frame]!;
+                        const a = lowChannel[frame];
+                        const b = highChannel[frame];
+                        const c = repeatChannel[frame];
                         finite = finite && Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c);
                         repeatDifference = Math.max(repeatDifference, Math.abs(b - c));
                         if (frame >= warmupFrames) {
@@ -174,16 +194,38 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
                 const secondBuiltin = await render();
                 let builtinDifference = 0;
                 for (let channel = 0; channel < firstBuiltin.length; channel++) {
-                    const first = firstBuiltin[channel]!;
-                    const second = secondBuiltin[channel]!;
+                    const first = firstBuiltin[channel];
+                    const second = secondBuiltin[channel];
                     for (let frame = warmupFrames; frame < first.length; frame++) {
                         if (!Number.isFinite(first[frame]) || !Number.isFinite(second[frame])) {
-                            throw new Error('Builtin Grinder slot rendered non-finite PCM');
+                            throw new TypeError('Builtin Grinder slot rendered non-finite PCM');
                         }
-                        builtinDifference = Math.max(builtinDifference, Math.abs(first[frame]! - second[frame]!));
+                        builtinDifference = Math.max(builtinDifference, Math.abs(first[frame] - second[frame]));
                     }
                 }
+                function encodePcm(channels: Float32Array[]): string {
+                    const bytes = new Uint8Array(channels.length * channels[0].byteLength);
+                    for (const [index, channel] of channels.entries()) {
+                        bytes.set(
+                            new Uint8Array(channel.buffer, channel.byteOffset, channel.byteLength),
+                            index * channel.byteLength
+                        );
+                    }
+                    const chunks: string[] = [];
+                    for (let start = 0; start < bytes.length; start += 8192) {
+                        chunks.push(String.fromCharCode(...bytes.subarray(start, start + 8192)));
+                    }
+                    return btoa(chunks.join(''));
+                }
                 return {
+                    setupAdmissions,
+                    pcm: {
+                        low: encodePcm(low),
+                        high: encodePcm(high),
+                        repeated: encodePcm(repeated),
+                        firstBuiltin: encodePcm(firstBuiltin),
+                        secondBuiltin: encodePcm(secondBuiltin),
+                    },
                     finite,
                     lowEnergy,
                     highEnergy,
@@ -205,10 +247,27 @@ for (const route of ['mixdown', 'stems', 'freeze', 'bounce'] as const) {
             }
         );
 
+        for (const [name, pcm] of Object.entries(rendered.pcm)) {
+            await testInfo.attach(`real-grinder-pcm-${name}`, {
+                body: Buffer.from(pcm, 'base64'),
+                contentType: 'application/octet-stream',
+            });
+        }
+        const { pcm: _pcm, ...observations } = rendered;
         await testInfo.attach('real-grinder-pcm', {
-            body: JSON.stringify({ route, ...rendered }, null, 2),
+            body: JSON.stringify({ route, ...observations }, null, 2),
             contentType: 'application/json',
         });
+        expect(rendered.setupAdmissions).toHaveLength(5);
+        for (const admission of rendered.setupAdmissions) {
+            expect(admission).toMatchObject({
+                type: 'ready',
+                phase: 'offline-grinder-setup',
+                schemaVersion: 1,
+                sampleFrame: 0,
+                target: { deviceType: 'grinder' },
+            });
+        }
         expect(rendered.channels).toBe(2);
         expect(rendered.frames).toBe(96_000);
         expect(rendered.finite).toBe(true);
