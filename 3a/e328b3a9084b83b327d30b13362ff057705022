@@ -1,0 +1,38 @@
+scripts/__tests__/fixtures/aptConfigStub/apt-config
+  s_b3201877f50e8a::t_a4d0775ae71f3d 7-11
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_b3201877f50e8a::t_7a01dbd826c990 260-263
+  s_b3201877f50e8a::t_a4d0775ae71f3d 395-396
+  s_26f70b851e8f7a::t_c535fcbbe19351 264-266
+scripts/__tests__/fixtures/hostedAptInstall/installer.py
+  s_b3201877f50e8a::t_a4d0775ae71f3d 44
+scripts/hostedAptInstall.py
+  s_b3201877f50e8a::t_a4d0775ae71f3d 118,120-122,125-126,128-134,157-169,198,204-206,223
+scripts/__tests__/fixtures/hostedAptInstall/progress.py
+  s_b3201877f50e8a::t_7a01dbd826c990 1-27,31-66,68-72
+  s_b3201877f50e8a::t_a4d0775ae71f3d 28-30,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ae328b3a9084b83b327d30b13362ff057705022",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
