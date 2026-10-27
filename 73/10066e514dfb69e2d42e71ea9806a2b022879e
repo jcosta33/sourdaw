@@ -1,0 +1,27 @@
+.agents/skills/review-stances/audio-source-time.md
+  s_29d8df116c5b92::t_ef9db12bc36056 66-88
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_29d8df116c5b92::t_a071bd34e540b8 653-659,666-668
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_fb06b70756f62b 261,265-267
+src/modules/AudioEngine/useCases/offlineRender/__tests__/legacyAudioCutSource.integration.spec.ts
+  s_29d8df116c5b92::t_027153de2749f3 8-14,146-159,165,168-170,178-184,204-206,215,217-222,224-226,228-234,238-243,245,247-249
+src/modules/Setlist/useCases/setlist/__tests__/setlistTempoCommand.integration.spec.ts
+  s_29d8df116c5b92::t_a4c553fd8e5a0b 139-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7310066e514dfb69e2d42e71ea9806a2b022879e",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
