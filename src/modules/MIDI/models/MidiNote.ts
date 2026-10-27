@@ -87,6 +87,14 @@ export type MidiCC = {
     channel: number;
 };
 
+/**
+ * A channel pitch-bend event recorded into a clip.
+ *
+ * `value` is the signed 14-bit wire delta, `PITCH_BEND_MIN`..`PITCH_BEND_MAX`
+ * (-8192..8191) with 0 at centre — the same unit as `MidiNote.pitchBend`. Like
+ * that scalar it carries no depth of its own: the semitone range is the
+ * channel's, declared through RPN 0.
+ */
 export type MidiPitchBend = {
     id: string;
     value: number;

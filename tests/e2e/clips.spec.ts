@@ -23,43 +23,43 @@ test.describe('Clip Operations', () => {
         await expect(addClipItem).toBeVisible();
         await addClipItem.click();
 
-        const clipLabel = page.getByText(/New midi clip/i).first();
-        await expect(clipLabel).toBeVisible();
+        await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
+        await canvas.click({ position: { x: 220, y: 30 } });
+        const dockToggle = page.getByTestId('toggle-bottom-dock');
+        if ((await dockToggle.getAttribute('aria-pressed')) !== 'true') {
+            await dockToggle.click();
+        }
+        await page.getByRole('tab', { name: 'Editor', exact: true }).click();
+        const clipCount = page.getByTestId('selected-track-clip-count');
+        await expect(clipCount).toHaveText('1 clip');
 
         // 3. Copy clip
         // Click firmly inside the clip (starts at x=200, ends at x=248)
         await canvas.click({ button: 'right', position: { x: 220, y: 30 }, force: true });
         const copyItem = page.getByRole('menuitem', { name: /Copy/i });
         await expect(copyItem).toBeVisible();
-        await copyItem.dispatchEvent('click');
-
-        // Wait a tiny bit for the clipboard to populate internally
-        await page.waitForTimeout(300);
+        await copyItem.click();
+        await expect(clipCount).toHaveText('1 clip');
 
         // 4. Paste clip at a different position
         await canvas.click({ button: 'right', position: { x: 400, y: 30 }, force: true });
         const pasteItem = page.getByRole('menuitem', { name: /Paste/i });
         await expect(pasteItem).toBeVisible();
-        await pasteItem.dispatchEvent('click');
+        await pasteItem.click();
+        await expect(clipCount).toHaveText('2 clips');
 
-        await page.waitForTimeout(500);
+        // 5. Exercise the main Duplicate action, distinct from Duplicate to Next Bar.
+        await canvas.click({ button: 'right', position: { x: 220, y: 30 }, force: true });
+        const duplicateItem = page.getByRole('menuitem', { name: /^Duplicate(?:\s+⌘D)?$/ });
+        await expect(duplicateItem).toBeVisible();
+        await duplicateItem.click();
+        await expect(clipCount).toHaveText('3 clips');
 
-        // We should now have multiple clips. Since 'New midi clip' renders multiple text nodes (e.g. for text-shadow),
-        // we'll count the nodes and ensure the count doubled.
-        const clipLabels = page.getByText(/New midi clip/i);
-        const nodeCountAfterPaste = await clipLabels.count();
-        expect(nodeCountAfterPaste).toBeGreaterThan(1);
-
-        // 5. Delete the first clip
+        // 6. Delete the original clip.
         await canvas.click({ button: 'right', position: { x: 220, y: 30 }, force: true });
         const deleteItem = page.getByRole('menuitem', { name: /Delete/i }).filter({ hasText: /Delete/ });
         await expect(deleteItem).toBeVisible();
-        await deleteItem.dispatchEvent('click');
-
-        await page.waitForTimeout(300);
-
-        // Ensure nodes decreased
-        const nodeCountAfterDelete = await clipLabels.count();
-        expect(nodeCountAfterDelete).toBeLessThan(nodeCountAfterPaste);
+        await deleteItem.click();
+        await expect(clipCount).toHaveText('2 clips');
     });
 });

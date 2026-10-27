@@ -141,6 +141,43 @@ describe('handleRestoreReversedClip', () => {
         expect(publishedUpdate(reversedClip)).toMatchObject({ fadeInBeats: 1.5, fadeOutBeats: 0.25 });
     });
 
+    it('restores loopOriginBeat when the payload carries it', () => {
+        const reversedClip = makeClip({ loopOriginBeat: 1, audioOffsetBeats: 3 });
+        setClip(reversedClip);
+
+        const result = handleRestoreReversedClip.execute({
+            type: 'restoreReversedClip',
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'reversed-1',
+                audioBufferId: 'buffer-1',
+                name: 'Verse',
+                loopOriginBeat: 0,
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(publishedUpdate(reversedClip)).toMatchObject({ loopOriginBeat: 0 });
+    });
+
+    it('leaves loopOriginBeat untouched on a legacy payload that predates the anchor field', () => {
+        const reversedClip = makeClip({ loopOriginBeat: 1 });
+        setClip(reversedClip);
+
+        const result = handleRestoreReversedClip.execute({
+            type: 'restoreReversedClip',
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'reversed-1',
+                audioBufferId: 'buffer-1',
+                name: 'Verse',
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(publishedUpdate(reversedClip)).toMatchObject({ loopOriginBeat: 1 });
+    });
+
     it('conflicts without writing when the expected buffer is no longer current', () => {
         setClip(makeClip({ audioBufferId: 'someone-else' }));
 

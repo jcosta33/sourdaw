@@ -288,6 +288,14 @@ describe('TimelineSurface', () => {
         expect(canvas).toHaveAttribute('aria-label', 'Timeline editor surface');
     });
 
+    it('keeps the measured canvas viewport free of the Browse control', () => {
+        const { container } = renderWithTooltip(<TimelineSurface />);
+
+        expect(container.querySelector('canvas')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Browse timeline clips' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
+    });
+
     it('should render PresenceOverlay', async () => {
         renderWithTooltip(<TimelineSurface />);
         expect(await screen.findByTestId('presence-overlay')).toBeInTheDocument();

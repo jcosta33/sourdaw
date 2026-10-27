@@ -27,6 +27,52 @@ function fakeAudioBuffer(frames: number): AudioBuffer {
 }
 
 describe('serializeAudioGraphCommandBatch', () => {
+    it('carries no-value device Hold and the tagged VCA update before raw replay', () => {
+        const wire = serializeAudioGraphCommandBatch({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'write-device-parameter',
+                    target: { kind: 'device-parameter', trackId: 't', deviceId: 'd', parameterId: '7' },
+                    write: { shape: 'hold', time: 2 },
+                },
+                { kind: 'set-strip-vca-multiplier', trackId: 't', multiplier: 0.5 },
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 't' },
+                    write: { shape: 'hold', time: 2 },
+                },
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 't' },
+                    write: { shape: 'step', value: 1.5, time: 2 },
+                },
+            ],
+        });
+        expect(wire).toEqual({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'write-device-parameter',
+                    target: { kind: 'device-parameter', trackId: 't', deviceId: 'd', parameterId: '7' },
+                    write: { shape: 'hold', time: 2 },
+                },
+                { kind: 'set-strip-vca-multiplier', trackId: 't', multiplier: 0.5 },
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 't' },
+                    write: { shape: 'hold', time: 2 },
+                },
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 't' },
+                    write: { shape: 'step', value: 1.5, time: 2 },
+                },
+            ],
+        });
+        expect(wire.commands[0]).not.toHaveProperty('write.value');
+    });
+
     it('serializes every command kind onto the graph.rs wire spellings', () => {
         const buffer = fakeAudioBuffer(16);
         const batch: AudioGraphCommandBatch = {
@@ -778,5 +824,13 @@ describe('collectBufferedClipSources', () => {
         ]);
 
         expect(sources).toEqual([{ sourceId: 'take-1', buffer: first }]);
+    });
+
+    it('carries the native lease without turning it into project correlation', () => {
+        expect(serializeAudioGraphCommandBatch({ schemaVersion: 1, timelineLease: 'lease-1', commands: [] })).toEqual({
+            schemaVersion: 1,
+            timelineLease: 'lease-1',
+            commands: [],
+        });
     });
 });

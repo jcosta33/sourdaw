@@ -60,11 +60,28 @@ describe('readMidiFile', () => {
         const worker = latestWorker();
 
         const tracks = [{ name: 'Bass', notes: [], endTick: 960 }];
+        const timing = {
+            format: 1,
+            ticksPerBeat: 480,
+            complete: false,
+            events: [
+                {
+                    kind: 'tempo',
+                    tick: 0,
+                    beat: 0,
+                    sourceTrackIndex: 0,
+                    eventOrdinal: 0,
+                    microsecondsPerQuarterNote: 400001,
+                },
+            ],
+        };
         worker.onmessage?.(
-            new MessageEvent('message', { data: { type: 'parsed', tracks, declaredTrackCount: 2, truncated: true } })
+            new MessageEvent('message', {
+                data: { type: 'parsed', tracks, declaredTrackCount: 2, truncated: true, timing },
+            })
         );
 
-        await expect(pending).resolves.toEqual({ tracks, declaredTrackCount: 2, truncated: true });
+        await expect(pending).resolves.toEqual({ tracks, declaredTrackCount: 2, truncated: true, timing });
         expect(worker.terminate).toHaveBeenCalledTimes(1);
     });
 
@@ -112,10 +129,21 @@ describe('readMidiFile', () => {
 
         latestWorker().onmessage?.(
             new MessageEvent('message', {
-                data: { type: 'parsed', tracks: [], declaredTrackCount: 0, truncated: false },
+                data: {
+                    type: 'parsed',
+                    tracks: [],
+                    declaredTrackCount: 0,
+                    truncated: false,
+                    timing: { format: 0, ticksPerBeat: 96, events: [], complete: true },
+                },
             })
         );
-        await expect(pending).resolves.toEqual({ tracks: [], declaredTrackCount: 0, truncated: false });
+        await expect(pending).resolves.toEqual({
+            tracks: [],
+            declaredTrackCount: 0,
+            truncated: false,
+            timing: { format: 0, ticksPerBeat: 96, events: [], complete: true },
+        });
 
         // A surviving timeout would fire here and reject an already-settled
         // promise, surfacing as an unhandled rejection.

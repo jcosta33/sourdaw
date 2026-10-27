@@ -25,16 +25,7 @@ test.describe('Timeline Navigation & Editing Surface', () => {
         await expect(beat_ruler).toBeVisible();
     });
 
-    test('Can add an adjustment layer and verify it appears in the strip', async ({ page }) => {
-        const strip = page.getByRole('region', { name: 'Adjustment layers' });
-        const items_before = await strip.locator('[class*="layer"], [data-layer]').count();
-
-        await page.getByRole('button', { name: 'Add adjustment layer' }).click();
-        await page.waitForTimeout(1000);
-
-        const items_after = await strip.locator('[class*="layer"], [data-layer]').count();
-        expect(items_after).toBeGreaterThanOrEqual(items_before);
-    });
+    // flowCoverage owns Volume row creation; panelDeepCoverage owns the Eq picker and row.
 
     /**
      * Zoom observable: the minimap slider's aria-valuenow is scrollX as a percentage of
@@ -161,6 +152,7 @@ test.describe('Timeline Navigation & Editing Surface', () => {
         expect(count).toBeGreaterThan(0);
     });
 
+    // Owns the ruler seek outcome formerly claimed by templateAndInspectorFinal.
     test('Beat ruler clicks seek the clicked beat under zoom and scroll', async ({ page }) => {
         // Same oracle as the timeline cases, on the ruler surface: the ruler shares the
         // canvas coordinate contract (origin at its left edge, scrollX and pixelsPerBeat

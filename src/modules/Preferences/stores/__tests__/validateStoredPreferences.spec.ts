@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { defaultPreferences } from '../../models/Preferences';
+import { PREFERENCES_SCHEMA_VERSION, defaultPreferences } from '../../models/Preferences';
 import { validateStoredPreferences } from '../preferencesStore';
 
 describe('validateStoredPreferences', () => {
@@ -63,6 +63,35 @@ describe('validateStoredPreferences', () => {
 describe('validateStoredPreferences — per-field schema guards', () => {
     beforeEach(() => {
         vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    it.each([0, 0.82, 1])('preserves valid Elastic transient sensitivity %s', (sensitivity) => {
+        const result = validateStoredPreferences({ ...defaultPreferences, elasticTransientSensitivity: sensitivity });
+        expect(result.elasticTransientSensitivity).toBe(sensitivity);
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0.1, 1.1, '0.82', null])(
+        'defaults invalid stored Elastic transient sensitivity %s without dropping other fields',
+        (sensitivity) => {
+            const result = validateStoredPreferences({
+                ...defaultPreferences,
+                theme: 'light',
+                elasticTransientSensitivity: sensitivity,
+            });
+            expect(result.elasticTransientSensitivity).toBe(0.5);
+            expect(result.theme).toBe('light');
+        }
+    );
+
+    it('seeds missing sensitivity without changing an explicit schema-3 count-in choice', () => {
+        const result = validateStoredPreferences({
+            preferencesSchemaVersion: 3,
+            recordCountIn: 1,
+            theme: 'light',
+        });
+        expect(result.elasticTransientSensitivity).toBe(0.5);
+        expect(result.recordCountIn).toBe(1);
+        expect(result.theme).toBe('light');
     });
 
     it('replaces an out-of-range numeric-enum recordCountIn with its default', () => {
@@ -285,12 +314,12 @@ describe('validateStoredPreferences — future schema preservation', () => {
     it('preserves an unknown future version and fields while validating current fields', () => {
         const result = validateStoredPreferences({
             ...defaultPreferences,
-            preferencesSchemaVersion: 3,
+            preferencesSchemaVersion: PREFERENCES_SCHEMA_VERSION + 1,
             audioLatencyProfile: 'highCapacity',
             futureSchedulingMode: 'adaptive',
         });
 
-        expect(result.preferencesSchemaVersion).toBe(3);
+        expect(result.preferencesSchemaVersion).toBe(PREFERENCES_SCHEMA_VERSION + 1);
         expect(result.audioLatencyProfile).toBe('highCapacity');
         expect((result as Record<string, unknown>).futureSchedulingMode).toBe('adaptive');
     });
@@ -309,7 +338,7 @@ describe('validateStoredPreferences — timeline minimap migration', () => {
 
         expect(result.showMinimap).toBe(true);
         expect(result.timelineMinimapHeight).toBe(28);
-        expect(result.preferencesSchemaVersion).toBe(2);
+        expect(result.preferencesSchemaVersion).toBe(PREFERENCES_SCHEMA_VERSION);
     });
 
     it('honors an explicit hidden choice after the schema-aware migration', () => {
@@ -333,7 +362,7 @@ describe('validateStoredPreferences — timeline minimap migration', () => {
                 showMinimap: false,
             });
 
-            expect(result.preferencesSchemaVersion).toBe(2);
+            expect(result.preferencesSchemaVersion).toBe(PREFERENCES_SCHEMA_VERSION);
             expect(result.showMinimap).toBe(true);
         }
     );
@@ -352,5 +381,66 @@ describe('validateStoredPreferences — timeline minimap migration', () => {
         });
 
         expect(result.timelineMinimapHeight).toBe(expected);
+    });
+});
+
+describe('validateStoredPreferences — legacy count-in default migration', () => {
+    beforeEach(() => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    it('rewrites a stored recordCountIn of 1 to the new Off default under a retired schema', () => {
+        // Schemas 1–2 never consumed recordCountIn, so a stored 1 is the old
+        // shipped default, not a choice; schema 3 honors the field and would
+        // otherwise silently put every upgraded user behind a count-in.
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            preferencesSchemaVersion: 2,
+            recordCountIn: 1,
+        });
+
+        expect(result.recordCountIn).toBe(0);
+        expect(result.preferencesSchemaVersion).toBe(PREFERENCES_SCHEMA_VERSION);
+    });
+
+    it.each([2, 4])('preserves an explicit recordCountIn of %s through the same migration', (recordCountIn) => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            preferencesSchemaVersion: 2,
+            recordCountIn,
+        });
+
+        expect(result.recordCountIn).toBe(recordCountIn);
+    });
+
+    it('keeps an explicit recordCountIn of 1 stored under the current schema', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            preferencesSchemaVersion: PREFERENCES_SCHEMA_VERSION,
+            recordCountIn: 1,
+        });
+
+        expect(result.recordCountIn).toBe(1);
+    });
+
+    it.each([1.5, Number.NaN, 'off', null, undefined])(
+        'lets a corrupt recordCountIn (%s) fall to the current default instead of migrating',
+        (recordCountIn) => {
+            const result = validateStoredPreferences({
+                ...defaultPreferences,
+                preferencesSchemaVersion: 2,
+                recordCountIn,
+            });
+
+            expect(result.recordCountIn).toBe(defaultPreferences.recordCountIn);
+        }
+    );
+
+    it('migrates a version-less blob too: its stored 1 is the old default, never a choice', () => {
+        // Mirrors the minimap visibility migration: no schema-aware build wrote
+        // this blob, so no explicit recordCountIn choice can exist in it.
+        const result = validateStoredPreferences({ recordCountIn: 1 });
+
+        expect(result.recordCountIn).toBe(0);
     });
 });

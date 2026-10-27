@@ -52,7 +52,10 @@ vi.mock('#/modules/Transport/stores', () => ({
         postRollBeats: 2,
     },
 }));
-vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn() }));
+vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
+    ensureTrackStrips: vi.fn(),
+}));
 vi.mock('#/modules/Preferences/stores', () => ({ preferencesStore: { value: {}, set: vi.fn() } }));
 vi.mock('../../../../stores/projectStore', () => ({ projectStore: { value: null, set: vi.fn() } }));
 vi.mock('../../../demoProjects/demoUtils/syncArrangement', () => ({ syncArrangement: vi.fn() }));

@@ -323,6 +323,10 @@ describe('persistPromptActionConfirmation', () => {
         mocks.transitionPhase.mockImplementation(() => ordering.push('waiting-for-approval'));
 
         const input = createInput();
+        input.protectionFacts = {
+            protectedUnchanged: [],
+            protectedControls: [{ trackId: 'track-vocals', operations: ['setTrackGain'] }],
+        };
         persistPromptActionConfirmation(input);
 
         expect(ordering).toEqual(['resource-lease', 'proposal-retained', 'proposed-chat', 'waiting-for-approval']);
@@ -338,6 +342,7 @@ describe('persistPromptActionConfirmation', () => {
                 commandBatch: input.commandBatch,
                 affectedIds: ['track-kick'],
                 protectedUnchanged: [{ id: 'track-vocals', name: 'Vocals' }],
+                protectionFacts: input.protectionFacts,
                 risk: { level: 'bounded-reversible', reason: 'Changes an existing track.' },
                 executionMode: 'atomic',
                 groupId: 'group-confirmation',

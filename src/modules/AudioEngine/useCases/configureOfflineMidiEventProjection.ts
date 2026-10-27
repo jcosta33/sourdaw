@@ -19,6 +19,7 @@ export function configureOfflineMidiEventProjection({
     evaluateAutomationValue,
     resolveArticulationId,
     projectClipControllers,
+    projectChannelBend,
 }: ConfigureOfflineMidiEventProjectionInput): void {
     offlineRenderCapturePorts.createMidiProjector = createProjector;
     offlineRenderCapturePorts.createChordProjector = createChordPitchProjector;
@@ -30,5 +31,6 @@ export function configureOfflineMidiEventProjection({
         evaluateAutomationValue,
         resolveArticulationId,
         projectClipControllers,
+        projectChannelBend,
     });
 }

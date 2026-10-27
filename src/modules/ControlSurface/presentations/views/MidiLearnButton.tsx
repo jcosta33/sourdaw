@@ -3,6 +3,7 @@ import { type ReactElement, type MouseEvent } from 'react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
+import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 
 import {
@@ -51,6 +52,8 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
         state.isLearning === true && state.learningTarget !== null && isTargetMatch(state.learningTarget, target);
 
     const existingMapping = findMappingForTarget(target);
+    const capabilities = getPlatformCapabilities();
+    const unavailableReason = capabilities.degradations.find((entry) => entry.feature === 'midi-input')?.message;
 
     const handleClick = (event: MouseEvent): void => {
         event.stopPropagation();
@@ -68,10 +71,15 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
             return;
         }
 
+        if (!capabilities.hasMidiInput) {
+            return;
+        }
+
         startMidiLearn(target);
     };
 
     const label = getMidiLearnLabel(isLearningThis, existingMapping);
+    const accessibleLabel = unavailableReason ? `${label}. ${unavailableReason}` : label;
 
     return (
         <Tooltip>
@@ -79,7 +87,7 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
                 <Button
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={label}
+                    aria-label={accessibleLabel}
                     aria-pressed={isLearningThis}
                     className={cn(
                         'size-5 text-[10px] font-bold',
@@ -91,7 +99,7 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
                     {existingMapping && !isLearningThis ? existingMapping.cc : 'M'}
                 </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">{label}</TooltipContent>
+            <TooltipContent side="bottom">{accessibleLabel}</TooltipContent>
         </Tooltip>
     );
 };

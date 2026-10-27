@@ -7,14 +7,24 @@ import { type CreativeRequestAuthority } from '../models/CreativeInterpretation'
 import { type IntentResult } from '../models/IntentResult';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
+import {
+    type BoundRequestProtections,
+    type ProposalGroundingBasis,
+    type ProposalProtectionFacts,
+} from '../models/ProposalGroundingBasis';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { type ToolCallResult } from '../transformers/toolCallParser';
+import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
 import { composeVerifiedProviderProposalScope } from './agentReference/composeVerifiedProviderProposalScope';
+import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
+import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { proposalGroundingBasis, unionProposalProtectionFacts } from './agentReference/proposalGroundingBasis';
+import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList';
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
@@ -34,6 +44,21 @@ type GroundCompiledCommandBatchInput = {
     transformTargetIds: readonly string[];
     creativeAuthority: CreativeRequestAuthority | undefined;
     providerProposal: AgentRunProviderProposal | null;
+    /**
+     * The grounding of the pending card this batch refines. Undefined grounds the batch exactly as
+     * any request; it is applied only to an ordinary batch, because only an ordinary card carries one.
+     */
+    refinementBasis?: ProposalGroundingBasis;
+    /** Immutable restrictions on the pending card, including cards without an ordinary grounding witness. */
+    refinementProtections?: ProposalProtectionFacts;
+    /** Resolved protections of this exact request when replaying a later scheduled slice. */
+    requestProtections?: BoundRequestProtections;
+};
+
+/** What grounding a refinement against its pending card's basis established. */
+type GroundedRefinement = {
+    protectedUnchanged: Array<{ id: string; name: string }>;
+    keptDirectionActionIndexes: number[];
 };
 
 type GroundedFields = {
@@ -43,6 +68,10 @@ type GroundedFields = {
     providerKnownTargetIds: string[] | undefined;
     matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[];
     providerProposal: AgentRunProviderProposal | null;
+    /** What a later refinement of this batch's card inherits; only an ordinary batch carries one. */
+    groundingBasis: ProposalGroundingBasis | undefined;
+    protectionFacts: ProposalProtectionFacts;
+    refinement: GroundedRefinement | undefined;
 };
 
 type GroundCompiledCommandBatchResult =
@@ -81,12 +110,26 @@ function buildTransformProof(input: GroundCompiledCommandBatchInput) {
     };
 }
 
+/**
+ * A batch the planner proposed as plain commands: no compiled list, adopted compilation, creative
+ * authority or specialized workflow decided any of it, so each command stands on the request text.
+ */
+function isOrdinaryBatch(input: GroundCompiledCommandBatchInput): boolean {
+    return (
+        input.compilerEvidence === undefined &&
+        input.selectedCompilations.length === 0 &&
+        input.transformCommands.length === 0 &&
+        input.creativeAuthority === undefined &&
+        input.workflowCapabilityId === undefined
+    );
+}
+
 function bridgeCompiledCalls(
     input: GroundCompiledCommandBatchInput
-): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' }> {
+): Bridged | Extract<GroundCompiledCommandBatchResult, { status: 'rejected' | 'clarify' }> {
     const { markerSignatures, sectionSignatures } = readPlanningMarkerSignatures();
     const transformProof = buildTransformProof(input);
-    const bridged = bridgeGroundedLlmToolCalls({
+    const bridgeInput: Parameters<typeof bridgeGroundedLlmToolCalls>[0] = {
         calls: input.toolCalls,
         context: input.context,
         markerSignatures,
@@ -97,7 +140,23 @@ function bridgeCompiledCalls(
         projectRevision: input.projectRevision,
         workflowCapabilityId: input.workflowCapabilityId,
         creativeAuthority: input.creativeAuthority,
-    });
+        refinementBasis: isOrdinaryBatch(input) ? input.refinementBasis : undefined,
+        protectionFacts: readPriorProtectionFacts(input),
+    };
+    if (input.requestProtections !== undefined) {
+        bridgeInput.requestProtections = input.requestProtections;
+    }
+    const bridged = bridgeGroundedLlmToolCalls(bridgeInput);
+    if (bridged.clarification !== undefined) {
+        return {
+            status: 'clarify',
+            planningOutcome: {
+                kind: 'clarify',
+                reason: bridged.clarification.reason,
+                questions: [...bridged.clarification.questions],
+            },
+        };
+    }
     for (const rejected of bridged.rejections) {
         logger.warn(`[AI] Rejected tool call ${String(rejected.index)} (${rejected.name}): ${rejected.reason}`);
     }
@@ -173,6 +232,7 @@ function composeGroundedFields(
     bridged: Bridged,
     guarded: Guarded
 ): GroundedFields {
+    const protectionFacts = composeProtectionFacts(input, bridged, guarded);
     const verifiedProviderProposalScope = composeVerifiedProviderProposalScope({
         actions: guarded.actions,
         compilerEvidence: input.compilerEvidence,
@@ -180,6 +240,7 @@ function composeGroundedFields(
         context: input.context,
         prompt: input.prompt,
         workflowCapabilityId: input.workflowCapabilityId,
+        requestProtectionFacts: input.requestProtections?.facts,
     });
     let effectiveProviderProposal = input.providerProposal;
     if (effectiveProviderProposal !== null && verifiedProviderProposalScope !== undefined) {
@@ -209,6 +270,19 @@ function composeGroundedFields(
         };
     }
 
+    const protectedObjectIds = protectionFacts.protectedUnchanged.map((object) => object.id);
+    if (effectiveProviderProposal !== null && protectedObjectIds.length > 0) {
+        effectiveProviderProposal = {
+            ...effectiveProviderProposal,
+            scope: {
+                ...effectiveProviderProposal.scope,
+                protectedTargetIds: [
+                    ...new Set([...effectiveProviderProposal.scope.protectedTargetIds, ...protectedObjectIds]),
+                ],
+            },
+        };
+    }
+
     const matchSelectorPredicates: SemanticCommandListMatchSelectorRecord[] = deriveMatchSelectorPredicates(
         input.compilerEvidence,
         input.transformCommands.length
@@ -221,7 +295,127 @@ function composeGroundedFields(
         providerKnownTargetIds: getProviderKnownTargetIds(input),
         matchSelectorPredicates,
         providerProposal: effectiveProviderProposal,
+        groundingBasis: composeGroundingBasis(input, bridged, guarded, protectionFacts),
+        protectionFacts,
+        refinement: toGroundedRefinement(bridged),
     };
+}
+
+function toGroundedRefinement(bridged: Bridged): GroundedRefinement | undefined {
+    if (bridged.refinement === undefined) {
+        return undefined;
+    }
+    return {
+        protectedUnchanged: bridged.refinement.protectedObjects,
+        keptDirectionActionIndexes: bridged.refinement.keptDirectionActionIndexes,
+    };
+}
+
+/**
+ * The basis the card for this batch carries, so a terse refinement of it can inherit its grounding.
+ * Only an ordinary batch whose commands are the provider's calls one for one carries one: anything an
+ * application route expanded, compiled or bound has no single request clause behind each command.
+ * Every command must also name a target, the one thing a refinement pairs a call with it by: a card
+ * holding a creation, a marker or section command or the tempo refines against its stored batch instead.
+ */
+function composeGroundingBasis(
+    input: GroundCompiledCommandBatchInput,
+    bridged: Bridged,
+    guarded: Guarded,
+    protectionFacts: ProposalProtectionFacts
+): ProposalGroundingBasis | undefined {
+    const alignsWithCalls =
+        guarded.actions.length === input.toolCalls.length &&
+        guarded.actions.every((action, index) => action.type === input.toolCalls[index]?.name);
+    const everyCallTargets = input.toolCalls.every(
+        (call) => proposalCommandShape.targets(call.name, call.arguments).length > 0
+    );
+    if (
+        !isOrdinaryBatch(input) ||
+        bridged.actionCommandGraph !== undefined ||
+        (bridged.batchLocalActionIdentities?.length ?? 0) > 0 ||
+        !alignsWithCalls ||
+        !everyCallTargets
+    ) {
+        return undefined;
+    }
+    let basis: ProposalGroundingBasis;
+    if (input.refinementBasis !== undefined && bridged.refinement !== undefined) {
+        basis = proposalGroundingBasis.extend({
+            previous: input.refinementBasis,
+            prompt: input.prompt,
+            calls: input.toolCalls,
+            inheritedCommandIndexes: bridged.refinement.inheritedCommandIndexes,
+            protectedUnchanged: [],
+            protectedControls: [],
+        });
+    } else {
+        basis = proposalGroundingBasis.create({
+            prompt: input.prompt,
+            calls: input.toolCalls,
+            ...protectionFacts,
+        });
+    }
+    return { ...basis, ...protectionFacts };
+}
+
+function readControlFacts(
+    reading: ReturnType<typeof readExplicitProtections>
+): ProposalProtectionFacts['protectedControls'] {
+    return reading.protectedControls.map(({ trackId, actionTypes, exceptActionTypes }) => {
+        const control: ProposalProtectionFacts['protectedControls'][number] = { trackId, operations: actionTypes };
+        if (exceptActionTypes !== undefined) {
+            control.exceptOperations = exceptActionTypes;
+        }
+        return control;
+    });
+}
+
+/** Old cards may carry only a basis; its absent controls retain the established source replay fallback. */
+function readPriorProtectionFacts(input: GroundCompiledCommandBatchInput): ProposalProtectionFacts {
+    if (input.refinementProtections !== undefined) {
+        return unionProposalProtectionFacts(input.refinementProtections);
+    }
+    const basis = input.refinementBasis;
+    if (basis === undefined) {
+        return { protectedUnchanged: [], protectedControls: [] };
+    }
+    return unionProposalProtectionFacts({
+        protectedUnchanged: basis.protectedUnchanged,
+        protectedControls:
+            basis.protectedControls ??
+            basis.sources.flatMap((source) => readControlFacts(readExplicitProtections(source.text, input.context))),
+    });
+}
+
+/** Every route captures restrictions now, independently of whether its commands align to provider calls. */
+function composeProtectionFacts(
+    input: GroundCompiledCommandBatchInput,
+    bridged: Bridged,
+    guarded: Guarded
+): ProposalProtectionFacts {
+    if (input.requestProtections !== undefined) {
+        return unionProposalProtectionFacts(input.requestProtections.facts);
+    }
+    const readProtections = readExplicitProtections(input.prompt, input.context);
+    // The tracks and operations the request protects are recorded as they resolve now, so a later
+    // refinement never reads this request's selection phrases against a selection that has since moved.
+    // The application's protected objects already carry the selection and VCA tracks the reading keeps;
+    // the tracks it names are added here.
+    const promptProtections = unionProtectedObjects(
+        getApplicationProtectedObjects({
+            actions: guarded.actions,
+            context: input.context,
+            prompt: input.prompt,
+        }),
+        input.context.tracks
+            .filter((track) => readProtections.namedTrackIds.includes(track.id))
+            .map(({ id, name }) => ({ id, name }))
+    );
+    return unionProposalProtectionFacts(readPriorProtectionFacts(input), {
+        protectedUnchanged: unionProtectedObjects(promptProtections, bridged.refinement?.protectedObjects ?? []),
+        protectedControls: readControlFacts(readProtections),
+    });
 }
 
 /** The direct targets the compiled list and any adopted transform proved, or none without either. */

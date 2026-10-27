@@ -15,9 +15,11 @@ import { hydrateYeastState } from '#/modules/Yeast/useCases';
 import { type HydratableProjectData } from './isHydratableProjectData';
 
 export function hydrateModuleStoresFromProjectData(data: HydratableProjectData): void {
-    if (data.transport) {
-        restoreTransportSnapshot(data.transport);
-    }
+    // Unconditional: a project file with no transport block must not inherit
+    // the outgoing project's — or the preference-seeded — transport through the
+    // preceding reset. `restoreTransportSnapshot` sanitizes an absent block to
+    // the model defaults, matching the clear-on-absent owners below.
+    restoreTransportSnapshot(data.transport);
 
     // Adjustment layers hydrate after the active arrangement so affectedTrackIds resolve.
     restoreAdjustmentLayerSnapshot(data.adjustmentLayers);

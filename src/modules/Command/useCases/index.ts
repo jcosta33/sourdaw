@@ -104,6 +104,7 @@ export { undo } from './undo';
 export { redo } from './redo';
 export { REDO_NOT_APPLIED } from './redoResult';
 export { revertActionGroup } from './revertActionGroup';
+export { revertActionGroupAtomically } from './revertActionGroupAtomically';
 export { getActionReplayStatus } from './getActionReplayStatus';
 export { revertAction } from './revertAction';
 export { clearActionHistory } from './clearActionHistory';
@@ -117,6 +118,7 @@ export { restoreUndoHistory } from './restoreUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 export { commitUndoEntry } from './commitUndoEntry';
+export { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
 // (`setPitchEditDependencies`) now live in Knead/useCases — Knead owns the
 // pitch aggregate. See ADR 0011 Wave 3.

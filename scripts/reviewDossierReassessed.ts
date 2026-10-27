@@ -1,8 +1,8 @@
 /**
  * The `review-reassessed` dossier event (#4584), split out of `reviewDossier.ts` so that module
- * stays under its `max-lines` ceiling. This owns the event's type, key list, and reader; the
- * caller-authors never write it — the reviewer publication appends exactly one when the escalation
- * gate consumes a reassessment.
+ * stays under its `max-lines` ceiling. This owns the event's type, key list, and reader. The
+ * three-round reassessment gate that appended it is retired (ADR 0054); records that carry it keep
+ * verifying, and no publication writes it.
  */
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';

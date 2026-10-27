@@ -10,8 +10,11 @@ import {
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
+import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
+import { PROPOSAL_DECIBEL_FORMAT } from '../transformers/proposalDecibelFormat';
+import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
 
 import { getApplicationProtectedObjects } from './agentReference/getApplicationProtectedObjects';
 import { describePlannedAction } from './describePlannedAction';
@@ -23,7 +26,15 @@ type DescribePendingActionConfirmationInput = {
     prompt: string;
     wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     workflowCapabilityId?: WorkflowCapabilityId;
+    /** Objects a refinement's chain protects beyond those this request's own text protects. */
+    inheritedProtectedUnchanged?: ReadonlyArray<{ id: string; name: string }>;
+    /** Complete resolved facts when the same request is replayed by a scheduled batch. */
+    requestProtectionFacts?: ProposalProtectionFacts;
+    /** Actions whose value kept the refined change's direction; their labels say so. */
+    keptDirectionActionIndexes?: readonly number[];
 };
+
+const KEPT_DIRECTION_NOTE = 'direction kept from the pending proposal';
 
 const riskRank = {
     'read-only': 0,
@@ -57,11 +68,12 @@ function formatDescriptorParameterValue(value: number, unit: string, choices?: r
  * The confirmation prose's dB readout. The conversion and the `-∞` branch come
  * from the shared level law rather than from a fourth copy of the arithmetic
  * here — a confirmation sentence free to drift from the strip the user is
- * about to look at is worse than no sentence. Two trimmed decimals is this
- * surface's presentation choice: prose wants `0 dB`, not the mixer's `0.0 dB`.
+ * about to look at is worse than no sentence. Its precision is the refined
+ * card's diff's: two trimmed decimals, since prose wants `0 dB`, not the
+ * mixer's `0.0 dB`.
  */
 function formatDecibelsFromGain(value: number): string {
-    return `${formatGainDb(value, { fractionDigits: 2, trimTrailingZeros: true })} dB`;
+    return `${formatGainDb(value, PROPOSAL_DECIBEL_FORMAT)} dB`;
 }
 
 /**
@@ -299,8 +311,14 @@ export function describePendingActionConfirmation({
     prompt,
     wholeProjectVibeMixPlan,
     workflowCapabilityId,
+    inheritedProtectedUnchanged = [],
+    requestProtectionFacts,
+    keptDirectionActionIndexes = [],
 }: DescribePendingActionConfirmationInput) {
-    const actionLabels = actions.map((action) => describeExactAction(action, actions, context));
+    const actionLabels = actions.map((action, index) => {
+        const label = describeExactAction(action, actions, context);
+        return keptDirectionActionIndexes.includes(index) ? `${label} (${KEPT_DIRECTION_NOTE})` : label;
+    });
     const affectedIds = [...new Set(actions.flatMap((action) => getPlannedActionAffectedIds(action)))];
     const policies = actions.map((action) => getAppActionExecutionPolicy(action.type));
     const riskPolicy = policies.reduce((highest, policy) =>
@@ -321,13 +339,17 @@ export function describePendingActionConfirmation({
             reason: 'This applies the same change to multiple project targets.',
         };
     }
-    const protectedUnchanged = getApplicationProtectedObjects({
-        actions,
-        context,
-        prompt,
-        wholeProjectVibeMixPlan,
-        workflowCapabilityId,
-    });
+    const protectedUnchanged = unionProtectedObjects(
+        requestProtectionFacts?.protectedUnchanged ??
+            getApplicationProtectedObjects({
+                actions,
+                context,
+                prompt,
+                wholeProjectVibeMixPlan,
+                workflowCapabilityId,
+            }),
+        inheritedProtectedUnchanged
+    );
     const intendedChanges = actions
         .map((action, index) => `- **${action.type}**: ${actionLabels[index] ?? action.type}`)
         .join('\n');

@@ -6,6 +6,7 @@ import { resolveDdspInstrument } from '../../models/DdspInstrumentCatalog';
 import { inferenceWorkerBridge } from '../../repositories/inferenceWorkerBridge';
 import { renderRequestCancellation } from '../../repositories/renderRequestCancellation';
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
+import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../cancelRender';
 import { renderDdspInstrument } from '../renderDdspInstrument';
@@ -23,6 +24,7 @@ const checkDdspInstrumentReady = vi.fn();
 const computeRenderCacheKey = vi.fn();
 const readRenderCache = vi.fn();
 const writeRenderCache = vi.fn();
+const getStorageStatus = vi.fn();
 const withDdspInstrumentLock = vi.fn();
 const resampleTo44100 = vi.fn();
 const applyFades = vi.fn();
@@ -88,6 +90,8 @@ describe('renderDdspInstrument', () => {
             );
         readRenderCache.mockReset().mockResolvedValue(null);
         writeRenderCache.mockReset().mockResolvedValue(undefined);
+        getStorageStatus.mockReset().mockResolvedValue({ usedBytes: 321 });
+        modelRegistryStore.update((state) => (state ? { ...state, storageUsedBytes: 12 } : state));
         withDdspInstrumentLock
             .mockReset()
             .mockImplementation(
@@ -121,11 +125,42 @@ describe('renderDdspInstrument', () => {
             supersedeBrowserRender,
             withDdspInstrumentLock,
             writeRenderCache,
+            getStorageStatus,
         });
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('refreshes the model manager from measured storage after writing the render', async () => {
+        getStorageStatus.mockImplementation(async () => {
+            expect(writeRenderCache).toHaveBeenCalledOnce();
+            return { usedBytes: 321 };
+        });
+        await render();
+        expect(getStorageStatus).toHaveBeenCalledOnce();
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(321);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
+    });
+
+    it('does not publish storage or completion after cancellation during measurement', async () => {
+        let finishMeasurement = (_value: { usedBytes: number }): void => undefined;
+        getStorageStatus.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    finishMeasurement = resolve;
+                })
+        );
+        const pending = render().catch((error: unknown) => error);
+        await vi.waitFor(() => expect(getStorageStatus).toHaveBeenCalledOnce());
+        const requestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(requestId).toBeDefined();
+        cancelRender({ phraseId: 'phrase-1', requestId: requestId! });
+        finishMeasurement({ usedBytes: 321 });
+        expect(await pending).toMatchObject({ name: 'AbortError' });
+        expect(modelRegistryStore.value?.storageUsedBytes).toBe(12);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).not.toBe('preview');
     });
 
     it('rejects when DDSP admission is disabled before queue, lock, storage, or worker work', async () => {
@@ -408,6 +443,62 @@ describe('renderDdspInstrument', () => {
         expect(replacementRequestId).not.toBe(firstRequestId);
         expect(cancelTfjsRequest).toHaveBeenCalledWith(firstRequestId);
         expect(cancelTfjsRequest).not.toHaveBeenCalledWith(replacementRequestId);
+    });
+
+    it('rejects a superseded render whose cache read finishes after its replacement is admitted', async () => {
+        let lockTail = Promise.resolve();
+        withDdspInstrumentLock.mockImplementation(
+            (_id: string, _mode: string, operation: () => Promise<unknown>, signal?: AbortSignal) => {
+                const locked = lockTail.then(async () => {
+                    if (signal?.aborted) {
+                        throw signal.reason;
+                    }
+                    lockHeld = true;
+                    try {
+                        return await operation();
+                    } finally {
+                        lockHeld = false;
+                    }
+                });
+                lockTail = locked.then(
+                    () => undefined,
+                    () => undefined
+                );
+                return locked;
+            }
+        );
+
+        const obsoleteCachedAudio = new Float32Array(Math.round(0.101 * 44_100)).fill(0.1);
+        let finishObsoleteCacheRead = (_audio: Float32Array | null): void => undefined;
+        readRenderCache.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finishObsoleteCacheRead = resolve;
+                })
+        );
+
+        const obsolete = render().catch((error: unknown) => error);
+        await vi.waitFor(() => expect(readRenderCache).toHaveBeenCalledOnce());
+        const obsoleteRequestId = renderQueueStore.value?.entries[0]?.requestId;
+        expect(obsoleteRequestId).toBeDefined();
+
+        const replacement = render({ durationSec: 0.102 });
+        await vi.waitFor(() => expect(withDdspInstrumentLock).toHaveBeenCalledTimes(2));
+        const obsoleteSignal = withDdspInstrumentLock.mock.calls[0]?.[3];
+        expect(obsoleteSignal?.aborted).toBe(true);
+        finishObsoleteCacheRead(obsoleteCachedAudio);
+
+        const obsoleteResult = await obsolete;
+        expect(obsoleteResult).toMatchObject({ name: 'AbortError' });
+
+        const replacementResult = await replacement;
+        const [obsoleteCacheKey, replacementCacheKey] = readRenderCache.mock.calls.map((call) => call[0].cacheKey);
+        expect(replacementResult.audio).not.toBe(obsoleteCachedAudio);
+        expect(runDdspInference).toHaveBeenCalledOnce();
+        expect(replacementCacheKey).not.toBe(obsoleteCacheKey);
+        expect(renderQueueStore.value?.cachedPhraseIds).not.toContain(obsoleteCacheKey);
+        expect(renderQueueStore.value?.cachedPhraseIds).toContain(replacementCacheKey);
+        expect(renderQueueStore.value?.phraseStatusMap['phrase-1']).toBe('preview');
     });
 
     it('routes active Kokoro supersession to the ONNX request without touching TFJS', async () => {

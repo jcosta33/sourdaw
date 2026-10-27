@@ -23,6 +23,7 @@ vi.mock('#/modules/Transport/stores', () => {
     throw new Error('PopSong template must not import Transport stores');
 });
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(),
     replaceTempoMap: vi.fn(),
     replaceTimeSignatureMap: vi.fn(),
 }));

@@ -267,4 +267,47 @@ describe('splitMidiNotesAtBeat', () => {
         expect(written.notesByClipId.source).toHaveLength(2);
         expect(written.notesByClipId.right).toHaveLength(0);
     });
+
+    describe('the bend range a Null RPN closed before the cut', () => {
+        const rpnRows = [
+            { id: 'rpn-msb', controller: 101, value: 0, beat: 1, channel: 0 },
+            { id: 'rpn-lsb', controller: 100, value: 0, beat: 1.25, channel: 0 },
+            { id: 'data-msb', controller: 6, value: 12, beat: 1.5, channel: 0 },
+            { id: 'data-lsb', controller: 38, value: 0, beat: 1.75, channel: 0 },
+            { id: 'null-msb', controller: 101, value: 127, beat: 2, channel: 0 },
+            { id: 'null-lsb', controller: 100, value: 127, beat: 2.25, channel: 0 },
+        ];
+
+        function rightRows(input: { discardBeforeBeat?: number }) {
+            mocks.midiStoreValue.value = {
+                notesByClipId: { source: [note(60, 0, 1, 'a')] },
+                ccByClipId: { source: rpnRows },
+                pitchBendByClipId: { source: [{ id: 'bend', value: 4096, beat: 6, channel: 0 }] },
+            };
+
+            splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 4, ...input });
+
+            const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+                ccByClipId: Record<string, { controller: number; value: number; beat: number }[]>;
+            };
+            return written.ccByClipId.right?.map(({ controller, value, beat }) => [controller, value, beat]);
+        }
+
+        const declaration = [
+            [101, 0, 0],
+            [100, 0, 0],
+            [6, 12, 0],
+            [38, 0, 0],
+            [101, 127, 0],
+            [100, 127, 0],
+        ];
+
+        it('starts the right clip with the range declared, in the order the Null RPN does not undo', () => {
+            expect(rightRows({})).toEqual(declaration);
+        });
+
+        it('keeps it when the cut also discards the span the declaration sat in, as Delete Time does', () => {
+            expect(rightRows({ discardBeforeBeat: 1.5 })).toEqual(declaration);
+        });
+    });
 });

@@ -31,6 +31,7 @@ const FRAMES = 128;
 const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
 
 const noteEvents: NoteEvent[] = [];
+const expressionEvents: Array<{ note: number }> = [];
 const paramCalls: Array<{ name: string; value: number }> = [];
 const paramByIdCalls: Array<{ id: number; value: number }> = [];
 const processSizes: number[] = [];
@@ -72,6 +73,11 @@ class FermenterInstanceMock {
     }
     push_note_off_on_channel(note: number, _channel: number, _offset: number): boolean {
         noteEvents.push({ kind: 'off', note });
+        pendingBlockEventCount++;
+        return true;
+    }
+    push_note_expression(note: number): boolean {
+        expressionEvents.push({ note });
         pendingBlockEventCount++;
         return true;
     }
@@ -133,6 +139,7 @@ function makeStereoBlock(): Float32Array[][] {
 
 function resetRecording(): void {
     noteEvents.length = 0;
+    expressionEvents.length = 0;
     paramCalls.length = 0;
     paramByIdCalls.length = 0;
     processSizes.length = 0;
@@ -311,6 +318,29 @@ describe('FermenterProcessor message handling', () => {
             // Queue is empty so a subsequent process block dispatches nothing.
             proc.process([], makeStereoBlock());
             expect(noteEvents).toHaveLength(128);
+        });
+
+        it('drops the expression changes queued ahead of a held note', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+            resetRecording();
+
+            // A recorded bend is posted with its note, due inside this block here
+            // so a surviving one would apply to whatever voice holds the pitch.
+            send(proc, { type: 'noteOn', note: 60, velocity: 100, sampleFrame: 32 });
+            send(proc, {
+                type: 'noteExpression',
+                note: 60,
+                channel: 0,
+                bendSemitones: 2,
+                pressure: 0.5,
+                slide: 0,
+                sampleFrame: 64,
+            });
+            send(proc, { type: 'allNotesOff' });
+            proc.process([], makeStereoBlock());
+
+            expect(expressionEvents).toEqual([]);
         });
     });
 

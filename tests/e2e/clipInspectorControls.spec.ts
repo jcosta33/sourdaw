@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -24,7 +25,12 @@ async function create_and_select_clip(page: import('@playwright/test').Page): Pr
     // Retry clicking the clip until the clip inspector renders (canvas clicks can miss).
     for (let attempt = 0; attempt < 5; attempt++) {
         await timeline.click({ position: { x: 300, y: 30 } });
-        if (await clip_content.first().isVisible().catch(() => false)) {
+        if (
+            await clip_content
+                .first()
+                .isVisible()
+                .catch(() => false)
+        ) {
             return;
         }
         await page.waitForTimeout(300);
@@ -74,14 +80,21 @@ test.describe('Clip inspector controls', () => {
 
     test('Clip color picker exposes exactly the preset swatches', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        // The Color section header precedes a row of swatch <button>s (CLIP_COLOR_PRESETS, 8 entries).
-        const color_header = inspector.getByText('Color', { exact: true }).first();
-        await expect(color_header).toBeVisible();
-        // The swatches are the buttons immediately following the Color header, grouped in a row.
-        // Each swatch is a small button with an inline oklch background; count them.
-        const swatch_row = color_header.locator('xpath=following::div[contains(@class,"flex")][1]');
-        const swatches = swatch_row.getByRole('button');
-        const count = await swatches.count();
-        expect(count).toBeGreaterThanOrEqual(4);
+        const colorSection = inspector.getByText('Color', { exact: true }).locator('xpath=ancestor::section[1]');
+        await expect(colorSection).toBeVisible();
+        const swatches = colorSection.getByRole('button');
+        await expect(swatches).toHaveCount(8);
+        expect(
+            await swatches.evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')))
+        ).toEqual([
+            'oklch(0.42 0.07 250)',
+            'oklch(0.40 0.07 20)',
+            'oklch(0.42 0.07 150)',
+            'oklch(0.42 0.07 70)',
+            'oklch(0.40 0.06 300)',
+            'oklch(0.40 0.06 340)',
+            'oklch(0.42 0.06 200)',
+            'oklch(0.41 0.07 45)',
+        ]);
     });
 });

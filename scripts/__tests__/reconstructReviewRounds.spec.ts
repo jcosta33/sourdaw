@@ -13,7 +13,7 @@ import {
 } from '../reconstructReviewRounds.ts';
 import { appendReviewDossierEvents, parseReviewDossier } from '../reviewDossier.ts';
 import { buildDossier } from '../reviewDossierChain.ts';
-import { buildReviewDossier, type ReviewDossierInput } from '../reviewDossierPublication.ts';
+import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import {
     renderReviewRepairConfirmationMarker,
     renderReviewRepairReply,
@@ -21,6 +21,7 @@ import {
     type ReviewRepairRecord,
 } from '../reviewRepair.ts';
 
+import type { ReviewDraw } from '../reviewDocumentParser.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 const head = 'c'.repeat(40);
@@ -37,19 +38,16 @@ const plan: ReviewRiskPlan = {
     triggers: [],
 };
 
-const dossierInput: ReviewDossierInput = {
-    format: 'dossier-input-v1',
-    pr: 42,
-    headSha: head,
-    baseSha: base,
-    stances: [
-        { stance: 'correctness', reviewerModel: 'review-model', modelTier: 'strongest', outcome: 'clean' },
-        { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-    ],
-    evidence: [],
-    limitations: [],
-    assessmentImpact: 'none',
-};
+const draws: ReviewDraw[] = [
+    { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'clean' },
+    { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+];
+
+const findingsDraws: ReviewDraw[] = [
+    { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'findings' },
+    draws[1]!,
+];
+const findingSources = [{ stance: 'correctness', reviewerModel: 'review-model' }];
 
 function repairRecord(rootCommentId: number, commit: string): ReviewRepairRecord {
     return {
@@ -486,9 +484,10 @@ describe('shadow comparison', () => {
     ) {
         const { canonical } = buildReviewDossier({
             plan,
-            raw: dossierInput,
-            discarded: [],
-            comments,
+            persisted: undefined,
+            draws: comments.length === 0 ? draws : findingsDraws,
+            evidence: [],
+            comments: comments.map((comment) => ({ ...comment, sources: findingSources })),
             recommendation: comments.length === 0 ? 'approve' : 'request-changes',
         });
         const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
@@ -639,9 +638,10 @@ describe('shadow comparison', () => {
     it('records a mismatch when an accepted finding binds no public comment', () => {
         const { canonical } = buildReviewDossier({
             plan,
-            raw: dossierInput,
-            discarded: [],
-            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' }],
+            persisted: undefined,
+            draws: findingsDraws,
+            evidence: [],
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT', sources: findingSources }],
             recommendation: 'request-changes',
         });
         const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
@@ -709,8 +709,9 @@ describe('reconstruction run', () => {
     it('shadow-compares only heads whose local bundle carries a dossier and never gates on a mismatch', () => {
         const { canonical } = buildReviewDossier({
             plan: { ...plan, headSha: olderHead },
-            raw: { ...dossierInput, headSha: olderHead },
-            discarded: [],
+            persisted: undefined,
+            draws,
+            evidence: [],
             comments: [],
             recommendation: 'approve',
         });
@@ -732,8 +733,9 @@ describe('reconstruction run', () => {
     it('reports mismatches without failing the run', () => {
         const { canonical } = buildReviewDossier({
             plan,
-            raw: dossierInput,
-            discarded: [],
+            persisted: undefined,
+            draws,
+            evidence: [],
             comments: [],
             recommendation: 'approve',
         });
