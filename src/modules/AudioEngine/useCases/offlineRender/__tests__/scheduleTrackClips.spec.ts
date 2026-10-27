@@ -496,6 +496,20 @@ async function runSchedule({
     const panNode = {} as StereoPannerNode;
     const destination = {} as AudioNode;
 
+    const projections: Parameters<typeof scheduleTrackClips>[0]['projections'] = {
+        projectMidiEvents,
+        projectPpqEndpoints,
+        processYeastMidi,
+        resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+        selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+        projectChordPitch: mocks.projectChordPitch,
+        evaluateAutomationValue: mocks.evaluateAutomationValue,
+        resolveArticulationId: mocks.resolveArticulationId,
+    };
+    if (withStoredControl) {
+        projections.projectClipControllers = projectClipControllerEvents;
+    }
+
     await scheduleTrackClips({
         offlineCtx,
         track,
@@ -507,17 +521,7 @@ async function runSchedule({
         durationSeconds: 60,
         defaultTempo: 120,
         changes: [],
-        projections: {
-            projectMidiEvents,
-            projectPpqEndpoints,
-            processYeastMidi,
-            resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
-            selectMidiEventProbability: mocks.shouldPlayMidiEvent,
-            projectChordPitch: mocks.projectChordPitch,
-            evaluateAutomationValue: mocks.evaluateAutomationValue,
-            resolveArticulationId: mocks.resolveArticulationId,
-            ...(withStoredControl ? { projectClipControllers: projectClipControllerEvents } : {}),
-        },
+        projections,
         pendingWorkletEvents,
         allTracks: [track],
         deviceEntriesByTrack,

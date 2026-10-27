@@ -211,19 +211,19 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         const before = structuredClone(takeLaneStore.value);
         const beforeCount = undoHistoryStore.value?.past.length;
         await executeUserAppAction({
-                type: 'replaceOriginalMidiTakeRow',
-                payload: {
-                    laneId: 'lane',
-                    takeId: 'selected',
-                    sourceClipId: 'wrong',
-                    rowId: edited.id,
-                    rowKind: 'note',
-                    expected: edited,
-                    replacement: { ...edited, velocity: 71 },
-                    expectedSlotPresent: true,
-                    replacementSlotPresent: true,
-                },
-            });
+            type: 'replaceOriginalMidiTakeRow',
+            payload: {
+                laneId: 'lane',
+                takeId: 'selected',
+                sourceClipId: 'wrong',
+                rowId: edited.id,
+                rowKind: 'note',
+                expected: edited,
+                replacement: { ...edited, velocity: 71 },
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
+            },
+        });
         expect(takeLaneStore.value).toEqual(before);
         expect(undoHistoryStore.value?.past.length).toBe(beforeCount);
     });
@@ -268,15 +268,16 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
                 ...lane,
                 takes: lane.takes.map((take) => {
                     const captured = take.midiSource;
-                    return captured
-                        ? {
-                              ...take,
-                              midiSource: {
-                                  ...captured,
-                                  rows: { ...captured.rows, notes: { present: false, value: [] } },
-                              },
-                          }
-                        : take;
+                    if (!captured) {
+                        return take;
+                    }
+                    return {
+                        ...take,
+                        midiSource: {
+                            ...captured,
+                            rows: { ...captured.rows, notes: { present: false, value: [] } },
+                        },
+                    };
                 }),
             })),
         });
@@ -328,19 +329,19 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         };
         const before = structuredClone(takeLaneStore.value);
         await executeUserAppAction({
-                type: 'replaceOriginalMidiTakeRow',
-                payload: {
-                    laneId: 'lane',
-                    takeId: 'selected',
-                    sourceClipId: 'original',
-                    rowId: wrongPass.id,
-                    rowKind: 'note',
-                    expected: null,
-                    replacement: wrongPass,
-                    expectedSlotPresent: true,
-                    replacementSlotPresent: true,
-                },
-            });
+            type: 'replaceOriginalMidiTakeRow',
+            payload: {
+                laneId: 'lane',
+                takeId: 'selected',
+                sourceClipId: 'original',
+                rowId: wrongPass.id,
+                rowKind: 'note',
+                expected: null,
+                replacement: wrongPass,
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
+            },
+        });
         expect(takeLaneStore.value).toEqual(before);
         expect(undoHistoryStore.value?.past).toHaveLength(0);
 
@@ -367,23 +368,24 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
                 ...lane,
                 takes: lane.takes.map((take) => {
                     const captured = take.midiSource;
-                    return captured
-                        ? {
-                              ...take,
-                              midiSource: {
-                                  ...captured,
-                                  rows: {
-                                      ...captured.rows,
-                                      notes: {
-                                          present: true,
-                                          value: captured.rows.notes.value.map((note) =>
-                                              note.id === edited.id ? { ...note, velocity: 55 } : note
-                                          ),
-                                      },
-                                  },
-                              },
-                          }
-                        : take;
+                    if (!captured) {
+                        return take;
+                    }
+                    return {
+                        ...take,
+                        midiSource: {
+                            ...captured,
+                            rows: {
+                                ...captured.rows,
+                                notes: {
+                                    present: true,
+                                    value: captured.rows.notes.value.map((note) =>
+                                        note.id === edited.id ? { ...note, velocity: 55 } : note
+                                    ),
+                                },
+                            },
+                        },
+                    };
                 }),
             })),
         });

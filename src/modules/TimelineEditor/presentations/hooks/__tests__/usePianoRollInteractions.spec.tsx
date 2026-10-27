@@ -318,17 +318,19 @@ describe('usePianoRollInteractions', () => {
                 ],
             ]),
             coveredWindows: [{ startBeat: 0, endBeat: 8 }],
-            insertOwnerAtBeat: (beat: number) =>
-                beat === 4
-                    ? {
-                          laneId: 'lane',
-                          takeId: 'second',
-                          sourceClipId: 'source',
-                          sourceBeat: 9.5,
-                          recordingPassIndex: 1,
-                          slotPresent: true,
-                      }
-                    : null,
+            insertOwnerAtBeat: (beat: number) => {
+                if (beat !== 4) {
+                    return null;
+                }
+                return {
+                    laneId: 'lane',
+                    takeId: 'second',
+                    sourceClipId: 'source',
+                    sourceBeat: 9.5,
+                    recordingPassIndex: 1,
+                    slotPresent: true,
+                };
+            },
         };
 
         it('moves repeated views through one original row action, preserving source coordinates', () => {

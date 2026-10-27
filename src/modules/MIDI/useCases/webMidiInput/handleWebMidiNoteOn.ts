@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
-import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { logger } from '#/infra/logger/appLogger';
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isBypassedNoteReceiver, resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
@@ -97,12 +97,13 @@ export const handleWebMidiNoteOn = inject({
             }
 
             const transport = deps.getTransportStoreValue();
-            const recordingClipId = transport?.isRecording
-                ? deps
-                      .getTrackStoreState()
-                      ?.tracks.find((track) => track.id === targetTrackId)
-                      ?.clips.find((clip) => clip.type === 'midi' && activeRecordingRef.current.includes(clip.id))?.id
-                : undefined;
+            let recordingClipId: string | undefined;
+            if (transport?.isRecording) {
+                recordingClipId = deps
+                    .getTrackStoreState()
+                    ?.tracks.find((track) => track.id === targetTrackId)
+                    ?.clips.find((clip) => clip.type === 'midi' && activeRecordingRef.current.includes(clip.id))?.id;
+            }
             const engine = audioEngine;
             // When the key was struck, not when this handler got its turn on
             // the main thread (audit MD-1). Everything downstream — the voice
