@@ -981,6 +981,7 @@ async function prepareYeastTrackNotes(
                     }
                     const window = projectFrozenMidiTakeWindow({
                         source: frozenSource,
+                        recordingPassIndex: clip.midiTakeRecordingPassIndex,
                         absoluteOccurrenceIndex,
                         fromBeat: clip.startBeat,
                         toBeat: clip.endBeat,
@@ -1774,6 +1775,7 @@ export async function scheduleMidiNotes(
                 } else if (frozenSource) {
                     const window = projectFrozenMidiTakeWindow({
                         source: frozenSource,
+                        recordingPassIndex: clip.midiTakeRecordingPassIndex,
                         absoluteOccurrenceIndex,
                         fromBeat: clip.startBeat,
                         toBeat: clip.endBeat,

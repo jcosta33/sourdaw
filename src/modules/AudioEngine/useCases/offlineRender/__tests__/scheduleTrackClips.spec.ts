@@ -749,6 +749,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                             endBeat: 4,
                             selected: true,
                             sourceOffsetBeats: 5,
+                            recordingPassIndex: 1,
                             midiSource: {
                                 sourceClipId: 'clip-1',
                                 sourceEntryBeat: 5,
@@ -760,11 +761,20 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                                         present: true,
                                         value: [
                                             {
+                                                id: 'held-previous',
+                                                pitch: 72,
+                                                startBeat: 4.75,
+                                                duration: 1,
+                                                velocity: 100,
+                                                recordingPassIndex: 0,
+                                            },
+                                            {
                                                 id: 'selected-row',
                                                 pitch: 67,
                                                 startBeat: 5.5,
                                                 duration: 1,
                                                 velocity: 100,
+                                                recordingPassIndex: 1,
                                             },
                                         ],
                                     },

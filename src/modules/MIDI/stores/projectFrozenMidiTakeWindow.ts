@@ -8,6 +8,8 @@ export type { FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
 
 type ProjectFrozenMidiTakeWindowInput = {
     readonly source: FrozenMidiTakeSource;
+    /** The selected recorded pass; absent on legacy or manually created takes. */
+    readonly recordingPassIndex?: number;
     readonly absoluteOccurrenceIndex: number;
     readonly fromBeat: number;
     readonly toBeat: number;
@@ -33,12 +35,14 @@ function isFiniteBeat(value: unknown): value is number {
  */
 export function projectFrozenMidiTakeWindow({
     source,
+    recordingPassIndex,
     absoluteOccurrenceIndex,
     fromBeat,
     toBeat,
 }: ProjectFrozenMidiTakeWindowInput): FrozenMidiTakeWindow | null {
     if (
         !isFrozenMidiTakeSource(source) ||
+        (recordingPassIndex !== undefined && (!Number.isSafeInteger(recordingPassIndex) || recordingPassIndex < 0)) ||
         !Number.isSafeInteger(absoluteOccurrenceIndex) ||
         !isFiniteBeat(fromBeat) ||
         !isFiniteBeat(toBeat) ||
@@ -64,7 +68,12 @@ export function projectFrozenMidiTakeWindow({
     const visibleSourceStartBeat = source.sourceEntryBeat + visibleStartBeat - passHeadBeat;
     const visibleSourceEndBeat = source.sourceEntryBeat + visibleEndBeat - passHeadBeat;
     const projected = projectMidiClipWindow({
-        notes: source.rows.notes.value,
+        notes: source.rows.notes.value.filter(
+            (note) =>
+                recordingPassIndex === undefined ||
+                note.recordingPassIndex === undefined ||
+                note.recordingPassIndex === recordingPassIndex
+        ),
         controlChanges: source.rows.controlChanges.value,
         pitchBends: source.rows.pitchBends.value,
         window: {

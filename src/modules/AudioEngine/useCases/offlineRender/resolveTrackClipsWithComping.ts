@@ -22,6 +22,7 @@ export type ResolvedClip = Track['clips'][number] & {
     sourceStartBeat: number;
     midiTakeSource?: NonNullable<Take['midiSource']>;
     midiTakeId?: string;
+    midiTakeRecordingPassIndex?: number;
 };
 
 type TakeMedia = {
@@ -342,7 +343,11 @@ export function resolveTrackClipsWithComping(
             regionEndBeat: overlapEnd,
             sourceStartBeat: media.sourceStartBeat,
             ...(sourceClip.type === 'midi' && take.midiSource
-                ? { midiTakeSource: take.midiSource, midiTakeId: take.id }
+                ? {
+                      midiTakeSource: take.midiSource,
+                      midiTakeId: take.id,
+                      midiTakeRecordingPassIndex: take.recordingPassIndex,
+                  }
                 : {}),
         });
     }

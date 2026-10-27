@@ -1017,6 +1017,7 @@ describe('scheduleMidiNotes', () => {
                 regionEndBeat: 8,
                 sourceStartBeat: 0,
                 midiTakeId: 'selected',
+                midiTakeRecordingPassIndex: 1,
                 midiTakeSource: {
                     sourceClipId: 'clip-1',
                     sourceEntryBeat: 5,
@@ -1026,7 +1027,24 @@ describe('scheduleMidiNotes', () => {
                     rows: {
                         notes: {
                             present: true,
-                            value: [{ id: 'selected-row', pitch: 67, startBeat: 5.5, duration: 1, velocity: 100 }],
+                            value: [
+                                {
+                                    id: 'held-previous',
+                                    pitch: 72,
+                                    startBeat: 4.75,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                                {
+                                    id: 'selected-row',
+                                    pitch: 67,
+                                    startBeat: 5.5,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 1,
+                                },
+                            ],
                         },
                         controlChanges: { present: false, value: [] },
                         pitchBends: { present: false, value: [] },
@@ -1065,6 +1083,7 @@ describe('scheduleMidiNotes', () => {
                 regionEndBeat: 8,
                 sourceStartBeat: 0,
                 midiTakeId: 'selected',
+                midiTakeRecordingPassIndex: 1,
                 midiTakeSource: {
                     sourceClipId: 'clip-1',
                     sourceEntryBeat: 5,
@@ -1074,7 +1093,24 @@ describe('scheduleMidiNotes', () => {
                     rows: {
                         notes: {
                             present: true,
-                            value: [{ id: 'selected-row', pitch: 67, startBeat: 5.5, duration: 1, velocity: 100 }],
+                            value: [
+                                {
+                                    id: 'held-previous',
+                                    pitch: 72,
+                                    startBeat: 4.75,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                                {
+                                    id: 'selected-row',
+                                    pitch: 67,
+                                    startBeat: 5.5,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 1,
+                                },
+                            ],
                         },
                         controlChanges: { present: false, value: [] },
                         pitchBends: { present: false, value: [] },

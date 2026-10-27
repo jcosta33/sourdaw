@@ -8,4 +8,5 @@ export type ResolvedClip = Clip & {
     /** Selected take's original MIDI owner; absent for base gaps and legacy takes. */
     midiTakeSource?: MidiTakeSource;
     midiTakeId?: string;
+    midiTakeRecordingPassIndex?: number;
 };

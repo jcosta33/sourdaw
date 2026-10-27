@@ -295,6 +295,7 @@ function projectClipNotes({
         for (let absoluteOccurrenceIndex = first; absoluteOccurrenceIndex < last; absoluteOccurrenceIndex++) {
             const window = projectFrozenMidiTakeWindow({
                 source,
+                recordingPassIndex: clip.midiTakeRecordingPassIndex,
                 absoluteOccurrenceIndex,
                 fromBeat: clip.startBeat,
                 toBeat: clip.endBeat,

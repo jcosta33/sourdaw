@@ -76,6 +76,7 @@ function selectedMidiWindows(clip: ResolvedClip) {
     for (let index = first; index < last; index++) {
         const value = projectFrozenMidiTakeWindow({
             source,
+            recordingPassIndex: clip.midiTakeRecordingPassIndex,
             absoluteOccurrenceIndex: index,
             fromBeat: clip.startBeat,
             toBeat: clip.endBeat,
@@ -869,6 +870,7 @@ export async function scheduleTrackClips({
                 if (frozenSource) {
                     const window = projectFrozenMidiTakeWindow({
                         source: frozenSource,
+                        recordingPassIndex: clip.midiTakeRecordingPassIndex,
                         absoluteOccurrenceIndex,
                         fromBeat: clip.startBeat,
                         toBeat: clip.endBeat,
@@ -1094,6 +1096,7 @@ export async function scheduleTrackClips({
                 const frozenWindow = frozenSource
                     ? projectFrozenMidiTakeWindow({
                           source: frozenSource,
+                          recordingPassIndex: clip.midiTakeRecordingPassIndex,
                           absoluteOccurrenceIndex,
                           fromBeat: clip.startBeat,
                           toBeat: clip.endBeat,

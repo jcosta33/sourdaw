@@ -127,7 +127,11 @@ export function resolveCompingProgramme(
             regionEndBeat: overlapEnd,
             sourceStartBeat: media.sourceStartBeat,
             ...(sourceClip.type === 'midi' && take.midiSource
-                ? { midiTakeSource: take.midiSource, midiTakeId: take.id }
+                ? {
+                      midiTakeSource: take.midiSource,
+                      midiTakeId: take.id,
+                      midiTakeRecordingPassIndex: take.recordingPassIndex,
+                  }
                 : {}),
         });
     }

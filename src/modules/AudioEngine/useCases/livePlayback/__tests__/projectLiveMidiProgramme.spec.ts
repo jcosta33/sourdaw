@@ -197,6 +197,7 @@ describe('projectLiveMidiProgramme', () => {
                             endBeat: 10,
                             selected: true,
                             sourceOffsetBeats: 5,
+                            recordingPassIndex: 1,
                             midiSource: {
                                 sourceClipId: 'original',
                                 sourceEntryBeat: 5,
@@ -206,7 +207,21 @@ describe('projectLiveMidiProgramme', () => {
                                 rows: {
                                     notes: {
                                         present: true,
-                                        value: [note({ id: 'selected-row', pitch: 60, startBeat: 5.5 })],
+                                        value: [
+                                            note({
+                                                id: 'held-previous',
+                                                pitch: 72,
+                                                startBeat: 4.75,
+                                                duration: 1,
+                                                recordingPassIndex: 0,
+                                            }),
+                                            note({
+                                                id: 'selected-row',
+                                                pitch: 60,
+                                                startBeat: 5.5,
+                                                recordingPassIndex: 1,
+                                            }),
+                                        ],
                                     },
                                     controlChanges: { present: false, value: [] },
                                     pitchBends: { present: false, value: [] },
