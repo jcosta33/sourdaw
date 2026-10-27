@@ -216,13 +216,18 @@ describe('crossfadeClips', () => {
         'preserves recorded leading silence at stretch $stretchRatio with anchor $loopOriginBeat',
         ({ stretchRatio, loopOriginBeat }) => {
             // A recording begun inside a loop starts its clip before captured media.
-            const recordedClip = makeClip('b', 4, 8, {
+            const clipOverrides: Partial<Clip> = {
                 audioOffsetBeats: -1,
                 stretchMode: 'timestretch',
                 stretchRatio,
                 loopEnabled: true,
                 loopLength: 4,
-                ...(loopOriginBeat !== undefined ? { loopOriginBeat } : {}),
+            };
+            if (loopOriginBeat !== undefined) {
+                clipOverrides.loopOriginBeat = loopOriginBeat;
+            }
+            const recordedClip = makeClip('b', 4, 8, {
+                ...clipOverrides,
             });
             const track = makeTrack([makeClip('a', 0, 4), recordedClip]);
             mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' });

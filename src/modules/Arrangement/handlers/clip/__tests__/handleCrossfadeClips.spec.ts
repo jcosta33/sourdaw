@@ -626,6 +626,10 @@ describe('crossfade recorded leading silence through command history', () => {
     ])(
         'round-trips signed source origin at stretch $stretchRatio with anchor $loopOriginBeat',
         async ({ stretchRatio, loopOriginBeat }) => {
+            const clipOverrides: { loopOriginBeat?: number } = {};
+            if (loopOriginBeat !== undefined) {
+                clipOverrides.loopOriginBeat = loopOriginBeat;
+            }
             const track = TrackDummy.create({
                 id: 'track-1',
                 clips: [
@@ -639,7 +643,7 @@ describe('crossfade recorded leading silence through command history', () => {
                         stretchRatio,
                         loopEnabled: true,
                         loopLength: 4,
-                        ...(loopOriginBeat !== undefined ? { loopOriginBeat } : {}),
+                        ...clipOverrides,
                     }),
                 ],
             });

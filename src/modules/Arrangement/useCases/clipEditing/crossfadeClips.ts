@@ -65,12 +65,14 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
 
     const clipBDelta = newClipBStart - clipB.startBeat;
     const contentDelta = clipBDelta * stretchFactor;
-    const newAudioOffsetBeats =
-        clipB.audioOffsetBeats !== undefined
-            ? Math.max(Math.min(0, clipB.audioOffsetBeats), clipB.audioOffsetBeats + contentDelta)
-            : undefined;
-    const newMidiOffsetBeats =
-        clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
+    let newAudioOffsetBeats: number | undefined;
+    if (clipB.audioOffsetBeats !== undefined) {
+        newAudioOffsetBeats = Math.max(Math.min(0, clipB.audioOffsetBeats), clipB.audioOffsetBeats + contentDelta);
+    }
+    let newMidiOffsetBeats: number | undefined;
+    if (clipB.midiOffsetBeats !== undefined) {
+        newMidiOffsetBeats = Math.max(0, clipB.midiOffsetBeats + clipBDelta);
+    }
     // The loop anchor follows the offset its clip type moves (#4988). The
     // audio offset retreats by the stretched `contentDelta` while the start
     // retreats by the raw `clipBDelta`, so the carried anchor shifts by
