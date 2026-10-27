@@ -335,26 +335,45 @@ async function beginActualRecording(
 
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
+    const requestRoot = captureProjectRootIdentity();
+    const stillOwnsStoppedRecording = (): boolean => {
+        const current = getTransportState();
+        return (
+            recordingLifecycle.isLatestRecordingStart(startToken) &&
+            captureProjectRootIdentity() === requestRoot &&
+            current?.isRecording === true &&
+            current.isPlaying === false
+        );
+    };
     const transportHold: TransportHold = {
         requestedAtContextSeconds: null,
         rolledAtContextSeconds: null,
         rollLeadBeats: null,
     };
-    void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
-        const current = getTransportState();
-        if (started && current && !current.isPlaying) {
-            const ctx = getAudioContext();
-            // The instant the transport is asked to roll, read on the clock the
-            // capture runs on: the take opened here is placed against it.
-            transportHold.requestedAtContextSeconds = ctx.currentTime;
-            transportHold.rollLeadBeats =
-                current.playheadPosition - resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
-            await startPlayback((contextSeconds) => {
-                transportHold.rolledAtContextSeconds = contextSeconds;
-            });
-        }
-        return null;
-    });
+    void beginActualRecording(startToken, anchorBeat, transportHold)
+        .then(async (started) => {
+            const current = getTransportState();
+            if (started && current && !current.isPlaying) {
+                const ctx = getAudioContext();
+                // The instant the transport is asked to roll, read on the clock the
+                // capture runs on: the take opened here is placed against it.
+                transportHold.requestedAtContextSeconds = ctx.currentTime;
+                transportHold.rollLeadBeats =
+                    current.playheadPosition -
+                    resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
+                await startPlayback((contextSeconds) => {
+                    transportHold.rolledAtContextSeconds = contextSeconds;
+                });
+                if (transportHold.rolledAtContextSeconds === null && stillOwnsStoppedRecording()) {
+                    await stopActiveRecording(stillOwnsStoppedRecording);
+                }
+            }
+            return null;
+        })
+        .catch((error: unknown) => {
+            logger.error(new Error('Recording admission or cleanup failed', { cause: error }));
+            notifyUser('Recording could not be completed. Check the take before trying again.', 'error');
+        });
 }
 
 /**
