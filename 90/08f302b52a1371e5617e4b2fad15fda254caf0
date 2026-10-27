@@ -1,0 +1,21 @@
+src/modules/Gluten/useCases/__tests__/setGlutenPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_37dc434d564e39 83-88,91
+src/modules/Gluten/useCases/setGlutenPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_3c534ea8d933b1 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9008f302b52a1371e5617e4b2fad15fda254caf0",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
