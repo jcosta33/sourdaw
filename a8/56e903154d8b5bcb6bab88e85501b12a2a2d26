@@ -1,0 +1,19 @@
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_29d8df116c5b92::t_db1238d47d8b2c 555-557,565
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a856e903154d8b5bcb6bab88e85501b12a2a2d26",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
