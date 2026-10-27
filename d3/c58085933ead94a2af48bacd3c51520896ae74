@@ -1,0 +1,50 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 646-669
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1528-1547
+package.json
+  h_beb54bf43b47b7 191
+pnpm-lock.yaml
+  h_beb54bf43b47b7 113,119,125,158,241-242,245,5560-5561,5566,7489,7496,7678,7683,7739,7748,7752,7892,8253,8256,8258,8271,8279,8286,11226,11235,11315,11330,11333,11344
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 10
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,280,1743,1755
+scripts/__tests__/fixtures/viteUpgradeReset.mjs
+  h_beb54bf43b47b7 1-21
+scripts/__tests__/viteUpgradeReset.spec.ts
+  h_beb54bf43b47b7 1-102
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 153-154
+src/modules/Arrangement/stores/index.ts
+  h_beb54bf43b47b7 14
+src/modules/Arrangement/stores/isValidTakePlacement.ts
+  h_beb54bf43b47b7 1-27
+src/modules/Arrangement/stores/takeLaneStore.ts
+  h_beb54bf43b47b7 17,112,136
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 3,15,366,827-900
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateArrangementStoreFromProjectData.spec.ts
+  h_beb54bf43b47b7 8-13,17,263-337
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  h_beb54bf43b47b7 24-27
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  h_beb54bf43b47b7 647-704
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  h_beb54bf43b47b7 83-86
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 1,681-682
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3c58085933ead94a2af48bacd3c51520896ae74",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

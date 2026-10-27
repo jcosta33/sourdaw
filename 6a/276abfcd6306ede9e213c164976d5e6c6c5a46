@@ -1,0 +1,30 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 670-680
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1548-1558
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  h_beb54bf43b47b7 474-533
+src/modules/Arrangement/stores/isValidTakePlacement.ts
+  h_beb54bf43b47b7 1-2,8-11,14-18,24,32-35
+src/modules/Arrangement/stores/takeLaneStore.ts
+  h_beb54bf43b47b7 102
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 3-4,75,77,357,370,832,834-905,928-934,954,964-968,980-983
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateArrangementStoreFromProjectData.spec.ts
+  h_beb54bf43b47b7 284-295
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  h_beb54bf43b47b7 674-680,688-697,711-744
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a276abfcd6306ede9e213c164976d5e6c6c5a46",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

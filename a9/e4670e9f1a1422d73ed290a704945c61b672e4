@@ -1,0 +1,21 @@
+src/modules/MIDI/useCases/midiEvent/__tests__/revisitHandEditedCCReturns.spec.ts
+  s_26f70b851e8f7a::t_83e573e27a448d 114-115,121-122
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  s_26f70b851e8f7a::t_83e573e27a448d 728-730,735,740
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a9e4670e9f1a1422d73ed290a704945c61b672e4",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
