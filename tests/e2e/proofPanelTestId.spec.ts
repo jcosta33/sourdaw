@@ -33,4 +33,42 @@ test.describe('Proof device — add to chain', () => {
         const devices_after = await inspector.getByRole('button', { name: /^Bypass /i }).count();
         expect(devices_after).toBe(devices_before + 1);
     });
+
+    test('shared named tiers retain the earlier controls and their settings', async ({ page }) => {
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        await inspector.getByRole('button', { name: 'Add device' }).click();
+        await page.getByRole('menuitem', { name: /^Proof$/ }).click();
+        await expect(inspector.getByRole('button', { name: /^Bypass Proof$/i })).toBeVisible();
+        await inspector.getByText('Proof', { exact: false }).first().click();
+
+        const selector = page.getByRole('group', { name: 'Effect control detail' });
+        await expect(selector).toBeVisible();
+        await expect(selector.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        const ceiling = page.getByRole('slider', { name: 'Mission limiter ceiling', exact: true });
+        await expect(ceiling).toBeVisible();
+        const before = await ceiling.getAttribute('aria-valuenow');
+        if (before === null) {
+            throw new Error('Proof mission ceiling has no current value');
+        }
+
+        for (const [selected, tier] of ['play', 'shape', 'build', 'route', 'lab'].entries()) {
+            await selector.getByRole('button', { name: tier, exact: true }).click();
+            await expect(selector.getByRole('button', { name: tier, exact: true })).toHaveAttribute(
+                'aria-pressed',
+                'true'
+            );
+            for (const [floor, name] of ['Play', 'Shape', 'Build', 'Route', 'Lab'].entries()) {
+                await expect(page.getByRole('region', { name: `${name} controls`, exact: true })).toHaveCount(
+                    floor <= selected ? 1 : 0
+                );
+            }
+            await expect(ceiling).toHaveAttribute('aria-valuenow', before);
+        }
+        await selector.getByRole('button', { name: 'play', exact: true }).click();
+        await expect(page.getByRole('region', { name: 'Build controls', exact: true })).toHaveCount(0);
+        await expect(ceiling).toHaveAttribute('aria-valuenow', before);
+    });
 });
