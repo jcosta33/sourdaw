@@ -51,8 +51,7 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { projectFrozenMidiTakeWindow } from '#/modules/MIDI/useCases';
+import { projectFrozenMidiTakeWindow, type MidiStoreState } from '#/modules/MIDI/stores';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type AudioGraphDeviceTarget, type AudioGraphMidiNoteEvent } from '../../models/AudioGraphBackend';
