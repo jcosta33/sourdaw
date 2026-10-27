@@ -1,5 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { clipDragPreviewRef } from '../../../stores/clipDragPreviewRef';
@@ -290,7 +291,7 @@ vi.mock('../../../useCases/setTrackState', () => ({ setTrackState: mocks.setTrac
 vi.mock('../../../useCases/timelineInteractions/snapToGridOrClips', () => ({
     snapToGridOrClips: mocks.snapToGridOrClips,
 }));
-vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossing', () => ({
+vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossingBeat', () => ({
     snapToZeroCrossing: mocks.snapToZeroCrossing,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));

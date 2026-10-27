@@ -2,12 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Clip } from '../../../models/Track';
 import { handleSplitClip } from '../handleSplitClip';
 
 const mocks = vi.hoisted(() => ({
     getNextAppActionClipId: vi.fn(),
     prepareClipSplit: vi.fn(),
     splitClip: vi.fn(),
+    getTrackStoreState: vi.fn<typeof import('../../../useCases/getTrackStoreState').getTrackStoreState>(),
+    resolveZeroCrossingPosition:
+        vi.fn<typeof import('../../../useCases/timelineInteractions/snapToZeroCrossing').resolveZeroCrossingPosition>(),
 }));
 
 vi.mock('../../../useCases/clip/getNextAppActionClipId', () => ({
@@ -22,12 +27,22 @@ vi.mock('../../../useCases/clipEditing/splitClip', () => ({
     splitClip: mocks.splitClip,
 }));
 
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossing', () => ({
+    resolveZeroCrossingPosition: mocks.resolveZeroCrossingPosition,
+}));
+
 describe('handleSplitClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getNextAppActionClipId.mockReturnValue('right-clip');
         mocks.prepareClipSplit.mockReturnValue(null);
         mocks.splitClip.mockReturnValue('right-clip');
+        mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.resolveZeroCrossingPosition.mockImplementation((_clip, beat) => ({ beat }));
     });
 
     it('executes splitClip with the provided payload', () => {
@@ -61,7 +76,7 @@ describe('handleSplitClip', () => {
             controlChanges: { present: false, value: [] },
             pitchBends: { present: false, value: [] },
         };
-        const leftClip = {
+        const leftClip: Clip = {
             id: 'c1',
             trackId: 't1',
             name: 'Intro',
@@ -75,6 +90,10 @@ describe('handleSplitClip', () => {
             locked: false,
             muted: false,
         };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [leftClip] })],
+            selectedTrackId: null,
+        });
         const rightClip = { ...leftClip, id: 'right-clip', name: 'Intro (R)', startBeat: 2.5 };
         const previous = {
             trackId: 't1',
@@ -138,7 +157,7 @@ describe('handleSplitClip', () => {
             controlChanges: { present: false, value: [] },
             pitchBends: { present: false, value: [] },
         };
-        const sourceClip = {
+        const sourceClip: Clip = {
             id: 'c1',
             trackId: 't1',
             name: 'Intro',
@@ -152,6 +171,11 @@ describe('handleSplitClip', () => {
             locked: false,
             muted: false,
         };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [sourceClip] })],
+            selectedTrackId: null,
+        });
+        mocks.resolveZeroCrossingPosition.mockReturnValue({ beat: 4.125 });
         mocks.prepareClipSplit.mockReturnValue({
             adjustedMediaSplit: 4.125,
             previous: {
@@ -180,6 +204,10 @@ describe('handleSplitClip', () => {
         };
         const description = handleSplitClip.describe(action);
 
+        expect(mocks.resolveZeroCrossingPosition).toHaveBeenCalledWith(sourceClip, 4, expect.any(Object));
+        expect(mocks.prepareClipSplit).toHaveBeenCalledWith(
+            expect.objectContaining({ admittedSplitPosition: { beat: 4.125 } })
+        );
         expect(description.label).toBe('Split clip "Intro" (c1) near requested beat 4 at beat 4.125');
         expect(action.payload.resolvedBeat).toBe(4.125);
 

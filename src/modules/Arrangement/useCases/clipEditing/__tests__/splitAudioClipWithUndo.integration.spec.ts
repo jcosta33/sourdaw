@@ -7,6 +7,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
+import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoHistoryStore, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -26,13 +28,12 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
-import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
-import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
+import { captureAudioSourceSnapshot } from '#/utils/audioSourceTime';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -45,10 +46,9 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { addClip } from '../../clip/addClip';
 import { getArrangementHandlers } from '../../getArrangementHandlers';
 import { splitClipWithUndo } from '../splitClipWithUndo';
-import { addClip } from '../../clip/addClip';
-import { captureAudioSourceSnapshot } from '#/utils/audioSourceTime';
 
 type NotificationEvents = { 'ui.notify': NotifyPayload; 'ui.confirm': ConfirmPayload; 'ui.prompt': PromptPayload };
 const noActionHistoryMetadataPort = {

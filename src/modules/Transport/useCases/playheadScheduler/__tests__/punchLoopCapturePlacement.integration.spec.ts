@@ -609,6 +609,44 @@ describe('punch audio capture loop placement', () => {
         vi.restoreAllMocks();
     });
 
+    it('keeps initial seam staging stable while delayed admission chooses the captured pass clock', async () => {
+        const ready = Promise.withResolvers<void>();
+        hardware.admissionGate = ready.promise;
+        transportStore.set({
+            ...transportStore.value!,
+            playheadPosition: 11.9,
+            punchInEnabled: true,
+            punchInBeat: 8,
+            punchOutBeat: 13,
+        });
+        const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
+        const playback = startPlayback(onRoll);
+        try {
+            await vi.waitFor(() => expect(lane().takes).toHaveLength(2), { interval: 1 });
+            const staged = takeLaneStore.value;
+            const stagedIds = lane().takes.map((take) => take.id);
+            expect(onRoll).not.toHaveBeenCalled();
+            hardware.now = 52;
+            ready.resolve();
+            await playback;
+
+            expect(onRoll).toHaveBeenCalledExactlyOnceWith(52.1, 11.9);
+            expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(52.15, 12);
+            expect(takeLaneStore.value).toBe(staged);
+            expect(lane().takes.map((take) => take.id)).toEqual(stagedIds);
+
+            hardware.now = 52.3;
+            await stopPlayback();
+            const completed = lane().takes.find((take) => take.id === stagedIds[1]);
+            expect(completed).toBeDefined();
+            expect(Math.round(completed!.passDepthSeconds! * 48000)).toBe(9600);
+            expect(Math.round(completed!.passSourceEndSeconds! * 48000)).toBe(12000);
+        } finally {
+            ready.resolve();
+            await playback;
+        }
+    });
+
     it('places delayed first PCM when Record joins playback and replays its saved geometry', async () => {
         hardware.now = 50.2;
         hardware.deferFirstFrame = true;

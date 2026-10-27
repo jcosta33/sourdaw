@@ -59,8 +59,8 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modules/Transport/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
+import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modules/Transport/useCases';
 
 import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
 import { projectStore } from '../../../../stores/projectStore';

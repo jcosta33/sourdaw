@@ -1,9 +1,10 @@
 import { captureAudioSourceState, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
-import { type Clip } from '../../models/Track';
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type Clip } from '../../models/Track';
 import { liveTempoTimeline } from '../liveTempoTimeline';
+
 import { consumedStretchFactor } from './consumedStretchFactor';
 
 type SourceClip = Pick<

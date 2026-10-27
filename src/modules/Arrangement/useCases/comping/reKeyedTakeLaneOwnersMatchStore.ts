@@ -3,8 +3,8 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 
-import { takeReKeySourceValuesMatch } from './reconcileTakeReKeySources';
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
+import { takeReKeySourceValuesMatch } from './takeReKeySourceValuesMatch';
 
 function replayFacets(take: Take): Record<string, unknown> {
     return Object.fromEntries(Object.entries(take).filter(([key, value]) => key !== 'selected' && value !== undefined));

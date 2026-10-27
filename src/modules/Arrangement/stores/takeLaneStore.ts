@@ -97,7 +97,6 @@ function hasValidMidiTakeFields(value: object): boolean {
         (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
     );
 }
-
 function hasValidTakeOffsets(value: object): boolean {
     return (
         (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&

@@ -201,14 +201,15 @@ const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
 function stageLoopWrapTakes(
     current: TransportState,
     passEndContextSeconds: number,
-    boundary: { planned?: boolean; endBeat?: number; nextPassStartBeat?: number } = {},
+    boundary: { planned?: boolean; endBeat?: number; nextPassStartBeat?: number; deferredClock?: boolean } = {},
     kinds: 'all' | 'audio' | 'midi' = 'all'
-): void {
+): Array<NonNullable<ReturnType<typeof stageRecordingTake>>> {
+    const finalizeClocks: Array<NonNullable<ReturnType<typeof stageRecordingTake>>> = [];
     // A punch can open or close inside this tick; its entry snapshot is stale.
     // The owner ref records exactly which clips still cross this boundary.
     const recordingClipIds = new Set(activeRecordingRef.current);
     if (recordingClipIds.size === 0) {
-        return;
+        return finalizeClocks;
     }
     const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
     for (const track of armedTracks) {
@@ -268,13 +269,17 @@ function stageLoopWrapTakes(
             sourceOffsetBeats,
             plannedPassEnd: boundary.planned,
             nextPassStartBeat: boundary.nextPassStartBeat,
-            passEndContextSeconds,
+            passEndContextSeconds: boundary.deferredClock ? undefined : passEndContextSeconds,
         };
         if (track.kind === 'midi') {
             stagedTake.recordingPassIndex = passIndex;
         }
-        stageRecordingTake(stagedTake);
+        const finalizeClock = stageRecordingTake(stagedTake);
+        if (boundary.deferredClock && finalizeClock) {
+            finalizeClocks.push(finalizeClock);
+        }
     }
+    return finalizeClocks;
 }
 
 export function startPlayheadScheduler(): void;
@@ -1011,6 +1016,7 @@ export function startPlayheadScheduler(
         }
 
         const recordingAdmissions: Promise<unknown>[] = [];
+        const initialRecordingAnchors: Array<{ contextSeconds: number; songSeconds: number }> = [];
         let openedRecording = false;
         const hasArmedTracks = trackStore.value?.tracks.some((time) => time.armed) ?? false;
         // On a scheduled-seam tick the audible transport is still finishing the
@@ -1078,7 +1084,11 @@ export function startPlayheadScheduler(
                 nativeEntry = nativeRecordingEntry(captureRead.snapshot);
             }
             if (browserCapture) {
-                clips = startRecording(punchAnchorBeat);
+                if (initial) {
+                    clips = startRecording(punchAnchorBeat, () => initialSchedulingAnchor ?? null);
+                } else {
+                    clips = startRecording(punchAnchorBeat);
+                }
             } else {
                 clips = startRecording(punchAnchorBeat, undefined, nativeEntry);
             }
@@ -1141,6 +1151,9 @@ export function startPlayheadScheduler(
                             latencySeconds:
                                 (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id),
                         };
+                    if (initial && browserCapture && captureAnchor) {
+                        initialRecordingAnchors.push(captureAnchor);
+                    }
                     const admission = Promise.resolve(
                         startAudioRecording(
                             track.id,
@@ -1299,12 +1312,22 @@ export function startPlayheadScheduler(
             updateTransportState({ isRecording: false });
         }
 
+        const browserCaptureKinds = browserCapture ? 'all' : 'midi';
         if (initial && preparedInitial) {
             // Recording creates provisional clips and takes synchronously. Take
             // the emission witness immediately after those owned writes, before
             // waiting on microphone admission or external MIDI preparation.
             if (!openedRecording && !cancellation.isCurrent()) {
                 return;
+            }
+            let finalizePassClocks: Array<NonNullable<ReturnType<typeof stageRecordingTake>>> = [];
+            if (seam) {
+                finalizePassClocks = stageLoopWrapTakes(
+                    current,
+                    seam.seamAudioTime,
+                    { planned: true, deferredClock: true },
+                    browserCaptureKinds
+                );
             }
             const midiPreparation = preparedInitial.prepareMidiWindows();
             const [midi] = await Promise.all([midiPreparation, ...recordingAdmissions]);
@@ -1315,6 +1338,10 @@ export function startPlayheadScheduler(
             now = ctx.currentTime + SCHEDULE_AHEAD_SECONDS;
             initialSchedulingAnchor = now;
             schedulerSession.lastTickTime = now;
+            for (const anchor of initialRecordingAnchors) {
+                anchor.contextSeconds = now;
+                anchor.songSeconds = secondsBetweenBeats(changes, 0, publishedBeat, current.tempo);
+            }
             if (seam && preparedInitial.seam) {
                 seam.seamAudioTime = now + preparedInitial.seam.secondsToSeam;
                 schedulerSession.pendingSeam = {
@@ -1333,6 +1360,9 @@ export function startPlayheadScheduler(
             if (!cancellation.isCurrent()) {
                 return;
             }
+            if (seam && finalizePassClocks.some((finalize) => !finalize(seam.seamAudioTime))) {
+                throw new Error('Initial recording pass no longer owns its capture clock');
+            }
         }
 
         const initialMidiEmissions: Promise<void>[] = [];
@@ -1346,7 +1376,6 @@ export function startPlayheadScheduler(
         }
         const previouslyNative = captureClock.isNative;
         captureClock.observe(current, readCapture());
-        const browserCaptureKinds = browserCapture ? 'all' : 'midi';
         // A cutover can leave an already scheduled browser seam with no new
         // emission this tick. Give its audio pass the browser owner exactly once.
         if (previouslyNative && browserCapture && !seam && schedulerSession.pendingSeam) {
@@ -1367,7 +1396,9 @@ export function startPlayheadScheduler(
             // out, or a punch-out past the loop end — still gets its pass-span
             // take here, so the staging moment moves but the staged takes do
             // not.
-            stageLoopWrapTakes(current, seam.seamAudioTime, { planned: true }, browserCaptureKinds);
+            if (!initial) {
+                stageLoopWrapTakes(current, seam.seamAudioTime, { planned: true }, browserCaptureKinds);
+            }
             // Dying pass: the window remainder up to the seam, emitted against
             // the position the dying pass holds at `now`, so its last events
             // land at their own grid times — all at or before the seam instant.

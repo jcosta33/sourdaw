@@ -453,6 +453,10 @@ describe('toggleRecording', () => {
     ])(
         'places a take opened from Stop against its admitted $runtime anchor',
         async ({ rollAnchor, expectedStartBeat }) => {
+            // The capture is open before the transport is asked to roll, and on a
+            // desktop build the roll waits for the native session — 80 ms here. So
+            // the buffer's first sample predates the anchor beat by that wait on top
+            // of the 20 ms of hardware latency: at 120 BPM, 4 - (0.02 + 0.08) * 2.
             const recordingClip = {
                 id: 'clip-recording',
                 trackId: 'track-audio',

@@ -1,9 +1,9 @@
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 import { resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 
-import { updateClip } from '../updateClip';
-import { getTrackStoreState } from '../getTrackStoreState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getTrackStoreState } from '../getTrackStoreState';
+import { updateClip } from '../updateClip';
 
 import { audioClipSlipOwner } from './audioClipSlipOwner';
 import { audioClipStartTrimState } from './audioClipStartTrimState';

@@ -6,8 +6,8 @@ import { type CommandApplicationAssignedId } from '../../models/VersionedCommand
 import { compileCommandArgumentMetadata } from '../commandArgumentMetadata';
 import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
-import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 import { readHandlerMintedApplicationIds } from '../readHandlerMintedApplicationIds';
+import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
 type GlueAction = Extract<AppAction, { type: 'glueClips' }>;
 

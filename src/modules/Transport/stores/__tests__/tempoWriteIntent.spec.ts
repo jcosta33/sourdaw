@@ -8,17 +8,17 @@ import {
     resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 
 import { setTempo } from '../../useCases/setTempo';
 import { tempoMapStore, type TempoMapStoreState } from '../tempoMapStore';
-import { defaultTransportState, transportStore, type TransportState } from '../transportStore';
 import {
     captureTempoWriteMetadata,
     runWithTempoSourcePreservation,
     runWithTempoWriteIntent,
     tempoWriteIntentsMatch,
 } from '../tempoWriteIntent';
-import { type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
+import { defaultTransportState, transportStore, type TransportState } from '../transportStore';
 
 let document: Record<string, unknown> & { transport: TransportState; tempoMap: TempoMapStoreState };
 const legacyPromotion: TempoAudioSourcePromotionSnapshot = {

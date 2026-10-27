@@ -1,6 +1,6 @@
 import { resolveClipLoopOriginAdvance } from './clipLoopOrigin';
-import { isRecord } from './structuralEquality';
 import { boundStretchRatio } from './stretchRatioBound';
+import { isRecord } from './structuralEquality';
 
 type AudioSourceOffset = {
     audioOffsetSeconds?: number;
@@ -55,15 +55,11 @@ export function hasCanonicalAudioTakeSource(take: AudioTakeSource, clip: LoopedA
 }
 
 /** Physical take media shared by live and offline comp resolution. */
-export function resolveAudioTakeSource(
-    take: AudioTakeSource,
-    clip: LoopedAudioSource & { stretchMode?: string; stretchRatio?: number },
-    timeline: AudioSourceTimeline
-) {
+function hasValidTakePlacement(take: AudioTakeSource, clip: LoopedAudioSource): boolean {
     const hasPlacement = [take.passAnchorSeconds, take.passDepthSeconds, take.passSourceEndSeconds].some(
         (value) => value !== undefined
     );
-    if (
+    return !(
         !hasValidAudioSourceState(clip) ||
         !hasValidAudioPassOrigin(take) ||
         (take.sourceOffsetSeconds !== undefined &&
@@ -77,7 +73,15 @@ export function resolveAudioTakeSource(
                 (take.passSourceEndSeconds !== undefined &&
                     (!Number.isFinite(take.passSourceEndSeconds) ||
                         take.passSourceEndSeconds <= take.passDepthSeconds))))
-    ) {
+    );
+}
+
+export function resolveAudioTakeSource(
+    take: AudioTakeSource,
+    clip: LoopedAudioSource & { stretchMode?: string; stretchRatio?: number },
+    timeline: AudioSourceTimeline
+) {
+    if (!hasValidTakePlacement(take, clip)) {
         return { status: 'invalid' as const };
     }
     const rate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;

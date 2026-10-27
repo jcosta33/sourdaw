@@ -3,8 +3,8 @@ import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardC
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
-import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
 import { handleRestoreAudioClipSlip } from '../handlers/clip/handleRestoreAudioClipSlip';
+import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
 import { handleAddGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleAddGainEnvelopePoint';

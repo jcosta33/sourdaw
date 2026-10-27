@@ -271,6 +271,65 @@ describe('ordered tempo and audio split source preparation', () => {
         expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'right')?.audioOffsetSeconds).toBe(4);
     });
 
+    it('preserves selected source frame 108002 through saved split undo and redo on the admission clock', async () => {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({
+                    ...clip,
+                    endBeat: 4,
+                    audioOffsetBeats: 0.5,
+                    audioOffsetSeconds: 0.25,
+                    audioUnwrappedOffsetSeconds: 0.25,
+                    stretchMode: 'repitch' as const,
+                    stretchRatio: 2,
+                })),
+            })),
+        });
+        tempoMapStore.set({
+            changes: [
+                { id: 'head', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'fast', beat: 1, tempo: 240, curve: 'instant' },
+                { id: 'tail', beat: 2, tempo: 120, curve: 'instant' },
+            ],
+        });
+        const samples = new Float32Array(192000).fill(-1);
+        samples.fill(1, 108003);
+        const buffer: AudioBuffer = {
+            getChannelData: () => samples,
+            length: samples.length,
+            numberOfChannels: 1,
+            sampleRate: 48000,
+            duration: 4,
+            copyFromChannel: () => undefined,
+            copyToChannel: () => undefined,
+        };
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(buffer);
+        const before = owners();
+
+        const result = await executeAppActionBatch(
+            [{ type: 'splitClip', payload: { clipId: 'source', beat: 2.5, rightClipId: 'right' } }],
+            { source: 'manual', requireCompensation: true }
+        );
+
+        expect(result.status).toBe('committed');
+        const after = owners();
+        const right = trackStore.value!.tracks[0]!.clips.find((clip) => clip.id === 'right');
+        expect(right?.startBeat).toBeCloseTo(2.5 + 2 / 48000, 12);
+        expect(right?.audioOffsetSeconds).toBe(108002 / 48000);
+        expect(Math.floor(right!.audioOffsetSeconds! * 48000)).toBe(108002);
+        await reopen(1);
+        expect(owners()).toEqual(after);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(owners()).toEqual(before);
+        await reopen(0);
+        await redo();
+        expect(owners()).toEqual(after);
+        expect(Math.floor(trackStore.value!.tracks[0]!.clips[1]!.audioOffsetSeconds! * 48000)).toBe(108002);
+        await reopen(1);
+    });
+
     it.each([
         ...['tempo-first', 'split-first'].flatMap((order) =>
             [false, true].map((grouped) => ({ order, grouped, undoClockFirst: false }))

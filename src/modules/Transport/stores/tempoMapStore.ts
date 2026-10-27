@@ -4,9 +4,9 @@ import {
     createAutomergeStorage,
 } from '#/infra/store/storage/createAutomergeStorage';
 
-import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoClockWriteIntent } from './tempoWriteIntent';
-
 import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../models/TempoMap';
+
+import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoClockWriteIntent } from './tempoWriteIntent';
 
 // The tempo-map bounds live in `models/TempoMap.ts` — a model file cannot import
 // from a store, so a bound both layers need sits a layer down. They are

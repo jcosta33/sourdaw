@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { handleSlipClipContent } from '../handleSlipClipContent';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type Clip } from '../../../models/Track';
+import { handleSlipClipContent } from '../handleSlipClipContent';
 
 const mocks = vi.hoisted(() => ({
     slipClipContent: vi.fn(),

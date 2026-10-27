@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { type AudioSourceSnapshot } from '#/utils/audioSourceTime';
 
 const mocks = vi.hoisted(() => {
@@ -62,10 +63,10 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type Take, type TakeLane } from '../../../models/TakeLane';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { type Clip } from '../../../stores/trackStore';
-import { resolveClipsWithComping } from '../../resolveComping';
 import { captureResolvedAudioSourceSnapshot } from '../../comping/captureResolvedAudioSourceSnapshot';
 import { resolveCompingProgramme } from '../../comping/resolveCompingProgramme';
 import { liveTempoTimeline } from '../../liveTempoTimeline';
+import { resolveClipsWithComping } from '../../resolveComping';
 import { createUndoableGlobalTimeOperation } from '../createUndoableGlobalTimeOperation';
 import { executeGlobalTimeOperation } from '../executeGlobalTimeOperation';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';

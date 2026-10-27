@@ -21,9 +21,9 @@ import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderMode
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
 import { relocateAudioSourceTimeFields } from '../../useCases/clip/relocateAudioSourceTimeFields';
+import { audioClipSlipOffsetBeats } from '../../useCases/clipEditing/audioClipSlipOffsetBeats';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
-import { audioClipSlipOffsetBeats } from '../../useCases/clipEditing/prepareAudioClipSlip';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
 import { selectClip } from '../../useCases/clipSelection/selectClip';
@@ -44,7 +44,7 @@ import { registerTimelineGestureCanceler } from '../../useCases/timelineInteract
 import { setPlayheadFromClick } from '../../useCases/timelineInteractions/setPlayheadFromClick';
 import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
-import { snapToZeroCrossing } from '../../useCases/timelineInteractions/snapToZeroCrossing';
+import { snapToZeroCrossing } from '../../useCases/timelineInteractions/snapToZeroCrossingBeat';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';
 import {

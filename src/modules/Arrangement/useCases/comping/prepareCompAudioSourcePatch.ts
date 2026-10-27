@@ -1,5 +1,6 @@
 import { type CompAudioSourceOwnerSnapshot, type CompAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 
+import { type ResolvedClip } from '../../models/ResolvedClip';
 import { type CompRegion, type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
@@ -9,10 +10,10 @@ import {
     type TakeLaneCompRegionPatch,
     type TakeLaneStoreValue,
 } from '../../stores/takeLaneWriteJournal';
-import { type ResolvedClip } from '../../models/ResolvedClip';
-import { resolveCompingProgramme } from './resolveCompingProgramme';
-import { captureResolvedAudioSourceSnapshot as snapshot } from './captureResolvedAudioSourceSnapshot';
+
 import { captureCompAudioSourceAuthorizations } from './captureCompAudioSourceAuthorizations';
+import { captureResolvedAudioSourceSnapshot as snapshot } from './captureResolvedAudioSourceSnapshot';
+import { resolveCompingProgramme } from './resolveCompingProgramme';
 
 function selectedSource(
     region: CompRegion,
@@ -70,6 +71,88 @@ function baseOwner(clip: ResolvedClip, lane: TakeLane): CompAudioSourceOwnerSnap
     return owner;
 }
 
+function collectExposedBasePromotions(
+    after: ResolvedClip[],
+    afterLane: TakeLane,
+    beforeBase: ResolvedClip[],
+    patch: TakeLaneCompRegionPatch,
+    timeline: TempoTimeline,
+    promotions: Omit<CompAudioSourcePromotionSnapshot, 'sourceInputs'>[]
+): void {
+    // Newly exposed base spans have no prior audible owner. Capture their
+    // current base law once, leaving the old adjacent gap owners untouched.
+    for (const clip of after.filter(
+        (candidate) => isBase(candidate, afterLane.activeCompRegions) && intersects(candidate, patch)
+    )) {
+        const start = Math.max(clip.startBeat, patch.startBeat);
+        const end = Math.min(clip.endBeat, patch.endBeat);
+        const previous = beforeBase.filter(
+            (candidate) => candidate.id === clip.id && intersects(candidate, { startBeat: start, endBeat: end })
+        );
+        const source = snapshot(clip, timeline);
+        if (!source) {
+            continue;
+        }
+        let cursor = start;
+        for (const old of previous) {
+            if (cursor < old.startBeat) {
+                const expected: CompAudioSourceOwnerSnapshot = {
+                    kind: 'base',
+                    clipId: clip.id,
+                    startBeat: cursor,
+                    endBeat: Math.min(old.startBeat, end),
+                };
+                promotions.push({ expected, replacement: { ...expected, audioSource: source } });
+            }
+            cursor = Math.max(cursor, Math.min(old.endBeat, end));
+        }
+        if (cursor < end) {
+            const expected: CompAudioSourceOwnerSnapshot = {
+                kind: 'base',
+                clipId: clip.id,
+                startBeat: cursor,
+                endBeat: end,
+            };
+            promotions.push({ expected, replacement: { ...expected, audioSource: source } });
+        }
+    }
+}
+
+function collectPromotions(
+    lane: TakeLane,
+    afterLane: TakeLane,
+    before: ResolvedClip[],
+    after: ResolvedClip[],
+    patch: TakeLaneCompRegionPatch,
+    timeline: TempoTimeline
+) {
+    const promotions: Omit<CompAudioSourcePromotionSnapshot, 'sourceInputs'>[] = [];
+    for (const region of lane.activeCompRegions) {
+        if (region.audioSource || !intersects(region, patch)) {
+            continue;
+        }
+        const source = selectedSource(region, lane, before, timeline);
+        if (!source) {
+            continue;
+        }
+        const expected: CompAudioSourceOwnerSnapshot = { kind: 'take', ...region };
+        promotions.push({ expected, replacement: { ...expected, audioSource: source } });
+    }
+    const beforeBase = before.filter((clip) => isBase(clip, lane.activeCompRegions));
+    for (const clip of beforeBase) {
+        if (!intersects(clip, patch)) {
+            continue;
+        }
+        const expected = baseOwner(clip, lane);
+        const source = expected.audioSource ?? snapshot(clip, timeline);
+        if (source) {
+            promotions.push({ expected, replacement: { ...expected, audioSource: source } });
+        }
+    }
+    collectExposedBasePromotions(after, afterLane, beforeBase, patch, timeline, promotions);
+    return promotions;
+}
+
 /** Capture actual old-law owners once; retained pieces inherit the same value and grid. */
 export function prepareCompAudioSourcePatch(
     state: TakeLaneStoreValue,
@@ -110,66 +193,7 @@ export function prepareCompAudioSourcePatch(
         const source = selectedSource(region, afterLane, after, timeline);
         return source ? { ...region, audioSource: source } : region;
     });
-    const promotions: Omit<CompAudioSourcePromotionSnapshot, 'sourceInputs'>[] = [];
-    for (const region of lane.activeCompRegions) {
-        if (region.audioSource || !intersects(region, patch)) {
-            continue;
-        }
-        const source = selectedSource(region, lane, before, timeline);
-        if (!source) {
-            continue;
-        }
-        const expected: CompAudioSourceOwnerSnapshot = { kind: 'take', ...region };
-        promotions.push({ expected, replacement: { ...expected, audioSource: source } });
-    }
-    const beforeBase = before.filter((clip) => isBase(clip, lane.activeCompRegions));
-    for (const clip of beforeBase) {
-        if (!intersects(clip, patch)) {
-            continue;
-        }
-        const expected = baseOwner(clip, lane);
-        const source = expected.audioSource ?? snapshot(clip, timeline);
-        if (source) {
-            promotions.push({ expected, replacement: { ...expected, audioSource: source } });
-        }
-    }
-    // Newly exposed base spans have no prior audible owner. Capture their
-    // current base law once, leaving the old adjacent gap owners untouched.
-    for (const clip of after.filter(
-        (candidate) => isBase(candidate, afterLane.activeCompRegions) && intersects(candidate, patch)
-    )) {
-        const start = Math.max(clip.startBeat, patch.startBeat);
-        const end = Math.min(clip.endBeat, patch.endBeat);
-        const previous = beforeBase.filter(
-            (candidate) => candidate.id === clip.id && intersects(candidate, { startBeat: start, endBeat: end })
-        );
-        const source = snapshot(clip, timeline);
-        if (!source) {
-            continue;
-        }
-        let cursor = start;
-        for (const old of previous) {
-            if (cursor < old.startBeat) {
-                const expected: CompAudioSourceOwnerSnapshot = {
-                    kind: 'base',
-                    clipId: clip.id,
-                    startBeat: cursor,
-                    endBeat: Math.min(old.startBeat, end),
-                };
-                promotions.push({ expected, replacement: { ...expected, audioSource: source } });
-            }
-            cursor = Math.max(cursor, Math.min(old.endBeat, end));
-        }
-        if (cursor < end) {
-            const expected: CompAudioSourceOwnerSnapshot = {
-                kind: 'base',
-                clipId: clip.id,
-                startBeat: cursor,
-                endBeat: end,
-            };
-            promotions.push({ expected, replacement: { ...expected, audioSource: source } });
-        }
-    }
+    const promotions = collectPromotions(lane, afterLane, before, after, patch, timeline);
     const authenticated: CompAudioSourcePromotionSnapshot[] = [];
     for (const promotion of promotions) {
         const sourceInputs = captureCompAudioSourceInputProof(lane, promotion.expected, context);

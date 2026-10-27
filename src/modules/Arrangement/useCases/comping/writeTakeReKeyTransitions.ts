@@ -6,7 +6,8 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { replaceBaseGapAudioSources } from '../../stores/takeLaneWriteJournal';
 import { getTrackStoreState } from '../getTrackStoreState';
 
-import { reconcileTransitionBaseGaps, reconcileTransitionRegions } from './reconcileTakeReKeySources';
+import { reconcileTransitionBaseGaps } from './reconcileTakeReKeySources';
+import { reconcileTransitionRegions } from './reconcileTransitionRegions';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 export type TakeReKeyWriteDirection = 'apply' | 'restore';

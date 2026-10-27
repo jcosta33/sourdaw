@@ -35,7 +35,6 @@ export {
     replaceBaseGapAudioSources,
     type OptionalAudioSourceTiles,
 } from './baseGapAudioSourceDelta';
-
 export type {
     TakeLaneStoreValue,
     TakeLaneCompRegionPatch,

@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { slipClipContent } from '#/modules/Arrangement/useCases/clipEditing/slipClipContent';
-import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
+
+import { createTrack } from '../../../models/Track';
 
 import type { Clip } from '#/modules/Arrangement/models/Track';
-import { createTrack } from '../../../models/Track';
 
 vi.mock('#/modules/Arrangement/useCases/updateClip', () => ({
     updateClip: vi.fn(),

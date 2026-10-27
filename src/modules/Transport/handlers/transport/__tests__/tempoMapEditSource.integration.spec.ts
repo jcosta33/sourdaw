@@ -11,6 +11,8 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { sanitizeTrackSnapshot, type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, normalizeTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
+import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore, undoStore } from '#/modules/Command/stores';
 import {
     captureCommandTargetFingerprints,
@@ -30,10 +32,6 @@ import {
     serializeVersionedCommandEnvelope,
     undo,
 } from '#/modules/Command/useCases';
-import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
-import { getAutomationHandlers } from '#/modules/Automation/useCases';
-import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
-import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
     createCrdtDoc,
     captureProjectRevision,
@@ -47,6 +45,8 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { hasValidAudioSourceState, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { type AppAction, type HandlerCommitValidation } from '#/utils/handlerContract';
 import {

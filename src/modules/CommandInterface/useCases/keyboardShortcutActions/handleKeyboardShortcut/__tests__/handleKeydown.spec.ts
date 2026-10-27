@@ -97,6 +97,9 @@ const eventBus = { emit: vi.fn(), on: vi.fn(() => () => undefined) };
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: trackStoreMock,
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
     clipSelectionStore: clipSelectionStoreMock,
     zoomTimeline: vi.fn(),
 }));

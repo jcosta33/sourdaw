@@ -1,14 +1,15 @@
+import { type AudioSourceTile } from '#/utils/audioSourceTime';
 import {
     type TempoAudioClipFieldsSnapshot,
     type TempoAudioSourcePresenceSnapshot,
     type TempoAudioSourcePromotionSnapshot,
     type TempoAudioTakeFieldsSnapshot,
 } from '#/utils/handlerContract';
-import { type AudioSourceTile } from '#/utils/audioSourceTime';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 import { type Clip, type Track } from '../models/Track';
+
 import {
     captureBaseGapAudioSources,
     reconcileBaseGapAudioSourceDelta,
@@ -196,6 +197,123 @@ export function projectTempoAudioSources(
     return { tracks: nextTracks, lanes: nextLanes };
 }
 
+function projectTakeDelta(
+    lanes: readonly TakeLane[],
+    plan: TempoAudioSourcePromotionSnapshot,
+    delta: TempoAudioSourcePromotionSnapshot['takes'][number],
+    from: 'before' | 'after',
+    to: 'before' | 'after'
+): TakeLane[] | null {
+    let nextLanes = [...lanes];
+    const lane = nextLanes.find((candidate) => candidate.id === delta.laneId && candidate.trackId === delta.trackId);
+    const take = lane?.takes.find((candidate) => candidate.id === delta.takeId && candidate.clipId === delta.clipId);
+    if (
+        !lane ||
+        !take ||
+        plan.clips.filter((clip) => clip.trackId === delta.trackId && clip.clipId === take.clipId).length !== 1 ||
+        !valuesEqual(
+            {
+                startBeat: take.startBeat,
+                endBeat: take.endBeat,
+                ...captureTempoSourceFields(take, tempoTakeOptionalInputs),
+            },
+            delta.inputs
+        ) ||
+        !valuesEqual(captureTempoSourceFields(take, tempoTakeSourceFields), delta[from])
+    ) {
+        return null;
+    }
+    const replacement = withTakeSource(take, delta[to]);
+    const nextLane = { ...lane, takes: lane.takes.map((row) => (row.id === take.id ? replacement : row)) };
+    nextLanes = nextLanes.map((candidate) => {
+        if (candidate.id === lane.id) {
+            return nextLane;
+        }
+        return candidate;
+    });
+
+    return nextLanes;
+}
+
+function projectRegionDelta(
+    lanes: readonly TakeLane[],
+    plan: TempoAudioSourcePromotionSnapshot,
+    delta: TempoAudioSourcePromotionSnapshot['regions'][number],
+    from: 'before' | 'after',
+    to: 'before' | 'after'
+): TakeLane[] | null {
+    let nextLanes = [...lanes];
+    const lane = nextLanes.find((candidate) => candidate.id === delta.laneId && candidate.trackId === delta.trackId);
+    const region = lane?.activeCompRegions.find(
+        (candidate) =>
+            candidate.takeId === delta.takeId &&
+            candidate.startBeat === delta.startBeat &&
+            candidate.endBeat === delta.endBeat
+    );
+    const take = lane?.takes.find((candidate) => candidate.id === delta.takeId);
+    if (
+        !lane ||
+        !region ||
+        !take ||
+        take.clipId !== delta.clipId ||
+        plan.clips.filter((clip) => clip.trackId === delta.trackId && clip.clipId === take.clipId).length !== 1 ||
+        !matchesPresence(region.audioSource, delta[from])
+    ) {
+        return null;
+    }
+    const nextLane = {
+        ...lane,
+        activeCompRegions: lane.activeCompRegions.map((row) => {
+            if (row === region) {
+                return withRegionSource(row, delta[to]);
+            }
+            return row;
+        }),
+    };
+    nextLanes = nextLanes.map((candidate) => {
+        if (candidate.id === lane.id) {
+            return nextLane;
+        }
+        return candidate;
+    });
+
+    return nextLanes;
+}
+
+function projectGapDelta(
+    lanes: readonly TakeLane[],
+    plan: TempoAudioSourcePromotionSnapshot,
+    presence: TempoAudioSourcePromotionSnapshot['gapFieldPresence'][number],
+    from: 'before' | 'after',
+    to: 'before' | 'after'
+): TakeLane[] | null {
+    let nextLanes = [...lanes];
+    const lane = nextLanes.find(
+        (candidate) => candidate.id === presence.laneId && candidate.trackId === presence.trackId
+    );
+    if (!lane) {
+        return null;
+    }
+    const expected = gapTiles(plan, lane, from);
+    const replacement = gapTiles(plan, lane, to);
+    if (!expected || !replacement) {
+        return null;
+    }
+    const sources = reconcileBaseGapAudioSourceDelta(captureBaseGapAudioSources(lane), expected, replacement);
+    if (!sources) {
+        return null;
+    }
+    const nextLane = replaceBaseGapAudioSources(lane, sources);
+    nextLanes = nextLanes.map((candidate) => {
+        if (candidate.id === lane.id) {
+            return nextLane;
+        }
+        return candidate;
+    });
+
+    return nextLanes;
+}
+
 /** The same bounded lane-facet law used by optimistic execution and raw journal replay. */
 export function projectTempoAudioSourceLanes(
     lanes: readonly TakeLane[],
@@ -206,97 +324,25 @@ export function projectTempoAudioSourceLanes(
     const to = direction === 'promote' ? 'after' : 'before';
     let nextLanes = [...lanes];
     for (const delta of plan.takes) {
-        const lane = nextLanes.find(
-            (candidate) => candidate.id === delta.laneId && candidate.trackId === delta.trackId
-        );
-        const take = lane?.takes.find(
-            (candidate) => candidate.id === delta.takeId && candidate.clipId === delta.clipId
-        );
-        if (
-            !lane ||
-            !take ||
-            plan.clips.filter((clip) => clip.trackId === delta.trackId && clip.clipId === take.clipId).length !== 1 ||
-            !valuesEqual(
-                {
-                    startBeat: take.startBeat,
-                    endBeat: take.endBeat,
-                    ...captureTempoSourceFields(take, tempoTakeOptionalInputs),
-                },
-                delta.inputs
-            ) ||
-            !valuesEqual(captureTempoSourceFields(take, tempoTakeSourceFields), delta[from])
-        ) {
+        const projected = projectTakeDelta(nextLanes, plan, delta, from, to);
+        if (!projected) {
             return null;
         }
-        const replacement = withTakeSource(take, delta[to]);
-        const nextLane = { ...lane, takes: lane.takes.map((row) => (row.id === take.id ? replacement : row)) };
-        nextLanes = nextLanes.map((candidate) => {
-            if (candidate.id === lane.id) {
-                return nextLane;
-            }
-            return candidate;
-        });
+        nextLanes = projected;
     }
     for (const delta of plan.regions) {
-        const lane = nextLanes.find(
-            (candidate) => candidate.id === delta.laneId && candidate.trackId === delta.trackId
-        );
-        const region = lane?.activeCompRegions.find(
-            (candidate) =>
-                candidate.takeId === delta.takeId &&
-                candidate.startBeat === delta.startBeat &&
-                candidate.endBeat === delta.endBeat
-        );
-        const take = lane?.takes.find((candidate) => candidate.id === delta.takeId);
-        if (
-            !lane ||
-            !region ||
-            !take ||
-            take.clipId !== delta.clipId ||
-            plan.clips.filter((clip) => clip.trackId === delta.trackId && clip.clipId === take.clipId).length !== 1 ||
-            !matchesPresence(region.audioSource, delta[from])
-        ) {
+        const projected = projectRegionDelta(nextLanes, plan, delta, from, to);
+        if (!projected) {
             return null;
         }
-        const nextLane = {
-            ...lane,
-            activeCompRegions: lane.activeCompRegions.map((row) => {
-                if (row === region) {
-                    return withRegionSource(row, delta[to]);
-                }
-                return row;
-            }),
-        };
-        nextLanes = nextLanes.map((candidate) => {
-            if (candidate.id === lane.id) {
-                return nextLane;
-            }
-            return candidate;
-        });
+        nextLanes = projected;
     }
     for (const presence of plan.gapFieldPresence) {
-        const lane = nextLanes.find(
-            (candidate) => candidate.id === presence.laneId && candidate.trackId === presence.trackId
-        );
-        if (!lane) {
+        const projected = projectGapDelta(nextLanes, plan, presence, from, to);
+        if (!projected) {
             return null;
         }
-        const expected = gapTiles(plan, lane, from);
-        const replacement = gapTiles(plan, lane, to);
-        if (!expected || !replacement) {
-            return null;
-        }
-        const sources = reconcileBaseGapAudioSourceDelta(captureBaseGapAudioSources(lane), expected, replacement);
-        if (!sources) {
-            return null;
-        }
-        const nextLane = replaceBaseGapAudioSources(lane, sources);
-        nextLanes = nextLanes.map((candidate) => {
-            if (candidate.id === lane.id) {
-                return nextLane;
-            }
-            return candidate;
-        });
+        nextLanes = projected;
     }
     return nextLanes;
 }

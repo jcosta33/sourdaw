@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { liveTempoTimeline } from '../../liveTempoTimeline';
-import { resolveZeroCrossingPosition, snapToZeroCrossing } from '../snapToZeroCrossing';
+import { resolveZeroCrossingPosition } from '../snapToZeroCrossing';
+import { snapToZeroCrossing } from '../snapToZeroCrossingBeat';
 
 import type { SnapSplitBeatToZeroCrossingInput } from '../../../services/snapSplitBeatToZeroCrossing';
 

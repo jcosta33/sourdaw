@@ -9,6 +9,7 @@ import {
     hasCanonicalAudioTakeSource,
 } from '#/utils/audioSourceTime';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+import { compBaseGapWindows } from '#/utils/compBaseGapWindows';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { liveTempoTimeline, type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
@@ -379,27 +380,11 @@ function resolveBaseGapClips(
 ): ResolvedClip[] {
     const resolvedClips: ResolvedClip[] = [];
     for (const clip of clips) {
-        const gaps: { start: number; end: number }[] = [];
-        let cursor = clip.startBeat;
-        for (const region of lane.activeCompRegions) {
-            if (region.endBeat <= clip.startBeat || region.startBeat >= clip.endBeat) {
-                continue;
-            }
-            const regionStart = Math.max(region.startBeat, clip.startBeat);
-            if (cursor < regionStart) {
-                gaps.push({ start: cursor, end: regionStart });
-            }
-            cursor = Math.max(cursor, Math.min(region.endBeat, clip.endBeat));
-        }
-        if (cursor < clip.endBeat) {
-            gaps.push({ start: cursor, end: clip.endBeat });
-        }
-
-        for (const gap of gaps) {
+        for (const gap of compBaseGapWindows(clip, lane.activeCompRegions)) {
             const windows = partitionAudioSourceTiles(
                 clip.id,
-                gap.start,
-                gap.end,
+                gap.startBeat,
+                gap.endBeat,
                 clip.type === 'audio' ? (lane.baseGapAudioSources ?? []) : []
             );
             for (const window of windows) {

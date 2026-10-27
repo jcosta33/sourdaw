@@ -1,11 +1,10 @@
 import { audioSourceSnapshotAtBeat, captureAudioSourceSnapshot } from '#/utils/audioSourceTime';
-import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
-import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type ResolvedClip } from '../../models/ResolvedClip';
+import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
-
 import { clipMediaOffsetAt } from '../clipMediaOffsetAt';
 import { withMediaOffsetBeats } from '../withMediaOffsetBeats';
 

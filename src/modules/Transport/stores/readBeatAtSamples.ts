@@ -1,5 +1,6 @@
-import { samplesToBeat } from '../models/TempoMap';
 import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
+
+import { samplesToBeat } from '../models/TempoMap';
 
 import { tempoMapStore } from './tempoMapStore';
 import { DEFAULT_TEMPO_BPM, transportStore } from './transportStore';

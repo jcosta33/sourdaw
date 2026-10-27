@@ -1,18 +1,20 @@
 import { createHandler } from '#/utils/createHandler';
-import { valuesEqual } from '#/utils/structuralEquality';
 import {
     type AppAction,
     type HandlerMaterializationContext,
     type RetiredTakeLaneSnapshot,
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
 import { preparedClipSplits } from '../../useCases/clipEditing/preparedClipSplit';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
-import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { splitClip } from '../../useCases/clipEditing/splitClip';
+import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
+import { resolveZeroCrossingPosition } from '../../useCases/timelineInteractions/snapToZeroCrossing';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { isSplitClipSessionEntry } from './validateClipEditSessionEntries';
@@ -44,11 +46,23 @@ function prepareAction(action: SplitClipAction, context?: HandlerMaterialization
     if (!prefix?.tracks) {
         return null;
     }
+    let admittedSplitPosition: ZeroCrossingPosition | undefined;
+    if (action.payload.resolvedBeat === undefined) {
+        const admission = projectClipReplayPrefix();
+        const clip = prefix.tracks.flatMap((track) => track.clips).find((clip) => clip.id === action.payload.clipId);
+        if (!admission || !clip) {
+            return null;
+        }
+        const position = resolveZeroCrossingPosition(clip, action.payload.beat, admission.timeline);
+        // A preceding tempo write changes source placement, not the admitted split geometry.
+        admittedSplitPosition = valuesEqual(admission.clock, prefix.clock) ? position : { beat: position.beat };
+    }
     const plan = prepareClipSplit({
         clipId: action.payload.clipId,
         splitBeat: action.payload.beat,
         rightClipId,
         resolvedSplitBeat: action.payload.resolvedBeat,
+        admittedSplitPosition,
         targetNoteIds: action.payload.targetNoteIds,
         owners: {
             tracks: prefix.tracks,

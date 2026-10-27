@@ -1,9 +1,8 @@
+import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
-
-import { regionsOverlap } from './regionsOverlap';
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
+import { regionsOverlap } from './regionsOverlap';
 
 /**
  * A captured lane can be absent or replaced by a new lane for its track. Its

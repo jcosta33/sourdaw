@@ -4,8 +4,9 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandObjectReference } from '../../models/VersionedCommandEnvelope';
 import { collectCommandIdReferences } from '../collectCommandIdReferences';
-import { compileCommandArgumentMetadata, isDerivedSourceSupportPath } from '../commandArgumentMetadata';
+import { compileCommandArgumentMetadata } from '../commandArgumentMetadata';
 import { createVersionedCommandEnvelope } from '../createVersionedCommandEnvelope';
+import { isDerivedSourceSupportPath } from '../isDerivedSourceSupportPath';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 

@@ -13,8 +13,8 @@ import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 import type { MidiStoreState } from '#/modules/MIDI/stores';
 import type { Preferences } from '#/modules/Preferences/stores';
 import type { TransportState } from '#/modules/Transport/stores';
-import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TakeLaneStoreState } from '../../stores/takeLaneStore';
+import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TrackStoreState } from '../../stores/trackStore';
 
 type TrackStoreSubscribe = (typeof import('../../stores/trackStore'))['trackStore']['subscribe'];

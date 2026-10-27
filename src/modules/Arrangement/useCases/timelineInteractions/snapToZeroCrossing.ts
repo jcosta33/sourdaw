@@ -1,14 +1,10 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
-import { snapSplitPositionToZeroCrossing, type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { snapSplitPositionToZeroCrossing, type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { type Clip } from '../../stores/trackStore';
 import { consumedStretchFactor } from '../clipEditing/consumedStretchFactor';
 import { liveTempoTimeline } from '../liveTempoTimeline';
-
-export function snapToZeroCrossing(clip: Clip, beat: number): number {
-    return resolveZeroCrossingPosition(clip, beat).beat;
-}
 
 export function resolveZeroCrossingPosition(
     clip: Clip,

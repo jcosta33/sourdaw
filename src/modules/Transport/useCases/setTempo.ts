@@ -2,8 +2,8 @@ import { createTempoRampWriteError } from '../errors/TempoRampWriteError';
 import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { tempoMapStore } from '../stores/tempoMapStore';
 import { runWithTempoWriteIntent } from '../stores/tempoWriteIntent';
-import { assertTempoWriteBpm } from './assertTempoWriteBpm';
 
+import { assertTempoWriteBpm } from './assertTempoWriteBpm';
 import { getTempoWriteTarget } from './transportQueries/getTempoWriteTarget';
 
 export type SetTempoInput = {

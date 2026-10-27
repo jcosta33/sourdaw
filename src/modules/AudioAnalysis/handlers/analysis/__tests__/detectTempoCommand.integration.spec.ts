@@ -1,17 +1,16 @@
 import 'fake-indexeddb/auto';
 
 import * as Automerge from '@automerge/automerge';
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createEventBus } from '#/infra/events/createEventBus';
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, normalizeTrack, resolveClipsWithComping } from '#/modules/Arrangement/useCases';

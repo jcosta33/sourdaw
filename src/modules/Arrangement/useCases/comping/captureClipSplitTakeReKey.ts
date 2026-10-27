@@ -1,6 +1,7 @@
-import { type Clip } from '../../models/Track';
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type Clip } from '../../models/Track';
+
 import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
@@ -38,8 +39,7 @@ export function captureClipSplitTakeReKeyTransitions(
 ): readonly TakeReKeyLaneTransition[] {
     return captureTakeReKeyTransitions({
         sourceClips: [input.sourceClip],
-        sourceMidiByClipId:
-            input.sourceMidi === undefined ? undefined : new Map([[input.clipId, input.sourceMidi]]),
+        sourceMidiByClipId: input.sourceMidi === undefined ? undefined : new Map([[input.clipId, input.sourceMidi]]),
         lanes: input.lanes,
         timeline: input.timeline,
         windowsByTrackId: new Map([
