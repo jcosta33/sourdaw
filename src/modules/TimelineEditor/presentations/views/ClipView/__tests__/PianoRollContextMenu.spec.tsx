@@ -130,6 +130,8 @@ describe('PianoRollContextMenu', () => {
         const display = { ...original, id: 'view-first', startBeat: 0.5 };
         const projection = {
             notes: [display],
+            baseNotes: [],
+            baseOwnersByViewId: new Map(),
             ownersByViewId: new Map([
                 [
                     display.id,
@@ -163,6 +165,51 @@ describe('PianoRollContextMenu', () => {
         });
         expect(removeMidiNote).not.toHaveBeenCalled();
         expect(pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('deletes repeated views of one base row once when the selection also contains a frozen row', () => {
+        const base = { id: 'base-original', pitch: 64, startBeat: 0, duration: 4, velocity: 80 };
+        const first = { ...base, id: 'base-gap-first', duration: 1 };
+        const second = { ...base, id: 'base-gap-second', startBeat: 2, duration: 1 };
+        const frozen = { id: 'frozen-view', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
+        renderWithTooltip(
+            <PianoRollContextMenu
+                {...defaultProps}
+                notes={[first, second, frozen]}
+                selectedNoteIds={new Set([first.id, second.id, frozen.id])}
+                takeProjection={{
+                    notes: [frozen],
+                    baseNotes: [first, second],
+                    ownersByViewId: new Map([
+                        [
+                            frozen.id,
+                            {
+                                laneId: 'lane',
+                                takeId: 'take',
+                                sourceClipId: 'source',
+                                row: frozen,
+                                occurrenceIndex: 0,
+                                displayedStartBeat: 1,
+                                displayedDuration: 1,
+                            },
+                        ],
+                    ]),
+                    baseOwnersByViewId: new Map([
+                        [first.id, { row: base, displayedStartBeat: 0, displayedDuration: 1 }],
+                        [second.id, { row: base, displayedStartBeat: 2, displayedDuration: 1 }],
+                    ]),
+                    coveredWindows: [{ startBeat: 1, endBeat: 2 }],
+                    insertOwnerAtBeat: () => null,
+                }}
+            />
+        );
+        fireEvent.click(screen.getByText('Delete Selected'));
+        expect(removeMidiNote).toHaveBeenCalledTimes(1);
+        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', base.id);
+        expect(executeUserAppAction).toHaveBeenCalledWith({
+            type: 'replaceOriginalMidiTakeRow',
+            payload: expect.objectContaining({ rowId: frozen.id, replacement: null }),
+        });
     });
 
     it('should render Select All button', () => {

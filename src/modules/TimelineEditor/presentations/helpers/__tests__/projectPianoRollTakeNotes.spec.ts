@@ -91,4 +91,33 @@ describe('piano roll frozen take occurrence ownership', () => {
         });
         expect(result.insertOwnerAtBeat(20)).toBeNull();
     });
+
+    it('clips base notes around a selected empty region and keeps both gap views on one base row', () => {
+        const state = laneState();
+        state.lanes[0]!.activeCompRegions = [{ startBeat: 2, endBeat: 4, takeId: 'first' }];
+        const base = {
+            id: 'base-held',
+            pitch: 70,
+            startBeat: 0,
+            duration: 6,
+            velocity: 80,
+            expression: {
+                pressure: [
+                    { offsetBeats: 1, value: 20 },
+                    { offsetBeats: 3, value: 40 },
+                    { offsetBeats: 5, value: 60 },
+                ],
+            },
+        };
+        const result = projectPianoRollTakeNotes({ id: 'clip', startBeat: 0, endBeat: 6 }, 'track', state, [base]);
+        expect(result.baseNotes.map((note) => [note.startBeat, note.duration])).toEqual([
+            [0, 2],
+            [4, 2],
+        ]);
+        expect(result.baseNotes[0]?.id).not.toBe(result.baseNotes[1]?.id);
+        expect(result.baseNotes.map((note) => result.baseOwnersByViewId.get(note.id)?.row)).toEqual([base, base]);
+        expect(result.baseNotes[1]?.expression?.pressure?.map((point) => point.offsetBeats)).toEqual([1]);
+        expect(result.insertOwnerAtBeat(2.5)?.takeId).toBe('first');
+        expect(result.insertOwnerAtBeat(4.5)).toBeNull();
+    });
 });

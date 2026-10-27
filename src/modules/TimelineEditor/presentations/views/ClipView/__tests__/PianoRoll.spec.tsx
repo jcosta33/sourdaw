@@ -314,6 +314,67 @@ describe('PianoRoll', () => {
         ).toEqual(second);
     });
 
+    it('keeps base-gap context actions addressed to the original base row', () => {
+        pianoRollStoreState.tracks = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    devices: [],
+                    clips: [{ id: 'clip-1', trackId: 'track-1', type: 'midi', startBeat: 0, endBeat: 6 }],
+                },
+            ],
+            selectedTrackId: null,
+        };
+        const base = { id: 'base-original', pitch: 60, startBeat: 0, duration: 6, velocity: 90 };
+        pianoRollStoreState.midi.notesByClipId = { 'clip-1': [base] };
+        pianoRollStoreState.takes = {
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track-1',
+                    takes: [
+                        {
+                            id: 'selected',
+                            clipId: 'clip-1',
+                            name: 'Selected',
+                            selected: true,
+                            startBeat: 0,
+                            endBeat: 6,
+                            midiSource: {
+                                sourceClipId: 'source',
+                                sourceEntryBeat: 5,
+                                sourceEndBeat: 9,
+                                phaseHeadBeat: 0,
+                                passLengthBeats: 4,
+                                rows: {
+                                    notes: { present: true, value: [] },
+                                    controlChanges: { present: true, value: [] },
+                                    pitchBends: { present: true, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'selected' }],
+                },
+            ],
+        };
+        vi.mocked(usePianoRollInteractions).mockImplementationOnce(() => ({
+            handleMouseDown: vi.fn(),
+            handleMouseMove: vi.fn(),
+            handleMouseUp: vi.fn(),
+            handleDoubleClick: vi.fn(),
+            handleKeyDown: vi.fn(),
+            handleContextMenu: vi.fn(),
+            ctxMenu: { x: 100, y: 100, beat: 5 },
+            setCtxMenu: vi.fn(),
+            hoverCursor: 'crosshair',
+        }));
+        const gapViewId = `base-gap:${JSON.stringify(['clip-1', 1, base.id])}`;
+        render(<PianoRoll {...defaultProps} selectedNoteIds={new Set([gapViewId])} />);
+        expect(contextMenuPropsRef.current?.notes).toEqual([base]);
+        expect(contextMenuPropsRef.current?.selectedNoteIds).toEqual(new Set([base.id]));
+    });
+
     it('should render toolbar', () => {
         render(<PianoRoll {...defaultProps} />);
         expect(screen.getByTestId('toolbar')).toBeInTheDocument();

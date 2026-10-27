@@ -1,5 +1,6 @@
 import { type TakeLaneStoreState } from '#/modules/Arrangement/stores';
 import { isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
+import { projectMidiClipWindow } from '#/modules/MIDI/useCases';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 
@@ -33,9 +34,17 @@ export type FrozenPianoRollInsertOwner = {
     readonly slotPresent: boolean;
 };
 
+export type BaseGapPianoRollNoteOwner = {
+    readonly row: MidiNote;
+    readonly displayedStartBeat: number;
+    readonly displayedDuration: number;
+};
+
 export type PianoRollTakeNotes = {
     readonly notes: MidiNote[];
+    readonly baseNotes: MidiNote[];
     readonly ownersByViewId: ReadonlyMap<string, FrozenPianoRollNoteOwner>;
+    readonly baseOwnersByViewId: ReadonlyMap<string, BaseGapPianoRollNoteOwner>;
     readonly coveredWindows: readonly { readonly startBeat: number; readonly endBeat: number }[];
     readonly insertOwnerAtBeat: (clipBeat: number) => FrozenPianoRollInsertOwner | null;
 };
@@ -85,10 +94,61 @@ function viewId(region: SelectedRegion, occurrenceIndex: number, regionIndex: nu
     return `frozen:${JSON.stringify([region.laneId, region.takeId, occurrenceIndex, regionIndex, rowId])}`;
 }
 
+function projectBaseGapNotes(
+    clip: ClipPlacement,
+    baseRows: readonly MidiNote[],
+    coveredWindows: readonly { readonly startBeat: number; readonly endBeat: number }[]
+): { notes: MidiNote[]; ownersByViewId: Map<string, BaseGapPianoRollNoteOwner> } {
+    const ownersByViewId = new Map<string, BaseGapPianoRollNoteOwner>();
+    if (coveredWindows.length === 0) {
+        return { notes: [...baseRows], ownersByViewId };
+    }
+    const gaps: Array<{ startBeat: number; endBeat: number }> = [];
+    let cursor = clip.startBeat;
+    for (const window of [...coveredWindows].sort((a, b) => a.startBeat - b.startBeat)) {
+        if (window.startBeat > cursor) {
+            gaps.push({ startBeat: cursor, endBeat: Math.min(window.startBeat, clip.endBeat) });
+        }
+        cursor = Math.max(cursor, window.endBeat);
+    }
+    if (cursor < clip.endBeat) {
+        gaps.push({ startBeat: cursor, endBeat: clip.endBeat });
+    }
+    const notes: MidiNote[] = [];
+    for (const [gapIndex, gap] of gaps.entries()) {
+        if (gap.startBeat >= gap.endBeat) {
+            continue;
+        }
+        const sourceStart = gap.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
+        const sourceEnd = gap.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
+        const projected = projectMidiClipWindow({
+            notes: baseRows,
+            controlChanges: [],
+            pitchBends: [],
+            window: { beatOffset: 0, visibleStartBeat: sourceStart, visibleEndBeat: sourceEnd },
+        });
+        for (const note of projected.notes) {
+            const original = baseRows.find((row) => row.id === note.id);
+            if (!original) {
+                throw new Error('Base MIDI gap note has no original row');
+            }
+            const id = `base-gap:${JSON.stringify([clip.id, gapIndex, note.id])}`;
+            notes.push({ ...note, id });
+            ownersByViewId.set(id, {
+                row: original,
+                displayedStartBeat: note.startBeat,
+                displayedDuration: note.duration,
+            });
+        }
+    }
+    return { notes, ownersByViewId };
+}
+
 export function projectPianoRollTakeNotes(
     clip: ClipPlacement,
     trackId: string,
-    laneState: TakeLaneStoreState | null
+    laneState: TakeLaneStoreState | null,
+    baseRows: readonly MidiNote[] = []
 ): PianoRollTakeNotes {
     const regions = selectedRegions(clip, trackId, laneState);
     const notes: MidiNote[] = [];
@@ -133,10 +193,14 @@ export function projectPianoRollTakeNotes(
             }
         }
     }
+    const coveredWindows = regions.map((region) => ({ startBeat: region.startBeat, endBeat: region.endBeat }));
+    const base = projectBaseGapNotes(clip, baseRows, coveredWindows);
     return {
         notes,
+        baseNotes: base.notes,
         ownersByViewId,
-        coveredWindows: regions.map((region) => ({ startBeat: region.startBeat, endBeat: region.endBeat })),
+        baseOwnersByViewId: base.ownersByViewId,
+        coveredWindows,
         insertOwnerAtBeat(clipBeat) {
             const arrangementBeat = clip.startBeat + clipBeat - (clip.midiOffsetBeats ?? 0);
             const region = regions.find(

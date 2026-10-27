@@ -1,4 +1,5 @@
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { sliceMidiTakeNoteForEdit } from '#/modules/MIDI/useCases';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 
@@ -19,20 +20,26 @@ export async function editPianoRollTakeNote(
         return false;
     }
     const expected = owner.row;
+    const startBeat =
+        change?.startBeat === undefined
+            ? expected.startBeat
+            : expected.startBeat + change.startBeat - owner.displayedStartBeat;
+    const duration =
+        change?.duration === undefined
+            ? expected.duration
+            : expected.duration + change.duration - owner.displayedDuration;
+    const resized =
+        startBeat === expected.startBeat && duration === expected.duration
+            ? expected
+            : sliceMidiTakeNoteForEdit(expected, { fromOffset: startBeat - expected.startBeat, duration });
     const replacement =
         change === null
             ? null
             : {
-                  ...expected,
+                  ...resized,
                   ...change,
-                  startBeat:
-                      change.startBeat === undefined
-                          ? expected.startBeat
-                          : expected.startBeat + change.startBeat - owner.displayedStartBeat,
-                  duration:
-                      change.duration === undefined
-                          ? expected.duration
-                          : expected.duration + change.duration - owner.displayedDuration,
+                  startBeat,
+                  duration,
               };
     await executeUserAppAction({
         type: 'replaceOriginalMidiTakeRow',
@@ -55,13 +62,14 @@ export async function editPianoRollTakeNote(
 export async function insertPianoRollTakeNote(
     projection: PianoRollTakeNotes,
     clipBeat: number,
-    note: Pick<MidiNote, 'pitch' | 'duration' | 'velocity'>
+    note: Omit<MidiNote, 'id' | 'startBeat'>
 ): Promise<string | null> {
     const owner = projection.insertOwnerAtBeat(clipBeat);
     if (!owner) {
         return null;
     }
     const id = crypto.randomUUID();
+    const { recordingPassIndex: _previousPass, ...fields } = note;
     await executeUserAppAction({
         type: 'replaceOriginalMidiTakeRow',
         payload: {
@@ -72,11 +80,9 @@ export async function insertPianoRollTakeNote(
             rowKind: 'note',
             expected: null,
             replacement: {
+                ...fields,
                 id,
-                pitch: note.pitch,
                 startBeat: owner.sourceBeat,
-                duration: note.duration,
-                velocity: note.velocity,
                 ...(owner.recordingPassIndex === undefined ? {} : { recordingPassIndex: owner.recordingPassIndex }),
             },
             expectedSlotPresent: owner.slotPresent,

@@ -422,6 +422,18 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         return undefined;
     };
 
+    const baseGapOwnerForViewId = (id: string) => {
+        for (const projection of takeProjections?.values() ?? []) {
+            const owner = projection.baseOwnersByViewId.get(id);
+            if (owner) {
+                return owner;
+            }
+        }
+        return undefined;
+    };
+
+    const storedNoteId = (viewId: string): string => baseGapOwnerForViewId(viewId)?.row.id ?? viewId;
+
     const editFrozen = (id: string, change: Parameters<typeof editPianoRollTakeNote>[2]): boolean => {
         const projection = projectionForViewId(id);
         if (!projection) {
@@ -438,13 +450,19 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         beat: number,
         pitch: number,
         duration: number,
-        velocity: number
+        velocity: number,
+        copiedNote?: MidiNote
     ): boolean => {
         const projection = takeProjections?.get(ownerClipId);
         if (!projection?.insertOwnerAtBeat(beat)) {
             return false;
         }
-        void insertPianoRollTakeNote(projection, beat, { pitch, duration, velocity }).catch((error) =>
+        let copiedFields: Omit<MidiNote, 'id' | 'startBeat'> | undefined;
+        if (copiedNote) {
+            const { id: _copiedId, startBeat: _copiedBeat, recordingPassIndex: _copiedPass, ...fields } = copiedNote;
+            copiedFields = fields;
+        }
+        void insertPianoRollTakeNote(projection, beat, { ...copiedFields, pitch, duration, velocity }).catch((error) =>
             logger.warn('Could not insert selected MIDI take note', error)
         );
         return true;
@@ -1115,20 +1133,30 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const { noteToClip, allNotesMap } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
                 // Group source notes by their owning clip
                 const byClip = new Map<string, MidiNote[]>();
+                const duplicatedRows = new Set<string>();
                 for (const id of dupIds) {
                     const node = allNotesMap.get(id);
                     if (!node) {
                         continue;
                     }
                     const cid = noteToClip.get(id) ?? noteClipId;
-                    if (projectionForViewId(id)) {
+                    const original =
+                        projectionForViewId(id)?.ownersByViewId.get(id)?.row ?? baseGapOwnerForViewId(id)?.row;
+                    const key = JSON.stringify([cid, original?.id ?? id]);
+                    if (duplicatedRows.has(key)) {
+                        continue;
+                    }
+                    duplicatedRows.add(key);
+                    if (
                         insertFrozen(
                             cid,
                             Math.max(0, node.startBeat + preview.beatDelta),
                             clampMidiData7(node.pitch + preview.pitchDelta),
                             node.duration,
-                            node.velocity
-                        );
+                            node.velocity,
+                            node
+                        )
+                    ) {
                         continue;
                     }
                     const arr = byClip.get(cid) ?? [];
@@ -1179,31 +1207,42 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 );
                 const origPositions = movedIds.map((id) => {
                     const node = allNotesMap2.get(id);
+                    const baseOwner = baseGapOwnerForViewId(id);
                     return {
-                        id,
+                        viewId: id,
+                        id: baseOwner?.row.id ?? id,
                         clipId: noteToClip2.get(id) ?? noteClipId,
-                        beat: node?.startBeat ?? 0,
+                        beat: baseOwner?.row.startBeat ?? node?.startBeat ?? 0,
+                        displayBeat: node?.startBeat ?? 0,
                         pitch: node?.pitch ?? 0,
                     };
                 });
                 const newPositions = origPositions.map((param) => ({
+                    viewId: param.viewId,
                     id: param.id,
                     clipId: param.clipId,
                     beat: Math.max(0, param.beat + preview.beatDelta),
+                    displayBeat: Math.max(0, param.displayBeat + preview.beatDelta),
                     // R-A12: snap final pitch to scale when constrain is active
                     pitch: snapToScalePitch(clampMidiData7(param.pitch + preview.pitchDelta)),
                 }));
                 const editedOriginalRows = new Set<string>();
+                const editedBaseRows = new Set<string>();
                 const basePositions: typeof newPositions = [];
                 for (const param of newPositions) {
-                    const owner = projectionForViewId(param.id)?.ownersByViewId.get(param.id);
+                    const owner = projectionForViewId(param.viewId)?.ownersByViewId.get(param.viewId);
                     if (owner) {
                         const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
                         if (!editedOriginalRows.has(key)) {
                             editedOriginalRows.add(key);
-                            editFrozen(param.id, { pitch: param.pitch, startBeat: param.beat });
+                            editFrozen(param.viewId, { pitch: param.pitch, startBeat: param.displayBeat });
                         }
                     } else {
+                        const key = JSON.stringify([param.clipId, param.id]);
+                        if (editedBaseRows.has(key)) {
+                            continue;
+                        }
+                        editedBaseRows.add(key);
                         moveMidiNote(param.clipId, param.id, param.pitch, param.beat);
                         basePositions.push(param);
                     }
@@ -1232,10 +1271,18 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && (override.beat !== origBeat || override.duration !== origDuration)) {
                     if (!editFrozen(noteId, { startBeat: override.beat, duration: override.duration })) {
+                        const baseOwner = baseGapOwnerForViewId(noteId);
+                        const storedId = baseOwner?.row.id ?? noteId;
+                        const startBeat = baseOwner
+                            ? baseOwner.row.startBeat + override.beat - baseOwner.displayedStartBeat
+                            : override.beat;
+                        const duration = baseOwner
+                            ? baseOwner.row.duration + override.duration - baseOwner.displayedDuration
+                            : override.duration;
                         const snapshotBefore = snapshotClipNotes(noteClipId);
-                        resizeMidiNote(noteClipId, noteId, override.beat, override.duration);
+                        resizeMidiNote(noteClipId, storedId, startBeat, duration);
                         const snapshotAfter = snapshotClipNotes(noteClipId);
-                        pushEditedNoteUndo('Resize MIDI note', noteClipId, snapshotBefore, snapshotAfter, [noteId]);
+                        pushEditedNoteUndo('Resize MIDI note', noteClipId, snapshotBefore, snapshotAfter, [storedId]);
                     }
                 }
             } else if (mode === 'resize-right' && preview?.durationOverride?.has(noteId)) {
@@ -1245,10 +1292,15 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && newDuration !== origDuration) {
                     if (!editFrozen(noteId, { duration: newDuration })) {
+                        const baseOwner = baseGapOwnerForViewId(noteId);
+                        const storedId = baseOwner?.row.id ?? noteId;
+                        const duration = baseOwner
+                            ? baseOwner.row.duration + newDuration - baseOwner.displayedDuration
+                            : newDuration;
                         const snapshotBefore = snapshotClipNotes(noteClipId);
-                        resizeMidiNote(noteClipId, noteId, undefined, newDuration);
+                        resizeMidiNote(noteClipId, storedId, undefined, duration);
                         const snapshotAfter = snapshotClipNotes(noteClipId);
-                        pushEditedNoteUndo('Resize MIDI note', noteClipId, snapshotBefore, snapshotAfter, [noteId]);
+                        pushEditedNoteUndo('Resize MIDI note', noteClipId, snapshotBefore, snapshotAfter, [storedId]);
                     }
                 }
             }
@@ -1397,7 +1449,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             }
             const ownerClipId = hit.ownerClipId;
             const notesBefore = snapshotClipNotes(ownerClipId);
-            removeMidiNote(ownerClipId, hit.note.id);
+            const storedId = storedNoteId(hit.note.id);
+            removeMidiNote(ownerClipId, storedId);
             const notesAfter = snapshotClipNotes(ownerClipId);
             pushMembershipUndo('Delete MIDI note', [{ clipId: ownerClipId, before: notesBefore, after: notesAfter }]);
         }
@@ -1440,18 +1493,25 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 }
                 return false;
             });
-            const affectedClips = [...new Set(baseNotesWithClip.map((entry) => entry.ownerClipId))];
+            const uniqueBaseNotes = baseNotesWithClip.filter(
+                ({ note, ownerClipId }, index) =>
+                    baseNotesWithClip.findIndex(
+                        (entry) =>
+                            entry.ownerClipId === ownerClipId && storedNoteId(entry.note.id) === storedNoteId(note.id)
+                    ) === index
+            );
+            const affectedClips = [...new Set(uniqueBaseNotes.map((entry) => entry.ownerClipId))];
             const clipSnapshots = affectedClips.map((oid) => ({ clipId: oid, before: snapshotClipNotes(oid) }));
-            for (const { note, ownerClipId: oid } of baseNotesWithClip) {
-                removeMidiNote(oid, note.id);
+            for (const { note, ownerClipId: oid } of uniqueBaseNotes) {
+                removeMidiNote(oid, storedNoteId(note.id));
             }
-            if (baseNotesWithClip.length > 0) {
+            if (uniqueBaseNotes.length > 0) {
                 const snapshotsAfter = clipSnapshots.map((entry) => ({
                     clipId: entry.clipId,
                     after: snapshotClipNotes(entry.clipId),
                 }));
                 pushMembershipUndo(
-                    `Delete ${baseNotesWithClip.length} note${baseNotesWithClip.length > 1 ? 's' : ''}`,
+                    `Delete ${uniqueBaseNotes.length} note${uniqueBaseNotes.length > 1 ? 's' : ''}`,
                     clipSnapshots.map((entry) => ({
                         ...entry,
                         after: snapshotsAfter.find((after) => after.clipId === entry.clipId)!.after,
@@ -1513,9 +1573,17 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const span = selEnd - selStart;
                 // Group by clip
                 const byClip = new Map<string, MidiNote[]>();
+                const duplicatedRows = new Set<string>();
                 for (const { note, ownerClipId: oid } of targetsWithClip) {
-                    if (projectionForViewId(note.id)) {
-                        insertFrozen(oid, note.startBeat + span, note.pitch, note.duration, note.velocity);
+                    const original =
+                        projectionForViewId(note.id)?.ownersByViewId.get(note.id)?.row ??
+                        baseGapOwnerForViewId(note.id)?.row;
+                    const key = JSON.stringify([oid, original?.id ?? note.id]);
+                    if (duplicatedRows.has(key)) {
+                        continue;
+                    }
+                    duplicatedRows.add(key);
+                    if (insertFrozen(oid, note.startBeat + span, note.pitch, note.duration, note.velocity, note)) {
                         continue;
                     }
                     const arr = byClip.get(oid) ?? [];
@@ -1594,7 +1662,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
                 event.preventDefault();
-                const ids = [...selectedNoteIds];
+                const ids = [...new Set([...selectedNoteIds].map(storedNoteId))];
                 const snapshotBefore = snapshotClipNotes(singleClip);
                 legatoNotes(singleClip, ids);
                 const snapshotAfter = snapshotClipNotes(singleClip);
@@ -1617,7 +1685,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 if (splitBeat !== undefined) {
                     event.preventDefault();
                     event.stopPropagation();
-                    const ids = [...selectedNoteIds];
+                    const ids = [...new Set([...selectedNoteIds].map(storedNoteId))];
                     const snapshotBefore = snapshotClipNotes(singleClip);
                     splitNoteAtBeat(singleClip, ids, splitBeat);
                     const snapshotAfter = snapshotClipNotes(singleClip);
@@ -1641,7 +1709,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
                 event.preventDefault();
-                const ids = [...selectedNoteIds];
+                const ids = [...new Set([...selectedNoteIds].map(storedNoteId))];
                 const snapshotBefore = snapshotClipNotes(singleClip);
                 joinNotes(singleClip, ids);
                 const snapshotAfter = snapshotClipNotes(singleClip);
@@ -1676,33 +1744,42 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 event.preventDefault();
                 const delta = event.key === 'ArrowRight' ? gridSnap : -gridSnap;
                 const before = selectedWithClip.map(({ note: node, ownerClipId: oid }) => ({
-                    id: node.id,
+                    viewId: node.id,
+                    id: storedNoteId(node.id),
                     clipId: oid,
-                    beat: node.startBeat,
+                    beat: baseGapOwnerForViewId(node.id)?.row.startBeat ?? node.startBeat,
+                    displayBeat: node.startBeat,
                     pitch: node.pitch,
                 }));
+                const after = before.map((entry) => ({
+                    ...entry,
+                    beat: Math.max(0, entry.beat + delta),
+                    displayBeat: Math.max(0, entry.displayBeat + delta),
+                }));
                 const editedOriginalRows = new Set<string>();
-                for (const { note: node, ownerClipId: oid } of selectedWithClip) {
-                    const owner = projectionForViewId(node.id)?.ownersByViewId.get(node.id);
+                const editedBaseRows = new Set<string>();
+                const baseBefore: typeof before = [];
+                const baseAfter: typeof after = [];
+                for (const [index, next] of after.entries()) {
+                    const owner = projectionForViewId(next.viewId)?.ownersByViewId.get(next.viewId);
                     if (owner) {
                         const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
                         if (!editedOriginalRows.has(key)) {
                             editedOriginalRows.add(key);
-                            editFrozen(node.id, { startBeat: Math.max(0, node.startBeat + delta) });
+                            editFrozen(next.viewId, { startBeat: next.displayBeat });
                         }
                     } else {
-                        moveMidiNote(oid, node.id, node.pitch, Math.max(0, node.startBeat + delta));
+                        const key = JSON.stringify([next.clipId, next.id]);
+                        if (editedBaseRows.has(key)) {
+                            continue;
+                        }
+                        editedBaseRows.add(key);
+                        moveMidiNote(next.clipId, next.id, next.pitch, next.beat);
+                        baseBefore.push(before[index]!);
+                        baseAfter.push(next);
                     }
                 }
-                const after = selectedWithClip.map(({ note: node, ownerClipId: oid }) => ({
-                    id: node.id,
-                    clipId: oid,
-                    beat: Math.max(0, node.startBeat + delta),
-                    pitch: node.pitch,
-                }));
-                const baseBefore = before.filter((item) => !projectionForViewId(item.id));
-                const baseAfter = after.filter((item) => !projectionForViewId(item.id));
-                if (baseBefore.length > 0)
+                if (baseBefore.length > 0) {
                     pushUndoEntry(
                         `Nudge ${baseBefore.length} note${baseBefore.length > 1 ? 's' : ''}`,
                         () => {
@@ -1716,39 +1793,44 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             }
                         }
                     );
+                }
             }
             if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
                 event.preventDefault();
                 const semis = event.shiftKey ? 12 : 1;
                 const delta = event.key === 'ArrowUp' ? semis : -semis;
                 const before = selectedWithClip.map(({ note: node, ownerClipId: oid }) => ({
-                    id: node.id,
+                    viewId: node.id,
+                    id: storedNoteId(node.id),
                     clipId: oid,
                     pitch: node.pitch,
-                    beat: node.startBeat,
+                    beat: baseGapOwnerForViewId(node.id)?.row.startBeat ?? node.startBeat,
                 }));
-                const after = selectedWithClip.map(({ note: node, ownerClipId: oid }) => ({
-                    id: node.id,
-                    clipId: oid,
-                    pitch: clampMidiData7(node.pitch + delta),
-                    beat: node.startBeat,
-                }));
+                const after = before.map((entry) => ({ ...entry, pitch: clampMidiData7(entry.pitch + delta) }));
                 const editedOriginalRows = new Set<string>();
-                for (const { note: node, ownerClipId: oid } of selectedWithClip) {
-                    const owner = projectionForViewId(node.id)?.ownersByViewId.get(node.id);
+                const editedBaseRows = new Set<string>();
+                const baseBefore: typeof before = [];
+                const baseAfter: typeof after = [];
+                for (const [index, next] of after.entries()) {
+                    const owner = projectionForViewId(next.viewId)?.ownersByViewId.get(next.viewId);
                     if (owner) {
                         const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
                         if (!editedOriginalRows.has(key)) {
                             editedOriginalRows.add(key);
-                            editFrozen(node.id, { pitch: clampMidiData7(node.pitch + delta) });
+                            editFrozen(next.viewId, { pitch: next.pitch });
                         }
                     } else {
-                        moveMidiNote(oid, node.id, clampMidiData7(node.pitch + delta), node.startBeat);
+                        const key = JSON.stringify([next.clipId, next.id]);
+                        if (editedBaseRows.has(key)) {
+                            continue;
+                        }
+                        editedBaseRows.add(key);
+                        moveMidiNote(next.clipId, next.id, next.pitch, next.beat);
+                        baseBefore.push(before[index]!);
+                        baseAfter.push(next);
                     }
                 }
-                const baseBefore = before.filter((item) => !projectionForViewId(item.id));
-                const baseAfter = after.filter((item) => !projectionForViewId(item.id));
-                if (baseBefore.length > 0)
+                if (baseBefore.length > 0) {
                     pushUndoEntry(
                         `Transpose ${delta > 0 ? '+' : ''}${delta} semitone${Math.abs(delta) !== 1 ? 's' : ''}`,
                         () => {
@@ -1762,6 +1844,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             }
                         }
                     );
+                }
             }
         }
 
@@ -1802,24 +1885,36 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const preset = velocityPresets[event.key];
             if (preset !== undefined) {
                 const { noteToClip, allNotesMap } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
-                const selectedNotesWithClip: Array<{ id: string; clipId: string; velocity: number }> = [];
+                const selectedNotesWithClip: Array<{ viewId: string; id: string; clipId: string; velocity: number }> =
+                    [];
                 for (const id of selectedNoteIds) {
                     const note = allNotesMap.get(id);
                     const ownerClip = noteToClip.get(id);
                     if (note && ownerClip) {
-                        selectedNotesWithClip.push({ id, clipId: ownerClip, velocity: note.velocity });
+                        selectedNotesWithClip.push({
+                            viewId: id,
+                            id: storedNoteId(id),
+                            clipId: ownerClip,
+                            velocity: note.velocity,
+                        });
                     }
                 }
                 const editedOriginalRows = new Set<string>();
+                const editedBaseRows = new Set<string>();
                 const baseNotesWithClip = selectedNotesWithClip.filter((item) => {
-                    const owner = projectionForViewId(item.id)?.ownersByViewId.get(item.id);
+                    const owner = projectionForViewId(item.viewId)?.ownersByViewId.get(item.viewId);
                     if (!owner) {
+                        const key = JSON.stringify([item.clipId, item.id]);
+                        if (editedBaseRows.has(key)) {
+                            return false;
+                        }
+                        editedBaseRows.add(key);
                         return true;
                     }
                     const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
                     if (!editedOriginalRows.has(key)) {
                         editedOriginalRows.add(key);
-                        editFrozen(item.id, { velocity: preset });
+                        editFrozen(item.viewId, { velocity: preset });
                     }
                     return false;
                 });

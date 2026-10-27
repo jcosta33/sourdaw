@@ -115,7 +115,10 @@ export const PianoRollContextMenu = ({
                 }
                 const owner = takeProjection.ownersByViewId.get(note.id);
                 if (!owner) {
-                    baseIds.push(note.id);
+                    const storedId = takeProjection.baseOwnersByViewId.get(note.id)?.row.id ?? note.id;
+                    if (!baseIds.includes(storedId)) {
+                        baseIds.push(storedId);
+                    }
                     continue;
                 }
                 const key = JSON.stringify([owner.sourceClipId, owner.row.id]);

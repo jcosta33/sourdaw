@@ -81,6 +81,11 @@ vi.mock('#/modules/MIDI/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    sliceMidiTakeNoteForEdit: (note: Note, extent: { fromOffset: number; duration: number }) => ({
+        ...note,
+        startBeat: note.startBeat + extent.fromOffset,
+        duration: extent.duration,
+    }),
     addMidiNote: mocks.addMidiNote,
     batchAddMidiNotes: mocks.batchAddMidiNotes,
     getNotesForClip: mocks.getNotesForClip,
@@ -269,6 +274,8 @@ describe('usePianoRollInteractions', () => {
         const otherView = makeNote('view-other', 62, 4, 1, 85);
         const projection = {
             notes: [firstView, repeatView, otherView],
+            baseNotes: [],
+            baseOwnersByViewId: new Map(),
             ownersByViewId: new Map([
                 [
                     firstView.id,
@@ -377,6 +384,47 @@ describe('usePianoRollInteractions', () => {
             expect(mocks.addMidiNote).not.toHaveBeenCalled();
             expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         });
+    });
+
+    it('moves and deletes two base-gap views once through their shared original base note', () => {
+        const original = makeNote('base-original', 60, 0, 6, 80);
+        const first = makeNote('base-gap-first', 60, 0, 2, 80);
+        const second = makeNote('base-gap-second', 60, 4, 2, 80);
+        const projection = {
+            notes: [],
+            baseNotes: [first, second],
+            ownersByViewId: new Map(),
+            baseOwnersByViewId: new Map([
+                [first.id, { row: original, displayedStartBeat: 0, displayedDuration: 2 }],
+                [second.id, { row: original, displayedStartBeat: 4, displayedDuration: 2 }],
+            ]),
+            coveredWindows: [{ startBeat: 2, endBeat: 4 }],
+            insertOwnerAtBeat: () => null,
+        };
+        const { canvas, unmount } = renderRoll({
+            notes: [first, second],
+            selectedNoteIds: new Set([first.id, second.id]),
+            takeProjections: new Map([['clip-1', projection]]),
+        });
+        fireEvent.mouseDown(canvas, { clientX: 20, clientY: yForPitch(60) });
+        fireEvent.mouseMove(canvas, { clientX: 60, clientY: yForPitch(60) });
+        fireEvent.mouseUp(canvas, { clientX: 60, clientY: yForPitch(60) });
+        expect(mocks.moveMidiNote).toHaveBeenCalledTimes(1);
+        expect(mocks.moveMidiNote).toHaveBeenCalledWith('clip-1', original.id, 60, 1);
+        const undoMove = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+        undoMove();
+        expect(mocks.moveMidiNote).toHaveBeenLastCalledWith('clip-1', original.id, 60, 0);
+        unmount();
+
+        mocks.removeMidiNote.mockClear();
+        const deleted = renderRoll({
+            notes: [first, second],
+            selectedNoteIds: new Set([first.id, second.id]),
+            takeProjections: new Map([['clip-1', projection]]),
+        });
+        fireEvent.keyDown(deleted.canvas, { key: 'Delete' });
+        expect(mocks.removeMidiNote).toHaveBeenCalledTimes(1);
+        expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', original.id);
     });
 
     // Issue #2299. The canvas covers the viewport, not the arrangement: it is

@@ -169,9 +169,15 @@ type UndoChange = { clipId: string; id: string; oldVal: number; newVal: number }
 /** The value of every note in a gesture's scope when it starts, keyed by note id. */
 const captureInitialValues = (
     entries: LaneNoteEntry[],
-    getValue: (note: MidiNote) => number
-): Map<string, { clipId: string; value: number }> =>
-    new Map(entries.map((entry) => [entry.note.id, { clipId: entry.clipId, value: getValue(entry.note) }]));
+    getValue: (note: MidiNote) => number,
+    storedId: (viewId: string) => string
+): Map<string, { clipId: string; storedId: string; value: number }> =>
+    new Map(
+        entries.map((entry) => [
+            entry.note.id,
+            { clipId: entry.clipId, storedId: storedId(entry.note.id), value: getValue(entry.note) },
+        ])
+    );
 
 /**
  * Diff the live store against a gesture's captured start, reading each note
@@ -179,16 +185,24 @@ const captureInitialValues = (
  * per gesture, every note addressed through its owner clip.
  */
 const collectUndoChanges = (
-    initialValues: Map<string, { clipId: string; value: number }>,
+    initialValues: Map<string, { clipId: string; storedId: string; value: number }>,
     getValue: (note: MidiNote) => number
 ): UndoChange[] => {
     const changes: UndoChange[] = [];
-    for (const [id, initial] of initialValues.entries()) {
-        const finalNote = (midiStore.value?.notesByClipId[initial.clipId] ?? []).find((node) => node.id === id);
+    const seen = new Set<string>();
+    for (const initial of initialValues.values()) {
+        const key = JSON.stringify([initial.clipId, initial.storedId]);
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        const finalNote = (midiStore.value?.notesByClipId[initial.clipId] ?? []).find(
+            (node) => node.id === initial.storedId
+        );
         if (finalNote) {
             const newVal = getValue(finalNote);
             if (newVal !== initial.value) {
-                changes.push({ clipId: initial.clipId, id, oldVal: initial.value, newVal });
+                changes.push({ clipId: initial.clipId, id: initial.storedId, oldVal: initial.value, newVal });
             }
         }
     }
@@ -314,11 +328,21 @@ export const NotePropertyLane = ({
         }
         return undefined;
     };
+    const baseGapOwner = (viewId: string) => {
+        for (const projection of takeProjections?.values() ?? []) {
+            const owner = projection.baseOwnersByViewId.get(viewId);
+            if (owner) {
+                return owner;
+            }
+        }
+        return undefined;
+    };
+    const storedId = (viewId: string): string => baseGapOwner(viewId)?.row.id ?? viewId;
     const writeValue = (ownerClipId: string, viewId: string, value: number): void => {
         if (frozenOwner(viewId)) {
             pendingFrozenValues.current.set(viewId, value);
         } else {
-            setValue(ownerClipId, viewId, value);
+            setValue(ownerClipId, storedId(viewId), value);
         }
     };
     const commitFrozenValues = (): void => {
@@ -543,7 +567,7 @@ export const NotePropertyLane = ({
         if (event.shiftKey && sortedSelected.length >= 2) {
             const firstNote = sortedSelected[0]!.note;
             const lastNote = sortedSelected[sortedSelected.length - 1]!.note;
-            const initialValues = captureInitialValues(sortedSelected, getValue);
+            const initialValues = captureInitialValues(sortedSelected, getValue, storedId);
             const startVal = initialValues.get(firstNote.id)?.value ?? getValue(firstNote);
             const beatSpan = lastNote.startBeat - firstNote.startBeat;
 
@@ -595,7 +619,7 @@ export const NotePropertyLane = ({
 
         // ── A8: Continuous velocity painting (single or drag-through) ─────
         const pressedEntry = hitNote;
-        const origValues = captureInitialValues(laneNotes, getValue);
+        const origValues = captureInitialValues(laneNotes, getValue, storedId);
 
         const onMove = (position: LanePointerPosition): void => {
             const point = toLanePoint(position.clientX, position.clientY);
@@ -658,7 +682,7 @@ export const NotePropertyLane = ({
         const startLeftVal = getValue(firstNote.note);
         const startRightVal = getValue(lastNote.note);
 
-        const initialValues = captureInitialValues(sortedSelected, getValue);
+        const initialValues = captureInitialValues(sortedSelected, getValue, storedId);
 
         const captureTarget = event.currentTarget;
 

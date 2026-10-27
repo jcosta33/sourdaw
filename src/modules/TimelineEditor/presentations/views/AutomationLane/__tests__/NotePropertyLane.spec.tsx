@@ -257,6 +257,8 @@ describe('NotePropertyLane', () => {
             const setFrozenValue = vi.fn();
             const projection = {
                 notes: [viewNote],
+                baseNotes: [],
+                baseOwnersByViewId: new Map(),
                 ownersByViewId: new Map([
                     [
                         viewNote.id,
@@ -289,6 +291,45 @@ describe('NotePropertyLane', () => {
             expect(setFrozenValue).toHaveBeenCalledWith(viewNote.id, 127);
             expect(liveSetValue).not.toHaveBeenCalled();
             expect(pushUndoEntry).not.toHaveBeenCalled();
+        });
+
+        it('edits a clipped base-gap view through its original base note and restores it with Undo', () => {
+            const original = { ...makeNote('base-original', 0, 90), duration: 6 };
+            const view = { ...original, id: 'base-gap-view', startBeat: 4, duration: 2 };
+            seedNotes([original]);
+            const projection = {
+                notes: [],
+                baseNotes: [view],
+                baseOwnersByViewId: new Map([
+                    [
+                        view.id,
+                        {
+                            row: original,
+                            displayedStartBeat: 4,
+                            displayedDuration: 2,
+                        },
+                    ],
+                ]),
+                ownersByViewId: new Map(),
+                coveredWindows: [{ startBeat: 2, endBeat: 4 }],
+                insertOwnerAtBeat: () => null,
+            };
+            render(
+                <NotePropertyLane
+                    {...defaultProps}
+                    primaryClipNotes={[view]}
+                    takeProjections={new Map([['clip-1', projection]])}
+                    setValue={liveSetValue}
+                />
+            );
+            const canvas = getCanvas();
+            fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 170, clientY: 2 });
+            fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 170, clientY: 2 });
+            expect(liveSetValue).toHaveBeenCalledWith('clip-1', original.id, 127);
+            expect(pushUndoEntry).toHaveBeenCalledTimes(1);
+            const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
+            undoFn!();
+            expect(liveSetValue).toHaveBeenLastCalledWith('clip-1', original.id, 90);
         });
 
         it('hit-tests the topmost (last-painted) note when notes overlap', () => {

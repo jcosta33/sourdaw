@@ -236,24 +236,23 @@ export const PianoRoll = ({
     const takeProjections = new Map<string, PianoRollTakeNotes>();
     for (const [id, clip] of editedClips) {
         if (clip.type === 'midi') {
-            takeProjections.set(id, projectPianoRollTakeNotes(clip, clip.trackId, laneState));
+            takeProjections.set(
+                id,
+                projectPianoRollTakeNotes(
+                    clip,
+                    clip.trackId,
+                    laneState,
+                    id === clipId ? baseNotes : (baseOpenedClipNotes?.[id] ?? [])
+                )
+            );
         }
     }
     const visibleNotes = (id: string, original: MidiNote[]): MidiNote[] => {
-        const clip = editedClips.get(id);
         const projection = takeProjections.get(id);
-        if (!clip || !projection || projection.coveredWindows.length === 0) {
+        if (!projection) {
             return original;
         }
-        const baseOutsideSelected = original.filter((note) => {
-            const beat = clip.startBeat + note.startBeat - (clip.midiOffsetBeats ?? 0);
-            return (
-                beat >= clip.startBeat &&
-                beat < clip.endBeat &&
-                !projection.coveredWindows.some((window) => beat >= window.startBeat && beat < window.endBeat)
-            );
-        });
-        return [...baseOutsideSelected, ...projection.notes];
+        return [...projection.baseNotes, ...projection.notes];
     };
     const notes = visibleNotes(clipId, baseNotes);
     const openedClipNotes = baseOpenedClipNotes
@@ -452,6 +451,16 @@ export const PianoRoll = ({
     // documented per-track truth (audit MD-2), derived from the same engine
     // registry `AutomationLane` gates its lanes on.
     const mpeExpressionLanes = getMpeExpressionLanesForDeviceTypes(trackDeviceTypes);
+    const primaryTakeProjection = takeProjections.get(clipId);
+    const contextUsesFrozenRows = Boolean(
+        ctxMenu &&
+        primaryTakeProjection &&
+        ([...selectedNoteIds].some((id) => primaryTakeProjection.ownersByViewId.has(id)) ||
+            primaryTakeProjection.insertOwnerAtBeat(ctxMenu.beat) !== null)
+    );
+    const contextSelectedNoteIds = contextUsesFrozenRows
+        ? selectedNoteIds
+        : new Set([...selectedNoteIds].map((id) => primaryTakeProjection?.baseOwnersByViewId.get(id)?.row.id ?? id));
 
     return (
         <Stack grow className="min-w-0 overflow-hidden">
@@ -680,9 +689,9 @@ export const PianoRoll = ({
                 <PianoRollContextMenu
                     menu={ctxMenu}
                     clipId={clipId}
-                    notes={notes}
+                    notes={contextUsesFrozenRows ? notes : baseNotes}
                     takeProjection={takeProjections.get(clipId)}
-                    selectedNoteIds={selectedNoteIds}
+                    selectedNoteIds={contextSelectedNoteIds}
                     onClose={() => setCtxMenu(null)}
                     onSelectAll={() => setSelectedNoteIds(new Set(notes.map((node) => node.id)))}
                     onClearSelection={() => setSelectedNoteIds(new Set())}
