@@ -9,7 +9,6 @@ import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
 import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { getProjectContext } from '../getProjectContext';
-
 import { parseAnalysisMeasureArguments } from '../parseAnalysisMeasureArguments';
 
 const scope = { kind: 'master' };
@@ -65,11 +64,10 @@ function runTurns(turns: ToolCallResult[][], maxReceiptBytesPerCall?: number) {
     for (const toolCalls of [...turns, [end]]) {
         requestTurn.mockResolvedValueOnce({ status: 'complete', toolCalls });
     }
-    const result = runApplicationOwnedToolLoop({
+    const loopInput: Parameters<typeof runApplicationOwnedToolLoop>[0] = {
         loopId: 'recipe-source-run',
         terminalToolNames: new Set(['answer.respond']),
         requestTurn,
-        ...(maxReceiptBytesPerCall === undefined ? {} : { limits: { maxReceiptBytesPerCall } }),
         recipe: {
             toolName: 'recipe.expand',
             revision,
@@ -79,7 +77,7 @@ function runTurns(turns: ToolCallResult[][], maxReceiptBytesPerCall?: number) {
             toolName: 'analysis.measure',
             revision,
             execute: async (call, ids) => {
-                observed.push([...(ids.retainedCompilations ?? [])]);
+                observed.push(Array.from(ids.retainedCompilations ?? []));
                 // Refuse before rendering when only the retention boundary is under test.
                 return executeAnalysisMeasure({
                     call,
@@ -96,7 +94,11 @@ function runTurns(turns: ToolCallResult[][], maxReceiptBytesPerCall?: number) {
                 });
             },
         },
-    });
+    };
+    if (maxReceiptBytesPerCall !== undefined) {
+        loopInput.limits = { maxReceiptBytesPerCall };
+    }
+    const result = runApplicationOwnedToolLoop(loopInput);
     return { result, observed };
 }
 
@@ -173,14 +175,16 @@ describe('recipe source lookup before preview creation', () => {
                     batchContentHash: 'unused',
                 },
             };
-            const retained: RetainedCompilation[] =
-                kind === 'unknown'
-                    ? []
-                    : kind === 'stale'
-                      ? [{ ...recipe, revision: 'old' }]
-                      : kind === 'transform'
-                        ? [{ ...recipe, kind: 'transform' }]
-                        : [wrongPreview];
+            let retained: RetainedCompilation[];
+            if (kind === 'unknown') {
+                retained = [];
+            } else if (kind === 'stale') {
+                retained = [{ ...recipe, revision: 'old' }];
+            } else if (kind === 'transform') {
+                retained = [{ ...recipe, kind: 'transform' }];
+            } else {
+                retained = [wrongPreview];
+            }
             const read = await executeAnalysisMeasure({
                 call: measure,
                 callId: 'measure-1',

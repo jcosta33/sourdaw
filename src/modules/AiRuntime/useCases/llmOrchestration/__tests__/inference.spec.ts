@@ -38,8 +38,8 @@ import {
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
-import { parseAnalysisMeasureArguments } from '../../parseAnalysisMeasureArguments';
 import { getProviderRouteView } from '../../getProviderRouteView';
+import { parseAnalysisMeasureArguments } from '../../parseAnalysisMeasureArguments';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
@@ -527,6 +527,16 @@ describe('generateToolPlanningOutcome', () => {
             schemaVersion: 1,
             items: [{ id: 'gain', name: 'setTrackGain', arguments: { trackId: 'drums', gainDb: -3 } }],
         };
+        const strictSemantic = {
+            schemaVersion: 1,
+            items: [
+                {
+                    id: 'gain',
+                    name: 'setTrackGain',
+                    argumentsJson: JSON.stringify({ trackId: 'drums', gainDb: -3 }),
+                },
+            ],
+        };
         it.each([
             ['strict-hosted', 'recipe'],
             ['hosted', 'recipe'],
@@ -542,31 +552,30 @@ describe('generateToolPlanningOutcome', () => {
             const strict = backend === 'strict-hosted';
             mocks.backendChain.value = local ? ['webllm'] : ['cloud'];
             mocks.usesStrictCloudToolSchemas.mockReturnValue(strict);
-            const args = {
-                scope: { kind: 'master', ...(strict ? { ids: null } : {}) },
-                range: { startBeat: 0, endBeat: 8, ...(strict ? { sectionId: null } : {}) },
+            const args: Record<string, unknown> = {
+                scope: { kind: 'master' },
+                range: { startBeat: 0, endBeat: 8 },
                 subject: source === 'project' ? 'project' : 'preview',
-                ...(source === 'recipe' ? { recipeCallId: 'expand-1' } : strict ? { recipeCallId: null } : {}),
-                ...(source === 'semantic'
-                    ? {
-                          proposal: strict
-                              ? {
-                                    schemaVersion: 1,
-                                    items: [
-                                        {
-                                            id: 'gain',
-                                            name: 'setTrackGain',
-                                            argumentsJson: JSON.stringify({ trackId: 'drums', gainDb: -3 }),
-                                        },
-                                    ],
-                                }
-                              : semantic,
-                      }
-                    : strict
-                      ? { proposal: null }
-                      : {}),
-                ...(strict ? { metrics: null } : {}),
             };
+            if (strict) {
+                args.scope = { kind: 'master', ids: null };
+                args.range = { startBeat: 0, endBeat: 8, sectionId: null };
+                args.metrics = null;
+            }
+            if (source === 'recipe') {
+                args.recipeCallId = 'expand-1';
+            } else if (strict) {
+                args.recipeCallId = null;
+            }
+            if (source === 'semantic') {
+                if (strict) {
+                    args.proposal = strictSemantic;
+                } else {
+                    args.proposal = semantic;
+                }
+            } else if (strict) {
+                args.proposal = null;
+            }
             const call = { id: 'measure-1', name: 'analysis.measure', arguments: args };
             if (local) {
                 mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [call] });

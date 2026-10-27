@@ -187,14 +187,17 @@ function successRead(
     const { parsed } = input;
     const { commands, batchContentHash, targets, retentionWarnings } = measured;
     const { startBeat, endBeat, sectionId } = measured.beats;
-    const measuredPreview: MeasuredPreview = {
+    const measuredPreviewBase = {
         scope: parsed.scope,
         range: { startBeat, endBeat, sectionId },
         targets,
         batchContentHash,
         revision: input.projectRevision,
-        ...(measured.recipeSource === undefined ? {} : { recipeSource: measured.recipeSource }),
     };
+    const measuredPreview: MeasuredPreview =
+        measured.recipeSource === undefined
+            ? measuredPreviewBase
+            : { ...measuredPreviewBase, recipeSource: measured.recipeSource };
     const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -253,8 +256,14 @@ function compileProposal(input: ExecutePreviewMeasurementInput) {
                 reason: 'The recipeCallId must name a successful earlier-turn recipe expansion admitted in this run at the measurement revision.',
             };
         }
-        const source =
-            'proposal' in input.source ? { proposal: input.source.proposal } : recipe === undefined ? null : { recipe };
+        let source: Parameters<typeof compilePreviewMeasurementProposal>[0]['source'] | null;
+        if ('proposal' in input.source) {
+            source = { proposal: input.source.proposal };
+        } else if (recipe !== undefined) {
+            source = { recipe };
+        } else {
+            source = null;
+        }
         if (source === null) {
             return { status: 'rejected' as const, reason: 'The preview has no admitted source.' };
         }

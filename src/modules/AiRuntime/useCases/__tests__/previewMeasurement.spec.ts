@@ -349,19 +349,16 @@ function recipeExpansionCall(): ToolCallResult {
 }
 
 function scriptRecipePreview(revision: string, commands: ReadonlyArray<Readonly<Record<string, unknown>>> = []) {
+    const expansionCalls: ToolCallResult[] = [recipeExpansionCall()];
+    if (commands.length > 0) {
+        expansionCalls.push({
+            id: 'discover-extra',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['setDeviceParameter'] },
+        });
+    }
     scriptTurns(revision, [
-        [
-            recipeExpansionCall(),
-            ...(commands.length === 0
-                ? []
-                : [
-                      {
-                          id: 'discover-extra',
-                          name: 'agent.catalog.discover',
-                          arguments: { category: 'command', names: ['setDeviceParameter'] },
-                      },
-                  ]),
-        ],
+        expansionCalls,
         [recipePreviewCall()],
         [proposeCall({ commands, compiledCallIds: ['measure-recipe'] })],
     ]);
@@ -1063,11 +1060,12 @@ describe('recipe preview evidence stays with the exact measured batch', () => {
         });
         expect(planned.rejectionReason).toBeUndefined();
         expect(planned.measuredPreview?.recipeSource).toBeDefined();
-        const actions = planned.actions.map((action) =>
-            action.type === 'setDeviceParameter' && action.payload.paramId === 'comp-threshold'
-                ? { ...action, payload: { ...action.payload, value: -20 } }
-                : action
-        );
+        const actions = planned.actions.map((action) => {
+            if (action.type === 'setDeviceParameter' && action.payload.paramId === 'comp-threshold') {
+                return { ...action, payload: { ...action.payload, value: -20 } };
+            }
+            return action;
+        });
         const confirmationId = persistForApproval({ ...planned, actions }, revision);
         expect(getAgentApprovalView({ confirmationId })).toMatchObject({ recipes: [], measuredPreview: null });
     });
@@ -1097,11 +1095,10 @@ describe('recipe preview evidence stays with the exact measured batch', () => {
                 requestTurn.mockResolvedValueOnce({ status: 'complete', toolCalls });
             }
             const measured: AnalysisMeasureRead[] = [];
-            const result = await runApplicationOwnedToolLoop({
+            const loopInput: Parameters<typeof runApplicationOwnedToolLoop>[0] = {
                 loopId: 'recipe-preview-admission',
                 terminalToolNames: new Set(['command.batch.propose']),
                 requestTurn,
-                ...(mode === 'budget' ? { limits: { maxReceiptBytesPerCall: expansionBytes } } : {}),
                 recipe: {
                     toolName: 'recipe.expand',
                     revision,
@@ -1123,7 +1120,11 @@ describe('recipe preview evidence stays with the exact measured batch', () => {
                         return read;
                     },
                 },
-            });
+            };
+            if (mode === 'budget') {
+                loopInput.limits = { maxReceiptBytesPerCall: expansionBytes };
+            }
+            const result = await runApplicationOwnedToolLoop(loopInput);
             expect(measured[0]?.receipt.status).toBe('success');
             expect(measured[0]?.measuredPreview?.recipeSource).toBeDefined();
             expect(result).toMatchObject({
