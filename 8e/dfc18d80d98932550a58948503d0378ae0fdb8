@@ -1,0 +1,53 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_454c30bae928c8 3933-3980,3989-3991,4013-4018,4021-4023,4026-4029,4034-4036,4038-4040,4043-4045,4049-4051,4056-4058
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_567a084d0540c4::t_129b4c9fb3ee9e 401-468,475-498,507-511,515-527,546-547,551-552
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_29d8df116c5b92::t_d5100585ec6bb9 199-203,213-214,221,226-227,240
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_29d8df116c5b92::t_d8fa7287e54100 64-71
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_81dc049549f142 391-397,568
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipSplitStateRestorable.spec.ts
+  s_29d8df116c5b92::t_066b2d1dc5da09 88-103,117
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_567a084d0540c4::t_3f846dfbda8bb4 6-7,60-61,82-86
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_29d8df116c5b92::t_b0e34a6e3d60f6 103,110-114,178,191
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_29d8df116c5b92::t_c56f52d046fa74 11-12,83,89-99,222-226
+src/modules/Arrangement/useCases/clipEditing/replaceClipSplitTrackState.ts
+  s_29d8df116c5b92::t_fb601c2f7ad210 8,45-49
+src/modules/Arrangement/useCases/clipEditing/resolveClipSplitInsertionIndex.ts
+  s_29d8df116c5b92::t_908a50cf606725 1-54
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_8fac62b57d8749 2,12,252-327,407-409
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_23c366deb2372b 1590
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_0454aab8b50ba1 526-527
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8edfc18d80d98932550a58948503d0378ae0fdb8",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
