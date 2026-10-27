@@ -1,0 +1,42 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_5db668e273c7af 300-301
+  s_29d8df116c5b92::t_36586241de80e7 302-307,312,322
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_29d8df116c5b92::t_98a9d0eb249a02 170-181,483
+  s_29d8df116c5b92::t_25fe3d5221ffa6 26,127,474-482
+  s_29d8df116c5b92::t_f631d90121e0fa 484
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_29d8df116c5b92::t_b2514d3ded0784 418-421
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_29d8df116c5b92::t_b2514d3ded0784 12
+src/modules/Transport/useCases/transportControls/__tests__/pauseStart.spec.ts
+  s_29d8df116c5b92::t_b2514d3ded0784 8,131
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_29d8df116c5b92::t_f531ef81baddd1 31-43
+  s_29d8df116c5b92::t_a5695d1c640380 71,89,134-159
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_ad5d761550d284 106,108
+  s_29d8df116c5b92::t_b2514d3ded0784 105,107
+  s_29d8df116c5b92::t_847aba1d8edb84 109-111
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_700d821fa0d706 239
+  s_29d8df116c5b92::t_ad5d761550d284 231-236,238,1275,1277,1279-1280,1286-1288
+  s_29d8df116c5b92::t_b2514d3ded0784 553-563
+  s_29d8df116c5b92::t_d77b7a263c7a85 237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1c6420d3cc8a3edb4b11b4f0bd0b4ade9af6e0c",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
