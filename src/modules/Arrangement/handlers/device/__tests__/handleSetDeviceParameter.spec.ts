@@ -89,11 +89,16 @@ describe('handleSetDeviceParameter', () => {
             },
         };
         expect(handleSetDeviceParameter.execute(action, context)).toEqual({ status: 'written' });
-        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5, {
+        const expectedOptions: Parameters<
+            typeof import('../../../useCases/device/setDeviceParameter/setDeviceParameter').setDeviceParameter
+        >[3] = {
             automationRecordingPolicy: undefined,
             runtimeOwner: owner,
-            ...(current ? {} : { projectOnly: true }),
-        });
+        };
+        if (!current) {
+            expectedOptions.projectOnly = true;
+        }
+        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5, expectedOptions);
         handleSetDeviceParameter.prepareAbort?.(action, context)();
         expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(current ? 1 : 0);
     });

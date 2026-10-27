@@ -150,6 +150,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
             action = materialized.action;
+            const runtimeAuthorityContext: {
+                deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
+            } = {};
+            if (options?.deviceParameterRuntimeAuthority) {
+                runtimeAuthorityContext.deviceParameterRuntimeAuthority = options.deviceParameterRuntimeAuthority;
+            }
             traceAppAction(action.type, options?.source ?? 'manual');
 
             const handler = getCommandHandler(action);
@@ -194,16 +200,15 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
                 let runtime_result: HandlerExecutionResult | void;
                 try {
-                    runtime_result = await handler.execute(action, {
+                    const runtimeContext: HandlerValidationContext = {
+                        ...runtimeAuthorityContext,
                         actions: [action],
                         actionIndex: 0,
                         signal: options?.signal,
                         onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                         workOwner: options?.workOwner,
-                        ...(options?.deviceParameterRuntimeAuthority
-                            ? { deviceParameterRuntimeAuthority: options.deviceParameterRuntimeAuthority }
-                            : {}),
-                    });
+                    };
+                    runtime_result = await handler.execute(action, runtimeContext);
                 } catch (error) {
                     logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                     throw error;
@@ -290,16 +295,22 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             // handler up front, and every non-undoable handler is one, so here an absent inverse
             // means nothing to replay and the abort keeps its own classification.
             const described = undoResult;
+            const abortContext: HandlerValidationContext = {
+                ...runtimeAuthorityContext,
+                actions: [action],
+                actionIndex: 0,
+            };
+            const executionContext: HandlerValidationContext = {
+                ...runtimeAuthorityContext,
+                actions: [action],
+                actionIndex: 0,
+                signal: options?.signal,
+                onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
+                workOwner: options?.workOwner,
+            };
             const attempted: AttemptedAction = {
                 actionType: action.type,
-                rollback:
-                    handler.prepareAbort?.(action, {
-                        actions: [action],
-                        actionIndex: 0,
-                        ...(options?.deviceParameterRuntimeAuthority
-                            ? { deviceParameterRuntimeAuthority: options.deviceParameterRuntimeAuthority }
-                            : {}),
-                    }) ?? null,
+                rollback: handler.prepareAbort?.(action, abortContext) ?? null,
                 readCompensation: () => {
                     const inverseAction = described?.inverseAction ?? null;
                     return {
@@ -324,16 +335,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             let execution_result: HandlerExecutionResult | void;
             const storage_transaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
-                handler.execute(action, {
-                    actions: [action],
-                    actionIndex: 0,
-                    signal: options?.signal,
-                    onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
-                    workOwner: options?.workOwner,
-                    ...(options?.deviceParameterRuntimeAuthority
-                        ? { deviceParameterRuntimeAuthority: options.deviceParameterRuntimeAuthority }
-                        : {}),
-                })
+                handler.execute(action, executionContext)
             );
             if (storage_transaction.status === 'threw') {
                 const error = storage_transaction.error;

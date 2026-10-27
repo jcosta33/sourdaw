@@ -6,9 +6,15 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { useStore } from '#/infra/store/useStore';
+import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getPluginById, setDeviceParameter } from '#/modules/Arrangement/useCases';
-import { audioEngine, isDeviceCarriedByNativeSession, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import {
+    audioEngine,
+    getAudioContext,
+    isDeviceCarriedByNativeSession,
+    updateDeviceParam,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
@@ -33,10 +39,8 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
-import { applyAutomation } from '#/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation';
+import { seekPlayhead, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { captureDeviceParameterRuntimeWriteReceipt } from '#/modules/AudioEngine/useCases/deviceControls/setDeviceParameterRuntimeWriteOwner';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
 
@@ -109,6 +113,24 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
+
+function installEngineDevice(device: Device, trackId = 'track-1'): void {
+    const strip = audioEngine.ensureTrackStrip(trackId);
+    const node = new AudioContext().createGain();
+    strip.deviceNodes.push({
+        deviceId: device.id,
+        type: device.type,
+        nodes: [node],
+        inputNode: node,
+        outputNode: node,
+        controller: {
+            setParam: (paramId, value) => {
+                engineWrites.push({ trackId, deviceId: device.id, paramId, value });
+                afterEngineWrite?.();
+            },
+        },
+    });
+}
 
 function testTrack(devices: Device[]): Track {
     return {
@@ -273,14 +295,11 @@ describe('Inspector continuous parameter gestures through real history', () => {
         afterEngineWrite = null;
         vi.clearAllMocks();
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(false);
-        vi.spyOn(audioEngine, 'updateDeviceParam').mockImplementation(
-            (trackId: string, deviceId: string, paramId: string, value: number) => {
-                const complete = captureDeviceParameterRuntimeWriteReceipt(trackId, deviceId, paramId).begin();
-                engineWrites.push({ trackId, deviceId, paramId, value });
-                complete();
-                afterEngineWrite?.();
-            }
-        );
+        Object.assign(audioEngine.context, createMockAudioContext());
+        vi.spyOn(audioEngine, 'updateDeviceParam');
+        audioEngine.ensureTrackStrip('track-1').deviceNodes.length = 0;
+        installEngineDevice(synth);
+        installEngineDevice(compressor);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Inspector gestures');
         removeCrdtDoc('root');
@@ -306,6 +325,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         automationStore.set({ lanes: [] });
         transportStore.set({ ...defaultTransportState, isPlaying: false });
         const context = new AudioContext();
+        vi.mocked(getAudioContext).mockReturnValue(context);
         setAutomationRecordingDependencies({ getAudioContext: () => context, getCompensationDelay: () => 0 });
         settlePendingProjectWritesAndCaptureRevision();
     });
@@ -742,7 +762,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         }
     });
 
-    it('retains a carried Grinder fallback written by real Read automation when a preview unmounts', () => {
+    it('retains a carried Grinder fallback written by real Read automation when a preview unmounts', async () => {
         const grinder: Device = {
             id: 'grinder-1',
             name: 'Grinder',
@@ -752,6 +772,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         };
         trackStore.set({ ...trackStore.value!, tracks: [testTrack([grinder])] });
         settlePendingProjectWritesAndCaptureRevision();
+        installEngineDevice(grinder);
         const view = render(<Control deviceId={grinder.id} paramId="gain" />);
         const control = screen.getByRole('slider', { name: 'Gain' });
         beginKnob(control);
@@ -769,13 +790,48 @@ describe('Inspector continuous parameter gestures through real history', () => {
             ],
         });
         vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
-        applyAutomation(0);
-        expect(writes(grinder.id).at(-1)).toBe(8);
-        const beforeUnmount = writes(grinder.id);
-        view.unmount();
-        expect(writes(grinder.id)).toEqual(beforeUnmount);
-        expect(rawValues(grinder.id)?.gain).toBe(5);
-        expect(depth()).toBe(0);
+        let tickScheduler: (() => void) | undefined;
+        class SchedulerWorker {
+            onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+            postMessage(message: { type: string; generation?: number }): void {
+                if (message.type === 'start' && message.generation !== undefined) {
+                    tickScheduler = () => {
+                        const now = performance.timeOrigin + performance.now();
+                        this.onmessage?.(
+                            new MessageEvent('message', {
+                                data: {
+                                    type: 'tick',
+                                    generation: message.generation,
+                                    sequence: 1,
+                                    scheduledAtMs: now,
+                                    sentAtMs: now,
+                                },
+                            })
+                        );
+                    };
+                }
+            }
+            terminate(): void {}
+        }
+        vi.stubGlobal('Worker', SchedulerWorker);
+        try {
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            seekPlayhead(0);
+            await waitFor(() => expect(tickScheduler).toBeTypeOf('function'));
+            if (!tickScheduler) {
+                throw new Error('Seek did not restart the real playback scheduler');
+            }
+            act(() => tickScheduler?.());
+            await waitFor(() => expect(writes(grinder.id).at(-1)).toBe(8));
+            const beforeUnmount = writes(grinder.id);
+            view.unmount();
+            expect(writes(grinder.id)).toEqual(beforeUnmount);
+            expect(rawValues(grinder.id)?.gain).toBe(5);
+            expect(depth()).toBe(0);
+        } finally {
+            await stopPlayback();
+            vi.unstubAllGlobals();
+        }
     });
 
     it.each(['changed-value', 'changed-type', 'removed-device', 'duplicate-owner', 'frozen-change'])(

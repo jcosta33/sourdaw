@@ -654,11 +654,15 @@ describe('executeAppAction', () => {
                 owner: Symbol('preview'),
                 isCurrent: () => false,
             };
-            const handler = create_mock_handler<SetEditingToolAction>({
-                ...(kind === 'runtime' ? { executionKind: 'runtime', undoable: false } : {}),
-            });
+            const handlerOptions: CreateMockHandlerInput<SetEditingToolAction> = {};
+            if (kind === 'runtime') {
+                handlerOptions.executionKind = 'runtime';
+                handlerOptions.undoable = false;
+            }
+            const handler = create_mock_handler<SetEditingToolAction>(handlerOptions);
             const prepareAbort = vi.fn((_action: AppAction, _context?: HandlerValidationContext) => () => undefined);
-            registerHandlerMap({ [action.type]: { ...handler, prepareAbort } });
+            handler.prepareAbort = prepareAbort;
+            registerHandlerMap({ [action.type]: handler });
             await executeAppAction(action, { deviceParameterRuntimeAuthority: authority });
             const [executed, context] = handler.execute.mock.calls[0] ?? [];
             expect(executed).toEqual(action);
