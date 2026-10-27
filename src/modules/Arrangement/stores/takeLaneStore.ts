@@ -398,6 +398,20 @@ function project_exact_audio_source(value: AudioSourceSnapshot, numbers: TakeLan
     };
 }
 
+function canonicalizeSourcePrefixNumbers(value: unknown): void {
+    if (value === null || typeof value !== 'object') {
+        return;
+    }
+    for (const key of Reflect.ownKeys(value)) {
+        const child: unknown = Reflect.get(value, key);
+        if (typeof child === 'number' && Object.is(child, -0)) {
+            Reflect.set(value, key, 0);
+        } else {
+            canonicalizeSourcePrefixNumbers(child);
+        }
+    }
+}
+
 function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take {
     const take: Take = {
         id: value.id,
@@ -414,7 +428,11 @@ function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take
         }
     }
     if (Object.hasOwn(value, 'midiSource') && value.midiSource !== undefined) {
-        take.midiSource = structuredClone(value.midiSource);
+        const midiSource = structuredClone(value.midiSource);
+        if (numbers === 'source-prefix') {
+            canonicalizeSourcePrefixNumbers(midiSource);
+        }
+        take.midiSource = midiSource;
     }
     if (Object.hasOwn(value, 'recordingPassIndex') && value.recordingPassIndex !== undefined) {
         take.recordingPassIndex = value.recordingPassIndex;

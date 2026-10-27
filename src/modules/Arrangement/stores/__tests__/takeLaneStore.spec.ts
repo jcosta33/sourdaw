@@ -653,12 +653,40 @@ describe('takeLaneStore', () => {
     });
 
     it('should preserve valid CRDT hydration without writing back', async () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: {
+                    present: true as const,
+                    value: [
+                        { id: 'recorded', pitch: 60, startBeat: 5, duration: 1, velocity: 100, recordingPassIndex: 1 },
+                    ],
+                },
+                controlChanges: { present: true as const, value: [] },
+                pitchBends: { present: true as const, value: [] },
+            },
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
         const valid_state = {
             lanes: [
                 {
                     id: 'lane-1',
                     trackId: 'track-1',
-                    takes: [],
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-1',
+                            name: 'Recorded',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            recordingPassIndex: 1,
+                            midiSource: source,
+                        },
+                    ],
                     activeCompRegions: [],
                 },
             ],
@@ -669,6 +697,8 @@ describe('takeLaneStore', () => {
         await flush_pending_frame();
 
         expect(takeLaneStore.value).toEqual(valid_state);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value[0]?.recordingPassIndex).toBe(1);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat).toBe(0);
         expect(mutation_count).toBe(0);
     });
 
