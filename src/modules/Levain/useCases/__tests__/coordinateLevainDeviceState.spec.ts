@@ -1,5 +1,6 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { coordinateLevainDeviceState } from '../coordinateLevainDeviceState';
 
 import type { executeAppAction } from '#/modules/Command/useCases';
@@ -9,7 +10,14 @@ type DeviceState = ReturnType<typeof toLevainDeviceState>;
 const mocks = vi.hoisted(() => ({
     execute: vi.fn<typeof executeAppAction>(),
     projectIdentity: 'project-a',
+    committed: true,
+    projectListeners: new Set<() => void>(),
+    trackListeners: new Set<() => void>(),
     trackStore: {
+        subscribe: (listener: () => void) => {
+            mocks.trackListeners.add(listener);
+            return () => mocks.trackListeners.delete(listener);
+        },
         value: {
             tracks: [
                 {
@@ -56,6 +64,20 @@ beforeEach(() => {
     mocks.execute.mockReset();
     mocks.projectIdentity = 'project-a';
     mocks.trackStore.value.tracks[0]!.devices[0]!.deviceState = initialState();
+    mocks.committed = true;
+    configureLevainDeviceStateProjectAccess({
+        hasDevice: () => mocks.committed,
+        subscribe: (listener) => {
+            mocks.projectListeners.add(listener);
+            return () => mocks.projectListeners.delete(listener);
+        },
+    });
+});
+
+afterEach(() => {
+    expect(mocks.projectListeners.size).toBe(0);
+    expect(mocks.trackListeners.size).toBe(0);
+    configureLevainDeviceStateProjectAccess(null);
 });
 
 it('creates an idle action immediately, then creates the next facet only after its own commit settles', async () => {
@@ -155,4 +177,79 @@ it('keeps a successor project tail when the outgoing project request cleans up',
     commit(2);
     last.resolve();
     await latest;
+});
+
+it('rejects a write explicitly when committed project access has not been bound', async () => {
+    configureLevainDeviceStateProjectAccess(null);
+    await expect(coordinateLevainDeviceState('a', 'tier', expert)).rejects.toThrow(
+        'Levain device-state project access is not configured'
+    );
+    expect(mocks.execute).not.toHaveBeenCalled();
+});
+
+it.each(['identity', 'tier'] as const)(
+    'retires the held %s entry and its uncreated facet without letting old cleanup remove a fresh queue',
+    async (firstFacet) => {
+        const held = deferred();
+        const fresh = deferred();
+        const last = deferred();
+        mocks.execute
+            .mockReturnValueOnce(held.promise)
+            .mockReturnValueOnce(fresh.promise)
+            .mockReturnValueOnce(last.promise);
+        const first = coordinateLevainDeviceState('a', firstFacet, expert);
+        const otherFacet = firstFacet === 'tier' ? 'identity' : 'tier';
+        const oldFactory = vi.fn(expert);
+        const oldSecond = coordinateLevainDeviceState('a', otherFacet, oldFactory);
+        commit(0);
+        mocks.committed = false;
+        for (const listener of [...mocks.projectListeners]) {
+            listener();
+        }
+        expect(mocks.projectListeners.size).toBe(0);
+        expect(mocks.trackListeners.size).toBe(0);
+        mocks.committed = true;
+        expect(mocks.execute.mock.calls[0]?.[1]?.shouldExecute?.()).toBe(false);
+        const newFirst = coordinateLevainDeviceState('a', 'tier', expert);
+        expect(mocks.execute).toHaveBeenCalledTimes(2);
+        held.resolve();
+        await Promise.all([first, oldSecond]);
+        expect(oldFactory).not.toHaveBeenCalled();
+        const newSecond = coordinateLevainDeviceState('a', 'identity', expert);
+        expect(mocks.execute).toHaveBeenCalledTimes(2);
+        commit(1);
+        fresh.resolve();
+        await newFirst;
+        expect(mocks.execute).toHaveBeenCalledTimes(3);
+        commit(2);
+        last.resolve();
+        await newSecond;
+    }
+);
+
+it('does not adopt a request whose never-committed visible target was lost', async () => {
+    mocks.committed = false;
+    const held = deferred();
+    mocks.execute.mockReturnValueOnce(held.promise);
+    const request = coordinateLevainDeviceState('a', 'tier', expert);
+    const devices = mocks.trackStore.value.tracks[0]!.devices;
+    mocks.trackStore.value.tracks[0]!.devices = [];
+    for (const listener of [...mocks.trackListeners]) {
+        listener();
+    }
+    mocks.trackStore.value.tracks[0]!.devices = devices;
+    mocks.committed = true;
+    expect(mocks.execute.mock.calls[0]?.[1]?.shouldExecute?.()).toBe(false);
+    held.resolve();
+    await request;
+});
+
+it('fences a replacement project-access provider without reviving an old submitted action', async () => {
+    const held = deferred();
+    mocks.execute.mockReturnValueOnce(held.promise);
+    const request = coordinateLevainDeviceState('a', 'tier', expert);
+    configureLevainDeviceStateProjectAccess({ hasDevice: () => true, subscribe: () => () => undefined });
+    expect(mocks.execute.mock.calls[0]?.[1]?.shouldExecute?.()).toBe(false);
+    held.resolve();
+    await request;
 });

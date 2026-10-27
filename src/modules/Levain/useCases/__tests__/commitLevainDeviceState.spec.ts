@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
@@ -28,9 +28,12 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 import { createDefaultPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { commitLevainDeviceState } from '../commitLevainDeviceState';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 
 describe('commitLevainDeviceState', () => {
     beforeEach(() => {
+        // This isolated writer fixture has no committed project; its visible device is still pending.
+        configureLevainDeviceStateProjectAccess({ hasDevice: () => false, subscribe: () => () => undefined });
         vi.clearAllMocks();
         levainStore.set({ a: { ...defaultLevainState, patch: createDefaultPatch('cello') } });
         mocks.trackStore.value = {
@@ -55,6 +58,8 @@ describe('commitLevainDeviceState', () => {
             ],
         };
     });
+
+    afterEach(() => configureLevainDeviceStateProjectAccess(null));
 
     it('carries the current peer tier through an identity write even before its session projection', () => {
         commitLevainDeviceState('a');

@@ -22,6 +22,7 @@ import {
     transactSnapshot,
     replaceCrdtDoc,
     projectCrdtToStores,
+    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -30,6 +31,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 import { createDefaultPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../stores/levainStore';
 import { commitLevainDeviceState } from '../commitLevainDeviceState';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { reconcileLevainDeviceStateFromProject } from '../reconcileLevainDeviceStateFromProject';
 import { setLevainPanelUiLevel } from '../setLevainPanelUiLevel';
@@ -87,7 +89,7 @@ function rawProjectState(deviceId: string) {
 
 async function requestDuringSnapshotEdit(
     edit: ((state: TrackStoreState, snapshotTransaction: object) => TrackStoreState | void) | null,
-    requestAction = () => setLevainPanelUiLevel('a', 6)
+    requestAction: (snapshotTransaction: object) => Promise<void> = () => setLevainPanelUiLevel('a', 6)
 ): Promise<void> {
     let allowEdit!: () => void;
     let releaseTransaction!: () => void;
@@ -105,28 +107,46 @@ async function requestDuringSnapshotEdit(
     const edited = new Promise<void>((resolve) => {
         markEdited = resolve;
     });
+    let snapshotOwner: object | undefined;
+    let editFailure: { error: unknown } | undefined;
     const transaction = transactSnapshot(async (snapshotTransaction) => {
+        snapshotOwner = snapshotTransaction;
         markStarted();
         await editAllowed;
-        const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
-            if (edit) {
-                const next = edit(trackStore.value!, snapshotTransaction);
-                if (next) {
-                    trackStore.set(next);
+        try {
+            const storageTransaction = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+                if (edit) {
+                    const next = edit(trackStore.value!, snapshotTransaction);
+                    if (next) {
+                        trackStore.set(next);
+                    }
                 }
+            });
+            if (storageTransaction.status === 'threw') {
+                storageTransaction.abort();
+                throw storageTransaction.error;
             }
-        });
-        storageTransaction.commit();
-        markEdited();
+            storageTransaction.commit();
+        } catch (error) {
+            editFailure = { error };
+        } finally {
+            markEdited();
+        }
         await transactionRelease;
     });
     await started;
-    const request = requestAction();
+    if (!snapshotOwner) {
+        throw new Error('Expected active snapshot owner');
+    }
+    const request = requestAction(snapshotOwner);
     allowEdit();
     await edited;
     releaseTransaction();
     await transaction;
     await request;
+    if (editFailure) {
+        throw editFailure.error;
+    }
 }
 
 async function requestAcrossSuccessorProject(requestAction: () => Promise<void>): Promise<void> {
@@ -181,14 +201,32 @@ const dispatched = vi.hoisted(() => [] as Promise<void>[]);
 const identityCompletion = vi.hoisted(() => ({
     hold: null as { committed: () => void; release: Promise<void> } | null,
 }));
+const tierCompletion = vi.hoisted(() => ({
+    hold: null as { committed: () => void; release: Promise<void> } | null,
+}));
+const submittedFacets = vi.hoisted(() => [] as ('identity' | 'tier')[]);
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/Command/useCases')>();
     return {
         ...original,
         executeAppAction: (...args: Parameters<typeof original.executeAppAction>) => {
+            submittedFacets.push('identity');
             const hold = identityCompletion.hold;
             identityCompletion.hold = null;
             const request = original.executeAppAction(...args).then(async () => {
+                if (hold) {
+                    hold.committed();
+                    await hold.release;
+                }
+            });
+            dispatched.push(request);
+            return request;
+        },
+        executeUserAppAction: (...args: Parameters<typeof original.executeUserAppAction>) => {
+            submittedFacets.push('tier');
+            const hold = tierCompletion.hold;
+            tierCompletion.hold = null;
+            const request = original.executeUserAppAction(...args).then(async () => {
                 if (hold) {
                     hold.committed();
                     await hold.release;
@@ -238,7 +276,27 @@ function editDevice(
     };
 }
 
+const committedMembershipEvents: boolean[] = [];
+
 beforeEach(() => {
+    committedMembershipEvents.length = 0;
+    configureLevainDeviceStateProjectAccess({
+        hasDevice: (ownerId, deviceId) => {
+            const document = getCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>('root');
+            return (
+                document?.tracks.tracks
+                    .find((track) => track.id === ownerId)
+                    ?.devices.some((device) => device.id === deviceId && device.type === 'levain') === true
+            );
+        },
+        subscribe: (listener) =>
+            subscribeToCrdtChanges((id) => {
+                if (id === undefined || id === 'root') {
+                    committedMembershipEvents.push(rawProjectDevice('a')?.type === 'levain');
+                    listener();
+                }
+            }),
+    });
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('Levain disclosure integration');
     removeCrdtDoc('root');
@@ -251,6 +309,8 @@ beforeEach(() => {
     dispatched.length = 0;
     coordinated.length = 0;
     identityCompletion.hold = null;
+    tierCompletion.hold = null;
+    submittedFacets.length = 0;
     trackStore.set({ ...defaultTrackState, tracks: tracksWithTwoLevainDevices() });
     flushAutomergeStorageWrites();
     levainStore.set({ a: hydrateLevainStateFromProject('a')!, b: hydrateLevainStateFromProject('b')! });
@@ -258,6 +318,7 @@ beforeEach(() => {
 
 afterEach(async () => {
     await settleIdentityRequests();
+    configureLevainDeviceStateProjectAccess(null);
     agentProjectRepairStateStore.set(null);
     trackStore.set({ ...defaultTrackState, tracks: [] });
     flushAutomergeStorageWrites();
@@ -624,7 +685,7 @@ function commitTopology(tracks: TrackStoreState['tracks'], snapshotTransaction: 
         id: 'root',
         snapshotTransaction,
         changeFn: (document) => {
-            document.tracks.tracks = structuredClone(tracks);
+            document.tracks.tracks = JSON.parse(JSON.stringify(tracks));
         },
     });
     projectCrdtToStores();
@@ -648,6 +709,7 @@ it.each(['tier', 'identity'] as const)(
                     transaction
                 );
                 expect(rawProjectDevice('a')).toBeUndefined();
+                expect(committedMembershipEvents.at(-1)).toBe(false);
                 commitTopology(tracks, transaction);
                 expect(rawProjectState('a')).toEqual(original);
             },
@@ -697,7 +759,10 @@ it.each(['owner', 'type'] as const)('retires a queued choice after committed %s 
     const original = structuredClone(rawProjectState('a'));
     await requestDuringSnapshotEdit((state, transaction) => {
         const tracks = structuredClone(state.tracks);
-        const absent = loss === 'owner' ? [] : editDevice(state, (device) => ({ ...device, type: 'crust' })).tracks;
+        const absent =
+            loss === 'owner'
+                ? tracks.map((track) => ({ ...track, id: 'different-owner' }))
+                : editDevice(state, (device) => ({ ...device, type: 'crust' })).tracks;
         commitTopology(absent, transaction);
         commitTopology(tracks, transaction);
     });
@@ -716,3 +781,97 @@ it('keeps a queued choice after an optimistic removal is aborted without committ
     });
     expect(rawProjectState('a')?.data.disclosureTier).toBe('expert');
 });
+
+it.each(['commit', 'abort'] as const)(
+    'handles a fresh visible uncommitted restore when its storage transaction will %s',
+    async (outcome) => {
+        const state = structuredClone(trackStore.value!);
+        const original = structuredClone(rawProjectState('a'));
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                devices: track.devices.filter((device) => device.id !== 'a'),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        expect(rawProjectDevice('a')).toBeUndefined();
+        await requestDuringSnapshotEdit(null, async (transaction) => {
+            const restore = runWithAutomergeStorageTransaction(transaction, () => trackStore.set(state));
+            expect(projectState('a')).toEqual(original);
+            expect(rawProjectDevice('a')).toBeUndefined();
+            const request = setLevainPanelUiLevel('a', 6);
+            if (outcome === 'commit') {
+                restore.commit();
+            } else {
+                restore.abort();
+                expect(projectState('a')).toBeUndefined();
+                const replacement = runWithAutomergeStorageTransaction(transaction, () => trackStore.set(state));
+                replacement.commit();
+            }
+            expect(rawProjectState('a')).toEqual(original);
+            await request;
+        });
+        if (outcome === 'commit') {
+            expect(rawProjectState('a')?.data.disclosureTier).toBe('expert');
+        } else {
+            expect(rawProjectState('a')).toEqual(original);
+            await setLevainPanelUiLevel('a', 6);
+            expect(rawProjectState('a')?.data.disclosureTier).toBe('expert');
+        }
+    }
+);
+
+it.each(['identity', 'tier'] as const)(
+    'does not create the old second facet after a held %s commit loses its target',
+    async (firstFacet) => {
+        let committed!: () => void;
+        let release!: () => void;
+        const firstCommitted = new Promise<void>((resolve) => {
+            committed = resolve;
+        });
+        const completion = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const hold = { committed, release: completion };
+        if (firstFacet === 'identity') {
+            identityCompletion.hold = hold;
+        } else {
+            tierCompletion.hold = hold;
+        }
+        const identity = () => {
+            levainStore.set({ ...levainStore.value, a: { ...defaultLevainState, patch: createDefaultPatch('horn') } });
+            commitLevainDeviceState('a');
+        };
+        if (firstFacet === 'identity') {
+            identity();
+        }
+        const tier = setLevainPanelUiLevel('a', 6);
+        if (firstFacet === 'tier') {
+            identity();
+        }
+        await firstCommitted;
+        const saved = structuredClone(rawProjectState('a'));
+        const state = structuredClone(trackStore.value!);
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                devices: track.devices.filter((device) => device.id !== 'a'),
+            })),
+        });
+        flushAutomergeStorageWrites();
+        expect(rawProjectDevice('a')).toBeUndefined();
+        trackStore.set(state);
+        flushAutomergeStorageWrites();
+        expect(rawProjectState('a')).toEqual(saved);
+        // A different device remains independently writable while the old tail is held.
+        await setLevainPanelUiLevel('b', 6);
+        expect(rawProjectState('b')?.data.disclosureTier).toBe('expert');
+        release();
+        await tier;
+        await settleIdentityRequests();
+        expect(rawProjectState('a')).toEqual(saved);
+        expect(submittedFacets).toEqual([firstFacet, 'tier']);
+    }
+);

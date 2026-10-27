@@ -16,6 +16,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { defaultLevainState, levainStore, updateMicPosition } from '../../stores/levainStore';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { createLevainBridge } from '../levainParamBridge/helpers';
 import { levainBridge } from '../levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../levainParamBridge/registerLevainDevice';
@@ -110,6 +111,8 @@ describe('Levain instrument persistence round trip', () => {
     let stopPersistence: () => void;
 
     beforeEach(() => {
+        // This isolated roundtrip fixture has no committed document; its visible rows are pending.
+        configureLevainDeviceStateProjectAccess({ hasDevice: () => false, subscribe: () => () => undefined });
         mocks.autoLoadLevainSamples.mockClear();
         mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve(null));
         clearHandlerRegistry();
@@ -122,6 +125,7 @@ describe('Levain instrument persistence round trip', () => {
     afterEach(async () => {
         stopPersistence();
         await Promise.all(mocks.coordinateRequests);
+        configureLevainDeviceStateProjectAccess(null);
         mocks.coordinateRequests.length = 0;
         vi.unstubAllGlobals();
     });

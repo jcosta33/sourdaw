@@ -3,7 +3,10 @@ import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCas
 import { captureProjectIdentity } from '#/modules/CrdtDocument/stores';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
+import { getLevainDeviceStateProjectAccess } from '../stores/levainDeviceStateProjectAccess';
+
 import type { toLevainDeviceState } from '../models/LevainDeviceState';
+import type { LevainDeviceStateProjectAccess } from '../stores/levainDeviceStateProjectAccess';
 
 type DeviceState = ReturnType<typeof toLevainDeviceState>;
 type Facet = 'identity' | 'tier';
@@ -13,6 +16,10 @@ type PendingDevice = {
     expectedState: string;
     latest: Partial<Record<Facet, symbol>>;
     tail?: Promise<void>;
+    projectAccess: LevainDeviceStateProjectAccess;
+    retired: boolean;
+    retire: () => void;
+    dispose: () => void;
 };
 
 const pendingDevices = new Map<string, PendingDevice>();
@@ -31,16 +38,69 @@ export function coordinateLevainDeviceState(
     if (!owner || !device || (device.deviceState && device.deviceState.version !== 1)) {
         return Promise.resolve();
     }
+    const projectAccess = getLevainDeviceStateProjectAccess();
+    if (!projectAccess) {
+        return Promise.reject(new Error('Levain device-state project access is not configured'));
+    }
     const projectIdentity = captureProjectIdentity();
     let pending = pendingDevices.get(deviceId);
-    if (!pending || pending.projectIdentity !== projectIdentity) {
+    if (
+        pending &&
+        (pending.projectIdentity !== projectIdentity ||
+            pending.ownerId !== owner.id ||
+            pending.projectAccess !== projectAccess)
+    ) {
+        pending.retire();
+    }
+    if (!pending || pending.retired) {
+        const unsubscribers: (() => void)[] = [];
+        const dispose = (): void => {
+            for (const unsubscribe of unsubscribers.splice(0)) {
+                unsubscribe();
+            }
+        };
         pending = {
             projectIdentity,
             ownerId: owner.id,
             expectedState: canonicalJson(device.deviceState ?? null),
             latest: {},
+            projectAccess,
+            retired: false,
+            retire: () => {
+                target.retired = true;
+                dispose();
+            },
+            dispose,
+        };
+        const target = pending;
+        let seenCommitted = projectAccess.hasDevice(owner.id, deviceId);
+        const observeMembership = (): void => {
+            if (target.retired) {
+                return;
+            }
+            if (getLevainDeviceStateProjectAccess() !== projectAccess || captureProjectIdentity() !== projectIdentity) {
+                target.retire();
+                return;
+            }
+            if (projectAccess.hasDevice(owner.id, deviceId)) {
+                seenCommitted = true;
+                return;
+            }
+            const visible = trackStore.value?.tracks
+                .find((track) => track.id === owner.id)
+                ?.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'levain');
+            // A visible add may still be pending; a committed loss can never revive this queue.
+            if (seenCommitted || !visible) {
+                target.retire();
+            }
         };
         pendingDevices.set(deviceId, pending);
+        unsubscribers.push(projectAccess.subscribe(observeMembership));
+        unsubscribers.push(trackStore.subscribe(observeMembership));
+        observeMembership();
+        if (target.retired) {
+            dispose();
+        }
     }
     const entry = pending;
     const request = Symbol();
@@ -50,6 +110,8 @@ export function coordinateLevainDeviceState(
             .find((track) => track.id === entry.ownerId)
             ?.devices.find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
     const isCurrent = (expected: string) =>
+        !entry.retired &&
+        getLevainDeviceStateProjectAccess() === entry.projectAccess &&
         captureProjectIdentity() === entry.projectIdentity &&
         currentDevice() !== undefined &&
         canonicalJson(currentDevice()?.deviceState ?? null) === expected;
@@ -91,8 +153,11 @@ export function coordinateLevainDeviceState(
     };
     const action = entry.tail ? entry.tail.then(run) : run();
     const result = action.finally(() => {
-        if (pendingDevices.get(deviceId) === entry && entry.tail === result) {
-            pendingDevices.delete(deviceId);
+        if (entry.tail === result) {
+            entry.dispose();
+            if (pendingDevices.get(deviceId) === entry) {
+                pendingDevices.delete(deviceId);
+            }
         }
     });
     entry.tail = result;

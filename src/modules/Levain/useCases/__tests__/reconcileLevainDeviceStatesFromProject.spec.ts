@@ -4,7 +4,7 @@ type FixtureDevice = { id: string; type: string; deviceState: unknown };
 type FixtureTracks = { tracks: { id: string; kind: string; devices: FixtureDevice[] }[] };
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { value: undefined as FixtureTracks | undefined },
+    trackStore: { value: undefined as FixtureTracks | undefined, subscribe: vi.fn(() => () => undefined) },
     coordinateRequests: [] as Promise<void>[],
     resolveWriteTarget: vi.fn(),
     applyPatchToEngine: vi.fn(),
@@ -56,6 +56,7 @@ vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
 import { createDefaultPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setCurrentArticulation } from '../../stores/levainStore';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { reconcileLevainDeviceStatesFromProject } from '../reconcileLevainDeviceStatesFromProject';
 
 import type { executeUserAppAction } from '#/modules/Command/useCases';
@@ -87,6 +88,8 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
     let stopPersistence: () => void;
 
     beforeEach(() => {
+        // Only the unit fixture's visible projection exists; committed membership is tested separately.
+        configureLevainDeviceStateProjectAccess({ hasDevice: () => false, subscribe: () => () => undefined });
         vi.clearAllMocks();
         mocks.resolveWriteTarget.mockReturnValue({ status: 'eligible', trackId: TRACK_ID, deviceId: DEVICE_ID });
         mocks.trackStore.value = undefined;
@@ -100,6 +103,7 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
     afterEach(async () => {
         stopPersistence();
         await Promise.all(mocks.coordinateRequests);
+        configureLevainDeviceStateProjectAccess(null);
         mocks.coordinateRequests.length = 0;
         levainStore.set({});
     });
