@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { liveTempoTimeline } from '../../liveTempoTimeline';
-import { snapToZeroCrossing } from '../snapToZeroCrossing';
+import { resolveZeroCrossingPosition, snapToZeroCrossing } from '../snapToZeroCrossing';
 
 import type { SnapSplitBeatToZeroCrossingInput } from '../../../services/snapSplitBeatToZeroCrossing';
 
@@ -25,7 +25,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 
 vi.mock('../../../services/snapSplitBeatToZeroCrossing', () => ({
-    snapSplitBeatToZeroCrossing: mocks.snapSplitBeatToZeroCrossing,
+    snapSplitPositionToZeroCrossing: mocks.snapSplitBeatToZeroCrossing,
 }));
 
 describe('snapToZeroCrossing use case', () => {
@@ -57,7 +57,7 @@ describe('snapToZeroCrossing use case', () => {
             sampleRate: 48000,
         };
         mocks.getCachedAudioBuffer.mockReturnValue(audioBuffer);
-        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(1.5);
+        mocks.snapSplitBeatToZeroCrossing.mockReturnValue({ beat: 1.5 });
 
         expect(snapToZeroCrossing(clip, 2)).toBe(1.5);
 
@@ -94,7 +94,7 @@ describe('snapToZeroCrossing use case', () => {
             getChannelData: () => new Float32Array([1, -1]),
             sampleRate: 48000,
         });
-        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(2);
+        mocks.snapSplitBeatToZeroCrossing.mockReturnValue({ beat: 2 });
 
         expect(snapToZeroCrossing(clip, 2)).toBe(2);
         expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith(
@@ -109,5 +109,24 @@ describe('snapToZeroCrossing use case', () => {
         expect(snapToZeroCrossing(clip, 2.5)).toBe(2.5);
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
         expect(mocks.snapSplitBeatToZeroCrossing).not.toHaveBeenCalled();
+    });
+
+    it('retains a selected source sample and uses the captured preparation timeline', () => {
+        const clip = ClipDummy.create();
+        const timeline = {
+            secondsAtBeat: vi.fn(),
+            beatAtSeconds: vi.fn(),
+            tempoAtBeat: vi.fn(),
+        };
+        const position = { beat: 2.5000416666666663, sourceSeconds: 108002 / 48000 };
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            getChannelData: () => new Float32Array([1, -1]),
+            sampleRate: 48000,
+        });
+        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(position);
+
+        expect(resolveZeroCrossingPosition(clip, 2.5, timeline)).toBe(position);
+        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith(expect.objectContaining({ timeline }));
+        expect(snapToZeroCrossing(clip, 2.5)).toBe(position.beat);
     });
 });

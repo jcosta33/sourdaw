@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ClipDummy } from '../../__tests__/ClipDummy';
 import { type TempoTimeline } from '../../models/TempoTimeline';
-import { snapSplitBeatToZeroCrossing } from '../snapSplitBeatToZeroCrossing';
+import { snapSplitBeatToZeroCrossing, snapSplitPositionToZeroCrossing } from '../snapSplitBeatToZeroCrossing';
 
 function constantTimeline(tempo: number): TempoTimeline {
     return {
@@ -115,6 +115,41 @@ describe('snapSplitBeatToZeroCrossing', () => {
         });
 
         expect(result).toBeCloseTo(2.5 + 2 / 48000, 12);
+    });
+
+    it('retains the exact selected source sample independently of inverse-clock precision', () => {
+        const result = snapSplitPositionToZeroCrossing({
+            clip: ClipDummy.create({ audioOffsetSeconds: 0.25 }),
+            splitBeat: 2.5,
+            channelData: createSamples(144000, 108002),
+            sampleRate: 48000,
+            timeline: {
+                ...changingTimeline,
+                beatAtSeconds: (seconds) => changingTimeline.beatAtSeconds(seconds) - Number.EPSILON,
+            },
+            stretchRatio: 2,
+        });
+
+        expect(result.sourceSeconds).toBe(108002 / 48000);
+        expect(Math.floor(result.sourceSeconds! * 48000)).toBe(108002);
+    });
+
+    it('retains an actual crossing at sample zero and omits source authority when none exists', () => {
+        const input = {
+            clip: ClipDummy.create({ audioOffsetSeconds: 0 }),
+            splitBeat: 0,
+            sampleRate: 48000,
+            timeline: constantTimeline(120),
+            stretchRatio: 1,
+        };
+
+        expect(snapSplitPositionToZeroCrossing({ ...input, channelData: createSamples(1000, 0) })).toEqual({
+            beat: 0,
+            sourceSeconds: 0,
+        });
+        expect(snapSplitPositionToZeroCrossing({ ...input, channelData: new Float32Array(1000).fill(1) })).toEqual({
+            beat: 0,
+        });
     });
 
     it('keeps canonical zero authoritative over a stale legacy offset', () => {

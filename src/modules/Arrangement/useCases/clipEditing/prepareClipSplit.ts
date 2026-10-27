@@ -13,9 +13,10 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { type Clip, type Track } from '../../stores/trackStore';
 import { type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 import { captureClipSplitTakeReKeyTransitions } from '../comping/captureClipSplitTakeReKey';
-import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
+import { resolveZeroCrossingPosition } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
 import { audioSourceAtBeat } from './audioSourceAtBeat';
@@ -134,7 +135,12 @@ export function prepareClipSplit({
         return null;
     }
 
-    const adjustedSplitBeat = resolvedSplitBeat ?? snapToZeroCrossing(clip, splitBeat);
+    const timeline = owners?.timeline ?? liveTempoTimeline;
+    const splitPosition: ZeroCrossingPosition =
+        resolvedSplitBeat === undefined
+            ? resolveZeroCrossingPosition(clip, splitBeat, timeline)
+            : { beat: resolvedSplitBeat };
+    const adjustedSplitBeat = splitPosition.beat;
     if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
         return null;
     }
@@ -155,12 +161,14 @@ export function prepareClipSplit({
     // (a mode-off clip ignores its dormant ratio; an out-of-range one clamps).
     const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
     const capturesAudioSource = clip.type === 'audio';
-    const timeline = owners?.timeline ?? liveTempoTimeline;
     const audioSourceTempoAtStart = timeline.tempoAtBeat(clip.startBeat);
     const leftSource = capturesAudioSource ? audioSourceAtBeat(clip, clip.startBeat, timeline) : null;
     const rightSource = capturesAudioSource ? audioSourceAtBeat(clip, adjustedSplitBeat, timeline) : null;
     if (capturesAudioSource && (!leftSource || !rightSource)) {
         return null;
+    }
+    if (rightSource && splitPosition.sourceSeconds !== undefined) {
+        rightSource.audioOffsetSeconds = splitPosition.sourceSeconds;
     }
     let contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
     if (capturesAudioSource) {

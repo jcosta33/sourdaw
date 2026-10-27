@@ -18,19 +18,29 @@ export type SnapSplitBeatToZeroCrossingInput = {
     stretchRatio: number;
 };
 
+export type ZeroCrossingPosition = {
+    beat: number;
+    sourceSeconds?: number;
+};
+
 /**
  * Given a clip and a proposed split beat, snaps the split position
  * to the nearest zero crossing in the audio data to avoid clicks.
  * Returns the original splitBeat unchanged for non-audio clips.
  */
-export function snapSplitBeatToZeroCrossing({
+export function snapSplitBeatToZeroCrossing(input: SnapSplitBeatToZeroCrossingInput): number {
+    return snapSplitPositionToZeroCrossing(input).beat;
+}
+
+/** Retain the selected physical sample instead of reconstructing it from the inverse beat. */
+export function snapSplitPositionToZeroCrossing({
     clip,
     splitBeat,
     channelData,
     sampleRate,
     timeline,
     stretchRatio,
-}: SnapSplitBeatToZeroCrossingInput): number {
+}: SnapSplitBeatToZeroCrossingInput): ZeroCrossingPosition {
     if (
         clip.type !== 'audio' ||
         !clip.audioBufferId ||
@@ -42,7 +52,7 @@ export function snapSplitBeatToZeroCrossing({
         stretchRatio <= 0 ||
         channelData.length < 2
     ) {
-        return splitBeat;
+        return { beat: splitBeat };
     }
 
     const splitSeconds = timeline.secondsAtBeat(splitBeat);
@@ -51,7 +61,7 @@ export function snapSplitBeatToZeroCrossing({
     const windowStartBeat = Math.max(clip.startBeat, timeline.beatAtSeconds(splitSeconds - searchSeconds));
     const windowEndBeat = timeline.beatAtSeconds(splitSeconds + searchSeconds);
     if (!Number.isFinite(windowStartBeat) || !Number.isFinite(windowEndBeat)) {
-        return splitBeat;
+        return { beat: splitBeat };
     }
 
     const loop = projectClipLoopExpansion({
@@ -73,7 +83,7 @@ export function snapSplitBeatToZeroCrossing({
             splitBeat < windowStartBeat + candidate.endOffsetBeats
     );
     if (!part) {
-        return splitBeat;
+        return { beat: splitBeat };
     }
 
     const partStartBeat = windowStartBeat + part.startOffsetBeats;
@@ -85,7 +95,7 @@ export function snapSplitBeatToZeroCrossing({
         stretchRatio
     );
     if (!Number.isFinite(sourceSeconds) || sourceSeconds < 0 || sourceSeconds >= channelData.length / sampleRate) {
-        return splitBeat;
+        return { beat: splitBeat };
     }
 
     const sourceEndSeconds = getAudioSourcePositionSeconds(
@@ -104,7 +114,7 @@ export function snapSplitBeatToZeroCrossing({
         snappedSample >= samples.length - 1 ||
         !(samples[snappedSample]! * samples[snappedSample + 1]! <= 0)
     ) {
-        return splitBeat;
+        return { beat: splitBeat };
     }
 
     const snappedBeat = timeline.beatAtSeconds(
@@ -116,6 +126,6 @@ export function snapSplitBeatToZeroCrossing({
             )
     );
     return Number.isFinite(snappedBeat) && partStartBeat <= snappedBeat && snappedBeat < partEndBeat
-        ? snappedBeat
-        : splitBeat;
+        ? { beat: snappedBeat, sourceSeconds: (firstSample + snappedSample) / sampleRate }
+        : { beat: splitBeat };
 }
