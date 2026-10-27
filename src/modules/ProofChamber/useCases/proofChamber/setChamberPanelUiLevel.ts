@@ -18,7 +18,7 @@ function resolveUniqueChamberDevice(deviceId: string): ChamberDeviceTarget | und
             }
             // The project action addresses every device with this ID, regardless of type.
             if (target || device.type !== 'dutch-oven') {
-                return;
+                return undefined;
             }
             target = { owner: track, device };
         }
