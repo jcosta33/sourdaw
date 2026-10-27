@@ -1,0 +1,25 @@
+src/modules/Arrangement/services/__tests__/snapSplitBeatToZeroCrossing.spec.ts
+  s_29d8df116c5b92::t_70992f30513ff1 4,7-28,45-46,62-63,82-83,88-245
+src/modules/Arrangement/services/snapSplitBeatToZeroCrossing.ts
+  s_29d8df116c5b92::t_a21410530d35d9 1-7,9,17-18,31-32,34-44,48-55,57-77,79-89,91-108,110-120
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/snapToZeroCrossing.spec.ts
+  s_29d8df116c5b92::t_5fc8d36ccccf0a 4,12-14,22-24,36-39,41-45,47-48,71-72,74-83,86-97,99,101,106
+src/modules/Arrangement/useCases/timelineInteractions/snapToZeroCrossing.ts
+  s_29d8df116c5b92::t_a21410530d35d9 5-6,23-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2af0bb13192b97bf411b305b20c05ddfd4881ebe",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
