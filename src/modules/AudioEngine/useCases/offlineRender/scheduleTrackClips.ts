@@ -1,7 +1,7 @@
 import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { projectFrozenMidiTakeWindow, type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,
@@ -784,7 +784,8 @@ export async function scheduleTrackClips({
             if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
-            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
+            const frozenSource = clip.midiTakeSource;
+            const sourceNotes = frozenSource ? [] : (midi.notesByClipId[clip.id] ?? []);
             const clipVisualLength = clip.endBeat - clip.startBeat;
             if (clipVisualLength <= 0) {
                 continue;
@@ -801,12 +802,61 @@ export async function scheduleTrackClips({
                 loopLength,
                 loopEnabled: clip.loopEnabled ?? false,
             });
-            const iterationCount = loopProjection.iterationCount;
+            const firstIteration = frozenSource
+                ? Math.max(
+                      0,
+                      Math.floor(
+                          (clip.startBeat -
+                              frozenSource.phaseHeadBeat -
+                              (frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat)) /
+                              frozenSource.passLengthBeats
+                      ) + 1
+                  )
+                : 0;
+            const iterationCount = frozenSource
+                ? Math.ceil((clip.endBeat - frozenSource.phaseHeadBeat) / frozenSource.passLengthBeats)
+                : loopProjection.iterationCount;
             const loopEnabled = clip.loopEnabled ?? false;
             const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-            for (let iteration = 0; iteration < iterationCount; iteration++) {
+            for (let iteration = firstIteration; iteration < iterationCount; iteration++) {
                 checkCallerAbort();
-                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
+                const absoluteOccurrenceIndex = frozenSource ? iteration : sourceOccurrenceOffset + iteration;
+                if (frozenSource) {
+                    const window = projectFrozenMidiTakeWindow({
+                        source: frozenSource,
+                        absoluteOccurrenceIndex,
+                        fromBeat: clip.startBeat,
+                        toBeat: clip.endBeat,
+                    });
+                    if (!window) {
+                        throw new Error('Invalid frozen MIDI take window');
+                    }
+                    const passHead = frozenSource.phaseHeadBeat + iteration * frozenSource.passLengthBeats;
+                    const passEnd = passHead + frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat;
+                    iterations.push({
+                        sourceNotes: window.notes
+                            .filter((note) =>
+                                selectMidiEventProbability({
+                                    projectProbabilitySeed: midi.probabilitySeed,
+                                    clipId: frozenSource.sourceClipId,
+                                    eventId: note.id,
+                                    absoluteOccurrenceIndex,
+                                    probabilityPercent: note.probability ?? 100,
+                                })
+                            )
+                            .map((note) => ({ ...note, startBeat: note.startBeat - passHead })),
+                        clipId: frozenSource.sourceClipId,
+                        clipStartBeat: clip.startBeat,
+                        clipEndBeat: Math.min(clip.endBeat, passEnd),
+                        iterationStartBeat: passHead,
+                        loopLengthBeats: frozenSource.passLengthBeats,
+                        midiOffsetBeats: 0,
+                        loopEnabled: false,
+                        toasterPadIndex: padIndex,
+                        clipGain: clip.gain,
+                    });
+                    continue;
+                }
                 iterations.push({
                     // #5198 — the anchored loop window owns membership on the
                     // row's stored figure before the rack ever sees it: a row
@@ -914,7 +964,8 @@ export async function scheduleTrackClips({
 
         if (clip.type === 'midi') {
             // A clip with no note list plays no notes; its stored controllers still play.
-            const sourceNotes = midi.notesByClipId[clip.id] ?? [];
+            const frozenSource = clip.midiTakeSource;
+            const sourceNotes = frozenSource ? [] : (midi.notesByClipId[clip.id] ?? []);
             const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
@@ -926,7 +977,7 @@ export async function scheduleTrackClips({
             // the chase a mid-song start needs belongs to the transport.
             // The clip's moves at the time its closing-line move plays apply, in its own
             // order, ahead of a clip starting there, as live playback posts them.
-            const storedControllers = dispatchControl ? midi.ccByClipId[clip.id] : undefined;
+            const storedControllers = dispatchControl && !frozenSource ? midi.ccByClipId[clip.id] : undefined;
             if (storedControllers && projectClipControllers) {
                 const regionStartSamples = regionStartSec * offlineCtx.sampleRate;
                 const clipControlEvents: { time: number; controller: number; value: number }[] = [];
@@ -962,16 +1013,41 @@ export async function scheduleTrackClips({
                 }
             }
 
-            for (let iter = 0; iter < maxIterations; iter++) {
+            const firstIteration = frozenSource
+                ? Math.max(
+                      0,
+                      Math.floor(
+                          (clip.startBeat -
+                              frozenSource.phaseHeadBeat -
+                              (frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat)) /
+                              frozenSource.passLengthBeats
+                      ) + 1
+                  )
+                : 0;
+            const lastIteration = frozenSource
+                ? Math.ceil((clip.endBeat - frozenSource.phaseHeadBeat) / frozenSource.passLengthBeats)
+                : maxIterations;
+            for (let iter = firstIteration; iter < lastIteration; iter++) {
                 checkCallerAbort();
-                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
-                const iterOffset = iter * loopLen;
-                const iterationStartBeat = clip.startBeat + iterOffset;
-                const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-                const acceptedSourceNotes = sourceNotes.filter((note) =>
+                const absoluteOccurrenceIndex = frozenSource ? iter : sourceOccurrenceOffset + iter;
+                const iterationStartBeat = frozenSource
+                    ? frozenSource.phaseHeadBeat + iter * frozenSource.passLengthBeats
+                    : clip.startBeat + iter * loopLen;
+                const frozenWindow = frozenSource
+                    ? projectFrozenMidiTakeWindow({
+                          source: frozenSource,
+                          absoluteOccurrenceIndex,
+                          fromBeat: clip.startBeat,
+                          toBeat: clip.endBeat,
+                      })
+                    : null;
+                if (frozenSource && !frozenWindow) {
+                    throw new Error('Invalid frozen MIDI take window');
+                }
+                const acceptedSourceNotes = (frozenWindow?.notes ?? sourceNotes).filter((note) =>
                     selectMidiEventProbability({
                         projectProbabilitySeed: midi.probabilitySeed,
-                        clipId: clip.id,
+                        clipId: frozenSource?.sourceClipId ?? clip.id,
                         eventId: note.id,
                         absoluteOccurrenceIndex,
                         probabilityPercent: note.probability ?? 100,
@@ -979,13 +1055,19 @@ export async function scheduleTrackClips({
                 );
                 const notes = projectMidiEvents({
                     events: acceptedSourceNotes,
-                    clipId: clip.id,
+                    clipId: frozenSource?.sourceClipId ?? clip.id,
                     clipStartBeat: clip.startBeat,
-                    clipEndBeat: clip.endBeat,
+                    clipEndBeat: frozenSource
+                        ? Math.min(
+                              clip.endBeat,
+                              iterationStartBeat + frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat
+                          )
+                        : clip.endBeat,
                     iterationStartBeat,
-                    loopLengthBeats: loopLen,
-                    midiOffsetBeats,
-                    loopEnabled: clip.loopEnabled ?? false,
+                    loopLengthBeats: frozenSource?.passLengthBeats ?? loopLen,
+                    midiOffsetBeats: frozenSource ? 0 : (clip.midiOffsetBeats ?? 0),
+                    loopEnabled: frozenSource ? false : (clip.loopEnabled ?? false),
+                    ...(frozenSource ? { eventsAreAbsolute: true } : {}),
                     loopOriginBeat: clip.loopOriginBeat,
                     phase: 'complete',
                 });
