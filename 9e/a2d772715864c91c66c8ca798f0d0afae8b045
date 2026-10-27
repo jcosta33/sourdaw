@@ -1,0 +1,180 @@
+src/modules/Arrangement/useCases/clipEditing/projectClipReplayPrefix.ts
+  s_29d8df116c5b92::t_b88a955de14ae2 41-42,166,172-182,199,407,413-416,457-461
+src/modules/Arrangement/useCases/clipEditing/__tests__/projectClipReplayPrefix.spec.ts
+  s_29d8df116c5b92::t_b88a955de14ae2 3,46-78
+  s_29d8df116c5b92::t_4e001b236bc2fa 79-91
+.agents/skills/review-stances/ai-notes-publication.md
+  s_29d8df116c5b92::t_ac6a9872653972 32-42
+.agents/skills/review-stances/session-lifecycle.md
+  s_29d8df116c5b92::t_730cba662f7d8c 384-389
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_9272c1b596e151 9-23
+crates/daw-dsp/src/proof/chain.rs
+  s_29d8df116c5b92::t_fbe32412933516 254-286,288-289,291-311,1267-1341
+crates/daw-dsp/src/proof/dither.rs
+  s_29d8df116c5b92::t_8608fa082f0ecb 115-123
+crates/daw-dsp/src/proof/dynamic_eq.rs
+  s_29d8df116c5b92::t_b9140917776de2 181-201
+crates/daw-dsp/src/proof/eq.rs
+  s_29d8df116c5b92::t_cfc18240fb06bd 116-136
+crates/daw-dsp/src/proof/exciter.rs
+  s_29d8df116c5b92::t_17c370a10342dd 164-179
+crates/daw-dsp/src/proof/imager.rs
+  s_29d8df116c5b92::t_9cc653018f0313 75-89
+crates/daw-dsp/src/proof/limiter.rs
+  s_29d8df116c5b92::t_bcc71fc5d783b7 205-215
+crates/daw-dsp/src/proof/match_eq.rs
+  s_29d8df116c5b92::t_8fd726c238d97f 192-202
+crates/daw-dsp/src/proof/mod.rs
+  s_29d8df116c5b92::t_da2f416e06f9ab 22,96
+crates/daw-dsp/src/proof/multiband.rs
+  s_29d8df116c5b92::t_d4ea46a1bc9f30 119-145
+crates/daw-dsp/src/proof/parameter_registry.rs
+  s_29d8df116c5b92::t_1a5a1f9de787e6 1-2567
+crates/daw-dsp/tests/proof_parameter_registry.rs
+  s_29d8df116c5b92::t_5e7335af40e045 1-265
+crates/daw-engine/src/scheduler.rs
+  s_29d8df116c5b92::t_971d99e9903daf 38,3278-3285,3289-3291,3293,4556,12705-12707,24787-24834
+crates/sourdaw-native/src/commands/graph.rs
+  s_29d8df116c5b92::t_7fbb5a7fabb2df 158-160,2317-2384,2409-2416,2464-2471,2839-2844,3798-3831,15997-16393
+evidence/agent-campaign/manifest.json
+  s_29d8df116c5b92::t_7dfeddfcbcf574 623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_29d8df116c5b92::t_24f78bcd89a5cb 1,1041-1043,1181-1294,1358-1373
+public/wasm/daw-dsp/daw_dsp.js
+  s_29d8df116c5b92::t_b4b82b73a2782d 2232
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_29d8df116c5b92::t_ea3cc1bbeeb335 1,49-162,226-241
+public/wasm/manifest.json
+  s_29d8df116c5b92::t_0d487fa9cc44d2 12,15-18,20-21
+release/open-source-inventory.json
+  s_29d8df116c5b92::t_9a3453095f0f5e 1211-1212,1345,1351,1771
+scripts/__tests__/deliverAuthorshipBoundary.spec.ts
+  s_29d8df116c5b92::t_5fd79b65574443 1-228
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_29d8df116c5b92::t_9585e7b45e92d2 12466-12467,12472,12490,12494,12513-12514,12521,12549-12550,12557,12575,12579,12603-12604,12612
+scripts/deliverPullRequest.ts
+  s_29d8df116c5b92::t_f2051abdbb011f 3822,3831,3934-3956
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  s_29d8df116c5b92::t_68faec962c8e78 1-351
+src/modules/Arrangement/handlers/__tests__/mixerCompensationBatch.spec.ts
+  s_29d8df116c5b92::t_9d1a9c700abf80 8,21,179-180,182-225,229-246,248,252-254,256-276
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_486a41610be676 3933-3937,3948-4013,4015,4017,4019-4060
+src/modules/Arrangement/handlers/clip/__tests__/handleDeleteTime.integration.spec.ts
+  s_29d8df116c5b92::t_48daccaa41860d 426-580
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  s_29d8df116c5b92::t_c54894f6b21dde 214-218,228-229,236,241-242,255
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_29d8df116c5b92::t_8c128390c02cfb 84-91
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_29d8df116c5b92::t_eee700f3ba4f8f 294-300,524
+src/modules/Arrangement/handlers/track/__tests__/soloTrack.spec.ts
+  s_29d8df116c5b92::t_403b15b3e9c806 82,90,99,107-118
+src/modules/Arrangement/handlers/track/soloTrack.ts
+  s_29d8df116c5b92::t_5a77f96984b440 18-24,27-31,39
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipSplitStateRestorable.spec.ts
+  s_29d8df116c5b92::t_5b020c32c4ce9f 88-103,117
+src/modules/Arrangement/useCases/clipEditing/clipSplitStateRestorable.ts
+  s_29d8df116c5b92::t_824927072bf322 6-7,60-61,82-86
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_29d8df116c5b92::t_cdfabf544b3bf7 178-179,253,270
+src/modules/Arrangement/useCases/clipEditing/replaceClipSplitTrackState.ts
+  s_29d8df116c5b92::t_000dcf42717577 8,45-49
+src/modules/Arrangement/useCases/clipEditing/resolveClipSplitInsertionIndex.ts
+  s_29d8df116c5b92::t_ca6a94739e4e6a 1-54
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_29d8df116c5b92::t_5d96083403509c 2,13,253-328,408-410
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_29d8df116c5b92::t_e19efe8b0e4764 15,158-162
+src/modules/AudioEngine/engine/__tests__/ProofNode.spec.ts
+  s_29d8df116c5b92::t_a694392571ae5a 209-242
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_29d8df116c5b92::t_e1ae1f19c13e12 408,412,422,441,443,445
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_29d8df116c5b92::t_de904277dc95c5 125-165
+src/modules/AudioEngine/models/ProofRuntimeControl.ts
+  s_29d8df116c5b92::t_68d70b7504f85c 1-7,16-54
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_29d8df116c5b92::t_bf48fc1daf9368 138-141
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_29d8df116c5b92::t_753d676bbb4fa7 315-358
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_29d8df116c5b92::t_06aad5d9cae135 512-540,545,549,614,624,673,683,779-780,805-835,866-870,872-896,972,975
+src/modules/AudioEngine/services/proofAppliedParameterContract.json
+  s_29d8df116c5b92::t_6412d4765e9e97 1-2441
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_29d8df116c5b92::t_608e80bc286dd8 12-16,133,342-346,362-364
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_29d8df116c5b92::t_095383600386f5 798-799,1121-1134
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_29d8df116c5b92::t_297dcc9b23a8b3 47,452-453,455-461
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_29d8df116c5b92::t_b2518127ffe2b6 1,1041-1043,1181-1294,1358-1373
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_29d8df116c5b92::t_dc7f7754253240 2409
+src/modules/Command/useCases/__tests__/versionedCommandArgumentKeys.spec.ts
+  s_29d8df116c5b92::t_65a9aff8d17536 227-244
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_29d8df116c5b92::t_a32e2458e985dc 2016
+src/modules/CrdtDocument/repositories/readChangesSinceHeads.ts
+  s_29d8df116c5b92::t_87b67631713015 8,12,17-20
+src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts
+  s_29d8df116c5b92::t_5e514ea4366b7f 1,8-15,261-326
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringCommandCheckpoint.ts
+  s_29d8df116c5b92::t_bcc3c3c21c602b 5,112-115,123-124,127-130
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/legacyPersistedIdCleanup.spec.ts
+  s_29d8df116c5b92::t_639c6e458c3159 22-26
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/nativeMidiPortsChanged.spec.ts
+  s_29d8df116c5b92::t_e01365ab5299de 32-36
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiCapabilityIntegration.spec.ts
+  s_29d8df116c5b92::t_e0915e5d077c0c 1-174
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_29d8df116c5b92::t_3bbbfc0f9fcf08 25-27,56-59,115-121,278,694-696
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_29d8df116c5b92::t_1d9efd7fa15824 2-3,283,292,294,331-334,339,402
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_29d8df116c5b92::t_24aee03ca19310 5,45
+src/modules/Proof/services/__tests__/getProofPatchParameterValues.spec.ts
+  s_29d8df116c5b92::t_8ee6823c6ada84 1-2,4-11,14-23,204-270
+src/modules/Proof/useCases/__tests__/prepareOfflineProof.spec.ts
+  s_29d8df116c5b92::t_bd4603059e0b17 17-51
+src/modules/Proof/useCases/__tests__/proofParamBridge.spec.ts
+  s_29d8df116c5b92::t_77c4183ca4edf8 26,28
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParam.spec.ts
+  s_29d8df116c5b92::t_929415c1ffed0c 43-60
+src/modules/Proof/useCases/proofParamBridge/setProofParam.ts
+  s_29d8df116c5b92::t_43ef211c377ed4 3-5,26-57,59-61
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_29d8df116c5b92::t_4caf32bf6e7cf8 48
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_c5909483088f36 82
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_63078b1a20bda5 3,142,146,206,330,1539-1540,1542,1618-1619,1629-1630,1632-1633,1687,1726-1727,1729,1790-1791
+src/modules/WorkspaceShell/presentations/views/MidiStatusBadge.tsx
+  s_29d8df116c5b92::t_0f8768f6c8b309 9,33-37,40-54
+src/modules/WorkspaceShell/presentations/views/__tests__/MidiStatusBadge.spec.tsx
+  s_29d8df116c5b92::t_bf5a4814953a4c 41-42,44-64,66-76,80-85,97,111,125,134
+src/utils/__tests__/platformCapabilities.spec.ts
+  s_29d8df116c5b92::t_919ca28abb5f88 1,8-39
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_c47ec75c92e6f3 572-573
+src/utils/platformCapabilities.ts
+  s_29d8df116c5b92::t_1b636a793750d3 17-19,27-28,31-35,51-55,60-61,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ea2d772715864c91c66c8ca798f0d0afae8b045",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
