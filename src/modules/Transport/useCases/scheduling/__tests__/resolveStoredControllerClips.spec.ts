@@ -38,6 +38,15 @@ const selectedSource = {
 };
 
 describe('resolveStoredControllerClips', () => {
+    it('refuses a present malformed modern source instead of playing ordinary controllers', () => {
+        expect(() =>
+            resolveStoredControllerClips({
+                trackId: TRACK_ID,
+                clips: [midiClip({ midiTakeSource: { sourceClipId: 'clip-1', rows: null } })],
+                ccByClipId: { 'clip-1': pedal },
+            })
+        ).toThrow('Invalid frozen MIDI take source');
+    });
     it('chases selected frozen controllers from the original pass across a left edit and ignores ordinary rows', () => {
         const clips = resolveStoredControllerClips({
             trackId: TRACK_ID,

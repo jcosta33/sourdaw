@@ -26,7 +26,7 @@ export function resolveChannelBendClips({
     pitchBendByClipId,
 }: ResolveChannelBendClipsInput) {
     return resolvePlayedMidiClips(trackId, clips).flatMap((clip) => {
-        if (clip.midiTakeSource) {
+        if (clip.midiTakeSource !== undefined) {
             return resolveFrozenMidiControllerPasses(clip).filter((pass) => pass.pitchBends.length > 0);
         }
         const pitchBends = pitchBendByClipId[clip.id];

@@ -23,7 +23,7 @@ export function resolveStoredControllerClips({
     ccByClipId,
 }: ResolveStoredControllerClipsInput): RestoreStoredControllersInput['clips'] {
     return resolvePlayedMidiClips(trackId, clips).flatMap((clip) => {
-        if (clip.midiTakeSource) {
+        if (clip.midiTakeSource !== undefined) {
             return resolveFrozenMidiControllerPasses(clip).flatMap((pass) =>
                 pass.controlChanges.length > 0 ? [{ clip: pass.clip, controlChanges: pass.controlChanges }] : []
             );

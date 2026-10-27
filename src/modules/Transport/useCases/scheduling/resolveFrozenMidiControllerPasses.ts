@@ -7,7 +7,7 @@ type PlayedClip = ReturnType<typeof resolvePlayedMidiClips>[number];
 /** Project one selected take from its original pass clock, including cuts into a pass. */
 export function resolveFrozenMidiControllerPasses(clip: PlayedClip) {
     const source = clip.midiTakeSource;
-    if (!source) {
+    if (source === undefined) {
         return [];
     }
     if (!isFrozenMidiTakeSource(source)) {
