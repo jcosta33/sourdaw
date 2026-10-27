@@ -1,4 +1,4 @@
-import { clone as cloneAutomergeDoc } from '@automerge/automerge';
+import { clone as cloneAutomergeDoc, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
@@ -13,13 +13,13 @@ import { activeRecordingRef, takeLaneStore, trackStore, type Track } from '#/mod
 import * as arrangementUseCases from '#/modules/Arrangement/useCases';
 import { stopRecording } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, undoHistoryStore } from '#/modules/Command/stores';
+import { undoTreeStore } from '#/modules/Command/stores/undoTree';
 import {
     clearUndoHistory,
     registerProductionCommandHandlers,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
-import { undoTreeStore } from '#/modules/Command/stores/undoTree';
 import { actionHistoryStore, branchStore } from '#/modules/CrdtDocument/stores';
 import {
     DOC_PREFIX_ROOT,
@@ -37,10 +37,11 @@ import {
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { recordingLifecycle } from '../recordingLifecycle';
-import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+import { recordingLifecycle } from '../recordingLifecycle';
 
 const TRACK_ID = 'track-recording';
 const SESSION_KEY = 'sourdaw-undo-session';
@@ -146,18 +147,16 @@ function recordingTrack(kind: 'audio' | 'midi', id = TRACK_ID): Track {
 
 function deferred() {
     let resolve!: () => void;
-    const promise = new Promise<void>((done) => {
-        resolve = done;
+    const promise = new Promise<void>((_resolve) => {
+        resolve = _resolve;
     });
     return { promise, resolve };
 }
-function jsonCopy<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value));
-}
 function state() {
-    return jsonCopy({
+    const root = getCrdtDoc(DOC_PREFIX_ROOT);
+    return structuredClone({
         identity: captureProjectRootIdentity(),
-        root: getCrdtDoc(DOC_PREFIX_ROOT),
+        root: root === undefined ? undefined : toJS(root),
         tracks: trackStore.value,
         takes: takeLaneStore.value,
         durableHistory: actionHistoryStore.value,
