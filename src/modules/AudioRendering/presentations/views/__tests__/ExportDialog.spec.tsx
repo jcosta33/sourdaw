@@ -1671,8 +1671,6 @@ describe('ExportDialog', () => {
     });
 
     describe('a Cancel that has ended the export', () => {
-        type RenderMock = ExportDialogMocks['renderOffline' | 'exportStems'];
-
         const stemTracks: TestTrack[] = [
             { id: 'track-bass', name: 'Bass', kind: 'audio', clips: [] },
             { id: 'track-lead', name: 'Lead', kind: 'audio', clips: [] },
