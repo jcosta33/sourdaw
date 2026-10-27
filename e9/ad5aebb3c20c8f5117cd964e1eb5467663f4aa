@@ -1,0 +1,33 @@
+evidence/agent-campaign/corpora/development.json
+  s_567a084d0540c4::t_7129ad882a2e2e 2457-2732
+evidence/agent-campaign/corpora/held-out.json
+  s_567a084d0540c4::t_ee40898900bc69 2414-2689
+evidence/agent-campaign/manifest.json
+  s_3168504f6ce387::t_09072e93d52f52 800,808,816
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_567a084d0540c4::t_a1a46dc584adcf 260-261,538,556,564-570,1155-1164,1277-1317,1323,1385-1386,1438-1506,1621-1647,1732-1733,1770-1791,1808-1831,1959-1980
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9ad5aebb3c20c8f5117cd964e1eb5467663f4aa",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
