@@ -129,6 +129,8 @@ export type LiveMidiWriterPass = {
      * clearing every entry its targets hold, so it opens at the head.
      */
     lastClearedBeforeSeconds: number;
+    /** A refused or thrown opening must retry its whole-store clear before ordinary refills. */
+    openingPending?: boolean;
     /** Whether this pass has already reported a refused batch. */
     refusalReported: boolean;
     targets: LiveMidiWriterTarget[];

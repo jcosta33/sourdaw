@@ -45,7 +45,12 @@ export async function pumpNativeLiveMidiWriter(input: PumpNativeLiveMidiWriterIn
     if (!nativeLiveGraphSession.backend) {
         return;
     }
-    const batch = loopMidiWindowBatch(pass, input.positionSeconds, pass.looping ? input.loopWraps : null);
+    const batch = loopMidiWindowBatch(
+        pass,
+        input.positionSeconds,
+        pass.looping ? input.loopWraps : null,
+        pass.openingPending
+    );
     if (batch.commands.length === 0) {
         return;
     }

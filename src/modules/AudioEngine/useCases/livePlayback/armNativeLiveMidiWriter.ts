@@ -271,6 +271,7 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
         // The opening batch wipes each store whole, so the trail starts at the
         // head of the timeline and walks forward from there.
         lastClearedBeforeSeconds: 0,
+        openingPending: true,
         refusalReported: false,
         targets: programme.targets.map((entry): LiveMidiWriterTarget => {
             const device = input.stripTracks

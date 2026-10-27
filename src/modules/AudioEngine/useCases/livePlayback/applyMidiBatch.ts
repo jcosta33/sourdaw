@@ -56,6 +56,7 @@ export async function applyMidiBatch(input: ApplyMidiBatchInput): Promise<void> 
             }
             return;
         }
+        pass.openingPending = false;
         for (const admission of batch.admissions) {
             admission.slot.cursor += admission.admitted;
             admission.slot.held = admission.heldAfter;
