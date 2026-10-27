@@ -2,10 +2,13 @@ import {
     AutomergeStorageWriteConflictError,
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    withoutDeferredTempoRecordingSources,
+    type DeferredTempoRecordingSources,
+} from '#/utils/deferredTempoRecordingSources';
 import { type CompAudioSourceInputProof, type TempoAudioSourcePromotionSnapshot } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { tempoAudioSourceCoverageMatches } from '#/utils/tempoAudioSourceCoverage';
-import { observeTempoMapRowPlan, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
 import {
     normalizeTempoSourceClockContext,
     normalizeTempoSourceOwnerContext,
@@ -14,6 +17,7 @@ import {
     type TempoSourceClockPath,
     type TempoSourceOwnerWitness,
 } from '#/utils/tempoAudioSourcePromotion';
+import { observeTempoMapRowPlan, type TempoMapRowClockWitness } from '#/utils/tempoMapRowPlan';
 
 import { captureCompAudioSourceInputProof, type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {
@@ -47,6 +51,7 @@ type SourceLaw = {
 export type TempoAudioSourceWriteIntent = SourceLaw & {
     readonly proofs: readonly Proof[];
     readonly ownerWitness?: TempoSourceOwnerWitness;
+    readonly deferredRecordingSources?: DeferredTempoRecordingSources;
 };
 
 function locatedClip(context: CompAudioSourceInputContext, owner: TempoAudioSourcePromotionSnapshot['clips'][number]) {
@@ -165,6 +170,23 @@ function dependencyProof(
             },
             sourceContext
         );
+    }
+    return takeDependencyProof(context, intent, dependency, owner, sourceContext, sourceStartBeat, sourceEndBeat);
+}
+
+function takeDependencyProof(
+    context: CompAudioSourceInputContext,
+    intent: SourceLaw,
+    dependency: Dependency,
+    owner: TempoAudioSourcePromotionSnapshot['clips'][number],
+    sourceContext: CompAudioSourceInputContext,
+    sourceStartBeat: number,
+    sourceEndBeat: number
+): CompAudioSourceInputProof | null {
+    const from = intent.direction === 'promote' ? 'before' : 'after';
+    const to = intent.direction === 'promote' ? 'after' : 'before';
+    if (!dependency.takeId) {
+        return null;
     }
     const take = locatedTake(context, dependency, owner.trackId);
     if (!take || take.clipId !== owner.clipId) {
@@ -315,13 +337,17 @@ export function tempoAudioSourceTrackIntentMatches(
         return false;
     }
     const from = intent.direction === 'promote' ? 'before' : 'after';
+    if ('rowClock' in intent) {
+        const coverage = withoutDeferredTempoRecordingSources(context, intent.deferredRecordingSources);
+        if (!coverage || !tempoAudioSourceCoverageMatches(coverage, intent.promotion)) {
+            return false;
+        }
+    }
     return (
-        (!('rowClock' in intent) || tempoAudioSourceCoverageMatches(context, intent.promotion)) &&
         intent.promotion.clips.every((owner) => {
             const clip = locatedClip(normalized, owner);
             return clip !== null && valuesEqual(captureTempoSourceFields(clip, tempoClipSourceFields), owner[from]);
-        }) &&
-        tempoAudioSourceWriteIntentMatches(intent, context)
+        }) && tempoAudioSourceWriteIntentMatches(intent, context)
     );
 }
 

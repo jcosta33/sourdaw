@@ -9,8 +9,9 @@ import {
 } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
-import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { isExactClipSnapshot as isClipSnapshot } from '../../stores/isExactClipSnapshot';
+import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
+import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
@@ -162,8 +163,7 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     return (
         value.clipId.length > 0 &&
         value.trackId.length > 0 &&
-        (value.clipIndex === undefined ||
-            (typeof value.clipIndex === 'number' && Number.isSafeInteger(value.clipIndex) && value.clipIndex >= 0)) &&
+        isClipRestoreOrderSnapshot(value) &&
         isClipSnapshot(value.clipSnapshot, value.clipId, value.trackId) &&
         (value.ripplePlan === null ||
             isRippleDeleteCapture(value.ripplePlan, value.clipSnapshot, value.clipId, value.trackId)) &&
@@ -335,32 +335,17 @@ function splitSnapshotCaptureOwnersMatch(value: Record<string, unknown>, clipId:
     );
 }
 
-function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: Record<string, unknown>): boolean {
-    const left = expected.leftClip;
-    const otherLeft = replacement.leftClip;
-    if (!isRecord(left) || !isRecord(otherLeft)) {
-        return false;
-    }
-    // Historical splits changed only these fields. New audio captures prove
-    // their additional source promotion against the stored old governing tempo.
-    const preservedFields = (clip: Record<string, unknown>): Record<string, unknown> =>
-        Object.fromEntries(
-            Object.entries(clip).filter(([key]) => key !== 'name' && key !== 'endBeat' && key !== 'fadeOutBeats')
-        );
-    if (expected.audioSourceTempoAtStart === undefined && replacement.audioSourceTempoAtStart === undefined) {
-        return valuesEqual(preservedFields(left), preservedFields(otherLeft));
-    }
-    const tempo = expected.audioSourceTempoAtStart;
-    if (
-        typeof tempo !== 'number' ||
-        !Number.isFinite(tempo) ||
-        tempo <= 0 ||
-        tempo !== replacement.audioSourceTempoAtStart
-    ) {
-        return false;
-    }
-    const original = expected.rightClip === null ? expected : replacement;
-    const split = expected.rightClip === null ? replacement : expected;
+function preservedSplitFields(clip: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+        Object.entries(clip).filter(([key]) => key !== 'name' && key !== 'endBeat' && key !== 'fadeOutBeats')
+    );
+}
+
+function splitAudioSourceFieldsMatch(
+    original: Record<string, unknown>,
+    split: Record<string, unknown>,
+    tempo: number
+): boolean {
     if (
         original.rightClip !== null ||
         split.rightClip === null ||
@@ -391,7 +376,32 @@ function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: 
         promoted.loopLength = loop.loopLengthBeats;
         promoted.loopOriginBeat = clip.loopOriginBeat ?? clip.startBeat;
     }
-    return valuesEqual(preservedFields(promoted), preservedFields(split.leftClip));
+    return valuesEqual(preservedSplitFields(promoted), preservedSplitFields(split.leftClip));
+}
+
+function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: Record<string, unknown>): boolean {
+    const left = expected.leftClip;
+    const otherLeft = replacement.leftClip;
+    if (!isRecord(left) || !isRecord(otherLeft)) {
+        return false;
+    }
+    // Historical splits changed only these fields. New audio captures prove
+    // their additional source promotion against the stored old governing tempo.
+    if (expected.audioSourceTempoAtStart === undefined && replacement.audioSourceTempoAtStart === undefined) {
+        return valuesEqual(preservedSplitFields(left), preservedSplitFields(otherLeft));
+    }
+    const tempo = expected.audioSourceTempoAtStart;
+    if (
+        typeof tempo !== 'number' ||
+        !Number.isFinite(tempo) ||
+        tempo <= 0 ||
+        tempo !== replacement.audioSourceTempoAtStart
+    ) {
+        return false;
+    }
+    const original = expected.rightClip === null ? expected : replacement;
+    const split = expected.rightClip === null ? replacement : expected;
+    return splitAudioSourceFieldsMatch(original, split, tempo);
 }
 
 /** Capture ownership is structural; live owner freshness is checked at replay. */

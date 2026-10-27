@@ -24,7 +24,7 @@ function prefixNumber(value: number): number {
 }
 
 function projectClip(clip: Clip): Clip {
-    const projected = { ...clip };
+    const projected = { ...clip, startBeat: prefixNumber(clip.startBeat) };
     for (const field of CLIP_NUMBER_FIELDS) {
         const value = clip[field];
         if (value !== undefined) {

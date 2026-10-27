@@ -244,7 +244,7 @@ export function getAudioWaveformOccurrences({
             const iterationStartBeat = source.startBeat + iteration * loop.loopLengthBeats;
             const iterationEndBeat = Math.min(source.endBeat, iterationStartBeat + loop.loopLengthBeats);
             const segments = projectAudioLoopPassSegments({
-                clip: { ...source },
+                clip: source,
                 loopLengthBeats: loop.loopLengthBeats,
                 iterationStartBeat,
                 iterationEndBeat,

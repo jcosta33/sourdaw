@@ -41,12 +41,13 @@ function mutableRecordingClip(snapshot: ClipStateSnapshot): Clip {
         clip.overrides = overrides;
     }
     if (Object.hasOwn(snapshot, 'kneadState')) {
-        clip.kneadState = kneadState
-            ? {
-                  ...kneadState,
-                  blobs: kneadState.blobs.map((blob) => ({ ...blob, pitchCurveCents: [...blob.pitchCurveCents] })),
-              }
-            : undefined;
+        clip.kneadState = undefined;
+        if (kneadState) {
+            clip.kneadState = {
+                ...kneadState,
+                blobs: kneadState.blobs.map((blob) => ({ ...blob, pitchCurveCents: [...blob.pitchCurveCents] })),
+            };
+        }
     }
     return clip;
 }

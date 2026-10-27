@@ -1,10 +1,11 @@
-import { type TempoTimeline } from '../models/TempoTimeline';
 import { type AppAction } from '#/utils/handlerContract';
+
+import { type TempoTimeline } from '../models/TempoTimeline';
 import { takeLaneStore } from '../stores/takeLaneStore';
 
-import { captureTempoAudioSources } from './comping/captureTempoAudioSources';
-import { getTrackStoreState } from './getTrackStoreState';
 import { projectClipReplayPrefix } from './clipEditing/projectClipReplayPrefix';
+import { captureCurrentTempoAudioSources } from './comping/captureCurrentTempoAudioSources';
+import { getTrackStoreState } from './getTrackStoreState';
 
 /** Capture current live source owners against the caller's immutable old map. */
 export function prepareTempoAudioSources(input: {
@@ -13,9 +14,9 @@ export function prepareTempoAudioSources(input: {
 }) {
     if (input.priorActions?.length) {
         const prefix = projectClipReplayPrefix(input.priorActions);
-        return prefix?.tracks ? captureTempoAudioSources(prefix.tracks, prefix.takeLanes, input.timeline) : null;
+        return prefix?.tracks ? captureCurrentTempoAudioSources(prefix.tracks, prefix.takeLanes, input.timeline) : null;
     }
-    return captureTempoAudioSources(
+    return captureCurrentTempoAudioSources(
         getTrackStoreState()?.tracks ?? [],
         takeLaneStore.value?.lanes ?? [],
         input.timeline

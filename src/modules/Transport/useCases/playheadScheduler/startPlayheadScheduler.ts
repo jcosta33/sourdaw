@@ -61,6 +61,7 @@ import {
     SCHEDULE_AHEAD_SECONDS,
 } from './projectLoopSeamWindow';
 import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
+import { schedulerLookAheadBeats } from './schedulerLookAheadBeats';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 
@@ -642,7 +643,6 @@ export function startPlayheadScheduler(
             observeRecordingPassEntry(schedulerSession.accumulatedPosition, now, true);
         }
         const currentTempo = getTempoAtBeat(changes, schedulerSession.accumulatedPosition, current.tempo);
-        const beatsPerSecond = currentTempo / 60;
         // Advance through the tempo map, not at the tick-start tempo (#4658).
         // `beatAtSecondsFromAnchor` inverts `secondsBetweenBeats` over this
         // tick's elapsed span, so a tick crossing a tempo change moves the
@@ -672,7 +672,7 @@ export function startPlayheadScheduler(
         // window that was open when its region was crossed.
         const dyingTickStartPosition = tickStartPosition;
 
-        const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
+        const lookAheadBeats = schedulerLookAheadBeats(currentTempo);
         // The horizon used to DETECT the seam. The emitted window is derived
         // from the committed position further down — a follow action may still
         // relocate the transport past this point, and its window opens at the
@@ -724,10 +724,10 @@ export function startPlayheadScheduler(
             // A loop edit that retired an unsounded seam starts its new region
             // at the edit instant. Its reprojected position cannot make a
             // boundary sound before the edit that created that region.
-            const seamAudioTime =
-                capturedEditBoundary === null
-                    ? now + secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo)
-                    : now;
+            let seamAudioTime = now;
+            if (capturedEditBoundary === null) {
+                seamAudioTime += secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
+            }
             // #4784 — the wrap the device read maps back across for one
             // compensation window: for that long the audio a compensated track
             // is fed is still this dying pass's tail.

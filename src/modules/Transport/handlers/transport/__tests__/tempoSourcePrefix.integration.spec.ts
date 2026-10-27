@@ -134,7 +134,7 @@ function installCrossing(): void {
         duration: samples.length / 100,
         copyFromChannel: () => undefined,
         copyToChannel: () => undefined,
-    } as AudioBuffer;
+    };
     vi.spyOn(audioBufferCache, 'get').mockReturnValue(buffer);
 }
 
@@ -243,7 +243,7 @@ describe('ordered tempo and audio split source preparation', () => {
         if (!current) {
             throw new Error('Expected the authoritative project');
         }
-        const plain = JSON.parse(JSON.stringify(Automerge.toJS(current))) as {
+        const plain = Automerge.toJS(current) as {
             tracks: { tracks: { clips: Clip[] }[] };
         };
         plain.tracks.tracks[0]!.clips[0]!.fadeInBeats = -0;
@@ -290,11 +290,14 @@ describe('ordered tempo and audio split source preparation', () => {
             if (undoClockFirst) {
                 actions.push({ type: 'setTimeSignature', payload: { numerator: 3, denominator: 4 } });
             }
-            const result = await executeAppActionBatch(actions, {
+            const options: NonNullable<Parameters<typeof executeAppActionBatch>[1]> = {
                 source: 'manual',
                 requireCompensation: true,
-                ...(grouped ? { groupId: 'tempo-and-split' } : {}),
-            });
+            };
+            if (grouped) {
+                options.groupId = 'tempo-and-split';
+            }
+            const result = await executeAppActionBatch(actions, options);
             expect(result.status).toBe('committed');
             const clips = trackStore.value!.tracks[0]!.clips;
             expect(clips).toMatchObject([
@@ -335,11 +338,14 @@ describe('ordered tempo and audio split source preparation', () => {
     it.each([false, true])('keeps an empty tempo capture complete with clock-first=%s', async (clockFirst) => {
         installCrossing();
         const before = owners();
-        const actions: AppAction[] = [
-            ...(clockFirst ? [{ type: 'setTimeSignature' as const, payload: { numerator: 3, denominator: 4 } }] : []),
+        const actions: AppAction[] = [];
+        if (clockFirst) {
+            actions.push({ type: 'setTimeSignature', payload: { numerator: 3, denominator: 4 } });
+        }
+        actions.push(
             { type: 'splitClip', payload: { clipId: 'source', beat: 4, rightClipId: 'right' } },
-            { type: 'setTempo', payload: { bpm: 60 } },
-        ];
+            { type: 'setTempo', payload: { bpm: 60 } }
+        );
         const result = await executeAppActionBatch(actions, {
             source: 'manual',
             requireCompensation: true,
@@ -395,12 +401,12 @@ describe('ordered tempo and audio split source preparation', () => {
                                     } else if (peer === 'cosmetic') {
                                         document.tracks.tracks[0]!.clips[0]!.color = 'peer-blue';
                                     } else {
-                                        document.tracks.tracks[0]!.clips.push({
-                                            ...source('peer'),
-                                            ...(peer === 'late-canonical'
-                                                ? { audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: 0 }
-                                                : {}),
-                                        });
+                                        const added = source('peer');
+                                        if (peer === 'late-canonical') {
+                                            added.audioOffsetSeconds = 0;
+                                            added.audioUnwrappedOffsetSeconds = 0;
+                                        }
+                                        document.tracks.tracks[0]!.clips.push(added);
                                     }
                                 },
                             });

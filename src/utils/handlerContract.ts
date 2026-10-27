@@ -1362,6 +1362,8 @@ export type AppAction =
               clipSnapshot: ClipSnapshot;
               /** Original clip slot. Older entries without it append. */
               clipIndex?: number;
+              /** Original owner order; absent in legacy captures that carried only an index. */
+              clipOrder?: readonly string[];
               ripplePlan: RipplePlanSnapshot | null;
               midiNotesSnapshot: MidiNotesSnapshot | null;
               midiCcSnapshot: MidiCcSnapshot | null;

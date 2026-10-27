@@ -650,13 +650,22 @@ describe('executeSelectedTimeRangeDeletion', () => {
             expect(trackStore.value?.tracks[0]).toEqual({
                 ...target,
                 clips: [
-                    { ...span, endBeat: 3, name: 'Test Clip (L)' },
+                    {
+                        ...span,
+                        endBeat: 3,
+                        name: 'Test Clip (L)',
+                        audioOffsetSeconds: 0,
+                        audioUnwrappedOffsetSeconds: 0,
+                    },
                     {
                         ...span,
                         id: 'clip-dtr-12345678',
                         startBeat: 7,
                         name: 'Test Clip (R)',
                         audioOffsetBeats: 7,
+                        // Seven source beats at the original 120 BPM.
+                        audioOffsetSeconds: 3.5,
+                        audioUnwrappedOffsetSeconds: 3.5,
                         midiOffsetBeats: 0,
                     },
                     untouched,

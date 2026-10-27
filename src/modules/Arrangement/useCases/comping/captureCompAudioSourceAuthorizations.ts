@@ -9,10 +9,10 @@ import {
 } from '../../stores/compAudioSourceInputs';
 import { type CompAudioSourceAuthorization } from '../../stores/compAudioSourcePromotions';
 import { type TakeLaneCompRegionPatch, type TakeLaneStoreValue } from '../../stores/takeLaneWriteJournal';
-import { resolveCompBaseGapWindow } from './resolveCompBaseGapWindow';
-import { resolveCompingProgramme } from './resolveCompingProgramme';
 
 import { captureResolvedAudioSourceSnapshot } from './captureResolvedAudioSourceSnapshot';
+import { resolveCompBaseGapWindow } from './resolveCompBaseGapWindow';
+import { resolveCompingProgramme } from './resolveCompingProgramme';
 
 /** Re-evaluate the real producer synchronously. Public snapshot hashes cannot
  * grant permission to convert complements outside the requested selection. */
@@ -45,29 +45,31 @@ export function captureCompAudioSourceAuthorizations(
         if (!clip || take?.passAnchorSeconds !== undefined) {
             return null;
         }
-        const fragment =
-            owner.kind === 'base'
-                ? resolveCompBaseGapWindow(clip, { startBeat: owner.startBeat, endBeat: owner.endBeat }, timeline)
-                : resolveCompingProgramme(
-                      patch.trackId,
-                      clips,
-                      {
-                          lanes: [
-                              {
-                                  ...lane,
-                                  activeCompRegions: [
-                                      { startBeat: owner.startBeat, endBeat: owner.endBeat, takeId: owner.takeId },
-                                  ],
-                              },
-                          ],
-                      },
-                      timeline
-                  ).find(
-                      (candidate) =>
-                          candidate.id === clipId &&
-                          candidate.startBeat >= owner.startBeat &&
-                          candidate.endBeat <= owner.endBeat
-                  );
+        let fragment;
+        if (owner.kind === 'base') {
+            fragment = resolveCompBaseGapWindow(clip, { startBeat: owner.startBeat, endBeat: owner.endBeat }, timeline);
+        } else {
+            fragment = resolveCompingProgramme(
+                patch.trackId,
+                clips,
+                {
+                    lanes: [
+                        {
+                            ...lane,
+                            activeCompRegions: [
+                                { startBeat: owner.startBeat, endBeat: owner.endBeat, takeId: owner.takeId },
+                            ],
+                        },
+                    ],
+                },
+                timeline
+            ).find(
+                (candidate) =>
+                    candidate.id === clipId &&
+                    candidate.startBeat >= owner.startBeat &&
+                    candidate.endBeat <= owner.endBeat
+            );
+        }
         const currentSource = fragment ? captureResolvedAudioSourceSnapshot(fragment, timeline) : null;
         const sourceInputs = captureCompAudioSourceInputProof(lane, owner, context);
         if (!sourceInputs) {

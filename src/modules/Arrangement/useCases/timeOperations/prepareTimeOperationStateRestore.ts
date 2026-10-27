@@ -3,6 +3,7 @@ import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOr
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
+import { type Clip } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
@@ -21,8 +22,6 @@ import { type TakeLaneTransitionPlan } from './takeLaneTransitionPlan';
 import { timeOperationDependencies, type TimeOperationDependencies } from './timeOperationDependencies';
 import { timeOperationStateCodec } from './timeOperationStateCodec';
 import { validateTakeLaneTransitionPlan } from './validateTakeLaneTransitionPlan';
-
-import { type Clip } from '../../models/Track';
 
 type PreparedHandle = {
     name: string;
@@ -259,11 +258,13 @@ function rightSurvivorMatches(candidate: Clip, original: Clip, expected: Clip): 
     if (!hasExactAudioSourceFields(original) || !hasExactAudioSourceFields(candidate)) {
         return false;
     }
-    if (original.type !== 'audio' || !Object.hasOwn(original, 'audioOffsetSeconds')) {
+    if (original.type !== 'audio') {
         return timeOperationStateCodec.valuesEqual(candidate, expected);
     }
     if (!Object.hasOwn(candidate, 'audioOffsetSeconds')) {
-        return false;
+        return (
+            !Object.hasOwn(original, 'audioOffsetSeconds') && timeOperationStateCodec.valuesEqual(candidate, expected)
+        );
     }
     const sourceFields = new Set([
         'audioOffsetSeconds',
@@ -274,13 +275,16 @@ function rightSurvivorMatches(candidate: Clip, original: Clip, expected: Clip): 
     ]);
     const ownerFacets = (clip: Clip) =>
         Object.fromEntries(Object.entries(clip).filter(([key]) => !sourceFields.has(key)));
-    const expectedOwner = { ...expected };
+    let expectedOwner = expected;
     if (original.loopEnabled) {
-        expectedOwner.loopLength = projectClipLoopExpansion({
-            clipDurationBeats: original.endBeat - original.startBeat,
-            configuredLoopLengthBeats: original.loopLength,
-            loopEnabled: true,
-        }).loopLengthBeats;
+        expectedOwner = {
+            ...expected,
+            loopLength: projectClipLoopExpansion({
+                clipDurationBeats: original.endBeat - original.startBeat,
+                configuredLoopLengthBeats: original.loopLength,
+                loopEnabled: true,
+            }).loopLengthBeats,
+        };
     }
     // The saved clock may no longer exist. Source-cut production proves source
     // seconds; satellite authority proves this exact range-derived owner.
@@ -937,18 +941,16 @@ function prepareDisappearingClipTakeRetirement(
     );
     // The joined transition also owns its exact FROM source tiles. Retiring
     // them here makes that owner's later source guard refuse its own replay.
-    const preservedBaseGapAudioSources = (takeLanes?.reKeyedLanes ?? [])
-        .flatMap(
-            (lane) =>
-                (takeLanes?.appliedEffect === 'restore'
-                    ? lane.baseGapAudioSourcesAfter
-                    : lane.baseGapAudioSourcesBefore) ?? []
-        )
-        .concat(
-            takeLanes?.appliedEffect === 'retire'
-                ? takeLanes.retiredLanes.flatMap((snapshot) => snapshot.retiredBaseGapAudioSources ?? [])
-                : []
+    const preservedBaseGapAudioSources = (takeLanes?.reKeyedLanes ?? []).flatMap(
+        (lane) =>
+            (takeLanes?.appliedEffect === 'restore' ? lane.baseGapAudioSourcesAfter : lane.baseGapAudioSourcesBefore) ??
+            []
+    );
+    if (takeLanes?.appliedEffect === 'retire') {
+        preservedBaseGapAudioSources.push(
+            ...takeLanes.retiredLanes.flatMap((snapshot) => snapshot.retiredBaseGapAudioSources ?? [])
         );
+    }
     const retirement = planTakeRetirement(disappearingClipIds, transitionTakeIds, {
         preservedLaneIds,
         preservedBaseGapAudioSources,

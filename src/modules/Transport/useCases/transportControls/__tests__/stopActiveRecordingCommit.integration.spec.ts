@@ -68,7 +68,11 @@ const mocks = vi.hoisted(() => {
         getCompensationDelay: vi.fn(() => 0),
         cacheAudioBuffer: vi.fn(),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
-        startPlayback: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+        startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(
+            async (onRoll) => {
+                onRoll?.(audioClock.currentTime, 4);
+            }
+        ),
         startAudioRecording: vi.fn<(trackId: string, terminal: RecordingTerminal) => Promise<boolean>>(
             (_trackId, terminal) => {
                 capturedAudioTerminal = terminal;

@@ -6,9 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { ClipDummy } from '#/modules/Arrangement/__tests__/ClipDummy';
-import { TrackDummy } from '#/modules/Arrangement/__tests__/TrackDummy';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
@@ -181,19 +179,29 @@ describe('compilePendingActionCommandEnvelopes', () => {
             registerHandlerMap(getArrangementHandlers());
             trackStore.set({
                 tracks: [
-                    TrackDummy.create({
-                        id: 'track-1',
-                        kind: 'midi',
-                        clips: lane.takes.map((take) =>
-                            ClipDummy.create({
-                                id: take.clipId,
-                                trackId: 'track-1',
-                                type: 'midi',
-                                startBeat: 0,
-                                endBeat: 8,
-                            })
-                        ),
-                    }),
+                    {
+                        ...createTrack({
+                            id: 'track-1',
+                            name: 'Track 1',
+                            kind: 'midi',
+                            initialAlternativeId: 'alt-1',
+                            withoutDefaultDevice: true,
+                        }),
+                        clips: lane.takes.map((take) => ({
+                            id: take.clipId,
+                            trackId: 'track-1',
+                            name: 'Test Clip',
+                            type: 'midi' as const,
+                            startBeat: 0,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            gain: 1,
+                            color: '#ff0000',
+                            locked: false,
+                            muted: false,
+                        })),
+                    },
                 ],
                 selectedTrackId: null,
             });

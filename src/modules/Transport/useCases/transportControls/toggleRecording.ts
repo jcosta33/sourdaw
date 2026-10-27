@@ -557,6 +557,16 @@ async function beginActualRecording(
 
 function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
+    const requestRoot = captureProjectRootIdentity();
+    const stillOwnsStoppedRecording = (): boolean => {
+        const current = getTransportState();
+        return (
+            recordingLifecycle.isLatestRecordingStart(startToken) &&
+            captureProjectRootIdentity() === requestRoot &&
+            current?.isRecording === true &&
+            current.isPlaying === false
+        );
+    };
     const transportHold: TransportHold = {
         nativeOwned: false,
         requestedAtContextSeconds: null,
@@ -566,32 +576,40 @@ function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
         firstPassContextSeconds: null,
         endedAtContextSeconds: null,
     };
-    void beginActualRecording(startToken, anchorBeat, transportHold).then(async (started) => {
-        const current = getTransportState();
-        if (started && transportHold.endedAtContextSeconds === null && current && !current.isPlaying) {
-            const ctx = getAudioContext();
-            // The instant the transport is asked to roll, read on the clock the
-            // capture runs on: the take opened here is placed against it.
-            transportHold.requestedAtContextSeconds = ctx.currentTime;
-            const recordPointBeat = current.playheadPosition;
-            const rollStartBeat = resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
-            transportHold.rollLeadBeats = recordPointBeat - rollStartBeat;
-            await startPlayback((contextSeconds, beat) => {
-                if (transportHold.endedAtContextSeconds !== null) {
-                    return;
+    void beginActualRecording(startToken, anchorBeat, transportHold)
+        .then(async (started) => {
+            const current = getTransportState();
+            if (started && transportHold.endedAtContextSeconds === null && current && !current.isPlaying) {
+                const ctx = getAudioContext();
+                // The instant the transport is asked to roll, read on the clock the
+                // capture runs on: the take opened here is placed against it.
+                transportHold.requestedAtContextSeconds = ctx.currentTime;
+                const recordPointBeat = current.playheadPosition;
+                const rollStartBeat = resolveRollStartBeat(current, timeSignatureMapStore.value?.changes ?? []);
+                transportHold.rollLeadBeats = recordPointBeat - rollStartBeat;
+                await startPlayback((contextSeconds, beat) => {
+                    if (transportHold.endedAtContextSeconds !== null) {
+                        return;
+                    }
+                    const rolled = getTransportState();
+                    const changes = structuredClone(tempoMapStore.value?.changes ?? []);
+                    const tempo = rolled?.tempo ?? DEFAULT_TEMPO_BPM;
+                    transportHold.rolledAtContextSeconds = contextSeconds;
+                    transportHold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, beat, tempo);
+                    const firstPassBeat = Math.max(recordPointBeat, rolled?.loopStart ?? recordPointBeat);
+                    transportHold.firstPassContextSeconds =
+                        contextSeconds + secondsBetweenBeats(changes, beat, firstPassBeat, tempo);
+                });
+                if (transportHold.rolledAtContextSeconds === null && stillOwnsStoppedRecording()) {
+                    await stopActiveRecording(stillOwnsStoppedRecording);
                 }
-                const rolled = getTransportState();
-                const changes = structuredClone(tempoMapStore.value?.changes ?? []);
-                const tempo = rolled?.tempo ?? DEFAULT_TEMPO_BPM;
-                transportHold.rolledAtContextSeconds = contextSeconds;
-                transportHold.captureStartSongSeconds = secondsBetweenBeats(changes, 0, beat, tempo);
-                const firstPassBeat = Math.max(recordPointBeat, rolled?.loopStart ?? recordPointBeat);
-                transportHold.firstPassContextSeconds =
-                    contextSeconds + secondsBetweenBeats(changes, beat, firstPassBeat, tempo);
-            });
-        }
-        return null;
-    });
+            }
+            return null;
+        })
+        .catch((error: unknown) => {
+            logger.error(new Error('Recording admission or cleanup failed', { cause: error }));
+            notifyUser('Recording could not be completed. Check the take before trying again.', 'error');
+        });
 }
 
 /**

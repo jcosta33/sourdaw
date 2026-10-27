@@ -1,10 +1,11 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerExecutionResult } from '#/utils/handlerContract';
 
-import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { assertTempoWriteBpm } from '../../useCases/assertTempoWriteBpm';
+import { markTempoProjectWrite } from '../../useCases/markTempoProjectWrite';
 import { setTempo } from '../../useCases/setTempo';
 import { getTempoWriteTarget } from '../../useCases/transportQueries/getTempoWriteTarget';
+
 import {
     capturedTempoReplay,
     isTempoEditSessionEntry,
@@ -72,15 +73,13 @@ export const handleSetTempo = createHandler<'setTempo'>({
             }
             // Preview prepares its source capture here. Keep that canonical self
             // in the ordered context without replacing a different caller entry.
-            const executionContext =
-                context && context.actions[context.actionIndex] === alpha
-                    ? {
-                          ...context,
-                          actions: context.actions.map((entry, index) =>
-                              index === context.actionIndex ? action : entry
-                          ),
-                      }
-                    : context;
+            let executionContext = context;
+            if (context && context.actions[context.actionIndex] === alpha) {
+                executionContext = {
+                    ...context,
+                    actions: context.actions.map((entry, index) => (index === context.actionIndex ? action : entry)),
+                };
+            }
             const result = writeTempoEdit(replay.payload, executionContext);
             if (result.status === 'conflict') {
                 return { status: 'conflict' };

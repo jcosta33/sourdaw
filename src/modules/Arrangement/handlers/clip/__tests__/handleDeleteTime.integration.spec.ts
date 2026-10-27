@@ -51,8 +51,8 @@ import {
     prepareTimelineMapTimeOperation,
 } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
-import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 import { audioSourceSnapshotAtBeat, type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -556,24 +556,27 @@ describe('Delete Time take ownership through Command and CRDT', () => {
                 ...trackStore.value!,
                 tracks: trackStore.value!.tracks.map((track) => ({
                     ...track,
-                    clips: track.clips.map((clip) => ({
-                        ...clip,
-                        audioOffsetBeats: 7,
-                        audioOffsetSeconds: entry,
-                        audioUnwrappedOffsetSeconds: entry,
-                        ...(effect.endsWith('loop')
-                            ? {
-                                  loopEnabled: true,
-                                  ...(effect === 'implicit loop' ? {} : { loopLength: 4 }),
-                                  loopOriginBeat: startBeat,
-                                  audioLoopStartSeconds: entry,
-                                  audioLoopPassEntrySeconds: entry,
-                                  audioLoopPassOriginBeat: startBeat,
-                                  stretchMode: 'timestretch' as const,
-                                  stretchRatio: 2,
-                              }
-                            : {}),
-                    })),
+                    clips: track.clips.map((clip) => {
+                        const prepared: typeof clip = {
+                            ...clip,
+                            audioOffsetBeats: 7,
+                            audioOffsetSeconds: entry,
+                            audioUnwrappedOffsetSeconds: entry,
+                        };
+                        if (effect.endsWith('loop')) {
+                            prepared.loopEnabled = true;
+                            if (effect !== 'implicit loop') {
+                                prepared.loopLength = 4;
+                            }
+                            prepared.loopOriginBeat = startBeat;
+                            prepared.audioLoopStartSeconds = entry;
+                            prepared.audioLoopPassEntrySeconds = entry;
+                            prepared.audioLoopPassOriginBeat = startBeat;
+                            prepared.stretchMode = 'timestretch';
+                            prepared.stretchRatio = 2;
+                        }
+                        return prepared;
+                    }),
                 })),
             });
             flushAutomergeStorageWrites();
@@ -625,20 +628,23 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         async (change, modern) => {
             hydrateProductionContracts();
             arrangeComp(2, 4);
+            const unaffected = ClipDummy.create({
+                id: 'peer',
+                trackId: 'track-1',
+                type: 'audio',
+                startBeat: 0,
+                endBeat: 1,
+            });
+            if (modern) {
+                unaffected.audioOffsetSeconds = 0.25;
+            }
             trackStore.set({
                 tracks: [
                     TrackDummy.create({
                         id: 'track-1',
                         kind: 'audio',
                         clips: [
-                            ClipDummy.create({
-                                id: 'peer',
-                                trackId: 'track-1',
-                                type: 'audio',
-                                startBeat: 0,
-                                endBeat: 1,
-                                ...(modern ? { audioOffsetSeconds: 0.25 } : {}),
-                            }),
+                            unaffected,
                             ClipDummy.create({
                                 id: 'erased',
                                 trackId: 'track-1',
@@ -1521,18 +1527,15 @@ describe('Delete Time take ownership through Command and CRDT', () => {
                 beforeLane.takes.filter((take) => take.clipId === right.id).map((take) => take.id)
             );
             expect(takeWrites.mock.calls.length).toBeGreaterThanOrEqual(2);
-            expect(takeWrites.mock.calls[0]?.[0]?.lanes[0]).toEqual({
+            const retired = {
                 ...beforeLane,
                 takes: beforeLane.takes.filter((take) => !retiredTakeIds.has(take.id)),
                 activeCompRegions: beforeLane.activeCompRegions.filter((region) => !retiredTakeIds.has(region.takeId)),
-                ...(beforeLane.baseGapAudioSources === undefined
-                    ? {}
-                    : {
-                          baseGapAudioSources: beforeLane.baseGapAudioSources.filter(
-                              (tile) => tile.clipId !== right.id
-                          ),
-                      }),
-            });
+            };
+            if (beforeLane.baseGapAudioSources !== undefined) {
+                retired.baseGapAudioSources = beforeLane.baseGapAudioSources.filter((tile) => tile.clipId !== right.id);
+            }
+            expect(takeWrites.mock.calls[0]?.[0]?.lanes[0]).toEqual(retired);
         }
     );
 

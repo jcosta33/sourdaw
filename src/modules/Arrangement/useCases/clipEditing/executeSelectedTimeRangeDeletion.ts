@@ -1,6 +1,6 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip, type Track } from '../../models/Track';
@@ -21,15 +21,15 @@ import { removeTakesForClips } from '../comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../comping/restoreTakeReKeyTransitions';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
-import { createTakeLaneTransitionPlan } from '../timeOperations/createTakeLaneTransitionPlan';
 import { liveTempoTimeline } from '../liveTempoTimeline';
+import { createTakeLaneTransitionPlan } from '../timeOperations/createTakeLaneTransitionPlan';
 import { prepareClipSatelliteStateRestore } from '../timeOperations/prepareClipSatelliteStateRestore';
 import { timeOperationDependencies, type TimeOperationDependencies } from '../timeOperations/timeOperationDependencies';
 import { timeOperationStateCodec } from '../timeOperations/timeOperationStateCodec';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
-import { prepareClipSplitSatellites } from './splitClipSatellites';
 import { prepareAudioClipCutFields } from './prepareAudioClipCutFields';
+import { prepareClipSplitSatellites } from './splitClipSatellites';
 
 type MidiPreparation = ReturnType<TimeOperationDependencies['prepareMidiGlobalTimeTransaction']>;
 type MidiReplayPlan = MidiPreparation['replayPlan'];
@@ -394,6 +394,20 @@ function contentBeatsConsumed(clip: Clip, timelineBeats: number): number {
     return timelineBeats * consumedStretchFactor(clip);
 }
 
+function selectedRangeRightLoopOriginEntry(clip: Clip, endBeat: number, mode: 'split' | 'trim') {
+    if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+        return {};
+    }
+    const timelineDelta = endBeat - clip.startBeat;
+    if (clip.type === 'midi') {
+        if (mode === 'split') {
+            return restampLoopOriginEntry(clip, endBeat);
+        }
+        return shiftLoopOriginEntry(clip, timelineDelta);
+    }
+    return shiftLoopOriginEntry(clip, timelineDelta - contentBeatsConsumed(clip, timelineDelta));
+}
+
 function sourceContentBeatAt(clip: Clip, beat: number): number {
     if (clip.type !== 'audio' || clip.audioOffsetSeconds === undefined) {
         return (clip.audioOffsetBeats ?? 0) + contentBeatsConsumed(clip, beat - clip.startBeat);
@@ -690,12 +704,7 @@ function planTrack(
             // live state, so writing the shifted key is safe.
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
-            const rightLoopOriginEntry =
-                clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
-                    ? {}
-                    : clip.type === 'midi'
-                      ? restampLoopOriginEntry(clip, operation.endBeat)
-                      : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
+            const rightLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat, 'split');
             const rightClip: Clip = {
                 ...clip,
                 id: identity.targetClipId,
@@ -765,12 +774,7 @@ function planTrack(
             // (#5198). Unanchored clips keep the key absent.
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
-            const trimLoopOriginEntry =
-                clip.type === 'audio' && clip.audioOffsetSeconds !== undefined
-                    ? {}
-                    : clip.type === 'midi'
-                      ? shiftLoopOriginEntry(clip, timelineDelta)
-                      : shiftLoopOriginEntry(clip, timelineDelta - contentDelta);
+            const trimLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat, 'trim');
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
