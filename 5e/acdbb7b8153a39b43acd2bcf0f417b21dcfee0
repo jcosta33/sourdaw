@@ -1,0 +1,40 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_29d8df116c5b92::t_d8684c10a055fd 6-7,264-333,348,354,360,364,370,374,379
+  s_29d8df116c5b92::t_7aef5871ab2709 334-347,349-353,355-359,361-363,365-369,371-373,375-378,380-381
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_29d8df116c5b92::t_33e4e6f27213ea 254-281,288
+  s_29d8df116c5b92::t_85d26f0b4e55a3 282-287,289-293
+src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx
+  s_29d8df116c5b92::t_02762f4c39a05f 45,148,154,227-229,271-273,300-332
+  s_29d8df116c5b92::t_54639bf260fcc5 333-338,557,566,605,610,635,679,684
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_29d8df116c5b92::t_a8aa169679e056 28,59,593-618
+  s_29d8df116c5b92::t_846f87936244ae 29,58,210,215,225,233-234,236-255,259,388
+  s_29d8df116c5b92::t_dd5e18527b9f23 226-232,235,256-258
+  s_29d8df116c5b92::t_1aa34c8a1786b3 31
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_29d8df116c5b92::t_611189a8389800 425
+  s_29d8df116c5b92::t_6adea8404c58de 430-432,436-442,1055-1063,1215-1217,1517-1520,1539-1553,1555-1556,1563-1565,1684,1686-1695,1703-1716,1718,1736,1738-1743,1745-1746,1748-1764,1813-1826,1833,1838
+  s_29d8df116c5b92::t_12ff7447ae058e 732-739,763-766,939-941,1064-1076,1094-1101
+  s_29d8df116c5b92::t_e23f16e448c883 21,55-56,291-292,347,416-424,426-429,433-435,443-451
+  s_29d8df116c5b92::t_ffdb7f561b8f56 1124-1133,1153-1167,1169-1170
+  s_29d8df116c5b92::t_af722565b4ae99 1196-1197,1199-1204,1206-1208,1210-1214,1218-1227,1234-1239,1247-1252
+  s_29d8df116c5b92::t_19fd5715b52520 1395-1397,1430-1443,1445,1448,1454
+  s_29d8df116c5b92::t_c0fbe975af85b8 452,1829
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5eacdbb7b8153a39b43acd2bcf0f417b21dcfee0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
