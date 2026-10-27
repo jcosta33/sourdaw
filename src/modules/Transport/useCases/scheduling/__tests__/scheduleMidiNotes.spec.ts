@@ -89,7 +89,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: null },
 }));
 vi.mock('#/modules/Automation/stores', () => ({
@@ -995,6 +996,56 @@ describe('scheduleMidiNotes', () => {
             absoluteOccurrenceIndex: 2,
             probabilityPercent: 50,
         });
+    });
+
+    it('schedules selected frozen source in both first and rolling WebAudio windows', async () => {
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [{ id: 'ordinary-row', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                regionStartBeat: 0,
+                regionEndBeat: 8,
+                sourceStartBeat: 0,
+                midiTakeId: 'selected',
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 5,
+                    sourceEndBeat: 9,
+                    phaseHeadBeat: 0,
+                    passLengthBeats: 4,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [{ id: 'selected-row', pitch: 67, startBeat: 5.5, duration: 1, velocity: 100 }],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+
+        await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([67, 67]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: 'clip-1',
+                eventId: 'selected-row',
+                absoluteOccurrenceIndex: 1,
+            })
+        );
     });
 
     it('counts a non-dyadic exact-multiple advance tolerantly through the live occurrence floor', async () => {
