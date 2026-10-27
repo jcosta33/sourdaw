@@ -7,26 +7,48 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './projectFrozenMidiTakeWindow';
 
-type FrozenMidiTakeRowEdit =
-    | { readonly kind: 'note'; readonly expected: MidiClipNoteSnapshot; readonly replacement: MidiClipNoteSnapshot }
-    | { readonly kind: 'cc'; readonly expected: MidiClipCcSnapshot; readonly replacement: MidiClipCcSnapshot }
-    | {
-          readonly kind: 'bend';
-          readonly expected: MidiClipPitchBendSnapshot;
-          readonly replacement: MidiClipPitchBendSnapshot;
-      };
+type SlotPresence = { readonly expectedSlotPresent?: boolean; readonly replacementSlotPresent?: boolean };
+type FrozenMidiTakeRowEdit = SlotPresence &
+    (
+        | {
+              readonly kind: 'note';
+              readonly expected: MidiClipNoteSnapshot | null;
+              readonly replacement: MidiClipNoteSnapshot | null;
+          }
+        | {
+              readonly kind: 'cc';
+              readonly expected: MidiClipCcSnapshot | null;
+              readonly replacement: MidiClipCcSnapshot | null;
+          }
+        | {
+              readonly kind: 'bend';
+              readonly expected: MidiClipPitchBendSnapshot | null;
+              readonly replacement: MidiClipPitchBendSnapshot | null;
+          }
+    );
 
 function replaceRow<Row extends { readonly id: string }>(
     rows: readonly Row[],
-    expected: Row,
-    replacement: Row
+    expected: Row | null,
+    replacement: Row | null
 ): Row[] | null {
-    if (expected.id !== replacement.id) {
+    if (expected === null && replacement === null) {
+        return null;
+    }
+    if (expected === null) {
+        return replacement && !rows.some((row) => row.id === replacement.id)
+            ? [...rows, structuredClone(replacement)]
+            : null;
+    }
+    if (replacement !== null && expected.id !== replacement.id) {
         return null;
     }
     const index = rows.findIndex((row) => row.id === expected.id);
     if (index < 0 || !valuesEqual(rows[index], expected)) {
         return null;
+    }
+    if (replacement === null) {
+        return rows.filter((_, rowIndex) => rowIndex !== index);
     }
     return rows.map((row, rowIndex) => (rowIndex === index ? structuredClone(replacement) : row));
 }
@@ -43,39 +65,41 @@ export function replaceFrozenMidiTakeRow(
     if (!isFrozenMidiTakeSource(source)) {
         return null;
     }
+    const expectedPresent = edit.expectedSlotPresent ?? true;
+    const replacementPresent = edit.replacementSlotPresent ?? true;
     let next: FrozenMidiTakeSource;
     switch (edit.kind) {
         case 'note': {
-            if (!source.rows.notes.present) {
+            if (source.rows.notes.present !== expectedPresent) {
                 return null;
             }
             const value = replaceRow(source.rows.notes.value, edit.expected, edit.replacement);
-            if (!value) {
+            if (!value || (!replacementPresent && value.length > 0)) {
                 return null;
             }
-            next = { ...source, rows: { ...source.rows, notes: { present: true, value } } };
+            next = { ...source, rows: { ...source.rows, notes: { present: replacementPresent, value } } };
             break;
         }
         case 'cc': {
-            if (!source.rows.controlChanges.present) {
+            if (source.rows.controlChanges.present !== expectedPresent) {
                 return null;
             }
             const value = replaceRow(source.rows.controlChanges.value, edit.expected, edit.replacement);
-            if (!value) {
+            if (!value || (!replacementPresent && value.length > 0)) {
                 return null;
             }
-            next = { ...source, rows: { ...source.rows, controlChanges: { present: true, value } } };
+            next = { ...source, rows: { ...source.rows, controlChanges: { present: replacementPresent, value } } };
             break;
         }
         case 'bend': {
-            if (!source.rows.pitchBends.present) {
+            if (source.rows.pitchBends.present !== expectedPresent) {
                 return null;
             }
             const value = replaceRow(source.rows.pitchBends.value, edit.expected, edit.replacement);
-            if (!value) {
+            if (!value || (!replacementPresent && value.length > 0)) {
                 return null;
             }
-            next = { ...source, rows: { ...source.rows, pitchBends: { present: true, value } } };
+            next = { ...source, rows: { ...source.rows, pitchBends: { present: replacementPresent, value } } };
             break;
         }
     }

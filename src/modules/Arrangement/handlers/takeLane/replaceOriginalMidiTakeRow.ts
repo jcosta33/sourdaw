@@ -16,11 +16,29 @@ type RowAction = Extract<AppAction, { type: 'replaceOriginalMidiTakeRow' }>;
 function reverse(payload: OriginalMidiTakeRowReplacementPayload): OriginalMidiTakeRowReplacementPayload {
     switch (payload.rowKind) {
         case 'note':
-            return { ...payload, expected: payload.replacement, replacement: payload.expected };
+            return {
+                ...payload,
+                expected: payload.replacement,
+                replacement: payload.expected,
+                expectedSlotPresent: payload.replacementSlotPresent,
+                replacementSlotPresent: payload.expectedSlotPresent,
+            };
         case 'cc':
-            return { ...payload, expected: payload.replacement, replacement: payload.expected };
+            return {
+                ...payload,
+                expected: payload.replacement,
+                replacement: payload.expected,
+                expectedSlotPresent: payload.replacementSlotPresent,
+                replacementSlotPresent: payload.expectedSlotPresent,
+            };
         case 'bend':
-            return { ...payload, expected: payload.replacement, replacement: payload.expected };
+            return {
+                ...payload,
+                expected: payload.replacement,
+                replacement: payload.expected,
+                expectedSlotPresent: payload.replacementSlotPresent,
+                replacementSlotPresent: payload.expectedSlotPresent,
+            };
     }
 }
 
@@ -46,8 +64,9 @@ function isRowSessionEntry(entry: HandlerSessionActionEntry): boolean {
     return (
         valuesEqual(inverse, reverse(forward)) &&
         valuesEqual(redo, forward) &&
-        forward.rowId === forward.expected.id &&
-        forward.rowId === forward.replacement.id
+        (forward.expected === null || forward.rowId === forward.expected.id) &&
+        (forward.replacement === null || forward.rowId === forward.replacement.id) &&
+        (forward.expected !== null || forward.replacement !== null)
     );
 }
 

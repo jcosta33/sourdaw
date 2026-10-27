@@ -54,7 +54,14 @@ describe('replaceOriginalMidiTakeRow', () => {
             ],
         });
         const edited = { ...original, velocity: 71 };
-        const owner = { laneId: 'lane-1', takeId: 'selected', sourceClipId: 'original-clip', rowId: original.id };
+        const owner = {
+            laneId: 'lane-1',
+            takeId: 'selected',
+            sourceClipId: 'original-clip',
+            rowId: original.id,
+            expectedSlotPresent: true,
+            replacementSlotPresent: true,
+        };
         replaceOriginalMidiTakeRow({ ...owner, rowKind: 'note', expected: original, replacement: edited });
         expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource?.rows.notes.value)).toEqual([
             [edited, peer],

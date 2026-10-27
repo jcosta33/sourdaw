@@ -9,22 +9,66 @@ type RowEdit = Parameters<typeof replaceFrozenMidiTakeRow>[1];
 function rowEdit(input: OriginalMidiTakeRowReplacementPayload): RowEdit {
     switch (input.rowKind) {
         case 'note':
-            return { kind: 'note', expected: input.expected, replacement: input.replacement };
+            return {
+                kind: 'note',
+                expected: input.expected,
+                replacement: input.replacement,
+                expectedSlotPresent: input.expectedSlotPresent,
+                replacementSlotPresent: input.replacementSlotPresent,
+            };
         case 'cc':
-            return { kind: 'cc', expected: input.expected, replacement: input.replacement };
+            return {
+                kind: 'cc',
+                expected: input.expected,
+                replacement: input.replacement,
+                expectedSlotPresent: input.expectedSlotPresent,
+                replacementSlotPresent: input.replacementSlotPresent,
+            };
         case 'bend':
-            return { kind: 'bend', expected: input.expected, replacement: input.replacement };
+            return {
+                kind: 'bend',
+                expected: input.expected,
+                replacement: input.replacement,
+                expectedSlotPresent: input.expectedSlotPresent,
+                replacementSlotPresent: input.replacementSlotPresent,
+            };
     }
 }
 
-function containsRow(source: MidiTakeSource, edit: RowEdit): boolean {
+function containsRow(source: MidiTakeSource, edit: RowEdit, rowId: string): boolean {
     const slot =
         edit.kind === 'note'
             ? source.rows.notes
             : edit.kind === 'cc'
               ? source.rows.controlChanges
               : source.rows.pitchBends;
-    return slot.value.some((row) => row.id === edit.expected.id);
+    return slot.value.some((row) => row.id === rowId);
+}
+
+function notePassIdentityMatches(
+    input: OriginalMidiTakeRowReplacementPayload,
+    takePassIndex: number | undefined
+): boolean {
+    if (input.rowKind !== 'note') {
+        return true;
+    }
+    const { expected, replacement } = input;
+    if (
+        expected &&
+        replacement &&
+        (Object.hasOwn(expected, 'recordingPassIndex') !== Object.hasOwn(replacement, 'recordingPassIndex') ||
+            expected.recordingPassIndex !== replacement.recordingPassIndex)
+    ) {
+        return false;
+    }
+    const row = replacement ?? expected;
+    if (!row) {
+        return false;
+    }
+    return (
+        row.recordingPassIndex === takePassIndex &&
+        Object.hasOwn(row, 'recordingPassIndex') === (takePassIndex !== undefined)
+    );
 }
 
 /** Prepare every frozen copy before one write; a stale copy refuses the entire action. */
@@ -39,11 +83,15 @@ export function prepareOriginalMidiTakeRowReplacement(
         !state ||
         !input.sourceClipId ||
         !input.rowId ||
-        input.rowId !== edit.expected.id ||
-        input.rowId !== edit.replacement.id ||
+        (edit.expected === null && edit.replacement === null) ||
+        (edit.expected !== null && input.rowId !== edit.expected.id) ||
+        (edit.replacement !== null && input.rowId !== edit.replacement.id) ||
         ownerSource?.sourceClipId !== input.sourceClipId ||
         !ownerSource ||
-        !containsRow(ownerSource, edit)
+        !notePassIdentityMatches(input, owner?.recordingPassIndex) ||
+        (edit.expected === null
+            ? containsRow(ownerSource, edit, input.rowId)
+            : !containsRow(ownerSource, edit, input.rowId))
     ) {
         return null;
     }
@@ -53,7 +101,11 @@ export function prepareOriginalMidiTakeRowReplacement(
         ...lane,
         takes: lane.takes.map((take) => {
             const source = take.midiSource;
-            if (!source || source.sourceClipId !== input.sourceClipId || !containsRow(source, edit)) {
+            if (
+                !source ||
+                source.sourceClipId !== input.sourceClipId ||
+                (edit.expected !== null && !containsRow(source, edit, input.rowId))
+            ) {
                 return take;
             }
             const replacement = replaceFrozenMidiTakeRow(source, edit);

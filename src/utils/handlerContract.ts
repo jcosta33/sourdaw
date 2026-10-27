@@ -545,13 +545,23 @@ export type OriginalMidiTakeRowReplacementPayload = {
     readonly takeId: string;
     readonly sourceClipId: string;
     readonly rowId: string;
+    readonly expectedSlotPresent: boolean;
+    readonly replacementSlotPresent: boolean;
 } & (
-    | { readonly rowKind: 'note'; readonly expected: MidiClipNoteSnapshot; readonly replacement: MidiClipNoteSnapshot }
-    | { readonly rowKind: 'cc'; readonly expected: MidiClipCcSnapshot; readonly replacement: MidiClipCcSnapshot }
+    | {
+          readonly rowKind: 'note';
+          readonly expected: MidiClipNoteSnapshot | null;
+          readonly replacement: MidiClipNoteSnapshot | null;
+      }
+    | {
+          readonly rowKind: 'cc';
+          readonly expected: MidiClipCcSnapshot | null;
+          readonly replacement: MidiClipCcSnapshot | null;
+      }
     | {
           readonly rowKind: 'bend';
-          readonly expected: MidiClipPitchBendSnapshot;
-          readonly replacement: MidiClipPitchBendSnapshot;
+          readonly expected: MidiClipPitchBendSnapshot | null;
+          readonly replacement: MidiClipPitchBendSnapshot | null;
       }
 );
 export type MidiClipGlueActionSnapshot = {

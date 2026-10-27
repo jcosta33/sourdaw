@@ -166,6 +166,8 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
                 rowKind: 'note',
                 expected: edited,
                 replacement,
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
             },
         });
         expect(frozenRows()).toEqual([
@@ -205,6 +207,8 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
                     rowKind: 'note',
                     expected: edited,
                     replacement: { ...edited, velocity: 71 },
+                    expectedSlotPresent: true,
+                    replacementSlotPresent: true,
                 },
             })
         ).rejects.toThrow();
