@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_29d8df116c5b92::t_7b6b21d2b3f339 110
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_29d8df116c5b92::t_5c9b0051d1f4f9 54
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_29d8df116c5b92::t_34d29302e195b4 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af843a629aa935d27e7cc287f5d95d41f376f52a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
