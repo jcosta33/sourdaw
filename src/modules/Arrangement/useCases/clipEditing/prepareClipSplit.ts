@@ -70,6 +70,7 @@ type PrepareClipSplitInput = {
     splitBeat: number;
     rightClipId?: string;
     resolvedSplitBeat?: number;
+    admittedSplitPosition?: ZeroCrossingPosition;
     targetNoteIds?: readonly string[];
     owners?: {
         readonly tracks: readonly Track[];
@@ -102,12 +103,19 @@ export function prepareClipSplit({
     splitBeat,
     rightClipId,
     resolvedSplitBeat,
+    admittedSplitPosition,
     targetNoteIds,
     owners,
 }: PrepareClipSplitInput): PreparedClipSplit | null {
     if (
         !Number.isFinite(splitBeat) ||
         (resolvedSplitBeat !== undefined && !Number.isFinite(resolvedSplitBeat)) ||
+        (admittedSplitPosition !== undefined &&
+            (!Number.isFinite(admittedSplitPosition.beat) ||
+                (resolvedSplitBeat !== undefined && admittedSplitPosition.beat !== resolvedSplitBeat) ||
+                (admittedSplitPosition.sourceSeconds !== undefined &&
+                    (!Number.isFinite(admittedSplitPosition.sourceSeconds) ||
+                        admittedSplitPosition.sourceSeconds < 0)))) ||
         (rightClipId !== undefined && rightClipId.trim().length === 0)
     ) {
         return null;
@@ -137,7 +145,9 @@ export function prepareClipSplit({
 
     const timeline = owners?.timeline ?? liveTempoTimeline;
     let splitPosition: ZeroCrossingPosition;
-    if (resolvedSplitBeat === undefined) {
+    if (admittedSplitPosition !== undefined) {
+        splitPosition = admittedSplitPosition;
+    } else if (resolvedSplitBeat === undefined) {
         splitPosition = resolveZeroCrossingPosition(clip, splitBeat, timeline);
     } else {
         splitPosition = { beat: resolvedSplitBeat };

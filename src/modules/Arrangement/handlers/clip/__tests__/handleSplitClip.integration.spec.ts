@@ -262,12 +262,10 @@ describe('handleSplitClip atomic integration', () => {
                 requireCompensation: true,
             });
 
-            // Preparation sees the preceding tempo action before the live transport store changes.
-            const expectedSplitBeat = order === 'tempo-first' ? 2.5 : 5;
             expect(result).toMatchObject({ status: 'committed' });
             expect(trackStore.value!.tracks[0]!.clips).toMatchObject([
-                { id: 'clip-1', endBeat: expectedSplitBeat },
-                { startBeat: expectedSplitBeat, endBeat: 8 },
+                { id: 'clip-1', endBeat: 5 },
+                { startBeat: 5, endBeat: 8 },
             ]);
             expect(transportStore.value?.tempo).toBe(60);
 
@@ -279,8 +277,8 @@ describe('handleSplitClip atomic integration', () => {
             await redo();
             await redo();
             expect(trackStore.value!.tracks[0]!.clips).toMatchObject([
-                { id: 'clip-1', endBeat: expectedSplitBeat },
-                { startBeat: expectedSplitBeat, endBeat: 8 },
+                { id: 'clip-1', endBeat: 5 },
+                { startBeat: 5, endBeat: 8 },
             ]);
             expect(transportStore.value?.tempo).toBe(60);
         }
