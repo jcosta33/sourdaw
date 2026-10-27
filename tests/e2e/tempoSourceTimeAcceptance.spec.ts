@@ -812,16 +812,18 @@ async function slipGesture(
     // is only six pixels and can lie under the adjacent pane's resize hit area.
     const point = await canvasPoint(page, clip, (clip.startBeat + clip.endBeat) / 2);
     await expectCanvasAdmission(page, point.x, point.y);
-    await page.keyboard.down('Control');
+    await page.keyboard.down(MOD);
     await page.keyboard.down('Shift');
     await page.mouse.move(point.x, point.y);
     await page.mouse.down();
     try {
+        await expect(page.getByRole('menuitem', { name: 'Edit Clip', exact: true })).toHaveCount(0);
         // A one-pixel excursion back to origin forces the zero-delta preview path.
         if (mediaBeatDelta === 0) {
             await page.mouse.move(point.x + 1, point.y);
         }
         await page.mouse.move(point.x + mediaBeatDelta * point.pixelsPerBeat, point.y, { steps: 8 });
+        await expect(page.getByRole('menuitem', { name: 'Edit Clip', exact: true })).toHaveCount(0);
         const preview = await waveform(page, before.trackId, clip.id);
         expect(preview.rectangle).toEqual({ startBeat: clip.startBeat, endBeat: clip.endBeat });
         expect(preview.occurrences[0]?.startSample).toBe(Math.floor(previewSourceSeconds * SAMPLE_RATE));
@@ -837,7 +839,7 @@ async function slipGesture(
     } finally {
         await page.mouse.up();
         await page.keyboard.up('Shift');
-        await page.keyboard.up('Control');
+        await page.keyboard.up(MOD);
     }
     await expect
         .poll(async () => onlyClip(await readSnapshot(page)).audioOffsetSeconds)
