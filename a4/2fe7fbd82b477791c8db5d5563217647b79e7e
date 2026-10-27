@@ -1,0 +1,20 @@
+src/modules/Gluten/useCases/__tests__/setGlutenPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_e7ed082a55bf89 280-282
+  s_59e31a5c6f3e31::t_489fceeeadf48f 283-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a42fe7fbd82b477791c8db5d5563217647b79e7e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
