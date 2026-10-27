@@ -1,0 +1,39 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_29d8df116c5b92::t_9bb3a70b0541aa 248,1301
+src/modules/Transport/useCases/scheduling/resolveMidiWindowClips.ts
+  s_29d8df116c5b92::t_9ce2d4f402782d 1-16
+src/modules/Transport/useCases/scheduling/prepareInitialMidiWindow.ts
+  s_29d8df116c5b92::t_9ce2d4f402782d 1-35,37-64
+  s_29d8df116c5b92::t_8cb2ade2b1d7a3 36
+src/modules/Transport/services/midiSchedulerWindowGeometry.ts
+  s_29d8df116c5b92::t_85c8daf7106f9d 1-64
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_29d8df116c5b92::t_71a642498e9075 10-15,23
+  s_29d8df116c5b92::t_85c8daf7106f9d 2-8,24-531
+  s_29d8df116c5b92::t_9ce2d4f402782d 1,22
+  s_29d8df116c5b92::t_c961dbdd388eed 9,16-21
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_29d8df116c5b92::t_85c8daf7106f9d 3,30,49-52,69,71,77
+  s_29d8df116c5b92::t_9ce2d4f402782d 18
+  s_29d8df116c5b92::t_71a642498e9075 43-48,70
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_29d8df116c5b92::t_85c8daf7106f9d 12-13
+src/modules/Transport/services/midiNoteWindowIndex.ts
+  s_29d8df116c5b92::t_29a020deafef55 1-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4d5f7e776d8dbcddf6e67a4ca526b03a95b0375",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
