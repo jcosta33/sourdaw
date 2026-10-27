@@ -1,4 +1,5 @@
 import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import {
     audioSourceSnapshotAtBeat,
     captureAudioSourceSnapshot,
@@ -19,6 +20,8 @@ export type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
     regionEndBeat: number;
     sourceStartBeat: number;
+    midiTakeSource?: NonNullable<Take['midiSource']>;
+    midiTakeId?: string;
 };
 
 type TakeMedia = {
@@ -307,6 +310,9 @@ export function resolveTrackClipsWithComping(
         // with the same beat as the window, so the source's region law holds
         // there unchanged.
         const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
+        if (take.midiSource !== undefined && !isFrozenMidiTakeSource(take.midiSource)) {
+            throw new Error('Invalid frozen MIDI take source');
+        }
         const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
         let audioSource:
             ReturnType<typeof audioSourceSnapshotAtBeat> | ReturnType<typeof audioTakeFragmentSource> | null = null;
@@ -335,6 +341,9 @@ export function resolveTrackClipsWithComping(
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
             sourceStartBeat: media.sourceStartBeat,
+            ...(sourceClip.type === 'midi' && take.midiSource
+                ? { midiTakeSource: take.midiSource, midiTakeId: take.id }
+                : {}),
         });
     }
 
