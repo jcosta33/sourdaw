@@ -320,6 +320,15 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     };
 }
 
+function createNativeRollBatch(
+    transport: Readonly<{ positionSeconds: number; locate?: boolean }>
+): AudioGraphCommandBatch {
+    return {
+        schemaVersion: 1,
+        commands: [{ kind: 'set-transport', playing: true, ...transport }],
+    };
+}
+
 export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps) {
     const { transport, acquireNativeSampleBank } = deps;
     let disposed = false;
@@ -381,11 +390,7 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps) {
                             // before calling it, including a refusal that throws.
                             const finalize = finalizeTransport;
                             finalizeTransport = undefined;
-                            const transportCommand = finalize();
-                            admittedBatch = {
-                                schemaVersion: 1,
-                                commands: [{ kind: 'set-transport', playing: true, ...transportCommand }],
-                            };
+                            admittedBatch = createNativeRollBatch(finalize());
                         }
                         raw = await transport.applyGraphCommands({
                             batch: serializeAudioGraphCommandBatch(admittedBatch, claim),
@@ -428,10 +433,7 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps) {
             positionSeconds: number,
             finalize: () => Readonly<{ positionSeconds: number; locate: boolean }>
         ): Promise<AudioGraphApplyResult> {
-            return apply(
-                { schemaVersion: 1, commands: [{ kind: 'set-transport', playing: true, positionSeconds }] },
-                finalize
-            );
+            return apply(createNativeRollBatch({ positionSeconds }), finalize);
         },
 
         dispose(): void {
