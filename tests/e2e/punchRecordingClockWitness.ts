@@ -35,7 +35,7 @@ type RuntimeWitness = {
     samples: ClockObservation[];
     events: ClockEvent[];
     control: Int32Array | null;
-    context: AudioContext | null;
+    context: BaseAudioContext | null;
     readOutput: (() => OutputPosition) | null;
     stopSent: boolean;
 };
@@ -170,8 +170,11 @@ export async function installPunchRecordingClockWitness(page: Page): Promise<voi
                     }
                     state.context = node.context;
                     const port = node.port;
-                    const originalPost = port.postMessage.bind(port);
-                    port.postMessage = (message: unknown, transfer?: Transferable[]): void => {
+                    const originalPost = port.postMessage;
+                    port.postMessage = (
+                        message: unknown,
+                        ...rest: [transferOrOptions?: Transferable[] | StructuredSerializeOptions]
+                    ): void => {
                         const data = record(message);
                         if (data?.type === 'init' && data.sab instanceof SharedArrayBuffer) {
                             state.control = new Int32Array(data.sab, 0, 6);
@@ -182,7 +185,7 @@ export async function installPunchRecordingClockWitness(page: Page): Promise<voi
                                 state.stopSent = true;
                             }
                         }
-                        originalPost(message, transfer ?? []);
+                        Reflect.apply(originalPost, port, [message, ...rest]);
                     };
                     port.addEventListener('message', (message: MessageEvent<unknown>) => {
                         const data = record(message.data);
@@ -220,13 +223,16 @@ export async function installPunchRecordingClockWitness(page: Page): Promise<voi
                     if (!String(args[0]).includes('recordingWorker')) {
                         return worker;
                     }
-                    const originalPost = worker.postMessage.bind(worker);
-                    worker.postMessage = (message: unknown, transfer?: Transferable[]): void => {
+                    const originalPost = worker.postMessage;
+                    worker.postMessage = (
+                        message: unknown,
+                        ...rest: [transferOrOptions?: Transferable[] | StructuredSerializeOptions]
+                    ): void => {
                         const data = record(message);
                         if (data?.type === 'stop' && typeof data.expectedFinalSampleCount === 'number') {
                             event('send-worker-stop', { publishedFrames: data.expectedFinalSampleCount });
                         }
-                        originalPost(message, transfer ?? []);
+                        Reflect.apply(originalPost, worker, [message, ...rest]);
                     };
                     worker.addEventListener('message', (message: MessageEvent<unknown>) => {
                         const data = record(message.data);
