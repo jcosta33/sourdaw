@@ -24,10 +24,10 @@ import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { trackStore } from '../../../stores/trackStore';
+import { compileTrackStripInitializationSnapshot } from '../../compileTrackStripInitializationSnapshot';
 import { getArrangementHandlers } from '../../getArrangementHandlers';
 import { importMidiFile } from '../../importMidiFile';
 import { runtimeGraphTopology } from '../../runtimeGraphTopology';
-import { compileTrackStripInitializationSnapshot } from '../../compileTrackStripInitializationSnapshot';
 
 // Physical Web Audio nodes are doubled; the engine, graph validation, import,
 // Command transaction, CRDT projection, and history are production implementations.

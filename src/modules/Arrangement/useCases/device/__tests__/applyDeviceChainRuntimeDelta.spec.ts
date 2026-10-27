@@ -5,10 +5,9 @@ import { trackStore } from '../../../stores/trackStore';
 import { applyDeviceChainRuntimeDelta } from '../applyDeviceChainRuntimeDelta';
 import { hasLiveProjectHostTrack } from '../hasLiveProjectHostTrack';
 
-import type { projectTrackToLiveStrip } from '../../projectTrackToLiveStrip';
-
 import type { applyRuntimeGraphDelta } from '#/modules/AudioEngine/useCases';
 import type { Track } from '../../../stores/trackStore';
+import type { projectTrackToLiveStrip } from '../../projectTrackToLiveStrip';
 
 const mocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn<typeof applyRuntimeGraphDelta>(() => ({
