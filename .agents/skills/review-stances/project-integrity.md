@@ -12,7 +12,8 @@ Take typed materialized snapshots around each turn. Derive allowed fields and va
 oracle rather than the executed action log, and compare every other entity and field as well. Add a
 real outside-barrel write to another track and to an unauthorized field on the target; both must be
 counted even when the expected commit and Undo history look correct. Compare Undo with its pre-commit
-values while retaining unrelated later user edits. Keep a valid commit control and require removal
+values only for oracle-authorized fields, atop pre-Undo truth, retaining unrelated later user edits.
+Count prior barrel writes even when their net field effect is zero. Keep a valid commit control and require removal
 of the state comparison to fail these cases; call counts, unchanged history and lossy JSON snapshots
 cannot establish preservation.
 

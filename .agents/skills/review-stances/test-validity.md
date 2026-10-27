@@ -22,6 +22,8 @@ outside the barrel and history, beside a valid commit; each must increase the un
 score. Include a duplicate barrel action, an unrelated entity, a wrong value on an authorized field,
 and typed values whose distinctions JSON serialization would erase. Removing the project-state
 comparison must fail the named acceptance cases while an ordinary intended commit still passes.
+Also count prior barrel writes that restore their original value, and inject an outside-barrel write
+beside Undo; removing only the Undo comparison must fail that case.
 
 ### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
 

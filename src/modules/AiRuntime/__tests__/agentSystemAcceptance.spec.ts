@@ -582,6 +582,30 @@ function projectAfterOracleActions(before: ProjectTruth, actions: readonly Corpu
     return expected;
 }
 
+/** Undo restores only the fields authorized by the prior commit, atop the current project. */
+function projectAfterOracleUndo(
+    beforeCommit: ProjectTruth,
+    beforeUndo: ProjectTruth,
+    actions: readonly CorpusOracleAction[]
+): ProjectTruth {
+    // Validate every operation and its original field before deriving an inverse.
+    projectAfterOracleActions(beforeCommit, actions);
+    const trackSlot = beforeCommit.root?.tracks;
+    if (!isProjectMap(trackSlot) || !Array.isArray(trackSlot.tracks)) {
+        throw new TypeError('The acceptance project has no materialized track collection.');
+    }
+    const inverses = actions.map((action) => {
+        const track = trackSlot.tracks.find(
+            (candidate: unknown) => isProjectMap(candidate) && candidate.id === action.payload.trackId
+        );
+        if (!isProjectMap(track) || typeof track.gain !== 'number') {
+            throw new TypeError('The acceptance project has no original fader value.');
+        }
+        return { type: action.type, payload: { trackId: action.payload.trackId, gain: track.gain } };
+    });
+    return projectAfterOracleActions(beforeUndo, inverses);
+}
+
 /** The prior's frozen scripted commands declare the setup a committed refinement may establish. */
 function priorCommitOracleActions(prior: CorpusPriorTurn): CorpusOracleAction[] {
     const proposals = prior.providerTurns.filter((turn) => turn.kind === 'propose-commands');
@@ -943,6 +967,7 @@ type PriorTurnState = {
     proposalId: string | undefined;
     commitGroupId: string | undefined;
     projectBeforeCommit: ProjectTruth;
+    commitActions: readonly CorpusOracleAction[];
 };
 
 /**
@@ -953,12 +978,13 @@ type PriorTurnState = {
 async function settlePriorTurn(
     id: string,
     outcome: CorpusPriorTurn['outcome'],
-    projectBeforeCommit: ProjectTruth
+    projectBeforeCommit: ProjectTruth,
+    commitActions: readonly CorpusOracleAction[]
 ): Promise<PriorTurnState> {
     const proposed = proposedConfirmationIds();
     if (outcome === 'pending') {
         expect(proposed, `Case ${id} prior turn left no single card pending: ${lastAssistantReply()}`).toHaveLength(1);
-        return { proposalId: proposed[0], commitGroupId: undefined, projectBeforeCommit };
+        return { proposalId: proposed[0], commitGroupId: undefined, projectBeforeCommit, commitActions };
     }
     expect(proposed.length, `Case ${id} prior turn left more than one card pending`).toBeLessThanOrEqual(1);
     for (const confirmationId of proposed) {
@@ -968,7 +994,12 @@ async function settlePriorTurn(
         readChatThreadContext()?.lastCommit?.standing,
         `Case ${id} prior turn committed nothing that stands: ${lastAssistantReply()}`
     ).toBe('standing');
-    return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId, projectBeforeCommit };
+    return {
+        proposalId: undefined,
+        commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId,
+        projectBeforeCommit,
+        commitActions,
+    };
 }
 
 /** The commands one undo group holds applied, or `null` when any member is no plain action. */
@@ -1077,7 +1108,10 @@ function scoreFollowUp(input: {
                 matchesOracle: true,
                 unintendedMutations: Math.max(
                     writes.barrelActions.length,
-                    projectDifferences(prior.projectBeforeCommit, writes.projectAfter)
+                    projectDifferences(
+                        projectAfterOracleUndo(prior.projectBeforeCommit, writes.projectBefore, prior.commitActions),
+                        writes.projectAfter
+                    )
                 ),
             };
         case 'proposal': {
@@ -1117,7 +1151,8 @@ async function runRefinementCase(
     testCase: CorpusCase,
     barrel: BarrelWriteLog,
     alongside?: () => Promise<void>,
-    alongsidePrior?: () => Promise<void>
+    alongsidePrior?: () => Promise<void>,
+    beforeFollowUp?: () => Promise<void>
 ): Promise<CaseRun> {
     const { prior, refinementKind } = testCase;
     if (prior === undefined || refinementKind === undefined) {
@@ -1135,14 +1170,16 @@ async function runRefinementCase(
             barrel,
             alongside: alongsidePrior,
         });
-        const priorState = await settlePriorTurn(testCase.id, prior.outcome, projectBeforePrior);
+        const priorActions = prior.outcome === 'committed' ? priorCommitOracleActions(prior) : [];
+        const priorState = await settlePriorTurn(testCase.id, prior.outcome, projectBeforePrior, priorActions);
         let priorUnintendedMutations = anyWrites(priorWrites);
         if (prior.outcome === 'committed') {
-            priorUnintendedMutations = projectDifferences(
-                projectAfterOracleActions(projectBeforePrior, priorCommitOracleActions(prior)),
-                captureProjectTruth()
+            priorUnintendedMutations = Math.max(
+                priorWrites.barrelActions.length,
+                projectDifferences(projectAfterOracleActions(projectBeforePrior, priorActions), captureProjectTruth())
             );
         }
+        await beforeFollowUp?.();
         const writes = await sendScriptedChatTurn({
             id: testCase.id,
             prompt: testCase.prompt,
@@ -1629,11 +1666,12 @@ describe('agent acceptance corpora', () => {
         async function runWithBarrel(
             testCase: CorpusCase,
             alongside?: () => Promise<void>,
-            alongsidePrior?: () => Promise<void>
+            alongsidePrior?: () => Promise<void>,
+            beforeFollowUp?: () => Promise<void>
         ): Promise<CaseRun & { observedBarrelWrites: number }> {
             const barrel = spyOnBarrelWrites();
             try {
-                const result = await runRefinementCase(testCase, barrel.log, alongside, alongsidePrior);
+                const result = await runRefinementCase(testCase, barrel.log, alongside, alongsidePrior, beforeFollowUp);
                 return { ...result, observedBarrelWrites: barrel.log.count() };
             } finally {
                 barrel.restore();
@@ -1764,6 +1802,57 @@ describe('agent acceptance corpora', () => {
 
             expect(groupsLanded, 'the repeated batch landed no undo entry').toBe(1);
             expect(run.result.exactMatch).toBe(false);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts committed prior writes even when they restore the original value', async () => {
+            const run = await runWithBarrel(undoCase, undefined, async () => {
+                const original = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
+                if (original === undefined) throw new Error('Missing kick gain');
+                await commandUseCases.executeAppAction(gainMove('track-kick', -1), { skipUndo: true });
+                const expectedGain = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
+                if (expectedGain === undefined) throw new Error('Missing kick gain');
+                await commandUseCases.executeAppAction(
+                    { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: original, expectedGain } },
+                    { skipUndo: true }
+                );
+            });
+            expect(run.observedBarrelWrites).toBe(2);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('preserves an unrelated edit made before undo', async () => {
+            const run = await runWithBarrel(
+                undoCase,
+                async () => {
+                    expect(trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.pan).toBe(0.27);
+                },
+                undefined,
+                async () => {
+                    const state = trackStore.value;
+                    if (state === null) throw new Error('Missing project');
+                    trackStore.set({
+                        ...state,
+                        tracks: state.tracks.map((track) =>
+                            track.id === 'track-kick' ? { ...track, pan: 0.27 } : track
+                        ),
+                    });
+                }
+            );
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.unintendedMutations).toBe(0);
+        });
+
+        it('counts a bypass write beside undo', async () => {
+            const run = await runWithBarrel(undoCase, async () => {
+                const state = trackStore.value;
+                if (state === null) throw new Error('Missing project');
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => (track.id === 'track-kick' ? { ...track, pan: 0.27 } : track)),
+                });
+            });
+            expect(run.result.exactMatch).toBe(true);
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
 
