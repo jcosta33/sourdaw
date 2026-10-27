@@ -54,6 +54,7 @@ import {
     SCHEDULE_AHEAD_SECONDS,
 } from './projectLoopSeamWindow';
 import { readNativeEngineCursorBeats } from './readNativeEngineCursorBeats';
+import { schedulerLookAheadBeats } from './schedulerLookAheadBeats';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 import { schedulerTimingDiagnostics } from './schedulerTimingDiagnostics';
 
@@ -530,7 +531,7 @@ export function startPlayheadScheduler(
         // window that was open when its region was crossed.
         const dyingTickStartPosition = tickStartPosition;
 
-        const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
+        const lookAheadBeats = schedulerLookAheadBeats(currentTempo);
         // The horizon used to DETECT the seam. The emitted window is derived
         // from the committed position further down — a follow action may still
         // relocate the transport past this point, and its window opens at the

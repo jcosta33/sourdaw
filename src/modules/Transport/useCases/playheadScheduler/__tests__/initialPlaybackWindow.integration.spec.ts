@@ -11,6 +11,7 @@ import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
+import { toggleRecording } from '../../transportControls/toggleRecording';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
 
@@ -64,10 +65,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return takeStoreState.value;
         },
     },
-    // The loop-wrap take path reads which clips are actively recording; no test
-    // here records, so the ref stays empty.
+    // The Record case opens a mocked take but does not stop or wrap it, so this
+    // renderer/scheduler ref stays empty in this fixture.
     activeRecordingRef: { current: [] },
     getGainEnvelopeSeries: () => undefined,
+    getTrackEligibility: () => ({ acceptsRecording: true }),
     // Pulled in transitively: the scheduler reaches Levain's param bridge, whose
     // dependency bundle destructures these off this barrel at module scope. A
     // factory that omits them fails the whole file at import, not at a test.
@@ -117,6 +119,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    getTrackStoreState: () => trackStoreState.value,
     takeOwnsRecordingRoot: vi.fn(() => true),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
@@ -434,6 +437,47 @@ describe('initial browser playback window', () => {
         }
     );
 
+    it('keeps Record engaged and emits its first MIDI window at 100 BPM', async () => {
+        const position = 0.125;
+        seedProject(position);
+        trackStoreState.value = {
+            tracks: programmeTracks(undefined, position, position).map((track) => ({
+                ...track,
+                armed: track.id === 'plain-track',
+            })),
+        };
+        transportStoreState.value = { ...transportStoreState.value!, tempo: 100 };
+        playheadClockRef.beat = position;
+        const recordingClip: ReturnType<typeof startRecording>[number] = {
+            id: 'record-from-stopped',
+            trackId: 'plain-track',
+            name: 'Recording',
+            type: 'midi',
+            startBeat: position,
+            endBeat: position,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '',
+            locked: false,
+            muted: false,
+        };
+        vi.mocked(startRecording).mockImplementation(() => {
+            trackStoreState.value = { tracks: programmeTracks(recordingClip, position, position) };
+            takeStoreState.value = { lanes: [{ id: 'recording-lane', clipId: recordingClip.id }] };
+            return [recordingClip];
+        });
+
+        toggleRecording();
+
+        await vi.waitFor(() => expect(transportStoreState.value?.isPlaying).toBe(true));
+        await vi.waitFor(() => expect(notes.map(({ pitch }) => pitch)).toEqual([60, 62, 67]));
+        expect(startRecording).toHaveBeenCalledOnce();
+        expect(transportStoreState.value?.isRecording).toBe(true);
+        expect(sources).toHaveLength(1);
+        expect(sources[0]!.start.mock.calls[0]?.[0]).toBe(8.1);
+    });
+
     it('prepares pending Yeast before one shared roll and preserves the attack despite a delayed first Worker tick', async () => {
         const ready = Promise.withResolvers<void>();
         vi.mocked(processYeastMidi).mockImplementation(async (input) => {
@@ -521,8 +565,8 @@ describe('initial browser playback window', () => {
         }
     );
 
-    function seedSeam(): void {
-        const tracks = programmeTracks();
+    function seedSeam(position = 1.5, tempo = 120, loopEnd = 1.65): void {
+        const tracks = programmeTracks(undefined, position, position);
         trackStoreState.value = {
             tracks: [
                 ...tracks,
@@ -559,15 +603,31 @@ describe('initial browser playback window', () => {
         };
         transportStoreState.value = {
             ...defaultTransportState,
-            tempo: 120,
-            playheadPosition: 1.5,
+            tempo,
+            playheadPosition: position,
             preRollEnabled: false,
             isLooping: true,
             loopStart: 0,
-            loopEnd: 1.65,
+            loopEnd,
             metronomeEnabled: true,
         };
     }
+
+    it('uses the same prepared horizon for both sides of a 100 BPM seam', async () => {
+        seedSeam(0.125, 100, 0.25);
+        playheadClockRef.beat = 0.125;
+        const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
+
+        await startPlayback(onRoll);
+
+        expect(onRoll).toHaveBeenCalledExactlyOnceWith(8.1, 0.125);
+        expect(transportStoreState.value?.isPlaying).toBe(true);
+        expect(notes.map(({ pitch }) => pitch)).toEqual([60, 67, 72]);
+        expect(sources).toHaveLength(3);
+        expect(sources[0]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.1, 12);
+        expect(sources[1]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.1, 12);
+        expect(sources[2]!.start.mock.calls[0]?.[0]).toBeCloseTo(8.175, 12);
+    });
 
     it('waits for the real seam panic before choosing one future anchor for both passes', async () => {
         seedSeam();
