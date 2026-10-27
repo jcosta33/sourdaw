@@ -21,7 +21,7 @@ import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderMode
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
 import { relocateAudioSourceTimeFields } from '../../useCases/clip/relocateAudioSourceTimeFields';
-import { audioClipTrimTimeline, captureAudioClipTrimClock } from '../../useCases/clipEditing/audioClipStartTrimState';
+import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
@@ -65,6 +65,20 @@ export type ContextMenuState = ClipMenuState | EmptyMenuState | null;
 // Kept in the same range as the Ctrl+wheel pinch step (see useTimelineGestures,
 // -deltaY * 0.02) so touch and trackpad pinch feel consistent (findings #81/#17).
 const PINCH_ZOOM_FACTOR = 0.02;
+
+type PreviewAudioSource = ReturnType<typeof relocateAudioSourceTimeFields> &
+    Pick<Clip, 'loopOriginBeat' | 'loopLength'>;
+
+function previewAudioSource(clip: Clip): PreviewAudioSource {
+    const source: PreviewAudioSource = relocateAudioSourceTimeFields(clip, 0);
+    if (clip.loopOriginBeat !== undefined) {
+        source.loopOriginBeat = clip.loopOriginBeat;
+    }
+    if (clip.loopLength !== undefined) {
+        source.loopLength = clip.loopLength;
+    }
+    return source;
+}
 
 // A single-clip drag commits through the registered moveClip action (#3641):
 // the handler performs the write and mints the undo entry, so admission
@@ -145,7 +159,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         types: Map<string, 'audio' | 'midi'>;
         locked: Set<string>;
         audioSources: Map<string, Clip>;
-        audioClock: ReturnType<typeof captureAudioClipTrimClock>;
+        audioClock: ReturnType<typeof audioClipStartTrimState.captureClock>;
     } | null>(null);
     // Drop rejection computed during the last preview pass: the reason surfaced
     // at drop time and the clips excluded from the commit.
@@ -441,9 +455,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                 startBeat: clip.startBeat,
                                 endBeat: clip.endBeat,
                                 audioOffsetBeats: clip.audioOffsetBeats,
-                                ...relocateAudioSourceTimeFields(clip, 0),
-                                ...(clip.loopOriginBeat === undefined ? {} : { loopOriginBeat: clip.loopOriginBeat }),
-                                ...(clip.loopLength === undefined ? {} : { loopLength: clip.loopLength }),
+                                ...previewAudioSource(clip),
                                 midiOffsetBeats: clip.midiOffsetBeats,
                             });
                             if (clip.type === 'audio') {
@@ -460,7 +472,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 // whole gesture rather than being silently skipped at commit.
                 const positions = new Map([...originals].filter(([id]) => !locked.has(id)));
                 clipDragPreviewRef.current = { positions, originals };
-                dragContextRef.current = { types, locked, audioSources, audioClock: captureAudioClipTrimClock() };
+                dragContextRef.current = {
+                    types,
+                    locked,
+                    audioSources,
+                    audioClock: audioClipStartTrimState.captureClock(),
+                };
                 dropRejectedRef.current = { reason: null, clipIds: new Set<string>() };
                 previewDirtyFlag.value = true;
             }
@@ -616,15 +633,17 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     const clipType = dragContextRef.current?.types.get(dragState.clipId);
                     const source = dragContextRef.current?.audioSources.get(dragState.clipId);
                     const clock = dragContextRef.current?.audioClock;
-                    const trimmed = source && clock ? prepareAudioClipStartTrim(source, newStart, audioClipTrimTimeline(clock)) : null;
+                    const trimmed =
+                        source && clock
+                            ? prepareAudioClipStartTrim(source, newStart, audioClipStartTrimState.timeline(clock))
+                            : null;
                     if (clipType === 'audio' && !trimmed) {
                         return;
                     }
+                    const sourceFields = trimmed ? previewAudioSource(trimmed) : {};
                     preview.positions.set(dragState.clipId, {
                         ...orig,
-                        ...(trimmed ? relocateAudioSourceTimeFields(trimmed, 0) : {}),
-                        ...(trimmed?.loopLength === undefined ? {} : { loopLength: trimmed.loopLength }),
-                        ...(trimmed?.loopOriginBeat === undefined ? {} : { loopOriginBeat: trimmed.loopOriginBeat }),
+                        ...sourceFields,
                         startBeat: newStart,
                         audioOffsetBeats: (orig.audioOffsetBeats ?? 0) + delta,
                         midiOffsetBeats:

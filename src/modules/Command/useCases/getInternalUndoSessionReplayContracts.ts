@@ -33,7 +33,11 @@ function createInternalReplayContract(
             // These internal actions carry owner-defined captures wider than
             // their neutral Command snapshots. Their owner validators decode
             // the complete shapes without widening executable discovery.
-            if (actionType === 'restoreClip' || actionType === 'restoreTimeOperationState' || actionType === 'restoreAudioClipStartTrim') {
+            if (
+                actionType === 'restoreClip' ||
+                actionType === 'restoreTimeOperationState' ||
+                actionType === 'restoreAudioClipStartTrim'
+            ) {
                 return ownerValidator?.(payload) === true;
             }
             if (!validateVersionedCommandArguments(actionType, payload)) {

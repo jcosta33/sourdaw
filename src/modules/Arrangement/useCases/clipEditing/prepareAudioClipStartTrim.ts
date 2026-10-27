@@ -1,8 +1,8 @@
 import { loopOriginEntry } from '#/utils/clipLoopOrigin';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
-import { type Clip } from '../../models/Track';
 import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type Clip } from '../../models/Track';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { audioSourceAtBeat } from './audioSourceAtBeat';

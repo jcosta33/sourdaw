@@ -1,6 +1,6 @@
 // A browser-carrier check: Web Audio starts and exported PCM are observable here; a native device clock is not.
-import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
@@ -101,17 +101,30 @@ function sourceWav(): Buffer {
     wav.write('data', 36);
     wav.writeUInt32LE(frames * 2, 40);
     for (let frame = 0; frame < frames; frame += 1) {
-        let sample = frame < 4_800 ? 4_096 : frame < 10_800 ? 8_192 : 16_384;
-        if (frame === LAST_SOURCE_FRAME) sample = 24_576;
-        if (frame >= EXCLUSIVE_SOURCE_FRAME) sample = -24_576;
+        let sample = 16_384;
+        if (frame < 4_800) {
+            sample = 4_096;
+        } else if (frame < 10_800) {
+            sample = 8_192;
+        }
+        if (frame === LAST_SOURCE_FRAME) {
+            sample = 24_576;
+        }
+        if (frame >= EXCLUSIVE_SOURCE_FRAME) {
+            sample = -24_576;
+        }
         wav.writeInt16LE(sample, 44 + frame * 2);
     }
     return wav;
 }
 
 function songSeconds(beat: number, thirdEvent = true): number {
-    if (beat <= 0.25) return beat * 0.5;
-    if (!thirdEvent || beat <= 0.45) return beat / 4 + 1 / 16;
+    if (beat <= 0.25) {
+        return beat * 0.5;
+    }
+    if (!thirdEvent || beat <= 0.45) {
+        return beat / 4 + 1 / 16;
+    }
     return beat / 2 - 1 / 20;
 }
 
@@ -199,12 +212,18 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
                     loopOriginBeat: clip.loopOriginBeat,
                 }));
             const audioClip = track.clips.find((clip) => clip.type === 'audio' && clip.audioBufferId);
-            if (!audioClip?.audioBufferId) throw new Error('Imported audio clip is absent');
+            if (!audioClip?.audioBufferId) {
+                throw new Error('Imported audio clip is absent');
+            }
             const buffer = audioBufferCache.get(audioClip.audioBufferId);
-            if (!buffer) throw new Error('Imported PCM is absent from the real audio cache');
+            if (!buffer) {
+                throw new Error('Imported PCM is absent from the real audio cache');
+            }
             const samples = buffer.getChannelData(0);
             const mirrorText = sessionStorage.getItem('sourdaw-undo-session');
-            if (!mirrorText) throw new Error('The real command mirror is absent');
+            if (!mirrorText) {
+                throw new Error('The real command mirror is absent');
+            }
             const owner = (clipEntries: typeof track.clips, lane: unknown, tempo: unknown): OwnerState => ({
                 clips: clips(clipEntries),
                 lane: lane as TakeLane | null,
@@ -220,7 +239,9 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
                 takeLaneStore.value?.lanes.find((entry) => entry.trackId === track.id) ?? null,
                 tempoMapStore.value?.changes ?? []
             );
-            if (captureDurableDocumentWitness() !== witness) throw new Error('Project changed during evidence capture');
+            if (captureDurableDocumentWitness() !== witness) {
+                throw new Error('Project changed during evidence capture');
+            }
             return JSON.stringify({
                 projectId: project.projectId,
                 witness,
@@ -247,7 +268,9 @@ function onlyClip(snapshot: Snapshot): SourceClip {
     expect(snapshot.raw).toEqual(snapshot.projected);
     expect(snapshot.raw.clips).toHaveLength(1);
     const clip = snapshot.raw.clips[0];
-    if (!clip) throw new Error('The one imported audio clip is absent');
+    if (!clip) {
+        throw new Error('The one imported audio clip is absent');
+    }
     return clip;
 }
 
@@ -278,9 +301,13 @@ async function waveform(page: Page, trackId: string, clipId: string): Promise<Wa
             const model = buildTimelineRenderModel();
             const track = model.tracks.find((entry) => entry.id === owner);
             const clip = track?.clips.find((entry) => entry.id === target);
-            if (!track || !clip?.audioBufferId) throw new Error('Rendered audio clip is absent');
+            if (!track || !clip?.audioBufferId) {
+                throw new Error('Rendered audio clip is absent');
+            }
             const buffer = audioBufferCache.get(clip.audioBufferId);
-            if (!buffer) throw new Error('Rendered audio buffer is absent');
+            if (!buffer) {
+                throw new Error('Rendered audio buffer is absent');
+            }
             const occurrences = getAudioWaveformOccurrences({
                 clip,
                 model,
@@ -320,7 +347,9 @@ async function canvasPoint(
         const { timelineViewStore } = await import('/src/modules/Arrangement/stores/timelineViewStore.ts');
         return timelineViewStore.value;
     });
-    if (!header || !canvas || !view) throw new Error('Visible timeline geometry is unavailable');
+    if (!header || !canvas || !view) {
+        throw new Error('Visible timeline geometry is unavailable');
+    }
     const x = canvas.x + beat * view.pixelsPerBeat - view.scrollX;
     const y = header.y + header.height / 2;
     expect(x).toBeGreaterThan(canvas.x + 2);
@@ -375,7 +404,9 @@ async function createComp(page: Page, snapshot: Snapshot): Promise<Snapshot> {
     await expect(promote).toBeVisible();
     const separator = page.locator('[data-onboarding="track-list"] + [role="separator"][aria-orientation="vertical"]');
     const separatorBox = await separator.boundingBox();
-    if (!separatorBox) throw new Error('Take lane resize handle is absent');
+    if (!separatorBox) {
+        throw new Error('Take lane resize handle is absent');
+    }
     await page.mouse.move(separatorBox.x + separatorBox.width / 2, separatorBox.y + 100);
     await page.mouse.down();
     await page.mouse.move(separatorBox.x + separatorBox.width / 2 + 180, separatorBox.y + 100, { steps: 8 });
@@ -383,7 +414,9 @@ async function createComp(page: Page, snapshot: Snapshot): Promise<Snapshot> {
     const strip = promote.locator('..').locator('[role="presentation"]');
     await expect.poll(async () => (await strip.boundingBox())?.width ?? 0).toBeGreaterThan(100);
     const box = await strip.boundingBox();
-    if (!box) throw new Error('Take comp strip is absent');
+    if (!box) {
+        throw new Error('Take comp strip is absent');
+    }
     const minBeat = Math.max(0, onlyClip(snapshot).startBeat);
     const maxBeat = Math.max(onlyClip(snapshot).endBeat, minBeat + 4);
     const x = (beat: number) => box.x + ((beat - minBeat) / (maxBeat - minBeat)) * box.width;
@@ -414,8 +447,9 @@ async function observeStarts(
     await page.evaluate(async (id) => {
         const { audioBufferCache } = await import('/src/modules/AudioEngine/stores/audioBufferCache.ts');
         const buffer = audioBufferCache.get(id);
-        if (!buffer || buffer.sampleRate !== 48_000)
+        if (!buffer || buffer.sampleRate !== 48_000) {
             throw new Error('Playback source is not the authenticated 48 kHz PCM');
+        }
         Reflect.set(window, '__sourceTimeBuffer', buffer);
         Reflect.set(window, '__sourceTimeStarts', []);
     }, bufferId);
@@ -466,24 +500,31 @@ function pcm24Wav(bytes: Buffer): { frames: number; at: (frame: number, channel:
         const offset = cursor + 8;
         expect(offset + size).toBeLessThanOrEqual(bytes.length);
         const chunk = bytes.toString('ascii', cursor, cursor + 4);
-        if (chunk === 'fmt ')
+        if (chunk === 'fmt ') {
             format = {
                 encoding: bytes.readUInt16LE(offset),
                 channels: bytes.readUInt16LE(offset + 2),
                 sampleRate: bytes.readUInt32LE(offset + 4),
                 bits: bytes.readUInt16LE(offset + 14),
             };
-        if (chunk === 'data') data = { offset, size };
+        }
+        if (chunk === 'data') {
+            data = { offset, size };
+        }
         cursor = offset + size + (size % 2);
     }
     expect(format).toEqual({ encoding: 1, channels: 2, sampleRate: SAMPLE_RATE, bits: 24 });
-    if (!data) throw new Error('Exported WAV has no PCM data chunk');
+    if (!data) {
+        throw new Error('Exported WAV has no PCM data chunk');
+    }
     expect(data.size % 6).toBe(0);
     const frames = data.size / 6;
     return {
         frames,
         at: (frame, channel) => {
-            if (frame >= frames) throw new Error(`WAV frame ${frame} is beyond its data chunk`);
+            if (frame >= frames) {
+                throw new Error(`WAV frame ${frame} is beyond its data chunk`);
+            }
             const unsigned = bytes.readUIntLE(data.offset + frame * 6 + channel * 3, 3);
             return unsigned >= 0x80_0000 ? unsigned - 0x100_0000 : unsigned;
         },
@@ -504,7 +545,9 @@ async function exportPcm(page: Page): Promise<ReturnType<typeof pcm24Wav>> {
     const result = await download;
     expect(await result.failure()).toBeNull();
     const path = await result.path();
-    if (!path) throw new Error('The visible Bakery produced no downloadable WAV');
+    if (!path) {
+        throw new Error('The visible Bakery produced no downloadable WAV');
+    }
     const pcm = pcm24Wav(await readFile(path));
     await bakery.getByRole('button', { name: 'Close Bakery' }).click();
     return pcm;
@@ -569,8 +612,12 @@ async function reopenProject(page: Page, projectId: string): Promise<Page> {
         fresh.evaluate(async (projectId) => {
             const { projectStore } = await import('/src/modules/Project/stores/projectStore.ts');
             const state = projectStore.value;
-            if (!state || state.loading) return 'pending';
-            if (state.initialized) return state.projectId === projectId ? 'saved-active' : 'wrong-active';
+            if (!state || state.loading) {
+                return 'pending';
+            }
+            if (state.initialized) {
+                return state.projectId === projectId ? 'saved-active' : 'wrong-active';
+            }
             return 'launch-ready';
         }, projectId);
     await expect.poll(mode, { timeout: STEP_TIMEOUT }).toMatch(/^(saved-active|launch-ready)$/);
@@ -626,15 +673,25 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
     // New-project switching deliberately clears session ownership. Establish
     // the supported boot owner before recording the Source edits under test.
     const initialOwner = await readProjectOwner(page);
-    if (!initialOwner.projectId) throw new Error('The new project has no canonical identity');
+    if (!initialOwner.projectId) {
+        throw new Error('The new project has no canonical identity');
+    }
     await palette(page, 'Save Project');
     await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0, { timeout: STEP_TIMEOUT });
     page = await reopenProject(page, initialOwner.projectId);
-    await expect.poll(async () => {
-        const owner = await readProjectOwner(page);
-        return owner.projectId === initialOwner.projectId && owner.mirrorProjectId === owner.projectId &&
-            owner.mirrorWitness === owner.witness;
-    }, { message: 'Source edits require the actual booted project and session owner' }).toBe(true);
+    await expect
+        .poll(
+            async () => {
+                const owner = await readProjectOwner(page);
+                return (
+                    owner.projectId === initialOwner.projectId &&
+                    owner.mirrorProjectId === owner.projectId &&
+                    owner.mirrorWitness === owner.witness
+                );
+            },
+            { message: 'Source edits require the actual booted project and session owner' }
+        )
+        .toBe(true);
     await info.attach('initial-boot-project-owner', {
         body: JSON.stringify(await readProjectOwner(page), null, 2),
         contentType: 'application/json',
@@ -649,8 +706,8 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
     let state = await readSnapshot(page);
     const imported = onlyClip(state);
     expect(state.buffer).toMatchObject({ sampleRate: SAMPLE_RATE, frames: SAMPLE_RATE });
-    expectDecodedPcm16(state.buffer.body[0]!, 8_192, 'base-gap body stamp');
-    expectDecodedPcm16(state.buffer.body[1]!, 16_384, 'selected body stamp');
+    expectDecodedPcm16(state.buffer.body[0], 8_192, 'base-gap body stamp');
+    expectDecodedPcm16(state.buffer.body[1], 16_384, 'selected body stamp');
     expectDecodedPcm16(state.buffer.finalPositive, 24_576, 'last positive source frame');
     expectDecodedPcm16(state.buffer.firstNegative, -24_576, 'first excluded negative source frame');
     expect(imported.startBeat).toBe(0);
@@ -703,7 +760,7 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
             [0.25, 240],
             [0.45, 120],
         ]) {
-            state = await addTempoEvent(page, beat!, bpm!, state);
+            state = await addTempoEvent(page, beat, bpm, state);
         }
         expect(state.raw.tempo.map(({ beat, tempo }) => [beat, tempo])).toEqual([
             [0, 120],
@@ -718,7 +775,7 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         expect(songSeconds(1.5)).toBe(0.7);
         expect(songSeconds(2)).toBe(0.95);
         expectFrame(
-            (await waveform(page, state.trackId, imported.id)).occurrences[0]!.endSample,
+            (await waveform(page, state.trackId, imported.id)).occurrences[0].endSample,
             EXCLUSIVE_SOURCE_FRAME,
             'three-event rendered end'
         );
@@ -731,7 +788,7 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         expect(sourceEntrySeconds(onlyClip(state))).toBeCloseTo(-0.1, 8);
         expect(songSeconds(1, false)).toBe(0.3125);
         expectFrame(
-            (await waveform(page, state.trackId, imported.id)).occurrences[0]!.endSample,
+            (await waveform(page, state.trackId, imported.id)).occurrences[0].endSample,
             10_200,
             'two-event rendered end'
         );
@@ -741,7 +798,7 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         expect(state.raw).toEqual(threeEvents.raw);
         expect(state.projected).toEqual(threeEvents.projected);
         expectFrame(
-            (await waveform(page, state.trackId, imported.id)).occurrences[0]!.endSample,
+            (await waveform(page, state.trackId, imported.id)).occurrences[0].endSample,
             EXCLUSIVE_SOURCE_FRAME,
             'restored rendered end'
         );
@@ -755,7 +812,9 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         state = await readSnapshot(page);
         expect(state.raw).toEqual(state.projected);
         const [left, right] = [...state.raw.clips].sort((a, b) => a.startBeat - b.startBeat);
-        if (!left || !right) throw new Error('Actual split fragments are absent');
+        if (!left || !right) {
+            throw new Error('Actual split fragments are absent');
+        }
         expect([left.startBeat, left.endBeat, right.startBeat, right.endBeat]).toEqual([0, 0.5, 0.5, 1]);
         expect(sourceEntrySeconds(left)).toBeCloseTo(-0.1, 8);
         expect(sourceEntrySeconds(right)).toBeCloseTo(0.1, 8);
@@ -781,7 +840,9 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
     });
 
     const region = state.raw.lane?.activeCompRegions[0];
-    if (!region) throw new Error('Visible take selection has no persisted region');
+    if (!region) {
+        throw new Error('Visible take selection has no persisted region');
+    }
     const compStart = region.startBeat;
     const selectedSourceStart = 0.1 + songSeconds(compStart) - songSeconds(1.5);
     const baseDuration = songSeconds(compStart) - songSeconds(1.5);
@@ -797,12 +858,12 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         ]);
         expect(rendered.occurrences).toHaveLength(2);
         const ordered = [...rendered.occurrences].sort((a, b) => a.startSample - b.startSample);
-        expect(ordered[0]!.startSample).toBe(4_800);
+        expect(ordered[0].startSample).toBe(4_800);
         // A fractional half-open end intersects its last PCM cell; the start
         // below still uses floor, and an exact integer end excludes that cell.
-        expect(ordered[0]!.endSample).toBe(Math.ceil(selectedSourceStart * SAMPLE_RATE));
-        expect(ordered[1]!.startSample).toBe(Math.floor(selectedSourceStart * SAMPLE_RATE));
-        expect(ordered[1]!.endSample).toBe(EXCLUSIVE_SOURCE_FRAME);
+        expect(ordered[0].endSample).toBe(Math.ceil(selectedSourceStart * SAMPLE_RATE));
+        expect(ordered[1].startSample).toBe(Math.floor(selectedSourceStart * SAMPLE_RATE));
+        expect(ordered[1].endSample).toBe(EXCLUSIVE_SOURCE_FRAME);
         await info.attach('selected-waveform', { body: await page.screenshot(), contentType: 'image/png' });
         await observeStarts(page, state.buffer.id, 1.5, [
             [0.1, baseDuration],
@@ -833,8 +894,8 @@ test('keeps the selected source frame through tempo edits, comp, playback, expor
         expect(trimmed.programme).toHaveLength(1);
         expect(trimmed.programme?.[0]?.startBeat).toBeCloseTo(trimStart, 5);
         expect(trimmed.occurrences).toHaveLength(1);
-        expect(trimmed.occurrences[0]!.startSample).toBe(Math.floor(trimEntry * SAMPLE_RATE));
-        expect(trimmed.occurrences[0]!.endSample).toBe(EXCLUSIVE_SOURCE_FRAME);
+        expect(trimmed.occurrences[0].startSample).toBe(Math.floor(trimEntry * SAMPLE_RATE));
+        expect(trimmed.occurrences[0].endSample).toBe(EXCLUSIVE_SOURCE_FRAME);
         await observeStarts(page, state.buffer.id, trimStart, [[trimEntry, songSeconds(2) - songSeconds(trimStart)]]);
         expectExportEnd(await exportPcm(page), Math.round((songSeconds(trimStart) + 0.05) * SAMPLE_RATE));
         const trimmedState = state;

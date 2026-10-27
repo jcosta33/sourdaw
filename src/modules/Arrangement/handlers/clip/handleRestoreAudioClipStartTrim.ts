@@ -1,42 +1,41 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { updateClip } from '../../repositories/track/updateClip';
-import {
-    audioClipStartTrimOptionalFields,
-    decodeAudioClipStartTrimPayload,
-    isAudioClipStartTrimPayload,
-} from '../../useCases/clipEditing/audioClipStartTrimState';
-import { audioClipTrimOwnerMatches, captureAudioClipTrimCommitValidation } from '../../useCases/clipEditing/audioClipTrimOwner';
+import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
+import { audioClipTrimOwner } from '../../useCases/clipEditing/audioClipTrimOwner';
 
 export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipStartTrim'>({
     batchExecution: 'singleton',
     canReportConflict: true,
     canReapplyAfterDivergence: () => true,
-    validateSessionActionArguments: isAudioClipStartTrimPayload,
+    validateSessionActionArguments: audioClipStartTrimState.isPayload,
     validate: (action) => {
-        const capture = decodeAudioClipStartTrimPayload(action.payload);
+        const capture = audioClipStartTrimState.decodePayload(action.payload);
         if (!capture) {
             return false;
         }
-        return audioClipTrimOwnerMatches(capture.direction === 'restore' ? capture.after : capture.before, capture.clock);
+        return audioClipTrimOwner.matches(
+            capture.direction === 'restore' ? capture.after : capture.before,
+            capture.clock
+        );
     },
     execute: (action) => {
-        const capture = decodeAudioClipStartTrimPayload(action.payload);
+        const capture = audioClipStartTrimState.decodePayload(action.payload);
         if (!capture) {
             return { status: 'conflict' };
         }
         const expected = capture.direction === 'restore' ? capture.after : capture.before;
         const replacement = capture.direction === 'restore' ? capture.before : capture.after;
-        if (!audioClipTrimOwnerMatches(expected, capture.clock)) {
+        if (!audioClipTrimOwner.matches(expected, capture.clock)) {
             return { status: 'conflict' };
         }
-        const proof = captureAudioClipTrimCommitValidation(expected, replacement, capture.clock);
+        const proof = audioClipTrimOwner.captureCommitValidation(expected, replacement, capture.clock);
         if (!proof) {
             return { status: 'conflict' };
         }
         const written = updateClip(capture.clipId, (clip) => {
             const updated = { ...clip, startBeat: replacement.startBeat };
-            for (const field of audioClipStartTrimOptionalFields) {
+            for (const field of audioClipStartTrimState.optionalFields) {
                 if (Object.hasOwn(replacement, field)) {
                     updated[field] = replacement[field];
                 } else {

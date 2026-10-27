@@ -11,8 +11,8 @@
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
 import { type AudioSourceSnapshot, type AudioSourceTile } from './audioSourceTime';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
-import { type TempoMapEdit, type TempoMapRowPlan } from './tempoMapRowPlan';
 import { type TempoSourceClock } from './tempoAudioSourcePromotion';
+import { type TempoMapEdit, type TempoMapRowPlan } from './tempoMapRowPlan';
 
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every

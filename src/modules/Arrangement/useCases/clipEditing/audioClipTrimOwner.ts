@@ -3,16 +3,16 @@ import { getObjectId } from '@automerge/automerge';
 import { getCrdtDoc, hasForeignPendingProjectWrites } from '#/modules/CrdtDocument/useCases';
 import { type HandlerCommitValidation } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
+import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 import { readTempoMapRows } from '#/utils/tempoMapRowPlan';
-import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
 
 import { type Clip } from '../../models/Track';
 import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
 
-import { audioClipTrimExpectedMatches, captureAudioClipTrimClock } from './audioClipStartTrimState';
+import { audioClipStartTrimState } from './audioClipStartTrimState';
 
 type Root = Readonly<Record<string, unknown>>;
 
@@ -32,11 +32,15 @@ function rawOwner(root: Root, expected: Clip): Clip | null {
         }
     }
     const owner = owners[0];
-    if (owners.length !== 1 || !owner || owner.trackId !== expected.trackId ||
-        !isExactClipSnapshot(owner.clip, expected.id, expected.trackId)) {
+    if (
+        owners.length !== 1 ||
+        !owner ||
+        owner.trackId !== expected.trackId ||
+        !isExactClipSnapshot(owner.clip, expected.id, expected.trackId)
+    ) {
         return null;
     }
-    return audioClipTrimExpectedMatches(owner.clip, expected) ? owner.clip : null;
+    return audioClipStartTrimState.expectedMatches(owner.clip, expected) ? owner.clip : null;
 }
 
 function rawClockMatches(root: Root, clock: TempoSourceClock): boolean {
@@ -45,22 +49,29 @@ function rawClockMatches(root: Root, clock: TempoSourceClock): boolean {
     return Object.is(tempo, clock.tempo) && changes !== null && valuesEqual(changes, clock.changes);
 }
 
-export function audioClipTrimOwnerMatches(expected: Clip, clock: TempoSourceClock): boolean {
-    if (hasForeignPendingProjectWrites() || !valuesEqual(captureAudioClipTrimClock(), clock)) {
+function audioClipTrimOwnerMatches(expected: Clip, clock: TempoSourceClock): boolean {
+    if (hasForeignPendingProjectWrites() || !valuesEqual(audioClipStartTrimState.captureClock(), clock)) {
         return false;
     }
     const target = resolveEligibleClipWriteTarget({ clipId: expected.id });
     if (target.status !== 'eligible' || target.trackId !== expected.trackId) {
         return false;
     }
-    const clip = trackStore.value?.tracks.find((track) => track.id === expected.trackId)?.clips.find((row) => row.id === expected.id);
+    const clip = trackStore.value?.tracks
+        .find((track) => track.id === expected.trackId)
+        ?.clips.find((row) => row.id === expected.id);
     const root = getCrdtDoc<Root>('root');
-    return clip !== undefined && audioClipTrimExpectedMatches(clip, expected) && root !== undefined &&
-        rawOwner(root, expected) !== null && rawClockMatches(root, clock);
+    return (
+        clip !== undefined &&
+        audioClipStartTrimState.expectedMatches(clip, expected) &&
+        root !== undefined &&
+        rawOwner(root, expected) !== null &&
+        rawClockMatches(root, clock)
+    );
 }
 
 /** Recheck this existing incarnation at the actual publication boundary. */
-export function captureAudioClipTrimCommitValidation(
+function captureAudioClipTrimCommitValidation(
     expected: Clip,
     replacement: Clip,
     clock: TempoSourceClock
@@ -81,7 +92,14 @@ export function captureAudioClipTrimCommitValidation(
             const current = getCrdtDoc<Root>('root');
             return current && matches(current, expected) ? null : 'Audio trim owner changed before commit';
         },
-        validateDocument: (document) => matches(document, replacement) ? null : 'Audio trim did not reach its owned source fields',
+        validateDocument: (document) =>
+            matches(document, replacement) ? null : 'Audio trim did not reach its owned source fields',
         release: () => undefined,
     };
 }
+
+/** The same scoped owner law at admission and atomic publication. */
+export const audioClipTrimOwner = {
+    matches: audioClipTrimOwnerMatches,
+    captureCommitValidation: captureAudioClipTrimCommitValidation,
+};

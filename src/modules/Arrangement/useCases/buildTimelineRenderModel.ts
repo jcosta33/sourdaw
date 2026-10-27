@@ -28,10 +28,11 @@ import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
-import { timelineViewStore } from '../stores/timelineViewStore';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
+
 import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
 
 function defaultViewportWidth(): number {

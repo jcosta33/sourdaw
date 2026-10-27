@@ -128,7 +128,6 @@ foreign case. A named recreation case must change the Automerge object ID while
 preserving geometry; a rectangle edit must retain the ID. Assert each mutation
 occurred before interpreting a rejected tempo command as ownership evidence.
 
-
 ## Trim owner and captured replay
 
 A selected comp snapshot can keep the audible source correct while a left trim
