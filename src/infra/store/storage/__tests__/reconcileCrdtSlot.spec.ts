@@ -1,4 +1,4 @@
-import { change, from } from '@automerge/automerge';
+import { change, from, getObjectId, load, save } from '@automerge/automerge';
 import { describe, it, expect } from 'vitest';
 
 import { reconcileCrdtSlot, type CrdtSlotPresence } from '../reconcileCrdtSlot';
@@ -898,4 +898,133 @@ describe('reconcileCrdtSlot cost against a large live Automerge list', () => {
         },
         testTimeoutMs
     );
+});
+
+type FractionPayload = {
+    entry: number;
+    nested: { unwrapped: number; signedZero: number; ordinary: number; integer: number };
+    curve: number[];
+};
+type FractionRow = FractionPayload & { id: string; name: string };
+type FractionSlot = { rows: FractionRow[]; payload?: FractionPayload | number; values?: number[] };
+type FractionDocument = Record<string, unknown> & { slot: FractionSlot };
+const exactFraction = 0.9999999999999999;
+function fractionPayload(entry: number): FractionPayload {
+    return {
+        entry,
+        nested: { unwrapped: entry, signedZero: -0, ordinary: 0.3, integer: 7 },
+        curve: [entry, -0, 0.3, 7],
+    };
+}
+function fractionRow(id: string, entry = 0.25): FractionRow {
+    return { ...fractionPayload(entry), id, name: id };
+}
+function expectExactFraction(payload: FractionPayload): void {
+    expect(payload).toStrictEqual(fractionPayload(exactFraction));
+    expect(Object.is(payload.nested.signedZero, -0)).toBe(true);
+    expect(Object.is(payload.curve[1], -0)).toBe(true);
+}
+
+describe('reconcileCrdtSlot exact fractions in accepted composite writes', () => {
+    it.each([
+        'new nested map',
+        'replacement map',
+        'replacement primitive array',
+        'new entity row',
+        'reordered entity row',
+    ] as const)('retains source-sized fractions through %s and binary reopen without rewriting peers', (route) => {
+        const base: FractionSlot = {
+            rows: [fractionRow('a'), fractionRow('b'), fractionRow('owned'), fractionRow('peer')],
+        };
+        if (route === 'replacement map') {
+            base.payload = 9;
+        }
+        if (route === 'replacement primitive array') {
+            base.values = [2, 3];
+        }
+        let document = from<FractionDocument>({ slot: base });
+        // A peer's scalar publication is exact and newer than this writer's base.
+        document = change(document, (draft) => {
+            draft.slot.rows[3]!.entry = exactFraction;
+            if (route === 'reordered entity row') {
+                draft.slot.rows[2]!.entry = exactFraction;
+                draft.slot.rows[2]!.nested.unwrapped = exactFraction;
+                draft.slot.rows[2]!.curve[0] = exactFraction;
+            }
+        });
+        const peerId = getObjectId(document.slot.rows[3]);
+        const aId = getObjectId(document.slot.rows[0]);
+        const bId = getObjectId(document.slot.rows[1]);
+        const movedId = getObjectId(document.slot.rows[2]);
+        const expectedPeer = { ...fractionRow('peer'), entry: exactFraction };
+        const desired = structuredClone(base);
+        if (route === 'new nested map' || route === 'replacement map') {
+            desired.payload = fractionPayload(exactFraction);
+        }
+        if (route === 'replacement primitive array') {
+            desired.values = [exactFraction, -0, 0.3, 7];
+        }
+        if (route === 'new entity row') {
+            desired.rows.push(fractionRow('new', exactFraction));
+        }
+        if (route === 'reordered entity row') {
+            base.rows[2] = fractionRow('owned', exactFraction);
+            desired.rows = [
+                fractionRow('owned', exactFraction),
+                fractionRow('a'),
+                fractionRow('b'),
+                fractionRow('peer'),
+            ];
+        }
+        document = change(document, (draft) => {
+            reconcileCrdtSlot({ doc: draft, key: 'slot', baseValue: base, value: desired });
+        });
+        for (const current of [document, load<FractionDocument>(save(document))]) {
+            const peer = current.slot.rows.find((row) => row.id === 'peer');
+            expect(peer).toStrictEqual(expectedPeer);
+            expect(getObjectId(peer)).toBe(peerId);
+            expect(getObjectId(current.slot.rows.find((row) => row.id === 'a'))).toBe(aId);
+            expect(getObjectId(current.slot.rows.find((row) => row.id === 'b'))).toBe(bId);
+            if (route === 'new nested map' || route === 'replacement map') {
+                const payload = current.slot.payload;
+                if (!payload || typeof payload === 'number') {
+                    throw new Error('Expected the authored composite');
+                }
+                expectExactFraction(payload);
+            } else if (route === 'replacement primitive array') {
+                expect(current.slot.values).toStrictEqual([exactFraction, -0, 0.3, 7]);
+                expect(Object.is(current.slot.values?.[1], -0)).toBe(true);
+            } else {
+                const id = route === 'new entity row' ? 'new' : 'owned';
+                const row = current.slot.rows.find((candidate) => candidate.id === id)!;
+                expectExactFraction({ entry: row.entry, nested: row.nested, curve: row.curve });
+                if (route === 'reordered entity row') {
+                    expect(current.slot.rows.map((candidate) => candidate.id)).toEqual(['owned', 'a', 'b', 'peer']);
+                    expect(getObjectId(row)).not.toBe(movedId);
+                }
+            }
+        }
+    });
+    it('retains an edited owned row identity and a newer peer tuple when only one scalar changed', () => {
+        const base: FractionSlot = { rows: [fractionRow('owned'), fractionRow('peer')] };
+        let document = from<FractionDocument>({ slot: base });
+        document = change(document, (draft) => {
+            draft.slot.rows[1]!.entry = exactFraction;
+        });
+        const ownedId = getObjectId(document.slot.rows[0]);
+        const peerId = getObjectId(document.slot.rows[1]);
+        const desired: FractionSlot = {
+            rows: [{ ...fractionRow('owned'), entry: exactFraction }, fractionRow('peer')],
+        };
+        document = change(document, (draft) => {
+            reconcileCrdtSlot({ doc: draft, key: 'slot', baseValue: base, value: desired });
+        });
+        for (const current of [document, load<FractionDocument>(save(document))]) {
+            expect(current.slot.rows.map((row) => row.entry)).toEqual([exactFraction, exactFraction]);
+            expect(getObjectId(current.slot.rows[0])).toBe(ownedId);
+            expect(getObjectId(current.slot.rows[1])).toBe(peerId);
+            expect(Object.is(current.slot.rows[0]!.nested.signedZero, -0)).toBe(true);
+            expect(Object.is(current.slot.rows[1]!.curve[1], -0)).toBe(true);
+        }
+    });
 });
