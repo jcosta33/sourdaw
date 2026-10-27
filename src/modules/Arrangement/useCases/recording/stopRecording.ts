@@ -13,7 +13,7 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
-import { recordingMidiSourceBeatAt } from './recordingMidiAdmission';
+import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
 import { recordingPassTiming } from './recordingPassTiming';
 
 /**

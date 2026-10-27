@@ -215,16 +215,14 @@ export { prepareRecoveredRecording } from './recording/prepareRecoveredRecording
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
 export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
-export {
-    admitRecordingMidiNoteOn,
-    admitRecordingMidiNoteOff,
-    admitRecordingMidiExpression,
-    retireRecordingMidiAdmission,
-    getRecordingMidiAdmission,
-    findOpenRecordingMidiAdmission,
-    findOpenRecordingMidiMemberAdmission,
-    recordingMidiSourceBeatAt,
-} from './recording/recordingMidiAdmission';
+export { recordingMidiSourceBeatAt } from './recording/recordingMidiSourceBeatAt';
+export { admitRecordingMidiNoteOn } from './recording/admitRecordingMidiNoteOn';
+export { admitRecordingMidiExpression } from './recording/admitRecordingMidiExpression';
+export { admitRecordingMidiNoteOff } from './recording/admitRecordingMidiNoteOff';
+export { findOpenRecordingMidiAdmission } from './recording/findOpenRecordingMidiAdmission';
+export { findOpenRecordingMidiMemberAdmission } from './recording/findOpenRecordingMidiMemberAdmission';
+export { retireRecordingMidiAdmission } from './recording/retireRecordingMidiAdmission';
+export { getRecordingMidiAdmission } from './recording/getRecordingMidiAdmission';
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';

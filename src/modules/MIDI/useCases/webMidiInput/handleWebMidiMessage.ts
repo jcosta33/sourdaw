@@ -194,6 +194,61 @@ function admitMemberExpression(
     admitRecordingMidiExpression(expression);
 }
 
+function handleAdmittedNoteOn(
+    message: Extract<NonNullable<ReturnType<typeof parseWebMidiMessage>>, { type: 'noteOn' }>,
+    timeStamp: CapturedInputEventTime
+): Promise<void> | void {
+    const channel = message.channel;
+    // The recorded onset is the beat of the EVENT's own instant, not of
+    // this callback's turn on the main thread (#4875).
+    const position = captureEventPositionAt(timeStamp);
+    const trackId = getTargetTrackId();
+    if (message.velocity === 0) {
+        const opened = findOpenRecordingMidiAdmission(channel, message.note);
+        if (opened) {
+            admitRecordingMidiNoteOff({
+                channel,
+                note: message.note,
+                audioTime: timeStamp.audioTime,
+                position: captureCompensatedRecordingPosition(opened.trackId, timeStamp.audioTime),
+            });
+        }
+    }
+    let admission: ReturnType<typeof admitRecordingMidiNoteOn> = null;
+    if (message.velocity > 0 && trackId) {
+        admission = admitRecordingMidiNoteOn({
+            trackId,
+            channel,
+            note: message.note,
+            velocity: message.velocity,
+            audioTime: timeStamp.audioTime,
+            position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
+            initialExpression: captureRecordingMemberExpression(channel),
+        });
+    }
+    const admittedTime: {
+        audioTime: number;
+        recordingBeat: number;
+        recordingPassIndex: number;
+        recordingAdmissionId?: string;
+    } = {
+        ...timeStamp,
+        recordingBeat: position.beat,
+        recordingPassIndex: position.passIndex,
+    };
+    if (admission) {
+        admittedTime.recordingAdmissionId = admission.id;
+    }
+    // The wheels it is struck under are those at arrival: bends admitted
+    // while it waits in the queue move the note at their own frame.
+    const admittedWheels = captureAdmittedWheels(channel);
+    return dispatchNoteHandler(
+        channel,
+        () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime, admittedWheels),
+        message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
+    );
+}
+
 /** Completion of accepted work, when that message had to wait in a queue. */
 export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> | void {
     const message = parseWebMidiMessage(event);
@@ -206,56 +261,8 @@ export function handleWebMidiMessage(event: WebMidiInputMessage): Promise<void> 
     const channel = message.channel;
 
     switch (message.type) {
-        case 'noteOn': {
-            // The recorded onset is the beat of the EVENT's own instant, not of
-            // this callback's turn on the main thread (#4875).
-            const position = captureEventPositionAt(timeStamp);
-            const trackId = getTargetTrackId();
-            if (message.velocity === 0) {
-                const opened = findOpenRecordingMidiAdmission(channel, message.note);
-                if (opened) {
-                    admitRecordingMidiNoteOff({
-                        channel,
-                        note: message.note,
-                        audioTime: timeStamp.audioTime,
-                        position: captureCompensatedRecordingPosition(opened.trackId, timeStamp.audioTime),
-                    });
-                }
-            }
-            let admission: ReturnType<typeof admitRecordingMidiNoteOn> = null;
-            if (message.velocity > 0 && trackId) {
-                admission = admitRecordingMidiNoteOn({
-                    trackId,
-                    channel,
-                    note: message.note,
-                    velocity: message.velocity,
-                    audioTime: timeStamp.audioTime,
-                    position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
-                    initialExpression: captureRecordingMemberExpression(channel),
-                });
-            }
-            const admittedTime: {
-                audioTime: number;
-                recordingBeat: number;
-                recordingPassIndex: number;
-                recordingAdmissionId?: string;
-            } = {
-                ...timeStamp,
-                recordingBeat: position.beat,
-                recordingPassIndex: position.passIndex,
-            };
-            if (admission) {
-                admittedTime.recordingAdmissionId = admission.id;
-            }
-            // The wheels it is struck under are those at arrival: bends admitted
-            // while it waits in the queue move the note at their own frame.
-            const admittedWheels = captureAdmittedWheels(channel);
-            return dispatchNoteHandler(
-                channel,
-                () => handleWebMidiNoteOn(channel, message.note, message.velocity, admittedTime, admittedWheels),
-                message.velocity === 0 ? admittedRelease(channel, message.note) : undefined
-            );
-        }
+        case 'noteOn':
+            return handleAdmittedNoteOn(message, timeStamp);
         case 'noteOff': {
             const opened = findOpenRecordingMidiAdmission(channel, message.note);
             if (opened) {
