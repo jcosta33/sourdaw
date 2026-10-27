@@ -52,6 +52,7 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { projectFrozenMidiTakeWindow } from '#/modules/MIDI/useCases';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type AudioGraphDeviceTarget, type AudioGraphMidiNoteEvent } from '../../models/AudioGraphBackend';
@@ -283,6 +284,66 @@ function projectClipNotes({
     input,
     projectBeatToSeconds,
 }: ClipProjectionInput): ProjectedNote[] {
+    if (clip.midiTakeSource) {
+        const source = clip.midiTakeSource;
+        const span = source.sourceEndBeat - source.sourceEntryBeat;
+        const first = Math.max(
+            0,
+            Math.floor((clip.startBeat - source.phaseHeadBeat - span) / source.passLengthBeats) + 1
+        );
+        const last = Math.ceil((clip.endBeat - source.phaseHeadBeat) / source.passLengthBeats);
+        const projected: ProjectedNote[] = [];
+        for (let absoluteOccurrenceIndex = first; absoluteOccurrenceIndex < last; absoluteOccurrenceIndex++) {
+            const window = projectFrozenMidiTakeWindow({
+                source,
+                absoluteOccurrenceIndex,
+                fromBeat: clip.startBeat,
+                toBeat: clip.endBeat,
+            });
+            if (!window) {
+                throw new Error('Invalid frozen MIDI take window');
+            }
+            const admitted = window.notes.filter((note) =>
+                input.selectProbability({
+                    projectProbabilitySeed: input.probabilitySeed,
+                    clipId: source.sourceClipId,
+                    eventId: note.id,
+                    absoluteOccurrenceIndex,
+                    probabilityPercent: note.probability ?? 100,
+                })
+            );
+            const passHead = source.phaseHeadBeat + absoluteOccurrenceIndex * source.passLengthBeats;
+            const events = input.projectMidiEvents({
+                events: admitted,
+                clipId: source.sourceClipId,
+                clipStartBeat: clip.startBeat,
+                clipEndBeat: Math.min(clip.endBeat, passHead + span),
+                iterationStartBeat: passHead,
+                loopLengthBeats: source.passLengthBeats,
+                midiOffsetBeats: 0,
+                loopEnabled: false,
+                eventsAreAbsolute: true,
+                phase: 'complete',
+            });
+            for (const event of events) {
+                projected.push({
+                    onSeconds: projectBeatToSeconds(event.startBeat),
+                    offSeconds: projectBeatToSeconds(event.startBeat + event.duration),
+                    note: conformPitch({
+                        projectChordPitch: track.followChordTrack ? input.projectChordPitch : null,
+                        pitch: event.pitch,
+                        referenceBeat: clip.startBeat,
+                        targetBeat: event.startBeat,
+                    }),
+                    channel: event.channel ?? 0,
+                    velocity: event.velocity,
+                    articulationId:
+                        input.resolveArticulationId?.({ deviceType, articulation: event.articulation }) ?? null,
+                });
+            }
+        }
+        return projected;
+    }
     const sourceNotes = input.notesByClipId[clip.id];
     const clipVisualLength = clip.endBeat - clip.startBeat;
     if (!sourceNotes || clipVisualLength <= 0) {
