@@ -31,10 +31,11 @@ import { compileTrackStripInitializationSnapshot } from '../../compileTrackStrip
 
 // Physical Web Audio nodes are doubled; the engine, graph validation, import,
 // Command transaction, CRDT projection, and history are production implementations.
-vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioEngine/repositories/createWebAudioEngine')>();
+const { createMockAudioContext } = await vi.hoisted(async () => {
     const { createMockAudioContext } = await import('#/helpers/__tests__/audioContext.mock');
-    return { ...actual, audioEngine: actual.createAudioEngine(createMockAudioContext() as unknown as AudioContext) };
+    // The production singleton constructs its context when its module loads.
+    vi.stubGlobal('AudioContext', createMockAudioContext);
+    return { createMockAudioContext };
 });
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
@@ -64,12 +65,15 @@ let stopProjection: (() => void) | undefined;
 
 function importedTrack() {
     const track = trackStore.value?.tracks.find((track) => track.name === 'Imported');
-    if (!track) throw new Error('Expected completed imported track');
+    if (!track) {
+        throw new Error('Expected completed imported track');
+    }
     return track;
 }
 
 beforeEach(async () => {
     vi.clearAllMocks();
+    vi.stubGlobal('AudioContext', createMockAudioContext);
     vi.stubGlobal('AudioWorkletNode', MeterWorklet);
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('cold imported device edit');
