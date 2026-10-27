@@ -88,8 +88,8 @@ describe('saved Grinder parameter admission into the offline control target', ()
                 throw new Error('The parameter command did not preserve its device');
             }
 
-            // Only the WASM boundary is mocked. The strategy, node sender, compiler,
-            // and processor admission all execute their production code.
+            // WASM records setter calls behind the real strategy, node sender,
+            // compiler, and processor admission; this does not assert PCM output.
             const processor = await createReadyGrinderProcessor();
             expect(processor.port.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
             const postMessage = vi.fn((data: unknown) => processor.port.onmessage?.({ data }));

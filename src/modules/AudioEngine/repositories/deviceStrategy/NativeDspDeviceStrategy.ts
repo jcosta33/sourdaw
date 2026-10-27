@@ -3,6 +3,7 @@ import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 import { type NoteExpressionControls } from '../../engine/noteExpression';
 import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 import { type Device } from '../../models/TrackViewTypes';
+import { isRuntimeDeviceControlId } from '../../services/compileRuntimeDeviceControl';
 import { type OfflineDeviceNode } from '../devices/types';
 
 import {
@@ -135,7 +136,9 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
             deviceId: device.id,
             deviceType: factory.type,
             parameterIds: Object.entries(device.parameterValues)
-                .filter(([, value]) => Number.isFinite(value))
+                // One unsupported saved key would make the processor reject the
+                // entire target, including controls the protocol can replay.
+                .filter(([name, value]) => isRuntimeDeviceControlId(name) && Number.isFinite(value))
                 .map(([name]) => name),
         };
     }

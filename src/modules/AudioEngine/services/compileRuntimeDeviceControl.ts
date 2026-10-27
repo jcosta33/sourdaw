@@ -17,7 +17,7 @@ function hasOnlyKeys(value: UnknownRecord, keys: readonly string[]): boolean {
     return actualKeys.length === keys.length && actualKeys.every((key) => keys.includes(key));
 }
 
-function isBoundedId(value: unknown): value is string {
+export function isRuntimeDeviceControlId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
 }
 
@@ -51,10 +51,10 @@ export function compileRuntimeDeviceControl(
         return invalid('Runtime device control target has an unsupported schema');
     }
     if (
-        !isBoundedId(input.target.trackId) ||
-        !isBoundedId(input.target.deviceId) ||
-        !isBoundedId(input.target.deviceType) ||
-        !isBoundedId(input.target.parameterId)
+        !isRuntimeDeviceControlId(input.target.trackId) ||
+        !isRuntimeDeviceControlId(input.target.deviceId) ||
+        !isRuntimeDeviceControlId(input.target.deviceType) ||
+        !isRuntimeDeviceControlId(input.target.parameterId)
     ) {
         return invalid('Runtime device control target is invalid');
     }
