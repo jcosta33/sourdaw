@@ -2455,7 +2455,13 @@
             "oracle": {
                 "kind": "revert",
                 "group": "prior-commit"
-            }
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-hi-hat",
+                    "gainDb": -7
+                }
+            ]
         },
         {
             "id": "AC004-HO-UNDO-MULTI-COMMAND",
@@ -2500,7 +2506,13 @@
             "oracle": {
                 "kind": "revert",
                 "group": "prior-commit"
-            }
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-hi-hat",
+                    "gainDb": -7
+                }
+            ]
         },
         {
             "id": "AC004-HO-RETARGET-MULTI-TRACK",

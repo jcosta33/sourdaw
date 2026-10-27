@@ -947,11 +947,11 @@ async function sendScriptedChatTurn(input: {
     };
 }
 
-/** What the prior turn left for the follow-up: the card it holds pending, or the group it committed. */
+/** The prior card or commit, with the project an Undo must restore while preserving later user edits. */
 type PriorTurnState = {
     proposalId: string | undefined;
     commitGroupId: string | undefined;
-    projectBeforeCommit: ProjectTruth;
+    projectAfterRevert: ProjectTruth;
 };
 
 /**
@@ -962,12 +962,12 @@ type PriorTurnState = {
 async function settlePriorTurn(
     id: string,
     outcome: CorpusPriorTurn['outcome'],
-    projectBeforeCommit: ProjectTruth
+    projectAfterRevert: ProjectTruth
 ): Promise<PriorTurnState> {
     const proposed = proposedConfirmationIds();
     if (outcome === 'pending') {
         expect(proposed, `Case ${id} prior turn left no single card pending: ${lastAssistantReply()}`).toHaveLength(1);
-        return { proposalId: proposed[0], commitGroupId: undefined, projectBeforeCommit };
+        return { proposalId: proposed[0], commitGroupId: undefined, projectAfterRevert };
     }
     expect(proposed.length, `Case ${id} prior turn left more than one card pending`).toBeLessThanOrEqual(1);
     for (const confirmationId of proposed) {
@@ -977,7 +977,7 @@ async function settlePriorTurn(
         readChatThreadContext()?.lastCommit?.standing,
         `Case ${id} prior turn committed nothing that stands: ${lastAssistantReply()}`
     ).toBe('standing');
-    return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId, projectBeforeCommit };
+    return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId, projectAfterRevert };
 }
 
 /** The commands one undo group holds applied, or `null` when any member is no plain action. */
@@ -1086,7 +1086,7 @@ function scoreFollowUp(input: {
                 matchesOracle: true,
                 unintendedMutations: Math.max(
                     writes.barrelActions.length,
-                    projectDifferences(prior.projectBeforeCommit, writes.projectAfter)
+                    projectDifferences(prior.projectAfterRevert, writes.projectAfter)
                 ),
             };
         case 'proposal': {
@@ -1161,6 +1161,10 @@ async function runRefinementCase(
                 type: 'setTrackGain',
                 payload: { trackId: edit.trackId, gainDb: edit.gainDb, expectedGain },
             });
+            // Reverting the AI batch must preserve the musician's independent later edit.
+            priorState.projectAfterRevert = projectAfterOracleActions(priorState.projectAfterRevert, [
+                { type: 'setTrackGain', payload: { trackId: edit.trackId, gainDb: edit.gainDb } },
+            ]);
         }
         const writes = await sendScriptedChatTurn({
             id: testCase.id,
@@ -1780,7 +1784,18 @@ describe('agent acceptance corpora', () => {
                     prefix = 'HO';
                 }
                 const testCase = corpusCase(corpusName, `AC004-${prefix}-${suffix}`);
-                const run = await runWithBarrel(testCase);
+                const run = await runWithBarrel(testCase, async () => {
+                    if (testCase.oracle.kind !== 'revert') {
+                        return;
+                    }
+                    for (const edit of testCase.interveningFaderEdits ?? []) {
+                        const track = trackStore.value?.tracks.find((candidate) => candidate.id === edit.trackId);
+                        expect(track?.gain, 'Undo must preserve the later musician edit').toBeCloseTo(
+                            10 ** (edit.gainDb / 20),
+                            10
+                        );
+                    }
+                });
                 expect(run.result, JSON.stringify(chatPlanning.last?.planningOutcome)).toMatchObject({
                     observed: 'execute-exact',
                     exactMatch: true,
