@@ -19,6 +19,29 @@ vi.mock('#/utils/desktopBridge', () => ({
 }));
 beforeEach(() => vi.clearAllMocks());
 describe('native export transaction adapter', () => {
+    it('stages audio then report but commits the report token first', async () => {
+        let index = 0;
+        native.begin.mockImplementation(async () => `token-${++index}`);
+        const batch = await streamExportToNative({
+            directoryPath: '/picked',
+            requireReportPairs: true,
+            checkCancelled: () => {},
+        });
+        const audio = await batch.beginFile('stem.wav');
+        await audio.writer.write(new Uint8Array([1]));
+        await audio.finish();
+        await expect(batch.commit(() => {})).rejects.toThrow('pairs are incomplete');
+        const report = await batch.beginFile('stem.wav.loudness.json');
+        await report.writer.write(new Uint8Array([2]));
+        await report.finish();
+        batch.registerReportPair('stem.wav', 'stem.wav.loudness.json');
+        await batch.commit(() => {});
+        expect(native.commit).toHaveBeenCalledWith(['token-2', 'token-1']);
+        expect(native.begin.mock.calls.map(([path]) => path)).toEqual([
+            '/picked/stem.wav',
+            '/picked/stem.wav.loudness.json',
+        ]);
+    });
     it('stages all formats, seals each, then commits the exact batch once', async () => {
         let index = 0;
         native.begin.mockImplementation(async () => `token-${++index}`);

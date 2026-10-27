@@ -19,6 +19,7 @@ type BrowserExportInput = {
     extension: string;
     mime: string;
     archive: boolean;
+    requireReportPairs?: boolean;
     checkCancelled: () => void;
     signal?: AbortSignal;
 };
@@ -158,6 +159,8 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
     let abortPromise: Promise<void> | undefined;
     const emitted: Uint8Array[] = [];
     const names = new Set<string>();
+    const completed = new Set<string>();
+    const pairs = new Map<string, string>();
     const zip = input.archive ? createZipOutput(emitted, drainState) : undefined;
     const drain = () => drainZipOutput(emitted, writable, input.checkCancelled, drainState, input.signal);
     const abort = (): Promise<void> => {
@@ -221,13 +224,36 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
                         await drain();
                     }
                     fileOpen = false;
+                    completed.add(name);
                 },
             };
+        },
+        registerReportPair(audioName: string, reportName: string) {
+            if (
+                !input.requireReportPairs ||
+                reportName !== `${audioName}.loudness.json` ||
+                !completed.has(audioName) ||
+                !completed.has(reportName) ||
+                pairs.has(audioName)
+            ) {
+                throw new Error('Invalid WAV report pair.');
+            }
+            pairs.set(audioName, reportName);
         },
         async commit(onCommitBegin: () => void) {
             input.checkCancelled();
             if (fileOpen || count === 0 || closed) {
                 throw new Error('Export has no completed files.');
+            }
+            if (
+                input.requireReportPairs &&
+                (!zip ||
+                    pairs.size * 2 !== completed.size ||
+                    [...completed].some((name) =>
+                        name.endsWith('.wav') ? !pairs.has(name) : ![...pairs.values()].includes(name)
+                    ))
+            ) {
+                throw new Error('WAV report pairs are incomplete.');
             }
             if (zip) {
                 zip.end();
