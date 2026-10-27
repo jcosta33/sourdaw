@@ -782,6 +782,79 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         Container.clear();
     });
 
+    describe.each([false, true])('relative removal placement saved=%s', (saved) => {
+        it.each([false, true])('preserves peer prepends, clip order and overlap hits grouped=%s', async (grouped) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineViewStore.set({ scrollX: 0, scrollY: 0, pixelsPerBeat: 20, autoScrollEnabled: false });
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({
+                        id: TRACK_ID,
+                        kind: 'midi',
+                        clips: [
+                            createClipFixture('clip-a', 0, 4),
+                            createClipFixture('clip-b', 2, 6),
+                            createClipFixture('clip-c', 4, 8),
+                        ],
+                    }),
+                ],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            expect(hitTestClipEdge(60, 20)?.clipId).toBe('clip-a');
+            const originalClips = structuredClone(trackStore.value!.tracks[0]!.clips);
+            const groupId = grouped ? 'relative-removal-group' : undefined;
+            await executeAppAction(
+                { type: 'removeClip', payload: { clipId: 'clip-b', ripple: false } },
+                { source: 'manual', groupId }
+            );
+            if (grouped) {
+                await executeAppAction(
+                    { type: 'removeClip', payload: { clipId: 'clip-c', ripple: false } },
+                    { source: 'manual', groupId }
+                );
+            }
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+            );
+            if (saved) {
+                reloadSavedProject();
+            }
+            const peer = createClipFixture('peer-x', 20, 24);
+            syncPeerProject((project) => project.tracks.tracks[0]!.clips.unshift(peer));
+            const restored = [peer, ...originalClips];
+            const away = grouped ? ['peer-x', 'clip-a'] : ['peer-x', 'clip-a', 'clip-c'];
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                expect((await undo()).headConsumed).toBe(true);
+                expect(hitTestClipEdge(60, 20)?.clipId).toBe('clip-a');
+                expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips).toEqual(restored);
+                expect(trackStore.value?.tracks[0]?.clips).toEqual(restored);
+                expect(undoHistoryStore.value?.past).toHaveLength(0);
+                expect(undoHistoryStore.value?.future).toHaveLength(1);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                );
+                if (saved) {
+                    reloadSavedProject();
+                }
+                await redo();
+                expect(getCrdtDoc<PeerProject>('root')?.tracks.tracks[0]?.clips.map((clip) => clip.id)).toEqual(away);
+                expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(away);
+                expect(undoHistoryStore.value?.past).toHaveLength(1);
+                expect(undoHistoryStore.value?.future).toHaveLength(0);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+                );
+                if (saved) {
+                    reloadSavedProject();
+                }
+            }
+        });
+    });
+
     it.each([
         {
             name: 'middle with no peer',
