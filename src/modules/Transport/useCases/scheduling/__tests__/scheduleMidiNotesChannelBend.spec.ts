@@ -318,15 +318,11 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
     });
 
     it('keeps a later channel bend over a captured note’s scalar after cropping their frozen pass', async () => {
-        const { prepareMidiTakeSourceCapture } =
-            await import('#/modules/Arrangement/useCases/comping/prepareMidiTakeSourceCapture');
-        const { createTake } = await import('#/modules/Arrangement/models/TakeLane');
         const { projectClipMidiEvents: realProject } =
-            await import('#/modules/MIDI/useCases/grooveTemplates/projectClipMidiEvents');
+            await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
         vi.mocked(projectClipMidiEvents).mockImplementation(realProject);
         stripFor(GRAND_BOULE);
         const clip = midiClip({ startBeat: 0, endBeat: 4, trackId: 'track-1' });
-        const take = { ...createTake('clip-1', 'second pass', 0, 4, 4), recordingPassIndex: 1 };
         const notes = [{ ...note('selected', 5, 3), pitchBend: 1000, recordingPassIndex: 1 }];
         const bends = [bend('later', 5.5, 8191)];
         const rows = {
@@ -334,13 +330,14 @@ describe('scheduleMidiNotes with a stored channel pitch bend', () => {
             controlChanges: { present: true as const, value: [] },
             pitchBends: { present: true as const, value: bends },
         };
-        const timeline = {
-            secondsAtBeat: (beat: number) => beat / 2,
-            beatAtSeconds: (seconds: number) => seconds * 2,
-            tempoAtBeat: () => 120,
+        const source = {
+            sourceClipId: clip.id,
+            rows,
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
         };
-        const source = prepareMidiTakeSourceCapture({ clip, take, siblingTakes: [take], rows, timeline });
-        expect(source).toMatchObject({ sourceEntryBeat: 4, sourceEndBeat: 8, phaseHeadBeat: 0, passLengthBeats: 4 });
 
         setProject({
             track: midiTrack(GRAND_BOULE, [

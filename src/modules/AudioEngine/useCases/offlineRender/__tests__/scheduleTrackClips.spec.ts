@@ -1972,7 +1972,10 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
             /** A tempo map; the render then places beats through the production projection. */
             changes?: Parameters<typeof scheduleTrackClips>[0]['changes'];
             /** Overrides of the clip the note sits in. */
-            clip?: Partial<Track['clips'][number]>;
+            clip?: Partial<Track['clips'][number]> & {
+                midiTakeSource?: import('#/utils/handlerContract').MidiTakeSourceSnapshot;
+                midiTakeRecordingPassIndex?: number;
+            };
             /** Cuts the clip's passes with the production groove projection, as the composition root injects it. */
             productionProjection?: boolean;
             /** Puts a Yeast device (which processes the notes unchanged here) on the track. */

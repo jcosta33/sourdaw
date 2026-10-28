@@ -192,7 +192,7 @@ function renderTakeMenu(
 ) {
     render(
         createElement(PianoRollContextMenu, {
-            menu: { x: 100, y: 100, beat, pitch: 60 },
+            menu: { x: 100, y: 100, beat },
             clipId: 'clip',
             notes: [...projection.baseNotes, ...projection.notes],
             selectedNoteIds,

@@ -50,6 +50,52 @@ describe('prepare MIDI take source capture', () => {
         expect(capture?.rows.pitchBends).toEqual({ present: true, value: [] });
     });
 
+    it('captures the second pass and its pedal and bend rows for playback', () => {
+        const clip = ClipDummy.create({
+            id: 'source',
+            type: 'midi',
+            startBeat: 0,
+            endBeat: 8,
+            loopEnabled: true,
+            loopLength: 4,
+        });
+        const take = { ...createTake('source', 'Second pass', 0, 4, 4), recordingPassIndex: 1 };
+        const capturedRows: MidiClipDataActionSnapshot = {
+            notes: {
+                present: true,
+                value: [
+                    {
+                        id: 'selected',
+                        pitch: 60,
+                        startBeat: 5,
+                        duration: 3,
+                        velocity: 100,
+                        pitchBend: 1000,
+                        recordingPassIndex: 1,
+                    },
+                ],
+            },
+            controlChanges: {
+                present: true,
+                value: [
+                    { id: 'press', controller: 64, value: 127, beat: 4, channel: 0 },
+                    { id: 'lift', controller: 64, value: 0, beat: 8, channel: 0 },
+                ],
+            },
+            pitchBends: { present: true, value: [{ id: 'later', beat: 5.5, value: 8191, channel: 0 }] },
+        };
+        expect(
+            prepareMidiTakeSourceCapture({ clip, take, siblingTakes: [take], rows: capturedRows, timeline })
+        ).toEqual({
+            sourceClipId: 'source',
+            rows: capturedRows,
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        });
+    });
+
     it('uses a full sibling pass period for a short first pass begun inside the loop', () => {
         const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 2, endBeat: 8 });
         const first = createTake('source', 'First pass', 2, 4, 0);

@@ -56,7 +56,7 @@ export { canPrepareMidiClipGlueState } from './midiClipData/canPrepareMidiClipGl
 export { prepareMidiClipFanOutState } from './midiClipData/prepareMidiClipFanOutState';
 export { prepareMidiClipGlueState } from './midiClipData/prepareMidiClipGlueState';
 export { projectMidiClipWindow } from './midiClipData/projectMidiClipWindow';
-export { isFrozenMidiTakeSource } from '../stores';
+export { isFrozenMidiTakeSource } from '../stores/isFrozenMidiTakeSource';
 export { projectFrozenMidiTakeWindow } from './midiClipData/projectFrozenMidiTakeWindow';
 export { replaceFrozenMidiTakeRow } from './midiClipData/replaceFrozenMidiTakeRow';
 export { sliceMidiTakeNoteForEdit } from './midiClipData/sliceMidiTakeNoteForEdit';

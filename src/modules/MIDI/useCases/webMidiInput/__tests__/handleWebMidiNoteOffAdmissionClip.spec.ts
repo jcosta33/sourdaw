@@ -138,8 +138,7 @@ describe('handleWebMidiNoteOff recorded-note destination clip', () => {
             expressionChanges: [{ dimension: 'pressure', value: 80, audioTime: 1.5, sourceBeat: 8.5 }],
         };
         recording_admission.get.mockReturnValue(admitted);
-        const append_recorded_midi_note =
-            vi.fn<NonNullable<HandleWebMidiNoteOffDependencies['appendRecordedMidiNote']>>();
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: { id: string } }) => void>();
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 appendRecordedMidiNote: append_recorded_midi_note,

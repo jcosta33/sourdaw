@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createTake } from '#/modules/Arrangement/models/TakeLane';
-import { type Clip, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
-import { prepareMidiTakeSourceCapture } from '#/modules/Arrangement/useCases/comping/prepareMidiTakeSourceCapture';
-import { resolveCompingProgramme } from '#/modules/Arrangement/useCases/comping/resolveCompingProgramme';
 import {
     applyNoteExpression,
     ensureTrackStrip,
@@ -88,8 +85,9 @@ const engineStub = vi.hoisted(() => ({
     nodesFor: (_trackId: string): unknown[] => [],
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { tracks: [] } },
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: { value: { tracks: [] }, subscribe: () => () => undefined },
     // Read at module scope by the MIDI barrel's device-write wiring, which the
     // tests that load the real projections past the barrel double evaluate.
     persistDeviceParam: vi.fn(),
@@ -97,10 +95,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
-    midiStore: { value: null },
+    midiStore: { value: null, subscribe: () => () => undefined },
 }));
 vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: { value: null },
+    automationStore: { value: null, subscribe: () => () => undefined },
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationValueAtBeat: vi.fn(() => null),
@@ -113,7 +111,8 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
 }));
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     resolveClipsWithComping: vi.fn((_trackId: string, clips: Clip[]) =>
         clips.map((clip) => ({
             ...clip,
@@ -124,7 +123,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     applyNoteExpression: vi.fn(),
     // The real projection: what a curve becomes is the contract under test here,
     // with only the engine surface around it doubled.
@@ -155,7 +155,8 @@ vi.mock('#/modules/AudioEngine/useCases', async () => ({
     })),
     scheduleFaustNote: vi.fn(),
 }));
-vi.mock('#/modules/Synth/useCases', () => ({
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Synth/useCases')>()),
     getDrumKitDefByIndex: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
@@ -165,12 +166,8 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
-vi.mock('#/modules/MIDI/useCases', async () => ({
-    isFrozenMidiTakeSource: (
-        await vi.importActual<typeof import('#/modules/MIDI/stores/isFrozenMidiTakeSource')>(
-            '#/modules/MIDI/stores/isFrozenMidiTakeSource'
-        )
-    ).isFrozenMidiTakeSource,
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     getChordAtBeat: vi.fn(),
     projectChannelBend: () => [],
     projectClipControllerEvents: vi.fn(),
@@ -4152,7 +4149,6 @@ describe('scheduleMidiNotes', () => {
                 },
             });
             const clip = midiClip({ endBeat: 8, loopEnabled: true, loopLength: 4 });
-            const rawTake = { ...createTake('clip-1', 'Second pass', 0, 4, 4), recordingPassIndex: 1 };
             const rows = {
                 notes: { present: true as const, value: [] },
                 controlChanges: {
@@ -4161,35 +4157,41 @@ describe('scheduleMidiNotes', () => {
                 },
                 pitchBends: { present: true as const, value: [] },
             };
-            const timeline = {
-                secondsAtBeat: (beat: number) => beat / 2,
-                beatAtSeconds: (seconds: number) => seconds * 2,
-                tempoAtBeat: () => 120,
-            };
-            const source = prepareMidiTakeSourceCapture({
-                clip,
-                take: rawTake,
-                siblingTakes: [rawTake],
+            const source = {
+                sourceClipId: 'clip-1',
                 rows,
-                timeline,
-            });
-            expect(source).toMatchObject({
                 sourceEntryBeat: 4,
                 sourceEndBeat: 8,
                 phaseHeadBeat: 0,
                 passLengthBeats: 4,
-            });
-            if (!source) {
-                throw new Error('Missing captured MIDI source');
-            }
-            const take = { ...rawTake, midiSource: source };
-            const lane = {
-                id: 'lane',
-                trackId: 'track-1',
-                takes: [take],
-                activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
             };
-            const resolved = resolveCompingProgramme('track-1', [clip], { lanes: [lane] }, timeline);
+            const take = {
+                id: 'take-1',
+                clipId: 'clip-1',
+                name: 'Second pass',
+                startBeat: 0,
+                endBeat: 4,
+                selected: false,
+                sourceOffsetBeats: 4,
+                recordingPassIndex: 1,
+                midiSource: source,
+            };
+            const previousLanes = takeLaneStore.value;
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 'track-1',
+                        takes: [take],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
+                    },
+                ],
+            });
+            const actualArrangement = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+                '#/modules/Arrangement/useCases'
+            );
+            const resolved = actualArrangement.resolveClipsWithComping('track-1', [clip]);
+            takeLaneStore.set(previousLanes);
             expect(resolved[0]).toMatchObject({ startBeat: 0, endBeat: 8, midiTakeSource: source });
             vi.mocked(resolveClipsWithComping).mockReturnValue(resolved);
             (trackStore as { value: unknown }).value = {

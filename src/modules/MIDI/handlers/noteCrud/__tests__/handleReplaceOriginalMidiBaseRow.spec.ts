@@ -43,7 +43,7 @@ describe('replaceOriginalMidiBaseRow', () => {
     it('replaces one original row and restores it while preserving a peer sibling edit', () => {
         const action = rowAction(original, { ...original, pitch: 61 });
         midiStore.set({ ...midiStore.value!, notesByClipId: { clip: [original, { ...sibling, velocity: 100 }] } });
-        expect(handleReplaceOriginalMidiBaseRow.validate?.(action)).toBe(true);
+        expect(handleReplaceOriginalMidiBaseRow.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
         expect(handleReplaceOriginalMidiBaseRow.execute(action)).toEqual({ status: 'written' });
         expect(midiStore.value?.notesByClipId.clip).toEqual([
             { ...original, pitch: 61 },
@@ -60,7 +60,7 @@ describe('replaceOriginalMidiBaseRow', () => {
     it('preserves absent and present empty notes buckets across an insertion inverse', () => {
         midiStore.set({ ...midiStore.value!, notesByClipId: {} });
         const action = rowAction(null, original, false);
-        expect(handleReplaceOriginalMidiBaseRow.validate?.(action)).toBe(true);
+        expect(handleReplaceOriginalMidiBaseRow.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
         expect(handleReplaceOriginalMidiBaseRow.execute(action)).toEqual({ status: 'written' });
         const inverse = handleReplaceOriginalMidiBaseRow.describe(action).inverseAction;
         if (inverse?.type !== 'replaceOriginalMidiBaseRow') {
@@ -70,17 +70,19 @@ describe('replaceOriginalMidiBaseRow', () => {
         expect(midiStore.value?.notesByClipId).not.toHaveProperty('clip');
 
         midiStore.set({ ...midiStore.value!, notesByClipId: { clip: [] } });
-        expect(handleReplaceOriginalMidiBaseRow.validate?.(action)).toBe(false);
+        expect(handleReplaceOriginalMidiBaseRow.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
     });
 
     it('refuses a changed original row and malformed present pass identity', () => {
         const action = rowAction(original, { ...original, pitch: 61 });
         midiStore.set({ ...midiStore.value!, notesByClipId: { clip: [{ ...original, pitch: 70 }, sibling] } });
-        expect(handleReplaceOriginalMidiBaseRow.validate?.(action)).toBe(false);
+        expect(handleReplaceOriginalMidiBaseRow.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
         expect(handleReplaceOriginalMidiBaseRow.execute(action)).toEqual({ status: 'conflict' });
         expect(midiStore.value?.notesByClipId.clip?.[0]?.pitch).toBe(70);
 
         const malformed = rowAction(original, { ...original, recordingPassIndex: undefined });
-        expect(handleReplaceOriginalMidiBaseRow.validate?.(malformed)).toBe(false);
+        expect(handleReplaceOriginalMidiBaseRow.validate?.(malformed, { actions: [malformed], actionIndex: 0 })).toBe(
+            false
+        );
     });
 });

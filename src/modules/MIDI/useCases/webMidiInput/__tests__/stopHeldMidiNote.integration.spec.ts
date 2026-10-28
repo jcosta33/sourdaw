@@ -310,9 +310,26 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
                 selectedTrackId: TRACK_ID,
                 ghostClips: [],
             });
-            vi.spyOn(audioEngine, 'ensureTrackStrip').mockReturnValue({ gainNode: {}, deviceNodes: [] } as ReturnType<
-                typeof audioEngine.ensureTrackStrip
-            >);
+            const gainNode = {} as GainNode;
+            vi.spyOn(audioEngine, 'ensureTrackStrip').mockReturnValue({
+                trackId: TRACK_ID,
+                gainNode,
+                preFaderTap: gainNode,
+                faderNode: gainNode,
+                postFaderGain: gainNode,
+                carrierGate: gainNode,
+                preFaderSendGate: gainNode,
+                panNode: {} as StereoPannerNode,
+                analyserNode: {} as AnalyserNode,
+                meterNode: null,
+                muted: false,
+                nativeCarried: false,
+                soloGated: false,
+                soloed: false,
+                deviceNodes: [],
+                midiFxNodes: [],
+                meterBuffer: new Float32Array(),
+            });
             vi.spyOn(audioEngine, 'getTrackStrip').mockReturnValue(undefined);
             const [clip] = startRecording(4);
             if (!clip) {

@@ -48,9 +48,10 @@ function applies(action: RowAction, context?: HandlerValidationContext): boolean
     if (!state) {
         return false;
     }
-    const projected = context
-        ? compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context)
-        : state;
+    let projected: typeof state | null = state;
+    if (context) {
+        projected = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context);
+    }
     if (!projected) {
         return false;
     }

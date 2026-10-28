@@ -245,11 +245,11 @@ describe('PianoRollContextMenu', () => {
         const previous = { id: 'previous-copy', pitch: 48, startBeat: 0, duration: 1, velocity: 80 };
         const frozen = { id: 'frozen-view', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
         copyPianoRollNotes([previous]);
-        let finishBatch: ((result: Awaited<ReturnType<typeof executeAppActionBatch>>) => void) | null = null;
+        const pendingBatch: { finish?: (result: Awaited<ReturnType<typeof executeAppActionBatch>>) => void } = {};
         vi.mocked(executeAppActionBatch).mockImplementationOnce(
             () =>
                 new Promise((resolve) => {
-                    finishBatch = resolve;
+                    pendingBatch.finish = resolve;
                 })
         );
         renderWithTooltip(
@@ -285,10 +285,10 @@ describe('PianoRollContextMenu', () => {
         expect(executeAppActionBatch).toHaveBeenCalledTimes(1);
         expect(getCopiedPianoRollNotes()).toEqual([previous]);
         expect(defaultProps.onClearSelection).not.toHaveBeenCalled();
-        if (!finishBatch) {
+        if (!pendingBatch.finish) {
             throw new Error('Expected pending Command batch');
         }
-        finishBatch({ status: 'committed', actions: [] });
+        pendingBatch.finish({ status: 'committed', actions: [] });
         await waitFor(() => expect(getCopiedPianoRollNotes()).toEqual([frozen]));
         expect(defaultProps.onClearSelection).toHaveBeenCalledTimes(1);
     });
