@@ -71,12 +71,12 @@ describe('revertActionGroup', () => {
         expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
             1,
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: g2.id }
         );
         expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
             2,
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: g1.id }
         );
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
         // Group entries are stripped from past and prepended (in order) to future.
@@ -121,7 +121,12 @@ describe('revertActionGroup', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
             { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
-            { skipUndo: true, skipMacroRecording: true, authorizeFirstHandler: expect.any(Function) }
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                undoEntryId: legacy.id,
+                authorizeFirstHandler: expect.any(Function),
+            }
         );
     });
 
@@ -159,7 +164,7 @@ describe('revertActionGroup', () => {
                     replacement: { present: true, enabled: true, loopOriginBeat: null },
                 },
             },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: legacy.id }
         );
     });
 
@@ -208,7 +213,7 @@ describe('revertActionGroup', () => {
         await Promise.all([inFlightMutation, revert]);
         expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: '1' }
         );
     });
 
@@ -289,7 +294,7 @@ describe('revertActionGroupAtomically', () => {
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledExactlyOnceWith(
             [newer.inverseAction, older.inverseAction],
-            { skipUndo: true, skipMacroRecording: true, source: 'ai' }
+            { skipUndo: true, skipMacroRecording: true, source: 'ai', undoEntryIds: [newer.id, older.id] }
         );
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [other], future: [older, newer] });
@@ -455,7 +460,7 @@ describe('revertActionGroupAtomically', () => {
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledExactlyOnceWith(
             [newer.inverseAction, older.inverseAction],
-            { skipUndo: true, skipMacroRecording: true, source: 'manual' }
+            { skipUndo: true, skipMacroRecording: true, source: 'manual', undoEntryIds: [newer.id, older.id] }
         );
     });
 });

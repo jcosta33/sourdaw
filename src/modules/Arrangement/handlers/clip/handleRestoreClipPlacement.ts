@@ -6,6 +6,8 @@ import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
 
+import { isRestoreClipPlacementSessionPayload } from './validateClipEditSessionEntries';
+
 function placementsMatch(left: ClipMoveActionSnapshot, right: ClipMoveActionSnapshot): boolean {
     return (
         left.trackId === right.trackId &&
@@ -75,6 +77,7 @@ function expectedMoveStateMatches(action: RestoreClipPlacementAction, projected:
 }
 
 export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>({
+    validateSessionActionArguments: isRestoreClipPlacementSessionPayload,
     // `expected` is mandatory on this payload (unlike optional replay guards elsewhere), so
     // every instance of this action carries a real precondition `validate` re-checks.
     canReapplyAfterDivergence: () => true,
@@ -89,13 +92,24 @@ export const handleRestoreClipPlacement = createHandler<'restoreClipPlacement'>(
         // rule can hold an audio clip on a MIDI track). Replay must return the
         // clip there, or the undo head is retained and every later Cmd+Z
         // re-fails on it.
+        const moveOptions: NonNullable<Parameters<typeof moveClip>[5]> = {
+            historicalPlacement: true,
+            historicalEndBeat: action.payload.replacement.endBeat,
+        };
+        if (action.payload.replacement.clipIndex !== undefined) {
+            moveOptions.historicalSlot = {
+                clipIndex: action.payload.replacement.clipIndex,
+                beforeClipId: action.payload.replacement.beforeClipId,
+                afterClipId: action.payload.replacement.afterClipId,
+            };
+        }
         const moved = moveClip(
             action.payload.clipId,
             action.payload.replacement.trackId,
             action.payload.replacement.startBeat,
             undefined,
             false,
-            { historicalPlacement: true }
+            moveOptions
         );
         if (
             !moved ||

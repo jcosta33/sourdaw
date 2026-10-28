@@ -6,13 +6,27 @@ import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { isMoveClipSessionEntry } from './validateClipEditSessionEntries';
+
 function moveState(
     trackId: string,
     startBeat: number,
     endBeat: number,
-    automationLanes: ClipMoveActionSnapshot['automationLanes']
+    automationLanes: ClipMoveActionSnapshot['automationLanes'],
+    slot?: Pick<ClipMoveActionSnapshot, 'clipIndex' | 'beforeClipId' | 'afterClipId'>
 ): ClipMoveActionSnapshot {
-    return { trackId, startBeat, endBeat, automationLanes };
+    return { trackId, startBeat, endBeat, automationLanes, ...slot };
+}
+
+function captureSlot(clips: readonly { id: string }[], index: number) {
+    const slot: { clipIndex: number; beforeClipId?: string; afterClipId?: string } = { clipIndex: index };
+    if (index > 0) {
+        slot.beforeClipId = clips[index - 1]!.id;
+    }
+    if (index < clips.length) {
+        slot.afterClipId = clips[index]!.id;
+    }
+    return slot;
 }
 
 function placementsMatch(left: ClipMoveActionSnapshot, right: ClipMoveActionSnapshot): boolean {
@@ -24,6 +38,7 @@ function placementsMatch(left: ClipMoveActionSnapshot, right: ClipMoveActionSnap
 }
 
 export const handleMoveClip = createHandler<'moveClip'>({
+    validateSessionEntry: isMoveClipSessionEntry,
     execute: (action) => {
         return toHandlerExecutionResult(
             moveClip(action.payload.clipId, action.payload.trackId, action.payload.startBeat)
@@ -47,12 +62,26 @@ export const handleMoveClip = createHandler<'moveClip'>({
             targetTrackId: action.payload.trackId,
             beatDelta,
         });
-        const previous = moveState(track.id, clip.startBeat, clip.endBeat, automation.previous);
+        const targetTrack = state?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+        let targetSlot: ReturnType<typeof captureSlot> | undefined;
+        if (track.id !== action.payload.trackId && targetTrack) {
+            targetSlot = captureSlot(targetTrack.clips, targetTrack.clips.length);
+        }
+        const sourceIndex = track.clips.findIndex((candidate) => candidate.id === clip.id);
+        let sourceSlot: ReturnType<typeof captureSlot> | undefined;
+        if (targetSlot) {
+            sourceSlot = captureSlot(
+                track.clips.filter((candidate) => candidate.id !== clip.id),
+                sourceIndex
+            );
+        }
+        const previous = moveState(track.id, clip.startBeat, clip.endBeat, automation.previous, sourceSlot);
         const next = moveState(
             action.payload.trackId,
             action.payload.startBeat,
             action.payload.startBeat + (clip.endBeat - clip.startBeat),
-            automation.next
+            automation.next,
+            targetSlot
         );
         return {
             label: `Move clip "${clip.name}" (${clip.id}) to track ${action.payload.trackId} at beat ${action.payload.startBeat}`,
