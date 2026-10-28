@@ -29,8 +29,28 @@ vi.mock('#/components/daw/DawPluginToggle', () => ({
     ),
 }));
 vi.mock('#/components/daw/Fader', () => ({
-    Fader: ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
-        <input type="range" data-testid="fader" value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    Fader: ({
+        value,
+        onChange,
+        valueScale,
+        min,
+        max,
+    }: {
+        value: number;
+        onChange: (v: number) => void;
+        valueScale?: string;
+        min?: number;
+        max?: number;
+    }) => (
+        <input
+            type="range"
+            data-testid="fader"
+            data-value-scale={valueScale}
+            data-min={min}
+            data-max={max}
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+        />
     ),
 }));
 
@@ -215,6 +235,9 @@ describe('MicBlendSlider — full mixer mode', () => {
             />
         );
         // Fader sends dB value; component transforms (db + 70) / 76 → 0-1
+        expect(screen.getAllByTestId('fader')[0]).toHaveAttribute('data-value-scale', 'decibels');
+        expect(screen.getAllByTestId('fader')[0]).toHaveAttribute('data-min', '-70');
+        expect(screen.getAllByTestId('fader')[0]).toHaveAttribute('data-max', '6');
         fireEvent.change(screen.getAllByTestId('fader')[0]!, { target: { value: '6' } });
         // (6 + 70) / 76 = 1.0
         expect(onUpdate).toHaveBeenCalledWith(0, { volume: 1 });
