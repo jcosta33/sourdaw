@@ -97,10 +97,12 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: null, subscribe: () => () => undefined },
 }));
-vi.mock('#/modules/Automation/stores', () => ({
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
     automationStore: { value: null, subscribe: () => () => undefined },
 }));
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     getAutomationValueAtBeat: vi.fn(() => null),
     isRecordingAutomation: vi.fn(() => false),
 }));
@@ -162,7 +164,8 @@ vi.mock('#/modules/Synth/useCases', async (importOriginal) => ({
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),
 }));
-vi.mock('#/modules/Yeast/useCases', () => ({
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
