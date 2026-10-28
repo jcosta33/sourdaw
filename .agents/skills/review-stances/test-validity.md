@@ -6,6 +6,28 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — successful scan did not prove comparison coverage (PRs #3170 and #4854)
+
+PR #3170 moved the main CodeQL producer to Nightly and left its former Health gates configuration
+in history. PR #4854 added a PR scan with a different default identity from Nightly. Execution and
+Gate checks could succeed while the comparison omitted a main configuration. Historical private
+review prompts and tiers are not established.
+
+Paginate all main analysis configurations, compare actual uploads and scan scope, and inspect the
+hosted introduced-alert summary. Check alert continuity and documented authorized retirement before
+deleting history. Remove or alter the PR category, re-record the snapshot, and require the independent
+input contract to fail; neither a snapshot nor an imitation of the upstream action proves upload.
+
+### 2026-10-28 — composite factory flow exhausted its aggregate budget (PR #5798)
+
+PR #5798 introduced a multi-step factory persistence case whose separate bounded state waits share
+the default aggregate deadline. Bounded slow work can exceed that deadline while each state arrives
+within its own limit. The exact phase of the historical CI timeout was not established.
+
+Inject bounded slow work through the complete flow: the old aggregate bound must fail and the revised
+bound must finish all assertions. Keep each state wait and assertion unchanged, and require a missing
+state to fail its original wait rather than pass under the larger aggregate budget.
+
 ### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
 
 The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
@@ -413,6 +435,22 @@ shared sounding owner. Charge every PCM holder to the normalized budget; never f
 remaining budget to a lower helper that independently normalizes it to one. This is an entry
 count contract, not a browser deallocation-time or audio-deadline measurement.
 
+### Timeline-bake writer spies missed partial project commits
+
+PR #474's exporter spec checked direct writer calls while a new groove-projection refusal could
+occur after an earlier clip was added. Those spies could not establish atomic project truth or a
+single Undo; historical private review prompts and tiers are unknown.
+
+Run the real Command and CRDT batch with at least two active pad lanes. Reject or freeze the later
+lane and compare the raw document, projected stores and history before and after. On success require
+one grouped Undo to remove both lanes and Redo to restore them. Replace the batch with the prior
+direct per-pad writers and require the later-lane case to fail.
+
+A separate warning failure was caught in #5798 review before merge: the batch committed but the
+history port failed, and the caller returned success without its warning. Inject that failure through
+the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
+that identifies the committed result. Do not describe that finding as the #474 main escape.
+
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
 Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
@@ -426,6 +464,22 @@ could leave both renders equally wrong, while nonzero allocator leftovers passed
 check. Poison the reserved PCM span, compare each acknowledged window with the independent
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
+
+### Project-device assertions missed the Web Audio projection and cold strip
+
+PR #2035 constructed runtime topology from every project device; PR #2083 filtered Yeast but not
+scheduler synths and drums. A project snapshot can be correct while its Web Audio chain still
+contains devices with no Web Audio node. The missed evidence joined actual MIDI editing to strip
+construction; historical private review prompts and tiers are unknown.
+
+Create a MIDI track with a scheduler synth or drum and a node-backed effect. Through real user
+commands, inspect complete project identity and the Web Audio initializer and live chain before
+Play, then after Play, Undo and Redo. Require only node-backed effects in Web Audio while the
+project and native snapshots retain all devices; preserve unknown types for normal failure. Use
+a deterministic AudioContext fixture that actually implements the strip constructor's required
+methods, rather than treating a minimal mock's missing method as a product warning. Reintroduce
+the unfiltered topology or remove cold initialization and require the corresponding unchanged
+case to fail. A controlled engine boundary does not establish audible or hardware behavior.
 
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
@@ -455,6 +509,23 @@ oracle: at 120 BPM half a second is one beat; for a 100→200 BPM ramp over eigh
 seconds from beat four to six are `4.8 * ln(175/150)`. Assert terminal values and compensated
 times/frames, not just captured callback identity or lane presence. Reverting inverse forwarding,
 subregion anchoring or the consumer's inverse must independently turn the relevant case red.
+
+### 2026-10-28 — live bank errors did not test buffered replay or repeated disposal (#5227)
+
+Commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57` introduced the buffered loop with no
+associated PR returned; PR #946 later handled bank-local errors on the live port but left that
+buffered route behind the outer init catch. PR #5204 documented the broader contract. Private
+review prompts and tiers are unknown. A live-error pass cannot prove that queued release and
+ready replies survive a buffered bank-local error, that a terminal replay stops its tail, or
+that a second dispose still answers after the first.
+
+Use the real message handler with distinct bank tokens: queue a bank-local refusal followed by
+its release and require decision, bank error, matching release and healthy ready in order. Pair
+the terminal buffered case with a later request that receives the original error. Inject one
+failed `initSync`, send a second init, and require the original error with no second construction
+or ready. Count two `disposed` replies from one processor and a terminal drain reply; a mere
+`toHaveBeenCalledWith` assertion misses the lost second answer. Removing the refusal guard and
+removing the already-disposed post must each fail its unchanged focused case in a committed probe.
 
 ### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
 
@@ -1660,3 +1731,9 @@ complete placed passes, including negative finite anchors, and assert exact
 selected-take and comp-region retention after real owner hydration. Removing only
 placement admission must redden the rejection case; testing a store sanitizer
 alone cannot observe the file admission gap.
+
+### 2026-10-28 — dirty-work retention was mistaken for busy-pump delivery (introduced by PR #5461)
+
+The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
+
+Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.

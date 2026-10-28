@@ -134,6 +134,20 @@ aggregate Save observed it. For any snapshot that replaces embedded data with du
 apply the selective-failure probe above at the aggregate Save boundary. Restore the old success
 path as a mutation; the real import/Save/clear/restore test must fail on Save=true or missing PCM.
 
+### Timeline bake must preserve project truth across a later-pad refusal
+
+The direct per-pad writer traces to `90bc7995e`; GitHub reports no associated PR. PR #474
+retained the escape when it added a groove-projection refusal after a clip write, allowing a
+later pad failure to leave earlier clips or notes in the project. The missing probe was project
+integrity across the whole action; historical private review prompts and tiers are unknown.
+
+When one UI action generates several clips or notes, fail a later lane after an earlier lane is
+valid. Pre-resolve source projections and submit one compensated typed batch bound to the current
+project and document identity. Require refusal to leave raw CRDT, projected stores and Undo history
+unchanged. On success, one Undo removes every generated clip and note, and one Redo restores
+exact content. Direct writers inside a per-pad loop can leave partial music even when each writer
+is valid.
+
 ## Lesson from the PR #1077 and PR #2822 escape
 
 PR #1077 (`17c4afde8828e5e61e783006e6e907f23ee92db0`) introduced Save's revision guard, but
