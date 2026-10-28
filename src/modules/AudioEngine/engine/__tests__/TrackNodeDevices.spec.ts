@@ -1525,6 +1525,11 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await Promise.resolve();
 
             expect(deferred.signal?.aborted).toBe(true);
+            const timedOut = readinessDiagnostics.snapshot();
+            deferred.settleContent('ready');
+            deferred.settleContent('failed');
+            deferred.settleContent('cancelled');
+            expect(readinessDiagnostics.snapshot()).toEqual(timedOut);
             expect(track.strip.deviceNodes[0]).toBe(deferred.placeholder);
             expect(loaded.controller.destroy).toHaveBeenCalledTimes(1);
             expect(loaded.dispose).not.toHaveBeenCalled();
@@ -1708,6 +1713,132 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             deferred.settle();
             await Promise.resolve();
         });
+
+        it.each(
+            [false, true].flatMap((faulted) =>
+                (['ready', 'failed', 'cancelled'] as const).map((outcome) => ({ faulted, outcome }))
+            )
+        )(
+            'ignores promoted $outcome content settlement after disposal (fault=$faulted)',
+            async ({ faulted, outcome }) => {
+                const deferred = installDeferredWasmDevice();
+                const readinessDiagnostics = createDeviceReadinessDiagnostics();
+                const pendingDevicePromises = new Set<Promise<unknown>>();
+                const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics, pendingDevicePromises }));
+                track.addDevice('wasm-1', 'levain');
+                deferred.resolve(createLoadedDevice().device);
+                const captured = [...pendingDevicePromises];
+                const fault = new Error('promoted strip disconnect failed');
+                if (faulted) {
+                    vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                        throw fault;
+                    });
+                    expect(captureFailure(() => track.dispose())).toBe(fault);
+                } else {
+                    track.dispose();
+                }
+                const retired = readinessDiagnostics.snapshot();
+
+                deferred.settleContent(outcome);
+                deferred.settle();
+                await Promise.all(captured);
+                track.dispose();
+
+                expect(track.getDeviceLoadState('wasm-1')).toBe('ready');
+                expect(readinessDiagnostics.snapshot()).toEqual(retired);
+                expect(track.strip.deviceNodes).toEqual([]);
+                expect(pendingDevicePromises.size).toBe(0);
+            }
+        );
+
+        it.each(
+            (['ready', 'failed', 'cancelled'] as const).flatMap((oldOutcome) =>
+                (['ready', 'failed', 'cancelled'] as const).flatMap((nextOutcome) =>
+                    [false, true].map((settled) => ({ oldOutcome, nextOutcome, settled }))
+                )
+            )
+        )(
+            'keeps a same-id successor $nextOutcome through old $oldOutcome (settled=$settled)',
+            async ({ oldOutcome, nextOutcome, settled }) => {
+                const deferred = installDeferredWasmDevice();
+                const readinessDiagnostics = createDeviceReadinessDiagnostics();
+                const pendingDevicePromises = new Set<Promise<unknown>>();
+                const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics, pendingDevicePromises }));
+                track.addDevice('wasm-1', 'levain');
+                deferred.resolve(createLoadedDevice().device, 0);
+                track.removeDevice('wasm-1');
+                track.addDevice('wasm-1', 'levain');
+                const next = createLoadedDevice();
+                deferred.resolve(next.device, 1);
+                await vi.waitFor(() =>
+                    expect(readinessDiagnostics.snapshot().devices[0]?.status).toBe('content-pending')
+                );
+                const markSettled = vi.spyOn(readinessDiagnostics, 'markContentSettled');
+                if (settled) {
+                    deferred.settleContent(nextOutcome, 1);
+                }
+                const before = readinessDiagnostics.snapshot();
+                const stateBefore = track.getDeviceLoadState('wasm-1');
+                const callsBefore = markSettled.mock.calls.length;
+
+                deferred.settleContent(oldOutcome, 0);
+
+                expect(readinessDiagnostics.snapshot()).toEqual(before);
+                expect(track.getDeviceLoadState('wasm-1')).toBe(stateBefore);
+                expect(markSettled).toHaveBeenCalledTimes(callsBefore);
+                expect(track.strip.deviceNodes[0]).toBe(next.device);
+                if (!settled) {
+                    deferred.settleContent(nextOutcome, 1);
+                }
+                expect(track.getDeviceLoadState('wasm-1')).toBe(nextOutcome === 'failed' ? 'failed' : 'ready');
+                const captured = [...pendingDevicePromises];
+                deferred.settle(0);
+                deferred.settle(1);
+                await Promise.all(captured);
+            }
+        );
+
+        it.each([
+            { first: 'ready', second: 'failed' },
+            { first: 'failed', second: 'ready' },
+            { first: 'cancelled', second: 'failed' },
+        ] as const)(
+            'accepts only the first current $first content terminal before $second, including reentry',
+            async ({ first, second }) => {
+                const deferred = installDeferredWasmDevice();
+                const readinessDiagnostics = createDeviceReadinessDiagnostics();
+                const pendingDevicePromises = new Set<Promise<unknown>>();
+                const track = new TrackNode('t1', makeDeps(ctx, { readinessDiagnostics, pendingDevicePromises }));
+                track.addDevice('wasm-1', 'levain');
+                deferred.resolve(createLoadedDevice().device);
+                await vi.waitFor(() =>
+                    expect(readinessDiagnostics.snapshot().devices[0]?.status).toBe('content-pending')
+                );
+                const settle = readinessDiagnostics.markContentSettled.bind(readinessDiagnostics);
+                const markSettled = vi
+                    .spyOn(readinessDiagnostics, 'markContentSettled')
+                    .mockImplementationOnce((input) => {
+                        deferred.settleContent(second);
+                        settle(input);
+                    });
+
+                deferred.settleContent(first);
+                deferred.settleContent(second);
+                deferred.settleContent(first);
+
+                expect(markSettled).toHaveBeenCalledOnce();
+                expect(track.getDeviceLoadState('wasm-1')).toBe(first === 'failed' ? 'failed' : 'ready');
+                expect(readinessDiagnostics.snapshot().counts).toMatchObject({
+                    contentReady: first === 'ready' ? 1 : 0,
+                    failed: first === 'failed' ? 1 : 0,
+                    cancelled: first === 'cancelled' ? 1 : 0,
+                });
+                const captured = [...pendingDevicePromises];
+                deferred.settle();
+                await Promise.all(captured);
+                expect(track.getDeviceLoadState('wasm-1')).toBe(first === 'failed' ? 'failed' : 'ready');
+            }
+        );
 
         it('rejects a late wasm completion after disposal reported an early strip fault', async () => {
             const deferred = installDeferredWasmDevice();

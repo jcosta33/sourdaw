@@ -25,6 +25,22 @@ mismatched existing strip rather than treating it as initialized. An instrument-
 also preserve full native truth. Remove the projection or cold-strip admission and require its
 corresponding case to fail.
 
+### Content settlement must retain the promoted owner's lifetime
+
+PR #967 introduced the content callback (`e63f1745e282e8491477b63c4ad6ccd6bca8f26f`)
+and its failed-state fallback (`5e4f5a2412f1794ab241f5e71b2efcded20e4172`). A retained
+callback could restore failure after disposal, while a Levain registration finishing after
+replacement could write readiness into the successor's same-ID store entry. The missed input
+was a terminal content result after ownership ended; historical reviewer prompts and tiers are unknown.
+
+Promote the real TrackNode callback before normal and faulted disposal, then deliver every old
+terminal. Hold actual descriptor registration or preparation across removal and same-ID replacement;
+require unchanged successor diagnostics, node identity and actual Levain store state while its own
+load is pending and after it settles. Keep current ready, failed and cancelled controls, duplicate
+and reentrant terminals, and runtime failure or timeout during loading. Promotion alone does not
+retire the pending owner: content can settle before the descriptor promise ends. Revert callback
+admission and descriptor continuation fences separately and require their corresponding cases to fail.
+
 ## Standing probes
 
 - PR #5091's head `71221839` fenced grant settlement but retained an unfenced reusable
