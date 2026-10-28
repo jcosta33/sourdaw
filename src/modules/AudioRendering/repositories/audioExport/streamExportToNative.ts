@@ -14,6 +14,7 @@ export async function streamExportToNative(input: {
     checkCancelled: () => void;
 }) {
     const tokens: string[] = [];
+    const pendingBegins = new Set<Promise<string>>();
     const names = new Set<string>();
     let closed = false;
     let closing = false;
@@ -23,6 +24,28 @@ export async function streamExportToNative(input: {
         input.checkCancelled();
         if (closed || closing) {
             throw new Error('Export cancelled');
+        }
+    };
+    const abort = async () => {
+        if (closed) {
+            return;
+        }
+        if (abortPending) {
+            await abortPending;
+            return;
+        }
+        closing = true;
+        const pending = (async () => {
+            await Promise.allSettled(pendingBegins);
+            await abortExportFiles([...tokens]);
+            tokens.length = 0;
+            closed = true;
+        })();
+        abortPending = pending;
+        try {
+            await pending;
+        } finally {
+            abortPending = undefined;
         }
     };
     return {
@@ -42,14 +65,21 @@ export async function streamExportToNative(input: {
             if (!path) {
                 throw new Error('No native export destination was selected.');
             }
-            const token = await beginExportFile(path);
+            const beginning = beginExportFile(path).then((token) => {
+                tokens.push(token);
+                return token;
+            });
+            pendingBegins.add(beginning);
+            let token: string;
             try {
+                token = await beginning;
                 checkOpen();
             } catch (error) {
-                await abortExportFiles([token]);
+                await abort();
                 throw error;
+            } finally {
+                pendingBegins.delete(beginning);
             }
-            tokens.push(token);
             names.add(name);
             fileOpen = true;
             return {
@@ -78,23 +108,6 @@ export async function streamExportToNative(input: {
             await commitExportFiles(tokens);
             closed = true;
         },
-        async abort() {
-            if (closed) {
-                return;
-            }
-            if (abortPending) {
-                await abortPending;
-                return;
-            }
-            closing = true;
-            const pending = abortExportFiles(tokens);
-            abortPending = pending;
-            try {
-                await pending;
-                closed = true;
-            } finally {
-                abortPending = undefined;
-            }
-        },
+        abort,
     };
 }
