@@ -1,4 +1,6 @@
+import { isValidTakePlacement } from '#/modules/Arrangement/stores';
 import { isChordTrackState, isGrooveTemplateState, isValidMidiNoteExpression } from '#/modules/MIDI/stores';
+import { hasValidAudioSourceTiles, hasValidAudioSourceState, isAudioSourceSnapshot } from '#/utils/audioSourceTime';
 
 import { isProductionBrief } from '../../../models/ProductionBrief';
 import {
@@ -387,6 +389,7 @@ function isClip(value: unknown): value is ProjectClip {
         typeof value.trackId === 'string' &&
         typeof value.name === 'string' &&
         (value.type === 'audio' || value.type === 'midi') &&
+        hasValidAudioSourceState(value) &&
         hasType({
             record: value,
             keys: ['startBeat', 'endBeat', 'fadeInBeats', 'fadeOutBeats', 'gain'],
@@ -399,6 +402,11 @@ function isClip(value: unknown): value is ProjectClip {
             keys: [
                 'sampleStartBeat',
                 'audioOffsetBeats',
+                'audioOffsetSeconds',
+                'audioUnwrappedOffsetSeconds',
+                'audioLoopStartSeconds',
+                'audioLoopPassEntrySeconds',
+                'audioLoopPassOriginBeat',
                 'midiOffsetBeats',
                 'stretchRatio',
                 'loopLength',
@@ -664,7 +672,8 @@ function isTake(value: unknown): boolean {
         isRecord(value) &&
         hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&
         hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
-        typeof value.selected === 'boolean'
+        typeof value.selected === 'boolean' &&
+        isValidTakePlacement(value)
     );
 }
 
@@ -672,7 +681,8 @@ function isCompRegion(value: unknown): boolean {
     return (
         isRecord(value) &&
         typeof value.takeId === 'string' &&
-        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' })
+        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
+        (value.audioSource === undefined || isAudioSourceSnapshot(value.audioSource))
     );
 }
 
@@ -684,7 +694,8 @@ function isTakeLane(value: unknown): boolean {
         Array.isArray(value.takes) &&
         value.takes.every(isTake) &&
         Array.isArray(value.activeCompRegions) &&
-        value.activeCompRegions.every(isCompRegion)
+        value.activeCompRegions.every(isCompRegion) &&
+        (value.baseGapAudioSources === undefined || hasValidAudioSourceTiles(value.baseGapAudioSources))
     );
 }
 

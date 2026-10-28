@@ -33,15 +33,30 @@ vi.mock('../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
-    shiftClipAutomation: mocks.shiftClipAutomation,
-}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        shiftClipAutomation: mocks.shiftClipAutomation,
+        getAutomationLaneCeiling: actual.getAutomationLaneCeiling,
+        buildOfflineModulatorPlans: actual.buildOfflineModulatorPlans,
+    };
+});
 
-vi.mock('#/modules/MIDI/useCases', () => ({
-    getNotesForClip: vi.fn(() => []),
-    setNotesForClip: vi.fn(),
-    shiftClipMidiNotes: mocks.shiftClipMidiNotes,
-}));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return {
+        getNotesForClip: vi.fn(() => []),
+        setNotesForClip: vi.fn(),
+        shiftClipMidiNotes: mocks.shiftClipMidiNotes,
+        adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
+        getGrooveTemplate: actual.getGrooveTemplate,
+        getStraightGrooveTemplateId: actual.getStraightGrooveTemplateId,
+        getScopedGrooveAssignment: actual.getScopedGrooveAssignment,
+        getScopedGrooveConsumerId: actual.getScopedGrooveConsumerId,
+        restoreGrooveAssignment: actual.restoreGrooveAssignment,
+        projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+    };
+});
 
 function makeClip(overrides: Partial<Clip> = {}): Clip {
     return {

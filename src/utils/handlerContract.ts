@@ -9,7 +9,10 @@
  */
 
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
+import { type AudioSourceSnapshot, type AudioSourceTile } from './audioSourceTime';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
+import { type TempoMapEdit, type TempoMapRowPlan } from './tempoMapRowPlan';
+import { type TempoSourceClock } from './tempoSourceClock';
 
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
@@ -135,6 +138,11 @@ export type ClipStateSnapshot = {
     readonly fileId?: string;
     readonly assetHash?: string;
     readonly audioOffsetBeats?: number;
+    readonly audioOffsetSeconds?: number;
+    readonly audioUnwrappedOffsetSeconds?: number;
+    readonly audioLoopStartSeconds?: number;
+    readonly audioLoopPassEntrySeconds?: number;
+    readonly audioLoopPassOriginBeat?: number;
     readonly midiOffsetBeats?: number;
     readonly fadeInBeats: number;
     readonly fadeOutBeats: number;
@@ -307,10 +315,47 @@ export type ClipAutomationLaneSnapshot = {
     readonly color?: string;
 };
 export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
+/** A saved source owner is bounded by the original take region or base gap.
+ * It never grants ownership of the rest of a lane's programme. */
+export type CompAudioSourceOwnerSnapshot =
+    | {
+          readonly kind: 'take';
+          readonly takeId: string;
+          readonly startBeat: number;
+          readonly endBeat: number;
+          readonly audioSource?: AudioSourceSnapshot;
+      }
+    | {
+          readonly kind: 'base';
+          readonly clipId: string;
+          readonly startBeat: number;
+          readonly endBeat: number;
+          readonly audioSource?: AudioSourceSnapshot;
+      };
+
+export type CompAudioSourceInputProof = {
+    readonly clipId: string;
+    readonly startBeat: number;
+    readonly endBeat: number;
+    readonly digest: string;
+    readonly media: { readonly audioBufferId?: string; readonly assetHash?: string };
+};
+
+export type CompAudioSourcePromotionSnapshot = {
+    readonly expected: CompAudioSourceOwnerSnapshot;
+    readonly replacement: CompAudioSourceOwnerSnapshot;
+    readonly sourceInputs: CompAudioSourceInputProof;
+};
+export type CompAudioSourceFieldPresenceSnapshot = {
+    readonly expected: boolean;
+    readonly replacement: boolean;
+};
+
 export type CompSelectionSpanSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
     readonly takeId: string;
+    readonly audioSource?: AudioSourceSnapshot;
 };
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
 export type MidiClipNoteSnapshot = {
@@ -519,6 +564,8 @@ export type StripSilenceActionSnapshot = {
     readonly clipAutomationLanes: readonly ClipAutomationLaneSnapshot[];
 };
 export type ClipSplitActionSnapshot = {
+    /** Old clip-start tempo that authenticates audio source promotion on both replay facets. */
+    readonly audioSourceTempoAtStart?: number;
     readonly trackId: string;
     readonly leftClip: ClipStateSnapshot;
     readonly rightClip: ClipStateSnapshot | null;
@@ -555,6 +602,8 @@ export type TakeReKeyLaneTransitionSnapshot = {
     takesAfter: TakeSnapshot[];
     regionsBefore: CompRegionSnapshot[];
     regionsAfter: CompRegionSnapshot[];
+    baseGapAudioSourcesBefore?: AudioSourceTile[];
+    baseGapAudioSourcesAfter?: AudioSourceTile[];
 };
 export type RippleShiftSnapshot = {
     readonly clipId: string;
@@ -578,15 +627,19 @@ export type TakeSnapshot = {
     endBeat: number;
     selected: boolean;
     sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
     passAnchorSeconds?: number;
     passDepthSeconds?: number;
     passSourceEndSeconds?: number;
+    passOriginBeat?: number;
+    passOriginSourceSeconds?: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {
     startBeat: number;
     endBeat: number;
     takeId: string;
+    audioSource?: AudioSourceSnapshot;
 };
 /** A whole comp take lane — structural mirror of Arrangement's `TakeLane`. */
 export type CompTakeLaneSnapshot = {
@@ -595,6 +648,87 @@ export type CompTakeLaneSnapshot = {
     automationLaneId?: string;
     takes: TakeSnapshot[];
     activeCompRegions: CompRegionSnapshot[];
+    baseGapAudioSources?: AudioSourceTile[];
+};
+
+/** Source facets captured by the Arrangement owner before a tempo edit.
+ * These are bounded value deltas, never replacement tracks or take lanes. */
+export type TempoAudioClipFieldsSnapshot = Pick<
+    ClipStateSnapshot,
+    | 'audioOffsetSeconds'
+    | 'audioUnwrappedOffsetSeconds'
+    | 'audioLoopStartSeconds'
+    | 'audioLoopPassEntrySeconds'
+    | 'audioLoopPassOriginBeat'
+>;
+export type TempoAudioClipInputsSnapshot = Pick<
+    ClipStateSnapshot,
+    | 'startBeat'
+    | 'endBeat'
+    | 'audioBufferId'
+    | 'assetHash'
+    | 'audioOffsetBeats'
+    | 'loopEnabled'
+    | 'loopLength'
+    | 'loopOriginBeat'
+    | 'stretchMode'
+    | 'stretchRatio'
+>;
+export type TempoAudioTakeFieldsSnapshot = Pick<
+    TakeSnapshot,
+    'sourceOffsetSeconds' | 'passOriginBeat' | 'passOriginSourceSeconds'
+>;
+export type TempoAudioTakeInputsSnapshot = Pick<
+    TakeSnapshot,
+    'startBeat' | 'endBeat' | 'sourceOffsetBeats' | 'passAnchorSeconds' | 'passDepthSeconds' | 'passSourceEndSeconds'
+>;
+export type TempoAudioSourcePresenceSnapshot =
+    { readonly present: false } | { readonly present: true; readonly value: AudioSourceSnapshot };
+export type TempoAudioSourcePromotionSnapshot = {
+    readonly version: 1;
+    readonly clips: readonly {
+        readonly trackId: string;
+        readonly collection: 'active' | 'alternative';
+        readonly alternativeId: string;
+        readonly clipId: string;
+        readonly inputs: TempoAudioClipInputsSnapshot;
+        readonly before: TempoAudioClipFieldsSnapshot;
+        readonly after: TempoAudioClipFieldsSnapshot;
+    }[];
+    readonly takes: readonly {
+        readonly trackId: string;
+        readonly laneId: string;
+        readonly takeId: string;
+        readonly clipId: string;
+        readonly inputs: TempoAudioTakeInputsSnapshot;
+        readonly before: TempoAudioTakeFieldsSnapshot;
+        readonly after: TempoAudioTakeFieldsSnapshot;
+    }[];
+    readonly regions: readonly {
+        readonly trackId: string;
+        readonly laneId: string;
+        readonly takeId: string;
+        readonly clipId: string;
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly before: TempoAudioSourcePresenceSnapshot;
+        readonly after: TempoAudioSourcePresenceSnapshot;
+    }[];
+    readonly gaps: readonly {
+        readonly trackId: string;
+        readonly laneId: string;
+        readonly clipId: string;
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly before: TempoAudioSourcePresenceSnapshot;
+        readonly after: TempoAudioSourcePresenceSnapshot;
+    }[];
+    readonly gapFieldPresence: readonly {
+        readonly trackId: string;
+        readonly laneId: string;
+        readonly before: boolean;
+        readonly after: boolean;
+    }[];
 };
 /** One lane a clip removal emptied or thinned, carried by `restoreClip` as it
  *  was before the removal together with the index it held, so undoing the
@@ -611,6 +745,8 @@ export type RetiredTakeLaneSnapshot = {
      * no take from this lane.
      */
     readonly retiredTakeIds?: readonly string[];
+    /** Exact source tiles this retirement removed; absent on legacy captures. */
+    readonly retiredBaseGapAudioSources?: readonly AudioSourceTile[];
 };
 export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
@@ -1310,6 +1446,36 @@ export type AppAction =
               tempoChangeId?: string | null;
               /** Application-owned replay guard. AiRuntime payload validation rejects this field. */
               expectedBpm?: number;
+              /** Owning admission capture. External arguments are discarded and derived afresh. */
+              audioSourcePromotion?: TempoAudioSourcePromotionSnapshot;
+          };
+      }
+    | {
+          type: 'restoreTempoEdit';
+          payload: {
+              bpm: number;
+              expectedBpm: number;
+              tempoChangeId: string | null;
+              sourceDirection: 'promote' | 'restore';
+              audioSourcePromotion: TempoAudioSourcePromotionSnapshot;
+          };
+      }
+    | {
+          type: 'editTempoMap';
+          payload: {
+              edit: TempoMapEdit;
+              /** Owner-derived at admission; caller captures never grant writes. */
+              rowPlan?: TempoMapRowPlan;
+              audioSourcePromotion?: TempoAudioSourcePromotionSnapshot;
+          };
+      }
+    | {
+          type: 'restoreTempoMapEdit';
+          payload: {
+              rowPlan: TempoMapRowPlan;
+              rowDirection: 'apply' | 'restore';
+              sourceDirection: 'promote' | 'restore';
+              audioSourcePromotion: TempoAudioSourcePromotionSnapshot;
           };
       }
     | {
@@ -1483,6 +1649,29 @@ export type AppAction =
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
+    | {
+          /** Internal exact audio-head replay; never a public trim source override. */
+          type: 'restoreAudioClipStartTrim';
+          payload: {
+              clipId: string;
+              before: ClipStateSnapshot;
+              after: ClipStateSnapshot;
+              clock: TempoSourceClock;
+              direction: 'apply' | 'restore';
+          };
+      }
+    | {
+          /** Internal exact source slip replay; absent from public command discovery. */
+          type: 'restoreAudioClipSlip';
+          payload: {
+              clipId: string;
+              offset: number;
+              before: { clip: ClipStateSnapshot; lanes: CompTakeLaneSnapshot[] };
+              after: { clip: ClipStateSnapshot; lanes: CompTakeLaneSnapshot[] };
+              clock: TempoSourceClock;
+              direction: 'apply' | 'restore';
+          };
+      }
     | {
           type: 'slipClipContent';
           payload: {
@@ -2217,10 +2406,26 @@ export type AppAction =
               laneId?: string;
               expected?: readonly CompSelectionSpanSnapshot[];
               replacement?: readonly CompSelectionSpanSnapshot[];
+              audioSourcePromotions?: readonly CompAudioSourcePromotionSnapshot[];
+              baseGapAudioSourceFieldPresence?: CompAudioSourceFieldPresenceSnapshot;
           };
       }
     | {
-          /** Guarded interval replay emitted by `setCompRegion`. */
+          type: 'removeCompRegion';
+          payload: {
+              trackId: string;
+              startBeat: number;
+              /** Owner-captured interval and source guards, never caller-authored snapshots. */
+              laneId?: string;
+              endBeat?: number;
+              expected?: readonly CompSelectionSpanSnapshot[];
+              replacement?: readonly CompSelectionSpanSnapshot[];
+              audioSourcePromotions?: readonly CompAudioSourcePromotionSnapshot[];
+              baseGapAudioSourceFieldPresence?: CompAudioSourceFieldPresenceSnapshot;
+          };
+      }
+    | {
+          /** Guarded interval replay emitted by a comp interval edit. */
           type: 'restoreCompRegionInterval';
           payload: {
               laneId: string;
@@ -2229,6 +2434,8 @@ export type AppAction =
               endBeat: number;
               expected: readonly CompSelectionSpanSnapshot[];
               replacement: readonly CompSelectionSpanSnapshot[];
+              audioSourcePromotions?: readonly CompAudioSourcePromotionSnapshot[];
+              baseGapAudioSourceFieldPresence?: CompAudioSourceFieldPresenceSnapshot;
           };
       }
     | { type: 'nudgeClip'; payload: { clipId: string; beats: number } }
@@ -3234,6 +3441,11 @@ export type HandlerExecutionResult = {
 export type HandlerValidationContext = {
     readonly actions: readonly AppAction[];
     readonly actionIndex: number;
+    /** Command-owned pending history identity, never an action argument or persisted capability. */
+    readonly recordedRedo?: {
+        readonly inverseAction: AppAction | null;
+        readonly isCurrent: () => boolean;
+    };
     /** Exact execution cancellation signal for long-running handler-owned follow-up work. */
     readonly signal?: AbortSignal;
     /** Caller-scoped telemetry for actual deferred work starts and for render receipts; never persisted as project truth. */
@@ -3244,7 +3456,10 @@ export type HandlerValidationContext = {
     readonly executionMode?: 'isolated-preview';
 };
 
-export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
+export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'> & {
+    /** Previously prepared actions; the full raw caller batch remains in `actions`. */
+    readonly preparedPrefix?: readonly AppAction[];
+};
 
 /** Neutral persisted-history shape supplied to an owning handler after Command
  *  has validated each action against its current operation contract. */

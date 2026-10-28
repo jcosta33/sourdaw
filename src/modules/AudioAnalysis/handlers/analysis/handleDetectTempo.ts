@@ -20,6 +20,7 @@ export const handleDetectTempo = createHandler<'detectTempo'>({
             return;
         }
 
+        // Detection reports a candidate. The existing tempo control owns adoption.
         const result = detectProjectTempo();
         if (result.confidence > 0.5) {
             notifyUser(`Detected tempo: ${result.averageBpm} BPM (${result.minBpm}–${result.maxBpm} range)`, 'success');

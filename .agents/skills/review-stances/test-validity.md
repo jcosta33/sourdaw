@@ -1436,6 +1436,15 @@ whole requested set after strategy teardown. Preserve bypass, withheld and non-c
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
 
+### Tempo inverse probes must cross a complete excursion (escaped via PR #4987)
+
+A single tempo rise or drop did not expose `renderTempoTimeline` alternating
+between segments. Use 180 to 60 to 180 BPM at beats 0.25 and 0.5 and a physical
+source end of frame 8320 at 48 kHz; read the ending through the actual live and
+offline comp consumers. The old inverse returns frame 320. Restoring that inverse
+must fail both the owning numerical case and source-end parity; see
+`audio-source-time.md` for the traced escape and preservation obligations.
+
 ### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
 
 PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
@@ -1516,3 +1525,34 @@ whole/scoped/parent inspection failures. Require retained storage and a stable, 
 on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
 or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
 or add inspection diagnostics to the warning-success allowlist.
+
+## Escape: sanitizer tests did not prove project-file admission (PR #4987)
+
+PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
+and valid saved-lane compatibility, but the file admission predicate ignored the
+new fields. PR #4222 (`120c9e2b418e`) had already left the same gap for
+malformed `sourceOffsetBeats`. A selected take carrying only `passAnchorSeconds` beside offset zero
+passed admission and disappeared with its comp region during real hydration.
+The missed input was malformed placement entering the full import route; private
+review prompts are unavailable, so do not infer a named historical stance or tier.
+
+Use a current-version file with a canonical project ID and a valid referenced
+track and clip, and first prove the valid control is admitted. Reject malformed
+placement in both top-level and saved-arrangement take lanes before replacement
+of an existing project. Assert raw authority, tracks, arrangement and selected
+material remain unchanged. Separately admit a JSON roundtrip of legacy takes and
+complete placed passes, including negative finite anchors, and assert exact
+selected-take and comp-region retention after real owner hydration. Removing only
+placement admission must redden the rejection case; testing a store sanitizer
+alone cannot observe the file admission gap.
+
+## Escape: recovery tests swallowed a stale owner result (PR #4496)
+
+PR #4496 (`b88383cb221f`) made project recovery read `ensureTrackStrips().status`,
+but the import roundtrip spec retained a void mock. Its recovery cases stayed
+green while logging `Cannot read properties of undefined (reading 'status')` and
+skipping the successful restoration continuation. The missed test-validity input
+was a real caller consuming an owner's changed result; private reviewer prompts
+and tiers are unavailable. Type the mock from the exported callable and return
+its complete ready result, so result-contract drift cannot masquerade as tested
+recovery. Read unexpected logged errors even when every assertion passes.

@@ -1,5 +1,20 @@
 # Lesson library: project integrity
 
+## Lesson from nullable write-metadata admission
+
+PR #4071 (`436bfbd49e40f63080c7638f42f822bd005066a8`) introduced nullable metadata capture but
+exempted every hook-equipped adapter from ordinary unscoped-write supersession. Optional source-time
+and tempo intents exposed that inherited contract gap in an author-lane reproduction; this does not
+establish a previous user incident on main. The missing integrity case was an installed hook whose
+current write carries no journal.
+
+Review actual captured intent rather than hook presence: `null` keeps ordinary supersession, while
+every nonnull journal, including `[]`, retains its owner's replay semantics. Hold a scoped write,
+queue an ordinary unscoped value, advance the same scoped owner again, commit, then flush the older
+unscoped value. Raw truth and projection must keep the newer commit. Repeat with a null-capturing
+hook, an empty journal whose owner applies no operation, and a real journal rebased over peer truth;
+neither array length nor truthiness may substitute for the nullable contract.
+
 ## 2026-10-25 — restored heads can revive stale confirmation authority (caught in PR #5677 review)
 
 An approval may tolerate a mutation-epoch advance when the active project heads are unchanged,
@@ -628,3 +643,38 @@ eligible audio target for the held-snapshot removal above and for a synthetic di
 revert unit whose newest callback would remove that target. The early callback guard
 must refuse before invoking the callback, preserving raw project, full history and tree.
 Retain callback identity when snapshotting history rather than cloning its functions.
+
+## Escape: admitted take placement was discarded during project hydration (PR #4987)
+
+PR #4987 (`62a116ee0073`) added paired `passAnchorSeconds` and `passDepthSeconds`
+with a required `sourceOffsetBeats` to the take-store sanitizer, while project-file
+admission still checked only the take's older required shape. A current-version
+file containing a selected take with offset zero and only an anchor was admitted,
+then real hydration removed both that take and its comp region. The top-level and
+saved-arrangement take-lane routes both admitted the loss. The public approval
+attacked saved lanes and persistence, but no published evidence covers malformed
+placement at admission; the exact private stance prompts are unavailable. The
+missed failure mode is admission accepting metadata its owning hydrator discards.
+The older malformed-offset variant began with PR #4222 (`120c9e2b418e`), which
+added offset rejection to the store without extending project admission.
+
+Probe the serialized candidate before project replacement, then its real owner
+hydration. Reject anchor-only, depth-only, negative or nonfinite depth, malformed
+offset, and complete placement without an offset before any current project,
+raw document, or store replacement. Exercise both take-lane routes. Pair these
+with JSON-roundtripped legacy takes without placement and complete finite
+placement with a negative anchor: the selected takes and their comp regions
+must survive real hydration unchanged, including an active saved arrangement's
+top-level fallback. Reverting placement admission must fail the rejection cases;
+a sanitizer-only assertion cannot establish safe file admission.
+
+## Recovery owner results must reach the continuation (PR #4496)
+
+PR #4496 (`b88383cb221f`) added the strip-ready result check before input
+monitoring rearm. The import roundtrip's void strip mock then threw inside
+recovery and was caught as a restoration failure while the spec stayed green.
+The missed integrity observable was the continuation after successful graph
+restoration; private review prompts and tiers are unavailable. Require owner
+mocks to satisfy the live callable result contract, and inspect logged recovery
+failures before using a passing import spec as proof. See test-validity's stale
+owner-result escape for the discriminating mock contract.

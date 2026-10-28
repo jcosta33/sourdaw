@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, defaultClipSelectionState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
@@ -12,6 +13,7 @@ import {
 } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
+import { hydrateArrangementStoreFromProjectData } from '../../helpers/hydrateArrangementStoreFromProjectData';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
@@ -70,8 +72,9 @@ const {
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     });
-    const restoreOldAudioGraph = vi.fn(() => {
+    const restoreOldAudioGraph = vi.fn<(typeof import('#/modules/Transport/useCases'))['ensureTrackStrips']>(() => {
         engineGraph.value = 'old-project';
+        return { status: 'ready', externalPluginActivations: [] };
     });
     return {
         audioContext: {},
@@ -351,6 +354,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         stopAudioRecording.mockClear();
         stopRecording.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
+        vi.mocked(clearUndoHistory).mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -362,6 +366,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         trackStore.set({ tracks: [], selectedTrackId: null });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        takeLaneStore.set({ lanes: [] });
+        clipSelectionStore.set(structuredClone(defaultClipSelectionState));
     });
 
     it('resolves clip bufferIds and stages them before project publication', async () => {
@@ -821,6 +827,166 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const active = state.arrangements.find((a) => a.id === state.activeArrangementId);
         expect(active?.tracks.tracks[0]?.clips.map((c) => c.id)).toEqual(['clip-a', 'clip-b']);
     });
+
+    it.each(['top-level', 'saved arrangement'])(
+        'imports selected canonical and legacy material unchanged from a %s JSON file',
+        async (route) => {
+            const project = makeProject();
+            const legacy = { id: 'legacy', clipId: 'clip-a', name: 'Legacy', startBeat: 0, endBeat: 4, selected: true };
+            const canonical = {
+                ...legacy,
+                id: 'canonical',
+                sourceOffsetBeats: 4,
+                sourceOffsetSeconds: 0,
+                passAnchorSeconds: -2,
+                passDepthSeconds: 2,
+                passSourceEndSeconds: 4,
+                passOriginBeat: 0,
+                passOriginSourceSeconds: -1,
+            };
+            const takeLanes = {
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-audio',
+                        takes: [legacy, canonical],
+                        activeCompRegions: [
+                            { startBeat: 0, endBeat: 2, takeId: legacy.id },
+                            { startBeat: 2, endBeat: 4, takeId: canonical.id },
+                        ],
+                    },
+                ],
+            };
+            if (route === 'top-level') {
+                project.takeLanes = takeLanes;
+            } else {
+                project.arrangements = [
+                    {
+                        id: 'saved',
+                        name: 'Saved',
+                        tracks: { tracks: project.arrangement.tracks, selectedTrackId: 'track-audio' },
+                        takeLanes,
+                    },
+                ];
+                project.activeArrangementId = 'saved';
+            }
+            const fileContent = JSON.stringify(project);
+            const serialized: unknown = JSON.parse(fileContent);
+            await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(takeLaneStore.value).toEqual(takeLanes);
+            const active = arrangementStore.value?.arrangements.find(
+                (item) => item.id === arrangementStore.value?.activeArrangementId
+            );
+            expect(active?.takeLanes).toEqual(takeLanes);
+            expect(trackStore.value?.tracks[0]?.clips[0]?.id).toBe(legacy.clipId);
+            expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each(
+        ['top-level', 'saved arrangement', 'inactive saved arrangement'].flatMap((route) =>
+            [
+                { passAnchorSeconds: 1 },
+                {
+                    sourceOffsetSeconds: -1,
+                    passAnchorSeconds: -2,
+                    passDepthSeconds: 2,
+                    passSourceEndSeconds: 4,
+                    passOriginBeat: 0,
+                    passOriginSourceSeconds: -1,
+                },
+                { passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 2 },
+                { passAnchorSeconds: -2, passDepthSeconds: 2, passOriginBeat: 0 },
+            ].map((placement) => ({ route, placement }))
+        )
+    )(
+        'rejects malformed take placement $placement in $route before replacing the open project',
+        async ({ route, placement }) => {
+            const previousData = makeProject();
+            previousData.takeLanes = {
+                lanes: [
+                    {
+                        id: 'existing-lane',
+                        trackId: 'track-audio',
+                        takes: [
+                            {
+                                id: 'existing-selected',
+                                clipId: 'clip-a',
+                                name: 'Keep selected material',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: true,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'existing-selected' }],
+                    },
+                ],
+            };
+            hydrateArrangementStoreFromProjectData({ data: previousData });
+            expect(takeLaneStore.value).toEqual(previousData.takeLanes);
+            clipSelectionStore.set({
+                ...defaultClipSelectionState,
+                selectedClipIds: ['clip-a'],
+                selectedClipId: 'clip-a',
+            });
+            const previousSelection = structuredClone(clipSelectionStore.value);
+            const previousEpoch = crdtAuthority.epoch;
+            const previousProject = structuredClone(projectStore.value);
+            const previousTracks = structuredClone(trackStore.value);
+            const previousArrangement = structuredClone(arrangementStore.value);
+            const previousTakes = structuredClone(takeLaneStore.value);
+            const project = makeProject();
+            const takeLanes = {
+                lanes: [
+                    {
+                        id: 'take-lane',
+                        trackId: 'track-audio',
+                        takes: [
+                            {
+                                id: 'selected-take',
+                                clipId: 'clip-a',
+                                name: 'Selected',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: true,
+                                sourceOffsetBeats: 0,
+                                ...placement,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected-take' }],
+                    },
+                ],
+            };
+            if (route === 'top-level') {
+                project.takeLanes = takeLanes;
+            } else {
+                project.arrangements = [
+                    { id: 'first', name: 'First' },
+                    { id: 'saved', name: 'Saved', takeLanes },
+                ];
+                project.activeArrangementId = route === 'inactive saved arrangement' ? 'first' : 'saved';
+            }
+            const content = JSON.stringify(project);
+            const serialized: unknown = JSON.parse(content);
+
+            await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
+
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+            expect(resetAudioGraph).not.toHaveBeenCalled();
+            expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+            expect(prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+            expect(crdtAuthority.value).toBe('Old Project');
+            expect(crdtAuthority.epoch).toBe(previousEpoch);
+            expect(clearUndoHistory).not.toHaveBeenCalled();
+            expect(persistCrdtProject).not.toHaveBeenCalled();
+            expect(clipSelectionStore.value).toEqual(previousSelection);
+            expect(projectStore.value).toEqual(previousProject);
+            expect(trackStore.value).toEqual(previousTracks);
+            expect(arrangementStore.value).toEqual(previousArrangement);
+            expect(takeLaneStore.value).toEqual(previousTakes);
+        }
+    );
 
     it('rejects malformed hydration data without resetting the live project', async () => {
         const malformedMidi = makeProject();

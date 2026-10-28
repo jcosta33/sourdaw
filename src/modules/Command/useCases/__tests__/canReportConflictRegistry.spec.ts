@@ -9,12 +9,19 @@ import {
 import { defaultTrackState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import {
+    createCrdtDoc,
+    mutateCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { setActiveYeastDevice, yeastStore } from '#/modules/Yeast/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '../../stores/handlerRegistry';
 import { getCommandHandler } from '../getCommandHandler';
+import { materializeCommandHandlerArguments } from '../materializeCommandHandlerArguments';
 
 // #2881 — undo step-over advances onto a unit only when every member's inverse
 // resolves to a handler flagged `canReportConflict`. The flag is a declared
@@ -25,7 +32,8 @@ import { getCommandHandler } from '../getCommandHandler';
 // types the fixtures below cover: the expectation is derived from the fixture
 // array, so a flag without a diverged fixture is unrepresentable and reds. A
 // handler routed through `toHandlerExecutionResult` (`no-write | written`) can
-// never refuse and must never carry the flag. Second, each fixture's `execute`
+// never refuse and must never carry the flag. A public union cannot advertise
+// safe stepping when only its audio route can refuse. Second, each fixture's `execute`
 // genuinely refuses — returns `{ status: 'conflict' }` — against the diverged
 // live state it constructs. Mechanical adoption over the remaining
 // conflict-capable handlers is owned by a follow-up issue; extending the set
@@ -39,11 +47,176 @@ import { getCommandHandler } from '../getCommandHandler';
 type DivergedFixture = {
     readonly title: string;
     readonly actionType: string;
-    readonly divergedAction: AppAction;
+    readonly divergedAction?: AppAction;
+    readonly createDivergedAction?: () => AppAction | Promise<AppAction>;
     readonly reason?: string;
 };
 
+type TempoMapRoot = {
+    tempoMap: {
+        changes: Array<{ id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }>;
+    };
+};
+
+type TempoMapConflictActionType = 'editTempoMap' | 'restoreTempoMapEdit';
+
+function createDivergedTempoMapAction(actionType: TempoMapConflictActionType): AppAction {
+    // Drain the Yeast fixture before disabling its test storage port; the tempo-map
+    // conflict below owns a real root CRDT document and the production handler.
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    setTrackStoreState({ ...defaultTrackState, tracks: [] });
+    takeLaneStore.set({ lanes: [] });
+
+    const original = { id: 'tempo-live', beat: 0, tempo: 120, curve: 'instant' as const };
+    transportStore.set({ ...defaultTransportState, tempo: 120 });
+    tempoMapStore.set({ changes: [original] });
+    const writeDocumentTempo = (tempo: number): void => {
+        mutateCrdtDoc<TempoMapRoot>({
+            id: 'root',
+            changeFn: (document) => {
+                document.tempoMap = { changes: [{ ...original, tempo }] };
+            },
+        });
+    };
+    writeDocumentTempo(original.tempo);
+
+    const editAction = {
+        type: 'editTempoMap',
+        payload: { edit: { type: 'update', id: original.id, tempo: 140 } },
+    } satisfies AppAction;
+    const editHandler = getCommandHandler(editAction);
+    if (!editHandler?.materializeCommandArguments) {
+        throw new Error('Expected the production tempo-map admission materializer');
+    }
+    const admittedEdit = materializeCommandHandlerArguments(editAction, editHandler);
+    if (admittedEdit.type !== 'editTempoMap') {
+        throw new Error('Expected the admitted tempo-map edit');
+    }
+
+    let action: AppAction = admittedEdit;
+    if (actionType === 'restoreTempoMapEdit') {
+        const inverseAction = editHandler.describe(admittedEdit).inverseAction;
+        if (!inverseAction || inverseAction.type !== 'restoreTempoMapEdit') {
+            throw new Error('Expected the captured tempo-map restore action');
+        }
+        action = inverseAction;
+        tempoMapStore.set({ changes: [{ ...original, tempo: 140 }] });
+    }
+
+    const handler = getCommandHandler(action);
+    if (!handler?.validate?.(action, { actions: [action], actionIndex: 0 })) {
+        throw new Error(`Expected ${actionType} to validate before the peer row changes`);
+    }
+
+    // The admitted edit expects the original row for apply; its generated inverse
+    // expects the edited row for restore. Both now meet the same actual peer row.
+    writeDocumentTempo(130);
+    return action;
+}
+
+type AudioSourceConflictActionType =
+    'trimClipStart' | 'restoreAudioClipStartTrim' | 'slipClipContent' | 'restoreAudioClipSlip';
+
+async function createDivergedAudioSourceAction(actionType: AudioSourceConflictActionType): Promise<AppAction> {
+    flushAutomergeStorageWrites();
+    configureAutomergeStoragePort(null);
+    removeCrdtDoc('root');
+    createCrdtDoc('root');
+    registerCrdtStorageRuntime();
+    takeLaneStore.hydrate();
+    transportStore.set({ ...defaultTransportState, tempo: 120 });
+    tempoMapStore.set({ changes: [] });
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: 'track-source', name: 'Source', kind: 'audio' })],
+    });
+    const clip = addClip({
+        id: 'clip-source',
+        trackId: 'track-source',
+        startBeat: 0,
+        endBeat: 8,
+        name: 'Source clip',
+        type: 'audio',
+        audioBufferId: 'source-original',
+        audioOffsetBeats: 0.5,
+        audioOffsetSeconds: 0.25,
+    });
+    if (!clip) {
+        throw new Error('Expected the canonical audio source fixture');
+    }
+    takeLaneStore.set({ lanes: [] });
+    flushAutomergeStorageWrites();
+
+    const trims = actionType === 'trimClipStart' || actionType === 'restoreAudioClipStartTrim';
+    let forward: AppAction;
+    if (trims) {
+        forward = { type: 'trimClipStart', payload: { clipId: clip.id, newStartBeat: 2 } };
+    } else {
+        forward = { type: 'slipClipContent', payload: { clipId: clip.id, clipType: 'audio', offset: 0.7 } };
+    }
+    const handler = getCommandHandler(forward);
+    const inverse = handler?.describe(forward).inverseAction;
+    if (!handler || !inverse || inverse.type !== (trims ? 'restoreAudioClipStartTrim' : 'restoreAudioClipSlip')) {
+        throw new Error('Expected an owner-captured audio source inverse');
+    }
+    const applyWrittenAction = async (action: AppAction): Promise<void> => {
+        const result = await getCommandHandler(action)?.execute(action);
+        if (result?.status !== 'written') {
+            throw new Error(`Expected ${action.type} to write before source divergence`);
+        }
+        result.commitValidation?.release();
+        flushAutomergeStorageWrites();
+    };
+    await applyWrittenAction(forward);
+
+    let action: AppAction = inverse;
+    if (actionType === forward.type) {
+        await applyWrittenAction(inverse);
+        handler.describe(forward);
+        action = forward;
+    } else if (getCommandHandler(inverse)?.validate?.(inverse, { actions: [inverse], actionIndex: 0 }) !== true) {
+        throw new Error('Expected the captured audio inverse to validate before source divergence');
+    }
+
+    // The media-owner refusals are also covered by clipSessionMirrorRoundTrip's
+    // audio trim replay and audioClipSlipSession's changed-media-owner fixture.
+    mutateCrdtDoc<{ tracks: { tracks: Array<{ clips: Array<{ audioBufferId?: string }> }> } }>({
+        id: 'root',
+        changeFn: (document) => {
+            document.tracks.tracks[0]!.clips[0]!.audioBufferId = 'source-peer';
+        },
+    });
+    return action;
+}
+
 const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
+    ...(['trimClipStart', 'restoreAudioClipStartTrim', 'restoreAudioClipSlip'] as const).map((actionType) => ({
+        title: `${actionType} refuses a captured edit after its media owner diverges`,
+        actionType,
+        createDivergedAction: () => createDivergedAudioSourceAction(actionType),
+    })),
+    {
+        title: 'setTempo refuses a changed pinned scalar before source capture',
+        actionType: 'setTempo',
+        divergedAction: { type: 'setTempo', payload: { bpm: 133, expectedBpm: 99, tempoChangeId: null } },
+    },
+    {
+        title: 'restoreTempoEdit refuses a changed pinned scalar without source writes',
+        actionType: 'restoreTempoEdit',
+        divergedAction: {
+            type: 'restoreTempoEdit',
+            payload: {
+                bpm: 120,
+                expectedBpm: 99,
+                tempoChangeId: null,
+                sourceDirection: 'restore',
+                audioSourcePromotion: { version: 1, clips: [], takes: [], regions: [], gaps: [], gapFieldPresence: [] },
+            },
+        },
+    },
     {
         title: 'restoreLoopRegion refuses to write against a collaborator loop edit',
         actionType: 'restoreLoopRegion',
@@ -69,6 +242,21 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
                 takeId: 'take-b',
                 expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
                 replacement: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+            },
+        },
+    },
+    {
+        title: 'removeCompRegion refuses to write against a diverged interval',
+        actionType: 'removeCompRegion',
+        divergedAction: {
+            type: 'removeCompRegion',
+            payload: {
+                laneId: 'lane-live',
+                trackId: 'track-comp',
+                startBeat: 2,
+                endBeat: 4,
+                expected: [{ startBeat: 2, endBeat: 4, takeId: 'take-b' }],
+                replacement: [],
             },
         },
     },
@@ -294,6 +482,16 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
             payload: { processorId: 'yeast-live', toIndex: 1, expectedOrder: ['yeast-arp', 'yeast-live'] },
         },
     },
+    {
+        title: 'editTempoMap refuses an admitted edit after its captured row diverges',
+        actionType: 'editTempoMap',
+        createDivergedAction: () => createDivergedTempoMapAction('editTempoMap'),
+    },
+    {
+        title: 'restoreTempoMapEdit refuses a captured inverse after its row diverges',
+        actionType: 'restoreTempoMapEdit',
+        createDivergedAction: () => createDivergedTempoMapAction('restoreTempoMapEdit'),
+    },
 ];
 
 /** Every action type a fixture proves — the one legal flagged set. */
@@ -429,6 +627,7 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
     });
 
     afterEach(() => {
+        removeCrdtDoc('root');
         resetLiveYeastRack();
         automationStore.set({ lanes: [] });
         clearHandlerRegistry();
@@ -447,12 +646,36 @@ describe('canReportConflict handler registry honesty (#2881)', () => {
         expect(flagged).toEqual(FIXTURE_PROVEN_ACTION_TYPES);
     });
 
-    it.each(CONFLICT_CAPABLE_FIXTURES)('$title', async ({ divergedAction, reason }) => {
-        const handler = getCommandHandler(divergedAction);
+    it('keeps the public MIDI/audio slip union out of safe stepping while its captured audio route refuses', async () => {
+        const action = await createDivergedAudioSourceAction('slipClipContent');
+        const handler = getCommandHandler(action);
+        const midiAction: AppAction = {
+            type: 'slipClipContent',
+            payload: { clipId: 'clip-source', clipType: 'midi', offset: 0.7 },
+        };
 
-        expect(handler?.canReportConflict).toBe(true);
-        expect(await handler?.execute(divergedAction)).toEqual(
-            reason === undefined ? { status: 'conflict' } : { status: 'conflict', reason }
-        );
+        expect(action.type).toBe('slipClipContent');
+        expect(action).toMatchObject({ payload: { clipType: 'audio' } });
+        expect(getCommandHandler(midiAction)).toBe(handler);
+        expect(handler?.canReportConflict).not.toBe(true);
+        expect(FIXTURE_PROVEN_ACTION_TYPES).not.toContain('slipClipContent');
+        expect(await handler?.execute(action)).toEqual({ status: 'conflict' });
     });
+
+    it.each(CONFLICT_CAPABLE_FIXTURES)(
+        '$title',
+        async ({ actionType, divergedAction, createDivergedAction, reason }) => {
+            const action = createDivergedAction ? await createDivergedAction() : divergedAction;
+            if (!action) {
+                throw new Error(`Expected a diverged action for ${actionType}`);
+            }
+            const handler = getCommandHandler(action);
+
+            expect(action.type).toBe(actionType);
+            expect(handler?.canReportConflict).toBe(true);
+            expect(await handler?.execute(action)).toEqual(
+                reason === undefined ? { status: 'conflict' } : { status: 'conflict', reason }
+            );
+        }
+    );
 });

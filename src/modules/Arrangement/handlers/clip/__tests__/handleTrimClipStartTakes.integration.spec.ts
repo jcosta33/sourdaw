@@ -215,18 +215,46 @@ describe('clip edits on a comped loop recording', () => {
     });
 
     it('keeps every trim of a comped clip in the session mirror and undoes it after a reload', async () => {
+        const snapshot = (): unknown => {
+            const clip = trackStore.value?.tracks[0]?.clips[0];
+            if (!clip) {
+                throw new Error('Expected the trimmed clip');
+            }
+            return Object.fromEntries(Object.entries(clip).filter(([, value]) => value !== undefined));
+        };
+        const before = snapshot();
         await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } });
+        const first = snapshot();
         await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } });
+        const second = snapshot();
         await vi.waitFor(() => expect(mirroredPast()).toHaveLength(2));
 
         expect(mirroredPast().map((entry) => [entry.action, entry.inverseAction])).toEqual([
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0, loopOriginBeat: null } },
+                {
+                    type: 'restoreAudioClipStartTrim',
+                    payload: {
+                        clipId: 'clip-1',
+                        before,
+                        after: first,
+                        clock: { tempo: 120, changes: [] },
+                        direction: 'restore',
+                    },
+                },
             ],
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2, loopOriginBeat: null } },
+                {
+                    type: 'restoreAudioClipStartTrim',
+                    payload: {
+                        clipId: 'clip-1',
+                        before: first,
+                        after: second,
+                        clock: { tempo: 120, changes: [] },
+                        direction: 'restore',
+                    },
+                },
             ],
         ]);
 
