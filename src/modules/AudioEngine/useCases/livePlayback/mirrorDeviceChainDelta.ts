@@ -48,7 +48,7 @@
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphCommand } from '../../models/AudioGraphBackend';
+import { type AudioGraphBackend, type AudioGraphCommand } from '../../models/AudioGraphBackend';
 
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { latchedPedalCommands } from './latchedPedalCommands';
@@ -87,6 +87,14 @@ type MirrorPlan = Readonly<{
     commands: readonly AudioGraphCommand[];
     changedDeviceNames: readonly string[];
 }>;
+
+// A refused atomic batch leaves its whole change outstanding. A later grouped
+// callback's `before` may already include devices that refusal never installed,
+// so keep the earliest before-chain until an applied batch discharges it. The
+// backend belongs to one play; its next topology starts with a fresh backend.
+// Comparing every missing project id to readback instead would also reinsert
+// devices deliberately omitted when that native strip was built.
+const deferredBeforeByBackend = new WeakMap<AudioGraphBackend, Map<string, Track>>();
 
 function idsOf(devices: readonly Device[]): readonly string[] {
     return devices.map((device) => device.id);
@@ -187,7 +195,10 @@ function editChain(
         // position, immediately, rather than left to the next play.
         const isSwapped = !isNew && swappedIds.has(device.id) && projected.includes(device.id);
         const unchanged = !isNew && !isSwapped;
-        if (unchanged) {
+        // An earlier grouped step can already have mirrored the same final
+        // chain. The engine's readback discharges that insert, not a second add.
+        const alreadyInserted = isNew && projected.includes(device.id);
+        if (unchanged || alreadyInserted) {
             continue;
         }
         if (isSwapped) {
@@ -264,6 +275,14 @@ function planMirror(input: MirrorDeviceChainDeltaInput, nativeChain: readonly st
     // second `projectDeviceForNativeBody` pass over every survivor for no
     // reason — the answer cannot differ between the two callers.
     const swapped = swappedDevices(input.before.devices, input.after.devices);
+    const afterIds = idsOf(input.after.devices);
+    const alreadyMirrored =
+        swapped.length === 0 &&
+        nativeChain.length === afterIds.length &&
+        nativeChain.every((deviceId, index) => deviceId === afterIds[index]);
+    if (alreadyMirrored) {
+        return { commands: [], changedDeviceNames: [] };
+    }
     return {
         commands: reordered ? rebuildChain(input.after, nativeChain) : editChain(input, nativeChain, swapped),
         // Empty for a pure reorder, which is what makes the notice name the
@@ -289,13 +308,19 @@ export function mirrorDeviceChainDelta(input: MirrorDeviceChainDeltaInput): Prom
             // strip to edit, and no command here creates one.
             return { outcome: 'skipped', reason: 'strip not built' };
         }
-        const plan = planMirror(input, nativeChain);
+        const deferredBefore = deferredBeforeByBackend.get(backend);
+        const outstandingInput = { before: deferredBefore?.get(input.after.id) ?? input.before, after: input.after };
+        const plan = planMirror(outstandingInput, nativeChain);
         if (plan.commands.length === 0) {
+            deferredBefore?.delete(input.after.id);
             return { outcome: 'skipped', reason: 'nothing to mirror' };
         }
         const result = await backend.apply({ schemaVersion: 1, commands: plan.commands });
         reportAttachedPlugins(result);
         if (result.application !== 'applied') {
+            const pending = deferredBefore ?? new Map<string, Track>();
+            pending.set(input.after.id, outstandingInput.before);
+            deferredBeforeByBackend.set(backend, pending);
             // The record is left exactly as it was, and it is still true: the
             // batch is whole-or-nothing, so a refused one moved no chain.
             notifyDeferredChainChange({
@@ -305,6 +330,7 @@ export function mirrorDeviceChainDelta(input: MirrorDeviceChainDeltaInput): Prom
             });
             return { outcome: 'declined', reason: result.reason };
         }
+        deferredBefore?.delete(input.after.id);
         recordNativeChains(result.reports);
         if (changesWhatThePassCarries(plan.commands)) {
             // The pass in flight was projected against the chain this batch has

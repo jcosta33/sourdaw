@@ -352,8 +352,8 @@ describe('recording terminal publishes only under its captured root (issue #5289
         expect(documentClipIds()).toEqual(successorClipsWithProvisional);
         expect(committedEntryCount()).toBe(0);
         expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'Recording failed — the take was not kept on this branch.',
-            'error'
+            'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+            'warning'
         );
     });
 
@@ -393,5 +393,15 @@ describe('recording terminal publishes only under its captured root (issue #5289
         expect(documentClipIds()).toEqual([]);
         expect(committedEntryCount()).toBe(0);
         expect(transportStore.value?.isRecording).toBe(false);
+    });
+    it('does not invoke the capture commit after its queued continuation loses the root', async () => {
+        await startAudioRecordingGesture();
+        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        installRootReplacement();
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('not kept'), 'warning')
+        );
+        expect(mocks.commitRecording).not.toHaveBeenCalled();
+        expect(committedEntryCount()).toBe(0);
     });
 });

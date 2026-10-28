@@ -148,6 +148,24 @@ direct and claimed release permitted. Assert exact owner and claim removal along
 reported reason and output. Persistent refusal must still report retention, and an earlier
 process or resource failure must remain a failure after storage removal.
 
+### DAWproject diagnostics missed unconsumed source and partial mixer losses
+
+PR #5656 delivered a bounded import-warning slice, but named source constructs and inexact
+retained content remained silent. The original introduction of the broader population gap and
+historical reviewer prompts and tiers are unestablished. Review of #5795 found a rejected
+structure-level Channel reference whose named Notes descendant also vanished, and an invalid
+retained Volume that fell back without a partial-loss warning. The missed input was the full
+source population and the actual reader's fallback, not just the named incident.
+
+Enumerate the legal source grammar and account for every preserved, omitted or partially retained
+semantic element, including independently named descendants under rejected owners. Exercise real
+import bytes and assert each warning's source identity, owner, order and cardinality beside playable
+siblings. For retained mixer values, test explicit malformed, nonnumeric, nonfinite, empty and
+whitespace-only attributes against the actual parser and fallback; require truthful partial-loss
+warnings while preserving the existing musical mapping. Pair absent values, valid defaults and
+supported finite values, including zero, as quiet controls. Remove each accounting or partial-warning
+branch and require its corresponding unchanged case to fail.
+
 ### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
 
 The orchestrator packet prescribed the requested beat-four anchor without tracing
@@ -251,9 +269,8 @@ and `ci` limits on a change set wide enough that the total binds — several col
 sources they cover, with a deleted, an over-ceiling and a credentialed path — and compare the planned
 units, their own and context regions, the reasons and their sides against the merge base. Compare
 fixture against fixture, never aggregate counts, and treat a reallocation the probe measures as the
-finding rather than as a disclosed limitation. `scripts/semanticReview/__tests__/semanticReview.spec.ts`
-now pins the case (`ranks a covered source with the spec that covers it...`), and disabling the
-`specCovered` arm still has to redden the two pairwise cases.
+finding rather than as a disclosed limitation. The semantic-review feature and its pairwise cases
+were retired; retain this probe for any future evidence allocation system.
 
 ### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
 
@@ -678,3 +695,9 @@ PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — 
 Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
 
 Probe: before merging, when the base tip has moved since the head's last Gate, require fresh CI evidence that covers the resulting base-plus-head tree, not just the earlier head. Reverting either contributing hunk should make that combined-tree typecheck fail, which is what no validated run observed here.
+
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.

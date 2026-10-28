@@ -40,7 +40,6 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'nightly-evidence-report.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
-    'semantic-review.yml',
     'cargo-dependency-seed.yml',
 ] as const;
 
@@ -63,8 +62,8 @@ const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
 const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
 const SHARDED_BROWSER_STEPS = [
-    ...SETUP_PNPM_NODE,
-    'Install Playwright browsers',
+    ...SETUP_NODE,
+    'Verify preinstalled browser runtime',
     'Run shard',
     'Report shard failure',
     'Upload blob report',
@@ -108,6 +107,7 @@ const STATIC_SUITE_STEPS = [
 ] as const;
 const VALIDATION_STATIC_SUITE_STEPS = [
     STATIC_SUITE_STEPS[0],
+    'Hosted installer systemd proof',
     'Campaign fixture freshness',
     ...STATIC_SUITE_STEPS.slice(1),
 ] as const;
@@ -192,7 +192,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
-        smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
+        smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
             ...NODE_SETUP_ACTIONS,
@@ -245,20 +245,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
-    },
-    'semantic-review.yml': {
-        assess: [
-            'Checkout the trusted revision',
-            'Fetch the reviewed head as Git objects',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Assess the change',
-            'Report the assessment',
-            'Upload the advisory report',
-            'Compute the coverage line',
-        ],
-        coverage: ['Download the advisory report', 'Publish the withheld paths'],
     },
     'nightly.yml': {
         decide: ['Resolve scope'],

@@ -19,6 +19,7 @@ import {
     refreshSidechainAlignment,
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { BEAT_EPSILON, getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
@@ -867,6 +868,10 @@ export function startPlayheadScheduler(
             // playhead) is wrong on both paths — nothing writes it during
             // playback.
             const punchAnchorBeat = Math.max(current.punchInBeat, punchScanWindowStart);
+            // Each opening owns its own root, including later loop/punch passes.
+            // A terminal may outlive both its scheduler and the installed root.
+            const captureRootIdentity = captureProjectRootIdentity();
+            const stillOwnsCaptureRoot = (): boolean => captureProjectRootIdentity() === captureRootIdentity;
             const clips = startRecording(punchAnchorBeat);
             updateTransportState({ isRecording: true });
 
@@ -901,6 +906,13 @@ export function startPlayheadScheduler(
                         startAudioRecording(
                             track.id,
                             (result) => {
+                                if (!stillOwnsCaptureRoot()) {
+                                    notifyUser(
+                                        'Punch-in recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                                        'warning'
+                                    );
+                                    return;
+                                }
                                 if (result.kind === 'failed') {
                                     // A capture that dies mid-punch (ring overrun,
                                     // worker crash, a WAV that never decoded) must
@@ -932,7 +944,16 @@ export function startPlayheadScheduler(
                                     // and says so the way the punch capture-failure
                                     // sibling does.
                                     recordingLifecycle.trackCommit(
-                                        commitRecording(recordedClip).catch((error: unknown) => {
+                                        commitRecording(recordedClip, undefined, {
+                                            shouldExecute: stillOwnsCaptureRoot,
+                                        }).catch((error: unknown) => {
+                                            if (!stillOwnsCaptureRoot()) {
+                                                notifyUser(
+                                                    'Punch-in recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                                                    'warning'
+                                                );
+                                                return;
+                                            }
                                             logger.error(
                                                 new Error('Punch-in recording commit failed', { cause: error })
                                             );

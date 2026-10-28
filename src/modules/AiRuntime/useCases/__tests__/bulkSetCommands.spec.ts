@@ -9,7 +9,7 @@ import {
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     commandTrackDefaultsPort,
@@ -35,7 +35,7 @@ import { WORKFLOW_CAPABILITY_IDS, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../mo
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { resolveSemanticCommandListSelector } from '../../services/semanticCommandListCandidates';
 import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
-import { clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
@@ -1752,7 +1752,32 @@ function pannedTrackNames(): string[] {
 }
 
 describe('a bulk request confirmed one batch at a time', () => {
+    type ReceiptTimeoutStage = 'seedTracks' | 'sendChatMessage' | 'confirmPendingChatActions' | 'undo';
+    type ReceiptTimeoutTrace = {
+        startedAt: number;
+        startedAtWallClock: number;
+        pendingStage: ReceiptTimeoutStage | null;
+        events: Array<{ stage: ReceiptTimeoutStage; event: 'begin' | 'end'; elapsedMs: number; wallClock: number }>;
+    };
+
+    let receiptTimeoutTrace: ReceiptTimeoutTrace | null = null;
+
+    function markReceiptTimeoutStage(stage: ReceiptTimeoutStage, event: 'begin' | 'end'): void {
+        const trace = receiptTimeoutTrace;
+        if (trace === null) {
+            return;
+        }
+        trace.pendingStage = event === 'begin' ? stage : null;
+        trace.events.push({
+            stage,
+            event,
+            elapsedMs: performance.now() - trace.startedAt,
+            wallClock: Date.now(),
+        });
+    }
+
     beforeEach(async () => {
+        receiptTimeoutTrace = null;
         Container.clear();
         configureAiWorkflowCommandPreflightFixture();
         runtimeMocks.generateWebLlmCompletion.mockReset();
@@ -1781,7 +1806,70 @@ describe('a bulk request confirmed one batch at a time', () => {
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
 
-    afterEach(async () => {
+    afterEach(async ({ task }) => {
+        const trace = receiptTimeoutTrace;
+        if (trace !== null && task.result?.state === 'fail') {
+            try {
+                console.error(
+                    '[5747-receipt-timeout]',
+                    JSON.stringify({
+                        testName: task.name,
+                        trace: {
+                            ...trace,
+                            elapsedMs: performance.now() - trace.startedAt,
+                            wallClock: Date.now(),
+                        },
+                        runs: readAgentRunState().runs.map((run) => ({
+                            runId: run.runId,
+                            phase: run.phase,
+                            schedule: run.plan?.batchSchedule && {
+                                scheduleId: run.plan.batchSchedule.scheduleId,
+                                position: run.plan.batchSchedule.position,
+                                total: run.plan.batchSchedule.total,
+                            },
+                            batches: run.batches.map((batch) => ({ batchId: batch.batchId, status: batch.status })),
+                            receipts: run.receipts.map((receipt) => ({
+                                workId: receipt.workId,
+                                receiptIdentity: receipt.receiptIdentity,
+                                revertGroupId: receipt.revertGroupId,
+                            })),
+                        })),
+                        confirmations: (pendingActionConfirmationStore.value?.confirmations ?? []).map(
+                            (confirmation) => ({
+                                id: confirmation.id,
+                                runId: confirmation.runId,
+                                status: confirmation.status,
+                                position: confirmation.approvalSnapshot.batchPosition,
+                            })
+                        ),
+                        directMessages: (chatStore.value?.messages ?? [])
+                            .filter((message) => message.agentBatchId !== undefined)
+                            .map((message) => ({
+                                id: message.id,
+                                runId: message.agentRunId,
+                                batchId: message.agentBatchId,
+                            })),
+                        aiHistoryGroups: (aiActionHistoryStore.value?.groups ?? []).map((group) => ({
+                            groupId: group.groupId,
+                            actionTypes: group.actions.map((action) => action.actionType),
+                        })),
+                        undo: {
+                            past: (undoHistoryStore.value?.past ?? []).map((entry) => ({
+                                id: entry.id,
+                                groupId: entry.groupId,
+                            })),
+                            future: (undoHistoryStore.value?.future ?? []).map((entry) => ({
+                                id: entry.id,
+                                groupId: entry.groupId,
+                            })),
+                        },
+                    })
+                );
+            } catch {
+                // Failure diagnostics must not replace the test's original failure.
+            }
+        }
+        receiptTimeoutTrace = null;
         clearUndoHistory();
         resetAiWorkflowCommandPreflightFixture();
         resetActionReplayAuthority();
@@ -2073,12 +2161,20 @@ describe('a bulk request confirmed one batch at a time', () => {
         // greedily, so two directly committed batches of one run are never adjacent: here a binding
         // span fills the middle batch and leaves a one-command batch on either side of it.
         it('reads the newest of two directly committed batches of one run, never the earlier one', async () => {
+            receiptTimeoutTrace = {
+                startedAt: performance.now(),
+                startedAtWallClock: Date.now(),
+                pendingStage: null,
+                events: [],
+            };
+            markReceiptTimeoutStage('seedTracks', 'begin');
             const trackIds = await seedTracks([
                 'Intro',
                 ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1),
                 'Outro',
                 'Vocals',
             ]);
+            markReceiptTimeoutStage('seedTracks', 'end');
             const vocalsId = trackIds.at(-1)!;
             const commandNames = ['muteTrack', 'createBus', 'addSend', 'setTrackPan'];
             scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
@@ -2112,9 +2208,11 @@ describe('a bulk request confirmed one batch at a time', () => {
             ]);
 
             flushAutomergeStorageWrites();
+            markReceiptTimeoutStage('sendChatMessage', 'begin');
             await sendChatMessage(
                 'Mute the Intro track, create a bus named Parallel, send every layer track to the Parallel bus at -6 dB, and pan Outro 20% left; leave Vocals alone'
             );
+            markReceiptTimeoutStage('sendChatMessage', 'end');
 
             const middle = requireOnlyProposedConfirmation();
             expect(middle.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 3 });
@@ -2133,9 +2231,11 @@ describe('a bulk request confirmed one batch at a time', () => {
             expect(laterReceipts).toEqual([]);
             expect(readChatThreadContext()?.lastCommit).toMatchObject({ receiptIds: [firstReceipt?.receiptIdentity] });
 
+            markReceiptTimeoutStage('confirmPendingChatActions', 'begin');
             await expect(confirmPendingChatActions({ confirmationId: middle.id })).resolves.toEqual({
                 status: 'executed',
             });
+            markReceiptTimeoutStage('confirmPendingChatActions', 'end');
 
             expect(pannedTrackNames()).toEqual(['Outro']);
             expect(trackStore.value?.tracks.find((track) => track.id === vocalsId)?.pan).toBe(0);
@@ -2149,7 +2249,9 @@ describe('a bulk request confirmed one batch at a time', () => {
                 measuredDeltas: [],
             });
 
+            markReceiptTimeoutStage('undo', 'begin');
             await undo();
+            markReceiptTimeoutStage('undo', 'end');
 
             expect(pannedTrackNames()).toEqual([]);
             expect(mutedTrackNames()).toEqual(['Intro']);

@@ -64,11 +64,20 @@ export async function commitRecording(
     capture?: RecordedCapture,
     options?: { shouldExecute?: () => boolean }
 ): Promise<void> {
-    // The shouldExecute option rides the dispatch's own post-wait re-check: a commit
-    // parked on the snapshot-transaction queue must not resume into a root the
-    // caller no longer owns (#5517).
+    // Placement writes provisional takes before dispatch, so it needs the same
+    // authority as the dispatch's post-wait check. A false guard must reject:
+    // executeAppAction otherwise resolves silently, hiding the refused take
+    // from the terminal's cleanup and notice (#5517).
+    const shouldExecute = (): boolean => {
+        if (options?.shouldExecute && !options.shouldExecute()) {
+            throw new Error('Recording commit was refused by its execution guard');
+        }
+        return true;
+    };
+    shouldExecute();
+    const guardedOptions = options?.shouldExecute ? { shouldExecute } : options;
     if (capture === undefined) {
-        await executeAppAction({ type: 'commitRecording', payload: { clip } }, options);
+        await executeAppAction({ type: 'commitRecording', payload: { clip } }, guardedOptions);
         return;
     }
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
@@ -80,5 +89,5 @@ export async function commitRecording(
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } }, options);
+    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } }, guardedOptions);
 }
