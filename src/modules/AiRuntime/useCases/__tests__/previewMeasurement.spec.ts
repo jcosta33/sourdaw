@@ -59,6 +59,8 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
+import { readMetricPublication } from './metricGoalWorkflowFixture';
 
 // Only the engine's render boundary is replaced: compilation, grounding, the isolated preview,
 // target resolution and the measurement figures are the real ones.
@@ -300,10 +302,39 @@ function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal): void
 /** The interpretation turn, then each scripted turn in order. */
 function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): void {
     const planning = vi.mocked(generateToolPlanningOutcome);
-    planning.mockResolvedValueOnce({
-        status: 'complete',
-        toolCalls: [interpretationCall(revision)],
-        providerTurn: { provider: 'openai', assistantItems: null },
+    planning.mockImplementationOnce(async (_systemPrompt, _userMessage, toolSchemas) => {
+        const unsupported = readMetricPublication({ function: advertisedAnswerSchema(toolSchemas) }).find(
+            (row) => row.kind === 'unsupported'
+        );
+        if (unsupported === undefined) {
+            throw new TypeError('Expected the actual published unsupported acoustic objective.');
+        }
+        const call = interpretationCall(revision);
+        return {
+            status: 'complete',
+            toolCalls: [
+                {
+                    ...call,
+                    arguments: {
+                        ...call.arguments,
+                        answer: null,
+                        metricIntent: {
+                            kind: 'perceptual',
+                            uncertainty: 'none',
+                            objectives: [
+                                {
+                                    objectiveId: unsupported.id,
+                                    scopeCandidateId: null,
+                                    referenceScopeCandidateId: null,
+                                    rangeCandidateId: null,
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+            providerTurn: { provider: 'openai', assistantItems: null },
+        };
     });
     for (const toolCalls of turns) {
         planning.mockResolvedValueOnce({
@@ -426,6 +457,7 @@ function persistForApproval(planned: IntentResult, revision: string): string {
     const actionLabels = planned.actions.map((action) => action.type);
     const compiled = compileAgentActionExecution({
         actions: planned.actions,
+        metricGoalState: planned.metricGoalState,
         actionCommandGraph: planned.actionCommandGraph,
         actionLabels,
         group,
@@ -454,6 +486,7 @@ function persistForApproval(planned: IntentResult, revision: string): string {
         commandEnvelopes: compiled.commandEnvelopes,
         commandBatch: compiled.commandBatch,
         agentApproval: compiled.agentApproval,
+        metricGoalState: compiled.metricGoalState,
         affectedIds: ['drums'],
         protectedUnchanged: [],
         measuredPreview: planned.measuredPreview,

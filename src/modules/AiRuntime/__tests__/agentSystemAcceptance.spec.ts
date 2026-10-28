@@ -75,6 +75,7 @@ import {
     type ProviderCall,
     type ScriptedTurn,
 } from '../useCases/__tests__/highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn } from '../useCases/__tests__/metricGoalWorkflowFixture';
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
@@ -168,6 +169,7 @@ const MINIMUM_SEALED_CLASS_CASES = 3;
  * generator.
  */
 type CorpusProviderTurn =
+    | { kind: 'intake'; intent: 'literal' }
     | { kind: 'search'; intents: string[] }
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[] }
@@ -393,6 +395,11 @@ function toScriptedTurn(
     priorProposalId: () => string | undefined = () => undefined
 ): ScriptedTurn {
     switch (turn.kind) {
+        case 'intake':
+            if (turn.intent !== 'literal') {
+                throw new TypeError('The corpus intake variant has no configured producer.');
+            }
+            return literalMetricIntakeTurn;
         case 'search':
             return () => searchCalls(turn.intents);
         case 'discover':
@@ -1546,6 +1553,28 @@ describe('agent acceptance corpora', () => {
                         testCase.oracle.kind,
                         `Case ${testCase.id} is pending inside sealed ${promptClass}`
                     ).not.toBe('pending');
+                }
+            }
+        });
+
+        it('declares one positive intake before every scripted mutation within the existing turn ceiling', () => {
+            for (const testCase of corpus.cases) {
+                for (const frame of [testCase, testCase.prior]) {
+                    if (frame === undefined) {
+                        continue;
+                    }
+                    const mutations = frame.providerTurns.some(
+                        (turn) => turn.kind === 'propose' || turn.kind === 'propose-commands'
+                    );
+                    const intakes = frame.providerTurns.filter((turn) => turn.kind === 'intake');
+                    if (mutations) {
+                        expect(frame.providerTurns[0]?.kind, `${testCase.id}: ${frame.prompt}`).toBe('intake');
+                        expect(frame.providerTurns[0]).toEqual(intakes[0]);
+                        expect(intakes).toHaveLength(1);
+                        expect(frame.providerTurns.length).toBeLessThanOrEqual(5);
+                    } else {
+                        expect(intakes).toEqual([]);
+                    }
                 }
             }
         });

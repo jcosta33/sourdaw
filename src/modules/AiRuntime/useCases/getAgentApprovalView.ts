@@ -230,8 +230,12 @@ function getRePreviewAvailability(
         return { available: false, reason: 'The confirmation has no approved command batch to re-preview.' };
     }
     const batch = confirmation.approvalSnapshot.commandBatch;
+    const state = metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState);
+    if (state === null || state.authorities.length === 0) {
+        return { available: false, reason: 'Submit the request again to establish its whole-request intent.' };
+    }
     const metric = evaluateMetricGoalAdmission({
-        state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+        state,
         commandBatch: batch,
     });
     if (freshness.status !== 'stale' && freshness.status !== 'mismatched' && metric.status !== 'blocked') {

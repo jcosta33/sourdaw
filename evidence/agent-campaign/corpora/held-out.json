@@ -57,6 +57,10 @@
             "prompt": "create a walking bass line on a new track",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["create a midi track", "add a clip", "add midi notes"]
                 },
@@ -159,6 +163,10 @@
             "class": "execute-exact",
             "prompt": "create a bass line on a new track and set tempo to 140 bpm",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create a midi track", "add a clip", "add midi notes", "change the project tempo"]
@@ -264,6 +272,10 @@
             "prompt": "create 2 midi tracks named Grand Piano, String Ensemble",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["create a midi track"]
                 },
@@ -322,6 +334,10 @@
             "prompt": "create a lead synth track",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["create a midi track"]
                 },
@@ -363,6 +379,10 @@
             "class": "execute-exact",
             "prompt": "create an audio track named Room Mic",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create a midi track"]
@@ -639,6 +659,10 @@
             "prompt": "Add a compressor to the Keys track and change its attack to 25 ms.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["add a device to a track", "set a device parameter"]
                 },
@@ -712,6 +736,10 @@
             "class": "execute-exact",
             "prompt": "Add a reverb to the Overheads and increase its decay to 3.5 s.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["add a device to a track", "set a device parameter"]
@@ -787,6 +815,10 @@
             "prompt": "Add a distortion to the Snare and change its drive to 60.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["add a device to a track", "set a device parameter"]
                 },
@@ -861,6 +893,10 @@
             "prompt": "Bring the Guitar up 2 dB.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["set track gain"]
                 },
@@ -916,6 +952,10 @@
             "class": "execute-exact",
             "prompt": "Put Backing Vocals L at -9 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -973,6 +1013,10 @@
             "prompt": "Lower the master by 1.5 dB.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["set master gain"]
                 },
@@ -1016,6 +1060,10 @@
             "class": "execute-exact",
             "prompt": "Lower the Snare send to the Drum Bus by 4 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set send"]
@@ -1074,6 +1122,10 @@
             "class": "execute-exact",
             "prompt": "Add a bus called Keys Chorus and feed the Keys into it at -10 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create bus", "add send"]
@@ -1146,6 +1198,10 @@
             "class": "execute-exact",
             "prompt": "Set up a new bus named Vocal Delay with sends from Backing Vocals L and Backing Vocals R at -15 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create bus", "add send"]
@@ -1246,6 +1302,10 @@
             "prompt": "Create a Bass Crush bus and send the Bass DI to it at -8 dB.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["create bus", "add send"]
                 },
@@ -1318,6 +1378,10 @@
             "prompt": "Duck the Guitar by 4 dB during the Verse, ramping in and out over one beat.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["duck a track level across a section"]
                 },
@@ -1388,6 +1452,10 @@
             "prompt": "Automate the Keys pan to -0.5 over bars 1 to 4.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["automate a parameter over a bar range"]
                 },
@@ -1455,6 +1523,10 @@
             "class": "execute-exact",
             "prompt": "Dip the Backing Vocals L to -18 dB from beat 48 to beat 64.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["dip a track level over a beat range"]
@@ -1526,6 +1598,10 @@
                 "prompt": "Turn Guitar down 4 dB and turn Keys down 2 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -1557,6 +1633,10 @@
             },
             "prompt": "make the guitar 2 dB",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -1616,6 +1696,10 @@
                 "prompt": "Turn Guitar down 4 dB and turn Keys down 2 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -1647,6 +1731,10 @@
             },
             "prompt": "make the keys 1 dB",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -1706,6 +1794,10 @@
                 "prompt": "Turn Overheads down 3 dB and mute Hi-Hat",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -1737,6 +1829,10 @@
             },
             "prompt": "make it 1.5 dB please",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain", "mute track"]
@@ -1796,6 +1892,10 @@
                 "prompt": "Turn Kick down 2 dB and turn Hi-Hat down 3 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -1827,6 +1927,10 @@
             },
             "prompt": "not the kick",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -1872,6 +1976,10 @@
                 "prompt": "Turn Overheads down 2 dB and mute Backing Vocals R",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -1903,6 +2011,10 @@
             },
             "prompt": "drop the Overheads change",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain", "mute track"]
@@ -1948,6 +2060,10 @@
                 "prompt": "Turn Overheads down 2 dB and mute Backing Vocals R",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -1979,6 +2095,10 @@
             },
             "prompt": "remove the Backing Vocals R mute",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -2023,6 +2143,10 @@
             "prior": {
                 "prompt": "Turn Guitar down 4 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2070,6 +2194,10 @@
                 "prompt": "Turn Guitar down 4 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2115,6 +2243,10 @@
             "prior": {
                 "prompt": "Turn Guitar down 4 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2162,6 +2294,10 @@
                 "prompt": "Turn Keys down 2 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2199,6 +2335,10 @@
             "prior": {
                 "prompt": "Turn Keys down 2 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2238,6 +2378,10 @@
                 "prompt": "Turn Guitar down 4 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2275,6 +2419,10 @@
             "prior": {
                 "prompt": "Turn Guitar down 4 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2322,6 +2470,10 @@
                 "prompt": "Turn Guitar down 4 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2367,6 +2519,10 @@
             "prior": {
                 "prompt": "Turn Keys down 2 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2421,6 +2577,10 @@
                 "prompt": "Turn Guitar down 1 dB and turn Keys down 2 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2472,6 +2632,10 @@
                 "prompt": "Turn Guitar down 1 dB and mute Guitar",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -2522,6 +2686,10 @@
             "prior": {
                 "prompt": "Turn Guitar down 2 dB and mute Keys",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
@@ -2582,6 +2750,10 @@
             "prior": {
                 "prompt": "Turn Guitar down 1 dB and mute Guitar",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
@@ -2656,6 +2828,10 @@
             "prior": {
                 "prompt": "Set Guitar to -9 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]

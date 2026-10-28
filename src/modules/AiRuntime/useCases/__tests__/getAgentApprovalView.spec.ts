@@ -328,7 +328,7 @@ describe('getAgentApprovalView', () => {
     });
 
     // A matching legacy batch has no positive whole-request intent; freshness alone cannot approve it.
-    it('reports a matching legacy proposal as current but unverified and offers re-preview', () => {
+    it('reports a matching legacy proposal as current but unverified and requires resubmission', () => {
         propose('confirmation-current');
 
         const view = getAgentApprovalView({ confirmationId: 'confirmation-current' });
@@ -340,14 +340,17 @@ describe('getAgentApprovalView', () => {
             failure: 'missing',
             reason: 'The whole request has no positive metric intent admission. The plan remains unverified.',
         });
-        expect(view?.rePreview).toEqual({ available: true, reason: null });
+        expect(view?.rePreview).toEqual({
+            available: false,
+            reason: 'Submit the request again to establish its whole-request intent.',
+        });
         expect(mocks.validateApproval).toHaveBeenCalledWith(
             expect.objectContaining({ currentRevision: REVISION, approval: expect.objectContaining(AGENT_APPROVAL) })
         );
     });
 
     // Red when a stale validation is reported as mismatched, or stops offering a re-preview.
-    it('reports a drifted proposal as stale and offers a re-preview', () => {
+    it('reports a drifted legacy proposal as stale while requiring resubmission', () => {
         mocks.captureRevision.mockReturnValue('revision-moved');
         mocks.validateApproval.mockReturnValue({
             status: 'invalid',
@@ -363,7 +366,10 @@ describe('getAgentApprovalView', () => {
             reason: 'The approved source revision is stale.',
             currentRevision: 'revision-moved',
         });
-        expect(view?.rePreview).toEqual({ available: true, reason: null });
+        expect(view?.rePreview).toEqual({
+            available: false,
+            reason: 'Submit the request again to establish its whole-request intent.',
+        });
     });
 
     // Red when a non-stale invalidity is folded into `stale` and loses the binding-mismatch reason.
@@ -382,7 +388,10 @@ describe('getAgentApprovalView', () => {
             reason: 'The local actor no longer matches the approval.',
             currentRevision: REVISION,
         });
-        expect(view?.rePreview).toEqual({ available: true, reason: null });
+        expect(view?.rePreview).toEqual({
+            available: false,
+            reason: 'Submit the request again to establish its whole-request intent.',
+        });
     });
 
     // Red when the view runs the validator over an invalidated proposal instead of reading its recorded reason.

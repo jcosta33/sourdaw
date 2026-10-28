@@ -6,7 +6,11 @@ import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import {
+    clearUndoHistory,
+    resetActionReplayAuthority,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     registerCrdtStorageRuntime,
@@ -18,7 +22,13 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { chatStore } from '../../stores/chatStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
+import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
+import { getProjectContext } from '../getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
+import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -260,3 +270,53 @@ export const literalMetricIntakeTurn: ScriptedTurn = (userMessage, providerView)
         },
     ];
 };
+
+/** Call only for an explicitly authored whole literal fixture; batch shape never classifies intent. */
+export function configuredLiteralMetricState(commandBatch: {
+    serialized: string;
+    authority: Parameters<typeof parseVersionedCommandBatchEnvelope>[1];
+}): string {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new TypeError(parsed.reason);
+    }
+    const input = {
+        prompt: parsed.envelope.intent,
+        context: getProjectContext(),
+        projectRevision: parsed.envelope.baseRevision,
+    };
+    const creative = prepareCreativeInterpretationCatalog(input);
+    const answer = prepareAnswerInterpretationCatalog(input);
+    const metric = prepareMetricIntentCatalog({ prompt: input.prompt, answer });
+    const admitted = admitPlanningInterpretation({
+        creative,
+        answer,
+        metric,
+        projectRevision: input.projectRevision,
+        turn: 1,
+        call: {
+            id: 'fixture-literal-intake',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: creative.catalogId,
+                modeId: 'literal',
+                uncertainty: 'none',
+                targetCandidateIds: [],
+                editDimensionCandidateIds: [],
+                constraintCandidateIds: [],
+                creationSlotIds: [],
+                answer: null,
+                metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+            },
+        },
+    });
+    if (admitted.status !== 'admitted' || admitted.kind !== 'literal') {
+        throw new Error('The declared literal fixture did not pass actual joint intake.');
+    }
+    return JSON.stringify(
+        bindMetricGoalsToBatch({
+            commandBatch,
+            state: { schemaVersion: 1, authorities: [admitted.metricAuthority], steps: [], proofs: [], binding: null },
+        })
+    );
+}

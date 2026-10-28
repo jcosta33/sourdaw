@@ -88,6 +88,10 @@ function admitReproposal(
     if (holdsPreparedStemResources(confirmation.actions)) {
         return { status: 'rejected', reason: PREPARED_STEM_RESOURCES_REASON };
     }
+    const state = metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState);
+    if (state === null || state.authorities.length === 0) {
+        return { status: 'rejected', reason: 'Submit the request again to establish its whole-request intent.' };
+    }
     return null;
 }
 

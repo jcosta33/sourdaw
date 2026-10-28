@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import {
@@ -9,6 +10,8 @@ import {
     updatePendingActionConfirmationStatus,
 } from '../../stores/pendingActionConfirmationStore';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
+
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 const ORIGINAL_REVISION = 'revision-original';
 const CURRENT_REVISION = 'revision-current';
@@ -100,9 +103,9 @@ function buildBatch(batchId: string, baseRevision: string, indexes: readonly num
     return compileVersionedCommandBatchEnvelope({
         runId: 'run-repropose',
         batchId,
-        projectId: 'project-repropose',
+        projectId: captureProjectIdentity(),
         baseRevision,
-        intent: 'Rebalance the drums',
+        intent: 'Set Kick, Snare and Hat gain to 80%',
         commands,
     });
 }
@@ -166,17 +169,19 @@ function propose(
     id: string,
     actions: readonly AppAction[] = TRACK_IDS.map((trackId) => gainAction(trackId)),
     adoptedRecipes?: Parameters<typeof proposePendingActionConfirmation>[0]['adoptedRecipes'],
-    protectionFacts?: Parameters<typeof proposePendingActionConfirmation>[0]['protectionFacts']
+    protectionFacts?: Parameters<typeof proposePendingActionConfirmation>[0]['protectionFacts'],
+    metricGoalState: string | null = configuredLiteralMetricState(originalBatch)
 ) {
     const confirmation = proposePendingActionConfirmation({
         id,
         runId: 'run-repropose',
-        prompt: 'Rebalance the drums',
+        prompt: 'Set Kick, Snare and Hat gain to 80%',
         assistantMessageId: 'assistant-original',
         actions: [...actions],
         actionLabels: [...ACTION_LABELS],
         commandBatch: originalBatch,
-        agentApproval: AGENT_APPROVAL,
+        agentApproval: { ...AGENT_APPROVAL, metricGoalState },
+        metricGoalState: metricGoalState ?? undefined,
         adoptedRecipes,
         protectionFacts,
         affectedIds: [...TRACK_IDS],
@@ -211,7 +216,11 @@ describe('reproposePendingChatActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         clearPendingActionConfirmations();
-        mocks.compileApproval.mockReturnValue({ ...AGENT_APPROVAL, sourceRevision: CURRENT_REVISION });
+        mocks.compileApproval.mockImplementation((input: { metricGoalState?: string }) => ({
+            ...AGENT_APPROVAL,
+            sourceRevision: CURRENT_REVISION,
+            metricGoalState: input.metricGoalState,
+        }));
         mocks.getRun.mockReturnValue({ runId: 'run-repropose', phase: 'waiting-for-approval' });
         mocks.persistConfirmation.mockReturnValue('confirmation-reproposed');
         mocks.refresh.mockReturnValue(readyRefresh(refreshedBatch));
@@ -252,6 +261,27 @@ describe('reproposePendingChatActions', () => {
         expect(result.status).toBe('reproposed');
         expect(mocks.persistConfirmation).toHaveBeenCalledWith(expect.objectContaining({ protectionFacts }));
     });
+
+    it.each(['missing', 'empty'] as const)(
+        'refuses an unadmitted legacy proposal with %s intent without opening a preview or creating another card',
+        async (kind) => {
+            const state =
+                kind === 'missing'
+                    ? null
+                    : JSON.stringify({ schemaVersion: 1, authorities: [], steps: [], proofs: [], binding: null });
+            const legacy = propose('confirmation-no-intent', undefined, undefined, undefined, state);
+            await expect(reproposePendingChatActions({ confirmationId: legacy.id })).resolves.toEqual({
+                status: 'rejected',
+                reason: 'Submit the request again to establish its whole-request intent.',
+            });
+            expect(mocks.refresh).not.toHaveBeenCalled();
+            expect(mocks.compileApproval).not.toHaveBeenCalled();
+            expect(mocks.preview).not.toHaveBeenCalled();
+            expect(mocks.persistConfirmation).not.toHaveBeenCalled();
+            expect(mocks.appendChatMessage).not.toHaveBeenCalled();
+            expect(getPendingActionConfirmation(legacy.id)).toMatchObject({ status: 'proposed', supersededBy: null });
+        }
+    );
 
     // Red when an unknown confirmation id is re-proposed instead of reported missing.
     it('reports a confirmation the store does not hold', async () => {
