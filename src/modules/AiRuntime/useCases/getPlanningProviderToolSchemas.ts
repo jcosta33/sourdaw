@@ -1,10 +1,12 @@
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
 import { ANALYSIS_COMPARE_REFERENCE_TOOL_NAME } from '../models/AgentToolCatalogNames';
+import { type PlanningProfile, READONLY_ANSWER_TOOL_NAMES } from '../models/PlanningProfile';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../models/WorkflowCapability';
 import { readAgentReference } from '../stores/agentReferenceStore';
 
+import { getReadonlyAnalysisMeasureSchema } from './agentToolCatalog';
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 
 /**
@@ -15,7 +17,14 @@ import { getPlanningProviderSchemaContract } from './planningProviderSchema';
  * contract the decision-resume identity reads still lists it, so loading or clearing a reference
  * never invalidates a decision that is waiting.
  */
-export function getPlanningProviderToolSchemas(): readonly ToolSchema[] {
+export function getPlanningProviderToolSchemas(profile?: PlanningProfile): readonly ToolSchema[] {
+    if (profile === 'readonly-answer') {
+        return getPlanningProviderSchemaContract()
+            .schemas.filter((schema) => READONLY_ANSWER_TOOL_NAMES.has(schema.function.name))
+            .map((schema) =>
+                schema.function.name === 'analysis.measure' ? getReadonlyAnalysisMeasureSchema() : schema
+            );
+    }
     const workflowToolSchemas = getExecutableAppActionToolSchemas().filter((tool) =>
         WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)
     );

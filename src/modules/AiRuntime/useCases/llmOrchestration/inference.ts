@@ -103,6 +103,8 @@ type HostedTurnRequest = {
     transientOnsetsDiscovered?: true;
     /** The composed receipt text is complete before its bounded local rendering. */
     localReceiptContextComplete?: boolean;
+    /** Application-selected ceiling; absent callers retain the configured planning budget. */
+    maxOutputTokens?: number;
 };
 
 /**
@@ -600,7 +602,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                               requestId,
                           })
                         : undefined;
-                const maxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
+                const configuredMaxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
+                const maxOutputTokens = Math.min(
+                    configuredMaxOutputTokens,
+                    hostedTurn?.maxOutputTokens ?? configuredMaxOutputTokens
+                );
                 // Native replay starts at the first recorded turn, which every hosted turn now
                 // becomes: in practice only the run's opening turn arrives with an empty history.
                 // Before that first record there is nothing to hand back, and the composed user

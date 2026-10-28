@@ -1,10 +1,12 @@
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
+import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
+import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';
@@ -31,6 +33,7 @@ type PlanPromptActionsInput = {
     onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult;
     onLocalWorkAttempt?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean;
     providerPlanning?: 'enabled' | 'disabled';
+    profile?: PlanningProfile;
     /** The chat thread's state before this request; a request from outside a thread passes none. */
     thread?: ThreadContext | null;
 };
@@ -200,7 +203,11 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             providerPlanning: input.providerPlanning,
             onMeasurementAttempt,
             thread: input.thread,
+            ...(input.profile === undefined ? {} : { profile: input.profile }),
         });
+        if (input.profile === 'readonly-answer') {
+            result = guardReadonlyPlanningResult(result);
+        }
         const initialCreativeAuthority = result.creativeAuthority ?? null;
         const rejectionEvidence = result.rejectionEvidence;
         const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
@@ -278,9 +285,13 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 providerPlanning: input.providerPlanning,
                 onMeasurementAttempt,
                 thread: input.thread,
+                ...(input.profile === undefined ? {} : { profile: input.profile }),
             });
         }
-        if (result.preparationRequest === 'stem-import') {
+        if (input.profile === 'readonly-answer') {
+            result = guardReadonlyPlanningResult(result);
+        }
+        if (input.profile !== 'readonly-answer' && result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
             if (preparedStemImport.status === 'cancelled') {
                 await settleAutoCreatedRun('completed');
@@ -316,6 +327,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 providerPlanning: input.providerPlanning,
                 onMeasurementAttempt,
                 thread: input.thread,
+                ...(input.profile === undefined ? {} : { profile: input.profile }),
             });
         }
     } catch (error) {
@@ -325,7 +337,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
         if (error instanceof AiProposalInvalidatedError) {
             category = 'conflict';
-        } else if (input.signal?.aborted) {
+        } else if (input.signal?.aborted || isAiRuntimeConfigurationChangedError(error)) {
             category = 'cancellation';
         }
         agentRunLifecycle.recordError({
@@ -347,7 +359,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await discardStemImportScope();
     }
 
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context, projectRevision);
+    const wholeProjectVibeMixScope =
+        input.profile === 'readonly-answer' ? undefined : getWholeProjectVibeMixScope(context, projectRevision);
     const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope && wholeProjectVibeMixAction) {
         result.wholeProjectVibeMixPlan = {
