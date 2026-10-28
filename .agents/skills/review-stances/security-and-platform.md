@@ -56,6 +56,18 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-28 — PR security scan lacked its main comparison configuration (PR #4854)
+
+PR #4854 added scope-selected CodeQL in Health gates while Nightly retained its own default
+analysis category. The two workflow/job identities differ, so a successful PR scan did not cover
+the existing main configuration and GitHub reported an incomplete introduced-alert comparison.
+Historical private reviewer prompts and tiers are not established.
+
+For each required security scan, inspect actual main and PR upload metadata by tool, category,
+ref, commit and scan configuration, then inspect the hosted comparison summary. Mutate or omit
+the PR category and require the independent workflow contract to fail even after the workflow
+snapshot is re-recorded. A green action or Gate alone does not prove baseline comparison.
+
 ### 2026-10-28 — desktop fallback filenames lost the selected File authority (issue #5767)
 
 Commit `4f410257b212` introduced a native-dialog rejection fallback that returned browser

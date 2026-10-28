@@ -6,6 +6,17 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — successful scan did not prove comparison coverage (PR #4854)
+
+PR #4854 added a PR CodeQL job with a default identity distinct from Nightly's main analysis.
+Execution and Gate checks could succeed while the code-scanning summary reported the main
+configuration missing. Historical private review prompts and tiers are not established.
+
+Compare current-head uploaded category and scan scope with the actual main baseline and inspect
+the hosted introduced-alert summary. Remove or alter the explicit category, re-record the
+workflow snapshot, and require the named independent input contract to fail. Neither a snapshot
+nor an imitation of an upstream action proves emitted metadata.
+
 ### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
 
 The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
