@@ -13,11 +13,11 @@ import { installTransactionalIndexedDb } from '#/infra/testing/installTransactio
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getPluginById, setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { audioEngine, updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import * as commandUseCases from '#/modules/Command/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoStore } from '#/modules/Command/stores';
+import * as commandUseCases from '#/modules/Command/useCases';
 import {
     clearUndoHistory,
     executeUserAppAction,
