@@ -15,7 +15,6 @@ import {
     captureProjectIdentity,
     createCrdtDoc,
     getCrdtDoc,
-    mutateCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -681,13 +680,19 @@ it.each(['instrument', 'articulation'])(
 );
 
 function commitTopology(tracks: TrackStoreState['tracks'], snapshotTransaction: object): void {
-    mutateCrdtDoc<{ tracks: Pick<TrackStoreState, 'tracks'> }>({
-        id: 'root',
-        snapshotTransaction,
-        changeFn: (document) => {
-            document.tracks.tracks = JSON.parse(JSON.stringify(tracks));
-        },
+    const write = runWithAutomergeStorageTransaction(snapshotTransaction, () => {
+        trackStore.set({ ...trackStore.value!, tracks });
     });
+    if (write.status === 'threw') {
+        write.abort();
+        throw write.error;
+    }
+    try {
+        write.commit();
+    } catch (error) {
+        write.abort();
+        throw error;
+    }
     projectCrdtToStores();
 }
 
@@ -759,10 +764,12 @@ it.each(['owner', 'type'] as const)('retires a queued choice after committed %s 
     const original = structuredClone(rawProjectState('a'));
     await requestDuringSnapshotEdit((state, transaction) => {
         const tracks = structuredClone(state.tracks);
-        const absent =
-            loss === 'owner'
-                ? tracks.map((track) => ({ ...track, id: 'different-owner' }))
-                : editDevice(state, (device) => ({ ...device, type: 'crust' })).tracks;
+        let absent: TrackStoreState['tracks'];
+        if (loss === 'owner') {
+            absent = tracks.map((track) => ({ ...track, id: 'different-owner' }));
+        } else {
+            absent = editDevice(state, (device) => ({ ...device, type: 'crust' })).tracks;
+        }
         commitTopology(absent, transaction);
         commitTopology(tracks, transaction);
     });

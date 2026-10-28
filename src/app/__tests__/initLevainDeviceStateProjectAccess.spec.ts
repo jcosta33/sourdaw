@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { sanitizeTrackSnapshot } from '#/modules/Arrangement/stores';
 import { createCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
 
 import { initLevainDeviceStateProjectAccess } from '../initLevainDeviceStateProjectAccess';
@@ -37,7 +36,7 @@ function access(): ProjectAccess {
 }
 
 function publish(owner = 'owner', type = 'levain'): void {
-    const snapshot = sanitizeTrackSnapshot({
+    const snapshot = {
         tracks: [
             {
                 id: owner,
@@ -54,11 +53,11 @@ function publish(owner = 'owner', type = 'levain'): void {
                 ],
             },
         ],
-    });
+    };
     mutateCrdtDoc({
         id: 'root',
         changeFn: (document) => {
-            document.tracks = JSON.parse(JSON.stringify(snapshot));
+            document.tracks = structuredClone(snapshot);
         },
     });
 }
