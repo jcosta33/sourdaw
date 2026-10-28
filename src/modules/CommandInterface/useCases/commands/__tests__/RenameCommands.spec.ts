@@ -11,6 +11,7 @@ import { trackCommands } from '../TrackCommands';
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
+    isAppActionCommittedError: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTrack: vi.fn(),
