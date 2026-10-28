@@ -106,7 +106,8 @@ export function projectFrozenMidiTakeWindow({
         visibleStartBeat: visibleSourceStartBeat,
         visibleEndBeat: visibleSourceEndBeat,
     };
-    if (visibleEndBeat === sourcePassEndBeat) {
+    const nextPassHeadBeat = passHeadBeat + source.passLengthBeats;
+    if (visibleEndBeat === sourcePassEndBeat && (sourcePassEndBeat >= toBeat || sourcePassEndBeat < nextPassHeadBeat)) {
         window.closingLineBeat = sourcePassEndBeat;
     }
     const projected = projectMidiClipWindow({

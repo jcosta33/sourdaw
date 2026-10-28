@@ -217,16 +217,29 @@ function handleAdmittedNoteOn(
         }
     }
     let admission: ReturnType<typeof admitRecordingMidiNoteOn> = null;
-    if (message.velocity > 0 && trackId) {
-        admission = admitRecordingMidiNoteOn({
-            trackId,
-            channel,
-            note: message.note,
-            velocity: message.velocity,
-            audioTime: timeStamp.audioTime,
-            position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
-            initialExpression: captureRecordingMemberExpression(channel),
-        });
+    if (message.velocity > 0) {
+        const replaced =
+            findOpenRecordingMidiAdmission(channel, message.note) ??
+            (getMpeEnabled() && channel >= 1 ? findOpenRecordingMidiMemberAdmission(channel) : undefined);
+        if (replaced) {
+            admitRecordingMidiNoteOff({
+                channel: replaced.channel,
+                note: replaced.note,
+                audioTime: timeStamp.audioTime,
+                position: captureCompensatedRecordingPosition(replaced.trackId, timeStamp.audioTime),
+            });
+        }
+        if (trackId) {
+            admission = admitRecordingMidiNoteOn({
+                trackId,
+                channel,
+                note: message.note,
+                velocity: message.velocity,
+                audioTime: timeStamp.audioTime,
+                position: captureCompensatedRecordingPosition(trackId, timeStamp.audioTime),
+                initialExpression: captureRecordingMemberExpression(channel),
+            });
+        }
     }
     const admittedTime: {
         audioTime: number;

@@ -43,7 +43,11 @@ import {
 
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { PianoRollContextMenu } from '../../views/ClipView/PianoRollContextMenu';
-import { cutPianoRollTakeNotes, transformPianoRollTakeNotes } from '../applyPianoRollTakeMenuAction';
+import {
+    cutPianoRollTakeNotes,
+    pastePianoRollTakeNotes,
+    transformPianoRollTakeNotes,
+} from '../applyPianoRollTakeMenuAction';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../editPianoRollTakeNote';
 import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
 
@@ -315,6 +319,65 @@ describe('selected piano roll Command callbacks', () => {
         takeLaneStore.set({ lanes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('cuts and pastes a cropped selected bend note through its original row and Undo', async () => {
+        const lane = takeLaneStore.value?.lanes[0];
+        if (!lane) {
+            throw new Error('Expected take lane');
+        }
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...lane,
+                    activeCompRegions: [{ startBeat: 1, endBeat: 4, takeId: 'selected' }],
+                    takes: lane.takes.map((take) => {
+                        const midiSource = take.midiSource;
+                        if (!midiSource) {
+                            return take;
+                        }
+                        return {
+                            ...take,
+                            midiSource: {
+                                ...midiSource,
+                                rows: {
+                                    ...midiSource.rows,
+                                    notes: {
+                                        present: true,
+                                        value: midiSource.rows.notes.value.map((note) =>
+                                            note.id === original.id ? { ...note, pitchBend: 1000 } : note
+                                        ),
+                                    },
+                                },
+                            },
+                        };
+                    }),
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const placement = { id: 'clip', startBeat: 0, endBeat: 4 };
+        const projection = projectPianoRollTakeNotes(placement, 'track', takeLaneStore.value);
+        const selected = projection.notes.find(
+            (note) => projection.ownersByViewId.get(note.id)?.row.id === original.id
+        );
+        if (!selected) {
+            throw new Error('Expected cropped selected note');
+        }
+
+        expect(await cutPianoRollTakeNotes(projection, 'clip', new Set([selected.id]))).toBe(true);
+        expect(rows()?.every((takeRows) => !takeRows?.some((note) => note.id === original.id))).toBe(true);
+        expect(getCopiedPianoRollNotes()).toEqual([selected]);
+        await undo();
+        expect(rows()?.every((takeRows) => takeRows?.some((note) => note.id === original.id))).toBe(true);
+        await redo();
+        expect(rows()?.every((takeRows) => !takeRows?.some((note) => note.id === original.id))).toBe(true);
+
+        const afterCut = projectPianoRollTakeNotes(placement, 'track', takeLaneStore.value);
+        expect(await pastePianoRollTakeNotes(afterCut, 'clip', 1.5)).toBe(true);
+        expect(rows()?.[0]?.some((note) => note.pitchBend === 1000 && note.id !== original.id)).toBe(true);
+        await undo();
+        expect(rows()?.[0]?.some((note) => note.pitchBend === 1000 && note.id !== original.id)).toBe(false);
     });
 
     it('edits the original property and inserts in the selected pass with Undo and Redo', async () => {

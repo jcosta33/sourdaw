@@ -840,7 +840,10 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                                     notes: { present: true, value: [] },
                                     controlChanges: {
                                         present: true,
-                                        value: [{ id: 'pedal', controller: 64, value: 127, beat: 5.25, channel: 0 }],
+                                        value: [
+                                            { id: 'pedal', controller: 64, value: 127, beat: 5.25, channel: 0 },
+                                            { id: 'pedal-lift', controller: 64, value: 0, beat: 9, channel: 0 },
+                                        ],
                                     },
                                     pitchBends: { present: true, value: [] },
                                 },
@@ -863,6 +866,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         ).toEqual([
             { time: 0.125, controller: 64, value: 127 },
             { time: 2.125, controller: 64, value: 127 },
+            { time: 4, controller: 64, value: 0 },
         ]);
     });
 

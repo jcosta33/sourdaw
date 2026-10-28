@@ -369,6 +369,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getRecordingMidiAdmission: noop,
     retireRecordingMidiAdmission: noop,
     takeOwnsRecordingRoot: noop,
+    recordingMidiSourceBeatAt: noop,
     getDeviceManifestProtocolContract: noop,
     setClipAudioAssetStager: noop,
     stageAudioBufferAsset: noop,
@@ -1009,6 +1010,7 @@ describe('bootstrap', () => {
             getRecordingMidiAdmission: noop,
             retireRecordingMidiAdmission: noop,
             takeOwnsRecordingRoot: noop,
+            recordingMidiSourceBeatAt: noop,
         });
 
         expect(configureRuntimeGraphProjectRevisionValidatorMock).toHaveBeenCalledTimes(1);

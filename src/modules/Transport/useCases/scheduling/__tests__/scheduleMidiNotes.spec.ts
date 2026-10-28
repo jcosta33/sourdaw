@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createTake } from '#/modules/Arrangement/models/TakeLane';
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import { prepareMidiTakeSourceCapture } from '#/modules/Arrangement/useCases/comping/prepareMidiTakeSourceCapture';
+import { resolveCompingProgramme } from '#/modules/Arrangement/useCases/comping/resolveCompingProgramme';
 import {
     applyNoteExpression,
     ensureTrackStrip,
@@ -162,7 +165,12 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async () => ({
+    isFrozenMidiTakeSource: (
+        await vi.importActual<typeof import('#/modules/MIDI/stores/isFrozenMidiTakeSource')>(
+            '#/modules/MIDI/stores/isFrozenMidiTakeSource'
+        )
+    ).isFrozenMidiTakeSource,
     getChordAtBeat: vi.fn(),
     projectChannelBend: () => [],
     projectClipControllerEvents: vi.fn(),
@@ -4127,6 +4135,76 @@ describe('scheduleMidiNotes', () => {
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = midi;
         }
+
+        it('keeps a selected completed pass pedal held across its inner repeat and lifts at the true end', async () => {
+            useRealProjections();
+            const setSustain = vi.fn();
+            stripWith({
+                type: 'grand-boule',
+                deviceId: 'gb-1',
+                grandBouleControls: {
+                    noteOn: vi.fn(),
+                    noteOff: vi.fn(),
+                    noteExpression: vi.fn(),
+                    setSustain,
+                    setSostenuto: vi.fn(),
+                    setUnaCorda: vi.fn(),
+                },
+            });
+            const clip = midiClip({ endBeat: 8, loopEnabled: true, loopLength: 4 });
+            const rawTake = { ...createTake('clip-1', 'Second pass', 0, 4, 4), recordingPassIndex: 1 };
+            const rows = {
+                notes: { present: true as const, value: [] },
+                controlChanges: {
+                    present: true as const,
+                    value: [storedController('press', 64, 127, 4), storedController('next-pass-lift', 64, 0, 8)],
+                },
+                pitchBends: { present: true as const, value: [] },
+            };
+            const timeline = {
+                secondsAtBeat: (beat: number) => beat / 2,
+                beatAtSeconds: (seconds: number) => seconds * 2,
+                tempoAtBeat: () => 120,
+            };
+            const source = prepareMidiTakeSourceCapture({
+                clip,
+                take: rawTake,
+                siblingTakes: [rawTake],
+                rows,
+                timeline,
+            });
+            expect(source).toMatchObject({
+                sourceEntryBeat: 4,
+                sourceEndBeat: 8,
+                phaseHeadBeat: 0,
+                passLengthBeats: 4,
+            });
+            if (!source) {
+                throw new Error('Missing captured MIDI source');
+            }
+            const take = { ...rawTake, midiSource: source };
+            const lane = {
+                id: 'lane',
+                trackId: 'track-1',
+                takes: [take],
+                activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
+            };
+            const resolved = resolveCompingProgramme('track-1', [clip], { lanes: [lane] }, timeline);
+            expect(resolved[0]).toMatchObject({ startBeat: 0, endBeat: 8, midiTakeSource: source });
+            vi.mocked(resolveClipsWithComping).mockReturnValue(resolved);
+            (trackStore as { value: unknown }).value = {
+                tracks: [midiTrack({ clips: [clip], devices: [{ id: 'gb-1', type: 'grand-boule' }] })],
+            };
+            (midiStore as { value: unknown }).value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+
+            await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(setSustain.mock.calls).toEqual([
+                [1, 0, true],
+                [1, 4 * BEAT_FRAMES, true],
+                [0, 8 * BEAT_FRAMES, true],
+            ]);
+        });
 
         it('posts a Grand Boule sustain press and lift at their own frames, ahead of a note on the same frame', async () => {
             const posted: string[] = [];

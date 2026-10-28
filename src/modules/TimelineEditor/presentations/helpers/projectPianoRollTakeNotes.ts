@@ -182,7 +182,8 @@ export function projectPianoRollTakeNotes(
                 }
                 const id = viewId(region, occurrenceIndex, regionIndex, note.id);
                 const displayedStartBeat = note.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
-                const display: MidiNote = { ...note, id, startBeat: displayedStartBeat };
+                const { recordedOwnBendBeat: _recordedOwnBendBeat, ...displayedNote } = note;
+                const display: MidiNote = { ...displayedNote, id, startBeat: displayedStartBeat };
                 notes.push(display);
                 ownersByViewId.set(id, {
                     laneId: region.laneId,

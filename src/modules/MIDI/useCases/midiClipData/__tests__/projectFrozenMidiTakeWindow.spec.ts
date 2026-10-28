@@ -46,6 +46,37 @@ function source(): FrozenMidiTakeSource {
 }
 
 describe('frozen MIDI take window', () => {
+    it('plays a pedal lift at a selected terminal or a source gap, never at a continuous inner repeat', () => {
+        const original = source();
+        const pedal = { id: 'press', controller: 64, value: 127, channel: 0, beat: 5 };
+        const lift = { id: 'press-lift', controller: 64, value: 0, channel: 0, beat: 9 };
+        const frozen = {
+            ...original,
+            rows: { ...original.rows, controlChanges: { present: true as const, value: [pedal, lift] } },
+        };
+        const project = (selectedSource: FrozenMidiTakeSource, absoluteOccurrenceIndex: number, toBeat: number) =>
+            projectFrozenMidiTakeWindow({
+                source: selectedSource,
+                absoluteOccurrenceIndex,
+                fromBeat: 0,
+                toBeat,
+            });
+
+        expect(project(frozen, 0, 8)?.closingControlChanges).toEqual([]);
+        expect(project(frozen, 1, 8)?.closingControlChanges).toEqual([{ ...lift, beat: 8 }]);
+        expect(project(frozen, 0, 4)?.closingControlChanges).toEqual([{ ...lift, beat: 4 }]);
+
+        const shortPass = {
+            ...frozen,
+            sourceEndBeat: 8,
+            rows: {
+                ...frozen.rows,
+                controlChanges: { present: true as const, value: [pedal, { ...lift, beat: 8 }] },
+            },
+        };
+        expect(project(shortPass, 0, 8)?.closingControlChanges).toEqual([{ ...lift, beat: 3 }]);
+    });
+
     it('locates the last own bend before a crop without changing original scalar or curve rows', () => {
         const original = source();
         const notes = [
