@@ -644,3 +644,61 @@ describe('isHydratableProjectData', () => {
         ).toBe(false);
     });
 });
+
+describe.each(['top-level', 'saved arrangement'])('project take placement admission: %s', (route) => {
+    function withPlacement(placement: Record<string, unknown>): unknown {
+        const takeLanes = {
+            lanes: [
+                {
+                    id: 'take-lane',
+                    trackId: validTrack.id,
+                    takes: [
+                        {
+                            id: 'selected-take',
+                            clipId: validClip.id,
+                            name: 'Selected',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            ...placement,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected-take' }],
+                },
+            ],
+        };
+        const data = buildValidProjectData();
+        if (route === 'top-level') {
+            return { ...data, takeLanes };
+        }
+        return { ...data, arrangements: [{ id: 'saved', name: 'Saved', takeLanes }] };
+    }
+
+    it.each([
+        {},
+        { sourceOffsetBeats: 0 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 0 },
+    ])('accepts legacy or complete placement %j', (placement) => {
+        expect(isHydratableProjectData(withPlacement(placement))).toBe(true);
+    });
+
+    it.each([
+        { sourceOffsetBeats: 0, passAnchorSeconds: 1 },
+        { sourceOffsetBeats: 0, passDepthSeconds: 1 },
+        { passAnchorSeconds: 1, passDepthSeconds: 1 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 1, passDepthSeconds: -1 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: Number.NaN, passDepthSeconds: 1 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 1, passDepthSeconds: Number.POSITIVE_INFINITY },
+        { sourceOffsetBeats: 0, passAnchorSeconds: '1', passDepthSeconds: 1 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 1, passDepthSeconds: null },
+        { sourceOffsetBeats: undefined },
+        { sourceOffsetBeats: -1 },
+        { sourceOffsetBeats: Number.NaN },
+        { sourceOffsetBeats: Number.POSITIVE_INFINITY },
+        { sourceOffsetBeats: '1' },
+        { sourceOffsetBeats: 0, passAnchorSeconds: undefined, passDepthSeconds: undefined },
+    ])('rejects malformed placement before hydration %j', (placement) => {
+        expect(isHydratableProjectData(withPlacement(placement))).toBe(false);
+    });
+});
