@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  s_59e31a5c6f3e31::t_dffdfb699c173f 636-641
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_59e31a5c6f3e31::t_dffdfb699c173f 46-51,342,374
+src/modules/Arrangement/useCases/device/__tests__/coldImportedDeviceEdits.integration.spec.ts
+  s_59e31a5c6f3e31::t_dffdfb699c173f 130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "753ee403ee6f66ebe4cc0812491f2095ebc3a573",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
