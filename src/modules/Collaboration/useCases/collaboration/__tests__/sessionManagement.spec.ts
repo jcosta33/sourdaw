@@ -109,7 +109,7 @@ const assetTransferMock = vi.hoisted(() => ({
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
-            onTransferFailed: (hash: string, reason: string) => void;
+            onTransferFailed: (hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void;
         };
         durabilityOptions: {
             durableStagingReady?: boolean;
@@ -245,7 +245,7 @@ vi.mock('../../assetTransfer', () => ({
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
-            onTransferFailed: (hash: string, reason: string) => void;
+            onTransferFailed: (hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void;
         },
         _ownerId: string,
         _repository: unknown,
@@ -1046,7 +1046,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 error: new Error('stale quarantine'),
             });
-            sessionATransfer.options.onTransferFailed('stale-hash', 'stale transfer');
+            sessionATransfer.options.onTransferFailed('stale-hash', 'stale transfer', 'cooldown');
+            sessionATransfer.options.onTransferFailed('stale-hash', 'stale transfer', 'abandoned');
 
             expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
             expect(collaborationStore.value).toEqual(sessionBState);
@@ -2435,6 +2436,20 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('AssetTransfer onTransferFailed hook', () => {
+        it('does not promise another request after the producer abandons the hash', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            latestAssetTransfer().options.onTransferFailed(
+                'sha256:abc',
+                'the sending peer stopped responding',
+                'abandoned'
+            );
+            expect(collaborationStore.value?.error).toContain(
+                'This session will not automatically request this asset again.'
+            );
+            expect(collaborationStore.value?.error).not.toContain('Playing over');
+        });
+
         // An abandoned asset transfer used to be a logger.warn and nothing
         // else: clips referencing the asset stayed silent with no user-visible
         // signal anywhere in the panel.
@@ -2442,10 +2457,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             await sessionRuntimePrimitives.initialize('project-owner-1');
 
-            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'the sending peer stopped responding');
+            latestAssetTransfer().options.onTransferFailed(
+                'sha256:abc',
+                'the sending peer stopped responding',
+                'cooldown'
+            );
 
             expect(collaborationStore.value?.error).toBe(
-                'Could not receive shared audio from a peer — the sending peer stopped responding. Playing over the affected clips asks again.'
+                'Could not receive shared audio from a peer — the sending peer stopped responding. Playing over the affected clips asks again after the retry cooldown.'
             );
         });
 
@@ -2456,7 +2475,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             await sessionRuntimePrimitives.initialize('project-owner-1');
 
-            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed', 'cooldown');
 
             expect(collaborationStore.value?.error).not.toContain('It will be retried');
             expect(collaborationStore.value?.error).toContain('Playing over the affected clips');
@@ -2466,7 +2485,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState({ connectionStatus: 'connected', isEnabled: true }));
             await sessionRuntimePrimitives.initialize('project-owner-1');
 
-            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed', 'cooldown');
 
             expect(collaborationStore.value?.connectionStatus).toBe('connected');
             expect(collaborationStore.value?.isEnabled).toBe(true);
@@ -2574,7 +2593,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         it('clears a previous transfer failure once the asset resolves', async () => {
             collaborationStore.set(makeState());
             await sessionRuntimePrimitives.initialize('project-owner-1');
-            latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding');
+            latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding', 'cooldown');
             expect(collaborationStore.value?.error).not.toBeNull();
 
             const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };

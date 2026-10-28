@@ -56,6 +56,19 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-27 — immutable identity proof could not cross the remote schema (introduced by PR #5705)
+
+PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) selected `author { id }` from
+GitHub's Actor interface, which does not expose `id`. Live GitHub rejected the query before
+historical admission could observe either author. Parser fixtures supplied IDs directly. The
+public approval describes lineage and native-reader probes; private prompts and tiers are unknown.
+The missed stance was remote identity availability across the actual query/parser boundary.
+
+Validate the native query against the remote schema, selecting immutable IDs only on supported
+concrete Node types. Pair real Bot/User responses with missing and unsupported author refusals;
+never substitute a mutable login or silently admit absent identity. Restoring direct Actor.id must
+fail the emitted-query regression and the read-only live query.
+
 ### MIDI Learn armed without an available input route (introduced in `4f410257b2`)
 
 The earliest observed MIDI Learn start route, `4f410257b2` (`src/modules/Track/useCases/midiLearnUseCases.ts`), set learning state and a target without checking platform input capability. Later moves retained the route; #401 and #1853 are retention evidence, not introducing changes. No associated introducing PR or historical reviewer stance is established, and exact historical prompts are unavailable. The missed risk was capability admission across real entries and direct start, not just UI messaging.

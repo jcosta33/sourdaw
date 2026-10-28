@@ -31,6 +31,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type IntentResult } from '../../models/IntentResult';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -297,9 +298,17 @@ function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal): void
 /** The interpretation turn, then each scripted turn in order. */
 function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): void {
     const planning = vi.mocked(generateToolPlanningOutcome);
-    planning.mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall(revision)] });
+    planning.mockResolvedValueOnce({
+        status: 'complete',
+        toolCalls: [interpretationCall(revision)],
+        providerTurn: { provider: 'openai', assistantItems: null },
+    });
     for (const toolCalls of turns) {
-        planning.mockResolvedValueOnce({ status: 'complete', toolCalls });
+        planning.mockResolvedValueOnce({
+            status: 'complete',
+            toolCalls,
+            providerTurn: { provider: 'openai', assistantItems: null },
+        });
     }
 }
 
@@ -651,6 +660,12 @@ describe('a measured preview through proposal and approval', () => {
             failedReads: [],
         });
         expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        const replay: HostedTurnHistory | undefined = vi
+            .mocked(generateToolPlanningOutcome)
+            .mock.calls.at(-1)?.[9]?.history;
+        expect(replay?.flatMap((turn) => turn.receipts).map((receipt) => receipt.callId)).toEqual(
+            receipts.map((receipt) => receipt.callId)
+        );
         const turnOf = (callId: string) => receipts.find((receipt) => receipt.callId === callId)?.turn;
         expect(turnOf('discover-1')).toBe(turnOf('measure-target'));
         expect(turnOf('expand-1')).toBeGreaterThan(turnOf('discover-1') ?? Number.POSITIVE_INFINITY);

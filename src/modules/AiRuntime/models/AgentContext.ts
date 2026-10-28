@@ -2,6 +2,16 @@ import { type ThreadContextEvidence } from './ThreadContext';
 
 export const AGENT_CONTEXT_SCHEMA_VERSION = 2 as const;
 
+/**
+ * Receipt summaries carry application-owned tool evidence, not imported project or prompt text, so
+ * they hold their own budget instead of the general imported-string bound. The budget is the total
+ * across every retained receipt, which keeps the worst-case message contribution identical to the
+ * previous MAX_RECEIPTS * MAX_IMPORTED_STRING_LENGTH aggregate while letting a single receipt spend
+ * the whole allowance. This constant is the only owner of that budget: callers pass whole summaries
+ * and read the reported `truncated` flag.
+ */
+export const AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS = 8_192;
+
 export type AgentContextGrants = {
     allowedOperationPrefixes: string[];
     create: boolean;

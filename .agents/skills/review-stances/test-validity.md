@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — response fixtures hid an invalid Actor identity selection (introduced by PR #5705)
+
+PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) added historical-stack admission's
+`author { id }` selection. GitHub rejects it because `Actor` has no `id` field, while the
+parser's handcrafted author-ID fixtures pass. The public approval names contradictory-lineage
+and native-reader probes; exact private prompts and tiers are unknown. The missed stance was
+whether the real remote query can produce the immutable identity its parser requires.
+
+Capture the native adapter's emitted query and validate its identity selections against the live
+schema. Narrow Actor selections to supported concrete Node types, pair real Bot and User ID
+responses with missing-author, missing-ID and GraphQL-error refusals, and restore direct Actor.id
+as the negative control. Parser fixtures alone cannot prove the remote query is executable.
+
 ### 2026-10-27 — start-only preview checks missed resource and owner teardown (preserved by PR #187)
 
 PR #187 (`8c11c40674b32074a12a209b308d3361e93fe873`) extracted the cached-preview helper
@@ -1458,3 +1471,23 @@ Undo and Redo, and saved history from both stacks. Mutating restoration, counter
 hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
 CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
 exact stored restoration.
+
+## Escape: sanitizer tests did not prove project-file admission (PR #4987)
+
+PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
+and valid saved-lane compatibility, but the file admission predicate ignored the
+new fields. PR #4222 (`120c9e2b418e`) had already left the same gap for
+malformed `sourceOffsetBeats`. A selected take carrying only `passAnchorSeconds` beside offset zero
+passed admission and disappeared with its comp region during real hydration.
+The missed input was malformed placement entering the full import route; private
+review prompts are unavailable, so do not infer a named historical stance or tier.
+
+Use a current-version file with a canonical project ID and a valid referenced
+track and clip, and first prove the valid control is admitted. Reject malformed
+placement in both top-level and saved-arrangement take lanes before replacement
+of an existing project. Assert raw authority, tracks, arrangement and selected
+material remain unchanged. Separately admit a JSON roundtrip of legacy takes and
+complete placed passes, including negative finite anchors, and assert exact
+selected-take and comp-region retention after real owner hydration. Removing only
+placement admission must redden the rejection case; testing a store sanitizer
+alone cannot observe the file admission gap.
