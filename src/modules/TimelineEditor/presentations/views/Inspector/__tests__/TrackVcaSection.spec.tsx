@@ -137,10 +137,13 @@ describe('TrackVcaSection', () => {
         setVcaGroups([]);
         render(<TrackVcaSection track={mockTrack} />);
         fireEvent.click(screen.getByLabelText('Create VCA group'));
-        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
-            type: 'createVcaGroup',
-            payload: { name: 'VCA 1', trackIds: ['track-1'] },
-        });
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'createVcaGroup',
+                payload: { name: 'VCA 1', trackIds: ['track-1'] },
+            },
+            { shouldExecute: expect.any(Function) }
+        );
     });
 
     it('dispatches assignToVca when a group is selected', () => {
@@ -148,10 +151,13 @@ describe('TrackVcaSection', () => {
         render(<TrackVcaSection track={mockTrack} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: 'vca-1' } });
-        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
-            type: 'assignToVca',
-            payload: { trackId: 'track-1', vcaGroupId: 'vca-1' },
-        });
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'assignToVca',
+                payload: { trackId: 'track-1', vcaGroupId: 'vca-1' },
+            },
+            { shouldExecute: expect.any(Function) }
+        );
     });
 
     it('dispatches removeFromVca when "None" is selected', () => {
@@ -160,10 +166,13 @@ describe('TrackVcaSection', () => {
         render(<TrackVcaSection track={trackWithVca} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: '' } });
-        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
-            type: 'removeFromVca',
-            payload: { trackId: 'track-1' },
-        });
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'removeFromVca',
+                payload: { trackId: 'track-1' },
+            },
+            { shouldExecute: expect.any(Function) }
+        );
     });
 
     it('should render surface card', () => {

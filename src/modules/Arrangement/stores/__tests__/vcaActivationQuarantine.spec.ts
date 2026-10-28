@@ -304,11 +304,26 @@ describe('VCA activation quarantine', () => {
         expect(calls).toHaveLength(3);
         for (const action of ['createVcaGroup', 'assignToVca', 'removeFromVca'] as const) {
             const matchingCalls = calls.filter((node) => {
-                if (!isCallExpression(node) || node.arguments.length !== 1) {
+                if (!isCallExpression(node) || node.arguments.length !== 2) {
                     return false;
                 }
                 const argument = node.arguments[0];
-                if (!argument || !isObjectLiteralExpression(argument)) {
+                const options = node.arguments[1];
+                if (
+                    !argument ||
+                    !isObjectLiteralExpression(argument) ||
+                    !options ||
+                    !isObjectLiteralExpression(options)
+                ) {
+                    return false;
+                }
+                const admission = options.properties.filter(
+                    (property) =>
+                        isPropertyAssignment(property) &&
+                        isIdentifier(property.name) &&
+                        property.name.text === 'shouldExecute'
+                );
+                if (admission.length !== 1) {
                     return false;
                 }
                 const types = argument.properties.filter(

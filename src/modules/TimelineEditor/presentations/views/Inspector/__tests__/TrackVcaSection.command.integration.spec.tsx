@@ -1,3 +1,4 @@
+import { clone } from '@automerge/automerge';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,16 +11,20 @@ import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import * as command from '#/modules/Command/useCases';
 import { actionHistoryStore, agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 import {
+    captureProjectIdentity,
     clearActionHistory,
     createCrdtDoc,
     getCrdtDoc,
     markActionHistoryEntryReverted,
+    projectCrdtToStores,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
@@ -171,6 +176,32 @@ function expectRuntime(automated: boolean, multiplier: number): void {
 function clearRuntime(): void {
     engine.setTrackGain.mockClear();
     engine.scheduleTrackGain.mockClear();
+}
+
+async function holdRootSnapshot(replaceRoot: boolean) {
+    let release!: () => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const transaction = transactSnapshot(async (snapshotTransaction) => {
+        automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, ['root']);
+        markStarted();
+        await held;
+        if (replaceRoot) {
+            const root = getCrdtDoc('root');
+            if (!root) {
+                throw new Error('Expected root before replacement');
+            }
+            automergeRepository.replaceDoc('root', clone(root), snapshotTransaction);
+            projectCrdtToStores();
+        }
+    });
+    await started;
+    return { release, transaction };
 }
 
 describe('Inspector VCA gestures through production Command and committed gain', () => {
@@ -331,6 +362,55 @@ describe('Inspector VCA gestures through production Command and committed gain',
             expect(undoStore.value?.future).toHaveLength(0);
             expect(screen.getByRole('combobox', { name: 'VCA group' })).toHaveValue(groupId ?? '');
             expectRuntime(automated, kind === 'assign' ? 0.25 : 1);
+        }
+    );
+
+    it.each(['create', 'assign', 'none'] as const)(
+        'refuses queued %s on a same-ID successor project without state, history or engine writes',
+        async (kind) => {
+            render(<Inspector />);
+            const identity = captureProjectIdentity();
+            const { release, transaction } = await holdRootSnapshot(true);
+            const dispatch = vi.spyOn(command, 'executeUserAppAction');
+            gesture(kind);
+            expect(dispatch).toHaveBeenCalledOnce();
+            await act(async () => {
+                release();
+                await transaction;
+                await dispatch.mock.results[0]?.value;
+            });
+            expect(captureProjectIdentity()).not.toBe(identity);
+            expect(projectedState()).toEqual(rawState());
+            expect(rawState().tracks.find((track) => track.id === 'subject')?.vcaGroupId).toBe('old');
+            expect(rawState().groups.find((group) => group.id === 'old')?.trackIds).toContain('subject');
+            expect(rawState().groups.find((group) => group.id === 'destination')?.trackIds).not.toContain('subject');
+            expect(rawState().groups).toHaveLength(3);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(actionHistoryStore.value?.entries).toEqual([]);
+            expect(engine.setTrackGain).not.toHaveBeenCalled();
+            expect(engine.scheduleTrackGain).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['create', 'assign', 'none'] as const)(
+        'executes queued %s after an ordinary same-project snapshot',
+        async (kind) => {
+            render(<Inspector />);
+            const identity = captureProjectIdentity();
+            const { release, transaction } = await holdRootSnapshot(false);
+            const dispatch = vi.spyOn(command, 'executeUserAppAction');
+            gesture(kind);
+            expect(dispatch).toHaveBeenCalledOnce();
+            await act(async () => {
+                release();
+                await transaction;
+                await dispatch.mock.results[0]?.value;
+            });
+            expect(captureProjectIdentity()).toBe(identity);
+            expect(projectedState()).toEqual(rawState());
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(actionHistoryStore.value?.entries).toHaveLength(1);
+            expect(subjectWrites(false)).toHaveLength(1);
         }
     );
 
