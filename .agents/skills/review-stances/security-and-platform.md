@@ -56,6 +56,22 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-28 — a documented Darwin symbolic-link descriptor invalidated the file census (PR #5274)
+
+PR #5274 (`40baa0716b`) omitted lsof's documented `LINK` vnode type from its file-census
+parser. A fresh same-UID capture observed an absolute `LINK` outside guarded storage; the
+parser refused the whole catalog as `unknown-file-type`. This capture is not the original
+failed guard's field record. Historical reviewer prompts, models and tiers are unknown;
+the missing probe was a documented path-bearing descriptor outside the owned payload.
+
+Open a private symlink with Darwin `O_SYMLINK` and observe its installed lsof record. Require
+a complete catalog containing an outside `LINK` to remain usable, and drive an owned `LINK`
+through file-use proof and release/recovery, including a moved claim, spaces, long paths and
+the deleted suffix. Its path must veto deletion. Missing, relative, malformed, diagnostic or
+unknown-type evidence must still retain storage. Reverting type admission must fail the
+outside case; discarding its path must fail the live-holder case. Adding a known type without
+following its path to the deletion veto is insufficient.
+
 ### 2026-10-28 — desktop fallback filenames lost the selected File authority (issue #5767)
 
 Commit `4f410257b212` introduced a native-dialog rejection fallback that returned browser
