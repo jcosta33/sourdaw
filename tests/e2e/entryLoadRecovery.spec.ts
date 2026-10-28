@@ -2,7 +2,13 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 import vercelConfig from '../../vercel.json' with { type: 'json' };
 
-import { enable_direct_e2e_viewport, launch_new_project, LAUNCH_SCREEN_NAME, setupWorkspace } from './e2eUtils';
+import {
+    enable_direct_e2e_viewport,
+    launch_new_project,
+    LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+    LAUNCH_SCREEN_NAME,
+    setupWorkspace,
+} from './e2eUtils';
 
 // The private per-tab budget in public/entryLoadRecovery.js.
 const RETRY_KEY = 'sourdaw:entry-load-retry-v1';
@@ -64,7 +70,9 @@ test('recovers when the actual entry request is aborted once', async ({ page }, 
         await page.goto('/', { waitUntil: 'commit' });
         await expect.poll(() => failures.length).toBe(1);
         expect(failures[0]?.error).toContain('ERR_ABORTED');
-        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({
+            timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+        });
         expect(attempts).toBe(2);
         expect(firstTimeOrigin).toBeDefined();
         expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(firstTimeOrigin);
@@ -153,7 +161,9 @@ test('a pending recovery controller leaves fallback readable and catches an alre
         );
 
         releaseController();
-        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({
+            timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+        });
         expect(firstTimeOrigin).toBeDefined();
         expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(firstTimeOrigin);
         expect(entryAttempts).toBe(2);
@@ -188,7 +198,9 @@ test('an unrelated script error before entry execution cannot consume the retry 
         }, RETRY_KEY);
         expect(budget).toBeNull();
         releaseEntry();
-        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({
+            timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+        });
         expect(await page.evaluate(() => performance.timeOrigin)).toBe(before);
     } finally {
         releaseEntry();
