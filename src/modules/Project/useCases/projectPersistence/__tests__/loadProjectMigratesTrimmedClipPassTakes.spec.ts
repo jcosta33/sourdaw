@@ -87,7 +87,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     updateMidiFxParam: vi.fn(),
     wireSidechainRoute: vi.fn(),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: vi.fn(),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),

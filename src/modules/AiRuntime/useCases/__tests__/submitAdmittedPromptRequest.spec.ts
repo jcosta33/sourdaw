@@ -44,7 +44,8 @@ const mocks = vi.hoisted(() => ({
     planPromptActions: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureActiveBranchReference: vi.fn(),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectMutationAuthorization: vi.fn(() => () => true),

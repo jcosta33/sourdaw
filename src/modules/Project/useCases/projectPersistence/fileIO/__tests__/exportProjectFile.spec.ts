@@ -28,6 +28,11 @@ vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: agentProjectRepairStateStoreMock,
 }));
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    captureProjectOriginalMedia: vi.fn(() => {
+        throw new Error('Unexpected original media capture in this fixture');
+    }),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: vi.fn(() => 'export-revision'),
 }));

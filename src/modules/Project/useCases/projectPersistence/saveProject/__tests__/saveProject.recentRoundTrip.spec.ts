@@ -51,7 +51,8 @@ vi.mock('../../../../stores/projectStore', () => ({
     },
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
@@ -103,6 +104,9 @@ vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => mocks.takes.settled,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    exportCachedAudioBuffers: vi.fn(() => {
+        throw new Error('Unexpected exportCachedAudioBuffers in this fixture');
+    }),
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     forgetProjectLatchedPedals: vi.fn(),
@@ -175,6 +179,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    reconcileSessionUndoForProject: vi.fn(() => {
+        throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
+    }),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
     executeUserAppAction: vi.fn(),

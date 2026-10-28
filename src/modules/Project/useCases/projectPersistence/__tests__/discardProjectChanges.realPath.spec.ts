@@ -114,6 +114,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    reconcileSessionUndoForProject: vi.fn(() => {
+        throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
+    }),
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
@@ -132,6 +135,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
         '#/modules/CrdtDocument/useCases'
     );
     return {
+        ...actual,
         captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
         captureProjectRevision: actual.captureProjectRevision,
         captureProjectIdentity: actual.captureProjectIdentity,
