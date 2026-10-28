@@ -817,6 +817,25 @@ describe('AssetTransfer', () => {
         expect(peer.sendCrdtSync).toHaveBeenCalledWith(expect.objectContaining({ peerId: 'requester' }));
     });
 
+    it('reports true only for each actual live staging lease without consuming sibling ownership', async () => {
+        const blob = new Blob(['same original']);
+        const first = await transfer.stageLocalAsset(blob, 'original.wav');
+        const sibling = await transfer.stageLocalAsset(blob, 'original.wav');
+        expect(transfer.promoteStagedAsset('unknown-lease')).toBe(false);
+        expect(transfer.promoteStagedAsset(first.leaseId)).toBe(true);
+        expect(transfer.promoteStagedAsset(first.leaseId)).toBe(false);
+        transfer.releaseStagedAsset(sibling.leaseId);
+        expect(transfer.promoteStagedAsset(sibling.leaseId)).toBe(false);
+        expect(transfer.getAsset(first.hash)).toBe(blob);
+    });
+
+    it('refuses promotion after its staging manager has been disposed', async () => {
+        const staged = await transfer.stageLocalAsset(new Blob(['disposed original']), 'disposed.wav');
+        transfer.dispose();
+        expect(transfer.promoteStagedAsset(staged.leaseId)).toBe(false);
+        expect(transfer.hasAsset(staged.hash)).toBe(false);
+    });
+
     it('dispose clears armed stall timers so a discarded session reports nothing', async () => {
         vi.useFakeTimers();
         await request(HASH);

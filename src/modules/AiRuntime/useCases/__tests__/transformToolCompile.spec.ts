@@ -2215,15 +2215,8 @@ describe('transform.compile planner tool', () => {
                     arguments: { clipId: { literal: 'clip-verse' }, velocity: { literal: 90 } },
                 })),
             };
-            let providerTurn: HostedProviderTurn | undefined;
-            let expectedReason = 'bounded text context budget';
-            let expectedTurns = 1;
-            if (transport === 'hosted') {
-                providerTurn = { provider: 'openai', assistantItems: null };
-                expectedReason = 'command budget';
-                expectedTurns = 2;
-            }
-            // Hosted replay retains the compilation; local text admission refuses it before another turn.
+            const providerTurn: HostedProviderTurn | undefined =
+                transport === 'hosted' ? { provider: 'openai', assistantItems: null } : undefined;
             planCalls(['compile-1'], document, providerTurn);
             const result = await parsePromptToActions({
                 prompt: 'set note velocities in Verse MIDI clip to 90',
@@ -2231,8 +2224,10 @@ describe('transform.compile planner tool', () => {
                 projectRevision: 'revision-transform-1',
             });
             expect(result.actions).toEqual([]);
-            expect(result.rejectionReason).toContain(expectedReason);
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(expectedTurns);
+            expect(result.rejectionReason).toBe(
+                'Provider planning rejected: Provider command proposal exceeds the command budget.'
+            );
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
         }
     );
 

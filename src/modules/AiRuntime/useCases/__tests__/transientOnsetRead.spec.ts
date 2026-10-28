@@ -29,6 +29,8 @@ import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
 import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { parsePromptToActions } from '../parsePromptToActions';
 
+import { decodeReceiptContext, isRecord, readReceiptSummary } from './receiptContextFixture';
+
 const READ = 'analysis.detectTransients';
 
 describe('planner transient read contract', () => {
@@ -95,19 +97,21 @@ describe('planner transient read contract', () => {
     });
 
     it.each([false, true])(
-        'admits full cumulative receipts only when their carrier can hold them; native=%s',
+        'preserves complete cumulative receipts through the bounded carrier; native=%s',
         async (native) => {
-            const requestTurn = vi.fn(async ({ turn }: { turn: number }) => {
-                const result = {
-                    status: 'complete' as const,
-                    toolCalls:
-                        turn < 3 ? [{ id: `page-${String(turn)}`, name: READ, arguments: { clipId: 'clip-1' } }] : [],
-                };
-                if (native) {
-                    return { ...result, providerTurn: { provider: 'openai' as const, assistantItems: null } };
+            const requestTurn = vi.fn(
+                async ({ turn }: Parameters<Parameters<typeof runApplicationOwnedToolLoop>[0]['requestTurn']>[0]) => {
+                    const toolCalls = [];
+                    if (turn < 3) {
+                        toolCalls.push({ id: `page-${String(turn)}`, name: READ, arguments: { clipId: 'clip-1' } });
+                    }
+                    const result = { status: 'complete' as const, toolCalls };
+                    if (native) {
+                        return { ...result, providerTurn: { provider: 'openai' as const, assistantItems: null } };
+                    }
+                    return result;
                 }
-                return result;
-            });
+            );
             const result = await runApplicationOwnedToolLoop({
                 loopId: 'text-receipt-cap',
                 terminalToolNames: new Set(['answer.respond']),
@@ -136,16 +140,22 @@ describe('planner transient read contract', () => {
                         receipt.status === 'success' && (receipt.data as { evidence: string }).evidence.length === 2_500
                 )
             ).toBe(true);
+            expect(result.status).toBe('complete');
+            expect(requestTurn).toHaveBeenCalledTimes(3);
+            const finalTurn = requestTurn.mock.calls[2]![0];
+            expect(finalTurn.receiptContext).not.toBeNull();
+            expect(finalTurn.receiptContext!.length).toBeLessThanOrEqual(4_096);
+            expect(decodeReceiptContext(finalTurn.receiptContext!)).toEqual(result.receipts);
             if (native) {
-                expect(result.status).toBe('complete');
-                expect(requestTurn).toHaveBeenCalledTimes(3);
+                expect(finalTurn.history.flatMap((turn) => turn.receipts)).toEqual(result.receipts);
+                expect(finalTurn.history.flatMap((turn) => turn.calls.map((call) => call.id))).toEqual([
+                    'page-1',
+                    'page-2',
+                ]);
             } else {
-                expect(result).toMatchObject({
-                    status: 'rejected',
-                    reason: 'Application tool receipts exceeded the bounded text context budget.',
-                });
-                expect(requestTurn).toHaveBeenCalledTimes(2);
+                expect(finalTurn.history).toEqual([]);
             }
+            // The default oversized real-project refusal belongs to receiptTextBudget.spec.ts.
         }
     );
 
@@ -815,7 +825,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
         { backend: 'cloud' as const, total: 128, fallback: false },
         { backend: 'cloud' as const, total: 128, fallback: true },
     ])(
-        'keeps full maximal $total-hit receipts with explicit text-carrier refusal and native history intact: $backend; fallback=$fallback',
+        'preserves full maximal $total-hit receipts through local or native history: $backend; fallback=$fallback',
         async ({ backend, total, fallback }) => {
             provider.backend = backend;
             provider.fallback = fallback;
@@ -848,6 +858,8 @@ describe('actual hosted planner, source owner and disposable read session', () =
             }));
             let firstCursor: string;
             let fallbackEvidenceTruncated: boolean | undefined;
+            const localReceiptSnapshots: unknown[][] = [];
+            const nativeReceiptSnapshots: ApplicationToolReceipt[][] = [];
             provider.completion.mockImplementation(async (_system: string, message: string) => {
                 if (fallback) {
                     const evidence = JSON.parse(
@@ -871,21 +883,41 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 if (turn === 2) {
                     return JSON.stringify([onsetCall('r'.repeat(256))]);
                 }
-                const relevant = JSON.parse(message.split('relevant_evidence:\n')[1]?.split('\n\n')[0] ?? 'null') as {
-                    receipts: { summary: { value: string; truncated: boolean } }[];
-                };
-                expect(relevant.receipts[0]?.summary.truncated).toBe(false);
-                const prior = JSON.parse(relevant.receipts[0]!.summary.value.split('\n').at(-1)!) as {
-                    receipts: ApplicationToolReceipt[];
-                };
-                const first = prior.receipts[2]!.data as {
-                    hits: { sourceSeconds: number; confidence: number }[];
-                    nextCursor: string;
-                };
-                expect(first.hits).toHaveLength(64);
-                expect(first.hits[63]).toEqual({ sourceSeconds: (64 * 512) / 48_000, confidence: 0.10000000000000002 });
-                firstCursor = first.nextCursor;
-                return JSON.stringify([onsetCall('s'.repeat(256), firstCursor)]);
+                const summary = readReceiptSummary(message);
+                expect(summary.truncated).toBe(false);
+                const prior = decodeReceiptContext(summary.value);
+                localReceiptSnapshots.push(prior);
+                const firstReceipt = prior.find((receipt) => isRecord(receipt) && receipt.callId === 'r'.repeat(256));
+                if (
+                    !isRecord(firstReceipt) ||
+                    !isRecord(firstReceipt.data) ||
+                    !Array.isArray(firstReceipt.data.hits) ||
+                    typeof firstReceipt.data.nextCursor !== 'string'
+                ) {
+                    throw new TypeError('Missing first onset page');
+                }
+                expect(firstReceipt.data.hits).toEqual(
+                    detectedHits.slice(0, 64).map((hit) => ({
+                        sourceSeconds: hit.sampleOffset / 48_000,
+                        confidence: hit.confidence,
+                    }))
+                );
+                firstCursor = firstReceipt.data.nextCursor;
+                if (turn === 3) {
+                    return JSON.stringify([onsetCall('s'.repeat(256), firstCursor)]);
+                }
+                expect(prior.find((receipt) => isRecord(receipt) && receipt.callId === 's'.repeat(256))).toMatchObject({
+                    callId: 's'.repeat(256),
+                    status: 'success',
+                    data: {
+                        complete: true,
+                        hits: detectedHits.slice(64).map((hit) => ({
+                            sourceSeconds: hit.sampleOffset / 48_000,
+                            confidence: hit.confidence,
+                        })),
+                    },
+                });
+                return JSON.stringify(answer(['r'.repeat(256), 's'.repeat(256)]));
             });
             respond = (turn) => {
                 if (turn === 0) {
@@ -901,10 +933,24 @@ describe('actual hosted planner, source owner and disposable read session', () =
                     return [onsetCall('r'.repeat(256))];
                 }
                 if (turn === 2) {
-                    firstCursor = (readReceipt('r'.repeat(256)).data as { nextCursor: string }).nextCursor;
+                    const first = readReceipt('r'.repeat(256));
+                    nativeReceiptSnapshots.push([readReceipt('intake'), readReceipt('discovery'), first]);
+                    firstCursor = (first.data as { nextCursor: string }).nextCursor;
                     return [onsetCall('s'.repeat(256), firstCursor)];
                 }
-                expect((readReceipt('s'.repeat(256)).data as { hits: unknown[] }).hits).toHaveLength(total - 64);
+                const second = readReceipt('s'.repeat(256));
+                nativeReceiptSnapshots.push([
+                    readReceipt('intake'),
+                    readReceipt('discovery'),
+                    readReceipt('r'.repeat(256)),
+                    second,
+                ]);
+                expect((second.data as { hits: unknown[] }).hits).toEqual(
+                    detectedHits.slice(64).map((hit) => ({
+                        sourceSeconds: hit.sampleOffset / 48_000,
+                        confidence: hit.confidence,
+                    }))
+                );
                 if (fallback) {
                     throw new Error('Synthetic hosted transport failure before fallback');
                 }
@@ -927,12 +973,33 @@ describe('actual hosted planner, source owner and disposable read session', () =
                     localRequests: 0,
                     receivedTruncatedEvidence: undefined,
                 });
-            } else if (backend === 'webllm') {
-                expect(result.rejectionReason).toContain(
-                    'Application tool receipts exceeded the bounded text context budget.'
+            } else if (backend === 'webllm' && total === 128) {
+                expect(result.rejectionReason).toBe(
+                    'Provider planning rejected: Application tool receipts exceeded the bounded text context budget.'
                 );
-                expect(provider.completion).toHaveBeenCalledTimes(3);
+                expect(provider.completion).toHaveBeenCalledTimes(4);
                 expect(provider.request).not.toHaveBeenCalled();
+                expect(localReceiptSnapshots).toEqual([result.applicationToolReceipts?.slice(0, 3)]);
+            } else if (backend === 'webllm') {
+                expect(result.rejectionReason).toBeUndefined();
+                expect(result.planningOutcome).toMatchObject({
+                    kind: 'answer',
+                    evidence: [
+                        expect.objectContaining({ callId: 'intake' }),
+                        expect.objectContaining({ callId: 'r'.repeat(256) }),
+                        expect.objectContaining({ callId: 's'.repeat(256) }),
+                    ],
+                });
+                expect(provider.completion).toHaveBeenCalledTimes(5);
+                expect(provider.request).not.toHaveBeenCalled();
+                expect(localReceiptSnapshots).toEqual([
+                    result.applicationToolReceipts?.slice(0, 3),
+                    result.applicationToolReceipts,
+                ]);
+                const localContext = JSON.stringify(provider.completion.mock.calls);
+                expect(localContext).not.toContain(RAW_BUFFER_ID);
+                expect(localContext).not.toContain(digest(RAW_BUFFER_ID));
+                expect(localContext).not.toMatch(/\\?"bufferId\\?"/);
             } else {
                 expect(result.rejectionReason).toBeUndefined();
                 expect(result.planningOutcome).toMatchObject({
@@ -946,16 +1013,25 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 expect(provider.request).toHaveBeenCalledTimes(5);
                 expect(provider.completion).not.toHaveBeenCalled();
             }
-            // Intake itself spends the unchanged carrier budget: the maximal first page now
-            // exhausts local text before a second read. Native history still carries both pages.
-            expect(result.applicationToolReceipts).toHaveLength(backend === 'webllm' ? 3 : 4);
-            const first = result.applicationToolReceipts?.[2]?.data as { hits: unknown[] };
-            expect(first.hits).toHaveLength(64);
             if (backend === 'cloud') {
-                const second = result.applicationToolReceipts?.[3]?.data as { hits: unknown[]; complete: boolean };
-                expect(second.hits).toHaveLength(total - 64);
-                expect(second.complete).toBe(true);
+                expect(nativeReceiptSnapshots).toEqual([
+                    result.applicationToolReceipts?.slice(0, 3),
+                    result.applicationToolReceipts,
+                ]);
             }
+            expect(result.applicationToolReceipts).toHaveLength(4);
+            const first = result.applicationToolReceipts?.find((receipt) => receipt.callId === 'r'.repeat(256))
+                ?.data as {
+                hits: unknown[];
+            };
+            const second = result.applicationToolReceipts?.find((receipt) => receipt.callId === 's'.repeat(256))
+                ?.data as {
+                hits: unknown[];
+                complete: boolean;
+            };
+            expect(first.hits).toHaveLength(64);
+            expect(second.hits).toHaveLength(total - 64);
+            expect(second.complete).toBe(true);
             expect(result.actions).toEqual([]);
             expect(result.requiresConfirmation).toBe(false);
             expect(captureProjectRevision()).toBe(before.revision);

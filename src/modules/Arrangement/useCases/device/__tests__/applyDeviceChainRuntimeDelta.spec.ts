@@ -7,6 +7,7 @@ import { hasLiveProjectHostTrack } from '../hasLiveProjectHostTrack';
 
 import type { applyRuntimeGraphDelta } from '#/modules/AudioEngine/useCases';
 import type { Track } from '../../../stores/trackStore';
+import type { projectTrackToLiveStrip } from '../../projectTrackToLiveStrip';
 
 const mocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn<typeof applyRuntimeGraphDelta>(() => ({
@@ -16,6 +17,8 @@ const mocks = vi.hoisted(() => ({
         runtimeRevision: 8,
     })),
     getRuntimeGraphRevision: vi.fn(() => 7),
+    getTrackStrip: vi.fn<(trackId: string) => object | undefined>(() => ({})),
+    projectTrackToLiveStrip: vi.fn<typeof projectTrackToLiveStrip>(),
     matchesRuntimeDeviceChainTopology: vi.fn(() => false),
     captureProjectRevision: vi.fn(() => 'project-1'),
     /**
@@ -32,10 +35,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyRuntimeGraphDelta: mocks.applyRuntimeGraphDelta,
     getRuntimeGraphRevision: mocks.getRuntimeGraphRevision,
+    getTrackStrip: mocks.getTrackStrip,
     matchesRuntimeDeviceChainTopology: mocks.matchesRuntimeDeviceChainTopology,
     createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
     mirrorDeviceChainDelta: mocks.mirrorDeviceChainDelta,
 }));
+
+vi.mock('../../projectTrackToLiveStrip', () => ({ projectTrackToLiveStrip: mocks.projectTrackToLiveStrip }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
@@ -63,9 +69,94 @@ describe('applyDeviceChainRuntimeDelta', () => {
             correlation: { appRevision: 7, projectRevision: 'project-1' },
             runtimeRevision: 8,
         });
+        mocks.getTrackStrip.mockReturnValue({});
+        mocks.projectTrackToLiveStrip.mockReturnValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            correlation: { appRevision: 7, projectRevision: 'project-1' },
+            runtimeRevision: 8,
+        });
         mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(false);
         mocks.mirrorDeviceChainDelta.mockResolvedValue({ outcome: 'skipped', reason: 'no session' });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    });
+
+    it.each(['add-device', 'remove-device', 'reorder-device'] as const)(
+        'initializes an absent strip from authoritative final project truth for %s',
+        (operation) => {
+            const before = seedTrack();
+            const after = { ...before, devices: operation === 'remove-device' ? [] : before.devices };
+            trackStore.set({ tracks: [after], selectedTrackId: after.id, ghostClips: [] });
+            mocks.getTrackStrip.mockReturnValue(undefined);
+            const result = applyDeviceChainRuntimeDelta({ before, after, operation });
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledExactlyOnceWith({ trackId: after.id });
+            expect(mocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+        }
+    );
+
+    it('initializes the composed final chain once and discharges its later grouped step', () => {
+        const before = seedTrack();
+        const intermediate = { ...before, devices: [] };
+        const finalTrack = { ...before, devices: [{ ...before.devices[0]!, id: 'replacement' }] };
+        trackStore.set({ tracks: [finalTrack], selectedTrackId: before.id, ghostClips: [] });
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        const actions = [
+            { type: 'removeDevice' as const, payload: { deviceId: 'device-1' } },
+            { type: 'addDevice' as const, payload: { trackId: before.id, deviceType: 'builtin-eq' } },
+        ];
+        const result = applyDeviceChainRuntimeDelta({
+            before,
+            after: intermediate,
+            operation: 'remove-device',
+            batchContext: { actions, actionIndex: 0 },
+        });
+        expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledExactlyOnceWith({ trackId: before.id });
+        mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(true);
+        const next = applyDeviceChainRuntimeDelta({
+            before: intermediate,
+            after: finalTrack,
+            operation: 'add-device',
+            batchContext: { actions, actionIndex: 1 },
+        });
+        expect(next).toMatchObject({ acceptance: 'superseded', application: 'discharged' });
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(1);
+        expect(mocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
+    });
+
+    it('does not initialize an absent strip from unrelated project divergence or duplicate ownership', () => {
+        const before = seedTrack();
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        trackStore.set({ tracks: [before], selectedTrackId: before.id, ghostClips: [] });
+        applyDeviceChainRuntimeDelta({ before, after: { ...before, devices: [] }, operation: 'remove-device' });
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenCalledOnce();
+        trackStore.set({ tracks: [before, before], selectedTrackId: before.id, ghostClips: [] });
+        applyDeviceChainRuntimeDelta({ before, after: before, operation: 'reorder-device' });
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves rejected and missing initialization outcomes without native mirroring', () => {
+        const track = seedTrack();
+        mocks.getTrackStrip.mockReturnValue(undefined);
+        const rejection = {
+            acceptance: 'rejected' as const,
+            application: 'not-applied' as const,
+            reason: 'stale initialization',
+        };
+        mocks.projectTrackToLiveStrip.mockReturnValueOnce(rejection).mockReturnValueOnce(undefined);
+        expect(applyDeviceChainRuntimeDelta({ before: track, after: track, operation: 'reorder-device' })).toBe(
+            rejection
+        );
+        expect(
+            applyDeviceChainRuntimeDelta({ before: track, after: track, operation: 'reorder-device' })
+        ).toMatchObject({
+            acceptance: 'rejected',
+            reason: `Cannot initialize device runtime strip for track ${track.id}`,
+        });
+        expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
     });
 
     it('submits the delta while the host track is still project truth', () => {
@@ -211,7 +302,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
         expect(result).toEqual({
             acceptance: 'superseded',
             application: 'discharged',
-            reason: 'Live runtime already matches the authoritative final device chain for track audio-1',
+            reason: 'Live Web Audio already matches the authoritative final device chain for track audio-1',
         });
         expect(mocks.matchesRuntimeDeviceChainTopology).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -280,6 +371,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
     it('mirrors the same snapshots onto the native carrier once Web Audio applied the delta', () => {
         const track = seedTrack();
         const after = { ...track, devices: [] };
+        trackStore.set({ tracks: [after], selectedTrackId: track.id, ghostClips: [] });
 
         applyDeviceChainRuntimeDelta({ before: track, after, operation: 'remove-device' });
 
@@ -294,6 +386,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
      */
     it('mirrors nothing when the runtime rejected the delta', () => {
         const track = seedTrack();
+        trackStore.set({ tracks: [{ ...track, devices: [] }], selectedTrackId: track.id, ghostClips: [] });
         mocks.applyRuntimeGraphDelta.mockReturnValue({
             acceptance: 'rejected',
             application: 'not-applied',
@@ -313,6 +406,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
     // before it, and only the repair can say which chain to mirror.
     it('mirrors nothing when the runtime needs reconciling', () => {
         const track = seedTrack();
+        trackStore.set({ tracks: [{ ...track, devices: [] }], selectedTrackId: track.id, ghostClips: [] });
         mocks.applyRuntimeGraphDelta.mockReturnValue({
             acceptance: 'accepted',
             application: 'needs-reconcile',
@@ -346,9 +440,27 @@ describe('applyDeviceChainRuntimeDelta', () => {
         expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
     });
 
-    // Discharged: nothing was submitted because the live chain already equals
-    // the authoritative target, so there is no change to carry anywhere.
-    it('mirrors nothing for a step the live runtime had already discharged', () => {
+    it.each(['duplicate owner', 'diverged project'])(
+        'does not mirror an accepted result without proven %s authority',
+        (state) => {
+            const before = seedTrack();
+            const after = { ...before, devices: [] };
+            trackStore.set({
+                tracks: state === 'duplicate owner' ? [after, after] : [before],
+                selectedTrackId: before.id,
+                ghostClips: [],
+            });
+            mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(true);
+
+            applyDeviceChainRuntimeDelta({ before, after, operation: 'remove-device' });
+
+            expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
+        }
+    );
+
+    // A persistent-node match proves only Web Audio. The native carrier still
+    // has to apply or explicitly defer the full project chain.
+    it('mirrors final project truth for a step Web Audio had already discharged', () => {
         const before = seedTrack();
         before.devices = [];
         const firstDevice = {
@@ -385,7 +497,10 @@ describe('applyDeviceChainRuntimeDelta', () => {
             },
         });
 
-        expect(mocks.mirrorDeviceChainDelta).not.toHaveBeenCalled();
+        expect(mocks.mirrorDeviceChainDelta).toHaveBeenCalledWith({
+            before,
+            after: expect.objectContaining({ devices: [firstDevice, secondDevice] }),
+        });
     });
 
     /**
@@ -440,6 +555,7 @@ describe('applyDeviceChainRuntimeDelta', () => {
      */
     it('returns the runtime result without waiting for a mirror that rejects', async () => {
         const track = seedTrack();
+        trackStore.set({ tracks: [{ ...track, devices: [] }], selectedTrackId: track.id, ghostClips: [] });
         mocks.mirrorDeviceChainDelta.mockRejectedValue(new Error('unreadable native answer'));
 
         const result = applyDeviceChainRuntimeDelta({

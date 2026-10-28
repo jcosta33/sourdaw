@@ -122,6 +122,47 @@ describe('playMacro', () => {
         });
     });
 
+    it('replays recorded row counteractions using only their public request fields', async () => {
+        const rowMacro: Macro = {
+            id: 'row-counteractions',
+            name: 'Row counteractions',
+            actions: [
+                {
+                    type: 'slipClipContent',
+                    payload: {
+                        clipId: 'phrase',
+                        clipType: 'midi',
+                        offset: 0,
+                        rowLiftBeats: -8,
+                        midiRowCoordinates: { beatDelta: 8, coordinates: [] },
+                    },
+                },
+                {
+                    type: 'trimClipStart',
+                    payload: {
+                        clipId: 'phrase',
+                        newStartBeat: 0,
+                        midiOffsetBeats: 7,
+                        loopOriginBeat: null,
+                        midiRowCoordinates: { beatDelta: -6, coordinates: [] },
+                    },
+                },
+            ],
+            createdAt: 0,
+        };
+        const saved = structuredClone(rowMacro);
+        macroStore.set({ macros: [rowMacro], recording: false, currentRecording: [] });
+        for (let playback = 0; playback < 2; playback += 1) {
+            await playMacro(rowMacro.id);
+        }
+        const expected = [
+            { type: 'slipClipContent', payload: { clipId: 'phrase', clipType: 'midi', offset: 0 } },
+            { type: 'trimClipStart', payload: { clipId: 'phrase', newStartBeat: 0 } },
+        ];
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([...expected, ...expected]);
+        expect(macroStore.value?.macros).toEqual([saved]);
+    });
+
     it('should no-op when macro id is missing', async () => {
         await playMacro('missing');
         expect(executeAppActionMock).not.toHaveBeenCalled();

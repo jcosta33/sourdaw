@@ -61,6 +61,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
         resolve(dirname(vitePackage), 'bin/vite.js'),
         '--mode',
         'e2e',
+        '--host',
+        '127.0.0.1',
         '--port',
         String(port),
         '--strictPort',

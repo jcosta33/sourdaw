@@ -56,6 +56,24 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-28 — desktop fallback filenames lost the selected File authority (issue #5767)
+
+Commit `4f410257b212` introduced a native-dialog rejection fallback that returned browser
+`File.name` strings; the desktop consumer read those strings as native paths. GitHub reports no
+associated PR. PR #2's `4faaa241a461` retained that earlier fallback while removing a later
+native-read-error retry, and #2181 retained it through Electron cutover. Historical reviewer
+prompts and models are unknown. The missed boundary was selection provenance through the actual
+byte consumer: separate mocked fallback-name and native-path checks stayed self-consistent.
+
+Reject the native opening, drive the real browser input with real Files, and read the returned
+bytes with the platform FileReader. Require original File identity, contents, MIME type,
+lastModified, order and same-basename separation, with zero native path reads. Keep granted-native
+byte reads and cancellation controls, and require native byte-read failures to propagate without
+another picker. A handle-only consumer must refuse browser-only authority before registration,
+without exposing a path, File or raw error. Removing provenance dispatch or that refusal must
+redden the owning case. These renderer-boundary probes establish neither OS-dialog execution nor
+a security exposure.
+
 ### 2026-10-27 — immutable identity proof could not cross the remote schema (introduced by PR #5705)
 
 PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) selected `author { id }` from

@@ -86,6 +86,7 @@ import {
 } from './composeMeasuredAnswer';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
+import { formatReceiptContext } from './formatReceiptContext';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 
@@ -2108,6 +2109,9 @@ export async function runApplicationOwnedToolLoop(
         receiptContext = serializeReceiptContext(receipts, turn);
         if (byteLength(receiptContext) > limits.maxTotalReceiptBytes) {
             return { reason: overBudget, receipts };
+        }
+        if (input.textReceiptCharacterBudget !== undefined) {
+            receiptContext = formatReceiptContext(receiptContext, turn, input.textReceiptCharacterBudget);
         }
         if (
             outcome.providerTurn === undefined &&

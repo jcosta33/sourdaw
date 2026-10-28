@@ -6,6 +6,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
+comparison, Undo-history, corpus-floor, later-case schema and prompt-separation checks could be
+removed without failing their acceptance cases (#5648). A changed fixture digest failed regardless
+of the guard's behavior, so it did not establish a semantic probe. Exact historical private review
+prompts and tiers are unavailable.
+
+Feed each actual validation helper a deliberately violating row while satisfying its other
+preconditions. Include a wrong or unexpected supersedes value, each missing Undo-history witness,
+a deficient refinement kind, a malformed later case and held-out reuse of a development prior
+prompt. Drop each guard separately and run the acceptance spec without the manifest spec; its
+named negative case must fail. Give the product examples distinct multi-entry groups and absolute
+as well as relative continuations, with an intervening musician edit, so a plausible wrong replay
+or baseline cannot keep the release score green. Preserve the existing outcomes and thresholds.
+
 ### 2026-10-27 — action-call spies missed extra project writes (refinement accounting introduced by PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write accounting
@@ -1304,6 +1320,27 @@ Probe that would have caught it: attach to the browser before template loading, 
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
 
+## Exact inverses need actual Command, reciprocal capture and hydration proof
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+Integer row figures and a JSON-round-tripped pure planner omit the execution boundary,
+the discarded skipUndo description, actual history counterpart refresh and session admission.
+Use fractional note, controller and bend figures, real snapshot admission, peer edits before
+Undo and Redo, and saved history from both stacks. Mutating restoration, counterpart refresh,
+hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
+CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
+exact stored restoration.
+
+For the [macro restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+introduced by PR #5495 and PR #5578, a fixture's expected result must come from
+independent real public commands, not retained inverse fields or the normalization
+helper under test. Record public history reversion, serialize it, change loop
+basis or anchor, and run both routes from an exactly restored common prestate.
+Compare full rows and clip state, then check each saved Undo/Redo checkpoint.
+Include zero and null restoration hints; keeping only those scalar hints while
+stripping coordinate captures must fail the unchanged macro comparison.
+
 ### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
 
 PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and
@@ -1486,6 +1523,12 @@ whole/scoped/parent inspection failures. Require retained storage and a stable, 
 on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
 or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
 or add inspection diagnostics to the warning-success allowlist.
+
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
 
 ## Escape: sanitizer tests did not prove project-file admission (PR #4987)
 
