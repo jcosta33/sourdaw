@@ -144,7 +144,11 @@ function lane(trackId: string) {
 }
 
 function seedSubjectAutomation(automated: boolean): void {
-    automationStore.set({ lanes: [lane('automated-peer'), ...(automated ? [lane('subject')] : [])] });
+    const lanes = [lane('automated-peer')];
+    if (automated) {
+        lanes.push(lane('subject'));
+    }
+    automationStore.set({ lanes });
     settlePendingProjectWritesAndCaptureRevision();
 }
 
@@ -199,12 +203,20 @@ describe('Inspector VCA gestures through production Command and committed gain',
             testTrack('static-peer', 'Static peer'),
             testTrack('automated-peer', 'Automated peer'),
             testTrack('unrelated', 'Unrelated'),
-        ].map((track, index) => ({
-            ...track,
-            gain: index === 0 ? 0.8 : 0.4,
-            muted: index === 0,
-            vcaGroupId: index === 0 ? 'old' : index === 3 ? 'untouched' : 'destination',
-        }));
+        ].map((track, index) => {
+            let vcaGroupId = 'destination';
+            if (index === 0) {
+                vcaGroupId = 'old';
+            } else if (index === 3) {
+                vcaGroupId = 'untouched';
+            }
+            return {
+                ...track,
+                gain: index === 0 ? 0.8 : 0.4,
+                muted: index === 0,
+                vcaGroupId,
+            };
+        });
         trackStore.set({ tracks, selectedTrackId: 'subject', ghostClips: [] });
         vcaGroupStore.set({
             groups: [
@@ -269,28 +281,30 @@ describe('Inspector VCA gestures through production Command and committed gain',
             expect(actionHistoryStore.value?.entries).toHaveLength(1);
             const after = rawState();
             expect(after).toEqual(projectedState());
-            const groupId =
-                kind === 'create'
-                    ? after.groups.find((group) => group.name === 'VCA 4')?.id
-                    : kind === 'assign'
-                      ? 'destination'
-                      : null;
+            let groupId: string | null | undefined = null;
+            if (kind === 'create') {
+                groupId = after.groups.find((group) => group.name === 'VCA 4')?.id;
+            } else if (kind === 'assign') {
+                groupId = 'destination';
+            }
             expect(groupId).not.toBeUndefined();
             expect(after.tracks).toEqual(
                 before.tracks.map((track) => (track.id === 'subject' ? { ...track, vcaGroupId: groupId } : track))
             );
-            expect(after.groups).toEqual([
-                ...before.groups.map((group) => ({
-                    ...group,
-                    trackIds:
-                        group.id === 'destination' && kind === 'assign'
-                            ? [...group.trackIds, 'subject']
-                            : group.trackIds.filter((id) => id !== 'subject'),
-                })),
-                ...(kind === 'create'
-                    ? [{ id: groupId, name: 'VCA 4', gain: 1, muted: false, trackIds: ['subject'] }]
-                    : []),
-            ]);
+            const expectedGroups = before.groups.map((group) => {
+                const expectedGroup = { ...group, trackIds: group.trackIds.filter((id) => id !== 'subject') };
+                if (group.id === 'destination' && kind === 'assign') {
+                    expectedGroup.trackIds = [...group.trackIds, 'subject'];
+                }
+                return expectedGroup;
+            });
+            if (kind === 'create') {
+                if (groupId === undefined || groupId === null) {
+                    throw new Error('Expected created VCA group identity');
+                }
+                expectedGroups.push({ id: groupId, name: 'VCA 4', gain: 1, muted: false, trackIds: ['subject'] });
+            }
+            expect(after.groups).toEqual(expectedGroups);
             expect(screen.getByRole('combobox', { name: 'VCA group' })).toHaveValue(groupId ?? '');
             expectRuntime(automated, kind === 'assign' ? 0.25 : 1);
             if (kind === 'assign') {
