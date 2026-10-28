@@ -40,11 +40,16 @@ test.describe('Proof Build module bypass toggles — aria-pressed round-trip', (
 
         // The panel mounts at desk depth 1 (Play). Drop to depth 3 (Build) where
         // the per-module sections render.
-        await page.getByRole('button', { name: 'Build Modules' }).click();
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'build', exact: true })
+            .click();
     });
 
     test('EQ module bypass round-trips ON to OFF and back', async ({ page }) => {
-        const toggle = page.getByRole('button', { name: 'EQ module' });
+        const toggle = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('button', { name: 'EQ module' });
         await expect(toggle).toBeVisible({ timeout: 15_000 });
 
         // Default eqBypassed=false → pressed (ON).
@@ -65,7 +70,9 @@ test.describe('Proof Build module bypass toggles — aria-pressed round-trip', (
     });
 
     test('Dynamics module bypass round-trips ON to OFF and back', async ({ page }) => {
-        const toggle = page.getByRole('button', { name: 'Dynamics module' });
+        const toggle = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('button', { name: 'Dynamics module' });
         await expect(toggle).toBeVisible({ timeout: 15_000 });
 
         // Default dynBypassed=false → pressed (ON).
@@ -84,7 +91,9 @@ test.describe('Proof Build module bypass toggles — aria-pressed round-trip', (
     });
 
     test('Imager module bypass round-trips ON to OFF and back', async ({ page }) => {
-        const toggle = page.getByRole('button', { name: 'Imager module' });
+        const toggle = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('button', { name: 'Imager module' });
         await expect(toggle).toBeVisible({ timeout: 15_000 });
 
         // Default imgBypassed=false → pressed (ON).
@@ -103,7 +112,9 @@ test.describe('Proof Build module bypass toggles — aria-pressed round-trip', (
     });
 
     test('Exciter module bypass round-trips OFF to ON and back', async ({ page }) => {
-        const toggle = page.getByRole('button', { name: 'Exciter module' });
+        const toggle = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('button', { name: 'Exciter module' });
         await expect(toggle).toBeVisible({ timeout: 15_000 });
 
         // Default excBypassed=true → not pressed (OFF).

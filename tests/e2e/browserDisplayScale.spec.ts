@@ -345,7 +345,11 @@ async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> 
     const inspector = app.getByRole('complementary', { name: 'Inspector panel' });
     await inspector.getByText('Proof', { exact: false }).first().click();
     await expect(app.getByRole('button', { name: /reset loudness/i })).toBeVisible({ timeout: 15_000 });
-    await app.getByRole('button', { name: 'Build Modules' }).click();
+    await app
+        .locator('.proof-faceplate')
+        .getByRole('group', { name: 'Effect control detail' })
+        .getByRole('button', { name: 'build', exact: true })
+        .click();
     const canvas = app.getByLabel('8-band parametric EQ frequency response');
     const band = app.getByRole('slider', { name: /EQ band 1/i });
     await canvas.scrollIntoViewIfNeeded();
