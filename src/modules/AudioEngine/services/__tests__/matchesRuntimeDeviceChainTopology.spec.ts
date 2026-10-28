@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { asAudioNode, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
-import { matchesRuntimeDeviceChainTopology, projectPersistentRuntimeDevices } from '../matchesRuntimeDeviceChainTopology';
+import {
+    matchesRuntimeDeviceChainTopology,
+    projectPersistentRuntimeDevices,
+} from '../matchesRuntimeDeviceChainTopology';
 
 import type { BuiltinDeviceNode, TrackChannelStrip } from '../../models/AudioEngineState';
 import type { RuntimeGraphDeltaDevice, RuntimeGraphDeltaNode } from '../../models/RuntimeGraphDelta';
@@ -299,5 +302,4 @@ describe('matchesRuntimeDeviceChainTopology', () => {
         expect(projected[1]).toBe(expected.devices[3]);
         expect(expected).toEqual(before);
     });
-
 });
