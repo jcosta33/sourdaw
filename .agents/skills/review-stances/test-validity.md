@@ -6,6 +6,28 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — successful scan did not prove comparison coverage (PRs #3170 and #4854)
+
+PR #3170 moved the main CodeQL producer to Nightly and left its former Health gates configuration
+in history. PR #4854 added a PR scan with a different default identity from Nightly. Execution and
+Gate checks could succeed while the comparison omitted a main configuration. Historical private
+review prompts and tiers are not established.
+
+Paginate all main analysis configurations, compare actual uploads and scan scope, and inspect the
+hosted introduced-alert summary. Check alert continuity and documented authorized retirement before
+deleting history. Remove or alter the PR category, re-record the snapshot, and require the independent
+input contract to fail; neither a snapshot nor an imitation of the upstream action proves upload.
+
+### 2026-10-28 — composite factory flow exhausted its aggregate budget (PR #5798)
+
+PR #5798 introduced a multi-step factory persistence case whose separate bounded state waits share
+the default aggregate deadline. Bounded slow work can exceed that deadline while each state arrives
+within its own limit. The exact phase of the historical CI timeout was not established.
+
+Inject bounded slow work through the complete flow: the old aggregate bound must fail and the revised
+bound must finish all assertions. Keep each state wait and assertion unchanged, and require a missing
+state to fail its original wait rather than pass under the larger aggregate budget.
+
 ### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
 
 The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
@@ -1639,3 +1661,9 @@ complete placed passes, including negative finite anchors, and assert exact
 selected-take and comp-region retention after real owner hydration. Removing only
 placement admission must redden the rejection case; testing a store sanitizer
 alone cannot observe the file admission gap.
+
+### 2026-10-28 — dirty-work retention was mistaken for busy-pump delivery (introduced by PR #5461)
+
+The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
+
+Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
