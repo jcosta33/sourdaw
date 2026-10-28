@@ -3639,6 +3639,34 @@ export function shellPort(
 
     return {
         fetch: () => {
+            const readRef = (ref: string): string | undefined => {
+                const lines = shell.capture('git', [
+                    'for-each-ref',
+                    '--format=%(refname) %(objectname) %(symref)',
+                    ref,
+                ]);
+                const matches = lines.split('\n').filter((line) => line.startsWith(`${ref} `));
+                if (matches.length === 0) return undefined;
+                const match = matches[0]?.trim().match(/^\S+ ([a-f0-9]{40}|[a-f0-9]{64})$/);
+                if (matches.length !== 1 || match === null || match === undefined) {
+                    fail(`cannot inspect direct Git ref ${ref}`);
+                }
+                return match[1];
+            };
+            const notes = readRef('refs/notes/ai');
+            if (notes !== undefined) {
+                if (shell.capture('git', ['cat-file', '-t', notes]).trim() !== 'commit') {
+                    fail('local authorship notes ref does not point to a commit');
+                }
+                const recoveryRef = `refs/agents/preserved-ai-notes/${notes}`;
+                const existing = readRef(recoveryRef);
+                if (existing !== undefined && existing !== notes) {
+                    fail(`authorship notes recovery ref ${recoveryRef} points to a different object`);
+                }
+                if (existing === undefined) {
+                    shell.run('git', ['update-ref', '--no-deref', recoveryRef, notes, '0'.repeat(notes.length)]);
+                }
+            }
             if (options.gitToken !== undefined) {
                 const helperDir =
                     options.helperDir ?? fail('authenticated git fetch requires a credential helper directory');
