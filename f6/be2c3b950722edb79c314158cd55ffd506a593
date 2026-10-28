@@ -1,0 +1,23 @@
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_29d8df116c5b92::t_b7faa0e8435071 120-121
+  s_29d8df116c5b92::t_846029184eaf88 122-124
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_29d8df116c5b92::t_39c25441c6a0f3 112-113
+  s_29d8df116c5b92::t_f74b2b6eaae0d3 114-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f6be2c3b950722edb79c314158cd55ffd506a593",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
