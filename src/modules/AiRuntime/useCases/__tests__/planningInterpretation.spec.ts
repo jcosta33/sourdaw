@@ -180,7 +180,7 @@ describe('joint planning interpretation consumes the actual printed context view
             clip.locked = true;
             value.context.productionBrief!.locks.push({
                 id: 'locked-clip',
-                scope: { kind: 'object', objectId: clip.id },
+                scope: { kind: 'object', objectType: 'clip', objectId: clip.id },
                 statement: 'Preserve this clip.',
                 createdAt: 0,
             });

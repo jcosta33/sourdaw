@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
 
@@ -29,13 +30,10 @@ function sine(amplitude = 0.1): AudioBuffer {
         { length: 192_000 },
         (_, index) => amplitude * Math.sin((2 * Math.PI * 1000 * index) / 48_000)
     );
-    return {
-        sampleRate: 48_000,
-        length: channel.length,
-        duration: 4,
-        numberOfChannels: 2,
-        getChannelData: () => channel,
-    } as AudioBuffer;
+    const buffer = MockAudioBuffer.create(2, 192_000, 48_000);
+    buffer.copyToChannel(channel, 0);
+    buffer.copyToChannel(channel, 1);
+    return buffer;
 }
 function resultTurn(toolCalls: ToolCallResult[]) {
     return { status: 'complete' as const, toolCalls };

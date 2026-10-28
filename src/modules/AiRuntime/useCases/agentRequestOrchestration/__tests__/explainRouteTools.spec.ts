@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -189,16 +190,13 @@ function sineBuffer(amplitude = 0.1): AudioBuffer {
         { length: 192_000 },
         (_, index) => amplitude * Math.sin((2 * Math.PI * 1000 * index) / 48_000)
     );
-    return {
-        sampleRate: 48_000,
-        length: samples.length,
-        numberOfChannels: 2,
-        duration: 4,
-        getChannelData: () => samples,
-    } as AudioBuffer;
+    const buffer = MockAudioBuffer.create(2, 192_000, 48_000);
+    buffer.copyToChannel(samples, 0);
+    buffer.copyToChannel(samples, 1);
+    return buffer;
 }
 function seedNamedChorus(trackNames: readonly string[]) {
-    const ids = trackNames.map((name, index) => (index === 0 ? vocalId : `named-track-${String(index)}`));
+    const ids = trackNames.map((_name, index) => (index === 0 ? vocalId : `named-track-${String(index)}`));
     trackStore.set({
         tracks: trackNames.map((name, index) => createTrack({ id: ids[index]!, name, kind: 'audio' })),
         selectedTrackId: vocalId,
