@@ -68,8 +68,10 @@
  * `dispose`, which it answers with `disposed` and starts the drain, and
  * `beginSampleBank` and `releaseRetiredBank`, which it answers by posting its
  * `error` again, so a host that began listening after the fault still learns
- * that no answer will come. A fault before ready also refuses a later `init`
- * with that original error: partial WASM creation is not retried in this scope.
+ * that no answer will come. A fault before internal initialization also refuses
+ * a later `init` with that original error: partial WASM creation is not retried.
+ * A terminal buffered-replay fault follows internal initialization, so a later
+ * `init` is silent even though no healthy `ready` was posted.
  *
  * ADR 0052's Message contract tables every answer by state.
  */

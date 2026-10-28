@@ -69,9 +69,9 @@ otherwise. The replacement contract has two parts:
   faulted or was disposed, and drops every later message), the release loop stops at once, and the
   waiting load rejects with the same "processor ended" error the handshake uses and posts nothing.
   **Superseded by ADR 0052 for both faulted and disposed processors:** the faulted processor repeats
-  its error for bank starts and retired-bank releases and answers `dispose`; a fault before ready also
-  refuses repeated `init` with that error. A disposed processor answers `releaseDisposedBanks` and
-  repeated `dispose` and drops every other message. See ADR 0052's Message contract for every state.
+  its error for bank starts and retired-bank releases and answers `dispose`; a fault before internal
+  initialization also refuses repeated `init` with that error. A disposed processor answers
+  `releaseDisposedBanks` and repeated `dispose` and drops every other message. See ADR 0052's Message contract for every state.
 - **Two bounded costs stay on the render thread, accepted.** `attach_sample_bank` frees an empty
   placeholder pool (one small allocation, since followers and ready roles never upload PCM) and
   refuses once the staged bank holds PCM, so a misused call cannot drop staged samples.
