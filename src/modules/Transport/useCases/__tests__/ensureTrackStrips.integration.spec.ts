@@ -259,7 +259,9 @@ describe('project strip initialization before bus facade and send publication', 
         expect(strip.deviceNodes.map((device) => device.deviceId)).toEqual([`${first.id}-eq`]);
         expect(strip.faderNode.gain.value).toBe(mode === 'pfl' ? 1 : 0.4);
         expect(strip.muted).toBe(mode !== 'pfl');
+        expect(strip.postFaderGain.gain.value).toBe(mode === 'pfl' ? 1 : 0);
         expect(strip.soloGated).toBe(mode === 'sip');
+        expect(strip.preFaderTap.gain.value).toBe(mode === 'sip' ? 0 : 1);
         expectSend('source', first.id, true);
     });
 
