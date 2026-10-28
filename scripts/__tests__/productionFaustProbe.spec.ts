@@ -53,9 +53,7 @@ function createCalibrationPlatform() {
             ) {
                 this.edges.push({ destination, output, input });
             }
-            if (destination instanceof CalibrationNode) {
-                return destination;
-            }
+            return destination instanceof CalibrationNode ? destination : undefined;
         }
 
         disconnect(
