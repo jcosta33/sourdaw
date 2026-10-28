@@ -1,0 +1,46 @@
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  h_beb54bf43b47b7 15-16
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  h_beb54bf43b47b7 47-48
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  h_beb54bf43b47b7 23-24
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  h_beb54bf43b47b7 47-48
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 77-78,109-111,124-126
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  h_beb54bf43b47b7 76-78
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_beb54bf43b47b7 117-119,138
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  h_beb54bf43b47b7 119-120
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 92-93
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  h_beb54bf43b47b7 90-91
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  h_beb54bf43b47b7 110-111
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  h_beb54bf43b47b7 47,108-113
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  h_beb54bf43b47b7 31-35
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  h_beb54bf43b47b7 66-75,77-79
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_beb54bf43b47b7 54-55,107-109,182-184
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  h_beb54bf43b47b7 73-82,84-86
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_beb54bf43b47b7 121-123,135-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ddbaa57c0280fee0c3ace33c5c92e3149065e80e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
