@@ -174,6 +174,28 @@ describe('exportPatternToTimeline', () => {
         expect(mocks.batch).not.toHaveBeenCalled();
     });
 
+    it('reports other committed warnings without implying that the bake failed', async () => {
+        seedKit();
+        mocks.batch.mockResolvedValue({ status: 'committed-with-warning', warning: 'Observer failed', actions: [] });
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({
+            ok: true,
+            warning: 'The pattern was added to the timeline, but a warning occurred: Observer failed',
+        });
+        mocks.batch.mockResolvedValue({
+            status: 'committed-with-warning',
+            warning: 'history; observer',
+            actions: [],
+            warningDetails: [
+                { kind: 'history', message: 'history' },
+                { kind: 'observer', message: 'observer' },
+            ],
+        });
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({
+            ok: true,
+            warning: 'The pattern was added to the timeline, but Undo history is unavailable. observer',
+        });
+    });
+
     it('reports batch refusal instead of claiming a bake succeeded', async () => {
         seedKit();
         mocks.batch.mockResolvedValue({ status: 'rejected', reason: 'Locked project', actions: [] });

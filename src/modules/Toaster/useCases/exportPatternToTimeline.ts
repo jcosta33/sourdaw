@@ -11,7 +11,25 @@ import { getEffectiveToasterPattern } from './getEffectiveToasterPattern';
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 import { projectToasterStepEvents } from './projectToasterStepEvents';
 
-type ExportPatternToTimelineResult = { ok: true } | { ok: false; message: string };
+type ExportPatternToTimelineResult = { ok: true; warning?: string } | { ok: false; message: string };
+
+type CommittedWarning = Extract<
+    Awaited<ReturnType<typeof executeAppActionBatch>>,
+    { status: 'committed-with-warning' }
+>;
+
+function describeCommittedWarning(result: CommittedWarning): string {
+    const details = result.warningDetails;
+    if (!details?.some((detail) => detail.kind === 'history')) {
+        return `The pattern was added to the timeline, but a warning occurred: ${result.warning}`;
+    }
+    const otherWarnings = details.filter((detail) => detail.kind !== 'history').map((detail) => detail.message);
+    const historyWarning = 'The pattern was added to the timeline, but Undo history is unavailable.';
+    if (otherWarnings.length > 0) {
+        return `${historyWarning} ${otherWarnings.join('; ')}`;
+    }
+    return historyWarning;
+}
 
 type BakeAction = Parameters<typeof executeAppActionBatch>[0][number];
 
@@ -243,8 +261,11 @@ export async function exportPatternToTimeline(deviceId: string): Promise<ExportP
     } catch {
         return { ok: false, message: 'Could not bake the pattern.' };
     }
-    if (result.status === 'committed' || result.status === 'committed-with-warning') {
+    if (result.status === 'committed') {
         return { ok: true };
+    }
+    if (result.status === 'committed-with-warning') {
+        return { ok: true, warning: describeCommittedWarning(result) };
     }
     return { ok: false, message: 'reason' in result ? result.reason : 'The pattern bake did not commit.' };
 }

@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     assignToasterPatternGroove: vi.fn<() => Promise<void>>(),
+    exportPatternToTimeline: vi.fn(),
     enter16Levels: vi.fn(),
     exit16Levels: vi.fn(),
     trigger16Level: vi.fn(),
@@ -24,6 +25,9 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 vi.mock('../../../useCases/assignToasterPatternGroove', () => ({
     assignToasterPatternGroove: mocks.assignToasterPatternGroove,
+}));
+vi.mock('../../../useCases/exportPatternToTimeline', () => ({
+    exportPatternToTimeline: mocks.exportPatternToTimeline,
 }));
 vi.mock('../../../useCases/enter16Levels', () => ({
     enter16Levels: mocks.enter16Levels,
@@ -101,6 +105,30 @@ describe('ToasterPanel', () => {
                 'Play sounds the pattern live only. To timeline writes it to the arrangement for export and native playback.'
             )
         ).toBeInTheDocument();
+    });
+
+    it('announces a committed bake warning, clears it on success, and reports refusal', async () => {
+        mocks.exportPatternToTimeline
+            .mockResolvedValueOnce({
+                ok: true,
+                warning: 'The pattern was added to the timeline, but Undo history is unavailable.',
+            })
+            .mockResolvedValueOnce({ ok: true })
+            .mockResolvedValueOnce({ ok: false, message: 'Locked project' });
+        render(<ToasterPanel deviceId="toaster-test" />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
+        const bake = screen.getByRole('button', { name: 'To timeline' });
+        fireEvent.click(bake);
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'The pattern was added to the timeline, but Undo history is unavailable.'
+        );
+        expect(mocks.exportPatternToTimeline).toHaveBeenCalledTimes(1);
+        fireEvent.click(bake);
+        await waitFor(() => expect(mocks.exportPatternToTimeline).toHaveBeenCalledTimes(2));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        fireEvent.click(bake);
+        expect(await screen.findByRole('alert')).toHaveTextContent('Locked project');
+        expect(mocks.exportPatternToTimeline).toHaveBeenCalledTimes(3);
     });
 
     it('exposes labeled pattern groove assignment controls', () => {

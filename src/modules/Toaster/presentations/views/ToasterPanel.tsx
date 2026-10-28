@@ -150,7 +150,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     const [grooveAmountPreview, setGrooveAmountPreview] = useState<GrooveAmountPreview | null>(null);
     const [grooveAssignmentFailure, setGrooveAssignmentFailure] = useState<GrooveAssignmentFailure | null>(null);
     const [morphFailure, setMorphFailure] = useState<string | null>(null);
-    const [bakeFailure, setBakeFailure] = useState<string | null>(null);
+    const [bakeNotice, setBakeNotice] = useState<string | null>(null);
     const [is16Levels, setIs16Levels] = useState(false);
     const [sixteenLevelsTarget, setSixteenLevelsTarget] = useState<SixteenLevelsTarget>('tune');
     const [isRepeatActive, setIsRepeatActive] = useState(false);
@@ -881,11 +881,13 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 tone="peach"
                                 size="sm"
                                 onClick={() => {
-                                    setBakeFailure(null);
+                                    setBakeNotice(null);
                                     void exportPatternToTimeline(deviceId).then((result) => {
                                         if (!result.ok) {
-                                            setBakeFailure(result.message);
+                                            setBakeNotice(result.message);
+                                            return;
                                         }
+                                        setBakeNotice(result.warning ?? null);
                                     });
                                 }}
                             >
@@ -897,9 +899,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             Play sounds the pattern live only. To timeline writes it to the arrangement for export and
                             native playback.
                         </DawInlineHint>
-                        {bakeFailure ? (
+                        {bakeNotice ? (
                             <div role="alert" className="text-[9px] text-destructive">
-                                {bakeFailure}
+                                {bakeNotice}
                             </div>
                         ) : null}
                         <div role="status" className="text-[9px] leading-4 text-muted-foreground">
