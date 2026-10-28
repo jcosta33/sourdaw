@@ -1,0 +1,21 @@
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx
+  s_3168504f6ce387::t_a0ff937420cb09 187,229
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_a0ff937420cb09 1686-1703
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f9948eaabf92496fbaf08efc2740606b193e189",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
