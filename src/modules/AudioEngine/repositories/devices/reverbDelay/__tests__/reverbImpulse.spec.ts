@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    asAudioNode,
     asBaseAudioContext,
     createMockAudioContext,
     type MockAudioContext,
     MockAudioBuffer,
 } from '../../../../../../helpers/__tests__/audioContext.mock';
+import { type OfflineDeviceNode } from '../../types';
 import { applyReverbParams } from '../applyReverbParams';
 import { createReverb } from '../createReverb';
-import { type ReverbImpulseShape } from '../reverbImpulse';
+import { applyReverbImpulseShape, DEFAULT_REVERB_SHAPE, type ReverbImpulseShape } from '../reverbImpulse';
 
 beforeEach(() => {
     vi.stubGlobal('AudioBuffer', MockAudioBuffer);
@@ -40,6 +42,18 @@ function impulseOf(dn: ReturnType<typeof createReverb>): AudioBuffer {
         throw new Error('reverb graph carries no convolver buffer');
     }
     return convolver.buffer;
+}
+
+function observeBufferWrites(convolver: { buffer: AudioBuffer | null }) {
+    let installed = convolver.buffer;
+    const setter = vi.fn((buffer: AudioBuffer | null) => {
+        installed = buffer;
+    });
+    Object.defineProperty(convolver, 'buffer', {
+        get: () => installed,
+        set: setter,
+    });
+    return setter;
 }
 
 /** RMS of the samples in a window. */
@@ -263,6 +277,111 @@ describe('reverb impulse rendering (#3731)', () => {
         const second = createReverb(asBaseAudioContext(ctx));
         applyReverbParams(second, shapeParams(9));
         expect(impulseOf(second)).toBe(shapeNineBuffer);
+    });
+
+    it.each([
+        ['rev-size', 0.5001],
+        ['rev-decay', 2.0001],
+        ['rev-damping', 0.5001],
+    ] as const)('skips allocation and installation for a warm equivalent %s: %s', (key, value) => {
+        const ctx = makeContext();
+        const dn = createReverb(asBaseAudioContext(ctx));
+        const installed = impulseOf(dn);
+        const setter = observeBufferWrites(dn.namedNodes!.convolver as ConvolverNode);
+
+        applyReverbParams(dn, { [key]: value });
+
+        expect(ctx.createBuffer).toHaveBeenCalledOnce();
+        expect(setter).not.toHaveBeenCalled();
+        expect(impulseOf(dn)).toBe(installed);
+    });
+
+    it('skips allocation and installation for an equivalent shape after peers evict its shared buffer', () => {
+        const ctx = makeContext();
+        const dn = createReverb(asBaseAudioContext(ctx));
+        const installed = impulseOf(dn);
+        const setter = observeBufferWrites(dn.namedNodes!.convolver as ConvolverNode);
+        const peer = createReverb(asBaseAudioContext(ctx));
+        for (let index = 1; index <= 9; index++) {
+            applyReverbParams(peer, { 'rev-decay': 2 + index });
+        }
+        expect(ctx.createBuffer).toHaveBeenCalledTimes(10);
+        ctx.createBuffer.mockClear();
+
+        applyReverbParams(dn, { 'rev-decay': 2.0001 });
+
+        expect.soft(ctx.createBuffer).not.toHaveBeenCalled();
+        expect.soft(setter).not.toHaveBeenCalled();
+        expect(impulseOf(dn)).toBe(installed);
+    });
+
+    it('merges later partial writes with the latest raw shape from an equivalent no-op', () => {
+        const ctx = makeContext();
+        ctx.sampleRate = 192_000;
+        const dn = createReverb(asBaseAudioContext(ctx));
+        const installed = impulseOf(dn);
+        const setter = observeBufferWrites(dn.namedNodes!.convolver as ConvolverNode);
+
+        applyReverbParams(dn, { 'rev-decay': 2.0001 });
+        expect(setter).not.toHaveBeenCalled();
+        expect(impulseOf(dn)).toBe(installed);
+
+        applyReverbParams(dn, { 'rev-damping': 0.8 });
+
+        expect(setter).toHaveBeenCalledOnce();
+        expect(impulseOf(dn).length).toBe(Math.round(ctx.sampleRate * 2.0001));
+        expect(impulseOf(dn).length).not.toBe(installed.length);
+    });
+
+    it.each(['render', 'install'])('retries the first installation after a failed %s', (failure) => {
+        const ctx = makeContext();
+        const convolver = ctx.createConvolver();
+        const node = asAudioNode(convolver);
+        const dn: OfflineDeviceNode = {
+            inputNode: node,
+            outputNode: node,
+            nodes: [node],
+            namedNodes: { convolver: node },
+        };
+        const setter = observeBufferWrites(convolver);
+        const error = new Error(`failed ${failure}`);
+        const fail = () => {
+            throw error;
+        };
+        if (failure === 'render') {
+            ctx.createBuffer.mockImplementationOnce(fail);
+        } else {
+            setter.mockImplementationOnce(fail);
+        }
+
+        expect(() => applyReverbImpulseShape(dn, asBaseAudioContext(ctx), DEFAULT_REVERB_SHAPE)).toThrow(error);
+        expect(convolver.buffer).toBeNull();
+
+        applyReverbImpulseShape(dn, undefined, DEFAULT_REVERB_SHAPE);
+
+        expect(convolver.buffer).not.toBeNull();
+        expect(impulseOf(dn).length).toBe(SAMPLE_RATE * 2);
+        expect(setter).toHaveBeenCalledTimes(failure === 'render' ? 1 : 2);
+        expect(ctx.createBuffer).toHaveBeenCalledTimes(failure === 'render' ? 2 : 1);
+    });
+
+    it('retries a different-bucket installation without recording the failed shape', () => {
+        const ctx = makeContext();
+        const dn = createReverb(asBaseAudioContext(ctx));
+        const installed = impulseOf(dn);
+        const setter = observeBufferWrites(dn.namedNodes!.convolver as ConvolverNode);
+        const error = new Error('failed install');
+        setter.mockImplementationOnce(() => {
+            throw error;
+        });
+
+        expect(() => applyReverbParams(dn, { 'rev-decay': 3 })).toThrow(error);
+        expect(impulseOf(dn)).toBe(installed);
+        applyReverbParams(dn, { 'rev-decay': 3 });
+
+        expect(setter).toHaveBeenCalledTimes(2);
+        expect(ctx.createBuffer).toHaveBeenCalledTimes(2);
+        expect(impulseOf(dn).length).toBe(SAMPLE_RATE * 3);
     });
 
     it('clamps out-of-range writes to the declared parameter window', () => {
