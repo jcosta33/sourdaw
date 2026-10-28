@@ -1,0 +1,22 @@
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_3168504f6ce387::t_4986305389a8af 152-166,185,195
+  s_3168504f6ce387::t_f6cb93dc4055ac 167-169,182-184
+  s_3168504f6ce387::t_f178f4d8267c2b 186-188,192-194
+  s_3168504f6ce387::t_a5e15f60acd814 196-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66c6b3971f9c7041e4a111dd5a375bb040289e40",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
