@@ -50,7 +50,10 @@ export const MidiDevicePicker = (): ReactElement => {
     }
 
     const handleRefresh = () => {
-        void initWebMidi();
+        void initWebMidi().then(() => {
+            setInitialised(true);
+            return null;
+        });
     };
 
     const handleChange = (deviceId: string) => {

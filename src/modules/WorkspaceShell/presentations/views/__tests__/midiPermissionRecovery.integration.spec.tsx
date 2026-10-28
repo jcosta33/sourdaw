@@ -48,6 +48,50 @@ describe('MIDI permission recovery', () => {
             views = await loadViews();
         }, 30000);
 
+        it('shows completed empty enumeration after a refused retry and later permission change', async () => {
+            requestMIDIAccess
+                .mockReset()
+                .mockRejectedValueOnce(new Error('Permission denied'))
+                .mockRejectedValueOnce(new Error('Still denied'))
+                .mockResolvedValue({ inputs: new Map(), onstatechange: null });
+            const { webMidiStore, MidiDevicePicker, MidiStatusBadge } = views;
+            const view = render(
+                <TooltipProvider>
+                    <MidiDevicePicker />
+                    <MidiStatusBadge />
+                </TooltipProvider>
+            );
+            await waitFor(() => expect(webMidiStore.value?.enumerationError).toBe('Permission denied'));
+            view.unmount();
+            const retryView = render(
+                <TooltipProvider>
+                    <MidiDevicePicker />
+                    <MidiStatusBadge />
+                </TooltipProvider>
+            );
+            expect(requestMIDIAccess).toHaveBeenCalledTimes(1);
+            fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
+            await waitFor(() => expect(webMidiStore.value?.enumerationError).toBe('Still denied'));
+            expect(screen.getByText("Couldn't list MIDI devices. Refresh to try again.")).toBeInTheDocument();
+            retryView.unmount();
+            render(
+                <TooltipProvider>
+                    <MidiDevicePicker />
+                    <MidiStatusBadge />
+                </TooltipProvider>
+            );
+            expect(requestMIDIAccess).toHaveBeenCalledTimes(2);
+            fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
+            await waitFor(() => expect(webMidiStore.value?.enumerationError).toBeNull());
+            expect(webMidiStore.value).toMatchObject({ isSupported: true, inputs: [], selectedInputId: null });
+            expect(screen.getByText('No MIDI')).toBeInTheDocument();
+            await waitFor(() => expect(screen.getByText('No MIDI devices found')).toBeInTheDocument());
+            expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
+            expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
+            expect(requestMIDIAccess).toHaveBeenCalledTimes(3);
+            expect(localStorage.getItem('sourdaw:midi:selectedInputId:web-midi')).toBe('preferred');
+        });
+
         it('retains an explicit retry after refusal and displays the selected device after permission changes', async () => {
             const { webMidiStore, MidiDevicePicker, MidiStatusBadge } = views;
             const view = render(
