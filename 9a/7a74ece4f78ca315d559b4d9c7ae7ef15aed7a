@@ -1,0 +1,67 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 64-65
+  s_29d8df116c5b92::t_acc94c33e30317 66-68
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 107-108
+  s_29d8df116c5b92::t_fabb9a30121e0d 109-111
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 79-80
+  s_29d8df116c5b92::t_3ad60e74a42aed 81-83
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 48-49
+  s_29d8df116c5b92::t_f9b5a3cb17f8b2 50-52
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 196-197
+  s_29d8df116c5b92::t_43595e3145891f 198-200
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 140-141
+  s_29d8df116c5b92::t_fb83cba692e4bd 142-144
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 57-58
+  s_29d8df116c5b92::t_7604915ec2f5a9 59-61
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 91-92
+  s_29d8df116c5b92::t_a1101e236d2428 93-95
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 16-17
+  s_29d8df116c5b92::t_8987b9df41bc38 18-20
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 24-25
+  s_29d8df116c5b92::t_af652a68888de5 26-28
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 48-49
+  s_29d8df116c5b92::t_6c7ff5bae608fc 50-52
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 137-138
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 152-153
+  s_29d8df116c5b92::t_ea1c51a8d356b6 154-156
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 137-138
+  s_29d8df116c5b92::t_136a647777630e 139-141
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 93-94
+  s_29d8df116c5b92::t_04448fc7a433d6 95-97
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 78-79
+  s_29d8df116c5b92::t_38b175831b3f1b 80-82
+src/modules/AiRuntime/useCases/__tests__/executePromptActionGroup.spec.ts
+  s_29d8df116c5b92::t_c892400d02ee9d 68-69
+  s_29d8df116c5b92::t_eaa5baf36c3f71 70-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a7a74ece4f78ca315d559b4d9c7ae7ef15aed7a",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
