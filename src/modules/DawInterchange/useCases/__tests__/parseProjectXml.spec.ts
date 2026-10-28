@@ -3276,4 +3276,52 @@ describe('rejected owners and invalid mixer values', () => {
             { volume: 0.8, pan: 0 },
         ]);
     });
+    it('reports custom mixer bounds without changing values or duplicating metadata warnings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track name="Keys" contentType="notes"><Channel><Volume id="vol" name="Level" value="0.75" min="0.25" max="0.9"/><Pan id="pan" value="0.75" min="0.25" max="0.75"/></Channel></Track><Track name="Min only" contentType="notes"><Channel><Volume id="min" value="0.8" min="0.1"/></Channel></Track><Track name="Max only" contentType="notes"><Channel><Pan id="max" value="0.5" max="0.9"/></Channel></Track><Track name="Default" contentType="notes"><Channel><Volume value="0.8"/><Pan value="0.5"/></Channel></Track></Structure>'
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Level',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['parameter name', 'parameter bounds'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'pan',
+                name: 'Pan',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+            {
+                sourceType: 'Volume',
+                sourceId: 'min',
+                name: 'Volume',
+                context: 'Min only',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'max',
+                name: 'Pan',
+                context: 'Max only',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(4);
+        expect(parsed.tracks.map(({ volume, pan }) => ({ volume, pan }))).toEqual([
+            { volume: 0.75, pan: 0.5 },
+            { volume: 0.8, pan: 0 },
+            { volume: 0.8, pan: 0 },
+            { volume: 0.8, pan: 0 },
+        ]);
+    });
 });

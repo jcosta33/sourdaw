@@ -173,6 +173,10 @@ function warnTimelineMetadata(context: ParseContext, node: XmlQuery, owner: stri
     }
 }
 
+function hasMixerBounds(node: XmlQuery): boolean {
+    return [VOLUME, PAN].includes(node.element.tagName) && ['min', 'max'].some((name) => node.attr(name) !== null);
+}
+
 function warnParameterMetadata(context: ParseContext, node: XmlQuery | null, owner: string, units: string[]): void {
     if (!node) {
         return;
@@ -191,6 +195,9 @@ function warnParameterMetadata(context: ParseContext, node: XmlQuery | null, own
     const unit = node.attr('unit');
     if (unit && !units.includes(unit)) {
         details.push('parameter unit');
+    }
+    if (hasMixerBounds(node)) {
+        details.push('parameter bounds');
     }
     const value = node.attrNumber('value', 0);
     const rawValue = node.attr('value');

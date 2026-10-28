@@ -944,4 +944,42 @@ describe('importDawProject', () => {
             expect.stringContaining('Imported blank.dawproject'),
         ]);
     });
+    it('reports custom mixer bounds from real ZIP bytes while retaining values and playable content', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        const projectXml =
+            '<Project version="1.0"><Structure><Track id="keys" name="Keys" contentType="notes"><Channel><Volume id="vol" value="0.75" min="0.25" max="0.9"/><Pan id="pan" value="0.75" min="0.25" max="0.75"/></Channel></Track></Structure><Arrangement><Lanes><Clips track="keys"><Clip name="Playable" time="0" duration="1"><Notes><Note key="64" time="0" duration="1"/></Notes></Clip></Clips></Lanes></Arrangement></Project>';
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+        const result = await importDawProject({ buffer: new Uint8Array(zipped).buffer, fileName: 'bounds.dawproject' });
+        expect(result.warnings).toMatchObject([
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Volume',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'pan',
+                name: 'Pan',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+        ]);
+        expect(result.warnings).toHaveLength(2);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')).toMatchObject({
+            gain: 0.75,
+            pan: 0.5,
+            clips: [{ name: 'Playable' }],
+        });
+        expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+            expect.stringContaining('Volume "Volume" on "Keys" was partially imported: parameter bounds'),
+            expect.stringContaining('Pan "Pan" on "Keys" was partially imported: parameter bounds'),
+            expect.stringContaining('Imported bounds.dawproject'),
+        ]);
+    });
 });
