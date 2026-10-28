@@ -11,7 +11,7 @@ import {
 
 const PAYLOAD = { sha256: 'abc123', mtime: '2026-09-11T00:00:00.000Z', files: ['Contents/Resources/app.asar'] };
 
-const STREAMING_STEP = 'stream a chat answer from the admitted loopback endpoint';
+const ANSWER_STEP = 'complete a tool-backed chat answer from the admitted loopback endpoint';
 
 function ok(phase: ProofPhase, name: string): ProofStep {
     return { name, phase, ok: true, observed: `${name} held` };
@@ -68,11 +68,11 @@ describe('decideVerdict', () => {
         expect(decideVerdict([...steps].reverse())).toBe('failed');
     });
 
-    it('reports failed when the streaming step never saw the endpoint answer', () => {
+    it('reports failed when the answer step never saw the endpoint answer', () => {
         const steps = [
             ok('launch', 'dismiss the alpha notice'),
             ok('workspace', 'admit the loopback provider through Preferences'),
-            failed('workspace', STREAMING_STEP, 'the endpoint served completionRequests=0'),
+            failed('workspace', ANSWER_STEP, 'the endpoint served completionRequests=0'),
         ];
 
         expect(decideVerdict(steps)).toBe('failed');
