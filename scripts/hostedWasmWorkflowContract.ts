@@ -131,6 +131,16 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         'exact head'
     );
     requireHostedWasmEqual(
+        named('Set up pnpm').uses,
+        './control/.github/actions/setup-pnpm',
+        'pnpm setup from workflow control'
+    );
+    requireHostedWasmEqual(
+        named('Set up pnpm').with,
+        { package_json_file: 'source/package.json' },
+        'pnpm target from the source manifest'
+    );
+    requireHostedWasmEqual(
         named('Select affected packages').run,
         'node control/scripts/hostedWasmArtifacts.ts plan "$GITHUB_WORKSPACE/source"',
         'the package selection helper'

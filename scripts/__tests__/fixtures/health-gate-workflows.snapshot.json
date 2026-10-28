@@ -104,7 +104,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -266,7 +266,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -367,7 +367,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -435,7 +435,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -496,7 +496,7 @@
           {
             "name": "Set up pnpm",
             "timeout-minutes": 7,
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -703,7 +703,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -816,7 +816,7 @@
           {
             "name": "Set up pnpm",
             "timeout-minutes": 5,
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -859,7 +859,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -915,7 +915,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "dest": "${{ steps.unit_tools.outputs.root }}",
               "package_json_file": "package.json"
@@ -971,7 +971,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1016,7 +1016,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1057,7 +1057,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1093,7 +1093,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1306,7 +1306,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1511,7 +1511,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1607,7 +1607,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1651,7 +1651,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1707,7 +1707,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "dest": "${{ steps.unit_tools.outputs.root }}",
               "package_json_file": "package.json"
@@ -1767,7 +1767,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -1923,7 +1923,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -2037,7 +2037,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -2101,7 +2101,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -2146,7 +2146,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -2322,7 +2322,7 @@
           {
             "name": "Set up pnpm",
             "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -2633,7 +2633,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+            "uses": "./.github/actions/setup-pnpm"
           },
           {
             "name": "Set up Node",
@@ -2786,7 +2786,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./control/.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "source/package.json"
             }

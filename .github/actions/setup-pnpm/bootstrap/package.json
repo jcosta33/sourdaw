@@ -1,0 +1,7 @@
+{
+    "name": "sourdaw-pnpm-bootstrap",
+    "private": true,
+    "dependencies": {
+        "pnpm": "11.26.0"
+    }
+}

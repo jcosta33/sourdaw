@@ -1,0 +1,190 @@
+import { spawnSync } from 'node:child_process';
+import {
+    appendFileSync,
+    copyFileSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    realpathSync,
+    writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const registry = 'https://registry.npmjs.org/';
+const bootstrapDirectory = resolve(import.meta.dirname, '../.github/actions/setup-pnpm/bootstrap');
+
+type CommandOptions = { cwd: string; env: NodeJS.ProcessEnv };
+type CommandResult = { status: number | null; stdout: string };
+export type SetupPnpmOptions = {
+    workspace: string;
+    manifest: string;
+    dest?: string;
+    env: NodeJS.ProcessEnv;
+    node: string;
+    run?: (file: string, args: string[], options: CommandOptions) => CommandResult;
+};
+
+function nativeCommand(file: string, args: string[], options: CommandOptions): CommandResult {
+    const result = spawnSync(file, args, {
+        ...options,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'inherit'],
+        maxBuffer: 16 * 1024 * 1024,
+    });
+    if (result.error) throw result.error;
+    return { status: result.status, stdout: result.stdout ?? '' };
+}
+
+function canonicalRegistry(value: string): boolean {
+    try {
+        const url = new URL(value);
+        return url.href === registry;
+    } catch {
+        return false;
+    }
+}
+
+function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
+    for (const [name, value] of Object.entries(env)) {
+        if (!value) continue;
+        const key = name.toLowerCase().replaceAll(/[_-]/g, '');
+        if (
+            (key === 'nodetlsrejectunauthorized' && value !== '1') ||
+            (key.endsWith('strictssl') && value !== 'true') ||
+            key.includes('packagemanagerregistries') ||
+            key.includes('packagemanagernetworkconfig') ||
+            key.endsWith('pmonfail') ||
+            key === 'corepackintegritykeys' ||
+            ((key === 'npmconfigregistry' || key === 'pnpmconfigregistry') && !canonicalRegistry(value))
+        ) {
+            throw new Error(`pnpm setup refuses security-changing environment variable ${name}`);
+        }
+    }
+}
+
+function targetVersion(workspace: string, manifest: string): string {
+    const file = resolve(workspace, manifest);
+    const path = relative(workspace, file);
+    if (path.startsWith('..') || isAbsolute(path)) throw new Error('pnpm manifest must belong to the workspace');
+    const data: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid pnpm manifest');
+    const declaration: unknown = Reflect.get(data, 'packageManager');
+    if (typeof declaration !== 'string' || !/^pnpm@(11\.\d+\.\d+)$/.test(declaration)) {
+        throw new Error('pnpm setup requires an exact JavaScript pnpm 11 packageManager declaration');
+    }
+    if (Reflect.get(data, 'devEngines') !== undefined) {
+        const devEngines: unknown = Reflect.get(data, 'devEngines');
+        if (devEngines !== null && typeof devEngines === 'object' && Reflect.has(devEngines, 'packageManager')) {
+            throw new Error('pnpm setup requires one packageManager declaration');
+        }
+    }
+    return declaration.slice('pnpm@'.length);
+}
+
+function prepareDestination(dest: string | undefined, env: NodeJS.ProcessEnv, workspace: string): string {
+    const candidate = resolve(dest || env.RUNNER_TEMP || tmpdir());
+    const withinWorkspace = relative(resolve(workspace), candidate);
+    if (!withinWorkspace.startsWith('..') && !isAbsolute(withinWorkspace)) {
+        throw new Error('pnpm destination must be outside the project workspace');
+    }
+    if (dest === undefined || dest === '') {
+        return realpathSync(mkdtempSync(join(env.RUNNER_TEMP ?? tmpdir(), 'sourdaw-pnpm-')));
+    }
+    if (!isAbsolute(dest) || /[\r\n]/.test(dest)) throw new Error('pnpm destination must be an absolute path');
+    let stat;
+    try {
+        stat = lstatSync(dest);
+    } catch (error) {
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+        mkdirSync(dest, { mode: 0o755 });
+        stat = lstatSync(dest);
+    }
+    if (
+        !stat.isDirectory() ||
+        stat.isSymbolicLink() ||
+        (process.getuid !== undefined && stat.uid !== process.getuid()) ||
+        (stat.mode & 0o777) !== 0o755 ||
+        readdirSync(dest).length !== 0
+    ) {
+        throw new Error('pnpm destination must be an empty owned directory with mode 0755');
+    }
+    return realpathSync(dest);
+}
+
+function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.ProcessEnv {
+    const safe = Object.fromEntries(
+        Object.entries(env).filter(([name]) => !/^(npm_|pnpm_|corepack_|node_options$|node_path$)/i.test(name))
+    );
+    const config = join(root, 'config');
+    mkdirSync(config);
+    const userConfig = join(config, 'user.npmrc');
+    const globalConfig = join(config, 'global.npmrc');
+    writeFileSync(userConfig, '');
+    writeFileSync(globalConfig, '');
+    return {
+        ...safe,
+        XDG_CONFIG_HOME: config,
+        NPM_CONFIG_USERCONFIG: userConfig,
+        NPM_CONFIG_GLOBALCONFIG: globalConfig,
+        NPM_CONFIG_CACHE: join(root, 'npm-cache'),
+        NPM_CONFIG_REGISTRY: registry,
+        NPM_CONFIG_STRICT_SSL: 'true',
+        PNPM_HOME: join(root, 'runtime'),
+    };
+}
+
+export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: string; version: string } {
+    assertSafeEnvironment(options.env);
+    const version = targetVersion(options.workspace, options.manifest);
+    const dest = prepareDestination(options.dest, options.env, options.workspace);
+    const bootstrap = join(dest, 'bootstrap');
+    mkdirSync(bootstrap);
+    // This reviewed repository lock replaces the external action's bootstrap
+    // byte pin. It authenticates the already signature-checked official release;
+    // target signature verification remains a separate runtime pnpm operation.
+    for (const file of ['package.json', 'package-lock.json']) {
+        copyFileSync(join(bootstrapDirectory, file), join(bootstrap, file));
+    }
+    const env = isolatedEnvironment(options.env, dest);
+    const run = options.run ?? nativeCommand;
+    const command = (file: string, args: string[], label: string): string => {
+        const result = run(file, args, { cwd: bootstrap, env });
+        if (result.status !== 0)
+            throw new Error(`pnpm setup ${label} failed (status ${result.status ?? 'unavailable'})`);
+        return result.stdout.trim();
+    };
+    command('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], 'bootstrap installation');
+    command(
+        options.node,
+        [join(bootstrap, 'node_modules/pnpm/bin/pnpm.mjs'), '--store-dir', join(dest, 'store'), 'self-update', version],
+        'verified target installation'
+    );
+    const home = join(dest, 'runtime');
+    const bin = join(home, 'bin');
+    const target = join(bin, process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm');
+    const actual = command(target, ['--version'], 'target version check');
+    if (actual !== version) throw new Error(`pnpm setup target reports ${actual}, expected ${version}`);
+    const { GITHUB_PATH, GITHUB_ENV, GITHUB_OUTPUT } = options.env;
+    if (!GITHUB_PATH || !GITHUB_ENV || !GITHUB_OUTPUT) throw new Error('pnpm setup requires GitHub output files');
+    appendFileSync(GITHUB_PATH, `${bin}\n`);
+    appendFileSync(GITHUB_ENV, `PNPM_HOME=${home}\n`);
+    appendFileSync(GITHUB_OUTPUT, `dest=${dest}\nbin_dest=${bin}\n`);
+    return { bin, dest, version };
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+    const workspace = process.env.GITHUB_WORKSPACE;
+    if (!workspace) throw new Error('pnpm setup requires GITHUB_WORKSPACE');
+    const result = setupPnpm({
+        workspace,
+        manifest: process.env.SOURDAW_PNPM_MANIFEST ?? 'package.json',
+        dest: process.env.SOURDAW_PNPM_DEST,
+        env: process.env,
+        node: process.execPath,
+    });
+    console.log(`Verified JavaScript pnpm ${result.version}`);
+}
