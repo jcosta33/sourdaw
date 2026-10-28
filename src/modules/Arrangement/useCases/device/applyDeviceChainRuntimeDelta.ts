@@ -134,6 +134,29 @@ export function applyDeviceChainRuntimeDelta({
         !compiledAfterIsCurrent &&
         hasLaterSameTrackDeviceChainMutation(batchContext, after);
     const authoritativeTrack = compiledAfterIsCurrent || mayComposeGroupedFinal ? currentTrack : undefined;
+
+    return applyProjectedDeviceChainRuntimeDelta({
+        before,
+        after,
+        operation,
+        authoritativeTrack,
+        mayComposeGroupedFinal,
+    });
+}
+
+type ProjectedDeviceChainRuntimeDeltaInput = Pick<ApplyDeviceChainRuntimeDeltaInput, 'before' | 'after' | 'operation'> &
+    Readonly<{
+        authoritativeTrack: Track | undefined;
+        mayComposeGroupedFinal: boolean;
+    }>;
+
+function applyProjectedDeviceChainRuntimeDelta({
+    before,
+    after,
+    operation,
+    authoritativeTrack,
+    mayComposeGroupedFinal,
+}: ProjectedDeviceChainRuntimeDeltaInput): ApplyDeviceChainRuntimeDeltaResult {
     const compiledBefore = runtimeGraphTopology.createWebAudioNode(before);
     const authoritativeAfter = runtimeGraphTopology.createWebAudioNode(authoritativeTrack ?? after);
     const projectedChainUnchanged =
