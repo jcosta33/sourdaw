@@ -1,0 +1,25 @@
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_3168504f6ce387::t_667086156ab165 180,188
+src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts
+  s_3168504f6ce387::t_667086156ab165 358
+src/modules/AiRuntime/useCases/__tests__/planningInterpretation.spec.ts
+  s_3168504f6ce387::t_667086156ab165 56
+src/modules/AiRuntime/useCases/projectAnswerRespondToolSchema.ts
+  s_3168504f6ce387::t_667086156ab165 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3229ee4979e73505bd9b5e177d2051ee582a16cc",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
