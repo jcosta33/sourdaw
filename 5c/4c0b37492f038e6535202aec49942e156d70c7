@@ -1,0 +1,22 @@
+src/components/daw/visualizers/DistortionCurve.tsx
+  h_beb54bf43b47b7 8,19-22,25-58,75-78,81,84-90,211,219-234,236,243-274,278-279,282-287,290-292,296-297,299-303,317-318
+src/components/daw/visualizers/__tests__/DistortionCurve.spec.tsx
+  h_beb54bf43b47b7 1-2,6-33,35-178
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx
+  h_beb54bf43b47b7 10,30-53,56-60,67-76
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/DistortionLayout.spec.tsx
+  h_beb54bf43b47b7 25-40,106-113,117-127,129-130,132-135
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/distortionCurveGestureUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-965
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c4c0b37492f038e6535202aec49942e156d70c7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
