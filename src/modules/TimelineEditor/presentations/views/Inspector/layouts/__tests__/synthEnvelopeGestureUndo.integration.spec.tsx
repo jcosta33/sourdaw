@@ -1034,7 +1034,7 @@ describe('actual registered Synth envelope through real project and history', ()
                 await act(() => undo());
                 await act(() => redo());
                 expect(recording.mock.calls).toEqual(expected);
-                stopAutomationRecording(3);
+                act(() => stopAutomationRecording(3));
                 expect(automationStore.value?.lanes[0]?.points.map(({ beat: at, value }) => [at, value])).toEqual(
                     mode === 'read' ? [] : samples.map((value, index) => [index + 1, expect.closeTo(value, 12)])
                 );
