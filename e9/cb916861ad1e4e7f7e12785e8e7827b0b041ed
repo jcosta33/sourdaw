@@ -1,0 +1,47 @@
+src/modules/Project/repositories/nativeFileDialog/openViaNative.ts
+  s_59e31a5c6f3e31::t_f551e63955dbb8 5,7,18
+src/modules/Project/repositories/nativeFileDialog/__tests__/openViaNative.spec.ts
+  s_59e31a5c6f3e31::t_b2d250d670b717 63-64,68,71-85
+.agents/skills/review-stances/security-and-platform.md
+  s_59e31a5c6f3e31::t_b2d250d670b717 59-76
+src/modules/Project/useCases/agentAssetFileBoundary.ts
+  s_59e31a5c6f3e31::t_f551e63955dbb8 18,30,54,61,93-99
+src/modules/Project/repositories/nativeFileDialog/__tests__/helpers.spec.ts
+  s_59e31a5c6f3e31::t_b2d250d670b717 6,16-17,19,22-24,43,45,47,50-52
+  s_59e31a5c6f3e31::t_5dbe1a750001f0 44,46,54-55
+src/modules/Project/repositories/nativeFileDialog/__tests__/agentAssetFileBoundary.browserFallback.integration.spec.ts
+  s_59e31a5c6f3e31::t_7d01d92e0f3a9d 1-2,4,6-161
+  s_59e31a5c6f3e31::t_8e87e69874f142 3,5
+src/modules/Project/repositories/nativeFileDialog/__tests__/browserFallback.integration.spec.ts
+  s_59e31a5c6f3e31::t_7d01d92e0f3a9d 268-270,277
+  s_59e31a5c6f3e31::t_b442621a887938 34-43,49,51-52,54-62,65,74-78,102-267,271-275
+  s_59e31a5c6f3e31::t_6764edb72ab49c 1-33,53,63-64,66-73,79-101,276,278
+  s_59e31a5c6f3e31::t_322546eda13c40 44-48,50
+src/modules/Project/repositories/nativeFileDialog/pickFiles.ts
+  s_59e31a5c6f3e31::t_f551e63955dbb8 4,24-25,28-30,33,40
+  s_59e31a5c6f3e31::t_b2d250d670b717 18
+src/modules/Project/repositories/nativeFileDialog/helpers.ts
+  s_59e31a5c6f3e31::t_7d01d92e0f3a9d 15,63-71
+  s_59e31a5c6f3e31::t_b2d250d670b717 11
+  s_59e31a5c6f3e31::t_f551e63955dbb8 12,14,25,50,52,54
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  s_59e31a5c6f3e31::t_b2d250d670b717 1,19-25,54-62
+  s_59e31a5c6f3e31::t_b442621a887938 79,81-85,87-89
+  s_59e31a5c6f3e31::t_a1f511019107bb 63-64,90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9cb916861ad1e4e7f7e12785e8e7827b0b041ed",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
