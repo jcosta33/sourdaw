@@ -90,7 +90,7 @@ The replacement normally targets the old pull request's base exactly. A child
 left behind after its stack parent was natively superseded may cross that base
 only with `--superseded-parent <pr>`. The named parent must be closed without
 merge, own the child's old base branch from the child's base repository, target
-the replacement's base, and carry exactly one canonical author-Bot supersession
+the replacement's base (or prove the completed nested binding below), and carry exactly one canonical author-Bot supersession
 receipt and one total finding lineage marker naming the merged replacement. The
 child's live `baseRef` must name that parent branch in the child's repository and
 target the parent's final head commit. The parent's final head must also belong
@@ -132,8 +132,9 @@ all the closed child's markers as durable evidence.
 
 When the parent was superseded by a different merged PR, name it explicitly with
 `--parent-replacement <pr>` after `--superseded-parent`. All four PR identities
-must differ. Both replacements and the old parent must target `main`; the old
-parent's canonical receipt and total live finding lineage must name its own
+must differ. Both replacements must target `main`; the old parent must target `main`
+or supply the completed nested-binding proof described below. The old parent's
+canonical receipt and total live finding lineage must name its own
 replacement, while the child keeps its independent lineage to the child
 replacement. The parent's replacement merge commit must be an ancestor of the
 child replacement's source head. The read-only comparison binds the repository,
@@ -154,6 +155,27 @@ stack. Ancestry proves dependency containment, not semantic replacement or produ
 acceptance; those remain independently reviewed caller obligations. Historical
 same-base supersessions and the existing same-replacement parent path do not
 require this additional merge-commit proof.
+
+A closed parent that itself crossed a superseded parent's base can authorize the next child only
+through its existing canonical completion. The command revalidates that parent's receipt, total
+live finding lineage and exact authorized parent-binding marker recursively, to the original
+one-level proof. The parent's recorded replacement must equal the selected parent successor:
+`--parent-replacement` when supplied, otherwise the child's replacement. Every distinct replacement
+merge must belong to the corresponding child replacement's immutable source history. Sharing one
+replacement across adjacent levels does not require its squash merge to occur in its own source.
+All original parent identities, historical provenance, cached-base ancestry and present live refs
+remain required; only an already completed node can use its stored binding after ref/ledger cleanup.
+
+New nested completions write `sourdaw-supersession-parent-v2`, binding the immediate parent's
+completion comment node ID, decimal database ID and exact canonical v1/v2 payload. The v1 schema,
+bytes and existing one-level admission remain unchanged; replay never upgrades a completion.
+Strict parsing refuses unknown or duplicate fields, contradictory repeated identities, cycles,
+more than 32 binding levels or a marker exceeding 60,000 UTF-8 bytes. Before any child write, before
+close, after close and on CLOSED replay, the full ancestor proof and all original finding sets are
+revalidated. Final dependent marker/thread reads are followed by independent core witnesses for
+every unique parent and replacement, then the child's final core. Ancestors are read-only. The
+existing child owner, marker convergence, verified pre-close compensation and post-close ambiguity
+retention apply to v2 unchanged. These are finite client observations, not a remote atomic snapshot.
 
 `branch:prune` defaults to dry run and deletes only branches whose every PR is
 merged or closed. It retains a branch that is the last remote holder of a
