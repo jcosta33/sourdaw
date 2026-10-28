@@ -1,4 +1,8 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
+import { chromium, devices, expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
 import {
@@ -263,18 +267,107 @@ async function startBlankProject(page: Page): Promise<void> {
     await expect(page.getByRole('grid', { name: /Track list/i })).toHaveCount(0);
 }
 
-async function useOriginPrivateProjectFolder(page: Page): Promise<void> {
-    await page.addInitScript(() => {
-        Object.defineProperty(window, 'showDirectoryPicker', {
-            configurable: true,
-            value: () => navigator.storage.getDirectory(),
-        });
+async function withExternalProjectPage(
+    testInfo: TestInfo,
+    baseURL: string | undefined,
+    run: (page: Page, folderPath: string) => Promise<void>
+): Promise<void> {
+    if (typeof baseURL !== 'string') {
+        throw new TypeError('The offline smoke project has no application origin');
+    }
+    const folderPath = testInfo.outputPath('external-project-root');
+    await mkdir(folderPath, { recursive: true });
+    const context = await chromium.launchPersistentContext(testInfo.outputPath('external-browser-profile'), {
+        ...devices['Desktop Chrome'],
+        baseURL,
+        headless: true,
+        serviceWorkers: 'block',
+        // Grants the dropped external directory in this disposable profile;
+        // this does not exercise Chrome's normal folder-permission prompt.
+        args: ['--enable-experimental-web-platform-features'],
     });
+    try {
+        const page = context.pages()[0] ?? (await context.newPage());
+        await run(page, folderPath);
+    } finally {
+        await context.close();
+    }
 }
 
-async function expectCommittedProjectFolder(page: Page): Promise<void> {
+async function useExternalProjectFolder(page: Page, folderPath: string): Promise<void> {
+    await page.evaluate(() => {
+        const target = document.createElement('div');
+        target.id = 'external-project-folder-drop';
+        target.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:white';
+        target.dataset.status = 'waiting';
+        let selectedHandle: FileSystemHandle | null = null;
+        Object.defineProperty(window, 'showDirectoryPicker', {
+            configurable: true,
+            value: () => {
+                if (!selectedHandle || selectedHandle.kind !== 'directory') {
+                    throw new Error('No external project folder was selected');
+                }
+                return Promise.resolve(selectedHandle);
+            },
+        });
+        target.addEventListener('dragover', (event) => event.preventDefault());
+        target.addEventListener('drop', (event) => {
+            event.preventDefault();
+            const canGetFileSystemHandle = (
+                candidate: DataTransferItem
+            ): candidate is DataTransferItem & { getAsFileSystemHandle(): Promise<FileSystemHandle | null> } =>
+                'getAsFileSystemHandle' in candidate && typeof candidate.getAsFileSystemHandle === 'function';
+            const item = Array.from(event.dataTransfer?.items ?? []).find((candidate) => candidate.kind === 'file');
+            if (!item || !canGetFileSystemHandle(item)) {
+                target.dataset.status = 'missing-dropped-directory';
+                return;
+            }
+            void (async () => {
+                try {
+                    const handle = await item.getAsFileSystemHandle();
+                    if (!handle || handle.kind !== 'directory') {
+                        target.dataset.status = 'not-a-directory';
+                        return;
+                    }
+                    target.dataset.readPermission = await handle.queryPermission({ mode: 'read' });
+                    target.dataset.writePermission = await handle.queryPermission({ mode: 'readwrite' });
+                    selectedHandle = handle;
+                    target.dataset.status = 'captured';
+                } catch {
+                    target.dataset.status = 'directory-handle-rejected';
+                }
+            })();
+        });
+        document.body.append(target);
+    });
+    const cdp = await page.context().newCDPSession(page);
+    const data = { items: [], files: [folderPath], dragOperationsMask: 1 };
+    for (const type of ['dragEnter', 'dragOver', 'drop'] as const) {
+        await cdp.send('Input.dispatchDragEvent', { type, x: 80, y: 80, data });
+    }
+    await page.waitForFunction(() => {
+        const status = document.getElementById('external-project-folder-drop')?.dataset.status;
+        return status !== undefined && status !== 'waiting';
+    });
+    const status = await page.locator('#external-project-folder-drop').getAttribute('data-status');
+    expect(status).toBe('captured');
+    expect(await page.locator('#external-project-folder-drop').getAttribute('data-read-permission')).toBe('granted');
+    const permission = await page.evaluate(async () => {
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        const read = await handle.queryPermission({ mode: 'read' });
+        const beforeWrite = await handle.queryPermission({ mode: 'readwrite' });
+        const requestedWrite =
+            beforeWrite === 'granted' ? beforeWrite : await handle.requestPermission({ mode: 'readwrite' });
+        const afterWrite = await handle.queryPermission({ mode: 'readwrite' });
+        return { read, requestedWrite, afterWrite };
+    });
+    expect(permission).toEqual({ read: 'granted', requestedWrite: 'granted', afterWrite: 'granted' });
+    await page.locator('#external-project-folder-drop').evaluate((target) => target.remove());
+}
+
+async function expectCommittedProjectFolder(page: Page, folderPath: string): Promise<void> {
     const committed = await page.evaluate(async () => {
-        const root = await navigator.storage.getDirectory();
+        const root = await window.showDirectoryPicker({ mode: 'readwrite' });
         const projects = await root.getDirectoryHandle('projects');
         const folders: FileSystemDirectoryHandle[] = [];
         for await (const handle of projects.values()) {
@@ -290,7 +383,8 @@ async function expectCommittedProjectFolder(page: Page): Promise<void> {
             throw new Error('The saved project folder is unavailable');
         }
         const manifestFile = await (await folder.getFileHandle('manifest.json')).getFile();
-        const manifest: unknown = JSON.parse(await manifestFile.text());
+        const manifestText = await manifestFile.text();
+        const manifest: unknown = JSON.parse(manifestText);
         if (
             typeof manifest !== 'object' ||
             manifest === null ||
@@ -299,16 +393,31 @@ async function expectCommittedProjectFolder(page: Page): Promise<void> {
             manifest.document === null ||
             !('path' in manifest.document) ||
             typeof manifest.document.path !== 'string' ||
+            !('sha256' in manifest.document) ||
+            typeof manifest.document.sha256 !== 'string' ||
             !('format' in manifest)
         ) {
             throw new Error('The project folder has no document manifest entry');
         }
         const document = await (await folder.getFileHandle(manifest.document.path)).getFile();
-        return { projectId: folder.name, format: manifest.format, documentBytes: document.size };
+        return {
+            projectId: folder.name,
+            format: manifest.format,
+            documentBytes: document.size,
+            documentPath: manifest.document.path,
+            documentHash: manifest.document.sha256,
+            manifestText,
+        };
     });
     expect(committed.format).toBe('sourdaw-project-directory-v1');
     expect(committed.projectId).toMatch(/^[a-f0-9-]{36}$/);
     expect(committed.documentBytes).toBeGreaterThan(0);
+    expect(committed.documentPath).toMatch(/^document\.[a-f0-9]{64}\.sdaw$/);
+    const hostFolder = join(folderPath, 'projects', committed.projectId);
+    expect(await readFile(join(hostFolder, 'manifest.json'), 'utf8')).toBe(committed.manifestText);
+    const hostDocument = await readFile(join(hostFolder, committed.documentPath));
+    expect(hostDocument.byteLength).toBe(committed.documentBytes);
+    expect(`sha256:${createHash('sha256').update(hostDocument).digest('hex')}`).toBe(committed.documentHash);
 }
 
 async function clearCrdtDatabase(page: Page): Promise<void> {
@@ -364,30 +473,32 @@ test.describe('Offline project smoke', () => {
         await assertOffline();
     });
 
-    test('saves and reopens an edited project', async ({ page }) => {
-        await useOriginPrivateProjectFolder(page);
-        const assertOffline = await openNewProject(page);
-        await expect(dirtyIndicator(page)).toHaveCount(0);
+    test('saves and reopens an edited project', async ({ baseURL }, testInfo) => {
+        await withExternalProjectPage(testInfo, baseURL, async (page, folderPath) => {
+            const assertOffline = await openNewProject(page);
+            await useExternalProjectFolder(page, folderPath);
+            await expect(dirtyIndicator(page)).toHaveCount(0);
 
-        await renameProject(page, 'Smoke Persistence');
+            await renameProject(page, 'Smoke Persistence');
 
-        await addMidiTrack(page);
-        await expect(dirtyIndicator(page)).toBeVisible();
+            await addMidiTrack(page);
+            await expect(dirtyIndicator(page)).toBeVisible();
 
-        await page.keyboard.press(`${MODIFIER}+s`);
-        await expect(dirtyIndicator(page)).toHaveCount(0);
-        await expectCommittedProjectFolder(page);
-        await startBlankProject(page);
-        await assertOffline();
+            await page.keyboard.press(`${MODIFIER}+s`);
+            await expect(dirtyIndicator(page)).toHaveCount(0);
+            await expectCommittedProjectFolder(page, folderPath);
+            await startBlankProject(page);
+            await assertOffline();
 
-        const reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
-        try {
-            await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Persistence');
-            await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toBeVisible();
-            await reopened.assertOffline();
-        } finally {
-            await reopened.page.close();
-        }
+            const reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
+            try {
+                await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Persistence');
+                await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toBeVisible();
+                await reopened.assertOffline();
+            } finally {
+                await reopened.page.close();
+            }
+        });
     });
 
     test('advances the playhead during playback and restores it on stop', async ({ page }) => {
@@ -428,35 +539,37 @@ test.describe('Offline project smoke', () => {
         await assertOffline();
     });
 
-    test('undo restores durable project truth before its track edit', async ({ page }) => {
-        await useOriginPrivateProjectFolder(page);
-        const assertOffline = await openNewProject(page);
-        await renameProject(page, 'Smoke Undo Persistence');
+    test('undo restores durable project truth before its track edit', async ({ baseURL }, testInfo) => {
+        await withExternalProjectPage(testInfo, baseURL, async (page, folderPath) => {
+            const assertOffline = await openNewProject(page);
+            await useExternalProjectFolder(page, folderPath);
+            await renameProject(page, 'Smoke Undo Persistence');
 
-        await addMidiTrack(page);
-        const midiTrack = trackList(page).getByText('MIDI', { exact: true });
-        await expect(midiTrack).toBeVisible();
+            await addMidiTrack(page);
+            const midiTrack = trackList(page).getByText('MIDI', { exact: true });
+            await expect(midiTrack).toBeVisible();
 
-        const undo = page.getByRole('button', { name: 'Undo', exact: true });
-        await expect(undo).toBeEnabled();
-        await undo.click();
-        await expect(midiTrack).toHaveCount(0);
-        await expect(page.getByText('Add your first track')).toBeVisible();
+            const undo = page.getByRole('button', { name: 'Undo', exact: true });
+            await expect(undo).toBeEnabled();
+            await undo.click();
+            await expect(midiTrack).toHaveCount(0);
+            await expect(page.getByText('Add your first track')).toBeVisible();
 
-        await page.keyboard.press(`${MODIFIER}+s`);
-        await expect(dirtyIndicator(page)).toHaveCount(0);
-        await expectCommittedProjectFolder(page);
-        await startBlankProject(page);
-        await assertOffline();
+            await page.keyboard.press(`${MODIFIER}+s`);
+            await expect(dirtyIndicator(page)).toHaveCount(0);
+            await expectCommittedProjectFolder(page, folderPath);
+            await startBlankProject(page);
+            await assertOffline();
 
-        const reopened = await openSavedProjectInFreshPage(page, 'Smoke Undo Persistence');
-        try {
-            await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Undo Persistence');
-            await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toHaveCount(0);
-            await expect(reopened.page.getByText('Add your first track')).toBeVisible();
-            await reopened.assertOffline();
-        } finally {
-            await reopened.page.close();
-        }
+            const reopened = await openSavedProjectInFreshPage(page, 'Smoke Undo Persistence');
+            try {
+                await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Undo Persistence');
+                await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toHaveCount(0);
+                await expect(reopened.page.getByText('Add your first track')).toBeVisible();
+                await reopened.assertOffline();
+            } finally {
+                await reopened.page.close();
+            }
+        });
     });
 });
