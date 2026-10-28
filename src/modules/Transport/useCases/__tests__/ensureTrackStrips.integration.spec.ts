@@ -124,8 +124,8 @@ describe('project strip initialization before bus facade and send publication', 
                     if (factoryName === 'createBiquadFilter') {
                         const busId = expectedConstructionOrder[Math.floor(filterCount / 3)];
                         if (!busId) {
-                        throw new Error('Unexpected EQ construction');
-                    }
+                            throw new Error('Unexpected EQ construction');
+                        }
                         privateConstruction.push({ busId, published: audioEngine.getTrackStrip(busId) !== undefined });
                         filterCount++;
                     }
@@ -148,12 +148,12 @@ describe('project strip initialization before bus facade and send publication', 
                         },
                     });
                     const parameters: { value: number }[] = [];
-                if ('gain' in node) {
-                    parameters.push(node.gain);
-                }
-                if ('pan' in node) {
-                    parameters.push(node.pan);
-                }
+                    if ('gain' in node) {
+                        parameters.push(node.gain);
+                    }
+                    if ('pan' in node) {
+                        parameters.push(node.pan);
+                    }
                     for (const parameter of parameters) {
                         for (const method of ['setTargetAtTime', 'setValueAtTime', 'linearRampToValueAtTime']) {
                             Object.defineProperty(parameter, method, {
@@ -331,14 +331,14 @@ describe('project strip initialization before bus facade and send publication', 
                 parameters: [],
             };
             if (stale === 'runtime') {
-            audioEngine.ensureTrackStrip('unrelated');
-        }
+                audioEngine.ensureTrackStrip('unrelated');
+            }
             if (stale === 'project') {
-            createCrdtDoc('revision-change');
-        }
+                createCrdtDoc('revision-change');
+            }
             if (stale === 'topology') {
-            installTracks([{ ...bus, devices: [] }]);
-        }
+                installTracks([{ ...bus, devices: [] }]);
+            }
             expect(audioEngine.initializeTrackStripFromSnapshot(snapshot)).toMatchObject({
                 acceptance: 'rejected',
                 application: 'not-applied',

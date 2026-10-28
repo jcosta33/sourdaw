@@ -726,8 +726,8 @@ describe('projectTrackToLiveStrip', () => {
             const source = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
             const target = createTrack({ id: 'target', name: 'Target', kind: 'bus' });
             if (state === 'vca') {
-            Object.defineProperty(target, 'kind', { value: 'vca' });
-        }
+                Object.defineProperty(target, 'kind', { value: 'vca' });
+            }
             source.sends = [{ busId: target.id, level: 0.5, preFader: true }];
             const tracks = [source, target];
             if (state === 'duplicate') {
