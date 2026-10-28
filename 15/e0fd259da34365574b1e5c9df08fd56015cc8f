@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/receiptTextBudget.spec.ts
+  s_3168504f6ce387::t_34dbc33025887d 1-61
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_567a084d0540c4::t_49bd029a9e9f0b 2218-2219,2227-2230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15e0fd259da34365574b1e5c9df08fd56015cc8f",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

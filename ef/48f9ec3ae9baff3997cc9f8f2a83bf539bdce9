@@ -1,0 +1,31 @@
+playwright.config.ts
+  s_567a084d0540c4::t_73fbccbe97791d 53-56,93-96
+scripts/__tests__/e2eDevServer.spec.ts
+  s_567a084d0540c4::t_e40128533d1ca4 1,3-10,24-26,27-28,34,36,55,66,78-88,102,104,121,123,157
+  s_567a084d0540c4::t_7167ed5fb15b81 2,11-23,29-32,37,41-43,47-48,50-51,56,58-65,67-77,89-101,103,105-120,122,124-156
+  s_567a084d0540c4::t_ff6ba8ae88e126 33,35,38-40,44-46,49,52-54,57
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_567a084d0540c4::t_57997f85f2fade 173-176,197,205,215,260,263-265
+scripts/e2eDevServer.ts
+  s_567a084d0540c4::t_89f9aaad66fb1e 1-22,26-36,40,44-68
+  s_567a084d0540c4::t_daa2aaa6e1fffd 37-39
+  s_567a084d0540c4::t_f50b9d0242e98c 23-25,41-43
+.agents/skills/review-stances/e2e-server-provenance.md
+  s_567a084d0540c4::t_48347704ca5eec 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef48f9ec3ae9baff3997cc9f8f2a83bf539bdce9",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
