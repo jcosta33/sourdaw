@@ -74,6 +74,7 @@ import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
 import { projectClipReplayPrefix } from '../../../useCases/clipEditing/projectClipReplayPrefix';
 import { takeLaneSelection } from '../../../useCases/comping/takeLaneSelection';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { resolveTakeMedia } from '../../../useCases/resolveTakeMedia';
 import { hitTestClipEdge } from '../../../useCases/timelineInteractions/hitTestClipEdge';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { handleDiscardDrawnClip } from '../handleDiscardDrawnClip';
@@ -85,6 +86,7 @@ import { handleRemoveClip } from '../handleRemoveClip';
 import { handleRestoreClipMoves } from '../handleRestoreClipMoves';
 import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
 import { handleRestoreDrawnClip } from '../handleRestoreDrawnClip';
+import { isRestoreClipSessionPayload, isRestoreClipSplitSessionPayload } from '../validateClipEditSessionEntries';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const TRACK_ID = 'track-keys';
@@ -608,6 +610,111 @@ async function persistSplitRetirement(): Promise<void> {
     }
     expect(entry.inverseAction.payload.retiredTakeLanes).toEqual([{ lane, laneIndex: 0, retiredTakeIds: [take.id] }]);
     expect(takeLaneStore.value?.lanes).toEqual([]);
+}
+
+type RetirementOperation = 'remove' | 'split-undo';
+type RetirementSourceVariant = 'midi' | 'placed-audio' | 'omitted';
+
+async function persistRetiredSourceContent(
+    operation: RetirementOperation,
+    grouped: boolean,
+    variant: RetirementSourceVariant
+) {
+    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+    if (variant === 'placed-audio') {
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({
+                ...track,
+                kind: 'audio',
+                clips: track.clips.map((clip) => ({ ...clip, type: 'audio', audioBufferId: `recorded-${clip.id}` })),
+            })),
+        });
+    }
+    flushAutomergeStorageWrites();
+    stopProjectionBridge = setupProjectionBridge();
+    projectCrdtToStores();
+    const groupId = grouped ? 'issued-source-content-group' : undefined;
+    if (operation === 'split-undo') {
+        await executeAppAction(
+            { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+            { source: 'manual', groupId }
+        );
+    }
+    const clipId = operation === 'remove' ? 'clip-a' : 'clip-right';
+    const clip = clipOnTrack(TRACK_ID, clipId);
+    if (!clip) {
+        throw new Error('Expected actual retirement source clip');
+    }
+    const take = {
+        ...createTake(
+            clipId,
+            'Actual source pass',
+            clip.startBeat,
+            clip.endBeat,
+            variant === 'omitted' ? undefined : 4
+        ),
+        selected: true,
+    };
+    const sourceTake =
+        variant === 'placed-audio'
+            ? placeTakeOnClipMedia(take, {
+                  recordPointBeat: 0,
+                  mediaOriginSeconds: 0,
+                  clipMediaOriginSeconds: 0,
+                  timeline: {
+                      secondsAtBeat: (beat) => beat / 2,
+                      beatAtSeconds: (seconds) => seconds * 2,
+                      tempoAtBeat: () => 120,
+                  },
+              })
+            : take;
+    const other = createTake(clipId, 'Other captured pass', clip.startBeat, clip.endBeat);
+    const middle = (clip.startBeat + clip.endBeat) / 2;
+    const lane = {
+        ...createTakeLane(TRACK_ID),
+        takes: [sourceTake, other],
+        activeCompRegions: [
+            { startBeat: clip.startBeat, endBeat: middle, takeId: sourceTake.id },
+            { startBeat: middle, endBeat: clip.endBeat, takeId: other.id },
+        ],
+    };
+    takeLaneStore.set({ lanes: [lane] });
+    flushAutomergeStorageWrites();
+    if (operation === 'remove') {
+        await executeAppAction({ type: 'removeClip', payload: { clipId } }, { source: 'manual', groupId });
+    }
+    if (grouped) {
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-b' } }, { source: 'manual', groupId });
+    }
+    await vi.waitFor(() =>
+        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(grouped ? 2 : 1)
+    );
+    if (operation === 'split-undo') {
+        expect((await undo({ stepOverConflicts: false })).headConsumed).toBe(true);
+    }
+    const side = operation === 'remove' ? 'past' : 'future';
+    await vi.waitFor(() =>
+        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY))[side]).toHaveLength(grouped ? 2 : 1)
+    );
+    const entry = undoHistoryStore.value?.[side].find(
+        (candidate) =>
+            candidate.kind === 'action' &&
+            candidate.action.type === (operation === 'remove' ? 'removeClip' : 'splitClip')
+    );
+    if (
+        entry?.kind !== 'action' ||
+        (entry.inverseAction?.type !== 'restoreClip' && entry.inverseAction?.type !== 'restoreClipSplitState')
+    ) {
+        throw new Error('Expected real retired source-content history');
+    }
+    expect(entry.inverseAction.payload.retiredTakeLanes).toEqual([
+        { lane, laneIndex: 0, retiredTakeIds: [sourceTake.id, other.id] },
+    ]);
+    expect(entry.inverseAction.payload.retiredTakeSourceProof?.changeHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(takeLaneStore.value?.lanes).toEqual([]);
+    return { side, lane, clip: structuredClone(clip), entryId: entry.id };
 }
 
 async function persistRippleRemoval(grouped: boolean, automated = true, fractional = false): Promise<void> {
@@ -6056,6 +6163,193 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(takeLaneStore.value?.lanes).toEqual(expected);
         expect(getCrdtDoc<{ takeLanes: { lanes: unknown[] } }>('root')?.takeLanes.lanes).toEqual(expected);
         expect(takeLaneStore.value?.lanes[0]?.takes.filter((take) => take.selected)).toEqual([later]);
+    });
+
+    describe.each(['remove', 'split-undo'] as const)('retired source content: operation=%s', (operation) => {
+        describe.each([false, true])('grouped=%s', (grouped) => {
+            it.each([
+                'source offset',
+                'audio placement',
+                'take geometry',
+                'comp span',
+                'comp source',
+                'take name',
+                'selection',
+                'lane index',
+                'lane metadata',
+            ] as const)(
+                'rejects valid forged %s with genuine producer evidence and unchanged identities',
+                async (facet) => {
+                    const { side, entryId } = await persistRetiredSourceContent(
+                        operation,
+                        grouped,
+                        facet === 'audio placement' ? 'placed-audio' : 'midi'
+                    );
+                    const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+                    const entries = saved[side];
+                    if (!Array.isArray(entries)) {
+                        throw new Error('Expected actual persisted source-content entries');
+                    }
+                    const entry = entries.find((candidate) => isRecord(candidate) && candidate.id === entryId);
+                    if (!isRecord(entry)) {
+                        throw new Error('Expected source-content producer entry');
+                    }
+                    const captures: unknown[] = [];
+                    for (const key of operation === 'remove' ? ['inverseAction'] : ['inverseAction', 'redoAction']) {
+                        const action = entry[key];
+                        if (
+                            !isRecord(action) ||
+                            !isRecord(action.payload) ||
+                            !Array.isArray(action.payload.retiredTakeLanes)
+                        ) {
+                            throw new Error('Expected real retired content payload');
+                        }
+                        const capture = action.payload.retiredTakeLanes[0];
+                        if (
+                            !isRecord(capture) ||
+                            !isRecord(capture.lane) ||
+                            !Array.isArray(capture.lane.takes) ||
+                            !Array.isArray(capture.lane.activeCompRegions)
+                        ) {
+                            throw new Error('Expected exact producer lane');
+                        }
+                        const take = capture.lane.takes[0];
+                        const other = capture.lane.takes[1];
+                        const region = capture.lane.activeCompRegions[0];
+                        if (
+                            !isRecord(take) ||
+                            !isRecord(other) ||
+                            !isRecord(region) ||
+                            typeof take.startBeat !== 'number' ||
+                            typeof take.endBeat !== 'number' ||
+                            typeof region.startBeat !== 'number'
+                        ) {
+                            throw new Error('Expected actual captured take and comp region');
+                        }
+                        const identities = [
+                            capture.lane.id,
+                            capture.lane.trackId,
+                            take.id,
+                            take.clipId,
+                            other.id,
+                            other.clipId,
+                        ];
+                        const proof = structuredClone(action.payload.retiredTakeSourceProof);
+                        if (facet === 'source offset') {
+                            take.sourceOffsetBeats = 123;
+                        } else if (facet === 'audio placement') {
+                            take.passAnchorSeconds = -7;
+                            take.passDepthSeconds = 123;
+                        } else if (facet === 'take geometry') {
+                            take.startBeat += 0.25;
+                            take.endBeat -= 0.25;
+                        } else if (facet === 'comp span') {
+                            region.startBeat += 0.25;
+                        } else if (facet === 'comp source') {
+                            region.takeId = other.id;
+                        } else if (facet === 'take name') {
+                            take.name = 'Forged source pass';
+                        } else if (facet === 'selection') {
+                            take.selected = false;
+                        } else if (facet === 'lane index') {
+                            capture.laneIndex = 1;
+                        } else {
+                            capture.lane.automationLaneId = 'forged-automation-owner';
+                        }
+                        expect([
+                            capture.lane.id,
+                            capture.lane.trackId,
+                            take.id,
+                            take.clipId,
+                            other.id,
+                            other.clipId,
+                        ]).toEqual(identities);
+                        expect(action.payload.retiredTakeSourceProof).toEqual(proof);
+                        expect(
+                            operation === 'remove'
+                                ? isRestoreClipSessionPayload(action.payload)
+                                : isRestoreClipSplitSessionPayload(action.payload)
+                        ).toBe(true);
+                        captures.push(action.payload.retiredTakeLanes);
+                    }
+                    if (operation === 'split-undo') {
+                        expect(captures[0]).toEqual(captures[1]);
+                    }
+                    const raw = structuredClone(getCrdtDoc('root'));
+                    const heads = Automerge.getHeads(getCrdtDoc('root')!);
+                    const owners = ownerProjections();
+                    sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+                    reloadSavedProject();
+                    expect(getCrdtDoc('root')).toEqual(raw);
+                    expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+                    expect(ownerProjections()).toEqual(owners);
+                    expect(undoHistoryStore.value?.[side]).toEqual([]);
+                    await expectReplayRefused(operation === 'remove' ? 'undo' : 'redo');
+                }
+            );
+
+            it.each(['midi', 'placed-audio', 'omitted'] as const)(
+                'restores authentic %s content through reload and a fresh retirement',
+                async (variant) => {
+                    const { side, lane, clip } = await persistRetiredSourceContent(operation, grouped, variant);
+                    const timeline = {
+                        secondsAtBeat: (beat: number) => beat / 2,
+                        beatAtSeconds: (seconds: number) => seconds * 2,
+                        tempoAtBeat: () => 120,
+                    };
+                    const expected = lane.takes.map((take) => {
+                        const media = resolveTakeMedia(take, clip, timeline);
+                        return {
+                            earliestBeat: media.earliestBeat,
+                            sourceStartBeat: media.sourceStartBeat,
+                            offset: media.offsetAt(clip.startBeat),
+                        };
+                    });
+                    expect(Object.hasOwn(lane.takes[1]!, 'sourceOffsetBeats')).toBe(false);
+                    if (variant === 'omitted') {
+                        expect(Object.hasOwn(lane.takes[0]!, 'sourceOffsetBeats')).toBe(false);
+                    }
+                    for (let cycle = 0; cycle < 2; cycle += 1) {
+                        reloadSavedProject();
+                        expect(undoHistoryStore.value?.[side]).toHaveLength(grouped ? 2 : 1);
+                        if (operation === 'remove') {
+                            expect((await undo({ stepOverConflicts: false })).headConsumed).toBe(true);
+                        } else {
+                            await redo();
+                        }
+                        expect(takeLaneStore.value?.lanes).toEqual([lane]);
+                        expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes).toEqual([lane]);
+                        const restoredClip = clipOnTrack(TRACK_ID, clip.id);
+                        if (!restoredClip) {
+                            throw new Error('Expected real restored source clip');
+                        }
+                        expect(
+                            takeLaneStore.value?.lanes[0]?.takes.map((take) => {
+                                const media = resolveTakeMedia(take, restoredClip, timeline);
+                                return {
+                                    earliestBeat: media.earliestBeat,
+                                    sourceStartBeat: media.sourceStartBeat,
+                                    offset: media.offsetAt(restoredClip.startBeat),
+                                };
+                            })
+                        ).toEqual(expected);
+                        if (cycle === 0) {
+                            if (operation === 'remove') {
+                                await redo();
+                            } else {
+                                expect((await undo({ stepOverConflicts: false })).headConsumed).toBe(true);
+                            }
+                            await vi.waitFor(() =>
+                                expect(
+                                    parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY))[side]
+                                ).toHaveLength(grouped ? 2 : 1)
+                            );
+                            expect(takeLaneStore.value?.lanes).toEqual([]);
+                        }
+                    }
+                }
+            );
+        });
     });
 
     it.each(['remove', 'split-undo'] as const)(

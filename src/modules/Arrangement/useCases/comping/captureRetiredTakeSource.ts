@@ -20,17 +20,10 @@ import { trackStore } from '../../stores/trackStore';
 type SourceKind = 'removeClip' | 'splitClipUndo';
 
 function sourceOwners(clipIds: readonly string[], captures: readonly RetiredTakeLaneSnapshot[], undoEntryId: string) {
-    return {
-        undoEntryId,
-        clipIds: [...clipIds],
-        owners: captures.map(({ lane, retiredTakeIds }) => ({
-            laneId: lane.id,
-            trackId: lane.trackId,
-            takes: lane.takes
-                .filter((take) => retiredTakeIds?.includes(take.id))
-                .map(({ id, clipId }) => ({ id, clipId })),
-        })),
-    };
+    // Restoration consumes media, selection, comp regions and lane placement,
+    // not just identities. Match the saved JSON shape before canonical hashing.
+    const owners: unknown = JSON.parse(JSON.stringify(captures));
+    return { undoEntryId, clipIds: [...clipIds], owners };
 }
 
 export function retiredTakeSourceMatches(
