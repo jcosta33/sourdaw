@@ -1,0 +1,23 @@
+src/app/__tests__/initLevainDeviceStateProjectAccess.spec.ts
+  s_b3201877f50e8a::t_517a76457fb388 60
+  s_b3201877f50e8a::t_6238c86eb98c39 39,56
+src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts
+  s_b3201877f50e8a::t_2cd5de8cf2e8e6 683-684,686-695
+  s_b3201877f50e8a::t_517a76457fb388 767-772
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7e5c3e0054bcc1090d4249fcc74e39b13250e05",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
