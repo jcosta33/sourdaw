@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readProjectDirectory, writeProjectDirectory, type ProjectDirectoryHandle } from '../projectDirectory';
+import { projectDirectory, type ProjectDirectoryHandle } from '../projectDirectory';
 
 class MemoryDirectory implements ProjectDirectoryHandle {
     readonly files = new Map<string, Uint8Array>();
@@ -53,7 +53,9 @@ class MemoryDirectory implements ProjectDirectoryHandle {
 }
 
 async function hash(bytes: Uint8Array): Promise<string> {
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    const digest = await crypto.subtle.digest('SHA-256', copy);
     return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
@@ -64,7 +66,7 @@ async function write(
     media: ReadonlyMap<string, Blob> = new Map(),
     pcm: ReadonlyMap<string, AudioBuffer> = new Map()
 ) {
-    return writeProjectDirectory({
+    return projectDirectory.write({
         directory,
         projectId,
         document: new TextEncoder().encode(document),
@@ -97,7 +99,7 @@ describe('project directory manifest commit', () => {
         const raw = new TextEncoder().encode('original compressed media');
         const assetHash = await hash(raw);
         const manifest = await write(directory, projectId, 'first', new Map([[assetHash, new Blob([raw])]]));
-        const cold = await readProjectDirectory(directory, projectId);
+        const cold = await projectDirectory.read(directory, projectId);
         expect(cold.manifest).toEqual(manifest);
         expect(Array.from(cold.media.get(assetHash) ?? [])).toEqual(Array.from(raw));
         expect(new TextDecoder().decode(cold.document)).toBe('first');
@@ -109,7 +111,7 @@ describe('project directory manifest commit', () => {
         const first = await write(directory, projectId, 'first');
         directory.failCloseName = 'manifest.json';
         await expect(write(directory, projectId, 'second')).rejects.toThrow('Quota');
-        const cold = await readProjectDirectory(directory, projectId);
+        const cold = await projectDirectory.read(directory, projectId);
         expect(cold.manifest.generation).toBe(first.generation);
         expect(new TextDecoder().decode(cold.document)).toBe('first');
     });
@@ -127,7 +129,7 @@ describe('project directory manifest commit', () => {
         mediaDirectory.failCloseName = null;
         mediaDirectory.corruptCloseName = name;
         await expect(write(directory, projectId, 'second', media)).rejects.toThrow('failed verification');
-        const cold = await readProjectDirectory(directory, projectId);
+        const cold = await projectDirectory.read(directory, projectId);
         expect(cold.manifest.generation).toBe(first.generation);
         expect(new TextDecoder().decode(cold.document)).toBe('first');
     });
@@ -143,10 +145,10 @@ describe('project directory manifest commit', () => {
             new Map([[assetHash, new Blob([raw])]]),
             new Map([['buffer-1', makePcm()]])
         );
-        expect((await readProjectDirectory(directory, projectId)).pcm.has('buffer-1')).toBe(true);
+        expect((await projectDirectory.read(directory, projectId)).pcm.has('buffer-1')).toBe(true);
         const mediaDirectory = directory.directories.get('media');
         const name = `asset.${assetHash.slice(7)}.bin`;
         mediaDirectory?.files.set(name, new TextEncoder().encode('wrong'));
-        await expect(readProjectDirectory(directory, projectId)).rejects.toThrow('No valid project manifest');
+        await expect(projectDirectory.read(directory, projectId)).rejects.toThrow('No valid project manifest');
     });
 });

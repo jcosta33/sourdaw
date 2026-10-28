@@ -2,11 +2,17 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { prepareExternalProjectDocument } from '#/modules/CrdtDocument/useCases';
 import { bytesToBase64 } from '#/utils/base64';
 
-import { readProjectDirectory } from '../../repositories/project/projectDirectory';
-import { openProjectDirectory, type ProjectDirectoryBinding } from '../../repositories/project/projectDirectoryBinding';
+import { projectDirectory } from '../../repositories/project/projectDirectory';
+import {
+    projectDirectoryBinding,
+    type ProjectDirectoryBinding,
+} from '../../repositories/project/projectDirectoryBinding';
 
-import { collectProjectAllBufferIds, collectProjectOriginalHashes } from './helpers/collectProjectOriginalHashes';
+import { collectProjectAllBufferIds } from './helpers/collectProjectAllBufferIds';
+import { collectProjectOriginalHashes } from './helpers/collectProjectOriginalHashes';
 import { isHydratableProjectData } from './helpers/isHydratableProjectData';
+
+const { openProjectDirectory } = projectDirectoryBinding;
 
 export type PreparedProjectDirectoryRead = {
     projectId: string;
@@ -27,7 +33,7 @@ export async function prepareProjectDirectoryRead(
     shouldContinue: () => boolean
 ): Promise<PreparedProjectDirectoryRead> {
     const directory = await openProjectDirectory(binding.root, binding.projectId, false);
-    const content = await readProjectDirectory(directory, binding.projectId);
+    const content = await projectDirectory.read(directory, binding.projectId);
     if (!shouldContinue()) {
         throw new Error('Project directory read was superseded');
     }

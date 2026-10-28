@@ -24,10 +24,9 @@ import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHos
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import {
-    loadProjectDirectoryBinding,
+    projectDirectoryBinding,
     type ProjectDirectoryBinding,
 } from '../../repositories/project/projectDirectoryBinding';
-
 import { projectStore } from '../../stores/projectStore';
 import { finishProjectLoading } from '../finishProjectLoading';
 import { getDurableProjectOwnerId } from '../getDurableProjectOwnerId';
@@ -39,9 +38,11 @@ import { runProjectLoadTransaction, type ProjectLoadTransaction } from './helper
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
-import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
 import { prepareProjectDirectoryRead, type PreparedProjectDirectoryRead } from './projectDirectoryRead';
+import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
 import { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
+
+const { loadProjectDirectoryBinding } = projectDirectoryBinding;
 
 type LoadProjectInput = {
     directory?: PreparedProjectDirectoryRead;

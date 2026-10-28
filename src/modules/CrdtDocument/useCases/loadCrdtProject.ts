@@ -4,9 +4,8 @@ import { automergeRepository } from '../repositories/automergeRepository';
 import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
 import { sanitizePersistedActionHistoryBundle } from '../repositories/sanitizePersistedActionHistoryBundle';
-import { branchStore } from '../stores/branchStore';
 
-import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
+import { restoreActiveBranchSlot } from './restoreActiveBranchSlot';
 import { runCrdtPersistenceLoad } from './runCrdtPersistenceLoad';
 import { whenBranchStateSettled } from './whenBranchStateSettled';
 
@@ -84,23 +83,4 @@ export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Pr
             },
         };
     });
-}
-
-export function restoreActiveBranchSlot(): void {
-    const state = branchStore.value;
-    if (!state) {
-        return;
-    }
-
-    const active = state.branches.find((branch) => branch.branchId === state.activeBranchId);
-    if (!active || active.rootDocId === DOC_PREFIX_ROOT) {
-        return;
-    }
-
-    const branchDoc = automergeRepository.getDoc(active.rootDocId);
-    if (!branchDoc) {
-        return;
-    }
-
-    automergeRepository.replaceDoc(DOC_PREFIX_ROOT, branchDoc);
 }

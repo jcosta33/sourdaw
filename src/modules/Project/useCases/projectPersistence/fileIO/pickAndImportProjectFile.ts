@@ -3,16 +3,31 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
+import { pickFiles } from '../../fileDialog';
+import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
 import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
-import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
-import { pickFiles } from '../../fileDialog';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { pendingProjectReplacements } from '../pendingProjectReplacements';
 import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
-import { readProjectOriginalMediaArchive } from './projectOriginalMediaArchive';
+import { readProjectOriginalMediaArchive } from './readProjectOriginalMediaArchive';
+
+function requireMatchingArchiveProjectId(
+    data: unknown,
+    archive: NonNullable<ReturnType<typeof readProjectOriginalMediaArchive>>
+): string {
+    if (!isHydratableProjectData(data) || !data.meta.projectId) {
+        throw new Error('Project archive has no stable identity');
+    }
+    const expected = new Set(collectProjectOriginalHashes(data));
+    const described = new Set([...archive.media.keys(), ...archive.unavailable]);
+    if (expected.size !== described.size || [...expected].some((hash) => !described.has(hash))) {
+        throw new Error('Project archive originals differ from its clip references');
+    }
+    return data.meta.projectId;
+}
 
 export async function pickAndImportProjectFile(): Promise<boolean> {
     const paths = await pickFiles({
@@ -57,16 +72,9 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         const archive = readProjectOriginalMediaArchive(data);
         const normalized = normalizeLegacyProjectData(data);
         if (archive) {
-            if (!isHydratableProjectData(normalized) || !normalized.meta.projectId) {
-                throw new Error('Project archive has no stable identity');
-            }
-            const expected = new Set(collectProjectOriginalHashes(normalized));
-            const described = new Set([...archive.media.keys(), ...archive.unavailable]);
-            if (expected.size !== described.size || [...expected].some((hash) => !described.has(hash))) {
-                throw new Error('Project archive originals differ from its clip references');
-            }
+            const projectId = requireMatchingArchiveProjectId(normalized, archive);
             const { restoreProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-            await restoreProjectOriginalMedia(normalized.meta.projectId, archive.media, isStillChosen);
+            await restoreProjectOriginalMedia(projectId, archive.media, isStillChosen);
             if (!isStillChosen()) {
                 return false;
             }

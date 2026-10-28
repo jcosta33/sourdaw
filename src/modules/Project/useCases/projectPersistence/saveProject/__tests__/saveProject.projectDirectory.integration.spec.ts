@@ -62,35 +62,37 @@ const folder = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../../repositories/project/projectDirectoryBinding', () => ({
-    beginProjectDirectorySelection: () => Promise.resolve(folder.root),
-    cachedProjectDirectoryRoot: (projectId: string) => folder.bound.get(projectId)?.root ?? null,
-    loadProjectDirectoryRoot: async (projectId: string) => folder.bound.get(projectId)?.root ?? null,
-    loadProjectDirectoryBinding: async (key: string) => folder.bound.get(key) ?? null,
-    bindProjectDirectoryRoot: async (projectId: string, root: MemoryDirectory, recentKey: string) => {
-        if (folder.bindFail) {
-            throw new Error('Folder bookmark storage failed');
-        }
-        const binding = { projectId, recentKey, root };
-        folder.bound.set(projectId, binding);
-        folder.bound.set(`recent:${recentKey}`, binding);
-        folder.bound.set('last', binding);
-    },
-    clearLastProjectDirectoryBinding: async () => {
-        folder.bound.delete('last');
-    },
-    openProjectDirectory: async (root: MemoryDirectory, projectId: string, create: boolean) => {
-        if (!folder.permission) {
-            throw new Error('Project folder permission is unavailable');
-        }
-        if (root.name === projectId) {
-            return root;
-        }
-        const projects = await root.getDirectoryHandle('projects', { create });
-        return projects.getDirectoryHandle(projectId, { create });
+    projectDirectoryBinding: {
+        beginProjectDirectorySelection: () => Promise.resolve(folder.root),
+        cachedProjectDirectoryRoot: (projectId: string) => folder.bound.get(projectId)?.root ?? null,
+        loadProjectDirectoryRoot: async (projectId: string) => folder.bound.get(projectId)?.root ?? null,
+        loadProjectDirectoryBinding: async (key: string) => folder.bound.get(key) ?? null,
+        bindProjectDirectoryRoot: async (projectId: string, root: MemoryDirectory, recentKey: string) => {
+            if (folder.bindFail) {
+                throw new Error('Folder bookmark storage failed');
+            }
+            const binding = { projectId, recentKey, root };
+            folder.bound.set(projectId, binding);
+            folder.bound.set(`recent:${recentKey}`, binding);
+            folder.bound.set('last', binding);
+        },
+        clearLastProjectDirectoryBinding: async () => {
+            folder.bound.delete('last');
+        },
+        openProjectDirectory: async (root: MemoryDirectory, projectId: string, create: boolean) => {
+            if (!folder.permission) {
+                throw new Error('Project folder permission is unavailable');
+            }
+            if (root.name === projectId) {
+                return root;
+            }
+            const projects = await root.getDirectoryHandle('projects', { create });
+            return projects.getDirectoryHandle(projectId, { create });
+        },
     },
 }));
 
-function makePcm(samples: Float32Array): AudioBuffer {
+function makePcm(samples: Float32Array<ArrayBuffer>): AudioBuffer {
     return {
         duration: samples.length / 48_000,
         length: samples.length,
@@ -237,9 +239,9 @@ describe('project directory save and cold Recent open', () => {
         if (!projectId || !folder.root || !clip?.assetHash || !clip.audioBufferId) {
             throw new Error('Expected a saved media-bearing project');
         }
-        const { readProjectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
         const directory = await (await folder.root.getDirectoryHandle('projects')).getDirectoryHandle(projectId);
-        const committed = await readProjectDirectory(directory, projectId);
+        const committed = await projectDirectory.read(directory, projectId);
         expect(committed.media.has(clip.assetHash)).toBe(true);
         expect(committed.pcm.has(clip.audioBufferId)).toBe(true);
         expect(committed.document.byteLength).toBeGreaterThan(0);
@@ -276,7 +278,8 @@ describe('project directory save and cold Recent open', () => {
             }),
         });
         await project.exportProjectFile();
-        if (!archiveCapture.value) {
+        const archiveBlob = archiveCapture.value;
+        if (!archiveBlob) {
             throw new Error('Expected an archive to be exported');
         }
         const archiveText = await new Promise<string>((resolve, reject) => {
@@ -289,9 +292,9 @@ describe('project directory save and cold Recent open', () => {
                 resolve(reader.result);
             };
             reader.onerror = () => reject(reader.error);
-            reader.readAsText(archiveCapture.value);
+            reader.readAsText(archiveBlob);
         });
-        const { readProjectOriginalMediaArchive } = await import('../../fileIO/projectOriginalMediaArchive');
+        const { readProjectOriginalMediaArchive } = await import('../../fileIO/readProjectOriginalMediaArchive');
         const archived = readProjectOriginalMediaArchive(JSON.parse(archiveText));
         expect(Array.from(archived?.media.get(clip.assetHash) ?? [])).toEqual(Array.from(originalBytes));
 

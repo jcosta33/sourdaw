@@ -37,7 +37,7 @@ function isDirectoryHandle(value: unknown): value is FileSystemDirectoryHandle {
 }
 
 /** The binding is private browser state, never part of the shared project document. */
-export async function loadProjectDirectoryRoot(projectId: string): Promise<FileSystemDirectoryHandle | null> {
+async function loadProjectDirectoryRoot(projectId: string): Promise<FileSystemDirectoryHandle | null> {
     if (invalidatedProjectIds.has(projectId)) {
         return null;
     }
@@ -69,7 +69,7 @@ export async function loadProjectDirectoryRoot(projectId: string): Promise<FileS
     }
 }
 
-export async function loadProjectDirectoryBinding(key: string): Promise<ProjectDirectoryBinding | null> {
+async function loadProjectDirectoryBinding(key: string): Promise<ProjectDirectoryBinding | null> {
     if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
         return null;
     }
@@ -105,7 +105,7 @@ export async function loadProjectDirectoryBinding(key: string): Promise<ProjectD
     }
 }
 
-export async function clearLastProjectDirectoryBinding(projectId?: string): Promise<void> {
+async function clearLastProjectDirectoryBinding(projectId?: string): Promise<void> {
     if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
         return;
     }
@@ -130,11 +130,11 @@ export async function clearLastProjectDirectoryBinding(projectId?: string): Prom
     }
 }
 
-export function cachedProjectDirectoryRoot(projectId: string): FileSystemDirectoryHandle | null {
+function cachedProjectDirectoryRoot(projectId: string): FileSystemDirectoryHandle | null {
     return invalidatedProjectIds.has(projectId) ? null : (cachedRoots.get(projectId) ?? null);
 }
 
-export async function bindProjectDirectoryRoot(
+async function bindProjectDirectoryRoot(
     projectId: string,
     root: FileSystemDirectoryHandle,
     recentKey: string
@@ -166,14 +166,14 @@ export async function bindProjectDirectoryRoot(
 }
 
 /** Call during a user gesture, before Save's first await. */
-export function beginProjectDirectorySelection(): Promise<FileSystemDirectoryHandle> {
+function beginProjectDirectorySelection(): Promise<FileSystemDirectoryHandle> {
     if (!('showDirectoryPicker' in window)) {
         throw new Error('Project folder selection is unavailable');
     }
     return window.showDirectoryPicker({ mode: 'readwrite' });
 }
 
-export async function openProjectDirectory(
+async function openProjectDirectory(
     root: FileSystemDirectoryHandle,
     projectId: string,
     create: boolean
@@ -187,3 +187,13 @@ export async function openProjectDirectory(
     const projects = await root.getDirectoryHandle('projects', { create });
     return projects.getDirectoryHandle(projectId, { create });
 }
+
+export const projectDirectoryBinding = {
+    loadProjectDirectoryRoot,
+    loadProjectDirectoryBinding,
+    clearLastProjectDirectoryBinding,
+    cachedProjectDirectoryRoot,
+    bindProjectDirectoryRoot,
+    beginProjectDirectorySelection,
+    openProjectDirectory,
+};

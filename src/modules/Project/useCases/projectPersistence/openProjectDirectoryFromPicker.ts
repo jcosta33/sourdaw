@@ -2,19 +2,18 @@ import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { isCanonicalProjectId } from '../../models/ProjectData';
-import {
-    beginProjectDirectorySelection,
-    bindProjectDirectoryRoot,
-} from '../../repositories/project/projectDirectoryBinding';
+import { projectDirectoryBinding } from '../../repositories/project/projectDirectoryBinding';
 import { projectStore } from '../../stores/projectStore';
 import { addToRecentProjects } from '../recentProjects/addToRecentProjects';
 
 import { getProjectSnapshotKey } from './getProjectSnapshotKey';
+import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { loadProject } from './loadProject';
 import { pendingProjectReplacements } from './pendingProjectReplacements';
 import { prepareProjectDirectoryRead } from './projectDirectoryRead';
 import { saveProjectBeforeReplacement } from './saveProject/saveProjectBeforeReplacement';
-import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
+
+const { beginProjectDirectorySelection, bindProjectDirectoryRoot } = projectDirectoryBinding;
 
 /** Open a saved project folder through the same validated CRDT authority path as Recent and boot. */
 export async function openProjectDirectoryFromPicker(): Promise<boolean> {

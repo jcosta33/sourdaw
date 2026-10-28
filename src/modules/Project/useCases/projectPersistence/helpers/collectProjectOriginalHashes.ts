@@ -1,6 +1,5 @@
-import type { ProjectClip } from '../../../models/ProjectData';
-
 import type { HydratableProjectData, HydratableProjectTrack } from './isHydratableProjectData';
+import type { ProjectClip } from '../../../models/ProjectData';
 
 function addTrackHashes(tracks: readonly HydratableProjectTrack[], hashes: Set<string>): void {
     const addClip = (clip: ProjectClip): void => {
@@ -28,58 +27,4 @@ export function collectProjectOriginalHashes(data: HydratableProjectData): strin
         addTrackHashes(arrangement.tracks?.tracks ?? [], hashes);
     }
     return [...hashes];
-}
-
-function addTrackBufferIds(tracks: readonly HydratableProjectTrack[], ids: Set<string>): void {
-    for (const track of tracks) {
-        const frozenId = track.freezeState?.frozenBufferId ?? track.frozenBufferId;
-        if (frozenId) {
-            ids.add(frozenId);
-        }
-        for (const clip of [
-            ...track.clips,
-            ...(track.alternatives ?? []).flatMap((alternative) => alternative.clips),
-        ]) {
-            const bufferId = clip.bufferId ?? clip.audioBufferId;
-            if (bufferId) {
-                ids.add(bufferId);
-            }
-        }
-    }
-}
-
-export function collectProjectAllBufferIds(data: HydratableProjectData): string[] {
-    const ids = new Set<string>();
-    addTrackBufferIds(data.arrangement.tracks, ids);
-    for (const arrangement of data.arrangements ?? []) {
-        addTrackBufferIds(arrangement.tracks?.tracks ?? [], ids);
-    }
-    return [...ids];
-}
-
-export function collectProjectFreezeOnlyBufferIds(data: HydratableProjectData): string[] {
-    const frozen = new Set<string>();
-    const ordinary = new Set<string>();
-    const visit = (tracks: readonly HydratableProjectTrack[]): void => {
-        for (const track of tracks) {
-            const frozenId = track.freezeState?.frozenBufferId ?? track.frozenBufferId;
-            if (frozenId) {
-                frozen.add(frozenId);
-            }
-            for (const clip of [
-                ...track.clips,
-                ...(track.alternatives ?? []).flatMap((alternative) => alternative.clips),
-            ]) {
-                const id = clip.bufferId ?? clip.audioBufferId;
-                if (id) {
-                    ordinary.add(id);
-                }
-            }
-        }
-    };
-    visit(data.arrangement.tracks);
-    for (const arrangement of data.arrangements ?? []) {
-        visit(arrangement.tracks?.tracks ?? []);
-    }
-    return Array.from(frozen).filter((id) => !ordinary.has(id));
 }

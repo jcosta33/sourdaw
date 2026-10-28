@@ -92,6 +92,96 @@ function isStoredFile(value: unknown): value is StoredFile {
     );
 }
 
+function parseMedia(values: unknown[]): ProjectMediaFile[] {
+    const media: ProjectMediaFile[] = [];
+    const seen = new Set<string>();
+    for (const value of values) {
+        if (!isStoredFile(value) || !('assetHash' in value) || !isSha256(value.assetHash)) {
+            throw new Error('Project manifest names invalid media');
+        }
+        const { assetHash, path, sha256, byteLength } = value;
+        if (
+            sha256 !== assetHash ||
+            path !== `media/${fileNameForHash('asset', assetHash, 'bin')}` ||
+            seen.has(assetHash)
+        ) {
+            throw new Error('Project manifest names invalid media');
+        }
+        seen.add(assetHash);
+        media.push({ assetHash, path, sha256, byteLength });
+    }
+    return media;
+}
+
+function parseUnavailableOriginals(values: unknown[], media: readonly ProjectMediaFile[]): string[] {
+    const unavailable: string[] = [];
+    const owned = new Set(media.map((entry) => entry.assetHash));
+    for (const hash of values) {
+        if (!isSha256(hash) || owned.has(hash) || unavailable.includes(hash)) {
+            throw new Error('Project manifest names invalid unavailable original');
+        }
+        unavailable.push(hash);
+    }
+    return unavailable;
+}
+
+function isPcmMetadata(value: unknown): value is Record<string, unknown> & {
+    bufferId: string;
+    sampleRate: number;
+    channels: unknown[];
+} {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const entry = value as Record<string, unknown>;
+    return (
+        typeof entry.bufferId === 'string' &&
+        entry.bufferId.length > 0 &&
+        typeof entry.sampleRate === 'number' &&
+        Number.isFinite(entry.sampleRate) &&
+        entry.sampleRate > 0 &&
+        Array.isArray(entry.channels) &&
+        entry.channels.length > 0 &&
+        entry.channels.length <= 32 &&
+        (entry.freezeProjectId === undefined ||
+            (typeof entry.freezeProjectId === 'number' &&
+                Number.isSafeInteger(entry.freezeProjectId) &&
+                entry.freezeProjectId > 0))
+    );
+}
+
+function parsePcm(values: unknown[]): ProjectPcmBuffer[] {
+    const pcm: ProjectPcmBuffer[] = [];
+    const seen = new Set<string>();
+    for (const value of values) {
+        if (!isPcmMetadata(value) || seen.has(value.bufferId)) {
+            throw new Error('Project manifest names invalid PCM');
+        }
+        const channels: StoredFile[] = [];
+        for (const channel of value.channels) {
+            if (
+                !isStoredFile(channel) ||
+                channel.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0 ||
+                channel.path !== `pcm/${fileNameForHash('channel', channel.sha256, 'f32le')}`
+            ) {
+                throw new Error('Project manifest names invalid PCM');
+            }
+            channels.push(channel);
+        }
+        seen.add(value.bufferId);
+        const parsed: ProjectPcmBuffer = {
+            bufferId: value.bufferId,
+            sampleRate: value.sampleRate,
+            channels,
+        };
+        if (typeof value.freezeProjectId === 'number') {
+            parsed.freezeProjectId = value.freezeProjectId;
+        }
+        pcm.push(parsed);
+    }
+    return pcm;
+}
+
 function parseManifest(value: unknown, projectId: string): ProjectDirectoryManifest {
     if (typeof value !== 'object' || value === null) {
         throw new Error('Project manifest is not an object');
@@ -118,77 +208,9 @@ function parseManifest(value: unknown, projectId: string): ProjectDirectoryManif
     ) {
         throw new Error('Project manifest names an invalid document');
     }
-    const media: ProjectMediaFile[] = [];
-    const seen = new Set<string>();
-    for (const value of manifest.media) {
-        if (typeof value !== 'object' || value === null || !isStoredFile(value)) {
-            throw new Error('Project manifest names invalid media');
-        }
-        const file = value as unknown as Record<string, unknown>;
-        if (
-            !isSha256(file.assetHash) ||
-            file.sha256 !== file.assetHash ||
-            file.path !== `media/${fileNameForHash('asset', file.assetHash, 'bin')}` ||
-            seen.has(file.assetHash)
-        ) {
-            throw new Error('Project manifest names invalid media');
-        }
-        seen.add(file.assetHash);
-        media.push(value as ProjectMediaFile);
-    }
-    const unavailableOriginals: string[] = [];
-    for (const hash of manifest.unavailableOriginals) {
-        if (!isSha256(hash) || seen.has(hash) || unavailableOriginals.includes(hash)) {
-            throw new Error('Project manifest names invalid unavailable original');
-        }
-        unavailableOriginals.push(hash);
-    }
-    const pcm: ProjectPcmBuffer[] = [];
-    const seenPcm = new Set<string>();
-    for (const value of manifest.pcm) {
-        if (typeof value !== 'object' || value === null) {
-            throw new Error('Project manifest names invalid PCM');
-        }
-        const entry = value as Record<string, unknown>;
-        if (
-            typeof entry.bufferId !== 'string' ||
-            entry.bufferId.length === 0 ||
-            seenPcm.has(entry.bufferId) ||
-            typeof entry.sampleRate !== 'number' ||
-            !Number.isFinite(entry.sampleRate) ||
-            entry.sampleRate <= 0 ||
-            !Array.isArray(entry.channels) ||
-            entry.channels.length === 0 ||
-            entry.channels.length > 32 ||
-            (entry.freezeProjectId !== undefined &&
-                (typeof entry.freezeProjectId !== 'number' ||
-                    !Number.isSafeInteger(entry.freezeProjectId) ||
-                    entry.freezeProjectId <= 0))
-        ) {
-            throw new Error('Project manifest names invalid PCM');
-        }
-        const channels: StoredFile[] = [];
-        for (const channel of entry.channels) {
-            if (
-                !isStoredFile(channel) ||
-                channel.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0 ||
-                channel.path !== `pcm/${fileNameForHash('channel', channel.sha256, 'f32le')}`
-            ) {
-                throw new Error('Project manifest names invalid PCM');
-            }
-            channels.push(channel);
-        }
-        seenPcm.add(entry.bufferId);
-        const parsed: ProjectPcmBuffer = {
-            bufferId: entry.bufferId,
-            sampleRate: entry.sampleRate,
-            channels,
-        };
-        if (typeof entry.freezeProjectId === 'number') {
-            parsed.freezeProjectId = entry.freezeProjectId;
-        }
-        pcm.push(parsed);
-    }
+    const media = parseMedia(manifest.media);
+    const unavailableOriginals = parseUnavailableOriginals(manifest.unavailableOriginals, media);
+    const pcm = parsePcm(manifest.pcm);
     return {
         format: FORMAT,
         projectId,
@@ -276,8 +298,56 @@ async function writeContentFile(
     }
 }
 
+async function writeMediaFiles(
+    directory: ProjectDirectoryHandle,
+    media: ReadonlyMap<string, Blob>,
+    isCurrent: () => boolean
+): Promise<ProjectMediaFile[]> {
+    const mediaDirectory = await directory.getDirectoryHandle('media', { create: true });
+    const entries: ProjectMediaFile[] = [];
+    for (const [assetHash, blob] of media) {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if ((await hashBytes(bytes)) !== assetHash) {
+            throw new Error(`Project original media does not match its asset hash: ${assetHash}`);
+        }
+        const name = fileNameForHash('asset', assetHash, 'bin');
+        await writeContentFile(mediaDirectory, name, bytes, isCurrent);
+        entries.push({ assetHash, path: `media/${name}`, sha256: assetHash, byteLength: bytes.byteLength });
+    }
+    return entries;
+}
+
+async function writePcmFiles(
+    directory: ProjectDirectoryHandle,
+    pcm: ReadonlyMap<string, AudioBuffer>,
+    freezeProjectIdByBufferId: ReadonlyMap<string, number> | undefined,
+    isCurrent: () => boolean
+): Promise<ProjectPcmBuffer[]> {
+    const pcmDirectory = await directory.getDirectoryHandle('pcm', { create: true });
+    const entries: ProjectPcmBuffer[] = [];
+    for (const [bufferId, buffer] of pcm) {
+        const channels: StoredFile[] = [];
+        for (let index = 0; index < buffer.numberOfChannels; index++) {
+            const samples = buffer.getChannelData(index);
+            const bytes = new Uint8Array(samples.byteLength);
+            bytes.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
+            const hash = await hashBytes(bytes);
+            const name = fileNameForHash('channel', hash, 'f32le');
+            await writeContentFile(pcmDirectory, name, bytes, isCurrent);
+            channels.push({ path: `pcm/${name}`, sha256: hash, byteLength: bytes.byteLength });
+        }
+        entries.push({
+            bufferId,
+            sampleRate: buffer.sampleRate,
+            channels,
+            freezeProjectId: freezeProjectIdByBufferId?.get(bufferId),
+        });
+    }
+    return entries;
+}
+
 /** Read and verify the committed generation, falling back to the previous valid manifest. */
-export async function readProjectDirectory(
+async function readProjectDirectory(
     directory: ProjectDirectoryHandle,
     projectId: string
 ): Promise<ProjectDirectoryContent> {
@@ -321,7 +391,7 @@ export async function readProjectDirectory(
 }
 
 /** Write immutable content first and replace the small manifest only after every byte is verified. */
-export async function writeProjectDirectory({
+async function writeProjectDirectory({
     directory,
     projectId,
     document,
@@ -349,43 +419,8 @@ export async function writeProjectDirectory({
     await writeContentFile(directory, documentEntry.path, document, isCurrent);
     await writeContentFile(directory, snapshotEntry.path, snapshotBytes, isCurrent);
 
-    const mediaDirectory = await directory.getDirectoryHandle('media', { create: true });
-    const mediaEntries: ProjectMediaFile[] = [];
-    for (const [assetHash, blob] of media) {
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        if ((await hashBytes(bytes)) !== assetHash) {
-            throw new Error(`Project original media does not match its asset hash: ${assetHash}`);
-        }
-        const name = fileNameForHash('asset', assetHash, 'bin');
-        await writeContentFile(mediaDirectory, name, bytes, isCurrent);
-        mediaEntries.push({
-            assetHash,
-            path: `media/${name}`,
-            sha256: assetHash,
-            byteLength: bytes.byteLength,
-        });
-    }
-
-    const pcmDirectory = await directory.getDirectoryHandle('pcm', { create: true });
-    const pcmEntries: ProjectPcmBuffer[] = [];
-    for (const [bufferId, buffer] of pcm) {
-        const channels: StoredFile[] = [];
-        for (let index = 0; index < buffer.numberOfChannels; index++) {
-            const samples = buffer.getChannelData(index);
-            const bytes = new Uint8Array(samples.byteLength);
-            bytes.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
-            const hash = await hashBytes(bytes);
-            const name = fileNameForHash('channel', hash, 'f32le');
-            await writeContentFile(pcmDirectory, name, bytes, isCurrent);
-            channels.push({ path: `pcm/${name}`, sha256: hash, byteLength: bytes.byteLength });
-        }
-        pcmEntries.push({
-            bufferId,
-            sampleRate: buffer.sampleRate,
-            channels,
-            freezeProjectId: freezeProjectIdByBufferId?.get(bufferId),
-        });
-    }
+    const mediaEntries = await writeMediaFiles(directory, media, isCurrent);
+    const pcmEntries = await writePcmFiles(directory, pcm, freezeProjectIdByBufferId, isCurrent);
 
     let previousManifest: Uint8Array | null = null;
     try {
@@ -430,3 +465,5 @@ export async function writeProjectDirectory({
     }
     return manifest;
 }
+
+export const projectDirectory = { read: readProjectDirectory, write: writeProjectDirectory };

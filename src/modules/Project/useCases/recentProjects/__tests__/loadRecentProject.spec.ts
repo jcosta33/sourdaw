@@ -264,8 +264,12 @@ describe('loadRecentProject', () => {
         );
 
         const load = loadRecentProject('discarded-project', { shouldProceed: () => authorityCurrent });
+        await vi.waitFor(() => expect(readNamedProjectJson).toHaveBeenCalledWith('discarded-project'));
         authorityCurrent = false;
-        resolveRead?.(validProject);
+        if (!resolveRead) {
+            throw new Error('Recent project JSON read did not start');
+        }
+        resolveRead(validProject);
 
         await expect(load).resolves.toBe('aborted');
         expect(resetCrdtProject).not.toHaveBeenCalled();

@@ -19,8 +19,8 @@ import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';

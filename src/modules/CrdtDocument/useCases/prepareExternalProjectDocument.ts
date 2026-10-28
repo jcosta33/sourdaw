@@ -1,12 +1,13 @@
 import { load } from '@automerge/automerge';
 
+import { resetActionReplayAuthority } from '#/modules/Command/useCases';
+
 import { automergeRepository } from '../repositories/automergeRepository';
 import { loadPersistenceSnapshotFromIdb } from '../repositories/crdtPersistence/loadPersistenceSnapshotFromIdb';
 import { EMPTY_PERSISTENCE_AUTHORITY } from '../repositories/crdtPersistence/persistenceAuthorityModel';
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
-import { resetActionReplayAuthority } from '#/modules/Command/useCases';
-import { restoreActiveBranchSlot } from './loadCrdtProject';
+import { restoreActiveBranchSlot } from './restoreActiveBranchSlot';
 import { runCrdtPersistenceLoad } from './runCrdtPersistenceLoad';
 import { decodeSdawFile } from './sdawFileFormat/decodeSdawFile';
 import { whenBranchStateSettled } from './whenBranchStateSettled';

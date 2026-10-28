@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { downloadProjectFile } from '../../../repositories/project/downloadProjectFile';
@@ -7,7 +8,6 @@ import { captureExternalPluginStates } from '../saveProject/captureExternalPlugi
 
 import { buildProjectData } from './buildProjectData';
 import { buildProjectOriginalMediaArchive } from './projectOriginalMediaArchive';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 export async function exportProjectFile(): Promise<void> {
     // Capture live native plugin state into project truth first, so an export that

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    collectProjectAllBufferIds,
-    collectProjectFreezeOnlyBufferIds,
-    collectProjectOriginalHashes,
-} from '../collectProjectOriginalHashes';
+import { collectProjectAllBufferIds } from '../collectProjectAllBufferIds';
+import { collectProjectFreezeOnlyBufferIds } from '../collectProjectFreezeOnlyBufferIds';
+import { collectProjectOriginalHashes } from '../collectProjectOriginalHashes';
 
 import type { ProjectClip } from '../../../../models/ProjectData';
 import type { HydratableProjectData } from '../isHydratableProjectData';

@@ -1,11 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { projectDirectoryBinding } from '../../../repositories/project/projectDirectoryBinding';
 import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
-import { clearLastProjectDirectoryBinding } from '../../../repositories/project/projectDirectoryBinding';
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { replaceProjectData } from '../helpers/replaceProjectData';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+
+const { clearLastProjectDirectoryBinding } = projectDirectoryBinding;
 
 type ApplyImportedProjectDataInput = {
     data: unknown;

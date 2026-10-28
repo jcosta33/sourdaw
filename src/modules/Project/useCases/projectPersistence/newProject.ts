@@ -301,9 +301,9 @@ async function activateNewProject(input: ActivateNewProjectInput): Promise<boole
     if (!committed) {
         return false;
     }
-    const { clearLastProjectDirectoryBinding } = await import('../../repositories/project/projectDirectoryBinding');
+    const { projectDirectoryBinding } = await import('../../repositories/project/projectDirectoryBinding');
     try {
-        await clearLastProjectDirectoryBinding(projectStore.value?.projectId);
+        await projectDirectoryBinding.clearLastProjectDirectoryBinding(projectStore.value?.projectId);
     } catch (error) {
         logger.warn('Previous project folder binding could not be cleared:', error);
         notifyUser('New project opened, but this browser could not update its startup folder.', 'warning');
