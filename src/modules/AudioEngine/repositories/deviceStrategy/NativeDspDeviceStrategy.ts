@@ -1,6 +1,8 @@
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
 
 import { type NoteExpressionControls } from '../../engine/noteExpression';
+import { createOfflineGrinderSetupError } from '../../errors/OfflineGrinderSetupError';
+import { isRuntimeDeviceControlId, type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
@@ -125,7 +127,22 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
 
 export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Device): Promise<NativeDspDeviceStrategy> {
     const factory = findReleasedNativeDspDeviceFactory(device.type);
-    const result = factory ? await factory.create(ctx) : null;
+    // Offline controls are local to this port and generation, as in Bacteria's
+    // direct offline API. Bind the captured device instead of reading live state.
+    let controlTarget: RuntimeDeviceControlTarget | undefined;
+    if (factory?.type === 'grinder') {
+        controlTarget = {
+            trackId: 'offline-grinder-track',
+            deviceId: device.id,
+            deviceType: factory.type,
+            parameterIds: Object.entries(device.parameterValues)
+                // One unsupported saved key would make the processor reject the
+                // entire target, including controls the protocol can replay.
+                .filter(([name, value]) => isRuntimeDeviceControlId(name) && Number.isFinite(value))
+                .map(([name]) => name),
+        };
+    }
+    const result = factory ? await factory.create(ctx, controlTarget) : null;
 
     if (!result) {
         throw new Error(`Failed to create Native DSP device: ${device.type}`);
@@ -140,6 +157,18 @@ export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Dev
             continue;
         }
         strategy.setParam(key, val);
+    }
+    if (result.completeOfflineSetup) {
+        try {
+            await result.completeOfflineSetup();
+        } catch (error) {
+            try {
+                strategy.destroy();
+            } catch {
+                // Teardown must not replace the startup failure that refused this render.
+            }
+            throw createOfflineGrinderSetupError(error);
+        }
     }
 
     // `parameterValues` is only the numeric half of a device's state: the setup an

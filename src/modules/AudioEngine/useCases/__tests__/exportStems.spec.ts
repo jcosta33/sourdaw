@@ -1188,36 +1188,39 @@ describe('exportStems — option parsing, validation & control flow', () => {
             vi.unstubAllGlobals();
         });
 
-        it('refuses the complete stem set when one stem omits an audible Faust device', async () => {
-            offlineRenderMocks.resolveRenderContext.mockReturnValue(
-                createRenderContext([stemTrack('keys'), stemTrack('broken'), stemTrack('bass')])
-            );
-            primeStemPool('broken');
-            const construct = offlineRenderMocks.createOfflineTrackStrip.getMockImplementation()!;
-            const destroy = vi.fn();
-            const failure = createAppError('Export', 'Track "broken" could not render "Tape Delay"', {
-                failureKind: 'faust-device',
-            });
-            offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
-                async (ctx: unknown, track: { id: string }) => {
-                    if (track.id === 'broken') {
-                        throw failure;
+        it.each(['faust-device', 'offline-grinder-setup'] as const)(
+            'refuses the complete stem set for %s',
+            async (failureKind) => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    createRenderContext([stemTrack('keys'), stemTrack('broken'), stemTrack('bass')])
+                );
+                primeStemPool('broken');
+                const construct = offlineRenderMocks.createOfflineTrackStrip.getMockImplementation()!;
+                const destroy = vi.fn();
+                const failure = createAppError('Export', 'Track "broken" could not render "Tape Delay"', {
+                    failureKind,
+                });
+                offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+                    async (ctx: unknown, track: { id: string }) => {
+                        if (track.id === 'broken') {
+                            throw failure;
+                        }
+                        const strip = await construct(ctx, track);
+                        return {
+                            ...strip,
+                            deviceEntries: [{ deviceId: track.id, deviceType: 'faust-ok', strategy: { destroy } }],
+                        };
                     }
-                    const strip = await construct(ctx, track);
-                    return {
-                        ...strip,
-                        deviceEntries: [{ deviceId: track.id, deviceType: 'faust-ok', strategy: { destroy } }],
-                    };
+                );
+                try {
+                    await expect(exportStems(4)).rejects.toBe(failure);
+                    expect(destroy).toHaveBeenCalledTimes(2);
+                    expect(isExportActive()).toBe(false);
+                } finally {
+                    vi.unstubAllGlobals();
                 }
-            );
-            try {
-                await expect(exportStems(4)).rejects.toBe(failure);
-                expect(destroy).toHaveBeenCalledTimes(2);
-                expect(isExportActive()).toBe(false);
-            } finally {
-                vi.unstubAllGlobals();
             }
-        });
+        );
 
         // Delivering an empty set silently would repeat the defect this branch
         // exists to stop: a dialog reporting success over a file that contains

@@ -1523,6 +1523,12 @@ on every inconclusive exit; only fresh complete proof may resolve it. Reverting 
 or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
 or add inspection diagnostics to the warning-success allowlist.
 
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
 ## Escape: sanitizer tests did not prove project-file admission (PR #4987)
 
 PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
