@@ -194,13 +194,20 @@ function projectSplitRestore(
     if (replacement.clipAutomationLanes !== undefined) {
         lanes = [...state.lanes.filter((lane) => lane.clipId !== rightClipId), ...replacement.clipAutomationLanes];
     }
-    const tracks =
-        state.tracks?.map((track) => {
+    let tracks: ShiftedOwnerState['tracks'] = null;
+    if (
+        state.tracks &&
+        trackClips.every((owner): owner is LocatedClip & { clip: ClipStateSnapshot } =>
+            isExactClipSnapshot(owner.clip, owner.clip.id, replacement.trackId)
+        )
+    ) {
+        tracks = state.tracks.map((track) => {
             if (track.id !== replacement.trackId) {
                 return track;
             }
             return { ...track, clips: trackClips.map((owner) => capturedClip(owner.clip)) };
-        }) ?? null;
+        });
+    }
     return { ...state, clips: otherClips, lanes, tracks };
 }
 
