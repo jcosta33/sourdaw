@@ -23,13 +23,16 @@ import {
     executeAppActionBatch,
     executeUserAppAction,
     productionBriefAdmissionPort,
+    reconcileSessionUndoForProject,
     registerProductionCommandHandlers,
+    stampSessionUndoWitness,
     undo,
     redo,
 } from '#/modules/Command/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
+    captureDurableDocumentWitness,
     getCrdtDoc,
     agentProjectInspectionPort,
     projectCrdtToStores,
@@ -39,6 +42,7 @@ import {
     mutateCrdtDoc,
     resetCrdtProjectAuthority,
     replaceCrdtDocInLineage,
+    replaceCrdtDoc,
     setupProjectionBridge,
     subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
@@ -206,18 +210,21 @@ function prepareAutomationMove(): AutomationLane[] {
     return structuredClone(automationStore.value!.lanes);
 }
 
-/** The production hydration path: every registered descriptor's forward contract plus the internal-replay contracts. */
-function hydrateProductionContracts(): void {
+/** Current-document registration; cold boot explicitly defers the same contracts until project authentication. */
+function hydrateProductionContracts(deferSessionRestore = false): void {
     clearHandlerRegistry();
-    registerProductionCommandHandlers([
-        getArrangementHandlers(),
-        getAudioRenderingHandlers(),
-        getAutomationHandlers(),
-        getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
-        getMidiNoteTransformHandlers(),
-        getTransportHandlers(),
-        getYeastHandlers(),
-    ]);
+    registerProductionCommandHandlers(
+        [
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+            getYeastHandlers(),
+        ],
+        { deferSessionRestore }
+    );
 }
 
 function ownerProjections() {
@@ -740,6 +747,173 @@ async function persistSplitRemoveGroup() {
  * validation both ran.
  */
 describe('slice-three clip actions / session-undo mirror round trips', () => {
+    it.each(['drawClip', 'addClip', 'duplicateClipAt'] as const)(
+        'cold boot preserves shipped %s mirrors including a captured take retirement',
+        async (type) => {
+            const projectId = 'cold-boot-creation-project';
+            reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+            const clip = {
+                id: 'cold-created',
+                trackId: TRACK_ID,
+                startBeat: 12,
+                endBeat: 16,
+                name: 'Cold created',
+                type: 'midi' as const,
+            };
+            const action: AppAction =
+                type === 'duplicateClipAt'
+                    ? {
+                          type,
+                          payload: {
+                              clipId: 'clip-a',
+                              targetClipId: 'cold-created',
+                              destinationTrackId: TRACK_ID,
+                              startBeat: 12,
+                          },
+                      }
+                    : type === 'drawClip'
+                      ? { type, payload: { ...clip, ripple: false } }
+                      : { type, payload: clip };
+            await executeAppAction(action, { source: 'manual' });
+            for (const retireTake of [false, true]) {
+                if (retireTake) {
+                    const take = createTake('cold-created', 'Recorded after creation', 12, 16);
+                    takeLaneStore.set({
+                        lanes: [
+                            {
+                                ...createTakeLane(TRACK_ID),
+                                takes: [take],
+                                activeCompRegions: [{ startBeat: 12, endBeat: 16, takeId: take.id }],
+                            },
+                        ],
+                    });
+                    flushAutomergeStorageWrites();
+                    expect((await undo()).headConsumed).toBe(true);
+                }
+                trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+                flushAutomergeStorageWrites();
+                stampSessionUndoWitness();
+                const current = getCrdtDoc('root');
+                if (!current) {
+                    throw new Error('Expected real created clip project');
+                }
+                const saved = Automerge.save(current);
+                const serialized = sessionStorage.getItem(UNDO_SESSION_KEY);
+                const history = structuredClone(undoHistoryStore.value);
+                const side = retireTake ? 'future' : 'past';
+                expect(parsePersistedUndoState(serialized)[side]).toHaveLength(1);
+                const expected = ownerProjections();
+                // Re-registering an installed project is the current-document path.
+                // A fresh boot instead captures the same wire before root installation.
+                hydrateProductionContracts();
+                removeCrdtDoc('root');
+                hydrateProductionContracts(true);
+                await new Promise<void>((resolve) => queueMicrotask(resolve));
+                expect(undoHistoryStore.value).toMatchObject({ past: [], future: [] });
+                expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(serialized);
+                replaceCrdtDoc({ id: 'root', doc: Automerge.load(saved) });
+                projectCrdtToStores({ resetProjections: true });
+                reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+                expect(undoHistoryStore.value).toEqual(history);
+                expect(ownerProjections()).toEqual(expected);
+                if (retireTake) {
+                    await redo();
+                    expect(takeLaneStore.value?.lanes[0]?.takes[0]?.clipId).toBe('cold-created');
+                    expect((await undo()).headConsumed).toBe(true);
+                } else {
+                    expect((await undo()).headConsumed).toBe(true);
+                    await redo();
+                }
+                expect(ownerProjections()).toEqual(expected);
+            }
+        }
+    );
+
+    it.each(['remove', 'moved-remove', 'split-undo'] as const)(
+        'cold boot retains real %s source proof until the saved root is authenticated',
+        async (operation) => {
+            const projectId = 'cold-boot-source-project';
+            reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+            if (operation !== 'split-undo') {
+                seedSplitTakeLane();
+                if (operation === 'moved-remove') {
+                    trackStore.set({
+                        ...trackStore.value!,
+                        tracks: [
+                            ...trackStore.value!.tracks,
+                            TrackDummy.create({ id: 'moved-destination', kind: 'midi', clips: [] }),
+                        ],
+                    });
+                    flushAutomergeStorageWrites();
+                    await executeAppAction(
+                        { type: 'moveClip', payload: { clipId: 'clip-a', trackId: 'moved-destination', startBeat: 0 } },
+                        { source: 'manual', skipUndo: true }
+                    );
+                    expect(takeLaneStore.value?.lanes[0]?.trackId).toBe(TRACK_ID);
+                }
+                await executeAppAction(
+                    { type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } },
+                    { source: 'manual' }
+                );
+            } else {
+                await persistCompedSplit();
+                const lanes = takeLaneStore.value;
+                if (!lanes) {
+                    throw new Error('Expected actual split recording lane');
+                }
+                takeLaneStore.set({
+                    lanes: lanes.lanes.map((lane) =>
+                        lane.id === 'comp-lane'
+                            ? { ...lane, takes: [...lane.takes, createTake('clip-right', 'Late right pass', 14, 16)] }
+                            : lane
+                    ),
+                });
+                flushAutomergeStorageWrites();
+                expect((await undo()).headConsumed).toBe(true);
+            }
+            // Selection is session UI state; start with the same neutral state a reload projects.
+            trackStore.set({ ...trackStore.value!, selectedTrackId: null });
+            flushAutomergeStorageWrites();
+            stampSessionUndoWitness();
+            const current = getCrdtDoc('root');
+            if (!current) {
+                throw new Error('Expected actual saved source root');
+            }
+            const saved = Automerge.save(current);
+            const witness = captureDurableDocumentWitness();
+            const serialized = sessionStorage.getItem(UNDO_SESSION_KEY);
+            expect(serialized).not.toBeNull();
+            expect(serialized).toContain('retiredTakeSourceProof');
+            const expected = ownerProjections();
+            const side = operation === 'split-undo' ? 'future' : 'past';
+            const history = structuredClone(undoHistoryStore.value);
+            expect(history?.[side]).toHaveLength(1);
+
+            // Production registers handlers before the asynchronous project load.
+            removeCrdtDoc('root');
+            hydrateProductionContracts(true);
+            await new Promise<void>((resolve) => queueMicrotask(resolve));
+            expect(getCrdtDoc('root')).toBeUndefined();
+            expect(undoHistoryStore.value).toMatchObject({ past: [], future: [] });
+            expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(serialized);
+
+            replaceCrdtDoc({ id: 'root', doc: Automerge.load(saved) });
+            projectCrdtToStores({ resetProjections: true });
+            expect(captureDurableDocumentWitness()).toBe(witness);
+            reconcileSessionUndoForProject({ projectId, captureWitness: captureDurableDocumentWitness });
+            expect(undoHistoryStore.value?.[side]).toEqual(history?.[side]);
+            expect(ownerProjections()).toEqual(expected);
+            if (operation !== 'split-undo') {
+                expect((await undo()).headConsumed).toBe(true);
+                await redo();
+            } else {
+                await redo();
+                expect((await undo()).headConsumed).toBe(true);
+            }
+            expect(ownerProjections()).toEqual(expected);
+        }
+    );
+
     beforeEach(() => {
         Container.clear();
         setNotificationEventBus(createEventBus<NotificationEvents>());
@@ -3247,7 +3421,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         );
         const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
         if (!Array.isArray(saved.past)) {
-            throw new Error('Expected both actual retirement events');
+            throw new TypeError('Expected both actual retirement events');
         }
         const first = saved.past[0];
         const second = saved.past[1];

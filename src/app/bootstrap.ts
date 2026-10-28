@@ -656,7 +656,9 @@ configureAudioDeviceRuntimeSink({
 });
 
 assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());
-registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }));
+registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }), {
+    deferSessionRestore: true,
+});
 registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);
 
 initToasterSubscribers({ eventBus, logger });

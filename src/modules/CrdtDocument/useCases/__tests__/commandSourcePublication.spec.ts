@@ -41,7 +41,9 @@ describe('command source publication references', () => {
             value.set({ count: source.before + 1 });
             return install;
         });
-        if (transaction.status !== 'returned') throw transaction.error;
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
         transaction.commit();
         transaction.value();
         return { source, reference };

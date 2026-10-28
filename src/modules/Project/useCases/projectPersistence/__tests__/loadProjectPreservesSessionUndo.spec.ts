@@ -285,4 +285,32 @@ describe('loadProject preserves session undo history for the same project (#3331
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toEqual([]);
     });
+
+    it('does not project or reconcile a disposed attempt and lets a later attempt restore', async () => {
+        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID, HYDRATED_WITNESS);
+        const loading = Promise.withResolvers<boolean>();
+        mocks.loadCrdtProject.mockReturnValueOnce(loading.promise);
+        let current = true;
+        const first = loadProject({ shouldContinue: () => current });
+        await vi.waitFor(() => expect(mocks.loadCrdtProject).toHaveBeenCalledOnce());
+        current = false;
+        loading.resolve(true);
+        await expect(first).resolves.toBe(false);
+        expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
+        restoreProjectVia(() => {
+            const project = projectStore.value ?? defaultProjectStoreState;
+            projectStore.set({ ...project, projectId: RESTORED_PROJECT_ID });
+        });
+        await expect(loadProject({ shouldContinue: () => true })).resolves.toBe(true);
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
+    });
+
+    it('leaves saved history untouched when the initialization attempt is already disposed', async () => {
+        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID, HYDRATED_WITNESS);
+        await expect(loadProject({ shouldContinue: () => false })).resolves.toBe(false);
+        expect(mocks.loadCrdtProject).not.toHaveBeenCalled();
+        expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
+    });
 });
