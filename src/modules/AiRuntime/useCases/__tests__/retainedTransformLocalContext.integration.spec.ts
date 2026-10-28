@@ -291,14 +291,18 @@ function receiptsFromLocalMessage(message: string): unknown {
         const keys = Object.keys(value);
         if (keys.length === 1 && keys[0] === '$s') {
             const found = strings[index(value.$s, strings.length)];
-            if (typeof found !== 'string') throw new Error('Invalid receipt string');
+            if (typeof found !== 'string') {
+                throw new Error('Invalid receipt string');
+            }
             return found;
         }
         if (keys.length === 1 && keys[0] === '$v') {
             return decode(shared[index(value.$v, shared.length)]);
         }
         if (keys.length === 1 && keys[0] === '$r') {
-            if (!Array.isArray(value.$r)) throw new Error('Invalid receipt row');
+            if (!Array.isArray(value.$r)) {
+                throw new Error('Invalid receipt row');
+            }
             const [rowIndex, ...values]: unknown[] = value.$r;
             const layout: unknown = layouts[index(rowIndex, layouts.length)];
             if (
@@ -311,11 +315,14 @@ function receiptsFromLocalMessage(message: string): unknown {
             return Object.fromEntries(layout.map((key, i) => [key, decode(values[i])]));
         }
         if (keys.length === 1 && keys[0] === '$l') {
-            if (!Array.isArray(value.$l)) throw new Error('Invalid literal receipt object');
+            if (!Array.isArray(value.$l)) {
+                throw new Error('Invalid literal receipt object');
+            }
             return Object.fromEntries(
                 value.$l.map((pair: unknown) => {
-                    if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string')
+                    if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string') {
                         throw new Error('Invalid literal receipt pair');
+                    }
                     return [pair[0], decode(pair[1])];
                 })
             );
