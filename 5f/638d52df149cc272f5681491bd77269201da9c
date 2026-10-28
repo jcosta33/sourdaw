@@ -1,0 +1,23 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_567a084d0540c4::t_9164a0a2f662c6 1,1134-1149,1281-1311
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_567a084d0540c4::t_576804d4e3b97a 1,5-20,152-182
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_567a084d0540c4::t_d0259265789a88 1,1134-1149,1281-1311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f638d52df149cc272f5681491bd77269201da9c",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
