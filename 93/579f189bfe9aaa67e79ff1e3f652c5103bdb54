@@ -1,0 +1,14 @@
+src/modules/AiRuntime/useCases/__tests__/metricGoalAdmission.spec.ts
+  h_beb54bf43b47b7 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93579f189bfe9aaa67e79ff1e3f652c5103bdb54",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
