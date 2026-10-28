@@ -199,7 +199,10 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
                 cpuSystemMs: cpu.system / 1000,
             });
         };
-        onTestFailed(() => console.error('Toaster persistence phases:', JSON.stringify(stages)));
+        onTestFailed(() => {
+            mark('failure');
+            console.error('Toaster persistence phases:', JSON.stringify(stages));
+        });
         mark('callback started');
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
         mark('render pending');
