@@ -1,0 +1,26 @@
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_b3201877f50e8a::t_005e5c088a7f75 1973-1974
+  s_b3201877f50e8a::t_3510fe9ea04612 1960-1972,2285-2290,2340-2341
+  s_b3201877f50e8a::t_f5ca768cd66f7f 2,4,36,2260-2284,2291-2339,2342-2368
+  s_b3201877f50e8a::t_b3926f40ea0858 1805,1808-1810,1821,1824,1826,1844,1853,2124-2125,2176-2177
+  s_b3201877f50e8a::t_5434041234e155 2369
+scripts/laneStackForkMarkers.ts
+  s_b3201877f50e8a::t_8b8122cca5449b 1,457-476,506-511
+  s_b3201877f50e8a::t_391d516133ae89 512-513
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1e0942a2b120f6f4a1ec18115d6f378958fb11f",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
