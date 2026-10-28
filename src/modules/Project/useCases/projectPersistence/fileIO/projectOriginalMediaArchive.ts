@@ -33,6 +33,9 @@ export async function buildProjectOriginalMediaArchive(
         }
         assets.push({ hash, bytes: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) });
     }
+    if (!shouldContinue()) {
+        throw new Error('Project changed during original media export');
+    }
     return {
         ...data,
         originalMedia: { format: 'sourdaw-original-media-v1', assets, unavailable: originals.unavailable },

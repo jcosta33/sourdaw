@@ -12,6 +12,15 @@ const audioRuntime = vi.hoisted(() => ({
     exportCachedAudioBuffers: vi.fn(),
 }));
 
+const originalMediaRuntime = vi.hoisted(() => ({
+    captureProjectOriginalMedia: vi.fn(),
+}));
+
+vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
+    captureProjectOriginalMedia: originalMediaRuntime.captureProjectOriginalMedia,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
@@ -53,6 +62,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     captureProjectRevision,
     registerCrdtStorageRuntime,
@@ -60,6 +70,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
 import { projectStore } from '../../../../stores/projectStore';
@@ -231,6 +242,9 @@ describe('project export snapshot consistency integration', () => {
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetProjectFileIoFixture();
         audioRuntime.exportCachedAudioBuffers.mockReset();
+        originalMediaRuntime.captureProjectOriginalMedia.mockReset();
+        vi.mocked(notifyUser).mockClear();
+        agentProjectRepairStateStore.set(null);
         await seedProjectA();
     });
 
@@ -242,6 +256,7 @@ describe('project export snapshot consistency integration', () => {
         Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        agentProjectRepairStateStore.set(null);
         vi.unstubAllGlobals();
     });
 
@@ -311,6 +326,72 @@ describe('project export snapshot consistency integration', () => {
         expect(built.missingBufferCount).toBe(0);
         expectCoherentProjectA(built.data, projectStore.value?.projectId);
     });
+
+    it.each(['edit', 'replacement', 'repair'] as const)(
+        'refuses export when %s occurs during the final original byte read',
+        async (change) => {
+            const incoming = await projectBData();
+            const hash = 'sha256:50497fa19a4d5a1db72d6ead883f6f54572a12f6f170abc4f1932273770f4274';
+            await executeAppAction({
+                type: 'addClip',
+                payload: {
+                    id: 'original-clip',
+                    trackId: 'track-a',
+                    startBeat: 4,
+                    endBeat: 8,
+                    name: 'Original Clip',
+                    type: 'audio',
+                    audioBufferId: AUDIO_BUFFER_A,
+                    assetHash: hash,
+                },
+            });
+            flushAutomergeStorageWrites();
+            const projectIdA = projectStore.value?.projectId;
+            const bytes = deferred<ArrayBuffer>();
+            const original = new Blob(['original source bytes']);
+            const read = vi.spyOn(original, 'arrayBuffer').mockReturnValue(bytes.promise);
+            originalMediaRuntime.captureProjectOriginalMedia.mockResolvedValueOnce({
+                media: new Map([[hash, original]]),
+                unavailable: [],
+            });
+            audioRuntime.exportCachedAudioBuffers.mockResolvedValueOnce(AUDIO_PAYLOAD_A);
+            setProjectFileIoDesktopRuntime(true);
+            queueProjectFileIoSaveDialog(Promise.resolve('/tmp/project-a.sourdaw'));
+
+            const exporting = exportProjectFile();
+            await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
+            expect(originalMediaRuntime.captureProjectOriginalMedia).toHaveBeenCalledWith(
+                projectIdA,
+                [hash],
+                expect.any(Function)
+            );
+            if (change === 'replacement') {
+                await switchToProjectB(incoming);
+            } else if (change === 'edit') {
+                await executeAppAction({
+                    type: 'addMarker',
+                    payload: { markerId: 'marker-during-original-read', beat: 12, name: 'Later Marker' },
+                });
+            } else {
+                agentProjectRepairStateStore.set({
+                    audioGraphValid: true,
+                    detectedRevision: captureProjectRevision(),
+                    inspectionAvailable: true,
+                    projectInvariantsValid: false,
+                    rawProjectRetained: true,
+                    repairCandidates: [{ kind: 'repair-project-invariants', targetIds: ['@project/raw'] }],
+                    status: 'repair-required',
+                });
+            }
+            bytes.resolve(new TextEncoder().encode('original source bytes').buffer);
+            await exporting;
+
+            expect(getProjectFileIoSaveDialogCallCount()).toBe(0);
+            expect(getProjectFileIoNativeWrites()).toHaveLength(0);
+            expect(notifyUser).toHaveBeenCalledWith('Failed to export project', 'error');
+            expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+        }
+    );
 
     it('writes the coherent completed snapshot through the real native serializer after a delayed dialog', async () => {
         setProjectFileIoDesktopRuntime(true);

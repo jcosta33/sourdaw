@@ -36,8 +36,7 @@ export async function exportProjectFile(): Promise<void> {
         );
         const outcome = await downloadProjectFile({
             data: archiveData,
-            shouldWrite: () =>
-                agentProjectRepairStateStore.value === null && captureProjectRevision() === built.snapshotRevision,
+            shouldWrite: () => agentProjectRepairStateStore.value === null,
         });
         if (outcome !== 'written') {
             return;
