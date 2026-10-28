@@ -122,13 +122,17 @@ export function projectTrackToLiveStrip(
     const { trackId } = input;
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
-        return input.mode === 'sends' ? { status: 'rejected', reason: 'Project tracks are unavailable' } : undefined;
+        if (input.mode === 'sends') {
+            return { status: 'rejected', reason: 'Project tracks are unavailable' };
+        }
+        return undefined;
     }
     const track = findUniqueTrack(tracks, trackId);
     if (!track || !shouldCreateLiveTrackStrip(track)) {
-        return input.mode === 'sends'
-            ? { status: 'rejected', reason: `Track ${trackId} has no unique eligible routing owner` }
-            : undefined;
+        if (input.mode === 'sends') {
+            return { status: 'rejected', reason: `Track ${trackId} has no unique eligible routing owner` };
+        }
+        return undefined;
     }
     if (input.mode === 'sends') {
         replayTrackSends(track, tracks);

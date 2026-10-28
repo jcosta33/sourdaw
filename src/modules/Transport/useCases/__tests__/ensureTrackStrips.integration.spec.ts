@@ -72,9 +72,15 @@ describe('project strip initialization before bus facade and send publication', 
         const bus = audioEngine.getTrackStrip(busId);
         expect(source).toBeDefined();
         expect(bus).toBeDefined();
-        if (!source || !bus) throw new Error('Required real send endpoints were not published');
+        if (!source || !bus) {
+            throw new Error('Required real send endpoints were not published');
+        }
         const tap = preFader ? source.preFaderSendGate : source.carrierGate;
-        const sendGains = [...(edges.get(tap) ?? [])].filter(
+        const destinations = edges.get(tap);
+        if (!destinations) {
+            throw new Error('The real send tap has no recorded platform connections');
+        }
+        const sendGains = Array.from(destinations).filter(
             (node) => typeof node === 'object' && node !== null && edges.get(node)?.has(bus.gainNode)
         );
         expect(sendGains).toHaveLength(1);
@@ -109,13 +115,17 @@ describe('project strip initialization before bus facade and send publication', 
             'createDelay',
         ] as const) {
             const factory = platform[factoryName].getMockImplementation();
-            if (!factory) throw new Error(`Missing platform primitive ${factoryName}`);
+            if (!factory) {
+                throw new Error(`Missing platform primitive ${factoryName}`);
+            }
             Object.defineProperty(audioEngine.context, factoryName, {
                 configurable: true,
                 value: () => {
                     if (factoryName === 'createBiquadFilter') {
                         const busId = expectedConstructionOrder[Math.floor(filterCount / 3)];
-                        if (!busId) throw new Error('Unexpected EQ construction');
+                        if (!busId) {
+                        throw new Error('Unexpected EQ construction');
+                    }
                         privateConstruction.push({ busId, published: audioEngine.getTrackStrip(busId) !== undefined });
                         filterCount++;
                     }
@@ -134,7 +144,13 @@ describe('project strip initialization before bus facade and send publication', 
                             else destinations.delete(target);
                         },
                     });
-                    const parameters = [...('gain' in node ? [node.gain] : []), ...('pan' in node ? [node.pan] : [])];
+                    const parameters: { value: number }[] = [];
+                if ('gain' in node) {
+                    parameters.push(node.gain);
+                }
+                if ('pan' in node) {
+                    parameters.push(node.pan);
+                }
                     for (const parameter of parameters) {
                         for (const method of ['setTargetAtTime', 'setValueAtTime', 'linearRampToValueAtTime']) {
                             Object.defineProperty(parameter, method, {
@@ -183,8 +199,11 @@ describe('project strip initialization before bus facade and send publication', 
         vi.unstubAllGlobals();
         for (const key of Object.keys(Object.getOwnPropertyDescriptors(audioEngine.context))) {
             const original = originalContextProperties[key];
-            if (original) Object.defineProperty(audioEngine.context, key, original);
-            else Reflect.deleteProperty(audioEngine.context, key);
+            if (original) {
+                Object.defineProperty(audioEngine.context, key, original);
+            } else {
+                Reflect.deleteProperty(audioEngine.context, key);
+            }
         }
     });
 
@@ -308,9 +327,15 @@ describe('project strip initialization before bus facade and send publication', 
                 output: { kind: 'output', sourceId: bus.id, targetId: 'master' },
                 parameters: [],
             };
-            if (stale === 'runtime') audioEngine.ensureTrackStrip('unrelated');
-            if (stale === 'project') createCrdtDoc('revision-change');
-            if (stale === 'topology') installTracks([{ ...bus, devices: [] }]);
+            if (stale === 'runtime') {
+            audioEngine.ensureTrackStrip('unrelated');
+        }
+            if (stale === 'project') {
+            createCrdtDoc('revision-change');
+        }
+            if (stale === 'topology') {
+            installTracks([{ ...bus, devices: [] }]);
+        }
             expect(audioEngine.initializeTrackStripFromSnapshot(snapshot)).toMatchObject({
                 acceptance: 'rejected',
                 application: 'not-applied',
@@ -323,7 +348,8 @@ describe('project strip initialization before bus facade and send publication', 
 
     it('rejects ambiguous bus ownership before creating any facade', () => {
         const tracks = tracksWithSends();
-        installTracks([...tracks, { ...tracks[1]! }]);
+        const duplicateBus = { ...tracks[1]!, name: 'Duplicate bus owner' };
+        installTracks([...tracks, duplicateBus]);
         expect(trackStore.value?.tracks.filter((track) => track.id === 'first-bus')).toHaveLength(2);
         expect(ensureTrackStrips()).toMatchObject({
             status: 'failed',
@@ -353,7 +379,9 @@ describe('project strip initialization before bus facade and send publication', 
         const source = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
         const target = createTrack({ id: 'target', name: 'Target', kind: 'audio' });
         source.sends = [{ busId: target.id, level: 0.5, preFader: false }];
-        installTracks([source, target, { ...(ambiguous === 'source' ? source : target) }]);
+        const originalOwner = ambiguous === 'source' ? source : target;
+        const duplicateOwner = { ...originalOwner, name: 'Duplicate routing owner' };
+        installTracks([source, target, duplicateOwner]);
         expect(ensureTrackStrips().status).toBe('failed');
         expect(facades).toEqual([]);
         expect(audioEngine.getTrackStrip(ambiguous === 'source' ? source.id : target.id)).toBeUndefined();

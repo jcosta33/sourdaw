@@ -687,18 +687,25 @@ describe('projectTrackToLiveStrip', () => {
             mocks.updateDeviceBypass,
             mocks.activateExternalPlugin,
             mocks.wireSidechainRoutes,
-        ])
+        ]) {
             expect(method).not.toHaveBeenCalled();
+        }
     });
 
     it.each(['missing', 'duplicate', 'folder', 'vca'] as const)('rejects send projection for a %s source', (state) => {
         const track = createTrack({ id: 'source', name: 'Source', kind: state === 'folder' ? 'folder' : 'audio' });
-        if (state === 'vca') Object.defineProperty(track, 'kind', { value: 'vca' });
+        if (state === 'vca') {
+            Object.defineProperty(track, 'kind', { value: 'vca' });
+        }
         track.sends = [{ busId: 'bus', level: 0.5, preFader: false }];
-        trackStore.set({
-            tracks: state === 'missing' ? [] : state === 'duplicate' ? [track, { ...track }] : [track],
-            selectedTrackId: null,
-        });
+        const tracks = [];
+        if (state !== 'missing') {
+            tracks.push(track);
+        }
+        if (state === 'duplicate') {
+            tracks.push({ ...track, name: 'Duplicate source owner' });
+        }
+        trackStore.set({ tracks, selectedTrackId: null });
         expect(projectTrackToLiveStrip({ mode: 'sends', trackId: track.id }).status).toBe('rejected');
         expect(mocks.setSend).not.toHaveBeenCalled();
         expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
@@ -718,7 +725,9 @@ describe('projectTrackToLiveStrip', () => {
         (state) => {
             const source = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
             const target = createTrack({ id: 'target', name: 'Target', kind: 'bus' });
-            if (state === 'vca') Object.defineProperty(target, 'kind', { value: 'vca' });
+            if (state === 'vca') {
+            Object.defineProperty(target, 'kind', { value: 'vca' });
+        }
             source.sends = [{ busId: target.id, level: 0.5, preFader: true }];
             trackStore.set({
                 tracks: state === 'duplicate' ? [source, target, { ...target }] : [source, target],

@@ -156,16 +156,17 @@ vi.mock('#/modules/Routing/useCases', () => ({
 describe('ensureTrackStrips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.projectTrackToLiveStrip.mockImplementation((input: { mode?: string }) =>
-            input.mode === 'sends'
-                ? { status: 'projected' }
-                : {
-                      acceptance: 'accepted',
-                      application: 'applied',
-                      correlation: { appRevision: 1, projectRevision: 'project-1' },
-                      runtimeRevision: 1,
-                  }
-        );
+        mocks.projectTrackToLiveStrip.mockImplementation((input: { mode?: string }) => {
+            if (input.mode === 'sends') {
+                return { status: 'projected' };
+            }
+            return {
+                acceptance: 'accepted',
+                application: 'applied',
+                correlation: { appRevision: 1, projectRevision: 'project-1' },
+                runtimeRevision: 1,
+            };
+        });
     });
 
     it('bootstraps tracks and their components in the engine', () => {
@@ -444,7 +445,9 @@ describe('ensureTrackStrips', () => {
         };
         mocks.projectTrackToLiveStrip.mockImplementation(
             (input: { mode?: string; onExternalPluginActivation?: (promise: typeof activation) => void }) => {
-                if (input.mode === 'sends') return { status: 'projected' };
+                if (input.mode === 'sends') {
+                    return { status: 'projected' };
+                }
                 input.onExternalPluginActivation?.(activation);
                 return {
                     acceptance: 'accepted',
@@ -468,16 +471,17 @@ describe('ensureTrackStrips', () => {
             tracks: [createTrack({ id: 'audio', name: 'Audio', kind: 'audio' })],
             selectedTrackId: null,
         };
-        mocks.projectTrackToLiveStrip.mockImplementation((input: { mode?: string }) =>
-            input.mode === 'sends'
-                ? { status: 'rejected', reason: 'routing owner changed' }
-                : {
-                      acceptance: 'accepted',
-                      application: 'applied',
-                      correlation: { appRevision: 1, projectRevision: 'project-1' },
-                      runtimeRevision: 1,
-                  }
-        );
+        mocks.projectTrackToLiveStrip.mockImplementation((input: { mode?: string }) => {
+            if (input.mode === 'sends') {
+                return { status: 'rejected', reason: 'routing owner changed' };
+            }
+            return {
+                acceptance: 'accepted',
+                application: 'applied',
+                correlation: { appRevision: 1, projectRevision: 'project-1' },
+                runtimeRevision: 1,
+            };
+        });
         expect(ensureTrackStrips()).toEqual({ status: 'failed', reason: 'routing owner changed' });
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
     });

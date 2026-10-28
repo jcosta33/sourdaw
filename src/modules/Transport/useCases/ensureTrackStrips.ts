@@ -17,10 +17,13 @@ function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['trac
     );
 }
 
+type StripProjectionInput = Parameters<typeof projectTrackToLiveStrip>[0];
+type ExternalPluginActivation = Parameters<NonNullable<StripProjectionInput['onExternalPluginActivation']>>[0];
+
 export type EnsureTrackStripsResult =
     | {
           status: 'ready';
-          externalPluginActivations: Promise<{ status: 'active' } | { status: 'failed'; reason: string }>[];
+          externalPluginActivations: ExternalPluginActivation[];
       }
     | { status: 'failed'; reason: string };
 
@@ -68,17 +71,20 @@ export function ensureTrackStrips(input?: { collectExternalPluginActivations?: b
     const busTracks = tracks.filter((track) => track.kind === 'bus');
     const liveTracks = tracks.filter(shouldCreateLiveTrackStrip);
 
-    const externalPluginActivations: Promise<{ status: 'active' } | { status: 'failed'; reason: string }>[] = [];
+    const externalPluginActivations: ExternalPluginActivation[] = [];
     for (const track of orderLiveTracksForInitialization(liveTracks)) {
-        const outcome = projectTrackToLiveStrip({
+        const projection: StripProjectionInput = {
             trackId: track.id,
             deferSidechainWiring: true,
             deferSends: true,
             activateDormantExternalPlugins: true,
-            ...(input?.collectExternalPluginActivations
-                ? { onExternalPluginActivation: (activation) => externalPluginActivations.push(activation) }
-                : {}),
-        });
+        };
+        if (input?.collectExternalPluginActivations) {
+            projection.onExternalPluginActivation = (activation) => {
+                externalPluginActivations.push(activation);
+            };
+        }
+        const outcome = projectTrackToLiveStrip(projection);
         if (outcome?.acceptance !== 'accepted' || outcome.application !== 'applied') {
             return {
                 status: 'failed',
