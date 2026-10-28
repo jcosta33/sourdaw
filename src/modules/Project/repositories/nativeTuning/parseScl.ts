@@ -1,36 +1,14 @@
-import { desktopInvoke } from '#/utils/desktopBridge';
+import { desktopInvoke, isDesktopRuntime } from '#/utils/desktopBridge';
 
-const STANDARD_A4_ROOT_NOTE = 69;
-const STANDARD_A4_ROOT_FREQ = 440;
-
-const PARSE_ERROR_KINDS = [
-    'missing-description',
-    'missing-count',
-    'invalid-count',
-    'count-mismatch',
-    'allocation-failed',
-    'invalid-cents',
-    'invalid-ratio',
-    'invalid-numerator',
-    'invalid-denominator',
-    'zero-numerator',
-    'zero-denominator',
-    'invalid-integer-ratio',
-] as const;
-
-type ParseSclOutput = {
-    name: string;
-    description: string;
-    frequencies: number[];
-};
-
-type ParseSclError = {
-    kind: (typeof PARSE_ERROR_KINDS)[number];
-    line: number;
-    reason: string;
-};
-
-type ParseSclResult = { status: 'parsed'; scale: ParseSclOutput } | { status: 'invalid'; error: ParseSclError };
+import {
+    PARSE_ERROR_KINDS,
+    type ParseSclError,
+    type ParseSclOutput,
+    type ParseSclResult,
+    STANDARD_A4_ROOT_FREQ,
+    STANDARD_A4_ROOT_NOTE,
+} from '../../models/ScalaTuning';
+import { parseSclContent } from '../../services/parseSclContent';
 
 function isNumberArray(value: unknown): value is number[] {
     return Array.isArray(value) && value.every((frequency) => Number.isFinite(frequency));
@@ -78,6 +56,9 @@ function isParseSclError(value: unknown): value is ParseSclError {
 }
 
 export async function parseScl(content: string): Promise<ParseSclResult> {
+    if (!isDesktopRuntime()) {
+        return parseSclContent(content);
+    }
     const result = await desktopInvoke('parse_scl', {
         content,
         rootNote: STANDARD_A4_ROOT_NOTE,
