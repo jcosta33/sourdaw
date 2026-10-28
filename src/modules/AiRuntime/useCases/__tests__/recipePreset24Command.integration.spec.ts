@@ -51,6 +51,7 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
@@ -214,28 +215,43 @@ function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): 
 /** Decode the provider-visible legend independently of the production formatter. */
 function receiptsFromLocalMessage(message: string): unknown {
     const section = message.match(/(?:^|\n)relevant_evidence:\n([^\n]+)/)?.[1];
-    if (section === undefined) throw new Error('Missing relevant evidence');
+    if (section === undefined) {
+        throw new Error('Missing relevant evidence');
+    }
     const evidence: { receipts: { summary: { value: string; truncated: boolean } }[] } = JSON.parse(section);
     const summary = evidence.receipts[0]?.summary;
-    if (summary === undefined || summary.truncated) throw new Error('Missing complete receipt text');
+    if (summary === undefined || summary.truncated) {
+        throw new Error('Missing complete receipt text');
+    }
     const wire: { version: number; layouts: string[][]; strings: string[]; shared: unknown[]; receipts: unknown } =
         JSON.parse(summary.value.split('\n').at(-1)!);
     expect(wire.version).toBe(1);
     function decode(value: unknown): unknown {
-        if (Array.isArray(value)) return value.map(decode);
-        if (value === null || typeof value !== 'object') return value;
+        if (Array.isArray(value)) {
+            return value.map(decode);
+        }
+        if (value === null || typeof value !== 'object') {
+            return value;
+        }
         const entry = value as Record<string, unknown>;
         const keys = Object.keys(entry);
-        if (keys.length === 1 && keys[0] === '$s') return wire.strings[entry.$s as number];
-        if (keys.length === 1 && keys[0] === '$v') return decode(wire.shared[entry.$v as number]);
+        if (keys.length === 1 && keys[0] === '$s') {
+            return wire.strings[entry.$s as number];
+        }
+        if (keys.length === 1 && keys[0] === '$v') {
+            return decode(wire.shared[entry.$v as number]);
+        }
         if (keys.length === 1 && keys[0] === '$r') {
             const [index, ...values] = entry.$r as unknown[];
             const layout = wire.layouts[index as number]!;
-            if (layout.length !== values.length) throw new Error('Invalid receipt layout');
+            if (layout.length !== values.length) {
+                throw new Error('Invalid receipt layout');
+            }
             return Object.fromEntries(layout.map((key, i) => [key, decode(values[i])]));
         }
-        if (keys.length === 1 && keys[0] === '$l')
+        if (keys.length === 1 && keys[0] === '$l') {
             return Object.fromEntries((entry.$l as [string, unknown][]).map(([key, child]) => [key, decode(child)]));
+        }
         return Object.fromEntries(Object.entries(entry).map(([key, child]) => [key, decode(child)]));
     }
     return decode(wire.receipts);
@@ -320,7 +336,9 @@ beforeEach(() => {
     });
     // Controlled runtime reducer starts at the existing strip and validates each topology transition.
     const initial = trackStore.value?.tracks.find((track) => track.id === '8c25eb5a-f366-460e-bd4b-15560d8ad9c0');
-    if (initial === undefined) throw new Error('Missing guitar fixture');
+    if (initial === undefined) {
+        throw new Error('Missing guitar fixture');
+    }
     let runtimeNode = runtimeGraphTopology.createNode(initial);
     engine.matchesRuntimeDeviceChainTopology.mockImplementation(
         (node: typeof runtimeNode) => JSON.stringify(node) === JSON.stringify(runtimeNode)
@@ -450,9 +468,13 @@ it('previews and confirms the complete factory guitar strip as one undo group', 
     const pending = getPendingActionConfirmation(confirmationId);
     expect(pending?.approvalSnapshot.measuredPreview?.batchContentHash).toBe(planned.measuredPreview?.batchContentHash);
     const batch = pending?.approvalSnapshot.commandBatch;
-    if (batch === undefined) throw new Error('Missing command batch');
+    if (batch === undefined) {
+        throw new Error('Missing command batch');
+    }
     const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
-    if (parsed.status === 'invalid') throw new Error(parsed.reason);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
     expect(parsed.envelope.commands).toHaveLength(24);
     agentRunLifecycle.create({
         runId: 'budget-24',
@@ -563,7 +585,9 @@ it.each(['guitar-1', '8c25eb5a-f366-460e-bd4b-15560d8ad9c0'])(
     'admits the complete guitar preview through local budgets for %s',
     async (trackId) => {
         const existing = trackStore.value;
-        if (existing === null) throw new Error('Missing project tracks');
+        if (existing === null) {
+            throw new Error('Missing project tracks');
+        }
         trackStore.set({
             ...existing,
             tracks: existing.tracks.map((track) =>
@@ -584,12 +608,13 @@ it.each(['guitar-1', '8c25eb5a-f366-460e-bd4b-15560d8ad9c0'])(
                 const { id: _id, ...interpretation } = interpretationCall(revision, trackId);
                 return { status: 'complete', toolCalls: [interpretation] };
             }
-            if (turn === 2)
+            if (turn === 2) {
                 return {
                     status: 'complete',
                     toolCalls: [{ name: 'recipe.discover', arguments: { descriptors: ['warm'], role: 'guitar' } }],
                 };
-            if (turn === 3)
+            }
+            if (turn === 3) {
                 return {
                     status: 'complete',
                     toolCalls: [
@@ -603,10 +628,13 @@ it.each(['guitar-1', '8c25eb5a-f366-460e-bd4b-15560d8ad9c0'])(
                         },
                     ],
                 };
+            }
             const expectedTurn = turn === 4 ? 3 : 4;
             const match = localText.match(new RegExp(`planning-[0-9a-f-]{36}-${String(expectedTurn)}-0`));
-            if (match === null) throw new Error(`Missing synthesized call ID for turn ${String(expectedTurn)}`);
-            if (turn === 4)
+            if (match === null) {
+                throw new Error(`Missing synthesized call ID for turn ${String(expectedTurn)}`);
+            }
+            if (turn === 4) {
                 return {
                     status: 'complete',
                     toolCalls: [
@@ -622,6 +650,7 @@ it.each(['guitar-1', '8c25eb5a-f366-460e-bd4b-15560d8ad9c0'])(
                         },
                     ],
                 };
+            }
             return {
                 status: 'complete',
                 toolCalls: [
@@ -643,9 +672,13 @@ it.each(['guitar-1', '8c25eb5a-f366-460e-bd4b-15560d8ad9c0'])(
         expect(planned.actions).toHaveLength(24);
         const call = planning.mock.calls.at(-1);
         expect(call?.[9]?.localReceiptContextComplete).toBe(true);
-        if (call === undefined || call[10] === undefined) throw new Error('Missing local planning input');
+        if (call === undefined || call[10] === undefined) {
+            throw new Error('Missing local planning input');
+        }
         const localCall = localProvider.calls.mock.calls.at(-1);
-        if (localCall === undefined) throw new Error('Local provider boundary was not reached');
+        if (localCall === undefined) {
+            throw new Error('Local provider boundary was not reached');
+        }
         const budget = budgetLocalPlanningRequest({
             systemPrompt: serializeWebLlmToolPlanningPrompt(localCall[0], localCall[2]),
             userMessage: localCall[1],
@@ -688,8 +721,9 @@ it('retains hosted history and delivers complete local text on hosted fallback',
                 },
             },
         ],
-    ])
+    ]) {
         planning.mockResolvedValueOnce({ status: 'complete', toolCalls, providerTurn });
+    }
     localProvider.backends = ['cloud', 'webllm'];
     localProvider.cloud.mockRejectedValue(new Error('controlled hosted failure'));
     localProvider.calls.mockResolvedValue({
@@ -771,7 +805,9 @@ it('refuses an adopted recipe beside a selector and repeat that expand beyond on
         calls: [{ name: 'command.batch.propose', arguments: { plan, list } }],
     });
     expect(compiled.status).toBe('accepted');
-    if (compiled.status !== 'accepted') throw new Error(compiled.reason);
+    if (compiled.status !== 'accepted') {
+        throw new Error(compiled.reason);
+    }
     expect(compiled.compilerEvidence?.commands).toHaveLength(25);
     scriptTurns(revision, [
         [

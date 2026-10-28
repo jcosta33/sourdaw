@@ -2059,7 +2059,7 @@ export async function runApplicationOwnedToolLoop(
             return { reason: overBudget, receipts };
         }
         if (input.textReceiptCharacterBudget !== undefined) {
-            receiptContext = formatReceiptContext(receiptContext, receipts, turn, input.textReceiptCharacterBudget);
+            receiptContext = formatReceiptContext(receiptContext, turn, input.textReceiptCharacterBudget);
         }
         if (
             outcome.providerTurn === undefined &&

@@ -14,32 +14,127 @@ function json(value: Json): string {
     return JSON.stringify(value);
 }
 
-function countValues(value: Json, shapes: Map<string, number>, strings: Map<string, number>): void {
+function countValues(
+    value: Json,
+    shapes: Map<string, { keys: string[]; count: number }>,
+    strings: Map<string, number>
+): void {
     if (typeof value === 'string') {
         strings.set(value, (strings.get(value) ?? 0) + 1);
     } else if (Array.isArray(value)) {
-        for (const child of value) countValues(child, shapes, strings);
+        for (const child of value) {
+            countValues(child, shapes, strings);
+        }
     } else if (value !== null && typeof value === 'object') {
-        const shape = JSON.stringify(Object.keys(value));
-        shapes.set(shape, (shapes.get(shape) ?? 0) + 1);
-        for (const child of Object.values(value)) countValues(child, shapes, strings);
+        const keys = Object.keys(value);
+        const shape = JSON.stringify(keys);
+        const previous = shapes.get(shape);
+        shapes.set(shape, { keys, count: (previous?.count ?? 0) + 1 });
+        for (const child of Object.values(value)) {
+            countValues(child, shapes, strings);
+        }
     }
 }
 
+function markerArray(node: Json, key: '$r' | '$l'): Json[] | undefined {
+    if (node === null || typeof node !== 'object' || Array.isArray(node) || Object.keys(node).length !== 1) {
+        return undefined;
+    }
+    const value = node[key];
+    return Array.isArray(value) ? value : undefined;
+}
+
+function factorShared(value: Json): { shared: Json[]; receipts: Json } {
+    let tree = value;
+    const shared: Json[] = [];
+    for (let index = 0; index < MAX_SHARED; index += 1) {
+        const counts = new Map<string, { value: Json; count: number }>();
+        function scan(node: Json): void {
+            if (node === null || typeof node !== 'object') {
+                return;
+            }
+            if (!Array.isArray(node) && Object.keys(node).length === 1 && ('$s' in node || '$v' in node)) {
+                return;
+            }
+            const key = json(node);
+            counts.set(key, { value: node, count: (counts.get(key)?.count ?? 0) + 1 });
+            const row = markerArray(node, '$r');
+            if (row !== undefined) {
+                for (const child of row.slice(1)) {
+                    scan(child);
+                }
+                return;
+            }
+            const literal = markerArray(node, '$l');
+            if (literal !== undefined) {
+                for (const pair of literal) {
+                    if (Array.isArray(pair) && pair.length === 2) {
+                        scan(pair[1]!);
+                    }
+                }
+                return;
+            }
+            for (const child of Array.isArray(node) ? node : Object.values(node)) {
+                scan(child);
+            }
+        }
+        scan(tree);
+        const reference: Json = { $v: index };
+        const referenceCost = json(reference).length;
+        let best: { key: string; value: Json } | null = null;
+        let bestSaving = 0;
+        for (const [key, entry] of counts) {
+            const saving = (key.length - referenceCost) * entry.count - key.length - 1;
+            if (entry.count > 1 && saving > bestSaving) {
+                best = { key, value: entry.value };
+                bestSaving = saving;
+            }
+        }
+        if (best === null) {
+            break;
+        }
+        const selected = best.key;
+        shared.push(best.value);
+        function replace(node: Json): Json {
+            if (node === null || typeof node !== 'object') {
+                return node;
+            }
+            if (json(node) === selected) {
+                return reference;
+            }
+            if (Array.isArray(node)) {
+                return node.map(replace);
+            }
+            if (Object.keys(node).length === 1 && Array.isArray(node.$r)) {
+                return { $r: [node.$r[0]!, ...node.$r.slice(1).map(replace)] };
+            }
+            if (Object.keys(node).length === 1 && Array.isArray(node.$l)) {
+                return {
+                    $l: node.$l.map((pair) =>
+                        Array.isArray(pair) && pair.length === 2 ? [pair[0]!, replace(pair[1]!)] : pair
+                    ),
+                };
+            }
+            return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, replace(child)]));
+        }
+        tree = replace(tree);
+    }
+    return { shared, receipts: tree };
+}
+
 function buildFactored(value: Json, omitted: ReadonlySet<string>): JsonObject {
-    const shapes = new Map<string, number>();
+    const shapes = new Map<string, { keys: string[]; count: number }>();
     const strings = new Map<string, number>();
     countValues(value, shapes, strings);
-    const layouts = [...shapes.entries()]
-        .filter(([shape, count]) => {
-            const keys: string[] = JSON.parse(shape);
+    const layouts = Array.from(shapes.values())
+        .filter(({ keys, count }) => {
             const cost = keys.reduce((sum, key) => sum + JSON.stringify(key).length + 1, 0);
             return count > 1 && (cost - 9) * count > cost + 10;
         })
-        .sort((a, b) => b[1] - a[1])
+        .sort((a, b) => b.count - a.count)
         .slice(0, MAX_DICTIONARY)
-        .map(([shape]) => JSON.parse(shape) as string[]);
-    const dictionary = [...strings.entries()]
+        .map(({ keys }) => keys);
+    const dictionary = Array.from(strings.entries())
         .filter(
             ([text, count]) =>
                 !omitted.has(text) &&
@@ -56,73 +151,51 @@ function buildFactored(value: Json, omitted: ReadonlySet<string>): JsonObject {
             const index = stringIndex.get(node);
             return index === undefined ? node : { $s: index };
         }
-        if (Array.isArray(node)) return node.map(encode);
-        if (node === null || typeof node !== 'object') return node;
+        if (Array.isArray(node)) {
+            return node.map(encode);
+        }
+        if (node === null || typeof node !== 'object') {
+            return node;
+        }
         const keys = Object.keys(node);
         const index = layoutIndex.get(JSON.stringify(keys));
-        if (index !== undefined) return { $r: [index, ...keys.map((key) => encode(node[key]!))] };
-        if (keys.length === 1 && RESERVED.has(keys[0]!)) return { $l: [[keys[0]!, encode(node[keys[0]!]!)]] };
+        if (index !== undefined) {
+            return { $r: [index, ...keys.map((key) => encode(node[key]!))] };
+        }
+        if (keys.length === 1 && RESERVED.has(keys[0]!)) {
+            return { $l: [[keys[0]!, encode(node[keys[0]!]!)]] };
+        }
         return Object.fromEntries(keys.map((key) => [key, encode(node[key]!)]));
     }
-    let tree = encode(value);
-    const shared: Json[] = [];
-    for (let index = 0; index < MAX_SHARED; index += 1) {
-        const counts = new Map<string, number>();
-        function scan(node: Json): void {
-            if (node === null || typeof node !== 'object') return;
-            if (!Array.isArray(node) && Object.keys(node).length === 1 && ('$s' in node || '$v' in node)) return;
-            const key = json(node);
-            counts.set(key, (counts.get(key) ?? 0) + 1);
-            if (!Array.isArray(node) && Object.keys(node).length === 1 && Array.isArray(node.$r)) {
-                for (const child of node.$r.slice(1)) scan(child);
-                return;
-            }
-            if (!Array.isArray(node) && Object.keys(node).length === 1 && Array.isArray(node.$l)) {
-                for (const pair of node.$l) if (Array.isArray(pair) && pair.length === 2) scan(pair[1]!);
-                return;
-            }
-            for (const child of Array.isArray(node) ? node : Object.values(node)) scan(child);
-        }
-        scan(tree);
-        const reference: Json = { $v: index };
-        const referenceCost = json(reference).length;
-        let best: string | null = null;
-        let bestSaving = 0;
-        for (const [key, count] of counts) {
-            const saving = (key.length - referenceCost) * count - key.length - 1;
-            if (count > 1 && saving > bestSaving) {
-                best = key;
-                bestSaving = saving;
-            }
-        }
-        if (best === null) break;
-        const selected = best;
-        shared.push(JSON.parse(selected) as Json);
-        function replace(node: Json): Json {
-            if (node === null || typeof node !== 'object') return node;
-            if (json(node) === selected) return reference;
-            if (Array.isArray(node)) return node.map(replace);
-            if (Object.keys(node).length === 1 && Array.isArray(node.$r)) {
-                return { $r: [node.$r[0]!, ...node.$r.slice(1).map(replace)] };
-            }
-            if (Object.keys(node).length === 1 && Array.isArray(node.$l)) {
-                return {
-                    $l: node.$l.map((pair) =>
-                        Array.isArray(pair) && pair.length === 2 ? [pair[0]!, replace(pair[1]!)] : pair
-                    ),
-                };
-            }
-            return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, replace(child)]));
-        }
-        tree = replace(tree);
+    return { layouts, strings: dictionary, ...factorShared(encode(value)) };
+}
+
+function isJson(value: unknown): value is Json {
+    if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+        return true;
     }
-    return { layouts, strings: dictionary, shared, receipts: tree };
+    if (typeof value === 'number') {
+        return Number.isFinite(value);
+    }
+    if (Array.isArray(value)) {
+        return value.every(isJson);
+    }
+    if (typeof value === 'object') {
+        return Object.values(value).every(isJson);
+    }
+    return false;
 }
 
 /** Keep the original text when it fits; otherwise use a smaller complete version only if it fits. */
-export function formatReceiptContext(raw: string, receipts: unknown, turn: number, maxCharacters: number): string {
-    if (raw.length <= maxCharacters) return raw;
-    const value: Json = JSON.parse(JSON.stringify(receipts));
+export function formatReceiptContext(raw: string, turn: number, maxCharacters: number): string {
+    if (raw.length <= maxCharacters) {
+        return raw;
+    }
+    const parsed: unknown = JSON.parse(raw.slice(raw.lastIndexOf('\n') + 1));
+    if (parsed === null || typeof parsed !== 'object' || !('receipts' in parsed) || !isJson(parsed.receipts)) {
+        return raw;
+    }
+    const value = parsed.receipts;
     const omitted = new Set<string>();
     let factored = buildFactored(value, omitted);
     // A shared subtree can make a string definition unprofitable. Remove only definitions whose
@@ -133,10 +206,13 @@ export function formatReceiptContext(raw: string, receipts: unknown, turn: numbe
         for (const text of factored.strings as string[]) {
             const candidate = buildFactored(value, new Set([...omitted, text]));
             const length = json(candidate).length;
-            if (length < current && (best === undefined || length < best.length))
+            if (length < current && (best === undefined || length < best.length)) {
                 best = { text, value: candidate, length };
+            }
         }
-        if (best === undefined) break;
+        if (best === undefined) {
+            break;
+        }
         omitted.add(best.text);
         factored = best.value;
     }
