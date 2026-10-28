@@ -52,9 +52,12 @@ The delivery sequence, in order:
 1. `lane:publish` — push the lane and open or update the PR ([publication mechanics](references/lane-publication.md)).
    It pushes without `--force` and refuses uncommitted changes: the publishing
    session commits the work itself with a conventional subject first.
-2. Wait for the cheap `PR checks` run on the head (pushes no longer run `Gate`),
-   then `review:prepare <pr>` — write the [bundle](references/review-records.md) and dispatch blind
-   reviewers against it under the root Review rules.
+2. Wait for the entire `PR checks` workflow on the exact head to conclude `SUCCESS`;
+   a green `Plan push checks` job alone is not the workflow result. A model-label event
+   may trigger a pre-approval `Gate` failure; that separate run is not awaited before
+   independent review and reviewer-App approval. Then `review:prepare <pr>` — write
+   the [bundle](references/review-records.md) and dispatch blind reviewers against it
+   under the root Review rules.
    A head that conflicts with its base gets no GitHub merge ref, so no
    `pull_request` workflow run is created and no check can ever appear: waiting
    on it waits forever. When `lane:publish` reports a conflicted head, read
