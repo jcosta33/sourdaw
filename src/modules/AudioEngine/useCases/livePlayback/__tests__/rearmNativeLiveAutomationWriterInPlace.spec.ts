@@ -457,14 +457,14 @@ describe('live store edits on the existing writer pass', () => {
                 if (holdNext) {
                     holdNext = false;
                     observed();
-                    return new Promise((resolve, rejectPromise) => {
+                    return new Promise((resolve, _reject) => {
                         settle = (result) => {
                             activeApplies -= 1;
                             resolve(result);
                         };
                         reject = (error) => {
                             activeApplies -= 1;
-                            rejectPromise(error);
+                            _reject(error);
                         };
                     });
                 }
