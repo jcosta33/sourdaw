@@ -1,0 +1,82 @@
+scripts/__tests__/loopbackOpenAiProvider.spec.ts
+  h_beb54bf43b47b7 25,29-40,42-52,54-65
+scripts/desktopAgentWorkspaceDrive.ts
+  h_beb54bf43b47b7 46,166,169-176,179-195,207,223
+scripts/loopbackOpenAiProvider.ts
+  h_beb54bf43b47b7 18,23,26-29,31-87,92-98,194-195
+scripts/proveDesktopAgentWorkspace.ts
+  h_beb54bf43b47b7 222
+src/modules/AiRuntime/models/AnalysisMeasureRead.ts
+  h_beb54bf43b47b7 1,13
+src/modules/AiRuntime/models/AnswerEvidence.ts
+  h_beb54bf43b47b7 1-26
+src/modules/AiRuntime/models/AnswerInterpretation.ts
+  h_beb54bf43b47b7 1-99
+src/modules/AiRuntime/models/AnswerRespond.ts
+  h_beb54bf43b47b7 1,3,5-7,9-32,34-61,63-81
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  h_beb54bf43b47b7 3-5,201-210,290-299
+src/modules/AiRuntime/transformers/__tests__/parseAnswerRespond.spec.ts
+  h_beb54bf43b47b7 3-5,8-11,13-15,17-28,31-52
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  h_beb54bf43b47b7 9,19-20,24,26
+src/modules/AiRuntime/transformers/parseAnswerRespond.ts
+  h_beb54bf43b47b7 1-2,4-5,7,9,11-13,15-16,19-28,30-35,37-39,41,43
+src/modules/AiRuntime/useCases/__tests__/answerInterpretation.spec.ts
+  h_beb54bf43b47b7 1-157
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  h_beb54bf43b47b7 3-4,18-20,26,35-38,63-65,93,95-111,121-134,142-144,153-158,179,185-186,193,197,202,215,220,223-224,234,241-244,249,259,264-268,275-281,286,294,306,311,316
+src/modules/AiRuntime/useCases/__tests__/answerWireFixture.ts
+  h_beb54bf43b47b7 1-112
+src/modules/AiRuntime/useCases/__tests__/explainPlanningProfile.spec.ts
+  h_beb54bf43b47b7 18,91-106,157,176,199
+src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts
+  h_beb54bf43b47b7 1-492
+src/modules/AiRuntime/useCases/__tests__/recipePreviewSource.spec.ts
+  h_beb54bf43b47b7 49-53,73
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  h_beb54bf43b47b7 1327-1331
+src/modules/AiRuntime/useCases/__tests__/transientOnsetRead.spec.ts
+  h_beb54bf43b47b7 27-29,170-175,177-179,182-192,195-211,222-225,231,235-240,242,370-376,381-429,503,570,577,616,644,680,685,711,739,745,756,761-762,766,770,805,861,881,941,946,949-952,954-958
+src/modules/AiRuntime/useCases/admitAnswerInterpretation.ts
+  h_beb54bf43b47b7 1-111
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/explainRouteTools.spec.ts
+  h_beb54bf43b47b7 29-33,67,71,80,86,96-104,110-157,175-225,305,383-397,407-410,414-437,447-461,483-497,509,528-541,556,573-584,589,596-603,618,630,640,642,655,659,668,683-687,696-841,843-980,1043,1050-1053,1107,1115,1120,1138,1150,1161,1171,1246-1247,1250,1259,1265,1268-1270
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  h_beb54bf43b47b7 31,472-478,480
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 28-29,81-86,194,221-227,245,367-368,372-375,400-405,416,1237-1242,1266,1292-1297,1300,1315,1334-1340,1361,1394,1399-1407,1457-1458,1689-1691,1704,1734-1736,1742,2077-2078,2087-2089,2148-2154,2167,2217-2321,2441-2443,2454,2504-2514,2572-2578
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  h_beb54bf43b47b7 1-474
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  h_beb54bf43b47b7 117-126
+src/modules/AiRuntime/useCases/executeTransientOnsetRead.ts
+  h_beb54bf43b47b7 7,89,218-225,278,286,299,308-312
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  h_beb54bf43b47b7 3-8,1742-1748,1782-1792,1850,1893-1903,1944-1950,1988-1998
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  h_beb54bf43b47b7 5-9,62,123-137,362,438,504,529,652
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  h_beb54bf43b47b7 13,80,86,89-90,92
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 10,54-55,76-79,644-648,650,880-887,895,905-918
+src/modules/AiRuntime/useCases/prepareAnswerInterpretationCatalog.ts
+  h_beb54bf43b47b7 1-121
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  h_beb54bf43b47b7 8,12-52,80,107,111-116,119,121,125,138,146-303
+tests/e2e/scriptedToolProvider.ts
+  h_beb54bf43b47b7 8-12,45
+tests/e2e/transientOnsetRead.spec.ts
+  h_beb54bf43b47b7 51-53,55,57,64,66,69,71,151-178,186-187,201,224,226-230,249,251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0580cd54c2f0bf38a238556f3de03d9b7c3f10d7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
