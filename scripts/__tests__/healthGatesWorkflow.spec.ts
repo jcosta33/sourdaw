@@ -2522,7 +2522,30 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
     }
 }
 
+function assertCodeqlComparisonCategory(set: WorkflowSet): void {
+    const analyze = stepNamed(jobAt(set.health, 'codeql'), 'Analyse');
+    if (recordAt(analyze, 'with').category !== '.github/workflows/nightly.yml:codeql') {
+        throw new Error('PR CodeQL must use the existing nightly analysis category');
+    }
+}
+
 describe('health gates workflow contract', () => {
+    it('keeps the PR CodeQL category aligned with the nightly baseline', () => {
+        expect(() => assertCodeqlComparisonCategory(workflowSet())).not.toThrow();
+
+        const missing = cloneWorkflows('missing PR CodeQL category');
+        delete recordAt(stepNamed(jobAt(missing.health, 'codeql'), 'Analyse'), 'with').category;
+        expect(() => assertCodeqlComparisonCategory(missing)).toThrow(
+            'PR CodeQL must use the existing nightly analysis category'
+        );
+
+        const wrong = cloneWorkflows('wrong PR CodeQL category');
+        recordAt(stepNamed(jobAt(wrong.health, 'codeql'), 'Analyse'), 'with').category = 'different';
+        expect(() => assertCodeqlComparisonCategory(wrong)).toThrow(
+            'PR CodeQL must use the existing nightly analysis category'
+        );
+    });
+
     it('registers the hosted quantum producer contract in the global workflow set', () => {
         expect(() => assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement)).not.toThrow();
     });

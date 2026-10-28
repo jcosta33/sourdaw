@@ -6,6 +6,28 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — successful scan did not prove comparison coverage (PRs #3170 and #4854)
+
+PR #3170 moved the main CodeQL producer to Nightly and left its former Health gates configuration
+in history. PR #4854 added a PR scan with a different default identity from Nightly. Execution and
+Gate checks could succeed while the comparison omitted a main configuration. Historical private
+review prompts and tiers are not established.
+
+Paginate all main analysis configurations, compare actual uploads and scan scope, and inspect the
+hosted introduced-alert summary. Check alert continuity and documented authorized retirement before
+deleting history. Remove or alter the PR category, re-record the snapshot, and require the independent
+input contract to fail; neither a snapshot nor an imitation of the upstream action proves upload.
+
+### 2026-10-28 — composite factory flow exhausted its aggregate budget (PR #5798)
+
+PR #5798 introduced a multi-step factory persistence case whose separate bounded state waits share
+the default aggregate deadline. Bounded slow work can exceed that deadline while each state arrives
+within its own limit. The exact phase of the historical CI timeout was not established.
+
+Inject bounded slow work through the complete flow: the old aggregate bound must fail and the revised
+bound must finish all assertions. Keep each state wait and assertion unchanged, and require a missing
+state to fail its original wait rather than pass under the larger aggregate budget.
+
 ### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
 
 The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
