@@ -57,6 +57,697 @@ const childMerge = 'f'.repeat(40);
 const parentBranch = 'fix/4380/refine-pending-proposal';
 const findingA = '1001';
 const findingB = '1002';
+
+/** Real content history with the same replacement reused across a completed stack. */
+function nestedNativeFixture(root: string, missingInnerDependency = false) {
+    const dag = dependencyDag(root, false);
+    const repository = 'jcosta33/sourdaw';
+    const records = new Map<number, SupersededPullRequest>();
+    const findings = new Map<number, SupersededReviewThread[]>();
+    const events: string[] = [];
+    let onEvent: (event: string) => void = () => undefined;
+    let nextComment = 10_000;
+    const content = {
+        'base.txt': 'base',
+        'original-dependency.txt': 'parent',
+        'child.txt': 'library',
+        'decode.txt': 'decode',
+    };
+    const oldHead = dag.commit('old decoder', [dag.oldChild], content);
+    const source = dag.commit(
+        'delivered decoder and library',
+        [missingInnerDependency ? dag.base : dag.parentReplacementMerge],
+        content
+    );
+    const merge = dag.commit('delivered decoder squash', [dag.parentReplacementMerge], content);
+    const oldNumbers = [4000, 4001, 4002];
+    let target = 4002;
+    let replacement = 5001;
+    let explicitParentReplacement: number | undefined;
+    const add = (
+        number: number,
+        head: string,
+        branch: string,
+        base: string,
+        baseHead: string,
+        merged = false,
+        mergeCommit: string | null = null
+    ) => {
+        const row: SupersededPullRequest = {
+            number,
+            head,
+            headRefName: branch,
+            headRepository: repository,
+            repository,
+            base,
+            baseRefOid: baseHead,
+            baseRef: { name: base, repository, target: baseHead },
+            state: merged ? 'MERGED' : 'CLOSED',
+            merged,
+            mergeCommit,
+            closedAt: '2026-10-24T00:00:00Z',
+            comments: [],
+        };
+        records.set(number, row);
+        return row;
+    };
+    const grand = add(4000, dag.originalParent, 'fix/nested-grand', 'main', dag.base);
+    const parent = add(4001, dag.oldChild, 'fix/nested-parent', grand.headRefName, grand.head);
+    const old = add(4002, oldHead, 'fix/nested-child', parent.headRefName, parent.head);
+    old.state = 'OPEN';
+    old.closedAt = null;
+    const grandReplacement = add(
+        5000,
+        dag.parentReplacementHead,
+        'fix/nested-grand-replacement',
+        'main',
+        dag.base,
+        true,
+        dag.parentReplacementMerge
+    );
+    const final = add(5001, source, 'fix/nested-replacement', 'main', dag.parentReplacementMerge, true, merge);
+    const lineage = (oldPr: number, replacementPr: number): FindingLineage => ({
+        format: 'lineage-v1',
+        oldPr,
+        replacementPr,
+        entries: [],
+    });
+    const complete = (row: SupersededPullRequest, successor: number) => {
+        row.comments = [
+            markerComment(`IC_receipt_${row.number}`, String(row.number * 10), supersessionCommentBody(successor)),
+            markerComment(
+                `IC_lineage_${row.number}`,
+                String(row.number * 10 + 1),
+                renderFindingLineage(lineage(row.number, successor))
+            ),
+        ];
+    };
+    complete(grand, grandReplacement.number);
+    complete(parent, final.number);
+    const identity = (row: SupersededPullRequest) => ({
+        number: row.number,
+        head: row.head,
+        branch: row.headRefName,
+        base: row.base,
+    });
+    const replacementIdentity = (row: SupersededPullRequest) => {
+        if (typeof row.mergeCommit !== 'string') {
+            throw new Error('fixture replacement has no merge');
+        }
+        return { ...identity(row), mergeCommit: row.mergeCommit };
+    };
+    const initialBinding: SupersessionParentBinding = {
+        format: 'supersession-parent-v1',
+        repository,
+        child: { ...identity(parent), cachedBase: grand.head, sourceRepository: repository },
+        parent: identity(grand),
+        replacement: replacementIdentity(final),
+        parentReplacement: replacementIdentity(grandReplacement),
+        provenance: { kind: 'final-parent-head', forkHead: grand.head, admittedParentHead: null },
+    };
+    parent.comments.push(markerComment('IC_binding_4001', '40012', bindingBody(initialBinding)));
+    const row = (number: number) => {
+        const value = records.get(number);
+        if (value === undefined) {
+            throw new Error(`missing fixture PR ${number}`);
+        }
+        return value;
+    };
+    const event = (value: string) => {
+        events.push(value);
+        onEvent(value);
+    };
+    const numberField = (args: string[], name: string) =>
+        Number(args.find((arg) => arg.startsWith(name + '='))?.slice(name.length + 1));
+    const stringField = (args: string[], name: string) => {
+        const field = args.find((arg) => arg.startsWith(name + '='))?.slice(name.length + 1);
+        if (field === undefined) {
+            throw new Error(`missing fixture field ${name}`);
+        }
+        return field;
+    };
+    const comparisonCache = new Map<string, boolean>();
+    const capture = (command: string, args: string[]) => {
+        if (command === 'git') {
+            return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        }
+        const endpoint = args[1] ?? '';
+        const comparison = endpoint.match(/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})$/);
+        if (comparison !== null) {
+            const [, ancestor, descendant] = comparison;
+            const key = ancestor + ':' + descendant;
+            let contained = comparisonCache.get(key);
+            if (contained === undefined) {
+                contained = dag.ancestor(ancestor, descendant);
+                comparisonCache.set(key, contained);
+            }
+            const identical = ancestor === descendant;
+            let status = 'diverged';
+            if (identical) {
+                status = 'identical';
+            } else if (contained) {
+                status = 'ahead';
+            }
+            const mergeBase = execFileSync('git', ['merge-base', ancestor, descendant], {
+                cwd: root,
+                encoding: 'utf8',
+            }).trim();
+            const output = JSON.stringify({
+                url: `https://api.github.com/${endpoint}`,
+                status,
+                ahead_by: identical ? 0 : 1,
+                behind_by: contained ? 0 : 1,
+                total_commits: identical ? 0 : 1,
+                base_commit: { sha: ancestor },
+                merge_base_commit: { sha: mergeBase },
+                commits: identical ? [] : [{ sha: descendant }],
+            });
+            event('ancestor:' + key);
+            return output;
+        }
+        const query = stringField(args, 'query');
+        if (query.includes('headRefOid')) {
+            const value = row(numberField(args, 'number'));
+            const ref = value.baseRef;
+            let nativeRef:
+                | {
+                      name: string;
+                      repository: { nameWithOwner: string };
+                      target: { oid: string };
+                  }
+                | null
+                | undefined;
+            if (ref === null || ref === undefined) {
+                nativeRef = ref;
+            } else {
+                nativeRef = {
+                    name: ref.name,
+                    repository: { nameWithOwner: ref.repository },
+                    target: { oid: ref.target },
+                };
+            }
+            const pullRequest = {
+                id: 'PR_' + value.number,
+                number: value.number,
+                state: value.state,
+                headRefOid: value.head,
+                headRefName: value.headRefName,
+                headRepository: value.headRepository === null ? null : { nameWithOwner: value.headRepository },
+                baseRefName: value.base,
+                baseRefOid: value.baseRefOid,
+                merged: value.merged,
+                closedAt: value.closedAt,
+                mergeCommit: value.mergeCommit === null ? null : { oid: value.mergeCommit },
+                baseRef: nativeRef,
+            };
+            const output = JSON.stringify({ data: { repository: { nameWithOwner: value.repository, pullRequest } } });
+            event('core:' + value.number);
+            return output;
+        }
+        if (query.includes('reviewThreads(first:100')) {
+            const number = numberField(args, 'number');
+            const output = JSON.stringify({
+                data: {
+                    repository: {
+                        pullRequest: {
+                            reviewThreads: {
+                                nodes: (findings.get(number) ?? []).map((thread) => ({
+                                    id: thread.threadId,
+                                    comments: { nodes: [{ databaseId: Number(thread.rootCommentId) }] },
+                                })),
+                                pageInfo: { hasNextPage: false, endCursor: null },
+                            },
+                        },
+                    },
+                },
+            });
+            event('threads:' + number);
+            return output;
+        }
+        if (query.includes('node(id:$subjectId)')) {
+            const id = stringField(args, 'subjectId');
+            const number = Number(id.slice(3));
+            const output = JSON.stringify({
+                data: {
+                    node: {
+                        id,
+                        comments: {
+                            nodes: row(number).comments.map((comment) => ({
+                                ...comment,
+                                author: {
+                                    id: comment.authorNodeId,
+                                    login: comment.authorLogin,
+                                    __typename: comment.authorType,
+                                },
+                            })),
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    },
+                },
+            });
+            event('comments:' + number);
+            return output;
+        }
+        const clientMutationId = stringField(args, 'clientMutationId');
+        if (query.includes('addComment(input:')) {
+            const number = Number(stringField(args, 'subjectId').slice(3));
+            nextComment += 1;
+            const comment = markerComment('IC_created_' + nextComment, String(nextComment), stringField(args, 'body'));
+            row(number).comments.push(comment);
+            const output = JSON.stringify({
+                data: {
+                    addComment: {
+                        clientMutationId,
+                        commentEdge: {
+                            node: {
+                                ...comment,
+                                author: { id: AUTHOR_BOT_NODE_ID, __typename: 'Bot', login: 'author[bot]' },
+                            },
+                        },
+                    },
+                },
+            });
+            event('comment:' + number);
+            return output;
+        }
+        if (query.includes('closePullRequest(input:')) {
+            const id = stringField(args, 'pullRequestId');
+            const value = row(Number(id.slice(3)));
+            value.state = 'CLOSED';
+            value.closedAt = '2026-10-28T00:00:00Z';
+            event('close:' + value.number);
+            return JSON.stringify({
+                data: {
+                    closePullRequest: {
+                        clientMutationId,
+                        pullRequest: { id, state: value.state, closedAt: value.closedAt },
+                    },
+                },
+            });
+        }
+        if (query.includes('deleteIssueComment(input:')) {
+            const id = stringField(args, 'id');
+            for (const value of records.values()) {
+                value.comments = value.comments.filter((comment) => comment.id !== id);
+            }
+            event('delete:' + id);
+            return JSON.stringify({ data: { deleteIssueComment: { clientMutationId } } });
+        }
+        throw new Error('unexpected nested native query');
+    };
+    const port: SupersedePullRequestPort = {
+        ...shellPort({ configDir: root, env: {}, dispose: () => undefined }, root, capture),
+        log: (message) => event(message),
+    };
+    const input = () => ({
+        oldNumber: target,
+        expectedHead: row(target).head,
+        replacementNumber: replacement,
+        supersededParentNumber: oldNumbers[oldNumbers.length - 2],
+        parentReplacementNumber: explicitParentReplacement,
+        lineage: lineage(target, replacement),
+        authorNodeId: AUTHOR_BOT_NODE_ID,
+        port,
+    });
+    return {
+        port,
+        row,
+        findings,
+        events,
+        initialBinding,
+        dag,
+        onEvent: (hook: (event: string) => void) => {
+            onEvent = hook;
+        },
+        run: () => {
+            const value = input();
+            return supersedePullRequest(
+                value.oldNumber,
+                value.expectedHead,
+                value.replacementNumber,
+                value.lineage,
+                value.authorNodeId,
+                port,
+                value.supersededParentNumber,
+                value.parentReplacementNumber
+            );
+        },
+        serialized: () => serializedSupersedePullRequest(root, input(), serializeFixture),
+        writes: () => events.filter((value) => /^(?:comment|delete|close):/.test(value)),
+        advance: (unrelated = false) => {
+            const parent = row(target);
+            target += 1;
+            oldNumbers.push(target);
+            const child = add(
+                target,
+                dag.commit('old resident aliases', [parent.head], { ...content, 'resident.txt': 'resident' }),
+                'fix/nested-resident',
+                parent.headRefName,
+                parent.head
+            );
+            child.state = 'OPEN';
+            child.closedAt = null;
+            const source = dag.commit('delivered resident aliases', [unrelated ? dag.base : merge], {
+                ...content,
+                'resident.txt': 'resident',
+            });
+            const landed = dag.commit('resident squash', [merge], { ...content, 'resident.txt': 'resident' });
+            add(5002, source, 'fix/nested-resident-replacement', 'main', merge, true, landed);
+            explicitParentReplacement = replacement;
+            replacement = 5002;
+        },
+    };
+}
+
+describe('nested canonical native supersession', () => {
+    it('accepts exactly 32 binding levels and refuses the next level and contradictory repeated replacements', () => {
+        let record: ReturnType<typeof parseSupersessionParentBinding> = distinctBinding;
+        const wrap = (previous: ReturnType<typeof parseSupersessionParentBinding>, index: number) => ({
+            ...previous,
+            format: 'supersession-parent-v2' as const,
+            child: {
+                ...previous.child,
+                number: 6000 + index,
+                branch: 'fix/bounded-' + index,
+                base: previous.child.branch,
+            },
+            parent: {
+                number: previous.child.number,
+                head: previous.child.head,
+                branch: previous.child.branch,
+                base: previous.child.base,
+            },
+            parentReplacement: previous.replacement,
+            provenance: { kind: 'final-parent-head' as const, forkHead: previous.child.head, admittedParentHead: null },
+            parentCompletion: { id: 'IC_bounded_' + index, fullDatabaseId: String(6000 + index), binding: previous },
+        });
+        for (let index = 1; index < 32; index += 1) {
+            record = wrap(record, index);
+        }
+        expect(parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(record))).toEqual(
+            record
+        );
+        expect(() =>
+            parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(wrap(record, 32)))
+        ).toThrow(/maximum depth/i);
+        expect(() =>
+            parseSupersessionParentBinding(
+                'sourdaw-supersession-parent-v2 ' +
+                    canonicalJson({
+                        ...record,
+                        parentReplacement: { ...record.parentReplacement, head: movedHead },
+                    })
+            )
+        ).toThrow(/contradictory/i);
+    });
+
+    it('refuses a completed-parent cycle before reading or mutating the original child as an ancestor', async () => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            const child = fixture.row(4002);
+            const parent = fixture.row(4001);
+            parent.base = child.headRefName;
+            parent.baseRef = { name: child.headRefName, repository: child.repository, target: child.head };
+            parent.comments[2].body = bindingBody({
+                ...fixture.initialBinding,
+                child: { ...fixture.initialBinding.child, base: child.headRefName },
+                parent: { number: child.number, head: child.head, branch: child.headRefName, base: 'main' },
+                provenance: { kind: 'final-parent-head', forkHead: child.head, admittedParentHead: null },
+            });
+            expect(() => fixture.run()).toThrow(/cycle/i);
+            expect(fixture.writes()).toEqual([]);
+        });
+    });
+
+    it('closes a real two-level stack and then a distinct replacement whose parent completion is v2', async () => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            expect(await fixture.serialized()).toBe('pull-request-superseded:4002:5001');
+            const marker = fixture.row(4002).comments[2];
+            const binding = parseSupersessionParentBinding(marker.body);
+            expect(binding.format).toBe('supersession-parent-v2');
+            expect(binding).toMatchObject({
+                parentCompletion: {
+                    id: 'IC_binding_4001',
+                    fullDatabaseId: '40012',
+                    binding: fixture.initialBinding,
+                },
+            });
+            expect(fixture.row(4002).state).toBe('CLOSED');
+            expect(fixture.writes()).toEqual(['comment:4002', 'comment:4002', 'comment:4002', 'close:4002']);
+            const writes = [...fixture.writes()];
+            fixture.row(4002).baseRef = null;
+            fixture.row(4001).baseRef = null;
+            expect(await fixture.serialized()).toBe('pull-request-superseded:4002:5001');
+            expect(fixture.writes()).toEqual(writes);
+            expect(fixture.row(4002).comments[2].body).toBe(marker.body);
+            fixture.advance();
+            expect(await fixture.serialized()).toBe('pull-request-superseded:4003:5002');
+            expect(parseSupersessionParentBinding(fixture.row(4003).comments[2].body)).toMatchObject({
+                format: 'supersession-parent-v2',
+                parentReplacement: { number: 5001 },
+                parentCompletion: { binding: { format: 'supersession-parent-v2', replacement: { number: 5001 } } },
+            });
+            expect(fixture.events).toContain(
+                'ancestor:' + fixture.row(5001).mergeCommit + ':' + fixture.row(5002).head
+            );
+            const lastDependent = fixture.events.findLastIndex(
+                (value) => value.startsWith('threads:') || value.startsWith('comments:')
+            );
+            const finalCores = fixture.events.slice(lastDependent + 1);
+            for (const number of [4000, 4001, 4002, 5000, 5001, 5002, 4003]) {
+                expect(finalCores).toContain('core:' + number);
+            }
+            const writesAfter = [...fixture.writes()];
+            fixture.row(4003).baseRef = null;
+            expect(await fixture.serialized()).toBe('pull-request-superseded:4003:5002');
+            expect(fixture.writes()).toEqual(writesAfter);
+        });
+    }, 30_000);
+
+    it.each([false, true])('refuses missing immutable dependency containment with v2 parent=%s', async (v2Parent) => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root, !v2Parent);
+            if (v2Parent) {
+                fixture.run();
+                fixture.advance(true);
+            }
+            const writes = [...fixture.writes()];
+            expect(() => fixture.run()).toThrow(/merge commit is not proven/i);
+            expect(fixture.writes()).toEqual(writes);
+        });
+    });
+
+    it.each([
+        'missing',
+        'duplicate',
+        'foreign',
+        'wrong identity',
+        'wrong successor',
+        'missing ref',
+        'missing native ref',
+        'unrelated old child',
+    ] as const)('refuses %s completion evidence before writing', async (failure) => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            const parent = fixture.row(4001);
+            const marker = parent.comments[2];
+            if (failure === 'missing') {
+                parent.comments.pop();
+            }
+            if (failure === 'duplicate') {
+                parent.comments.push({ ...marker, id: 'IC_duplicate' });
+            }
+            if (failure === 'foreign') {
+                marker.authorNodeId = REVIEWER_BOT_NODE_ID;
+            }
+            if (failure === 'wrong identity') {
+                marker.body = bindingBody({
+                    ...fixture.initialBinding,
+                    child: { ...fixture.initialBinding.child, head: fixture.dag.base },
+                });
+            }
+            if (failure === 'wrong successor') {
+                marker.body = bindingBody({
+                    ...fixture.initialBinding,
+                    replacement: { ...fixture.initialBinding.replacement, head: fixture.dag.base },
+                });
+            }
+            if (failure === 'missing ref') {
+                fixture.row(4002).baseRef = null;
+            }
+            if (failure === 'missing native ref') {
+                fixture.row(4002).baseRef = undefined;
+            }
+            if (failure === 'unrelated old child') {
+                fixture.row(4002).head = fixture.dag.reusedParent;
+            }
+            expect(() => fixture.run()).toThrow();
+            expect(fixture.writes()).toEqual([]);
+        });
+    });
+
+    it.each([4000, 4001])('requires total current finding roots on ancestor %s', async (number) => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            fixture.findings.set(number, [{ threadId: 'PRRT_late', rootCommentId: '7001' }]);
+            expect(() => fixture.run()).toThrow(/no entry for finding 7001/i);
+            expect(fixture.writes()).toEqual([]);
+        });
+    });
+
+    it.each(['pre-write', 'pre-close', 'post-close', 'replay'] as const)(
+        'binds final ancestor cores at %s',
+        async (boundary) => {
+            await withLockRoot(async (root) => {
+                const fixture = nestedNativeFixture(root);
+                if (boundary === 'replay') {
+                    fixture.run();
+                }
+                const start = fixture.events.length;
+                let armed = boundary === 'pre-write' || boundary === 'replay';
+                let moved = false;
+                fixture.onEvent((event) => {
+                    if (boundary === 'pre-close' && event === 'comment:4002') {
+                        armed = true;
+                    }
+                    if (boundary === 'post-close' && event === 'close:4002') {
+                        armed = true;
+                    }
+                    if (armed && !moved && event === 'threads:4000') {
+                        fixture.row(5000).head = fixture.dag.base;
+                        moved = true;
+                    }
+                });
+                await expect(fixture.serialized()).rejects.toThrow();
+                expect(moved).toBe(true);
+                expect(fixture.events.slice(start)).not.toContain('pull-request-superseded:4002:5001');
+                if (boundary === 'post-close' || boundary === 'replay') {
+                    expect(fixture.row(4002).state).toBe('CLOSED');
+                    expect(fixture.row(4002).comments).toHaveLength(3);
+                    expect(fixture.events.slice(start).filter((event) => event.startsWith('delete:'))).toEqual([]);
+                } else {
+                    expect(fixture.row(4002).state).toBe('OPEN');
+                    expect(fixture.row(4002).comments).toEqual([]);
+                }
+                const owner = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(4002), 4002);
+                if (boundary === 'post-close') {
+                    expect(owner).toBeDefined();
+                } else {
+                    expect(owner).toBeUndefined();
+                }
+            });
+        }
+    );
+
+    it.each(['id', 'body', 'actor', 'roots'] as const)(
+        'compensates when ancestor %s changes during marker writes',
+        async (field) => {
+            await withLockRoot(async (root) => {
+                const fixture = nestedNativeFixture(root);
+                let moved = false;
+                fixture.onEvent((event) => {
+                    if (moved || event !== 'comment:4002') {
+                        return;
+                    }
+                    moved = true;
+                    const marker = fixture.row(4001).comments[2];
+                    if (field === 'id') {
+                        marker.id = 'IC_replaced_binding';
+                    }
+                    if (field === 'body') {
+                        marker.body += ' ';
+                    }
+                    if (field === 'actor') {
+                        marker.authorType = 'User';
+                    }
+                    if (field === 'roots') {
+                        fixture.findings.set(4000, [{ threadId: 'PRRT_new', rootCommentId: '7001' }]);
+                    }
+                });
+                await expect(fixture.serialized()).rejects.toThrow();
+                expect(fixture.row(4002).comments).toEqual([]);
+                expect(fixture.row(4002).state).toBe('OPEN');
+                expect(fixture.writes().filter((event) => event.startsWith('delete:'))).toHaveLength(3);
+                expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(4002), 4002)).toBeUndefined();
+            });
+        }
+    );
+
+    it('refuses a new root arriving during the final ancestor marker read after close', async () => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            let closed = false;
+            let markerReads = 0;
+            fixture.onEvent((event) => {
+                if (event === 'close:4002') {
+                    closed = true;
+                }
+                if (closed && event === 'comments:4000') {
+                    markerReads += 1;
+                    if (markerReads === 2) {
+                        fixture.findings.set(4000, [{ threadId: 'PRRT_final', rootCommentId: '7001' }]);
+                    }
+                }
+            });
+            await expect(fixture.serialized()).rejects.toThrow(/no entry for finding 7001/i);
+            expect(markerReads).toBe(2);
+            expect(fixture.row(4002).state).toBe('CLOSED');
+            expect(fixture.row(4002).comments).toHaveLength(3);
+            expect(fixture.events).not.toContain('pull-request-superseded:4002:5001');
+            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(4002), 4002)).toBeDefined();
+        });
+    });
+
+    it('refuses contradictory present refs and a substituted completion marker on CLOSED replay', async () => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            fixture.run();
+            const writes = [...fixture.writes()];
+            fixture.row(4001).comments[2].id = 'IC_substituted';
+            expect(() => fixture.run()).toThrow();
+            expect(fixture.writes()).toEqual(writes);
+        });
+    });
+
+    it('rejects noncanonical and oversized v2 records without weakening v1', async () => {
+        await withLockRoot(async (root) => {
+            const fixture = nestedNativeFixture(root);
+            fixture.run();
+            const body = fixture.row(4002).comments[2].body;
+            const binding = parseSupersessionParentBinding(body);
+            expect(() => parseSupersessionParentBinding(body.replace(' {', '  {'))).toThrow();
+            expect(() =>
+                parseSupersessionParentBinding(body.replace('"format":', '"format":"supersession-parent-v2","format":'))
+            ).toThrow();
+            expect(() =>
+                parseSupersessionParentBinding(
+                    'sourdaw-supersession-parent-v2 ' + canonicalJson({ ...binding, extra: 1 })
+                )
+            ).toThrow(/unexpected keys/i);
+            expect(() => parseSupersessionParentBinding(body + ' '.repeat(60_000))).toThrow(/byte size/i);
+            expect(() =>
+                parseSupersessionParentBinding('sourdaw-supersession-parent-v1 ' + canonicalJson(binding))
+            ).toThrow(/canonical/i);
+            const collision = {
+                ...binding,
+                replacement: { ...binding.replacement, number: 5000 },
+            };
+            expect(() =>
+                parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(collision))
+            ).toThrow(/contradictory repeated/i);
+            const reusedOriginal = {
+                ...binding,
+                replacement: { ...binding.replacement, number: 4000 },
+            };
+            expect(() =>
+                parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(reusedOriginal))
+            ).toThrow(/reuses an original/i);
+            expect(bindingBody(fixture.initialBinding)).toBe(fixture.row(4001).comments[2].body);
+        });
+    });
+});
+
 const databaseBase = 9223372036854775808n;
 const oldComment: IssueComment = {
     id: 'IC_old',
@@ -665,6 +1356,7 @@ function dependencyDag(root: string, unrelatedReplacement: boolean) {
     };
     return {
         base,
+        commit,
         originalParent,
         oldChild,
         finalParent,

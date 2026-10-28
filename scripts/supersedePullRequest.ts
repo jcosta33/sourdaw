@@ -186,6 +186,10 @@ const LINEAGE_LABEL = 'finding lineage marker';
 const LINEAGE_MARKER = 'sourdaw-lineage-v1';
 const SUPERSESSION_RECEIPT_PREFIX = 'Superseded by #';
 const PARENT_BINDING_MARKER = 'sourdaw-supersession-parent-v1';
+const NESTED_PARENT_BINDING_MARKER = 'sourdaw-supersession-parent-v2';
+const PARENT_BINDING_PREFIX = 'sourdaw-supersession-parent-';
+const MAX_PARENT_DEPTH = 32;
+const MAX_PARENT_BINDING_BYTES = 60_000;
 
 type ProofMarker = Pick<IssueComment, 'id' | 'fullDatabaseId' | 'body' | 'authorNodeId' | 'authorType'>;
 type PullRequestProof = Pick<
@@ -218,6 +222,11 @@ export type SupersessionParentBinding = {
     parentReplacement: ReplacementBinding;
     provenance: ParentProvenance;
 };
+type CompletedParentBinding = SupersessionParentBinding | NestedParentBinding;
+type NestedParentBinding = Omit<SupersessionParentBinding, 'format'> & {
+    format: 'supersession-parent-v2';
+    parentCompletion: { id: string; fullDatabaseId: string; binding: CompletedParentBinding };
+};
 type StackedParentProof = {
     parent: PullRequestProof;
     replacement: PullRequestProof;
@@ -232,6 +241,7 @@ type StackedParentProof = {
     child: Omit<PullRequestProof, 'state' | 'closedAt'>;
     provenance: ParentProvenance;
     historicalBase: string | null;
+    completion?: { marker: ProofMarker; binding: CompletedParentBinding; proof: StackedParentProof };
 };
 
 function pullRequestProof(value: SupersededPullRequest): PullRequestProof {
@@ -371,7 +381,7 @@ function replacementBinding(value: PullRequestProof) {
     };
 }
 
-function parentBindingRecord(proof: StackedParentProof): SupersessionParentBinding {
+function parentBindingRecord(proof: StackedParentProof): CompletedParentBinding {
     const child = proof.child;
     const parent = proof.parent;
     const parentReplacement = proof.dependency?.parentReplacement ?? proof.replacement;
@@ -383,7 +393,7 @@ function parentBindingRecord(proof: StackedParentProof): SupersessionParentBindi
         proof.replacement.headRefName,
         parentReplacement.headRefName,
     ]);
-    return {
+    const binding: SupersessionParentBinding = {
         format: 'supersession-parent-v1',
         repository: REQUIRED_REPOSITORY,
         child: {
@@ -399,10 +409,57 @@ function parentBindingRecord(proof: StackedParentProof): SupersessionParentBindi
         parentReplacement: replacementBinding(parentReplacement),
         provenance: proof.provenance,
     };
+    if (proof.completion === undefined) {
+        return binding;
+    }
+    return {
+        ...binding,
+        format: 'supersession-parent-v2',
+        parentCompletion: {
+            id: proof.completion.marker.id,
+            fullDatabaseId: proof.completion.marker.fullDatabaseId,
+            binding: proof.completion.binding,
+        },
+    };
 }
 
-export function renderSupersessionParentBinding(record: SupersessionParentBinding): string {
-    return `${PARENT_BINDING_MARKER} ${canonicalJson(readSupersessionParentBinding(record))}`;
+export function renderSupersessionParentBinding(record: CompletedParentBinding): string {
+    const binding = readSupersessionParentBinding(record);
+    assertParentBindingChain(binding);
+    const prefix = binding.format === 'supersession-parent-v1' ? PARENT_BINDING_MARKER : NESTED_PARENT_BINDING_MARKER;
+    const body = `${prefix} ${canonicalJson(binding)}`;
+    assertParentBindingSize(body);
+    return body;
+}
+
+function assertParentBindingChain(binding: CompletedParentBinding): void {
+    const originals = new Set<number>();
+    const replacements = new Map<number, ReplacementBinding>();
+    let current = binding;
+    while (true) {
+        if (originals.has(current.child.number)) {
+            fail('supersession parent binding contains a cycle');
+        }
+        originals.add(current.child.number);
+        for (const replacement of [current.replacement, current.parentReplacement]) {
+            const previous = replacements.get(replacement.number);
+            if (previous !== undefined && canonicalJson(previous) !== canonicalJson(replacement)) {
+                fail('supersession parent binding has contradictory repeated replacement identities');
+            }
+            replacements.set(replacement.number, replacement);
+        }
+        if (originals.has(current.parent.number)) {
+            fail('supersession parent binding contains a cycle');
+        }
+        if (current.format === 'supersession-parent-v1') {
+            originals.add(current.parent.number);
+            break;
+        }
+        current = current.parentCompletion.binding;
+    }
+    if ([...replacements.keys()].some((number) => originals.has(number))) {
+        fail('supersession parent binding replacement reuses an original identity');
+    }
 }
 
 function bindingObject(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
@@ -494,13 +551,18 @@ function assertParentBindingIdentities(record: SupersessionParentBinding): void 
     }
 }
 
-function readSupersessionParentBinding(value: unknown): SupersessionParentBinding {
-    const record = bindingObject(
-        value,
-        ['format', 'repository', 'child', 'parent', 'replacement', 'parentReplacement', 'provenance'],
-        'record'
-    );
-    if (record.format !== 'supersession-parent-v1' || record.repository !== REQUIRED_REPOSITORY) {
+function readSupersessionParentBinding(value: unknown, depth = 0): CompletedParentBinding {
+    if (depth >= MAX_PARENT_DEPTH) {
+        fail('supersession parent binding exceeds the maximum depth');
+    }
+    const nested =
+        typeof value === 'object' && value !== null && 'format' in value && value.format === 'supersession-parent-v2';
+    const keys = ['format', 'repository', 'child', 'parent', 'replacement', 'parentReplacement', 'provenance'];
+    if (nested) {
+        keys.push('parentCompletion');
+    }
+    const record = bindingObject(value, keys, 'record');
+    if ((!nested && record.format !== 'supersession-parent-v1') || record.repository !== REQUIRED_REPOSITORY) {
         fail('supersession parent binding format or repository is invalid');
     }
     const child = bindingObject(record.child, [...IDENTITY_KEYS, 'cachedBase', 'sourceRepository'], 'child');
@@ -522,12 +584,60 @@ function readSupersessionParentBinding(value: unknown): SupersessionParentBindin
         parentReplacement: readReplacementBinding(record.parentReplacement),
         provenance,
     };
-    assertParentBindingIdentities(binding);
-    return binding;
+    if (!nested) {
+        assertParentBindingIdentities(binding);
+        return binding;
+    }
+    const completion = bindingObject(record.parentCompletion, ['id', 'fullDatabaseId', 'binding'], 'parent completion');
+    const id = bindingString(completion.id, 'parent completion id');
+    if (
+        id === '' ||
+        id.length > 256 ||
+        !isDecimalId(completion.fullDatabaseId) ||
+        completion.fullDatabaseId.length > 32
+    ) {
+        fail('supersession parent completion marker identity is invalid');
+    }
+    const completed = readSupersessionParentBinding(completion.binding, depth + 1);
+    const result: NestedParentBinding = {
+        ...binding,
+        format: 'supersession-parent-v2',
+        parentCompletion: { id, fullDatabaseId: completion.fullDatabaseId, binding: completed },
+    };
+    assertNestedParentBindingIdentities(result);
+    return result;
 }
 
-export function parseSupersessionParentBinding(body: string): SupersessionParentBinding {
-    const prefix = `${PARENT_BINDING_MARKER} `;
+function assertNestedParentBindingIdentities(record: NestedParentBinding): void {
+    const { child, parent, replacement, parentReplacement, parentCompletion } = record;
+    const completedChild = parentCompletion.binding.child;
+    if (
+        new Set([child.number, parent.number, replacement.number]).size !== 3 ||
+        parentReplacement.number === child.number ||
+        parentReplacement.number === parent.number ||
+        child.base !== parent.branch ||
+        parent.base === replacement.base ||
+        parentReplacement.base !== replacement.base ||
+        canonicalJson(readBindingIdentity(completedChild)) !== canonicalJson(parent) ||
+        canonicalJson(parentCompletion.binding.replacement) !== canonicalJson(parentReplacement) ||
+        (record.provenance.kind === 'registered-lane-stack' && child.sourceRepository !== REQUIRED_REPOSITORY) ||
+        (parentReplacement.number === replacement.number &&
+            canonicalJson(parentReplacement) !== canonicalJson(replacement))
+    ) {
+        fail('nested supersession parent binding identities are contradictory');
+    }
+}
+
+function assertParentBindingSize(body: string): void {
+    if (Buffer.byteLength(body, 'utf8') > MAX_PARENT_BINDING_BYTES) {
+        fail('supersession parent binding exceeds the maximum byte size');
+    }
+}
+
+export function parseSupersessionParentBinding(body: string): CompletedParentBinding {
+    assertParentBindingSize(body);
+    const marker = body.startsWith(`${PARENT_BINDING_MARKER} `) ? PARENT_BINDING_MARKER : NESTED_PARENT_BINDING_MARKER;
+    const prefix = `${marker} `;
     if (!body.startsWith(prefix)) {
         fail('supersession parent binding marker is missing');
     }
@@ -540,14 +650,23 @@ export function parseSupersessionParentBinding(body: string): SupersessionParent
     return record;
 }
 
-function completedParentBinding(child: SupersededPullRequest): SupersessionParentBinding {
-    const candidates = child.comments.filter((comment) => comment.body.startsWith(PARENT_BINDING_MARKER));
+function completedParentCompletion(child: SupersededPullRequest): {
+    marker: ProofMarker;
+    binding: CompletedParentBinding;
+} {
+    const candidates = child.comments.filter((comment) => comment.body.startsWith(PARENT_BINDING_PREFIX));
     const [marker] = candidates;
     if (candidates.length !== 1 || marker === undefined) {
         fail(`PR #${child.number} does not have exactly one supersession parent binding marker`);
     }
-    proofMarker(marker, 'completed supersession parent binding');
-    return parseSupersessionParentBinding(marker.body);
+    return {
+        marker: proofMarker(marker, 'completed supersession parent binding'),
+        binding: parseSupersessionParentBinding(marker.body),
+    };
+}
+
+function completedParentBinding(child: SupersededPullRequest): CompletedParentBinding {
+    return completedParentCompletion(child).binding;
 }
 
 function stackedParentMarker(proof: StackedParentProof): MarkerSpec {
@@ -669,8 +788,12 @@ function inspectStackedParentProof(
     port: SupersedePullRequestPort,
     parentReplacementNumber?: number,
     completedReplay = false,
-    replayBinding?: SupersessionParentBinding
+    replayBinding?: CompletedParentBinding,
+    ancestors: readonly number[] = []
 ): StackedParentProof {
+    if (ancestors.length >= MAX_PARENT_DEPTH || ancestors.includes(old.number) || ancestors.includes(parentNumber)) {
+        fail('superseded parent proof contains a cycle or exceeds the maximum depth');
+    }
     if (
         !Number.isSafeInteger(parentNumber) ||
         parentNumber <= 0 ||
@@ -699,7 +822,8 @@ function inspectStackedParentProof(
             `superseded parent PR #${parentNumber} head repository does not match child base repository ${old.repository}`
         );
     }
-    if (parent.base !== replacement.base) {
+    const nested = parent.base !== replacement.base;
+    if (nested && !parent.comments.some((comment) => comment.body.startsWith(PARENT_BINDING_PREFIX))) {
         fail(`superseded parent PR #${parentNumber} does not target replacement base ${replacement.base}`);
     }
     let dependency: StackedParentProof['dependency'];
@@ -709,6 +833,33 @@ function inspectStackedParentProof(
     const parentSuccessor = parentReplacementNumber ?? replacement.number;
     const receipt = parentReceipt(parent, parentSuccessor);
     const lineage = parentLineage(parent, parentSuccessor, port);
+    let completion: StackedParentProof['completion'];
+    if (nested) {
+        const stored = completedParentCompletion(parent);
+        const successor = dependency === undefined ? replacement : port.inspect(dependency.parentReplacement.number);
+        if (
+            dependency !== undefined &&
+            JSON.stringify(pullRequestProof(successor)) !== JSON.stringify(dependency.parentReplacement)
+        ) {
+            fail(`superseded parent PR #${parentNumber} replacement changed during completed proof`);
+        }
+        if (canonicalJson(stored.binding.replacement) !== canonicalJson(replacementBinding(successor))) {
+            fail(`superseded parent PR #${parentNumber} completed replacement changed`);
+        }
+        const completedProof = inspectStackedParentProof(
+            parent,
+            successor,
+            stored.binding.parent.number,
+            port,
+            stored.binding.parentReplacement.number === successor.number
+                ? undefined
+                : stored.binding.parentReplacement.number,
+            true,
+            stored.binding,
+            [...ancestors, old.number]
+        );
+        completion = { ...stored, proof: completedProof };
+    }
     const child = inspectStackedChild(old, port);
     const childBaseRef = checkedChildBaseRef(child, parent, completedReplay);
     const provenance = historicalParentProvenance(child, parent, port, replayBinding);
@@ -726,10 +877,12 @@ function inspectStackedParentProof(
         child: oldDependencyIdentity(child),
         provenance,
         historicalBase: replayBinding === undefined ? (child.baseRefOid ?? null) : replayBinding.child.cachedBase,
+        ...(completion === undefined ? {} : { completion }),
     };
     if (replayBinding !== undefined && canonicalJson(parentBindingRecord(proof)) !== canonicalJson(replayBinding)) {
         fail(`PR #${child.number} completed parent binding does not match current identities`);
     }
+    proofAuthorities(proof);
     return proof;
 }
 
@@ -784,7 +937,11 @@ function assertStackedParentProofUnchanged(
     }
 }
 
-function assertParentMarkersCurrent(initial: StackedParentProof, port: SupersedePullRequestPort): void {
+function assertParentMarkersCurrent(
+    initial: StackedParentProof,
+    port: SupersedePullRequestPort,
+    refreshFindings = false
+): void {
     const parent = port.inspect(initial.parent.number);
     const successor = initial.dependency?.parentReplacement.number ?? initial.replacement.number;
     const receipt = parentReceipt(parent, successor);
@@ -800,6 +957,43 @@ function assertParentMarkersCurrent(initial: StackedParentProof, port: Supersede
     ) {
         fail(`superseded parent PR #${initial.parent.number} proof changed during supersession; compensating`);
     }
+    if (refreshFindings || initial.completion !== undefined) {
+        const findings = lineageFindings(parent.number, port);
+        assertFindingLineage(lineage, findings);
+        if (
+            JSON.stringify(findings.map((finding) => finding.findingId).sort()) !== JSON.stringify(initial.findingIds)
+        ) {
+            fail(`superseded parent PR #${parent.number} findings changed during supersession`);
+        }
+    }
+    if (initial.completion !== undefined) {
+        const current = completedParentCompletion(parent);
+        if (JSON.stringify(current.marker) !== JSON.stringify(initial.completion.marker)) {
+            fail(`superseded parent PR #${parent.number} completed binding changed during supersession`);
+        }
+        assertParentMarkersCurrent(initial.completion.proof, port, true);
+    }
+}
+
+function proofAuthorities(proof: StackedParentProof): PullRequestProof[] {
+    const authorities = new Map<number, PullRequestProof>();
+    const add = (authority: PullRequestProof) => {
+        const previous = authorities.get(authority.number);
+        if (previous !== undefined && JSON.stringify(previous) !== JSON.stringify(authority)) {
+            fail(`supersession authority PR #${authority.number} has contradictory identities`);
+        }
+        authorities.set(authority.number, authority);
+    };
+    let current: StackedParentProof | undefined = proof;
+    while (current !== undefined) {
+        add(current.replacement);
+        add(current.parent);
+        if (current.dependency !== undefined) {
+            add(current.dependency.parentReplacement);
+        }
+        current = current.completion?.proof;
+    }
+    return [...authorities.values()];
 }
 
 /**
@@ -814,9 +1008,13 @@ function assertSupersessionAuthoritiesCurrent(
     const authorities: PullRequestProof[] = [pullRequestProof(replacement)];
     if (stacked !== undefined) {
         assertParentMarkersCurrent(stacked, port);
-        authorities.push(stacked.parent);
-        if (stacked.dependency !== undefined) {
-            authorities.push(stacked.dependency.parentReplacement);
+        if (stacked.completion !== undefined) {
+            authorities.splice(0, authorities.length, ...proofAuthorities(stacked));
+        } else {
+            authorities.push(stacked.parent);
+            if (stacked.dependency !== undefined) {
+                authorities.push(stacked.dependency.parentReplacement);
+            }
         }
     }
     for (const authority of authorities) {
@@ -1239,7 +1437,7 @@ function assertReplacement(
     port: SupersedePullRequestPort,
     parentReplacementNumber?: number,
     completedReplay = false,
-    replayBinding?: SupersessionParentBinding
+    replayBinding?: CompletedParentBinding
 ): StackedParentProof | undefined {
     assertReplacementIdentityAndMerge(value, number, old);
     if (value.base === old.base) {
