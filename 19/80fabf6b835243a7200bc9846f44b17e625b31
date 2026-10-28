@@ -1,0 +1,56 @@
+.agents/decisions/0055-retire-automatic-semantic-review.md
+  h_beb54bf43b47b7 1-30
+.agents/decisions/README.md
+  h_beb54bf43b47b7 62-63,71
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 254-255
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1288-1290
+.gitignore
+  h_beb54bf43b47b7 33
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,280,1706,1718
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 352-353,1285-1286,1289,1292-1293,1296,1330,1417,1450,1453,1466,1473-1475,1480,1491,1499-1500,1519-1521
+scripts/__tests__/prepareReview.spec.ts
+  h_beb54bf43b47b7 126-127,155,158-162,164-167,252
+scripts/prepareReview.ts
+  h_beb54bf43b47b7 367
+scripts/prepareReviewEntry.ts
+  h_beb54bf43b47b7 117
+scripts/savedProjectStatePaths.ts
+  h_beb54bf43b47b7 2-3
+scripts/vitestCollectionPatterns.ts
+  h_beb54bf43b47b7 2-3
+scripts/workflowSecuritySurfaceContract.ts
+  h_beb54bf43b47b7 23
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 381-382
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 46,52,55-59,87,97,101,103,105,165
+.agents/skills/delivery-orchestration/references/closure-and-retirement.md
+  h_beb54bf43b47b7 1-135
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  h_beb54bf43b47b7 1-135
+.agents/skills/delivery-orchestration/references/repair-and-lock-recovery.md
+  h_beb54bf43b47b7 1-181
+.agents/skills/delivery-orchestration/references/review-records.md
+  h_beb54bf43b47b7 1-226
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  h_beb54bf43b47b7 1-20
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 10
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1980fabf6b835243a7200bc9846f44b17e625b31",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
