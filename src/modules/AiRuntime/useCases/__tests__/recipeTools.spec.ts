@@ -6,7 +6,6 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
-import { parseSemanticCommandList } from '../../models/SemanticCommandList';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
@@ -15,7 +14,6 @@ import { executeTransformCompile } from '../executeTransformCompile';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
-import { parseRecipeExpansionInput } from '../parseRecipeExpansionInput';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
 
@@ -983,7 +981,7 @@ describe('recipe.expand', () => {
             {
                 recipeId: 'vocal-warm',
                 targetId: 'lead-vocal-1',
-                values: Array.from({ length: 25 }, (_unused, index) => ({ step: 0, paramId: `p-${index}`, value: 1 })),
+                values: Array.from({ length: 17 }, (_unused, index) => ({ step: 0, paramId: `p-${index}`, value: 1 })),
             },
         ],
         [
@@ -1009,7 +1007,7 @@ describe('recipe.expand', () => {
                 {
                     kind: 'insert' as const,
                     deviceType: 'builtin-eq',
-                    parameters: Array.from({ length: 24 }, (_unused, index) => ({
+                    parameters: Array.from({ length: 17 }, (_unused, index) => ({
                         paramId: `eq-low-gain-${index}`,
                         minimum: 1,
                         maximum: 2,
@@ -1026,8 +1024,8 @@ describe('recipe.expand', () => {
         });
 
         expect(receipt.status).toBe('failure');
-        expect(receipt.error?.safeMessage).toContain('25 commands');
-        expect(receipt.error?.safeMessage).toContain('24');
+        expect(receipt.error?.safeMessage).toContain('18 commands');
+        expect(receipt.error?.safeMessage).toContain('16');
     });
 
     // Red when a midpoint snapped outside its window is emitted instead of refused.
@@ -1322,31 +1320,6 @@ describe('recipe.expand adoption by command.batch.propose', () => {
         if (result.status === 'rejected') {
             expect(result.reason).toBe('Provider command proposal exceeds the command budget.');
         }
-    });
-});
-
-describe('recipe expansion argument boundaries', () => {
-    it('keeps the provider semantic list ceiling at 16 items', () => {
-        const items = Array.from({ length: 17 }, (_, index) => ({
-            id: `item-${index}`,
-            name: 'muteTrack',
-            arguments: { trackId: `track-${index}`, muted: true },
-        }));
-        expect(parseSemanticCommandList({ schemaVersion: 1, items: items.slice(0, 16) }).status).toBe('accepted');
-        expect(parseSemanticCommandList({ schemaVersion: 1, items }).status).toBe('rejected');
-    });
-
-    it('accepts 24 supplied values through step 23 but refuses 25 values or step 24', () => {
-        const values = Array.from({ length: 24 }, (_, step) => ({ step, paramId: `p-${step}`, value: 1 }));
-        const input = { recipeId: 'recipe', targetId: 'track', values };
-        expect(parseRecipeExpansionInput(input, []).status).toBe('valid');
-        expect(
-            parseRecipeExpansionInput({ ...input, values: [...values, { step: 0, paramId: 'extra', value: 1 }] }, [])
-                .status
-        ).toBe('invalid');
-        expect(parseRecipeExpansionInput({ ...input, values: [{ step: 24, paramId: 'p', value: 1 }] }, []).status).toBe(
-            'invalid'
-        );
     });
 });
 

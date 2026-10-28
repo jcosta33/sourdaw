@@ -181,12 +181,12 @@ function readExpansion(receipt: ApplicationToolReceipt): ExpansionData {
 }
 
 /** The commands a stored chain must lower to on `lead-vocal-1`, written out from the chain itself. */
-function expectedCommands(chain: readonly ChainDevice[], afterDeviceId: string | null, trackId = 'lead-vocal-1') {
+function expectedCommands(chain: readonly ChainDevice[], afterDeviceId: string | null) {
     const commands: { name: string; arguments: Record<string, unknown> }[] = [];
     for (const [index, device] of chain.entries()) {
         const binding = `recipe-1-${String(index)}`;
         const after = index === 0 ? afterDeviceId : `$recipe-1-${String(index - 1)}`;
-        const addArguments: Record<string, unknown> = { trackId, deviceType: device.deviceType };
+        const addArguments: Record<string, unknown> = { trackId: 'lead-vocal-1', deviceType: device.deviceType };
         if (after !== null) {
             addArguments.afterDeviceId = after;
         }
@@ -276,9 +276,17 @@ describe('preset recipes', () => {
             expect(page.candidates[0]?.origin).toBeUndefined();
         });
 
-        it('offers the real guitar strip at the batch ceiling', async () => {
-            const data = await discover('loop-guitar-discover', { descriptors: ['warm'], role: 'guitar' });
-            expect(data.candidates.map((entry) => entry.id)).toContain('preset:fx-chain-guitar-clean:warm');
+        // Red when a preset the expander would refuse for size is still offered to the planner.
+        it('withholds a preset recipe that expands past the batch ceiling and says so', async () => {
+            const receipt = await runTool('loop-preset-oversize', 'recipe.discover', {
+                descriptors: ['warm'],
+                role: 'guitar',
+                limit: 8,
+            });
+
+            const data = receipt.data as DiscoveryData;
+            expect(data.candidates.map((entry) => entry.id)).not.toContain('preset:fx-chain-guitar-clean:warm');
+            expect(receipt.warnings.join(' ')).toContain('withheld');
         });
     });
 
@@ -393,113 +401,17 @@ describe('preset recipes', () => {
             expect(receipt.error?.safeMessage).toContain('no legal setting');
         });
 
-        it('refuses a primitive command alongside the 24-command guitar recipe', async () => {
+        it('refuses a preset that expands past the batch ceiling with the ordinary size refusal', async () => {
             setTracks([createTrack({ id: 'guitar-1', name: 'Guitar' })]);
-            const requestTurn = vi
-                .fn()
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'expand-1',
-                            name: 'recipe.expand',
-                            arguments: {
-                                recipeId: 'preset:fx-chain-guitar-clean:warm',
-                                targetId: 'guitar-1',
-                                role: 'guitar',
-                            },
-                        },
-                    ],
-                })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'propose-1',
-                            name: 'command.batch.propose',
-                            arguments: {
-                                commands: [{ name: 'setTempo', arguments: { bpm: 120 } }],
-                                compiledCallIds: ['expand-1'],
-                            },
-                        },
-                    ],
-                });
-            const result = await runApplicationOwnedToolLoop({
-                loopId: 'guitar-plus-one',
-                terminalToolNames: new Set(['command.batch.propose']),
-                requestTurn,
-                recipe: recipeExpansionTool(),
-            });
-            expect(result.receipts.find((entry) => entry.callId === 'expand-1')?.status).toBe('success');
-            expect(result).toMatchObject({
-                status: 'rejected',
-                reason: 'Provider command proposal exceeds the command budget.',
-            });
-        });
 
-        it('expands the real guitar strip after the existing insert with all stored values', async () => {
-            const chain: ChainDevice[] = [
-                {
-                    deviceType: 'builtin-eq',
-                    values: [
-                        ['eq-low-gain', -2],
-                        ['eq-low-freq', 100],
-                        ['eq-mid-gain', 2],
-                        ['eq-mid-freq', 1500],
-                        ['eq-mid-q', 1],
-                        ['eq-high-gain', 1],
-                        ['eq-high-freq', 6000],
-                    ],
-                },
-                {
-                    deviceType: 'builtin-compressor',
-                    values: [
-                        ['comp-threshold', -15],
-                        ['comp-ratio', 2.5],
-                        ['comp-attack', 20],
-                        ['comp-release', 150],
-                        ['comp-makeup', 2],
-                    ],
-                },
-                {
-                    deviceType: 'builtin-chorus',
-                    values: [
-                        ['chorus-rate', 0.6],
-                        ['chorus-depth', 4],
-                        ['chorus-feedback', 0.2],
-                        ['chorus-mix', 0.25],
-                    ],
-                },
-                {
-                    deviceType: 'builtin-reverb',
-                    values: [
-                        ['rev-size', 0.3],
-                        ['rev-decay', 1.5],
-                        ['rev-damping', 0.2],
-                        ['rev-mix', 0.25],
-                    ],
-                },
-            ];
-            setTracks([
-                createTrack({
-                    id: 'guitar-1',
-                    name: 'Guitar',
-                    devices: [installedDevice('existing', 'builtin-limiter')],
-                }),
-            ]);
-            const data = readExpansion(
-                await expand('loop-guitar-at-cap', {
-                    recipeId: 'preset:fx-chain-guitar-clean:warm',
-                    targetId: 'guitar-1',
-                    role: 'guitar',
-                })
-            );
-            expect(data.commands).toHaveLength(24);
-            expect(data.commands).toEqual(expectedCommands(chain, 'existing', 'guitar-1'));
-            expect(data.values).toHaveLength(20);
-            expect(data.values.every((value) => value.minimum === value.value && value.maximum === value.value)).toBe(
-                true
-            );
+            const receipt = await expand('loop-expand-oversize', {
+                recipeId: 'preset:fx-chain-guitar-clean:warm',
+                targetId: 'guitar-1',
+                role: 'guitar',
+            });
+
+            expect(receipt.status).toBe('failure');
+            expect(receipt.error?.safeMessage).toContain('24 commands');
         });
     });
 

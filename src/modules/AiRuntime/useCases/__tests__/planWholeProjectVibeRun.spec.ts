@@ -769,7 +769,7 @@ describe('planWholeProjectVibeRun recipe admission', () => {
     });
 
     it('never lists a recipe whose own expansion passes what one expansion may add to a batch', () => {
-        const oversizedParameterCount = RECIPE_EXPANSION_MAX_COMMANDS;
+        const oversizedParameterCount = RECIPE_EXPANSION_MAX_COMMANDS + 3;
         const oversized = synthetic(
             'warm-oversized',
             'warm',
@@ -778,13 +778,12 @@ describe('planWholeProjectVibeRun recipe admission', () => {
             oversizedParameterCount
         );
         expect(oversizedParameterCount + 1).toBeGreaterThan(RECIPE_EXPANSION_MAX_COMMANDS);
-        expect(oversizedParameterCount + 1).toBeGreaterThan(MAX_LLM_ACTIONS_PER_BATCH);
+        expect(oversizedParameterCount + 1).toBeLessThanOrEqual(MAX_LLM_ACTIONS_PER_BATCH);
         const ordinary = synthetic(
             'warm-ordinary',
             'warm',
             ['drums'],
-            [{ metric: 'spectralCentroid', direction: 'decrease' }],
-            RECIPE_EXPANSION_MAX_COMMANDS - 1
+            [{ metric: 'spectralCentroid', direction: 'decrease' }]
         );
 
         const result = planWholeProjectVibeRun({
