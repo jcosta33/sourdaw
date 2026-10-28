@@ -1,0 +1,21 @@
+scripts/__tests__/setupPnpm.spec.ts
+  s_3168504f6ce387::t_bc68e99436ca17 350-369,371
+  s_3168504f6ce387::t_d604f47747f608 370
+  s_3168504f6ce387::t_ad87de49ef4949 372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8931884eab2834a9c7eef24dfcc7e60729a58c98",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
