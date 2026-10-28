@@ -31,6 +31,7 @@ import {
 
 import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { handleReplaceOriginalMidiTakeRow } from '../replaceOriginalMidiTakeRow';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -205,6 +206,41 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
             [71, 112],
         ]);
         expect(documentRows()).toEqual(frozenRows());
+    });
+
+    it('refuses a stale selection prefix even when the current owner accepts the edit', () => {
+        const action = {
+            type: 'replaceOriginalMidiTakeRow' as const,
+            payload: {
+                laneId: 'lane',
+                takeId: 'selected',
+                sourceClipId: 'original',
+                rowId: edited.id,
+                rowKind: 'note' as const,
+                expected: edited,
+                replacement: { ...edited, velocity: 71 },
+                expectedSlotPresent: true,
+                replacementSlotPresent: true,
+            },
+        };
+        const staleSelection = {
+            type: 'selectTake' as const,
+            payload: {
+                trackId: 'track',
+                takeId: 'selected',
+                expectedLaneId: 'lane',
+                expectedSelectedTakeId: 'other-fragment',
+            },
+        };
+        const before = structuredClone(takeLaneStore.value);
+        expect(handleReplaceOriginalMidiTakeRow.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(true);
+        expect(
+            handleReplaceOriginalMidiTakeRow.validate?.(action, {
+                actions: [staleSelection, action],
+                actionIndex: 1,
+            })
+        ).toBe(false);
+        expect(takeLaneStore.value).toEqual(before);
     });
 
     it('refuses stale row and source owner without consuming command history', async () => {

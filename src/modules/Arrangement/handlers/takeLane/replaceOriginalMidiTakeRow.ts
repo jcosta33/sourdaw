@@ -48,9 +48,11 @@ function applies(action: RowAction, context?: HandlerValidationContext): boolean
     if (!state) {
         return false;
     }
-    let projected = state;
-    if (context) {
-        projected = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context);
+    const projected = context
+        ? compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context)
+        : state;
+    if (!projected) {
+        return false;
     }
     return prepareOriginalMidiTakeRowReplacement(action.payload, projected) !== null;
 }
