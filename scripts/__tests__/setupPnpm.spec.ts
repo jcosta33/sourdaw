@@ -60,13 +60,7 @@ describe('verified JavaScript pnpm setup', () => {
             ['npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund']],
             [
                 process.execPath,
-                [
-                    join(result.dest, 'bootstrap/node_modules/pnpm/bin/pnpm.mjs'),
-                    '--store-dir',
-                    join(result.dest, 'store'),
-                    'self-update',
-                    '11.6.0',
-                ],
+                [join(result.dest, 'bootstrap/node_modules/pnpm/bin/pnpm.mjs'), 'self-update', '11.6.0'],
             ],
             [join(result.bin, process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'), ['--version']],
         ]);
@@ -76,6 +70,7 @@ describe('verified JavaScript pnpm setup', () => {
                 NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org/',
                 NPM_CONFIG_STRICT_SSL: 'true',
                 PNPM_HOME: join(result.dest, 'runtime'),
+                PNPM_CONFIG_STORE_DIR: join(result.dest, 'store'),
                 XDG_CONFIG_HOME: join(result.dest, 'config'),
             });
             for (const key of ['NODE_OPTIONS', 'npm_config_cache', 'COREPACK_ROOT']) {

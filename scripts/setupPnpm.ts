@@ -134,6 +134,7 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.Proce
         NPM_CONFIG_REGISTRY: registry,
         NPM_CONFIG_STRICT_SSL: 'true',
         PNPM_HOME: join(root, 'runtime'),
+        PNPM_CONFIG_STORE_DIR: join(root, 'store'),
     };
 }
 
@@ -160,7 +161,7 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     command('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], 'bootstrap installation');
     command(
         options.node,
-        [join(bootstrap, 'node_modules/pnpm/bin/pnpm.mjs'), '--store-dir', join(dest, 'store'), 'self-update', version],
+        [join(bootstrap, 'node_modules/pnpm/bin/pnpm.mjs'), 'self-update', version],
         'verified target installation'
     );
     const home = join(dest, 'runtime');
