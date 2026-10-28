@@ -1,0 +1,23 @@
+.github/workflows/validation.yml
+  s_26f70b851e8f7a::t_deb93b9be08cc8 421,424
+scripts/test-health-gate-scripts.sh
+  s_26f70b851e8f7a::t_deb93b9be08cc8 347-362
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_26f70b851e8f7a::t_deb93b9be08cc8 854-857,867-868,3602-3604,3606,3614
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a98b59586bf300a8db3691be652f60a03ac96cc",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
