@@ -128,6 +128,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.restoreAllMocks();
     resetAiWorkflowCommandPreflightFixture();
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
@@ -154,17 +155,17 @@ it('preserves the live project while retaining 24 distinct transforms through th
     const confirmationWrites = vi.spyOn(pendingActionConfirmationStore, 'set');
     const undoWrites = vi.spyOn(undoHistoryStore, 'set');
     const runWrites = vi.spyOn(agentRunStore, 'set');
-    const before = JSON.stringify({
+    const before = {
         project: getCrdtDoc('root'),
-        tracks: trackStore.value,
-        midi: midiStore.value,
-        transport: transportStore.value,
-        undo: undoHistoryStore.value,
-        confirmations: pendingActionConfirmationStore.value,
-    });
+        tracks: structuredClone(trackStore.value),
+        midi: structuredClone(midiStore.value),
+        transport: structuredClone(transportStore.value),
+        undo: structuredClone(undoHistoryStore.value),
+        confirmations: structuredClone(pendingActionConfirmationStore.value),
+    };
+    expect(before.project).toBeDefined();
     const writes: (string | undefined)[] = [];
     const unsubscribe = subscribeToCrdtChanges((id) => writes.push(id));
-    const context = getProjectContext();
     const prompt = `Quantize MIDI clips ${clips
         .slice(0, 12)
         .map((c) => c.name)
@@ -172,23 +173,27 @@ it('preserves the live project while retaining 24 distinct transforms through th
         .slice(12)
         .map((c) => c.name)
         .join(', ')} up 1 semitone`;
-    const result = await parsePromptToActions({ prompt, context, projectRevision: captureProjectRevision() });
-    flushAutomergeStorageWrites();
-    unsubscribe();
+    let result: Awaited<ReturnType<typeof parsePromptToActions>>;
+    try {
+        const context = getProjectContext();
+        result = await parsePromptToActions({ prompt, context, projectRevision: captureProjectRevision() });
+    } finally {
+        try {
+            flushAutomergeStorageWrites();
+        } finally {
+            unsubscribe();
+        }
+    }
     expect(writes).toEqual([]);
     expect(confirmationWrites).not.toHaveBeenCalled();
     expect(undoWrites).not.toHaveBeenCalled();
     expect(runWrites).not.toHaveBeenCalled();
-    expect(
-        JSON.stringify({
-            project: getCrdtDoc('root'),
-            tracks: trackStore.value,
-            midi: midiStore.value,
-            transport: transportStore.value,
-            undo: undoHistoryStore.value,
-            confirmations: pendingActionConfirmationStore.value,
-        })
-    ).toBe(before);
+    expect(getCrdtDoc('root')).toStrictEqual(before.project);
+    expect(trackStore.value).toStrictEqual(before.tracks);
+    expect(midiStore.value).toStrictEqual(before.midi);
+    expect(transportStore.value).toStrictEqual(before.transport);
+    expect(undoHistoryStore.value).toStrictEqual(before.undo);
+    expect(pendingActionConfirmationStore.value).toStrictEqual(before.confirmations);
     expect(result.rejectionReason).toBeUndefined();
     expect(result.requiresConfirmation).toBe(true);
     expect(result.actions.map((action) => ({ type: action.type, ...action.payload }))).toEqual([
@@ -201,9 +206,7 @@ it('preserves the live project while retaining 24 distinct transforms through th
     ]);
     expect(provider).toHaveBeenCalledTimes(2);
     const [system, local, tools, maxOutput, , promptTokens] = provider.mock.calls[1]!;
-    const section = local.match(/(?:^|\n)relevant_evidence:\n([^\n]+)/)?.[1];
-    const evidence = JSON.parse(section!);
-    const summary = evidence.receipts[0].summary;
+    const summary = readReceiptSummary(local);
     expect(summary.truncated).toBe(false);
     expect(receiptsFromLocalMessage(local)).toEqual(result.applicationToolReceipts);
     const budget = budgetLocalPlanningRequest({
@@ -212,6 +215,7 @@ it('preserves the live project while retaining 24 distinct transforms through th
         windowTokens: 32768,
         configuredMaxOutputTokens: maxOutput,
     });
+    expect(maxOutput).toBe(8192);
     expect(budget).toMatchObject({ status: 'admitted', maxOutputTokens: maxOutput, promptTokens });
     expect(summary.value.length).toBeLessThan(8192);
     const raw = [
@@ -222,49 +226,101 @@ it('preserves the live project while retaining 24 distinct transforms through th
     ].join('\n');
     expect(raw.length).toBeGreaterThan(8192);
     expect(new TextEncoder().encode(raw).length).toBeGreaterThan(8192);
-    vi.restoreAllMocks();
 });
 
-function receiptsFromLocalMessage(message: string): unknown {
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readReceiptSummary(message: string): { value: string; truncated: boolean } {
     const section = message.match(/(?:^|\n)relevant_evidence:\n([^\n]+)/)?.[1];
     if (section === undefined) {
         throw new Error('Missing relevant evidence');
     }
-    const evidence: { receipts: { summary: { value: string; truncated: boolean } }[] } = JSON.parse(section);
-    const summary = evidence.receipts[0]?.summary;
-    if (summary === undefined || summary.truncated) {
+    const evidence: unknown = JSON.parse(section);
+    if (!isRecord(evidence) || !Array.isArray(evidence.receipts) || evidence.receipts.length !== 1) {
+        throw new Error('Expected exactly one correlated receipt summary');
+    }
+    const receipt: unknown = evidence.receipts[0];
+    if (
+        !isRecord(receipt) ||
+        !isRecord(receipt.summary) ||
+        typeof receipt.summary.value !== 'string' ||
+        typeof receipt.summary.truncated !== 'boolean'
+    ) {
+        throw new Error('Invalid receipt summary');
+    }
+    return { value: receipt.summary.value, truncated: receipt.summary.truncated };
+}
+
+function receiptsFromLocalMessage(message: string): unknown {
+    const summary = readReceiptSummary(message);
+    if (summary.truncated) {
         throw new Error('Missing complete receipt text');
     }
-    const wire: { version: number; layouts: string[][]; strings: string[]; shared: unknown[]; receipts: unknown } =
-        JSON.parse(summary.value.split('\n').at(-1)!);
-    expect(wire.version).toBe(1);
+    const encoded = summary.value.split('\n').at(-1);
+    if (encoded === undefined) {
+        throw new Error('Missing receipt wire');
+    }
+    const wire: unknown = JSON.parse(encoded);
+    if (
+        !isRecord(wire) ||
+        wire.version !== 1 ||
+        !Array.isArray(wire.layouts) ||
+        !Array.isArray(wire.strings) ||
+        !Array.isArray(wire.shared)
+    ) {
+        throw new Error('Invalid receipt wire');
+    }
+    const layouts: unknown[] = wire.layouts;
+    const strings: unknown[] = wire.strings;
+    const shared: unknown[] = wire.shared;
+    function index(value: unknown, length: number): number {
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value >= length) {
+            throw new Error('Invalid receipt reference');
+        }
+        return value;
+    }
     function decode(value: unknown): unknown {
         if (Array.isArray(value)) {
             return value.map(decode);
         }
-        if (value === null || typeof value !== 'object') {
+        if (!isRecord(value)) {
             return value;
         }
-        const entry = value as Record<string, unknown>;
-        const keys = Object.keys(entry);
+        const keys = Object.keys(value);
         if (keys.length === 1 && keys[0] === '$s') {
-            return wire.strings[entry.$s as number];
+            const found = strings[index(value.$s, strings.length)];
+            if (typeof found !== 'string') throw new Error('Invalid receipt string');
+            return found;
         }
         if (keys.length === 1 && keys[0] === '$v') {
-            return decode(wire.shared[entry.$v as number]);
+            return decode(shared[index(value.$v, shared.length)]);
         }
         if (keys.length === 1 && keys[0] === '$r') {
-            const [index, ...values] = entry.$r as unknown[];
-            const layout = wire.layouts[index as number]!;
-            if (layout.length !== values.length) {
+            if (!Array.isArray(value.$r)) throw new Error('Invalid receipt row');
+            const [rowIndex, ...values]: unknown[] = value.$r;
+            const layout: unknown = layouts[index(rowIndex, layouts.length)];
+            if (
+                !Array.isArray(layout) ||
+                layout.length !== values.length ||
+                !layout.every((key) => typeof key === 'string')
+            ) {
                 throw new Error('Invalid receipt layout');
             }
             return Object.fromEntries(layout.map((key, i) => [key, decode(values[i])]));
         }
         if (keys.length === 1 && keys[0] === '$l') {
-            return Object.fromEntries((entry.$l as [string, unknown][]).map(([key, child]) => [key, decode(child)]));
+            if (!Array.isArray(value.$l)) throw new Error('Invalid literal receipt object');
+            return Object.fromEntries(
+                value.$l.map((pair: unknown) => {
+                    if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string')
+                        throw new Error('Invalid literal receipt pair');
+                    return [pair[0], decode(pair[1])];
+                })
+            );
         }
-        return Object.fromEntries(Object.entries(entry).map(([key, child]) => [key, decode(child)]));
+        return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, decode(child)]));
     }
     return decode(wire.receipts);
 }
