@@ -1,0 +1,36 @@
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_3168504f6ce387::t_750b77a47356f1 365-368
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_3168504f6ce387::t_ed0ec64863def7 512,2438-2444
+  s_3168504f6ce387::t_945e67a8f21558 2445
+scripts/hostedWasmWorkflowContract.ts
+  s_3168504f6ce387::t_750b77a47356f1 133-142
+.github/actions/setup-pnpm/action.yml
+  s_3168504f6ce387::t_f0745e1919a568 1-28
+scripts/setupPnpm.ts
+  s_3168504f6ce387::t_f0745e1919a568 1-87,94-142,144-169,175-189
+  s_3168504f6ce387::t_b48e3349738972 88-93,143,170-174
+  s_3168504f6ce387::t_f0cbfcf0b601f4 190
+scripts/__tests__/setupPnpm.spec.ts
+  s_3168504f6ce387::t_ed0ec64863def7 1-2,4-17,23-132,140-163,165-202
+  s_3168504f6ce387::t_e0f994441c7e77 3,164
+  s_3168504f6ce387::t_b48e3349738972 18-22,133-139
+.github/actions/setup-pnpm/bootstrap/package.json
+  s_3168504f6ce387::t_f0745e1919a568 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdef5c7681b1c387b2fb994bbbf5f36aeec96aff",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
