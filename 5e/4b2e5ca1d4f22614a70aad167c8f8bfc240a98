@@ -1,0 +1,53 @@
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_26f70b851e8f7a::t_45e5bcc9b7be5b 1015-1022,1024,1047-1051,1054,1062-1064,1069-1072,1075
+src/modules/Collaboration/useCases/__tests__/assetTransferLibrary.spec.ts
+  s_26f70b851e8f7a::t_a5957ed7ca40a2 793,827,833
+  s_26f70b851e8f7a::t_a3dd38ed8691c4 1-727,762-792,794-826,828-832,834-838
+  s_26f70b851e8f7a::t_204f66d2fdc1b1 728,753,757
+  s_26f70b851e8f7a::t_d941bf0ad47436 729-752,754-756,758-761
+  s_26f70b851e8f7a::t_f44df506897140 839-843
+.agents/skills/review-stances/asset-cache-publication.md
+  s_26f70b851e8f7a::t_ce1ffeb532b4a2 1-19
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_26f70b851e8f7a::t_ddad9a92983bf9 1-2,5-6,34-35,83-84,161,170-171,1449-1636
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_26f70b851e8f7a::t_bde1a42d4f8b9d 7,274,379-392,445-456
+src/modules/Collaboration/useCases/__tests__/assetTransfer.spec.ts
+  s_26f70b851e8f7a::t_1e924fdf0b3ec8 820-838
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_26f70b851e8f7a::t_58be08c7248ccf 21,45-46,49-57,74-76,220-225
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_26f70b851e8f7a::t_bd866dd0e39ec6 2,92,439-442,445,452-454,456,1184-1194,1217-1288,1496-1500,2052
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_26f70b851e8f7a::t_a41e0be76c7653 163-165,2502-2657
+src/modules/SampleLibrary/repositories/__tests__/libraryAssetMappings.spec.ts
+  s_26f70b851e8f7a::t_5111aeff55512a 1-164
+src/modules/SampleLibrary/repositories/libraryAssetMappings.ts
+  s_26f70b851e8f7a::t_b272e822505434 1-194
+src/modules/SampleLibrary/useCases/__tests__/rememberLibraryAssetMapping.spec.ts
+  s_26f70b851e8f7a::t_784a8a06061a61 1-70
+src/modules/SampleLibrary/useCases/__tests__/resolveMappedLibraryAssetCandidate.spec.ts
+  s_26f70b851e8f7a::t_882484ff0ca67d 1-156
+src/modules/SampleLibrary/useCases/index.ts
+  s_26f70b851e8f7a::t_7a3e3bfc88bbd0 5-6
+src/modules/SampleLibrary/useCases/rememberLibraryAssetMapping.ts
+  s_26f70b851e8f7a::t_4dd52c8b620c17 1-42
+src/modules/SampleLibrary/useCases/resolveMappedLibraryAssetCandidate.ts
+  s_26f70b851e8f7a::t_26eebbf14e3d7a 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e4b2e5ca1d4f22614a70aad167c8f8bfc240a98",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
