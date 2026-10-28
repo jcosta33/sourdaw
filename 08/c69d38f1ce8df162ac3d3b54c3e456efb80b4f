@@ -1,0 +1,104 @@
+src/modules/AiRuntime/models/AgentRun.ts
+  h_beb54bf43b47b7 63,101-102
+src/modules/AiRuntime/models/IntentResult.ts
+  h_beb54bf43b47b7 16-17
+src/modules/AiRuntime/models/MeasuredPreview.ts
+  h_beb54bf43b47b7 2,39-40
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  h_beb54bf43b47b7 1-142
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  h_beb54bf43b47b7 3,42
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  h_beb54bf43b47b7 25,31,35,133-140,172-182,190,206-216
+src/modules/AiRuntime/stores/agentRunStore.ts
+  h_beb54bf43b47b7 41,1363-1368,1521-1525
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  h_beb54bf43b47b7 40,127,338,386,508
+src/modules/AiRuntime/useCases/__tests__/metricGoalAdmission.spec.ts
+  h_beb54bf43b47b7 11-12,105-160
+src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts
+  h_beb54bf43b47b7 1-185
+src/modules/AiRuntime/useCases/admitMetricIntent.ts
+  h_beb54bf43b47b7 1-138
+src/modules/AiRuntime/useCases/admitPlanningInterpretation.ts
+  h_beb54bf43b47b7 7-8,15-16,18,20-58,64-92,111,122
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  h_beb54bf43b47b7 362
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  h_beb54bf43b47b7 130,161,169-170,195,291
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  h_beb54bf43b47b7 719
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  h_beb54bf43b47b7 38,130,151-172
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  h_beb54bf43b47b7 136,209
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  h_beb54bf43b47b7 18,20,71-73,312-318
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  h_beb54bf43b47b7 474,499-512,521-523
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 42,96,178,181-185,223-226,1379,1389,1831,1851,2033,2075,2092,2116,2129,2191,2441,2484-2485,2490
+src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts
+  h_beb54bf43b47b7 1-57
+src/modules/AiRuntime/useCases/collectMetricGoalProof.ts
+  h_beb54bf43b47b7 1-45
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  h_beb54bf43b47b7 6,10,19,24-30,42-47,62,73,129
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  h_beb54bf43b47b7 11,13,28,95-107,109
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  h_beb54bf43b47b7 28-30,181-200
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  h_beb54bf43b47b7 18,146,149-150,153-161,175-177
+src/modules/AiRuntime/useCases/createPlanningCandidateView.ts
+  h_beb54bf43b47b7 5-6,82-83,178-191
+src/modules/AiRuntime/useCases/createPlanningInterpretationToolSchema.ts
+  h_beb54bf43b47b7 6,11,17,35-80,92
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  h_beb54bf43b47b7 1-293
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  h_beb54bf43b47b7 3-6,56-58,208-218,278-288
+src/modules/AiRuntime/useCases/executeRecipeExpansion.ts
+  h_beb54bf43b47b7 2,6,19,63-80,87,92,110
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  h_beb54bf43b47b7 5,13,15,101-104,197-205,230-235,391-436,438-443
+src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts
+  h_beb54bf43b47b7 20,38
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  h_beb54bf43b47b7 61,129-134
+src/modules/AiRuntime/useCases/metricGoalContractTypes.ts
+  h_beb54bf43b47b7 1-12
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  h_beb54bf43b47b7 1-370
+src/modules/AiRuntime/useCases/objectiveMetricProjection.ts
+  h_beb54bf43b47b7 1-68
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 4,6,18,90,109-110,114,141,450-472,486-487,494,570,580,586,592,678,771,807-893,953,957-958,965-986,996-999,1002-1005,1013-1014,1026,1079,1274-1287,1617-1670,1672
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  h_beb54bf43b47b7 33,285,326
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  h_beb54bf43b47b7 1-257
+src/modules/AiRuntime/useCases/prepareMetricIntentCatalog.ts
+  h_beb54bf43b47b7 1-173
+src/modules/AiRuntime/useCases/projectAnswerProviderReceipt.ts
+  h_beb54bf43b47b7 12,22-34
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  h_beb54bf43b47b7 21,24-26,241,251-260,340,344-345,356-411,429
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  h_beb54bf43b47b7 320,346,416
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  h_beb54bf43b47b7 3-5,7-8,14,28-62,68,93-99
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  h_beb54bf43b47b7 47-52,411-419,444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08c69d38f1ce8df162ac3d3b54c3e456efb80b4f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
