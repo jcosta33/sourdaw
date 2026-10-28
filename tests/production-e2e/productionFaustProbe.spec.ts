@@ -155,6 +155,15 @@ function createCalibrationPlatform() {
 
 let platform: ReturnType<typeof createCalibrationPlatform>;
 
+function thrownBy(action: () => unknown): unknown {
+    try {
+        action();
+    } catch (error) {
+        return error;
+    }
+    throw new Error('Expected the calibrated native operation to throw');
+}
+
 async function targetNode(): Promise<{ node: AudioWorkletNode; destination: GainNode }> {
     window.productionFaustProbe.setMode('pass');
     const context = new AudioContext();
@@ -245,13 +254,13 @@ describe('passive Faust diagnostic connection calibration', () => {
             throw new Error('Missing calibrated native node');
         }
         native.connectFailure = platform.nativeFailure;
-        expect(() => node.connect(destination)).toThrow(platform.nativeFailure);
+        expect(thrownBy(() => node.connect(destination))).toBe(platform.nativeFailure);
         expect(window.productionFaustProbe.snapshot()).toMatchObject({ tapCount: 0, samplePeak: 0 });
         native.connectFailure = undefined;
         expect(node.connect(destination, 0, 0)).toBe(destination);
         expect(platform.calls.at(-2)).toEqual({ method: 'connect', args: [destination, 0, 0] });
         native.disconnectFailure = platform.nativeFailure;
-        expect(() => node.disconnect()).toThrow(platform.nativeFailure);
+        expect(thrownBy(() => node.disconnect())).toBe(platform.nativeFailure);
         expect(window.productionFaustProbe.snapshot()).toMatchObject({ tapCount: 1, samplePeak: 0.25 });
         native.disconnectFailure = undefined;
         node.disconnect();
@@ -267,17 +276,33 @@ describe('passive Faust diagnostic connection calibration', () => {
         native.diagnosticFailure = platform.nativeFailure;
         expect(node.connect(destination)).toBe(destination);
         expect(native.edges.some((edge) => edge.destination === destination)).toBe(true);
-        expect(() => window.productionFaustProbe.snapshot()).toThrow(platform.nativeFailure);
+        expect(thrownBy(() => window.productionFaustProbe.snapshot())).toBe(platform.nativeFailure);
     });
 
-    it('installs the same function serialized into an independent realm without module closures', () => {
+    it('runs the same serialized installer and connection lifecycle in an independent realm without module closures', async () => {
         const fresh = createCalibrationPlatform();
         const sandbox: Record<string, unknown> = { ...fresh.globals };
         sandbox.window = sandbox;
-        runInNewContext(`(${installFaustProbe.toString()})()`, sandbox);
-        expect(sandbox.productionFaustProbe).toMatchObject({
-            snapshot: expect.any(Function),
-            release: expect.any(Function),
+        const result: unknown = runInNewContext(
+            `
+            (${installFaustProbe.toString()})();
+            (async () => {
+                window.productionFaustProbe.setMode('pass');
+                const context = new AudioContext();
+                const source = 'const faustData = {"dspName":"Tape_Delay","processorName":"serialized-tape"};';
+                await context.audioWorklet.addModule(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })));
+                const node = new AudioWorkletNode(context, 'serialized-tape');
+                node.connect(context.createGain());
+                const connected = window.productionFaustProbe.snapshot();
+                node.disconnect();
+                return { connected, disconnected: window.productionFaustProbe.snapshot() };
+            })();
+        `,
+            sandbox
+        );
+        expect(await result).toMatchObject({
+            connected: { tapCount: 1, samplePeak: 0.25 },
+            disconnected: { tapCount: 0, samplePeak: 0 },
         });
     });
 });
