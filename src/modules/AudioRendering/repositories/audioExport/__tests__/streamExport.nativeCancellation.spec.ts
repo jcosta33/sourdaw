@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { streamExport } from '../streamExport';
+import { streamExport } from '../../../useCases/audioExport/streamExport';
 
 const native = vi.hoisted(() => ({
     begin: vi.fn<(path: string) => Promise<string>>(),
