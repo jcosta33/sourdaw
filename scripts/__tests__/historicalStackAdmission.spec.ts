@@ -2333,16 +2333,15 @@ describe('native inspection executable identity', () => {
         expect(invocation.command).toBe(process.execPath);
     });
 
-    it.each(['gh and ps', 'ps', 'node', 'git alias'])(
+    it.each(['gh', 'ps', 'node', 'git alias'])(
         'refuses competing %s identities before launching the reader',
         (collision) => {
             const tools = inspectionToolFixture();
             let gitPath = tools.gitPath;
             let operatorPath = tools.operatorPath;
             let competing = '';
-            if (collision === 'gh and ps') {
+            if (collision === 'gh') {
                 competing = tools.executable(join(tools.gitDir, 'gh'));
-                tools.executable(join(tools.gitDir, 'ps'));
             }
             if (collision === 'ps') {
                 competing = tools.executable(join(tools.gitDir, 'ps'));
