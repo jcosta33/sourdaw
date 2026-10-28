@@ -63,8 +63,8 @@ const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
 const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
 const SHARDED_BROWSER_STEPS = [
-    ...SETUP_PNPM_NODE,
-    'Install Playwright browsers',
+    ...SETUP_NODE,
+    'Verify preinstalled browser runtime',
     'Run shard',
     'Report shard failure',
     'Upload blob report',
@@ -108,6 +108,7 @@ const STATIC_SUITE_STEPS = [
 ] as const;
 const VALIDATION_STATIC_SUITE_STEPS = [
     STATIC_SUITE_STEPS[0],
+    'Hosted installer systemd proof',
     'Campaign fixture freshness',
     ...STATIC_SUITE_STEPS.slice(1),
 ] as const;
@@ -192,7 +193,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
-        smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
+        smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
             ...NODE_SETUP_ACTIONS,

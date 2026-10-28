@@ -330,9 +330,9 @@ describe('finite captured offsets refuse unsafe derived MIDI coordinates', () =>
         expect(trimClipStart('c-loop', 0, undefined, Number.MAX_VALUE)).toBe(false);
         expect(trackStore.value).toBe(tracksBefore);
         expect(midiStore.value).toBe(midiBefore);
-        expect(handleTrimClipStart.execute(action)).toEqual({ status: 'no-write' });
+        expect(handleTrimClipStart.execute(action)).toEqual({ status: 'conflict' });
         if (verifiesCommand) {
-            await executeAppAction(action);
+            await expect(executeAppAction(action)).rejects.toMatchObject({ name: 'AppActionConflictError' });
             flushAutomergeStorageWrites();
             expect(JSON.stringify(getCrdtDoc('root'))).toBe(documentBefore);
             expect(undoHistoryStore.value).toEqual(historyBefore);

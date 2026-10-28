@@ -11,6 +11,17 @@
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
 
+/** Identity-scoped row numbers captured by an executed slip or trim, without row snapshots. */
+type MidiRowCoordinateCapture = {
+    beatDelta: number;
+    coordinates: {
+        kind: 'note' | 'cc' | 'pitchBend';
+        id: string;
+        beforeBeat: number;
+        afterBeat: number;
+    }[];
+};
+
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
  * other snapshot here, so this neutral contract does not depend on a model owned by
@@ -1466,6 +1477,8 @@ export type AppAction =
                * and replay the re-wrapping law they always did.
                */
               midiOffsetBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
@@ -1487,6 +1500,8 @@ export type AppAction =
                * restoration (`rowLiftBeats: 0`).
                */
               rowLiftBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | {
@@ -3215,6 +3230,14 @@ export type HandlerValidationContext = {
     readonly workOwner?: AgentWorkOwnerIdentity | null;
     /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
     readonly executionMode?: 'isolated-preview';
+    /** Ephemeral Inspector preview owner; never part of persisted actions or replay. */
+    readonly deviceParameterRuntimeAuthority?: {
+        readonly trackId: string;
+        readonly deviceId: string;
+        readonly paramId: string;
+        readonly owner: symbol;
+        readonly isCurrent: () => boolean;
+    };
 };
 
 export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
@@ -3272,7 +3295,7 @@ type ActionHandlerCommon<Action extends AppAction> = {
     /** Owner-provided strict validation for an internal persisted replay payload. */
     validateSessionActionArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
-    prepareAbort?: (action: Action) => HandlerAfterCommit;
+    prepareAbort?: (action: Action, context?: HandlerValidationContext) => HandlerAfterCommit;
     /**
      * Called with this inverse action once a redo has replayed the entry it inverts.
      *
