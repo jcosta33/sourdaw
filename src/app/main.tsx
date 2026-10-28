@@ -2,6 +2,10 @@ import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup }
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
+// Only a failed entry graph before this boundary is safe to retry automatically.
+document.documentElement.setAttribute('data-sourdaw-entry-started', '');
+document.getElementById('entry-startup')?.remove();
+
 const root = document.getElementById('root')!;
 
 function paintAppShellMarker(container: HTMLElement): void {

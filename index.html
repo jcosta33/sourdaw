@@ -9,9 +9,31 @@
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        <script src="/entryLoadRecovery.js"></script>
     </head>
     <body class="bg-background text-foreground antialiased">
-        <div id="root"></div>
-        <script type="module" src="/src/app/main.tsx"></script>
+        <div id="root">
+            <main
+                id="entry-startup"
+                style="
+                    min-height: 100vh;
+                    display: grid;
+                    place-items: center;
+                    background: #020100;
+                    color: #eee;
+                    font-family: system-ui;
+                    text-align: center;
+                "
+            >
+                <section role="status" aria-labelledby="entry-startup-title" style="max-width: 28rem; padding: 1.5rem">
+                    <h1 id="entry-startup-title">Starting Sourdaw</h1>
+                    <p id="entry-startup-description">
+                        If this screen remains, use your browser's Reload to try starting Sourdaw again.
+                    </p>
+                    <button id="entry-startup-reload" type="button" hidden>Reload Sourdaw</button>
+                </section>
+            </main>
+        </div>
+        <script id="sourdaw-entry" type="module" src="/src/app/main.tsx"></script>
     </body>
 </html>
