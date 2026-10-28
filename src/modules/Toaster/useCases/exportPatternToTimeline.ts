@@ -4,6 +4,7 @@ import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { getSettledProjectIdentity } from '#/modules/Project/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
+import { type Pattern } from '../models/ToasterKit';
 import { toasterStore } from '../stores/toasterStore';
 
 import { getEffectiveToasterPattern } from './getEffectiveToasterPattern';
@@ -12,81 +13,30 @@ import { projectToasterStepEvents } from './projectToasterStepEvents';
 
 type ExportPatternToTimelineResult = { ok: true } | { ok: false; message: string };
 
-/**
- * Export the active pattern to the timeline as MIDI clips, one per pad lane.
- *
- * Fidelity decision (resolving the prior "lossy vs full-fidelity" Unknown):
- * the exporter is faithful to every musical dimension a plain MIDI note routed
- * to a pad can carry, baked at export time so the clip plays the same groove
- * the live sequencer plays:
- *   - microTiming  → baked into note start (matches `sequencerPlayback.tick`)
- *   - swing        → baked into odd-step note start (matches the player's
- *                    `swing * stepDuration * 0.5` push on odd steps)
- *   - retrigger    → emitted as extra notes with the player's decay-velocity
- *                    model (`vel * (1 - r * 0.12)`, floored)
- *   - meter        → clip length derived from the pattern's own step grid, not
- *                    a hard-coded 4 beats/bar
- * Dimensions a MIDI note cannot represent are intentionally NOT exported and
- * remain part of the live instrument only: per-step sound locks and param
- * locks (no per-note engine/param override exists on a MIDI note), per-step
- * `probability` and runtime `condition`s (`fill`/`first`/…), which depend on
- * play-time loop state and cannot be frozen into a static clip. (`addMidiNote`
- * also takes no probability argument, so a faithful export would have to widen
- * that surface; out of scope here.)
- */
-export async function exportPatternToTimeline(deviceId: string): Promise<ExportPatternToTimelineResult> {
-    const state = toasterStore.value?.[deviceId];
-    if (!state) {
-        return { ok: false, message: 'The Toaster is not ready.' };
-    }
+type BakeAction = Parameters<typeof executeAppActionBatch>[0][number];
 
-    const kit = state.kit;
-    const effective = getEffectiveToasterPattern(kit);
-    const projectId = getSettledProjectIdentity()?.projectId;
-    const projectIdentity = captureProjectIdentity();
-    if (!effective || !projectId) {
-        return { ok: false, message: 'The pattern or project is not ready.' };
-    }
-    const { sourcePattern, pattern } = effective;
+type PrepareBakeInput = {
+    deviceId: string;
+    sourcePattern: Pattern;
+    pattern: Pattern;
+    childTracksByPad: Map<number, ReturnType<typeof getAllTracks>[number]>;
+    totalSteps: number;
+    stepDurationBeats: number;
+    insertAt: number;
+    swing: number;
+};
 
-    const grooveCapability = projectToasterPatternGroove({
-        deviceId,
-        patternId: sourcePattern.id,
-        stepsPerBar: pattern.stepsPerBar,
-        events: [],
-    });
-    if (!grooveCapability.ok) {
-        return { ok: false, message: `The groove cannot be baked: ${grooveCapability.status.status}.` };
-    }
-
-    const tracks = getAllTracks();
-    const parentTrack = tracks.find((t) => t.devices.some((d) => d.id === deviceId));
-    if (!parentTrack) {
-        return { ok: false, message: 'The Toaster track is no longer present.' };
-    }
-
-    // Child tracks in the parent's creation order. createDrumTrackStack pushes
-    // one child per pad in pad order, so the Nth child IS pad N — map by that
-    // pad identity, not by a raw filtered array index that would silently
-    // misalign if the child set were ever sparse.
-    const childTracksByPad = new Map<number, (typeof tracks)[number]>();
-    let padOrdinal = 0;
-    for (const track of tracks) {
-        if (track.parentId === parentTrack.id) {
-            childTracksByPad.set(padOrdinal, track);
-            padOrdinal += 1;
-        }
-    }
-
+function prepareBakeActions({
+    deviceId,
+    sourcePattern,
+    pattern,
+    childTracksByPad,
+    totalSteps,
+    stepDurationBeats,
+    insertAt,
+    swing,
+}: PrepareBakeInput): { ok: true; actions: BakeAction[] } | { ok: false; message: string } {
     const stepsPerBar = pattern.stepsPerBar;
-    const totalSteps = stepsPerBar * pattern.bars;
-    const stepDurationBeats = 4 / stepsPerBar;
-    const insertAt = playheadPositionRef.current; // beats — place pattern at playhead
-    const swing = state.kit.swing;
-    if (!Number.isFinite(insertAt) || insertAt < 0) {
-        return { ok: false, message: 'The playhead position is invalid.' };
-    }
-    type BakeAction = Parameters<typeof executeAppActionBatch>[0][number];
     const actions: BakeAction[] = [];
 
     for (const track of pattern.tracks) {
@@ -170,6 +120,97 @@ export async function exportPatternToTimeline(deviceId: string): Promise<ExportP
             }
         );
     }
+    return { ok: true, actions };
+}
+
+/**
+ * Export the active pattern to the timeline as MIDI clips, one per pad lane.
+ *
+ * Fidelity decision (resolving the prior "lossy vs full-fidelity" Unknown):
+ * the exporter is faithful to every musical dimension a plain MIDI note routed
+ * to a pad can carry, baked at export time so the clip plays the same groove
+ * the live sequencer plays:
+ *   - microTiming  → baked into note start (matches `sequencerPlayback.tick`)
+ *   - swing        → baked into odd-step note start (matches the player's
+ *                    `swing * stepDuration * 0.5` push on odd steps)
+ *   - retrigger    → emitted as extra notes with the player's decay-velocity
+ *                    model (`vel * (1 - r * 0.12)`, floored)
+ *   - meter        → clip length derived from the pattern's own step grid, not
+ *                    a hard-coded 4 beats/bar
+ * Dimensions a MIDI note cannot represent are intentionally NOT exported and
+ * remain part of the live instrument only: per-step sound locks and param
+ * locks (no per-note engine/param override exists on a MIDI note), per-step
+ * `probability` and runtime `condition`s (`fill`/`first`/…), which depend on
+ * play-time loop state and cannot be frozen into a static clip. (`addMidiNote`
+ * also takes no probability argument, so a faithful export would have to widen
+ * that surface; out of scope here.)
+ */
+export async function exportPatternToTimeline(deviceId: string): Promise<ExportPatternToTimelineResult> {
+    const state = toasterStore.value?.[deviceId];
+    if (!state) {
+        return { ok: false, message: 'The Toaster is not ready.' };
+    }
+
+    const kit = state.kit;
+    const effective = getEffectiveToasterPattern(kit);
+    const projectId = getSettledProjectIdentity()?.projectId;
+    const projectIdentity = captureProjectIdentity();
+    if (!effective || !projectId) {
+        return { ok: false, message: 'The pattern or project is not ready.' };
+    }
+    const { sourcePattern, pattern } = effective;
+
+    const grooveCapability = projectToasterPatternGroove({
+        deviceId,
+        patternId: sourcePattern.id,
+        stepsPerBar: pattern.stepsPerBar,
+        events: [],
+    });
+    if (!grooveCapability.ok) {
+        return { ok: false, message: `The groove cannot be baked: ${grooveCapability.status.status}.` };
+    }
+
+    const tracks = getAllTracks();
+    const parentTrack = tracks.find((t) => t.devices.some((d) => d.id === deviceId));
+    if (!parentTrack) {
+        return { ok: false, message: 'The Toaster track is no longer present.' };
+    }
+
+    // Child tracks in the parent's creation order. createDrumTrackStack pushes
+    // one child per pad in pad order, so the Nth child IS pad N — map by that
+    // pad identity, not by a raw filtered array index that would silently
+    // misalign if the child set were ever sparse.
+    const childTracksByPad = new Map<number, (typeof tracks)[number]>();
+    let padOrdinal = 0;
+    for (const track of tracks) {
+        if (track.parentId === parentTrack.id) {
+            childTracksByPad.set(padOrdinal, track);
+            padOrdinal += 1;
+        }
+    }
+
+    const stepsPerBar = pattern.stepsPerBar;
+    const totalSteps = stepsPerBar * pattern.bars;
+    const stepDurationBeats = 4 / stepsPerBar;
+    const insertAt = playheadPositionRef.current; // beats — place pattern at playhead
+    const swing = state.kit.swing;
+    if (!Number.isFinite(insertAt) || insertAt < 0) {
+        return { ok: false, message: 'The playhead position is invalid.' };
+    }
+    const prepared = prepareBakeActions({
+        deviceId,
+        sourcePattern,
+        pattern,
+        childTracksByPad,
+        totalSteps,
+        stepDurationBeats,
+        insertAt,
+        swing,
+    });
+    if (!prepared.ok) {
+        return prepared;
+    }
+    const { actions } = prepared;
     if (actions.length === 0) {
         return { ok: false, message: 'This pattern has no active steps on available pad tracks.' };
     }

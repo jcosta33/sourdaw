@@ -1,6 +1,7 @@
+import { wasToasterKitExplicitlyCommitted } from '../models/toasterKitCommitMarkers';
 import { toasterStore } from '../stores/toasterStore';
 
-import { commitToasterKit, wasToasterKitExplicitlyCommitted } from './commitToasterKit';
+import { commitToasterKit } from './commitToasterKit';
 
 /**
  * Mirror every Toaster kit edit into project truth.

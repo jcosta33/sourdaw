@@ -4,9 +4,9 @@ import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { getSettledProjectIdentity } from '#/modules/Project/stores';
 
 import { type ToasterKit } from '../../models/ToasterKit';
+import { markToasterKitCommitted } from '../../models/toasterKitCommitMarkers';
 import { toToasterKitState } from '../../models/ToasterKitState';
 import { captureToasterDeviceLifetime, toasterStore } from '../../stores/toasterStore';
-import { markToasterKitCommitted } from '../commitToasterKit';
 
 type MorphQueue = { tail: Promise<void>; lastCommittedKit: ToasterKit | null };
 const morphQueues = new Map<string, MorphQueue>();

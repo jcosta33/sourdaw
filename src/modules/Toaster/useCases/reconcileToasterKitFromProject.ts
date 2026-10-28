@@ -1,10 +1,10 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
+import { markToasterKitCommitted } from '../models/toasterKitCommitMarkers';
 import { fromToasterKitState } from '../models/ToasterKitState';
 import { toasterStore } from '../stores/toasterStore';
 
-import { markToasterKitCommitted } from './commitToasterKit';
 import { loadToasterKitPreset } from './loadToasterKit';
 
 /**
