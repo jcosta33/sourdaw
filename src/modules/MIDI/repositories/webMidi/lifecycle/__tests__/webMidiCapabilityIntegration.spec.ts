@@ -218,7 +218,9 @@ describe('Web MIDI capability snapshot at repository startup', () => {
             .mockRejectedValueOnce(new Error('Permission denied'))
             .mockReturnValueOnce(permission.promise);
         vi.stubGlobal('navigator', { requestMIDIAccess });
-        if (desktop) desktopInvokeMock.mockRejectedValueOnce(new Error('native denied'));
+        if (desktop) {
+            desktopInvokeMock.mockRejectedValueOnce(new Error('native denied'));
+        }
         const { initWebMidi } = await import('../initWebMidi');
         const { destroyWebMidi } = await import('../destroyWebMidi');
         const { webMidiStore } = await import('../../../../stores/webMidiStore');
