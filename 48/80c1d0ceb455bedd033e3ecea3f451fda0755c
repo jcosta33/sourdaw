@@ -1,0 +1,19 @@
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  s_59e31a5c6f3e31::t_da173af87585e5 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4880c1d0ceb455bedd033e3ecea3f451fda0755c",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
