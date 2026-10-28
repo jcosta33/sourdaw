@@ -1,0 +1,20 @@
+tests/production-e2e/playwright.config.ts
+  h_beb54bf43b47b7 28-30
+tests/production-e2e/productionFaustExport.e2e.spec.ts
+  h_beb54bf43b47b7 12,39,209,252,266,363-364
+tests/production-e2e/productionTransportInput.spec.ts
+  h_beb54bf43b47b7 1-148
+tests/production-e2e/productionTransportInput.ts
+  h_beb54bf43b47b7 1-379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e92e16e11d0a30e3e3cc8ca5ffd15b4fcba6a4e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
