@@ -1,0 +1,46 @@
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_59e31a5c6f3e31::t_983bf8da6597f3 30,85,87-94,205-206,209
+  s_59e31a5c6f3e31::t_4b5e7c1658b51c 204,207-208
+src/modules/Project/useCases/projectPersistence/fileIO/projectOriginalMediaArchive.ts
+  s_59e31a5c6f3e31::t_29ffe384aed7b6 62-63
+tests/e2e/smoke.spec.ts
+  s_59e31a5c6f3e31::t_72cd2b85fbb7f1 266-278,294-300,303-306,308-313,368,379,432,448
+  s_59e31a5c6f3e31::t_773ca3d2d3f4af 279-291,307
+  s_59e31a5c6f3e31::t_8313bd4fd3ed8a 292-293,301-302
+src/modules/Project/useCases/projectPersistence/saveProject/collectProjectDirectoryPcm.ts
+  s_59e31a5c6f3e31::t_8359e73052e34a 44-48
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/collectProjectOriginalHashes.spec.ts
+  s_59e31a5c6f3e31::t_24c014a997e3ca 20,58,86
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_59e31a5c6f3e31::t_d44f4b6ad51199 101-106
+src/modules/Collaboration/useCases/projectOriginalMedia.ts
+  s_59e31a5c6f3e31::t_981b48e11aabc8 101,105-107,110
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectOriginalHashes.ts
+  s_59e31a5c6f3e31::t_2a6e77644d0d5d 12-14,16-18,84
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_59e31a5c6f3e31::t_981b48e11aabc8 460,464-466,469
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  s_59e31a5c6f3e31::t_b3902adf1b9edc 31-33,45-50,70-72,82-87,109-111,204,206,229-231,251-253,255-257,260-262,279-281,284-290,315-317
+  s_59e31a5c6f3e31::t_24c014a997e3ca 126-128
+src/modules/Project/useCases/projectPersistence/projectDirectoryRead.ts
+  s_59e31a5c6f3e31::t_cfea85cef836bb 57-58,72-74,76
+src/modules/Project/repositories/project/projectDirectory.ts
+  s_59e31a5c6f3e31::t_b85a38ef5053a8 10,161,182,186-190,211-219,242-244
+  s_59e31a5c6f3e31::t_c01c4a493fd2a0 170,179,185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "767049386acfdd1f31c6ca05addd1afcdb24bb90",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
