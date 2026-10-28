@@ -1253,6 +1253,120 @@ describe('Inspector continuous parameter gestures through real history', () => {
         }
     );
 
+    it.each(
+        (['touch', 'latch', 'write'] as const).flatMap((sourceMode) =>
+            (['read', 'off', 'touch', 'latch', 'write'] as const).flatMap((endMode) =>
+                [false, true].flatMap((moveAfterSwitch) =>
+                    (['release', 'pointerCancel', 'unmount'] as const).flatMap((ending) =>
+                        (['knob', 'slider'] as const).map((control) => ({
+                            sourceMode,
+                            endMode,
+                            moveAfterSwitch,
+                            ending,
+                            control,
+                        }))
+                    )
+                )
+            )
+        )
+    )(
+        'settles $control $sourceMode -> $endMode, moved=$moveAfterSwitch, ending=$ending',
+        async ({ sourceMode, endMode, moveAfterSwitch, ending, control }) => {
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            await act(async () => {
+                await executeUserAppAction({
+                    type: 'setAutomationMode',
+                    payload: { trackId: 'track-1', mode: sourceMode },
+                });
+            });
+            expect(trackStore.value?.tracks[0]?.automationMode).toBe(sourceMode);
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            const isKnob = control === 'knob';
+            const deviceId = isKnob ? synth.id : compressor.id;
+            const paramId = isKnob ? 'detune' : 'comp-threshold';
+            const parameterId = `${deviceId}:${paramId}`;
+            const originalValue = isKnob ? 5 : -20;
+            let expectedPreviewValue = isKnob ? 25 : -48;
+            if (moveAfterSwitch) {
+                expectedPreviewValue = isKnob ? 45 : -30;
+            }
+            const view = render(<Control deviceId={deviceId} paramId={paramId} />);
+            const target = isKnob ? knob() : sliderTrack();
+            if (isKnob) {
+                beginKnob(target);
+                moveKnob(85, target);
+            } else {
+                fireEvent.pointerDown(target, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
+                fireEvent.pointerMove(target, { pointerId: 2, clientX: 20, clientY: 10 });
+            }
+            expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(true);
+            const sourceSamples = recording.mock.calls.length;
+            await act(async () => {
+                await executeUserAppAction({
+                    type: 'setAutomationMode',
+                    payload: { trackId: 'track-1', mode: endMode },
+                });
+            });
+            expect(trackStore.value?.tracks[0]?.automationMode).toBe(endMode);
+            expect(recording).toHaveBeenCalledTimes(sourceSamples);
+            const endRecords = endMode === 'touch' || endMode === 'latch' || endMode === 'write';
+            if (moveAfterSwitch) {
+                if (isKnob) {
+                    moveKnob(70, target);
+                } else {
+                    fireEvent.pointerMove(target, { pointerId: 2, clientX: 50, clientY: 10 });
+                }
+            }
+            const finalValue = writes(deviceId).at(-1);
+            expect(finalValue).toBeCloseTo(expectedPreviewValue, 12);
+            if (finalValue === undefined) {
+                throw new Error('Expected the physical preview to reach the engine');
+            }
+            const samples = sourceSamples + (moveAfterSwitch && endRecords ? 1 : 0);
+            expect(recording).toHaveBeenCalledTimes(samples);
+            expect(rawValues(deviceId)?.[paramId]).toBe(originalValue);
+            const modeHistory = depth();
+            if (ending === 'unmount') {
+                view.unmount();
+                expect(rawValues(deviceId)?.[paramId]).toBe(originalValue);
+                expect(writes(deviceId).at(-1)).toBe(originalValue);
+                expect(depth()).toBe(modeHistory);
+            } else {
+                const pointerId = isKnob ? 1 : 2;
+                if (ending === 'release') {
+                    fireEvent.pointerUp(target, { pointerId });
+                } else {
+                    fireEvent.pointerCancel(target, { pointerId });
+                }
+                await expectCommitted(paramId, finalValue, modeHistory + 1, deviceId);
+                await act(() => undo());
+                expect(rawValues(deviceId)?.[paramId]).toBe(originalValue);
+                await act(() => redo());
+                expect(rawValues(deviceId)?.[paramId]).toBe(finalValue);
+            }
+            const terminalSample = isKnob && ending !== 'unmount' && endRecords ? 1 : 0;
+            expect(recording).toHaveBeenCalledTimes(samples + terminalSample);
+            expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(
+                endMode === 'latch' || endMode === 'write'
+            );
+            if (endMode === 'read' || endMode === 'off') {
+                await act(async () => {
+                    await executeUserAppAction({
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-1', mode: 'touch' },
+                    });
+                });
+                expect(trackStore.value?.tracks[0]?.automationMode).toBe('touch');
+                expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(false);
+                expect(recording).toHaveBeenCalledTimes(samples + terminalSample);
+            }
+            act(() => {
+                stopAutomationRecording();
+            });
+            expect(automationUseCases.isRecordingAutomation('track-1', parameterId)).toBe(false);
+        }
+    );
+
     it('preserves a newer same-key MIDI Touch writer when the old knob is cancelled', () => {
         trackStore.set({
             ...trackStore.value!,

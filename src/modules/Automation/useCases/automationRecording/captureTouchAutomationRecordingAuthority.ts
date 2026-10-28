@@ -1,7 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { makeKey } from './makeKey';
-import { activeRecording } from './recordingSessionState';
 import { releaseTouchAutomation } from './releaseTouchAutomation';
 
 export function captureTouchAutomationRecordingAuthority(trackId: string, parameterId: string) {
@@ -14,10 +12,7 @@ export function captureTouchAutomationRecordingAuthority(trackId: string, parame
             if (mode === 'latch' || mode === 'write') {
                 return;
             }
-            const session = activeRecording.get(makeKey(trackId, parameterId));
-            if (session?.recordingMode === 'touch') {
-                releaseTouchAutomation(trackId, parameterId, owner);
-            }
+            releaseTouchAutomation(trackId, parameterId, owner);
         },
     };
 }

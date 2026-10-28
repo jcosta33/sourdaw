@@ -22,8 +22,6 @@ export type RecordingSession = {
     lastValue: number | null;
     /** Producer of the latest recording sample; independent of DSP runtime ownership. */
     recordingOwner?: symbol;
-    /** Mode admitting the latest sample; gesture release must preserve Latch/Write until Stop. */
-    recordingMode?: AutomationMode;
     /**
      * Tempo (BPM) captured when the session first records a value. Reused for
      * every subsequent value so a mid-session tempo change does not silently

@@ -143,19 +143,6 @@ describe('recordAutomationValue', () => {
         expect(pendingPoints.get('t1::gain')?.map(({ value }) => value)).toEqual([0.2, 0.4, 0.6]);
     });
 
-    it('retains the mode of each latest admitted sample across mode changes', () => {
-        const owner = Symbol('gesture');
-        for (const mode of ['touch', 'latch', 'write'] as const) {
-            setTracks([{ id: 't1', kind: 'audio', automationMode: mode }]);
-            recordAutomationValue('t1', 'gain', 0.5, 1, owner);
-            expect(activeRecording.get('t1::gain')?.recordingMode).toBe(mode);
-        }
-        setTracks([{ id: 't1', kind: 'audio', automationMode: 'read' }]);
-        recordAutomationValue('t1', 'gain', 0.6, 2, owner);
-        expect(activeRecording.get('t1::gain')?.recordingMode).toBe('write');
-        expect(pendingPoints.get('t1::gain')).toHaveLength(3);
-    });
-
     // Regression (Batch B fix 4): before the transport store hydrates its tempo
     // is unknown. Recording then would convert beats with a guessed 120 BPM and
     // misplace points silently. It must skip + warn instead.
