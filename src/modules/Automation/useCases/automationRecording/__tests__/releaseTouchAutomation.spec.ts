@@ -3,15 +3,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { captureTouchAutomationRecordingAuthority } from '../captureTouchAutomationRecordingAuthority';
 import { releaseTouchAutomation } from '../releaseTouchAutomation';
 
-const { activeRecording, touchActive, flushPendingPoints } = vi.hoisted(() => {
+const { activeRecording, touchActive, flushPendingPoints, trackSnapshot } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const touchActive = new Set<string>();
+    const trackSnapshot: { value: { tracks: { id: string; automationMode: string }[] } | null } = { value: null };
     return {
+        trackSnapshot,
         activeRecording,
         touchActive,
         flushPendingPoints: vi.fn(),
     };
 });
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return trackSnapshot.value;
+        },
+    },
+}));
 
 vi.mock('../recordingSessionState', () => ({
     activeRecording,
@@ -27,6 +37,7 @@ describe('releaseTouchAutomation', () => {
         vi.clearAllMocks();
         activeRecording.clear();
         touchActive.clear();
+        trackSnapshot.value = null;
     });
 
     it('removes the key from touchActive and flushes pending points for that parameter', () => {
@@ -116,6 +127,26 @@ describe('releaseTouchAutomation', () => {
         expect(flushPendingPoints).toHaveBeenCalledTimes(mode === 'touch' ? 1 : 0);
         expect(touchActive.has('t1::gain')).toBe(mode !== 'touch');
         expect(activeRecording.get('t1::gain')?.lastValue).toBe(mode === 'touch' ? null : 0.5);
+    });
+
+    it.each(['latch', 'write'] as const)('preserves live %s without requiring another sample', (mode) => {
+        const authority = captureTouchAutomationRecordingAuthority('t1', 'gain');
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: 0.5,
+            recordingOwner: authority.owner,
+            recordingMode: 'touch',
+        });
+        touchActive.add('t1::gain');
+        trackSnapshot.value = { tracks: [{ id: 't1', automationMode: mode }] };
+
+        authority.release();
+
+        expect(flushPendingPoints).not.toHaveBeenCalled();
+        expect(touchActive.has('t1::gain')).toBe(true);
+        expect(activeRecording.get('t1::gain')?.lastValue).toBe(0.5);
     });
 
     it('leaves an absent session untouched (no throw) on release', () => {

@@ -1169,6 +1169,90 @@ describe('Inspector continuous parameter gestures through real history', () => {
         expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
     });
 
+    it('retains live Latch on knob cancellation without a new movement after switching modes', async () => {
+        const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        const view = render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        await act(async () => {
+            await executeUserAppAction({
+                type: 'setAutomationMode',
+                payload: { trackId: 'track-1', mode: 'latch' },
+            });
+        });
+        expect(trackStore.value?.tracks[0]?.automationMode).toBe('latch');
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        const samples = recording.mock.calls.length;
+        const modeHistory = depth();
+
+        view.unmount();
+
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        expect(recording).toHaveBeenCalledTimes(samples);
+        expect(rawValues()?.detune).toBe(5);
+        expect(writes().at(-1)).toBe(5);
+        expect(depth()).toBe(modeHistory);
+        act(() => {
+            stopAutomationRecording();
+        });
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
+    });
+
+    it.each(['release', 'pointerCancel', 'unmount'] as const)(
+        'retains live Latch after slider %s without a new movement after switching modes',
+        async (ending) => {
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(compressor)]), automationMode: 'touch' }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            const view = render(<Control deviceId={compressor.id} paramId="comp-threshold" />);
+            const root = sliderTrack();
+            fireEvent.pointerDown(root, { button: 0, pointerId: 2, clientX: 40, clientY: 10 });
+            fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
+            await act(async () => {
+                await executeUserAppAction({
+                    type: 'setAutomationMode',
+                    payload: { trackId: 'track-1', mode: 'latch' },
+                });
+            });
+            expect(trackStore.value?.tracks[0]?.automationMode).toBe('latch');
+            expect(automationUseCases.isRecordingAutomation('track-1', 'compressor-1:comp-threshold')).toBe(true);
+            const samples = recording.mock.calls.length;
+            const modeHistory = depth();
+
+            if (ending === 'unmount') {
+                view.unmount();
+                expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+                expect(writes(compressor.id).at(-1)).toBe(-20);
+                expect(depth()).toBe(modeHistory);
+            } else {
+                if (ending === 'release') {
+                    fireEvent.pointerUp(root, { pointerId: 2 });
+                } else {
+                    fireEvent.pointerCancel(root, { pointerId: 2 });
+                }
+                await expectCommitted('comp-threshold', -48, modeHistory + 1, compressor.id);
+                await act(() => undo());
+                expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
+                await act(() => redo());
+                expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-48);
+            }
+            expect(automationUseCases.isRecordingAutomation('track-1', 'compressor-1:comp-threshold')).toBe(true);
+            expect(recording).toHaveBeenCalledTimes(samples);
+            act(() => {
+                stopAutomationRecording();
+            });
+            expect(automationUseCases.isRecordingAutomation('track-1', 'compressor-1:comp-threshold')).toBe(false);
+        }
+    );
+
     it('preserves a newer same-key MIDI Touch writer when the old knob is cancelled', () => {
         trackStore.set({
             ...trackStore.value!,
