@@ -285,16 +285,6 @@ function getProjectMeasurementProperties() {
     };
 }
 
-/** A project-only view reuses the measurement owner's properties without preview authority. */
-export function getReadonlyAnalysisMeasureSchema(): ToolSchema {
-    return tool(
-        ANALYSIS_MEASURE_TOOL_NAME,
-        'Measure the current project scope and range without preparing or previewing changes. Returns figures and evidence, never audio.',
-        getProjectMeasurementProperties(),
-        ['scope', 'range']
-    );
-}
-
 function getAnalysisMeasureSchema(): ToolSchema {
     return tool(
         ANALYSIS_MEASURE_TOOL_NAME,

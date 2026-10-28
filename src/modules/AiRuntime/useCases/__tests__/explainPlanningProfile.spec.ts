@@ -2,20 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type PlannedIntentResult } from '../../models/IntentResult';
 import { guardReadonlyPlanningResult, READONLY_ANSWER_TOOL_NAMES } from '../../models/PlanningProfile';
-import { WORKFLOW_ACTION_TOOL_NAMES } from '../../models/WorkflowCapability';
 import { type ToolCallResult } from '../../models/ToolCallResult';
+import { WORKFLOW_ACTION_TOOL_NAMES } from '../../models/WorkflowCapability';
 import { buildPlanningSystemPrompt } from '../../transformers/buildPlanningSystemPrompt';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
+import * as preparation from '../agentReference/prepareStemImport';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import * as parserModule from '../parsePromptToActions';
-import * as preparation from '../agentReference/prepareStemImport';
-import { agentRunLifecycle } from '../agentRunLifecycle';
-import { planPromptActions } from '../planPromptActions';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
+import { planPromptActions } from '../planPromptActions';
 
 vi.mock('../llmOrchestration/inference', async (original) => ({
     ...(await original<typeof import('../llmOrchestration/inference')>()),
@@ -102,6 +102,13 @@ describe('application-selected Explain profile', () => {
             additionalProperties: false,
         });
         expect(Object.keys(schema?.function.parameters.properties ?? {})).toEqual(['scope', 'range', 'metrics']);
+        const defaultProperties = before.find((tool) => tool.function.name === 'analysis.measure')?.function.parameters
+            .properties;
+        expect(schema?.function.parameters.properties).toEqual({
+            scope: defaultProperties?.scope,
+            range: defaultProperties?.range,
+            metrics: defaultProperties?.metrics,
+        });
         expect(matchesJsonSchema(measurement, schema?.function.parameters)).toBe(true);
         expect(getPlanningProviderToolSchemas()).toEqual(before);
         expect(getPlanningProviderSchemaContract()).toEqual(contract);

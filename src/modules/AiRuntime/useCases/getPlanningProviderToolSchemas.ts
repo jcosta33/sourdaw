@@ -6,8 +6,25 @@ import { type ToolSchema } from '../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../models/WorkflowCapability';
 import { readAgentReference } from '../stores/agentReferenceStore';
 
-import { getReadonlyAnalysisMeasureSchema } from './agentToolCatalog';
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
+
+function readonlyMeasurementView(schema: ToolSchema): ToolSchema {
+    const { scope, range, metrics } = schema.function.parameters.properties;
+    return {
+        ...schema,
+        function: {
+            ...schema.function,
+            description:
+                'Measure the current project scope and range without preparing or previewing changes. Returns figures and evidence, never audio.',
+            parameters: {
+                type: 'object',
+                properties: { scope, range, metrics },
+                required: ['scope', 'range'],
+                additionalProperties: false,
+            },
+        },
+    };
+}
 
 /**
  * The provider-visible planning list uses Command's published workflow schemas, including their
@@ -21,9 +38,7 @@ export function getPlanningProviderToolSchemas(profile?: PlanningProfile): reado
     if (profile === 'readonly-answer') {
         return getPlanningProviderSchemaContract()
             .schemas.filter((schema) => READONLY_ANSWER_TOOL_NAMES.has(schema.function.name))
-            .map((schema) =>
-                schema.function.name === 'analysis.measure' ? getReadonlyAnalysisMeasureSchema() : schema
-            );
+            .map((schema) => (schema.function.name === 'analysis.measure' ? readonlyMeasurementView(schema) : schema));
     }
     const workflowToolSchemas = getExecutableAppActionToolSchemas().filter((tool) =>
         WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)
