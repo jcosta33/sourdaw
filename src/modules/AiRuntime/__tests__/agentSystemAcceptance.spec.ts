@@ -1072,6 +1072,7 @@ async function sendScriptedChatTurn(input: {
 type PriorTurnState = {
     proposalId: string | undefined;
     commitGroupId: string | undefined;
+    commitEntryIds: readonly string[];
     projectBeforeCommit: ProjectTruth;
     commitActions: readonly CorpusOracleAction[];
 };
@@ -1090,7 +1091,13 @@ async function settlePriorTurn(
     const proposed = proposedConfirmationIds();
     if (outcome === 'pending') {
         expect(proposed, `Case ${id} prior turn left no single card pending: ${lastAssistantReply()}`).toHaveLength(1);
-        return { proposalId: proposed[0], commitGroupId: undefined, projectBeforeCommit, commitActions };
+        return {
+            proposalId: proposed[0],
+            commitGroupId: undefined,
+            commitEntryIds: [],
+            projectBeforeCommit,
+            commitActions,
+        };
     }
     expect(proposed.length, `Case ${id} prior turn left more than one card pending`).toBeLessThanOrEqual(1);
     for (const confirmationId of proposed) {
@@ -1100,12 +1107,20 @@ async function settlePriorTurn(
         readChatThreadContext()?.lastCommit?.standing,
         `Case ${id} prior turn committed nothing that stands: ${lastAssistantReply()}`
     ).toBe('standing');
-    return {
-        proposalId: undefined,
-        commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId,
-        projectBeforeCommit,
-        commitActions,
-    };
+    const commitGroupId = undoHistoryStore.value?.past.at(-1)?.groupId;
+    if (commitGroupId === undefined) {
+        throw new Error(`Case ${id} prior commit has no Undo group.`);
+    }
+    const entries = pastEntries().filter((entry) => entry.groupId === commitGroupId);
+    expect(
+        landedActionsMatch(id, committedGroupActions(entries), [...commitActions]),
+        `Case ${id} prior Undo group does not match its frozen command oracle`
+    ).toBe(true);
+    const commitEntryIds = Object.freeze(entries.map((entry) => entry.id));
+    expect(new Set(commitEntryIds).size, `Case ${id} prior Undo group repeats an entry identity`).toBe(
+        commitEntryIds.length
+    );
+    return { proposalId: undefined, commitGroupId, commitEntryIds, projectBeforeCommit, commitActions };
 }
 
 /** The commands one undo group holds applied, or `null` when any member is no plain action. */
@@ -1168,12 +1183,22 @@ function writesBeyondCommit(
 /** The undo of the prior commit: the planned revert names its group, and the history holds it undone whole. */
 function revertsPriorCommit(outcome: PlanningOutcome, prior: PriorTurnState): boolean {
     const history = undoHistoryStore.value;
+    const future = history?.future ?? [];
+    const futureGroup = future.filter((entry) => entry.groupId === prior.commitGroupId);
     return (
         outcome.kind === 'revert' &&
         prior.commitGroupId !== undefined &&
         outcome.revertGroupId === prior.commitGroupId &&
         (history?.past ?? []).every((entry) => entry.groupId !== prior.commitGroupId) &&
-        (history?.future ?? []).some((entry) => entry.groupId === prior.commitGroupId)
+        prior.commitEntryIds.length > 0 &&
+        futureGroup.length === prior.commitEntryIds.length &&
+        // Grouped Redo consumes the contiguous head in original commit order.
+        prior.commitEntryIds.every(
+            (id, index) =>
+                future[index]?.id === id &&
+                future[index]?.groupId === prior.commitGroupId &&
+                future.filter((entry) => entry.id === id).length === 1
+        )
     );
 }
 
@@ -2366,6 +2391,50 @@ describe('agent acceptance corpora', () => {
                             future: history.future.filter((candidate) => candidate.groupId !== entry.groupId),
                         });
                     }
+                });
+                expect(run.result.exactMatch).toBe(false);
+            }
+        );
+
+        it.each(['missing', 'duplicate', 'replacement', 'reordered', 'split', 'extra'] as const)(
+            'refuses a fully restored Undo with %s original redo membership',
+            async (violation) => {
+                const multiCommand = corpusCase('development', 'AC004-DEV-UNDO-MULTI-COMMAND');
+                const run = await runWithBarrel(multiCommand, async () => {
+                    const history = undoHistoryStore.value;
+                    const [first, second] = history?.future ?? [];
+                    if (history === null || history === undefined || first === undefined || second === undefined) {
+                        throw new Error('The scripted multi-command Undo must leave both redo members.');
+                    }
+                    expect(first.groupId).toBe(second.groupId);
+                    expect(first.id).not.toBe(second.id);
+                    expect(trackStore.value?.tracks.find((track) => track.id === 'track-lead-vocal')).toMatchObject({
+                        gain: 1,
+                        muted: false,
+                    });
+                    const extra = { ...first, id: 'unexpected-redo-member' };
+                    let future = history.future;
+                    switch (violation) {
+                        case 'missing':
+                            future = history.future.slice(1);
+                            break;
+                        case 'duplicate':
+                            future = [first, first, ...history.future.slice(2)];
+                            break;
+                        case 'replacement':
+                            future = [extra, second, ...history.future.slice(2)];
+                            break;
+                        case 'reordered':
+                            future = [second, first, ...history.future.slice(2)];
+                            break;
+                        case 'split':
+                            future = [first, { ...extra, groupId: 'unrelated-redo-group' }, ...history.future.slice(1)];
+                            break;
+                        case 'extra':
+                            future = [...history.future, extra];
+                            break;
+                    }
+                    undoHistoryStore.set({ ...history, future });
                 });
                 expect(run.result.exactMatch).toBe(false);
             }
