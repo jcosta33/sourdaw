@@ -1,0 +1,14 @@
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  h_beb54bf43b47b7 74-76,108-110,162-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b302cdfe5b9ee96c9732f84afe2a5a34349a7603",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
