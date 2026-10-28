@@ -1,0 +1,18 @@
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  h_beb54bf43b47b7 985-1017
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  h_beb54bf43b47b7 3327-3354
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  h_beb54bf43b47b7 177-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d446934e33c4675106e94b2450e64ecfb274e9d8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
