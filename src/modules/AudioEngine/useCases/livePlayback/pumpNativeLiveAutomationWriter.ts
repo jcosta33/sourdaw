@@ -47,6 +47,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import {
     type AudioGraphApplyResult,
+    type AudioGraphBackend,
     type AudioGraphCommand,
     type AudioGraphParameterTarget,
     type AudioGraphParameterWrite,
@@ -797,6 +798,25 @@ function commitProjection(pass: LiveAutomationWriterPass, refresh: Refresh): voi
     }
 }
 
+function releaseFlightAndFollowBusy(pass: LiveAutomationWriterPass, backend: AudioGraphBackend, epoch: number): void {
+    const pending = pass.pendingBusy;
+    pass.pendingBusy = null;
+    if (nativeLiveAutomationWriter.inFlightEpoch !== epoch) {
+        return;
+    }
+    nativeLiveAutomationWriter.inFlightEpoch = null;
+    if (
+        !pending ||
+        pending.backend !== backend ||
+        nativeLiveAutomationWriter.pass !== pass ||
+        nativeLiveAutomationWriter.epoch !== epoch ||
+        nativeLiveGraphSession.backend !== backend
+    ) {
+        return;
+    }
+    void pumpNativeLiveAutomationWriter(pending.input);
+}
+
 export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutomationWriterInput): Promise<void> {
     const pass = nativeLiveAutomationWriter.pass;
     const backend = nativeLiveGraphSession.backend;
@@ -907,19 +927,6 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
         // Release only what this pump claimed; a newer pass may already hold
         // the claim, and clearing that would let its next tick stack a second
         // batch behind its own.
-        const pending = pass.pendingBusy;
-        pass.pendingBusy = null;
-        if (nativeLiveAutomationWriter.inFlightEpoch === epoch) {
-            nativeLiveAutomationWriter.inFlightEpoch = null;
-            if (
-                pending &&
-                pending.backend === backend &&
-                nativeLiveAutomationWriter.pass === pass &&
-                nativeLiveAutomationWriter.epoch === epoch &&
-                nativeLiveGraphSession.backend === backend
-            ) {
-                void pumpNativeLiveAutomationWriter(pending.input);
-            }
-        }
+        releaseFlightAndFollowBusy(pass, backend, epoch);
     }
 }
