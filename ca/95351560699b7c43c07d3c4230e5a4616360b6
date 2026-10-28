@@ -1,0 +1,21 @@
+.agents/skills/review-stances/correctness.md
+  s_59e31a5c6f3e31::t_a34ffcd8ceaab0 199-212
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_a34ffcd8ceaab0 432-446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca95351560699b7c43c07d3c4230e5a4616360b6",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
