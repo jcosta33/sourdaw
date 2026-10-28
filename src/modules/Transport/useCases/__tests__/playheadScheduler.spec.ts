@@ -102,7 +102,15 @@ vi.mock('../../models/TempoMap', () => ({
     // itself is covered where the tempo map is real.
     secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'root-identity'
+    ),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
     adjustmentLayerStore: { value: null },
     gainEnvelopeStore: { value: null },
     getTrackEligibility: vi.fn(),
@@ -741,10 +749,14 @@ describe('playhead scheduler tick', () => {
                 bufferId: 'rec-00000000-0000-4000-8000-000000000001',
             });
             expect(harness.update_clip).not.toHaveBeenCalled();
-            expect(harness.commit_recording).toHaveBeenCalledWith({
-                ...recording_clip,
-                audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
-            });
+            expect(harness.commit_recording).toHaveBeenCalledWith(
+                {
+                    ...recording_clip,
+                    audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
+                },
+                undefined,
+                expect.objectContaining({ shouldExecute: expect.any(Function) })
+            );
         } finally {
             random_uuid.mockRestore();
         }

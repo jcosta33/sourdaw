@@ -266,6 +266,50 @@ describe('createGrinderNode', () => {
 
         expect(postMessage).not.toHaveBeenCalled();
     });
+
+    it('posts offline controls immediately even when animation frames are available', async () => {
+        makeCtx();
+        class FakeOfflineAudioContext {
+            currentTime = 0;
+            sampleRate = 48_000;
+            state = 'suspended';
+        }
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        const raf = vi.fn();
+        vi.stubGlobal('requestAnimationFrame', raf);
+        const target = {
+            trackId: 'offline-grinder-track',
+            deviceId: 'offline-grinder',
+            deviceType: 'grinder',
+            parameterIds: ['neuralCustomOutputTrim'],
+        };
+        const node = await createGrinderNode(
+            new FakeOfflineAudioContext() as unknown as OfflineAudioContext,
+            undefined,
+            undefined,
+            target
+        );
+        expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ command: 'initialize-fallback-control' }));
+        postMessage.mockClear();
+
+        node.setParam('neuralCustomOutputTrim', 0.2);
+
+        expect(raf).not.toHaveBeenCalled();
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage).toHaveBeenCalledWith({
+            schemaVersion: 1,
+            command: 'set-fallback-param',
+            target: {
+                trackId: target.trackId,
+                deviceId: target.deviceId,
+                deviceType: target.deviceType,
+                parameterId: 'neuralCustomOutputTrim',
+            },
+            value: 0.2,
+            correlation: { workletGeneration: expect.any(Number), controlSequence: 1 },
+            scheduling: { targetFrame: null, deadlineFrame: null },
+        });
+    });
     it('posts reset only while the worklet port is open', async () => {
         const node = await createGrinderNode(makeCtx());
         postMessage.mockClear();

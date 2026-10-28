@@ -2,6 +2,7 @@ import { type ComponentProps, type ReactElement, type ReactNode, useEffect, useR
 
 import { Waves } from 'lucide-react';
 
+import { DawEffectDisclosure } from '#/components/daw/DawEffectDisclosure';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginInsetCard } from '#/components/daw/DawPluginInsetCard';
@@ -22,6 +23,11 @@ import { MAX_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { decayToRt60Seconds } from '#/utils/reverbDecayLaw';
+import {
+    effectDisclosureLevel,
+    effectDisclosureTierFromLevel,
+    isEffectDisclosureStageVisible,
+} from '#/utils/UI/effectDisclosureTier';
 
 import {
     ALGORITHM_LABELS,
@@ -46,8 +52,10 @@ import {
 } from '../../models/ProofChamberState';
 import { chamberStore } from '../../stores/chamberStore';
 import { decodeImpulseResponse } from '../../useCases/proofChamber/decodeImpulseResponse';
+import { hydrateChamberDisclosureFromProject } from '../../useCases/proofChamber/hydrateChamberDisclosureFromProject';
 import { hydrateChamberStateFromProject } from '../../useCases/proofChamber/hydrateChamberStateFromProject';
 import { registerChamberInstance } from '../../useCases/proofChamber/registerChamberInstance';
+import { setChamberPanelUiLevel } from '../../useCases/proofChamber/setChamberPanelUiLevel';
 import { updateChamberEngine } from '../../useCases/proofChamber/updateChamberEngine';
 import { DecayEqOverlay } from '../components/DecayEqOverlay';
 import { IrBrowser } from '../components/IrBrowser';
@@ -355,9 +363,14 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     const storeState = useStore(chamberStore, { activeInstanceId: null, instances: {} });
     const trackState = useStore(trackStore, defaultTrackState);
     const params = storeState?.instances?.[deviceId]?.engineState ?? DEFAULT_PARAMS;
-    const projectParameterValues = trackState.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.parameterValues;
+    const projectDevice = trackState.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
+    const projectParameterValues = projectDevice?.parameterValues;
+    const projectDeviceState = projectDevice?.deviceState;
+    const tier = effectDisclosureTierFromLevel(storeState?.instances?.[deviceId]?.uiLevel);
+    const showShape = isEffectDisclosureStageVisible(tier, 'shape');
+    const showBuild = isEffectDisclosureStageVisible(tier, 'build');
+    const showRoute = isEffectDisclosureStageVisible(tier, 'route');
+    const showLab = isEffectDisclosureStageVisible(tier, 'lab');
 
     useEffect(() => {
         registerChamberInstance(deviceId);
@@ -366,6 +379,9 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     useEffect(() => {
         hydrateChamberStateFromProject(deviceId);
     }, [deviceId, projectParameterValues]);
+    useEffect(() => {
+        hydrateChamberDisclosureFromProject(deviceId);
+    }, [deviceId, projectDeviceState]);
     const [showDecayEq, setShowDecayEq] = useState(false);
     const [showFlow, setShowFlow] = useState(false);
     const decayRange = decayRangeForAlgorithm(params.algorithm);
@@ -617,12 +633,15 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     });
     const decayEqMultipliers = PROOF_CHAMBER_DECAY_EQ_BANDS.map((band) => params[band]);
 
+    const decayEqVisible = showBuild && showDecayEq;
+    const flowVisible = showRoute && showFlow;
+
     let tailViewLed = 'Live tail';
-    if (decayEqGate.isInert && showDecayEq) {
+    if (decayEqGate.isInert && decayEqVisible) {
         tailViewLed = 'EQ no headroom';
-    } else if (showDecayEq) {
+    } else if (decayEqVisible) {
         tailViewLed = 'EQ overlay';
-    } else if (showFlow) {
+    } else if (flowVisible) {
         tailViewLed = 'Flow open';
     }
 
@@ -654,83 +673,97 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                     </div>
                 </SectionCard>
 
-                <SectionCard title="Flavor" detail={algorithmBadge(params.algorithm)}>
-                    <Row align="stretch" wrap gap={1.5}>
-                        {VINTAGE_MODES.map((mode) => {
-                            const active = params.vintage === mode.id;
-                            return (
-                                <ChamberChip key={mode.id} active={active} onClick={() => setParam('vintage', mode.id)}>
-                                    {mode.label}
-                                </ChamberChip>
-                            );
-                        })}
-                    </Row>
-                    <Row align="stretch" wrap gap={1.5}>
-                        {ALGORITHMS.map((algorithm) => {
-                            const active = params.algorithm === algorithm.id;
-                            return (
+                {showShape ? (
+                    <SectionCard title="Flavor" detail={algorithmBadge(params.algorithm)}>
+                        {showLab ? (
+                            <Row align="stretch" wrap gap={1.5}>
+                                {VINTAGE_MODES.map((mode) => {
+                                    const active = params.vintage === mode.id;
+                                    return (
+                                        <ChamberChip
+                                            key={mode.id}
+                                            active={active}
+                                            onClick={() => setParam('vintage', mode.id)}
+                                        >
+                                            {mode.label}
+                                        </ChamberChip>
+                                    );
+                                })}
+                            </Row>
+                        ) : null}
+                        <Row align="stretch" wrap gap={1.5}>
+                            {ALGORITHMS.map((algorithm) => {
+                                const active = params.algorithm === algorithm.id;
+                                return (
+                                    <ChamberChip
+                                        key={algorithm.id}
+                                        active={active}
+                                        onClick={() => selectAlgorithm(algorithm.id)}
+                                    >
+                                        {algorithm.label}
+                                    </ChamberChip>
+                                );
+                            })}
+                        </Row>
+                        {showBuild ? (
+                            <Row align="stretch" wrap gap={1.5}>
+                                {/*
+                                 * The chip still opens the overlay on an algorithm that
+                                 * cannot hear it — this is a *view* toggle, not a
+                                 * parameter write, and hiding the curve would hide the
+                                 * shape a project has saved. What the gate does is
+                                 * carry the explanation and hand the overlay its
+                                 * disabled state, so the nodes draw and refuse to move
+                                 * rather than moving and doing nothing.
+                                 */}
                                 <ChamberChip
-                                    key={algorithm.id}
-                                    active={active}
-                                    onClick={() => selectAlgorithm(algorithm.id)}
+                                    active={decayEqVisible}
+                                    title={decayEqGate.explanation ?? undefined}
+                                    onClick={() => setShowDecayEq((value) => !value)}
                                 >
-                                    {algorithm.label}
+                                    Decay EQ
                                 </ChamberChip>
-                            );
-                        })}
-                    </Row>
-                    <Row align="stretch" wrap gap={1.5}>
-                        {/*
-                         * The chip still opens the overlay on an algorithm that
-                         * cannot hear it — this is a *view* toggle, not a
-                         * parameter write, and hiding the curve would hide the
-                         * shape a project has saved. What the gate does is
-                         * carry the explanation and hand the overlay its
-                         * disabled state, so the nodes draw and refuse to move
-                         * rather than moving and doing nothing.
-                         */}
-                        <ChamberChip
-                            active={showDecayEq}
-                            title={decayEqGate.explanation ?? undefined}
-                            onClick={() => setShowDecayEq((value) => !value)}
-                        >
-                            Decay EQ
-                        </ChamberChip>
-                        <ChamberChip active={showFlow} onClick={() => setShowFlow((value) => !value)}>
-                            Flow
-                        </ChamberChip>
-                        <GatedChip
-                            gate={gateFor('freeze', 'Freeze')}
-                            active={params.freeze}
-                            onClick={() => setParam('freeze', !params.freeze)}
-                        >
-                            Freeze
-                        </GatedChip>
-                        <GatedChip
-                            gate={gateFor('shimmer', 'Shimmer')}
-                            active={params.shimmer}
-                            onClick={() => setParam('shimmer', !params.shimmer)}
-                        >
-                            Shimmer
-                        </GatedChip>
-                        <GatedChip
-                            gate={gateFor('saturation', 'Saturation')}
-                            active={params.saturation}
-                            onClick={() => setParam('saturation', !params.saturation)}
-                        >
-                            Saturation
-                        </GatedChip>
-                    </Row>
-                </SectionCard>
+                                {showRoute ? (
+                                    <ChamberChip active={flowVisible} onClick={() => setShowFlow((value) => !value)}>
+                                        Flow
+                                    </ChamberChip>
+                                ) : null}
+                                <GatedChip
+                                    gate={gateFor('freeze', 'Freeze')}
+                                    active={params.freeze}
+                                    onClick={() => setParam('freeze', !params.freeze)}
+                                >
+                                    Freeze
+                                </GatedChip>
+                                <GatedChip
+                                    gate={gateFor('shimmer', 'Shimmer')}
+                                    active={params.shimmer}
+                                    onClick={() => setParam('shimmer', !params.shimmer)}
+                                >
+                                    Shimmer
+                                </GatedChip>
+                                <GatedChip
+                                    gate={gateFor('saturation', 'Saturation')}
+                                    active={params.saturation}
+                                    onClick={() => setParam('saturation', !params.saturation)}
+                                >
+                                    Saturation
+                                </GatedChip>
+                            </Row>
+                        ) : null}
+                    </SectionCard>
+                ) : null}
 
-                <SectionCard title="IR tray" detail="Cabinet-free">
-                    <IrBrowser
-                        onFileDrop={decodeImpulseResponse}
-                        onIrLoaded={(data, channels) => {
-                            logger.info(`[ProofChamber] IR loaded: ${data.length} samples, ${channels}ch`);
-                        }}
-                    />
-                </SectionCard>
+                {showRoute ? (
+                    <SectionCard title="IR tray" detail="Cabinet-free">
+                        <IrBrowser
+                            onFileDrop={decodeImpulseResponse}
+                            onIrLoaded={(data, channels) => {
+                                logger.info(`[ProofChamber] IR loaded: ${data.length} samples, ${channels}ch`);
+                            }}
+                        />
+                    </SectionCard>
+                ) : null}
             </DawPluginRail>
 
             <Stack as="section" grow gap={3} className="min-w-0 overflow-y-auto pr-1">
@@ -743,6 +776,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             {SPACES.find((space) => space.id === params.space)?.label ?? 'Hall'}
                         </div>
                     </Stack>
+                    <DawEffectDisclosure
+                        tier={tier}
+                        onChange={(choice) => {
+                            void setChamberPanelUiLevel(deviceId, effectDisclosureLevel(choice));
+                        }}
+                    />
                     <DawPluginMetricStrip className="ml-auto">
                         <StatusTile
                             label="Decay"
@@ -776,7 +815,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             </Row>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">
                                 <ReverbSpectrogram decay={effectiveDecay} damping={effectiveDamping} />
-                                {showDecayEq ? (
+                                {decayEqVisible ? (
                                     <DecayEqOverlay
                                         multipliers={decayEqMultipliers}
                                         // The write goes through `setParam` like
@@ -812,7 +851,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                     />
                                 ) : null}
                             </div>
-                            {showFlow ? (
+                            {flowVisible ? (
                                 <div className="shrink-0 border-t border-white/6 px-3 py-2">
                                     <SignalFlowDiagram
                                         algorithm={params.algorithm}
@@ -853,73 +892,75 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 />
                             </DawPluginReadoutList>
                         </SectionCard>
-                        <SectionCard title="Switches" detail={params.freeze ? 'Frozen' : 'Moving'}>
-                            <Row align="stretch" wrap gap={1.5}>
-                                <GatedChip
-                                    gate={gateFor('shimmer', 'Shimmer')}
-                                    active={params.shimmer}
-                                    onClick={() => setParam('shimmer', !params.shimmer)}
-                                >
-                                    Shimmer
-                                </GatedChip>
-                                <GatedChip
-                                    gate={gateFor('freeze', 'Freeze')}
-                                    active={params.freeze}
-                                    onClick={() => setParam('freeze', !params.freeze)}
-                                >
-                                    Freeze
-                                </GatedChip>
-                                <GatedChip
-                                    gate={gateFor('saturation', 'Saturation')}
-                                    active={params.saturation}
-                                    onClick={() => setParam('saturation', !params.saturation)}
-                                >
-                                    Saturation
-                                </GatedChip>
-                            </Row>
-                            {params.shimmer ? (
-                                <Grid cols={2} gap={2}>
-                                    <KnobCell
-                                        label="Amount"
-                                        gate={gateFor('shimmerAmount', 'Amount')}
-                                        value={params.shimmerAmount}
-                                        onChange={(value) => setParam('shimmerAmount', value)}
-                                        min={0}
-                                        max={1}
-                                        step={0.01}
-                                        defaultValue={0.2}
-                                        size="sm"
-                                        readout={formatValue(params.shimmerAmount, '%')}
-                                    />
-                                    <KnobCell
-                                        label="Pitch"
-                                        gate={gateFor('shimmerPitch', 'Pitch')}
-                                        value={params.shimmerPitch}
-                                        onChange={(value) => setParam('shimmerPitch', Math.round(value))}
-                                        min={0}
-                                        max={1}
-                                        step={1}
-                                        defaultValue={1}
-                                        size="sm"
-                                        readout={params.shimmerPitch < 0.5 ? 'Fifth' : 'Octave'}
-                                    />
-                                </Grid>
-                            ) : null}
-                            {params.saturation ? (
+                        {showBuild ? (
+                            <SectionCard title="Switches" detail={params.freeze ? 'Frozen' : 'Moving'}>
                                 <Row align="stretch" wrap gap={1.5}>
-                                    {SATURATION_CURVES.map((curve) => (
-                                        <GatedChip
-                                            key={curve.id}
-                                            gate={gateFor('saturationType', 'The saturation curve')}
-                                            active={params.saturationType === curve.id}
-                                            onClick={() => setParam('saturationType', curve.id)}
-                                        >
-                                            {curve.label}
-                                        </GatedChip>
-                                    ))}
+                                    <GatedChip
+                                        gate={gateFor('shimmer', 'Shimmer')}
+                                        active={params.shimmer}
+                                        onClick={() => setParam('shimmer', !params.shimmer)}
+                                    >
+                                        Shimmer
+                                    </GatedChip>
+                                    <GatedChip
+                                        gate={gateFor('freeze', 'Freeze')}
+                                        active={params.freeze}
+                                        onClick={() => setParam('freeze', !params.freeze)}
+                                    >
+                                        Freeze
+                                    </GatedChip>
+                                    <GatedChip
+                                        gate={gateFor('saturation', 'Saturation')}
+                                        active={params.saturation}
+                                        onClick={() => setParam('saturation', !params.saturation)}
+                                    >
+                                        Saturation
+                                    </GatedChip>
                                 </Row>
-                            ) : null}
-                        </SectionCard>
+                                {params.shimmer ? (
+                                    <Grid cols={2} gap={2}>
+                                        <KnobCell
+                                            label="Amount"
+                                            gate={gateFor('shimmerAmount', 'Amount')}
+                                            value={params.shimmerAmount}
+                                            onChange={(value) => setParam('shimmerAmount', value)}
+                                            min={0}
+                                            max={1}
+                                            step={0.01}
+                                            defaultValue={0.2}
+                                            size="sm"
+                                            readout={formatValue(params.shimmerAmount, '%')}
+                                        />
+                                        <KnobCell
+                                            label="Pitch"
+                                            gate={gateFor('shimmerPitch', 'Pitch')}
+                                            value={params.shimmerPitch}
+                                            onChange={(value) => setParam('shimmerPitch', Math.round(value))}
+                                            min={0}
+                                            max={1}
+                                            step={1}
+                                            defaultValue={1}
+                                            size="sm"
+                                            readout={params.shimmerPitch < 0.5 ? 'Fifth' : 'Octave'}
+                                        />
+                                    </Grid>
+                                ) : null}
+                                {params.saturation ? (
+                                    <Row align="stretch" wrap gap={1.5}>
+                                        {SATURATION_CURVES.map((curve) => (
+                                            <GatedChip
+                                                key={curve.id}
+                                                gate={gateFor('saturationType', 'The saturation curve')}
+                                                active={params.saturationType === curve.id}
+                                                onClick={() => setParam('saturationType', curve.id)}
+                                            >
+                                                {curve.label}
+                                            </GatedChip>
+                                        ))}
+                                    </Row>
+                                ) : null}
+                            </SectionCard>
+                        ) : null}
                     </DawPluginRail>
                 </div>
 
@@ -990,199 +1031,207 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             </Grid>
                         </SectionCard>
 
-                        <SectionCard title="Tone" detail="Cuts">
-                            <Grid cols={2} gap={2}>
-                                <KnobCell
-                                    label="Hi Cut"
-                                    gate={gateFor('highCut', 'Hi Cut')}
-                                    value={params.highCut}
-                                    onChange={(value) => setParam('highCut', value)}
-                                    min={1000}
-                                    max={MAX_AUDIBLE_FREQ_HZ}
-                                    step={100}
-                                    defaultValue={12000}
-                                    size="md"
-                                    readout={formatValue(params.highCut, 'Hz')}
-                                />
-                                <KnobCell
-                                    label="Lo Cut"
-                                    gate={gateFor('lowCut', 'Lo Cut')}
-                                    value={params.lowCut}
-                                    onChange={(value) => setParam('lowCut', value)}
-                                    min={20}
-                                    max={1000}
-                                    step={5}
-                                    defaultValue={80}
-                                    size="md"
-                                    readout={`${Math.round(params.lowCut)}Hz`}
-                                />
-                                <KnobCell
-                                    label="Damp"
-                                    gate={gateFor('damping', 'Damp')}
-                                    value={effectiveDamping}
-                                    onChange={(value) => setParam('damping', value)}
-                                    min={0}
-                                    max={0.999}
-                                    step={0.001}
-                                    defaultValue={0.3}
-                                    size="md"
-                                    readout={formatValue(effectiveDamping, '%')}
-                                    activeRange={dampingRange}
-                                />
-                                <KnobCell
-                                    label="Diffuse"
-                                    gate={gateFor('diffusion', 'Diffuse')}
-                                    value={params.diffusion}
-                                    onChange={(value) => setParam('diffusion', value)}
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    defaultValue={0.75}
-                                    size="md"
-                                    readout={formatValue(params.diffusion, '%')}
-                                />
-                            </Grid>
-                        </SectionCard>
+                        {showShape ? (
+                            <SectionCard title="Tone" detail="Cuts">
+                                <Grid cols={2} gap={2}>
+                                    <KnobCell
+                                        label="Hi Cut"
+                                        gate={gateFor('highCut', 'Hi Cut')}
+                                        value={params.highCut}
+                                        onChange={(value) => setParam('highCut', value)}
+                                        min={1000}
+                                        max={MAX_AUDIBLE_FREQ_HZ}
+                                        step={100}
+                                        defaultValue={12000}
+                                        size="md"
+                                        readout={formatValue(params.highCut, 'Hz')}
+                                    />
+                                    <KnobCell
+                                        label="Lo Cut"
+                                        gate={gateFor('lowCut', 'Lo Cut')}
+                                        value={params.lowCut}
+                                        onChange={(value) => setParam('lowCut', value)}
+                                        min={20}
+                                        max={1000}
+                                        step={5}
+                                        defaultValue={80}
+                                        size="md"
+                                        readout={`${Math.round(params.lowCut)}Hz`}
+                                    />
+                                    <KnobCell
+                                        label="Damp"
+                                        gate={gateFor('damping', 'Damp')}
+                                        value={effectiveDamping}
+                                        onChange={(value) => setParam('damping', value)}
+                                        min={0}
+                                        max={0.999}
+                                        step={0.001}
+                                        defaultValue={0.3}
+                                        size="md"
+                                        readout={formatValue(effectiveDamping, '%')}
+                                        activeRange={dampingRange}
+                                    />
+                                    <KnobCell
+                                        label="Diffuse"
+                                        gate={gateFor('diffusion', 'Diffuse')}
+                                        value={params.diffusion}
+                                        onChange={(value) => setParam('diffusion', value)}
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0.75}
+                                        size="md"
+                                        readout={formatValue(params.diffusion, '%')}
+                                    />
+                                </Grid>
+                            </SectionCard>
+                        ) : null}
 
-                        <SectionCard title="Motion" detail="Swirl">
-                            <Grid cols={2} gap={2}>
-                                <KnobCell
-                                    label="Rate"
-                                    gate={gateFor('modRate', 'Rate')}
-                                    value={params.modRate}
-                                    onChange={(value) => setParam('modRate', value)}
-                                    min={0.1}
-                                    max={5}
-                                    step={0.1}
-                                    defaultValue={1}
-                                    size="md"
-                                    readout={`${params.modRate.toFixed(1)}Hz`}
-                                />
-                                <KnobCell
-                                    label="Depth"
-                                    gate={gateFor('modDepth', 'Depth')}
-                                    value={params.modDepth}
-                                    onChange={(value) => setParam('modDepth', value)}
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    defaultValue={0.3}
-                                    size="md"
-                                    readout={formatValue(params.modDepth, '%')}
-                                />
-                                <KnobCell
-                                    label="Width"
-                                    gate={gateFor('width', 'Width')}
-                                    value={params.width}
-                                    onChange={(value) => setParam('width', value)}
-                                    min={0}
-                                    max={2}
-                                    step={0.01}
-                                    defaultValue={1}
-                                    size="md"
-                                    readout={formatValue(params.width / 2, '%')}
-                                />
-                                <KnobCell
-                                    label="E/L"
-                                    gate={gateFor('earlyLateBalance', 'E/L')}
-                                    value={params.earlyLateBalance}
-                                    onChange={(value) => setParam('earlyLateBalance', value)}
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    defaultValue={0.4}
-                                    size="md"
-                                    readout={formatValue(params.earlyLateBalance, '%')}
-                                />
-                            </Grid>
-                        </SectionCard>
+                        {showBuild ? (
+                            <SectionCard title="Motion" detail="Swirl">
+                                <Grid cols={2} gap={2}>
+                                    <KnobCell
+                                        label="Rate"
+                                        gate={gateFor('modRate', 'Rate')}
+                                        value={params.modRate}
+                                        onChange={(value) => setParam('modRate', value)}
+                                        min={0.1}
+                                        max={5}
+                                        step={0.1}
+                                        defaultValue={1}
+                                        size="md"
+                                        readout={`${params.modRate.toFixed(1)}Hz`}
+                                    />
+                                    <KnobCell
+                                        label="Depth"
+                                        gate={gateFor('modDepth', 'Depth')}
+                                        value={params.modDepth}
+                                        onChange={(value) => setParam('modDepth', value)}
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0.3}
+                                        size="md"
+                                        readout={formatValue(params.modDepth, '%')}
+                                    />
+                                    <KnobCell
+                                        label="Width"
+                                        gate={gateFor('width', 'Width')}
+                                        value={params.width}
+                                        onChange={(value) => setParam('width', value)}
+                                        min={0}
+                                        max={2}
+                                        step={0.01}
+                                        defaultValue={1}
+                                        size="md"
+                                        readout={formatValue(params.width / 2, '%')}
+                                    />
+                                    <KnobCell
+                                        label="E/L"
+                                        gate={gateFor('earlyLateBalance', 'E/L')}
+                                        value={params.earlyLateBalance}
+                                        onChange={(value) => setParam('earlyLateBalance', value)}
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0.4}
+                                        size="md"
+                                        readout={formatValue(params.earlyLateBalance, '%')}
+                                    />
+                                </Grid>
+                            </SectionCard>
+                        ) : null}
 
-                        <SectionCard title="Character" detail="Push">
-                            <Grid cols={2} gap={2}>
-                                <KnobCell
-                                    label="Gravity"
-                                    gate={gateFor('gravity', 'Gravity')}
-                                    value={params.gravity}
-                                    onChange={(value) => setParam('gravity', value)}
-                                    min={-1}
-                                    max={1}
-                                    step={0.01}
-                                    defaultValue={0.5}
-                                    size="md"
-                                    bipolar
-                                    readout={formatValue(params.gravity, 'bipolar')}
-                                />
-                                <KnobCell
-                                    label="Vintage"
-                                    gate={gateFor('vintage', 'Vintage')}
-                                    value={params.vintage}
-                                    onChange={(value) => setParam('vintage', Math.round(value))}
-                                    min={0}
-                                    max={2}
-                                    step={1}
-                                    defaultValue={0}
-                                    size="md"
-                                    readout={VINTAGE_MODES[Math.round(params.vintage)]?.label ?? 'Modern'}
-                                />
-                                <KnobCell
-                                    label="Density"
-                                    gate={gateFor('density', 'Density')}
-                                    value={params.density}
-                                    onChange={(value) => setParam('density', value)}
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    defaultValue={1}
-                                    size="md"
-                                    readout={formatValue(params.density, '%')}
-                                />
-                            </Grid>
-                            <Row align="stretch" wrap gap={1.5}>
-                                {VINTAGE_MODES.map((mode) => (
-                                    <ChamberChip
-                                        key={mode.id}
-                                        active={params.vintage === mode.id}
-                                        onClick={() => setParam('vintage', mode.id)}
+                        {showLab ? (
+                            <SectionCard title="Character" detail="Push">
+                                <Grid cols={2} gap={2}>
+                                    <KnobCell
+                                        label="Gravity"
+                                        gate={gateFor('gravity', 'Gravity')}
+                                        value={params.gravity}
+                                        onChange={(value) => setParam('gravity', value)}
+                                        min={-1}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0.5}
+                                        size="md"
+                                        bipolar
+                                        readout={formatValue(params.gravity, 'bipolar')}
+                                    />
+                                    <KnobCell
+                                        label="Vintage"
+                                        gate={gateFor('vintage', 'Vintage')}
+                                        value={params.vintage}
+                                        onChange={(value) => setParam('vintage', Math.round(value))}
+                                        min={0}
+                                        max={2}
+                                        step={1}
+                                        defaultValue={0}
+                                        size="md"
+                                        readout={VINTAGE_MODES[Math.round(params.vintage)]?.label ?? 'Modern'}
+                                    />
+                                    <KnobCell
+                                        label="Density"
+                                        gate={gateFor('density', 'Density')}
+                                        value={params.density}
+                                        onChange={(value) => setParam('density', value)}
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={1}
+                                        size="md"
+                                        readout={formatValue(params.density, '%')}
+                                    />
+                                </Grid>
+                                <Row align="stretch" wrap gap={1.5}>
+                                    {VINTAGE_MODES.map((mode) => (
+                                        <ChamberChip
+                                            key={mode.id}
+                                            active={params.vintage === mode.id}
+                                            onClick={() => setParam('vintage', mode.id)}
+                                        >
+                                            {mode.label}
+                                        </ChamberChip>
+                                    ))}
+                                </Row>
+                            </SectionCard>
+                        ) : null}
+
+                        {showLab ? (
+                            <SectionCard title="Engine" detail="Algo">
+                                <Grid cols={2} gap={2}>
+                                    <DawPluginInsetCard
+                                        className="proof-chamber-window"
+                                        title="Algorithm"
+                                        headerSize="xs"
+                                        titleClassName="text-white/46"
                                     >
-                                        {mode.label}
-                                    </ChamberChip>
-                                ))}
-                            </Row>
-                        </SectionCard>
-
-                        <SectionCard title="Engine" detail="Algo">
-                            <Grid cols={2} gap={2}>
-                                <DawPluginInsetCard
-                                    className="proof-chamber-window"
-                                    title="Algorithm"
-                                    headerSize="xs"
-                                    titleClassName="text-white/46"
-                                >
-                                    <Row align="stretch" wrap gap={1.5}>
-                                        {ALGORITHMS.map((algorithm) => (
-                                            <ChamberChip
-                                                key={algorithm.id}
-                                                active={params.algorithm === algorithm.id}
-                                                onClick={() => selectAlgorithm(algorithm.id)}
-                                            >
-                                                {algorithm.label}
-                                            </ChamberChip>
-                                        ))}
-                                    </Row>
-                                </DawPluginInsetCard>
-                                <DawPluginInsetCard
-                                    className="proof-chamber-window"
-                                    title="State"
-                                    headerSize="xs"
-                                    titleClassName="text-white/46"
-                                >
-                                    <Row align="stretch" wrap gap={1.5}>
-                                        <ChamberLed>{params.freeze ? 'Freeze on' : 'Freeze off'}</ChamberLed>
-                                        <ChamberLed>{params.shimmer ? 'Shimmer on' : 'Shimmer off'}</ChamberLed>
-                                    </Row>
-                                </DawPluginInsetCard>
-                            </Grid>
-                        </SectionCard>
+                                        <Row align="stretch" wrap gap={1.5}>
+                                            {ALGORITHMS.map((algorithm) => (
+                                                <ChamberChip
+                                                    key={algorithm.id}
+                                                    active={params.algorithm === algorithm.id}
+                                                    onClick={() => selectAlgorithm(algorithm.id)}
+                                                >
+                                                    {algorithm.label}
+                                                </ChamberChip>
+                                            ))}
+                                        </Row>
+                                    </DawPluginInsetCard>
+                                    <DawPluginInsetCard
+                                        className="proof-chamber-window"
+                                        title="State"
+                                        headerSize="xs"
+                                        titleClassName="text-white/46"
+                                    >
+                                        <Row align="stretch" wrap gap={1.5}>
+                                            <ChamberLed>{params.freeze ? 'Freeze on' : 'Freeze off'}</ChamberLed>
+                                            <ChamberLed>{params.shimmer ? 'Shimmer on' : 'Shimmer off'}</ChamberLed>
+                                        </Row>
+                                    </DawPluginInsetCard>
+                                </Grid>
+                            </SectionCard>
+                        ) : null}
                     </div>
                 </section>
             </Stack>

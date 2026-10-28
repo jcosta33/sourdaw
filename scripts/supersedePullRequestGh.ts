@@ -86,13 +86,10 @@ export function shellPort(
         inspectReviewThreads: (number) => inspectReviewThreads(number, gh),
         isCommitAncestor: (repository, ancestor, descendant) =>
             inspectCommitAncestry(repository, ancestor, descendant, gh),
-        readRegisteredLaneStack: (branch) => {
-            const marker = capture('git', ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`], {
-                cwd: primaryRoot,
-                env: session.env,
-            });
-            return readRegisteredLaneStack(primaryRoot, branch, marker);
-        },
+        readRegisteredLaneStack: (branch) =>
+            readRegisteredLaneStack(primaryRoot, branch, (args) =>
+                capture('git', args, { cwd: primaryRoot, env: session.env })
+            ),
         comment: (number, body) => addComment(nodeId(number), body, commentClientMutationId(number, body), gh),
         close: (number) => closePullRequest(nodeId(number), gh),
         deleteComment: (id) => deleteComment(id, gh),

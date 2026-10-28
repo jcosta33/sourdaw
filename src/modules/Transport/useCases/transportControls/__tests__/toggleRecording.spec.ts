@@ -52,9 +52,13 @@ const mocks = vi.hoisted(() => {
         ensureTrackStrips: vi.fn<() => void>(),
         getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
         getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
-        commitRecording: vi.fn<(clip: TestRecordingClip, capture?: TestRecordedCapture) => Promise<void>>(() =>
-            Promise.resolve()
-        ),
+        commitRecording: vi.fn<
+            (
+                clip: TestRecordingClip,
+                capture?: TestRecordedCapture,
+                options?: { shouldExecute?: () => boolean }
+            ) => Promise<void>
+        >(() => Promise.resolve()),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
         startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(),
@@ -490,6 +494,7 @@ describe('toggleRecording', () => {
         await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
 
         const capture = mocks.commitRecording.mock.calls[0]?.[1];
+        expect(mocks.commitRecording.mock.calls[0]?.[2]?.shouldExecute?.()).toBe(true);
         expect(capture).toEqual({ provisionalStartBeat: 4, mediaOriginSeconds: expect.any(Number) });
         expect(capture?.mediaOriginSeconds).toBeCloseTo(secondsBetweenBeats([], 0, 3.8, 120), 9);
     });

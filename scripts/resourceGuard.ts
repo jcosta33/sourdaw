@@ -148,8 +148,12 @@ const profiles: Record<ResourceProfile, { maxRssBytes: number; timeoutMs: number
 
 // Budgets sized above peaks measured under the guard on this repository; the profile ceiling alone would kill these runs.
 const measuredScriptBudgets = new Map<string, number>([
-    // A cold private frozen install peaked at 2051 MiB under the guard.
+    // A cold private frozen install peaked at 2057 MiB under the guard.
     ['install', 2304 * 1024 ** 2],
+    // A focused pnpm exec eslint invocation over seven files peaked at 4015 MiB.
+    ['exec', 4608 * 1024 ** 2],
+    // A dependency add peaked at 2360 MiB under the guard.
+    ['add', 3072 * 1024 ** 2],
     ['lint', 4 * 1024 ** 3],
     // A full lint (node scripts/runLint.ts --full) peaked at 6201 MiB under the guard.
     ['lint:full', 6500 * 1024 ** 2],
@@ -167,7 +171,7 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
     if (command !== 'pnpm') {
         return undefined;
     }
-    const optionsWithArgument = new Set(['-C', '--dir', '-F', '--filter', '--reporter', '--loglevel']);
+    const optionsWithArgument = new Set(['-C', '--dir', '-F', '--filter', '--filter-prod', '--reporter', '--loglevel']);
     let index = 0;
     while (index < args.length) {
         const arg = args[index];
@@ -185,6 +189,7 @@ export function pnpmScriptName(command: string, args: readonly string[]): string
         if (
             arg.startsWith('--config.') ||
             arg.startsWith('--filter=') ||
+            arg.startsWith('--filter-prod=') ||
             arg.startsWith('-F=') ||
             arg.startsWith('--dir=') ||
             arg.startsWith('-C=') ||

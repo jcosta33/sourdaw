@@ -1,5 +1,6 @@
-import { type ReactElement, useLayoutEffect, useReducer, useRef } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 
+import { DawEffectDisclosure } from '#/components/daw/DawEffectDisclosure';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -13,10 +14,18 @@ import { RotaryKnob, type GestureAuthority } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
+import {
+    effectDisclosureLevel,
+    effectDisclosureTierFromLevel,
+    type EffectDisclosureTier,
+    isEffectDisclosureStageVisible,
+} from '#/utils/UI/effectDisclosureTier';
 
 import { getLinkedBandValues } from '../../models/LinkedBandValues';
+import { proofDisclosureLevelFromState } from '../../models/ProofDisclosure';
 import { getProofLoudnessAlert } from '../../models/ProofLoudnessAlert';
 import {
     getProofPatchSnapshot,
@@ -30,19 +39,21 @@ import {
 import { PROOF_LOUDNESS_HISTORY_LENGTH } from '../../stores/proofLoudnessHistory';
 import {
     proofStore,
-    setProofUiLevel,
     setProofAbBypass,
     getProofState,
     DEFAULT_PROOF_STATE,
     type ProofState,
 } from '../../stores/proofStore';
+import { hydrateProofDisclosureFromProject } from '../../useCases/hydrateProofDisclosureFromProject';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
+import { rehydrateRestoredPatch } from '../../useCases/proofParamBridge/rehydrateRestoredPatch';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
 import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
 import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
 import { setProofTarget } from '../../useCases/proofParamBridge/setProofTarget';
 import { PROOF_PRESETS } from '../../useCases/proofPresets';
+import { setProofPanelUiLevel } from '../../useCases/setProofPanelUiLevel';
 import { LoudnessHistory } from '../components/LoudnessHistory';
 import { ProofDynSection } from '../components/ProofDynSection';
 import { ProofEqSection } from '../components/ProofEqSection';
@@ -71,14 +82,6 @@ const MODULE_COLORS = [
 const TARGET_OPTIONS: { value: ProofTarget; label: string; lufs: number }[] = (
     ['streaming', 'cd', 'club', 'broadcast', 'podcast'] as const
 ).map((value) => ({ value, label: TARGET_LABELS[value], lufs: TARGET_LUFS[value] }));
-
-const LEVEL_OPTIONS = [
-    { level: 1 as const, label: 'Play', detail: 'Target' },
-    { level: 2 as const, label: 'Shape', detail: 'Tone' },
-    { level: 3 as const, label: 'Build', detail: 'Modules' },
-    { level: 4 as const, label: 'Route', detail: 'Chain' },
-    { level: 5 as const, label: 'Lab', detail: 'Check' },
-];
 
 type ProofPatchChange = (edit: ProofPatchEdit) => void;
 
@@ -110,7 +113,7 @@ function getLevelMeta(level: ProofState['uiLevel']): {
     if (level === 2) {
         return {
             title: 'Chain shape',
-            description: 'See the mastering stations as one desk instead of five stacked pages.',
+            description: 'Balance the mastering stages with their primary controls.',
         };
     }
 
@@ -164,6 +167,27 @@ type ProofLevelContentProps = {
     onChainReorder: (order: ProofPatch['chainOrder']) => void;
 };
 
+function ProofControlStage({
+    selected,
+    stage,
+    children,
+}: {
+    selected: EffectDisclosureTier;
+    stage: EffectDisclosureTier;
+    children: ReactNode;
+}): ReactElement | null {
+    if (!isEffectDisclosureStageVisible(selected, stage)) {
+        return null;
+    }
+    const title = stage.charAt(0).toUpperCase() + stage.slice(1);
+    return (
+        <section aria-label={`${title} controls`} className="shrink-0">
+            <h3 className="mb-3 text-[10px] uppercase tracking-[0.22em] text-[var(--color-accent-mint)]/70">{title}</h3>
+            {children}
+        </section>
+    );
+}
+
 const ProofLevelContent = ({
     patch,
     uiLevel,
@@ -174,57 +198,52 @@ const ProofLevelContent = ({
     onTargetSelection,
     onChainReorder,
 }: ProofLevelContentProps): ReactElement => {
-    if (uiLevel === 1) {
-        return (
-            <Level1Play
-                patch={patch}
-                deviceId={deviceId}
-                gestureOwner={gestureOwner}
-                gestureAuthority={gestureAuthority}
-                onPatchChange={onPatchChange}
-                onTargetSelection={onTargetSelection}
-            />
-        );
-    }
-
-    if (uiLevel === 2) {
-        return (
-            <Level2Shape
-                patch={patch}
-                deviceId={deviceId}
-                gestureOwner={gestureOwner}
-                gestureAuthority={gestureAuthority}
-                onPatchChange={onPatchChange}
-            />
-        );
-    }
-
-    if (uiLevel === 3) {
-        return (
-            <Level3Build
-                patch={patch}
-                deviceId={deviceId}
-                gestureOwner={gestureOwner}
-                gestureAuthority={gestureAuthority}
-                onPatchChange={onPatchChange}
-            />
-        );
-    }
-
-    if (uiLevel === 4) {
-        return (
-            <Level4Route
-                patch={patch}
-                deviceId={deviceId}
-                gestureOwner={gestureOwner}
-                gestureAuthority={gestureAuthority}
-                onPatchChange={onPatchChange}
-                onChainReorder={onChainReorder}
-            />
-        );
-    }
-
-    return <Level5Lab patch={patch} deviceId={deviceId} />;
+    const tier = effectDisclosureTierFromLevel(uiLevel);
+    return (
+        <Stack gap={6}>
+            <ProofControlStage selected={tier} stage="play">
+                <Level1Play
+                    patch={patch}
+                    deviceId={deviceId}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
+                    onTargetSelection={onTargetSelection}
+                />
+            </ProofControlStage>
+            <ProofControlStage selected={tier} stage="shape">
+                <Level2Shape
+                    patch={patch}
+                    deviceId={deviceId}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
+                />
+            </ProofControlStage>
+            <ProofControlStage selected={tier} stage="build">
+                <Level3Build
+                    patch={patch}
+                    deviceId={deviceId}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
+                />
+            </ProofControlStage>
+            <ProofControlStage selected={tier} stage="route">
+                <Level4Route
+                    patch={patch}
+                    deviceId={deviceId}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={gestureAuthority}
+                    onPatchChange={onPatchChange}
+                    onChainReorder={onChainReorder}
+                />
+            </ProofControlStage>
+            <ProofControlStage selected={tier} stage="lab">
+                <Level5Lab patch={patch} deviceId={deviceId} />
+            </ProofControlStage>
+        </Stack>
+    );
 };
 
 function isModuleBypassed(patch: ProofPatch, moduleIndex: number): boolean {
@@ -362,12 +381,12 @@ const ProofAbCompareChip = ({ deviceId }: { deviceId: string }): ReactElement =>
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
-    // Two narrow subscriptions instead of one on the whole instances record.
+    // Subscribe to patch/layout state instead of the whole instances record.
     // The record gets a new identity on every meter frame — ~62 a second per
     // open device — so subscribing to it here re-rendered the entire desk on
     // every frame of every device, and cancelled in-flight knob gestures'
-    // memoization along the way. Patch and desk level change only on a user
-    // edit, so this tree re-renders only when the user changes something.
+    // memoization along the way. Patch, layout and restoration status change on
+    // edits or loads, so meter frames do not re-render this tree.
     const patch = useStoreSelector(
         proofStore,
         (instances) => instances?.[deviceId]?.patch ?? DEFAULT_PROOF_STATE.patch
@@ -376,6 +395,24 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
         proofStore,
         (instances) => instances?.[deviceId]?.uiLevel ?? DEFAULT_PROOF_STATE.uiLevel
     );
+    const projectPatchHydrated = useStoreSelector(
+        proofStore,
+        (instances) => instances?.[deviceId]?.projectPatchHydrated ?? false
+    );
+    const projectLevel = useStoreSelector(trackStore, (project) => {
+        const device = project?.tracks
+            .flatMap((track) => track.devices)
+            .find((candidate) => candidate.id === deviceId && candidate.type === 'proof');
+        return device ? proofDisclosureLevelFromState(device.deviceState) : null;
+    });
+    useEffect(() => {
+        if (projectLevel !== null && !projectPatchHydrated) {
+            rehydrateRestoredPatch(deviceId);
+        }
+        if (projectLevel !== null && projectLevel !== uiLevel) {
+            hydrateProofDisclosureFromProject(deviceId);
+        }
+    }, [deviceId, projectLevel, uiLevel, projectPatchHydrated]);
 
     const patchSnapshot = getProofPatchSnapshot(patch);
     const [gestureOwner, setGestureOwner] = useReducer((_owner: number, nextOwner: number) => nextOwner, 0);
@@ -532,21 +569,12 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
 
                             <Stack gap={1}>
                                 <div className="text-[10px] font-medium text-foreground">Desk depth</div>
-                                <Stack gap={1}>
-                                    {LEVEL_OPTIONS.map((entry) => {
-                                        const active = uiLevel === entry.level;
-                                        return (
-                                            <DawPluginChoiceRow
-                                                key={entry.label}
-                                                className="proof-window"
-                                                active={active}
-                                                title={entry.label}
-                                                detail={entry.detail}
-                                                onPress={() => setProofUiLevel({ deviceId, level: entry.level })}
-                                            />
-                                        );
-                                    })}
-                                </Stack>
+                                <DawEffectDisclosure
+                                    tier={effectDisclosureTierFromLevel(uiLevel)}
+                                    onChange={(tier) =>
+                                        void setProofPanelUiLevel(deviceId, effectDisclosureLevel(tier))
+                                    }
+                                />
                             </Stack>
                         </Stack>
                     </SideCard>
@@ -738,12 +766,6 @@ const Level1Meters = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string
     const outputStLufs = useProofMeter(deviceId, (state) => state.outputStLufs);
     const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
     const correlation = useProofMeter(deviceId, (state) => state.correlation);
-    const alert = getProofLoudnessAlert({
-        target: patch.target,
-        targetLufs: patch.targetLufs,
-        integratedLufs,
-    });
-
     return (
         <Stack align="center" gap={3}>
             <Row align="stretch" gap={8}>
@@ -765,16 +787,7 @@ const Level1Meters = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string
                 <span>Correlation: {correlation.toFixed(2)}</span>
             </Row>
 
-            {/* Loudness-normalization warning */}
-            {alert ? (
-                <div
-                    role="alert"
-                    aria-live="polite"
-                    className="px-3 py-1.5 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)] max-w-xs text-center"
-                >
-                    {alert.message}
-                </div>
-            ) : null}
+            <ProofNormalizationAlert deviceId={deviceId} patch={patch} />
         </Stack>
     );
 };
@@ -1375,7 +1388,6 @@ const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string })
                 <Level5MeterGrid deviceId={deviceId} />
 
                 {/* Platform normalization info */}
-                <Level5NormalizationAlert deviceId={deviceId} patch={patch} />
 
                 {/* Reset integrated button */}
                 <Button
@@ -1430,13 +1442,8 @@ const Level5MeterGrid = ({ deviceId }: { deviceId: string }): ReactElement => {
     );
 };
 
-const Level5NormalizationAlert = ({
-    deviceId,
-    patch,
-}: {
-    deviceId: string;
-    patch: ProofPatch;
-}): ReactElement | null => {
+const ProofNormalizationAlert = ({ deviceId, patch }: { deviceId: string; patch: ProofPatch }): ReactElement | null => {
+    const includeAdvice = useStoreSelector(proofStore, (instances) => instances?.[deviceId]?.uiLevel === 5);
     const integratedLufs = useProofMeter(deviceId, (state) => state.integratedLufs);
     const alert = getProofLoudnessAlert({
         target: patch.target,
@@ -1454,7 +1461,7 @@ const Level5NormalizationAlert = ({
             aria-live="polite"
             className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]"
         >
-            {`${alert.message} ${alert.advice}`}
+            {includeAdvice ? `${alert.message} ${alert.advice}` : alert.message}
         </div>
     );
 };

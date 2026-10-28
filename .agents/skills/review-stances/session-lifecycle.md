@@ -36,6 +36,23 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
+
+Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
+Stop stopped it and natural completion cleared UI state, without disconnect or engine-lifetime
+cleanup. GitHub's commit-to-PR lookup returns no associated PR. PR #187
+(`8c11c40674b32074a12a209b308d3361e93fe873`) moved that behavior into AudioEngine's cached
+preview helper. Historical private review prompts and tiers are unavailable.
+
+Start a cached preview through its real owner, then reset or dispose the engine. Require the source
+to stop and disconnect before the outgoing graph is retired, with one completion notification and
+no admission against the outgoing lifetime. Start a successor during an old callback and deliver
+the old completion and release afterward; the successor must survive. Pair nested reset, cleanup
+failure and disposed-engine refusal with ordinary previews that still coexist. Removing reset
+invalidation or the disposed-owner guard must fail those cases. Intent currentness permits
+preparation only; native monitoring readiness, programme isolation and audible A/B need their own
+evidence.
+
 ### 2026-10-22 — a store hydrate on a sync reset the runtime-only fields (introduced by PR #171)
 
 PR #171 (commit `d764229f1`) gave `transportStore` a `fromCrdt` that expands the partial document slot to a
@@ -352,6 +369,12 @@ closure, legacy null witness and a landed sibling with a refused sibling; captur
 before clearing refs, retain it across every queued wait, and distinguish refused resume from
 success that settled just before replacement.
 
+### 2026-10-27 — a retired audio terminal cannot borrow a successor opening (issue #5517)
+
+The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0cbea8d62b`) added same-ID failure cleanup and PR #4564 (`40c5218228c5`) added asynchronous commit cleanup. PR #5373 explicitly deferred these scheduler windows. Historical review dispatch and tier are unknown. Capture the public root identity at each punch opening, before callback registration, and retain that opening through success, failure, commit wait and catch. Guard before caching media, reading a same-ID live clip or discarding it.
+
+Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
+
 ### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
 
 PR #5453 added `material.prepare` to every native backend apply. The live session computes its
@@ -387,3 +410,29 @@ runtime RED claim. This probe establishes ordering and admission, not live hardw
 PR #305 (`b077ef6d34c7fc72bf3907a55bcaa7d7102a1584`) moved seek finalization behind the recording-flush promise while retaining only the pre-wait `wasPlaying` snapshot. During that wait, Stop→Play or Stop→Record can install a successor scheduler; the old finalizer can then stop that scheduler, write its stale seek target, or restart against successor state. Checking live `isPlaying` only gates restart; it does not establish ownership. Commit `983371455c147465033d6ac9ccd27706cc2210fa` later relocated the path into `executePlayheadSeek.ts` without introducing the race. PR #5374 (`ddceec4283b3715f267773b33bccfc21c3778e0f`) added the scheduler-generation ownership check before deferred side effects. The available public history does not contain the private reviewer prompts, so the exact missed stance or reviewer responsibility cannot be established.
 
 Probe: through the real seek/transport coordinator, hold a controlled promise returned at the `stopActiveRecording` boundary after a playing, recording seek is admitted. While it is held, exercise Stop→Play and Stop→Record, then resolve and reject the promise. Require the successor worker identity, generation, epoch, transport state, and position to remain intact; on rejection, require the original error to remain reported. Remove the generation-ownership guard and require both successor cases to fail. This controlled scheduler probe tests deferred ownership; it does not establish real capture, PCM flushing, browser behavior, or hardware audibility.
+
+### 2026-10-27 — dense loop-off inherited a linear window that replenished after its frames (introduced by PR #3912)
+
+PR #3912 (`cb8a0c81fc`) admitted a capacity-sized linear prefix but kept its spent entries until
+more than three seconds into playback. A 1200-pair, three-second phrase filled the 2048-entry
+store; the remaining 352 events arrived only after their frames. Loop-window work in #5346
+exposed the same path by disabling looping near the start. The original public review checked
+prefix limits, refusal bookkeeping and trail counts without rendering the unadmitted suffix.
+Private historical dispatches are unavailable, so the exact reviewer prompt is unverified.
+
+Blind spot: capacity-safe admission does not establish timely delivery. A lifecycle stance must
+walk dense loop-on to loop-off at the start and near-start, then seek and edit-rearm in the
+resulting linear mode. Drive the real writer against a persistent store and render through the
+entire phrase; require every expected event identity before its frame, bounded residency and no
+callback overflow. Carry a distant real off and a same-key reattack through those transitions,
+without replaying the old onset. Restore the linear prefix/three-second-clear path and require
+the suffix assertions to fail. Model host queue admission separately from callback application:
+a later note-store refusal leaves preceding clears applied and cannot be retried from an
+already-applied host response. Native output peaks supplement this probe; they cannot count all
+attacks/releases or establish zero callback refusals when the wire omits those counters.
+
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.

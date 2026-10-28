@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
     updateClip: vi.fn<(typeof updateClipRepo)['updateClip']>(),
     shiftClipAutomation: vi.fn(),
+    prepareClipMidiRowCoordinateShift:
+        vi.fn<typeof import('#/modules/MIDI/useCases').prepareClipMidiRowCoordinateShift>(),
     shiftClipMidiNotes: vi.fn(),
 }));
 
@@ -10,6 +12,7 @@ vi.mock('../../../repositories/track/updateClip', () => ({ updateClip: mocks.upd
 vi.mock('#/modules/Automation/useCases', () => ({ shiftClipAutomation: mocks.shiftClipAutomation }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getNotesForClip: vi.fn(() => []),
+    prepareClipMidiRowCoordinateShift: mocks.prepareClipMidiRowCoordinateShift,
     setNotesForClip: vi.fn(),
     shiftClipMidiNotes: mocks.shiftClipMidiNotes,
 }));
@@ -49,6 +52,7 @@ describe('clip editing operations', () => {
             // Notes are clip-relative and follow the rectangle; shifting them
             // here double-moved every note (ledger M-025 family finding).
             expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+            expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', 2);
         });
 
@@ -57,6 +61,7 @@ describe('clip editing operations', () => {
             nudgeClip('c1', 2);
             expect(result[0]).toMatchObject({ startBeat: 0, endBeat: 4, locked: true });
             expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+            expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
         });
 
@@ -65,6 +70,7 @@ describe('clip editing operations', () => {
             nudgeClip('c1', -10);
             expect(result[0]).toMatchObject({ startBeat: 0, endBeat: 4 });
             expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+            expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', -1);
         });
     });

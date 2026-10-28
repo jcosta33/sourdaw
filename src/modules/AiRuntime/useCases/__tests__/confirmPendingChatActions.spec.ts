@@ -2,6 +2,7 @@ import { clone } from '@automerge/automerge';
 import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { asBaseAudioContext, createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import {
@@ -12,6 +13,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import * as audioEngineUseCases from '#/modules/AudioEngine/useCases';
 import {
     clearAgentSectionRenderArtifacts,
     getAgentSectionRenderArtifacts,
@@ -154,6 +156,39 @@ function createRuntimeTestTrack(): Track {
         vcaGroupId: null,
         midiOutputTrackId: null,
         followChordTrack: false,
+    };
+}
+
+function createRuntimeTestStrip(): NonNullable<ReturnType<typeof audioEngineUseCases.getTrackStrip>> {
+    const context = asBaseAudioContext(createMockAudioContext());
+    const deviceNode = context.createGain();
+    return {
+        trackId: 'track-bass',
+        preFaderTap: context.createGain(),
+        gainNode: context.createGain(),
+        faderNode: context.createGain(),
+        postFaderGain: context.createGain(),
+        panNode: context.createStereoPanner(),
+        meterNode: null,
+        analyserNode: context.createAnalyser(),
+        carrierGate: context.createGain(),
+        preFaderSendGate: context.createGain(),
+        muted: false,
+        nativeCarried: false,
+        soloGated: false,
+        soloed: false,
+        deviceNodes: [
+            {
+                deviceId: 'device-eq',
+                type: 'builtin-eq',
+                parameterIds: [],
+                nodes: [deviceNode],
+                inputNode: deviceNode,
+                outputNode: deviceNode,
+            },
+        ],
+        midiFxNodes: [],
+        meterBuffer: new Float32Array(128),
     };
 }
 
@@ -3503,6 +3538,12 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('surfaces a durable add-device runtime failure and fails recovery without exact checkpoint binding', async () => {
+        // An existing strip keeps this recovery case on the injected delta-refusal route.
+        const beforeStrip = createRuntimeTestStrip();
+        const getTrackStrip = vi
+            .spyOn(audioEngineUseCases, 'getTrackStrip')
+            .mockImplementation((trackId) => (trackId === beforeStrip.trackId ? beforeStrip : undefined));
+        onTestFinished(() => getTrackStrip.mockRestore());
         runtimeMocks.applyRuntimeGraphDelta.mockReset();
         const rejectedRuntimeDelta = {
             acceptance: 'rejected' as const,
@@ -3610,6 +3651,23 @@ describe('confirmPendingChatActions transaction admission', () => {
         ]);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledOnce();
+        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+            expect.objectContaining({
+                command: 'replace-track-device-chain',
+                operation: 'add-device',
+                before: expect.objectContaining({
+                    id: 'track-bass',
+                    devices: [expect.objectContaining({ id: 'device-eq' })],
+                }),
+                after: expect.objectContaining({
+                    id: 'track-bass',
+                    devices: [
+                        expect.objectContaining({ id: 'device-eq' }),
+                        expect.objectContaining({ id: 'device-compressor' }),
+                    ],
+                }),
+            })
+        );
         expect(getPendingActionConfirmation('confirmation-runtime-effect')).toMatchObject({
             status: 'failed',
             executedActions: [{ outcome: 'committed-with-warning' }],

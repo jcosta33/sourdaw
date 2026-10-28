@@ -364,6 +364,10 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         confirmation.approvalSnapshot;
     const freshness = getFreshness(confirmation);
     const routeView = getProviderRouteView({ runId: confirmation.runId });
+    const recipes = Array.from(adoptedRecipes ?? []);
+    if (measuredPreview?.revision === confirmation.projectRevision && measuredPreview.recipeSource !== undefined) {
+        recipes.push(measuredPreview.recipeSource);
+    }
     return {
         confirmationId: confirmation.id,
         runId: confirmation.runId,
@@ -377,7 +381,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         previousProposalDiff: projectPreviousProposalDiff(confirmation),
         scope: commandBatch ? commandBatch.authority.scope : EMPTY_SCOPE,
         risk: projectRisk(agentApproval),
-        recipes: projectRecipes(adoptedRecipes),
+        recipes: projectRecipes(recipes),
         measuredPreview: projectMeasuredPreview(measuredPreview, confirmation.projectRevision),
         ...projectSemanticDiff(semanticDiff),
         baseRevision: confirmation.projectRevision,

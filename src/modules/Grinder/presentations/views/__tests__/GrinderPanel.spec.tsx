@@ -17,6 +17,14 @@ vi.mock('../../../useCases/restoreGrinderNeuralLibrary', () => ({
     restoreGrinderNeuralLibrary: vi.fn(async () => undefined),
 }));
 
+// These pre-existing cases exercise the complete advanced surface. Project-backed
+// tier selection, admission and defaults are exercised without this fixture in
+// GrinderDisclosure.integration.spec.tsx.
+vi.mock('../../../models/GrinderDisclosure', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../models/GrinderDisclosure')>()),
+    grinderDisclosureLevelFromState: () => 5,
+}));
+
 describe('GrinderPanel', () => {
     const device_id = 'test-device';
 

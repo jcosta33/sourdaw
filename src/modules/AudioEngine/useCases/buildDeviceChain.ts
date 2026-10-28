@@ -12,6 +12,7 @@ import { getAudioDeviceRuntimeSink, type CapturedOfflineInstrument } from '../en
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { createExportError } from '../errors/ExportError';
 import { createFaustDeviceExportError } from '../errors/FaustDeviceExportError';
+import { isOfflineGrinderSetupError } from '../errors/OfflineGrinderSetupError';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 import {
@@ -525,6 +526,15 @@ export const buildDeviceChain = inject({ logger })(
                                 // cancellation with its own failure.
                             }
                             throw exportCancelled();
+                        }
+                        if (device.type === 'grinder' && contributesAudio && isOfflineGrinderSetupError(error)) {
+                            releaseBuiltStrategies(entries, logger);
+                            try {
+                                strategy?.destroy?.();
+                            } catch (teardownError) {
+                                logger.warn(`Grinder threw during refused setup teardown: ${String(teardownError)}`);
+                            }
+                            throw error;
                         }
                         if (refuseFaustFailure) {
                             releaseBuiltStrategies(entries, logger);

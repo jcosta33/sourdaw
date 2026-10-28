@@ -11,6 +11,7 @@ export { readMusicalRangeInputs } from './readMusicalRangeInputs';
 export { scratchPadStore } from './scratchPadStore';
 export type { ScratchPadStoreState } from './scratchPadStore';
 
+export { isValidTakePlacement } from './isValidTakePlacement';
 export { takeLaneStore } from './takeLaneStore';
 export type { TakeLaneStoreState } from './takeLaneStore';
 

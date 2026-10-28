@@ -2,9 +2,9 @@ import { desktopOpenDialog } from '#/utils/desktopBridge';
 
 import { openViaBrowser } from './helpers';
 
-import type { OpenFileOptions } from './helpers';
+import type { OpenFileOptions, OpenFileSelection } from './helpers';
 
-export async function openViaNative(options: OpenFileOptions): Promise<string[] | null> {
+export async function openViaNative(options: OpenFileOptions): Promise<OpenFileSelection | null> {
     try {
         const result = await desktopOpenDialog({
             multiple: options.multiple ?? false,
@@ -15,6 +15,6 @@ export async function openViaNative(options: OpenFileOptions): Promise<string[] 
         }
         return Array.isArray(result) ? result : [result];
     } catch {
-        return openViaBrowser(options);
+        return { kind: 'browser-files', files: await openViaBrowser(options) };
     }
 }

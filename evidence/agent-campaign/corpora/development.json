@@ -2454,6 +2454,294 @@
                     }
                 ]
             }
+        },
+        {
+            "id": "AC004-DEV-UNDO-MULTI-TRACK",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "undo-commit",
+            "prior": {
+                "prompt": "Turn Lead Vocal down 1 dB and turn Bass DI down 2 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-lead-vocal",
+                                    "deltaDb": -1
+                                }
+                            },
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-bass-di",
+                                    "deltaDb": -2
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "Undo the last change",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "revert",
+                "group": "prior-commit"
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-kick",
+                    "gainDb": -7
+                }
+            ]
+        },
+        {
+            "id": "AC004-DEV-UNDO-MULTI-COMMAND",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "undo-commit",
+            "prior": {
+                "prompt": "Turn Lead Vocal down 1 dB and mute Lead Vocal",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-lead-vocal",
+                                    "deltaDb": -1
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-lead-vocal",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "revert that",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "revert",
+                "group": "prior-commit"
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-kick",
+                    "gainDb": -7
+                }
+            ]
+        },
+        {
+            "id": "AC004-DEV-RETARGET-MULTI-TRACK",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "retarget-commit",
+            "prior": {
+                "prompt": "Turn Lead Vocal down 2 dB and mute Bass DI",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-lead-vocal",
+                                    "deltaDb": -2
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-bass-di",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "do the same to Keys",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "deltaDb": -2
+                        }
+                    },
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "muted": true
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-DEV-RETARGET-MULTI-COMMAND",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "retarget-commit",
+            "prior": {
+                "prompt": "Turn Lead Vocal down 1 dB and mute Lead Vocal",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-lead-vocal",
+                                    "deltaDb": -1
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-lead-vocal",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "do the same to both Bass DI and Keys",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-bass-di",
+                            "deltaDb": -1
+                        }
+                    },
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-bass-di",
+                            "muted": true
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "deltaDb": -1
+                        }
+                    },
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "muted": true
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-DEV-RELATIVE-ABSOLUTE",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "relative-to-commit",
+            "prior": {
+                "prompt": "Set Lead Vocal to -8 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-lead-vocal",
+                                    "gainDb": -8
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "2 dB less",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "gainDb": -10
+                        }
+                    }
+                ]
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-lead-vocal",
+                    "gainDb": -15
+                }
+            ]
         }
     ]
 }
