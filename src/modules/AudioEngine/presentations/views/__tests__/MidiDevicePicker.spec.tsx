@@ -123,14 +123,16 @@ describe('MidiDevicePicker', () => {
         expect(mockInitWebMidi).toHaveBeenCalledTimes(1);
     });
 
-    it('should show connected badge when device is selected', () => {
+    it('should show connected badge when device is selected', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
             selectedInputId: 'midi1',
             enumerationError: null,
         });
-        render(<MidiDevicePicker />);
+        await act(async () => {
+            render(<MidiDevicePicker />);
+        });
         // The component shows "Connected:" when selectedInputId is set
         expect(screen.getByText(/Connected:/)).toBeInTheDocument();
     });
@@ -240,7 +242,7 @@ describe('MidiDevicePicker', () => {
         expect(mockSelectMidiInput).not.toHaveBeenCalled();
     });
 
-    it('renders "Connected: Unknown" when the selected device is no longer in the input list', () => {
+    it('renders "Connected: Unknown" when the selected device is no longer in the input list', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
@@ -248,7 +250,9 @@ describe('MidiDevicePicker', () => {
             selectedInputId: 'disconnected',
             enumerationError: null,
         });
-        render(<MidiDevicePicker />);
+        await act(async () => {
+            render(<MidiDevicePicker />);
+        });
         // find() returns undefined ⇒ `?? 'Unknown'` fallback ⇒ "Connected: Unknown".
         expect(screen.getByText('Connected: Unknown')).toBeInTheDocument();
     });
