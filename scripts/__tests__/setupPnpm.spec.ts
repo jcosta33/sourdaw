@@ -21,7 +21,9 @@ const directories: string[] = [];
 const repository = resolve(import.meta.dirname, '../..');
 
 afterEach(() => {
-    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+    for (const directory of directories.splice(0)) {
+        rmSync(directory, { recursive: true, force: true });
+    }
 });
 
 function fixture() {
@@ -43,7 +45,9 @@ function fixture() {
     const implementation: NonNullable<SetupPnpmOptions['run']> = (_file, args, { env }) => {
         if (args.includes('self-update')) {
             const home = env.PNPM_HOME;
-            if (!home) throw new Error('Fixture requires an isolated pnpm home');
+            if (!home) {
+                throw new Error('Fixture requires an isolated pnpm home');
+            }
             const installedTarget = join(home, 'target/node_modules/pnpm/bin/pnpm.mjs');
             mkdirSync(dirname(installedTarget), { recursive: true });
             mkdirSync(join(home, 'bin'), { recursive: true });
@@ -91,20 +95,15 @@ describe('verified JavaScript pnpm setup', () => {
         input.options.env.COREPACK_ROOT = '/shared/corepack';
         const project = readFileSync(join(input.workspace, 'package.json'), 'utf8');
         const lock = readFileSync(join(input.workspace, 'pnpm-lock.yaml'), 'utf8');
+        let npmEntrypoint: string;
+        if (process.platform === 'win32') {
+            npmEntrypoint = join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
+        } else {
+            npmEntrypoint = resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js');
+        }
         const result = setupPnpm(input.options);
         expect(input.run.mock.calls.map(([file, args]) => [file, args])).toEqual([
-            [
-                process.execPath,
-                [
-                    process.platform === 'win32'
-                        ? join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')
-                        : resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js'),
-                    'ci',
-                    '--ignore-scripts',
-                    '--no-audit',
-                    '--no-fund',
-                ],
-            ],
+            [process.execPath, [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund']],
             [
                 process.execPath,
                 [join(result.dest, 'bootstrap/node_modules/pnpm/bin/pnpm.mjs'), 'self-update', '11.6.0'],
@@ -280,8 +279,12 @@ writeFileSync(join(process.cwd(),'node_modules/pnpm/bin/pnpm.mjs'),${JSON.string
 
     it.each(['populated', 'symlink', 'writable'])('refuses a %s destination without changing its contents', (kind) => {
         const input = fixture();
-        if (kind === 'populated') writeFileSync(join(input.dest, 'foreign'), 'preserve');
-        if (kind === 'writable') chmodSync(input.dest, 0o777);
+        if (kind === 'populated') {
+            writeFileSync(join(input.dest, 'foreign'), 'preserve');
+        }
+        if (kind === 'writable') {
+            chmodSync(input.dest, 0o777);
+        }
         if (kind === 'symlink') {
             const link = join(dirname(input.dest), 'link');
             symlinkSync(input.dest, link);
@@ -289,7 +292,9 @@ writeFileSync(join(process.cwd(),'node_modules/pnpm/bin/pnpm.mjs'),${JSON.string
         }
         expect(() => setupPnpm(input.options)).toThrow('empty owned directory');
         expect(input.run).not.toHaveBeenCalled();
-        if (kind === 'populated') expect(readFileSync(join(input.dest, 'foreign'), 'utf8')).toBe('preserve');
+        if (kind === 'populated') {
+            expect(readFileSync(join(input.dest, 'foreign'), 'utf8')).toBe('preserve');
+        }
     });
 
     it('keeps the authenticated official bootstrap byte pin and composite runtime immutable', () => {
@@ -331,17 +336,20 @@ function nodeFixture() {
     mkdirSync(bin);
     const node = join(bin, process.platform === 'win32' ? 'node.exe' : 'node');
     symlinkSync(process.execPath, node);
-    const corepack =
-        process.platform === 'win32'
-            ? join(bin, 'node_modules/corepack')
-            : resolve(bin, '../lib/node_modules/corepack');
-    const official =
-        process.platform === 'win32'
-            ? join(dirname(process.execPath), 'node_modules/corepack')
-            : resolve(dirname(process.execPath), '../lib/node_modules/corepack');
+    let corepack: string;
+    let official: string;
+    if (process.platform === 'win32') {
+        corepack = join(bin, 'node_modules/corepack');
+        official = join(dirname(process.execPath), 'node_modules/corepack');
+    } else {
+        corepack = resolve(bin, '../lib/node_modules/corepack');
+        official = resolve(dirname(process.execPath), '../lib/node_modules/corepack');
+    }
     mkdirSync(dirname(corepack), { recursive: true });
     symlinkSync(official, corepack, 'dir');
-    for (const name of ['npm', 'npx', 'yarn', 'unrelated']) writeFileSync(join(bin, name), `preserve ${name}`);
+    for (const name of ['npm', 'npx', 'yarn', 'unrelated']) {
+        writeFileSync(join(bin, name), `preserve ${name}`);
+    }
     const link = (name: string) => symlinkSync(join(corepack, 'dist', `${name}.js`), join(bin, name));
     return { root, bin, node, link };
 }

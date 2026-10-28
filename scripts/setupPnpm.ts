@@ -35,7 +35,9 @@ function nativeCommand(file: string, args: string[], options: CommandOptions): C
         stdio: ['ignore', 'pipe', 'inherit'],
         maxBuffer: 16 * 1024 * 1024,
     });
-    if (result.error) throw result.error;
+    if (result.error) {
+        throw result.error;
+    }
     return { status: result.status, stdout: result.stdout ?? '' };
 }
 
@@ -50,7 +52,9 @@ function canonicalRegistry(value: string): boolean {
 
 function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
     for (const [name, value] of Object.entries(env)) {
-        if (!value) continue;
+        if (!value) {
+            continue;
+        }
         const key = name.toLowerCase().replaceAll(/[_-]/g, '');
         if (
             (key === 'nodetlsrejectunauthorized' && value !== '1') ||
@@ -68,11 +72,17 @@ function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
 
 function targetVersion(workspace: string, manifest: string): string {
     const requested = resolve(workspace, manifest);
-    if (!within(workspace, requested)) throw new Error('pnpm manifest must belong to the workspace');
+    if (!within(workspace, requested)) {
+        throw new Error('pnpm manifest must belong to the workspace');
+    }
     const file = realpathSync(requested);
-    if (!within(workspace, file)) throw new Error('pnpm manifest must belong to the workspace');
+    if (!within(workspace, file)) {
+        throw new Error('pnpm manifest must belong to the workspace');
+    }
     const data: unknown = JSON.parse(readFileSync(file, 'utf8'));
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid pnpm manifest');
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('Invalid pnpm manifest');
+    }
     const declaration: unknown = Reflect.get(data, 'packageManager');
     if (typeof declaration !== 'string' || !/^pnpm@(11\.\d+\.\d+)$/.test(declaration)) {
         throw new Error('pnpm setup requires an exact JavaScript pnpm 11 packageManager declaration');
@@ -95,19 +105,26 @@ function prepareDestination(dest: string | undefined, env: NodeJS.ProcessEnv, wo
     // The stable per-job path keeps setup-node's store-cache archive path stable.
     // An existing nonempty directory is refused rather than reused or deleted.
     const candidate = dest || join(env.RUNNER_TEMP ?? tmpdir(), 'sourdaw-pnpm');
-    if (!isAbsolute(candidate) || /[\r\n]/.test(candidate))
+    if (!isAbsolute(candidate) || /[\r\n]/.test(candidate)) {
         throw new Error('pnpm destination must be an absolute path');
+    }
     let stat;
     let root: string;
     try {
         stat = lstatSync(candidate);
-        if (stat.isSymbolicLink()) throw new Error('pnpm destination must be an empty owned directory with mode 0755');
+        if (stat.isSymbolicLink()) {
+            throw new Error('pnpm destination must be an empty owned directory with mode 0755');
+        }
         root = realpathSync(candidate);
     } catch (error) {
-        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+            throw error;
+        }
         root = join(realpathSync(dirname(candidate)), basename(candidate));
     }
-    if (within(workspace, root)) throw new Error('pnpm destination must be outside the project workspace');
+    if (within(workspace, root)) {
+        throw new Error('pnpm destination must be outside the project workspace');
+    }
     if (stat === undefined) {
         mkdirSync(root, { mode: 0o755 });
         stat = lstatSync(root);
@@ -117,7 +134,7 @@ function prepareDestination(dest: string | undefined, env: NodeJS.ProcessEnv, wo
         stat.isSymbolicLink() ||
         (process.getuid !== undefined && stat.uid !== process.getuid()) ||
         (process.platform !== 'win32' && (stat.mode & 0o777) !== 0o755) ||
-        readdirSync(root).length !== 0
+        readdirSync(root).length > 0
     ) {
         throw new Error('pnpm destination must be an empty owned directory with mode 0755');
     }
@@ -155,7 +172,9 @@ function installedEntrypoint(dest: string, bin: string, version: string): string
     // uses it to identify installed shim targets. Execute the JS with known Node
     // so Windows never needs a terminal to launch a .cmd file.
     const marker = readFileSync(join(bin, 'pnpm'), 'utf8').match(/^#\s*cmd-shim-target=(.+)$/m)?.[1];
-    if (!marker) throw new Error('pnpm target shim has no installed entrypoint');
+    if (!marker) {
+        throw new Error('pnpm target shim has no installed entrypoint');
+    }
     const entrypoint = realpathSync(resolve(bin, marker));
     if (
         (!within(join(dest, 'runtime'), entrypoint) && !within(join(dest, 'store'), entrypoint)) ||
@@ -193,15 +212,18 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     const run = options.run ?? nativeCommand;
     const command = (file: string, args: string[], label: string): string => {
         const result = run(file, args, { cwd: bootstrap, env });
-        if (result.status !== 0)
+        if (result.status !== 0) {
             throw new Error(`pnpm setup ${label} failed (status ${result.status ?? 'unavailable'})`);
+        }
         return result.stdout.trim();
     };
     const nodeDirectory = dirname(options.node);
-    const npmEntrypoint =
-        (options.platform ?? process.platform) === 'win32'
-            ? join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js')
-            : resolve(nodeDirectory, '../lib/node_modules/npm/bin/npm-cli.js');
+    let npmEntrypoint: string;
+    if ((options.platform ?? process.platform) === 'win32') {
+        npmEntrypoint = join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js');
+    } else {
+        npmEntrypoint = resolve(nodeDirectory, '../lib/node_modules/npm/bin/npm-cli.js');
+    }
     command(
         options.node,
         [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'],
@@ -216,9 +238,13 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     const bin = join(home, 'bin');
     const target = installedEntrypoint(dest, bin, version);
     const actual = command(options.node, [target, '--version'], 'target version check');
-    if (actual !== version) throw new Error(`pnpm setup target reports ${actual}, expected ${version}`);
+    if (actual !== version) {
+        throw new Error(`pnpm setup target reports ${actual}, expected ${version}`);
+    }
     const { GITHUB_PATH, GITHUB_ENV, GITHUB_OUTPUT } = options.env;
-    if (!GITHUB_PATH || !GITHUB_ENV || !GITHUB_OUTPUT) throw new Error('pnpm setup requires GitHub output files');
+    if (!GITHUB_PATH || !GITHUB_ENV || !GITHUB_OUTPUT) {
+        throw new Error('pnpm setup requires GitHub output files');
+    }
     appendFileSync(GITHUB_PATH, `${bin}\n`);
     appendFileSync(GITHUB_ENV, `PNPM_HOME=${home}\n`);
     appendFileSync(GITHUB_OUTPUT, `dest=${dest}\nbin_dest=${bin}\n`);
@@ -227,10 +253,12 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
 
 export function preparePnpmNode(node: string): string[] {
     const nodeBin = dirname(node);
-    const corepackDist =
-        process.platform === 'win32'
-            ? join(nodeBin, 'node_modules/corepack/dist')
-            : resolve(nodeBin, '../lib/node_modules/corepack/dist');
+    let corepackDist: string;
+    if (process.platform === 'win32') {
+        corepackDist = join(nodeBin, 'node_modules/corepack/dist');
+    } else {
+        corepackDist = resolve(nodeBin, '../lib/node_modules/corepack/dist');
+    }
     const extensions = process.platform === 'win32' ? ['', '.cmd', '.ps1'] : [''];
     const owned: string[] = [];
     for (const name of ['pnpm', 'pnpx']) {
@@ -240,7 +268,9 @@ export function preparePnpmNode(node: string): string[] {
             try {
                 stat = lstatSync(file);
             } catch (error) {
-                if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+                if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+                    continue;
+                }
                 throw error;
             }
             // Corepack disable unlinks names blindly. Admit the whole affected set
@@ -251,7 +281,9 @@ export function preparePnpmNode(node: string): string[] {
             owned.push(file);
         }
     }
-    if (owned.length === 0) return [];
+    if (owned.length === 0) {
+        return [];
+    }
     const env = Object.fromEntries(
         Object.entries(process.env).filter(([name]) => !/^(npm_|pnpm_|corepack_|node_options$|node_path$)/i.test(name))
     );
@@ -260,12 +292,16 @@ export function preparePnpmNode(node: string): string[] {
         [join(corepackDist, 'corepack.js'), 'disable', 'pnpm', '--install-directory', nodeBin],
         { cwd: nodeBin, env: { ...env, COREPACK_ENABLE_NETWORK: '0' } }
     );
-    if (result.status !== 0) throw new Error("Could not disable the selected Node installation's Corepack shims");
+    if (result.status !== 0) {
+        throw new Error("Could not disable the selected Node installation's Corepack shims");
+    }
     for (const file of owned) {
         try {
             lstatSync(file);
         } catch (error) {
-            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+                continue;
+            }
             throw error;
         }
         throw new Error(`Corepack left a package-manager launcher in the selected Node directory: ${file}`);
@@ -275,12 +311,16 @@ export function preparePnpmNode(node: string): string[] {
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
     if (process.argv[2] === '--prepare-node') {
-        if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('Node preparation is restricted to the CI action');
+        if (process.env.GITHUB_ACTIONS !== 'true') {
+            throw new Error('Node preparation is restricted to the CI action');
+        }
         preparePnpmNode(process.execPath);
         console.log('Selected Node installation cannot shadow the verified pnpm target');
     } else {
         const workspace = process.env.GITHUB_WORKSPACE;
-        if (!workspace) throw new Error('pnpm setup requires GITHUB_WORKSPACE');
+        if (!workspace) {
+            throw new Error('pnpm setup requires GITHUB_WORKSPACE');
+        }
         const result = setupPnpm({
             workspace,
             manifest: process.env.SOURDAW_PNPM_MANIFEST ?? 'package.json',
