@@ -1639,3 +1639,9 @@ complete placed passes, including negative finite anchors, and assert exact
 selected-take and comp-region retention after real owner hydration. Removing only
 placement admission must redden the rejection case; testing a store sanitizer
 alone cannot observe the file admission gap.
+
+### 2026-10-28 — dirty-work retention was mistaken for busy-pump delivery (introduced by PR #5461)
+
+The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
+
+Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
