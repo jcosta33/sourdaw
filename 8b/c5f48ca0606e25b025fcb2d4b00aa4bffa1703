@@ -1,0 +1,14 @@
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiCapabilityIntegration.spec.ts
+  h_beb54bf43b47b7 221-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8bc5f48ca0606e25b025fcb2d4b00aa4bffa1703",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
