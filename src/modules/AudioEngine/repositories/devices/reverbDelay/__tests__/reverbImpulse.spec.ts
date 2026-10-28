@@ -292,7 +292,7 @@ describe('reverb impulse rendering (#3731)', () => {
         applyReverbParams(dn, { [key]: value });
 
         expect(ctx.createBuffer).toHaveBeenCalledOnce();
-        expect(setter).not.toHaveBeenCalled();
+        expect(setter.mock.calls.length).toBe(0);
         expect(impulseOf(dn)).toBe(installed);
     });
 
@@ -311,8 +311,8 @@ describe('reverb impulse rendering (#3731)', () => {
         applyReverbParams(dn, { 'rev-decay': 2.0001 });
 
         expect.soft(ctx.createBuffer).not.toHaveBeenCalled();
-        expect.soft(setter).not.toHaveBeenCalled();
-        expect(impulseOf(dn)).toBe(installed);
+        expect.soft(setter.mock.calls.length).toBe(0);
+        expect(impulseOf(dn) === installed).toBe(true);
     });
 
     it('merges later partial writes with the latest raw shape from an equivalent no-op', () => {
@@ -323,7 +323,7 @@ describe('reverb impulse rendering (#3731)', () => {
         const setter = observeBufferWrites(dn.namedNodes!.convolver as ConvolverNode);
 
         applyReverbParams(dn, { 'rev-decay': 2.0001 });
-        expect(setter).not.toHaveBeenCalled();
+        expect(setter.mock.calls.length).toBe(0);
         expect(impulseOf(dn)).toBe(installed);
 
         applyReverbParams(dn, { 'rev-damping': 0.8 });
