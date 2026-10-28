@@ -30,7 +30,7 @@ export const MidiDevicePicker = (): ReactElement => {
             return;
         }
         attemptedInitialisation.current = true;
-        if (state.enumerationError != null) {
+        if ((state.enumerationError ?? null) !== null) {
             return;
         }
         void initWebMidi().then(() => {

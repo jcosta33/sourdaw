@@ -2,14 +2,28 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { createEventBus } from '#/infra/events/createEventBus';
+import {
+    type MidiNoteOffPayload,
+    type MidiNoteOnPayload,
+    type MidiPedalCcPayload,
+} from '#/modules/WorkspaceShell/events';
+import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
+
+type MidiEvents = {
+    'midi.noteOn': MidiNoteOnPayload;
+    'midi.noteOff': MidiNoteOffPayload;
+    'midi.pedalCc': MidiPedalCcPayload;
+    'yeast.notesOff': YeastNotesOffPayload;
+};
 
 async function loadViews() {
-    const { eventBus } = await import('../registerDependencies');
+    const eventBus = createEventBus<MidiEvents>();
     const { setWebMidiRuntimeEventBus } = await import('#/modules/MIDI/useCases');
     setWebMidiRuntimeEventBus({ eventBus });
     const { webMidiStore } = await import('#/modules/MIDI/stores');
-    const { MidiDevicePicker } = await import('#/modules/AudioEngine/presentations/views/MidiDevicePicker');
-    const { MidiStatusBadge } = await import('#/modules/WorkspaceShell/presentations/views/MidiStatusBadge');
+    const { MidiDevicePicker } = await import('#/modules/AudioEngine/presentations/views');
+    const { MidiStatusBadge } = await import('../MidiStatusBadge');
     return { webMidiStore, MidiDevicePicker, MidiStatusBadge };
 }
 
