@@ -26,10 +26,13 @@ type ADSREnvelopeProps = {
 
 type BreakpointId = 'attack' | 'decay' | 'sustain' | 'release';
 
+type ReleaseDrag = { startClientX: number; startValue: number; secondsPerPixel: number };
+
 type EnvelopeGesture = {
     pointerId: number;
     canvas: HTMLCanvasElement;
     breakpoint: BreakpointId;
+    releaseDrag?: ReleaseDrag;
     lastValue?: number;
     change: NonNullable<ADSREnvelopeProps['onParamChange']>;
     commit: ADSREnvelopeProps['onGestureCommit'];
@@ -279,10 +282,24 @@ export const ADSREnvelope = ({
         if (!closest) {
             return;
         }
+        let releaseDrag: ReleaseDrag | undefined;
+        if (closest === 'release') {
+            const secondsPerPixel = Math.max(0.01, attack + decay + 0.4 + release) / (width - 12);
+            if (
+                !Number.isFinite(event.clientX) ||
+                !Number.isFinite(release) ||
+                !Number.isFinite(secondsPerPixel) ||
+                secondsPerPixel <= 0
+            ) {
+                return;
+            }
+            releaseDrag = { startClientX: event.clientX, startValue: release, secondsPerPixel };
+        }
         const gesture: EnvelopeGesture = {
             pointerId: event.pointerId,
             canvas,
             breakpoint: closest,
+            releaseDrag,
             change: onParamChange,
             commit: onGestureCommit,
             cancel: onGestureCancel,
@@ -343,6 +360,14 @@ export const ADSREnvelope = ({
             const ratio = 1 - (my - topY) / (bottomY - topY);
             const clamped = Math.max(0, Math.min(1, ratio));
             change('sustain', clamped);
+        } else if (bp === 'release') {
+            if (!gesture.releaseDrag) {
+                finishGesture(gestureRef, false);
+                return;
+            }
+            const { startClientX, startValue, secondsPerPixel } = gesture.releaseDrag;
+            const value = startValue + (event.clientX - startClientX) * secondsPerPixel;
+            change('release', Math.max(0.001, Math.min(5, value)));
         } else {
             // Horizontal drag -> time parameter
             const xRatio = Math.max(0, Math.min(1, (mx - pad) / plotW));
@@ -355,10 +380,6 @@ export const ADSREnvelope = ({
             } else if (bp === 'decay') {
                 const val = Math.max(0.001, Math.min(2, mappedTime - attack));
                 change('decay', Math.max(0.001, val));
-            } else if (bp === 'release') {
-                const sustainEnd = attack + decay + 0.4;
-                const val = Math.max(0.001, Math.min(5, mappedTime - sustainEnd));
-                change('release', Math.max(0.001, val));
             }
         }
     };
