@@ -265,6 +265,31 @@ describe('playwright config port derivation', () => {
         expect(servers[1]?.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 5_000 });
     });
 
+    it('runs a shard selecting only Grinder PCM parity through its matching dev companion', async () => {
+        const spec = 'tests/e2e/grinderOfflineNumericParity.spec.ts';
+        const specPath = join(import.meta.dirname, '../..', spec);
+        vi.stubEnv('CI', 'true');
+        vi.stubEnv(SOURDAW_E2E_PORT_ENV, '6123');
+        vi.stubEnv('E2E_SPECS', JSON.stringify([spec]));
+
+        const config = await loadPlaywrightConfig();
+        const [builtProject, devProject] = config.projects ?? [];
+
+        expect(config.workers).toBe(1);
+        expect(config.retries).toBe(0);
+        expect(config.projects?.map((project) => project.name)).toEqual(['chromium', 'chromium-dev']);
+        expect(builtProject?.testIgnore).toContain(specPath);
+        expect(devProject?.testMatch).toContain(specPath);
+        expect(devProject?.testIgnore).toBeUndefined();
+        expect(devProject?.use?.baseURL).toBe('http://localhost:6124');
+        const servers = webServers(config);
+        expect(servers.map((server) => server.url)).toEqual(['http://localhost:6123', 'http://localhost:6124']);
+        expect(servers[1]?.command).toBe('node scripts/e2eDevServer.ts 6124');
+        expect(servers[1]?.stdout).toBe('pipe');
+        expect(servers[1]?.stderr).toBe('pipe');
+        expect(servers[1]?.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 5_000 });
+    });
+
     it('refuses the last port when a CI shard needs a dev companion', async () => {
         vi.stubEnv('CI', 'true');
         vi.stubEnv(SOURDAW_E2E_PORT_ENV, '65535');
