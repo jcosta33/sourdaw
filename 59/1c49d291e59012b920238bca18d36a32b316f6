@@ -1,0 +1,25 @@
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_3168504f6ce387::t_dd887289d9ae06 4475,4507-4508,4540-4557,4559-4562
+  s_3168504f6ce387::t_1c92b07cdecc12 4460-4474,4558
+  s_3168504f6ce387::t_c7d8c416e94742 4563
+scripts/resourceGuardStorage.ts
+  s_3168504f6ce387::t_29732c904440bf 120,147
+.agents/skills/review-stances/security-and-platform.md
+  s_3168504f6ce387::t_29732c904440bf 59-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "591c49d291e59012b920238bca18d36a32b316f6",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
