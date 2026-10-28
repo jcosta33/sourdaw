@@ -657,19 +657,19 @@ async function persistRetiredSourceContent(
         ),
         selected: true,
     };
-    const sourceTake =
-        variant === 'placed-audio'
-            ? placeTakeOnClipMedia(take, {
-                  recordPointBeat: 0,
-                  mediaOriginSeconds: 0,
-                  clipMediaOriginSeconds: 0,
-                  timeline: {
-                      secondsAtBeat: (beat) => beat / 2,
-                      beatAtSeconds: (seconds) => seconds * 2,
-                      tempoAtBeat: () => 120,
-                  },
-              })
-            : take;
+    let sourceTake = take;
+    if (variant === 'placed-audio') {
+        sourceTake = placeTakeOnClipMedia(take, {
+            recordPointBeat: 0,
+            mediaOriginSeconds: 0,
+            clipMediaOriginSeconds: 0,
+            timeline: {
+                secondsAtBeat: (beat) => beat / 2,
+                beatAtSeconds: (seconds) => seconds * 2,
+                tempoAtBeat: () => 120,
+            },
+        });
+    }
     const other = createTake(clipId, 'Other captured pass', clip.startBeat, clip.endBeat);
     const middle = (clip.startBeat + clip.endBeat) / 2;
     const lane = {
@@ -694,7 +694,7 @@ async function persistRetiredSourceContent(
     if (operation === 'split-undo') {
         expect((await undo({ stepOverConflicts: false })).headConsumed).toBe(true);
     }
-    const side = operation === 'remove' ? 'past' : 'future';
+    const side: 'past' | 'future' = operation === 'remove' ? 'past' : 'future';
     await vi.waitFor(() =>
         expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY))[side]).toHaveLength(grouped ? 2 : 1)
     );
@@ -6188,7 +6188,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
                     const entries = saved[side];
                     if (!Array.isArray(entries)) {
-                        throw new Error('Expected actual persisted source-content entries');
+                        throw new TypeError('Expected actual persisted source-content entries');
                     }
                     const entry = entries.find((candidate) => isRecord(candidate) && candidate.id === entryId);
                     if (!isRecord(entry)) {
@@ -6265,11 +6265,11 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                             other.clipId,
                         ]).toEqual(identities);
                         expect(action.payload.retiredTakeSourceProof).toEqual(proof);
-                        expect(
-                            operation === 'remove'
-                                ? isRestoreClipSessionPayload(action.payload)
-                                : isRestoreClipSplitSessionPayload(action.payload)
-                        ).toBe(true);
+                        if (operation === 'remove') {
+                            expect(isRestoreClipSessionPayload(action.payload)).toBe(true);
+                        } else {
+                            expect(isRestoreClipSplitSessionPayload(action.payload)).toBe(true);
+                        }
                         captures.push(action.payload.retiredTakeLanes);
                     }
                     if (operation === 'split-undo') {

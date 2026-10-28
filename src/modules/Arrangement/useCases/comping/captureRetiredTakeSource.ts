@@ -20,9 +20,32 @@ import { trackStore } from '../../stores/trackStore';
 type SourceKind = 'removeClip' | 'splitClipUndo';
 
 function sourceOwners(clipIds: readonly string[], captures: readonly RetiredTakeLaneSnapshot[], undoEntryId: string) {
-    // Restoration consumes media, selection, comp regions and lane placement,
-    // not just identities. Match the saved JSON shape before canonical hashing.
-    const owners: unknown = JSON.parse(JSON.stringify(captures));
+    // Preserve the complete capture, omitting only unset domain optionals as
+    // saved JSON does. Store sanitization could discard meaningful invalid data.
+    const owners = captures.map((capture) => {
+        const takes = capture.lane.takes.map((take) => {
+            const savedTake = { ...take };
+            if (savedTake.sourceOffsetBeats === undefined) {
+                delete savedTake.sourceOffsetBeats;
+            }
+            if (savedTake.passAnchorSeconds === undefined) {
+                delete savedTake.passAnchorSeconds;
+            }
+            if (savedTake.passDepthSeconds === undefined) {
+                delete savedTake.passDepthSeconds;
+            }
+            return savedTake;
+        });
+        const lane = { ...capture.lane, takes };
+        if (lane.automationLaneId === undefined) {
+            delete lane.automationLaneId;
+        }
+        const savedCapture = { ...capture, lane };
+        if (savedCapture.retiredTakeIds === undefined) {
+            delete savedCapture.retiredTakeIds;
+        }
+        return savedCapture;
+    });
     return { undoEntryId, clipIds: [...clipIds], owners };
 }
 
