@@ -89,6 +89,8 @@ export function ensureTrackStrips(input?: { collectExternalPluginActivations?: b
 
     // A facade or send can create an empty paired strip. Publish them only
     // after all full chains have been admitted, including later send targets.
+    // BusNode shares the track fader: projection already restored gain and PFL,
+    // so replaying raw bus gain here would overwrite the solo audition gain.
     for (const bus of busTracks) {
         ensureBusStrip(bus.id);
     }
