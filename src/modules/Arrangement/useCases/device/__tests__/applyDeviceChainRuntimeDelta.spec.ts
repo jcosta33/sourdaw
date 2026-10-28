@@ -633,11 +633,12 @@ describe('applyDeviceChainRuntimeDelta', () => {
             trackStore.set({ tracks: [after], selectedTrackId: after.id });
             mocks.getTrackStrip.mockReturnValue(warm ? {} : undefined);
             mocks.matchesRuntimeDeviceChainTopology.mockReturnValue(warm);
-            expect(applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' })).toMatchObject(
-                warm
-                    ? { acceptance: 'superseded', application: 'discharged' }
-                    : { acceptance: 'accepted', application: 'applied' }
-            );
+            const result = applyDeviceChainRuntimeDelta({ before, after, operation: 'add-device' });
+            if (warm) {
+                expect(result).toMatchObject({ acceptance: 'superseded', application: 'discharged' });
+            } else {
+                expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            }
             expect(mocks.applyRuntimeGraphDelta).not.toHaveBeenCalled();
             expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(warm ? 0 : 1);
             expect(mocks.mirrorDeviceChainDelta).toHaveBeenCalledWith({ before, after });
