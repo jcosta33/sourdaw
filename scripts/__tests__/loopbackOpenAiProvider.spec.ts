@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { startLoopbackOpenAiProvider } from '../loopbackOpenAiProvider';
+import { createLoopbackAnswerToolCalls, startLoopbackOpenAiProvider } from '../loopbackOpenAiProvider';
 
 async function post(baseUrl: string, body: unknown): Promise<Response> {
     return fetch(`${baseUrl}/chat/completions`, { method: 'POST', body: JSON.stringify(body) });
@@ -22,15 +22,12 @@ describe('loopback OpenAI provider', () => {
 
     it('returns explicitly scripted non-streaming tool calls in order', async () => {
         const provider = await startLoopbackOpenAiProvider({
-            toolCalls: [
-                { id: 'query', name: 'project_query', arguments: { type: 'project-summary' } },
-                { id: 'answer', name: 'answer_respond', arguments: { text: 'Done', evidenceCallIds: ['query'] } },
-            ],
+            toolCalls: createLoopbackAnswerToolCalls('Done'),
         });
         try {
             for (const [id, name, args] of [
-                ['query', 'project_query', { type: 'project-summary' }],
-                ['answer', 'answer_respond', { text: 'Done', evidenceCallIds: ['query'] }],
+                ['loopback-query', 'project_query', { type: 'project-summary' }],
+                ['loopback-answer', 'answer_respond', { text: 'Done', evidenceCallIds: ['loopback-query'] }],
             ] as const) {
                 const response = await post(provider.baseUrl, { stream: false });
                 expect(response.headers.get('content-type')).toBe('application/json');

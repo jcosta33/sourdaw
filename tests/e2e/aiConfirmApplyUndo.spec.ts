@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
+import { createLoopbackAnswerToolCalls } from '../../scripts/loopbackOpenAiProvider';
+
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider';
@@ -33,14 +35,7 @@ test.describe('AI chat over an admitted loopback provider', () => {
         test.setTimeout(120000);
         provider = await startLoopbackOpenAiProvider({
             reply: LOOPBACK_REPLY,
-            toolCalls: [
-                { id: 'loopback-query', name: 'project_query', arguments: { type: 'project-summary' } },
-                {
-                    id: 'loopback-answer',
-                    name: 'answer_respond',
-                    arguments: { text: LOOPBACK_REPLY, evidenceCallIds: ['loopback-query'] },
-                },
-            ],
+            toolCalls: createLoopbackAnswerToolCalls(LOOPBACK_REPLY),
         });
         await setupWorkspace(page);
         await launch_new_project(page);
