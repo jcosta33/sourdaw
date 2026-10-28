@@ -4,7 +4,7 @@ import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
+import { rememberLibraryAssetMapping, resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -271,6 +271,7 @@ export const useTimelineFileDrop = ({
                 let decodedAudioBufferId: string | undefined;
                 let assetHash: string | undefined;
                 let assetLeaseId: string | undefined;
+                let rememberRawFileBinding: (() => Promise<boolean>) | undefined;
                 let durationBeats = sample.durationSeconds
                     ? Math.max(1, Math.ceil((sample.durationSeconds / 60) * buildTimelineRenderModel().tempo))
                     : 4;
@@ -375,6 +376,20 @@ export const useTimelineFileDrop = ({
                             const stagedAsset = await assetTransfer?.stageLocalAsset(file, file.name);
                             assetHash = stagedAsset?.hash;
                             assetLeaseId = stagedAsset?.leaseId;
+                            if (stagedAsset) {
+                                const hash = stagedAsset.hash;
+                                const sampleId = sample.id;
+                                const libraryRootId = sample.libraryRootId;
+                                const relativePath = sample.path;
+                                rememberRawFileBinding = () =>
+                                    rememberLibraryAssetMapping({
+                                        hash,
+                                        sampleId,
+                                        libraryRootId,
+                                        relativePath,
+                                        isCurrent: () => authority.isCurrent(),
+                                    });
+                            }
                         } catch {
                             discardPreparedSampleResources();
                             if (authority.isCurrent()) {
@@ -427,7 +442,18 @@ export const useTimelineFileDrop = ({
                 }
                 sampleCommitted = true;
                 if (assetLeaseId) {
-                    assetTransfer?.promoteStagedAsset(assetLeaseId);
+                    const promoted = assetTransfer?.promoteStagedAsset(assetLeaseId) === true;
+                    if (
+                        promoted &&
+                        rememberRawFileBinding &&
+                        (batchResult?.status === 'committed' || batchResult?.status === 'committed-with-warning') &&
+                        authority.isCurrent()
+                    ) {
+                        await rememberRawFileBinding().catch(() => false);
+                        if (!authority.isCurrent()) {
+                            return;
+                        }
+                    }
                 }
             } catch {
                 if (!sampleCommitted) {
