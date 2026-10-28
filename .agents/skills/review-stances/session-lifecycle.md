@@ -9,6 +9,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### A cold MIDI strip must initialize from the node-backed projection
+
+PR #2035 introduced runtime topology construction for every project device; PR #2083 later
+excluded Yeast but left scheduler synth and drum devices in the Web Audio chain projection.
+A MIDI track can therefore carry valid project instruments with no Web Audio node beside a
+node-backed effect. The missed lifecycle input was an effect edit before the strip exists;
+historical private reviewer prompts and tiers are unknown.
+
+Exercise a cold strip and an already initialized strip with a MIDI synth or drum and an effect.
+Apply the real add, Undo and Redo route: project and native snapshots must retain the complete
+instrument and effect identities, while Web Audio initializes or reconciles only node-backed
+members. Keep unknown device types visible for ordinary construction refusal, and refuse a
+mismatched existing strip rather than treating it as initialized. An instrument-only edit must
+also preserve full native truth. Remove the projection or cold-strip admission and require its
+corresponding case to fail.
+
 ## Standing probes
 
 - PR #5091's head `71221839` fenced grant settlement but retained an unfenced reusable
@@ -217,6 +233,22 @@ requested key — and the assertion reddens, as it does at #4423.
 
 Ownership half: a per-track edge and a per-key stream are released exactly once, and one key's failed
 acquisition must not disturb another key's source, edge, or pending grant.
+
+### 2026-10-28 — a Levain init fault must not announce a healthy engine (#5227)
+
+The buffered pre-init loop first appears in commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57`;
+GitHub returned no associated PR. PR #946 added bank-local rejection for live handlers while
+buffered replay still escaped through init's outer catch. PR #5204 later documented the wider
+message-state contract. Historical private review prompts and tiers are unknown. PR #5587 repaired
+the bank-local replay path, but a failed engine creation could still post `ready` on a later init
+while retaining its terminal fault, and no maintained case counted a repeated `disposed` reply.
+
+Drive the raw port through a failed init, another init, a bank start and a release. Require the
+original error each time, no engine creation, replay or healthy ready, and no rendered block;
+preserve a fresh processor's successful init and bank-local replay. Dispose the same processor
+twice and require two replies plus a completed paced drain. Refusing a second init must not alter
+the shipped node's first-init readiness or the owner/follower bank lifecycle. Remove the terminal
+init refusal or repeated-dispose answer separately; each unchanged named regression must fail.
 
 ### 2026-09-20 — live cancellation is not durable cancellation (escaped via PR #1949)
 
