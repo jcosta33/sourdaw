@@ -256,13 +256,14 @@ export function getValidMorphState(kit: ToasterKit): MorphState {
         kit.patterns.some((pattern) => pattern.id === morph.targetPatternId)
             ? morph.targetPatternId
             : null;
+    let position = 0;
+    if (typeof morph?.position === 'number' && Number.isFinite(morph.position)) {
+        position = Math.max(0, Math.min(1, morph.position));
+    }
     return {
         enabled: morph?.enabled === true && targetPatternId !== null && targetPatternId !== kit.activePatternId,
         targetPatternId,
-        position:
-            typeof morph?.position === 'number' && Number.isFinite(morph.position)
-                ? Math.max(0, Math.min(1, morph.position))
-                : 0,
+        position,
     };
 }
 
@@ -282,7 +283,7 @@ export function createDefaultKit(): ToasterKit {
         pads: Array.from({ length: numPads }, (_, index) => createDefaultPad(index)),
         patterns: [createDefaultPattern(numPads)],
         activePatternId: 'A1',
-        morph: { ...DEFAULT_MORPH_STATE },
+        morph: structuredClone(DEFAULT_MORPH_STATE),
         swing: 0,
         masterGain: 1,
         reverbMix: 0.15,

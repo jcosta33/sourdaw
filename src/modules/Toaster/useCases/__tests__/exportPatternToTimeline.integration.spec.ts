@@ -4,7 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     redo,
@@ -132,7 +132,11 @@ describe('Toaster effective pattern batch in project truth', () => {
         expect(createdTracks?.find((track) => track.id === 'child-2')?.clips).toHaveLength(1);
         expect(Object.values(createdNotes ?? {}).flat()).toHaveLength(2);
         expect(undoStore.value?.past).toHaveLength(4);
-        expect(new Set(undoStore.value?.past.map((entry) => entry.groupId)).size).toBe(1);
+        const groupIds = undoHistoryStore.value?.past.map((entry) => entry.groupId) ?? [];
+        expect(groupIds).toHaveLength(4);
+        expect(groupIds[0]).toEqual(expect.any(String));
+        expect(groupIds[0]).not.toBe('');
+        expect(new Set(groupIds).size).toBe(1);
 
         await undo();
         expect(trackStore.value?.tracks.find((track) => track.id === 'child-0')?.clips).toEqual([]);

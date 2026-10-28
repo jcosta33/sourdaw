@@ -11,8 +11,9 @@ export async function setMorphTarget(deviceId: string, patternId: string | null)
             return null;
         }
         const morph = getValidMorphState(kit);
-        return morph.targetPatternId === patternId
-            ? null
-            : { ...kit, morph: { ...morph, targetPatternId: patternId, enabled: false } };
+        if (morph.targetPatternId === patternId) {
+            return null;
+        }
+        return { ...kit, morph: { ...morph, targetPatternId: patternId, enabled: false } };
     });
 }

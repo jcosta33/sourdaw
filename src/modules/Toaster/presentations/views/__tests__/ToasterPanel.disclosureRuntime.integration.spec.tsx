@@ -188,24 +188,26 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
         render(<ToasterPanel deviceId={DEVICE_ID} />);
         view('full');
-        expect(screen.getByRole('button', { name: 'Copy selected pattern as B' })).toBeEnabled();
-        fireEvent.click(screen.getByRole('button', { name: 'Copy selected pattern as B' }));
+        expect(screen.getByText('Copy selected pattern as B', { selector: 'button' })).toBeEnabled();
+        fireEvent.click(screen.getByText('Copy selected pattern as B', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.patterns).toHaveLength(2));
         expect(selectedState().kit.activePatternId).toBe('A1');
-        expect(screen.getByRole('combobox', { name: 'Morph B target' })).toHaveValue('B1');
+        expect(screen.getByLabelText('Morph B target', { selector: 'select' })).toHaveValue('B1');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Pattern B1' }));
+        fireEvent.click(screen.getByText('Pattern B1', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.activePatternId).toBe('B1'));
         fireEvent.keyDown(screen.getByTestId('toaster-step-0-1'), { key: 'Enter' });
         await waitFor(() => expect(selectedState().kit.patterns[1]?.tracks[0]?.steps[1]?.active).toBe(true));
         expect(selectedState().kit.patterns[0]?.tracks[0]?.steps[1]?.active).toBe(false);
-        expect(screen.getByRole('button', { name: 'Morph off' })).toBeDisabled();
+        expect(screen.getByText('Morph off', { selector: 'button' })).toBeDisabled();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Pattern A1' }));
+        fireEvent.click(screen.getByText('Pattern A1', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.activePatternId).toBe('A1'));
-        fireEvent.click(screen.getByRole('button', { name: 'Morph off' }));
+        fireEvent.click(screen.getByText('Morph off', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.morph?.enabled).toBe(true));
-        fireEvent.change(screen.getByRole('slider', { name: 'Position 0%' }), { target: { value: '0.5' } });
+        fireEvent.change(screen.getByLabelText('Position 0%', { selector: 'input[type=range]' }), {
+            target: { value: '0.5' },
+        });
         await waitFor(() => expect(selectedState().kit.morph?.position).toBe(0.5));
 
         const savedChunk = trackStore.value?.tracks[0]?.devices[0]?.deviceState;
@@ -220,9 +222,9 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
             registerToasterDevice(DEVICE_ID, restored);
         });
         expect(selectedState().kit.patterns[1]?.tracks[0]?.steps[1]?.active).toBe(true);
-        expect(screen.getByRole('combobox', { name: 'Morph B target' })).toHaveValue('B1');
-        expect(screen.getByRole('button', { name: 'Morph on' })).toBeEnabled();
-        expect(screen.getByRole('slider', { name: 'Position 50%' })).toHaveValue('0.5');
+        expect(screen.getByLabelText('Morph B target', { selector: 'select' })).toHaveValue('B1');
+        expect(screen.getByText('Morph on', { selector: 'button' })).toBeEnabled();
+        expect(screen.getByLabelText('Position 50%', { selector: 'input[type=range]' })).toHaveValue('0.5');
     });
     it('starts in Simple and reveals every existing advanced region only in Full', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);

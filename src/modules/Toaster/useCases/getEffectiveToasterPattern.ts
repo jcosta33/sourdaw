@@ -12,7 +12,8 @@ export function getEffectiveToasterPattern(kit: ToasterKit): { sourcePattern: Pa
         return { sourcePattern, pattern: sourcePattern };
     }
     const targetPattern = kit.patterns.find((candidate) => candidate.id === morph.targetPatternId);
-    return targetPattern
-        ? { sourcePattern, pattern: morphPatterns(sourcePattern, targetPattern, morph.position) }
-        : { sourcePattern, pattern: sourcePattern };
+    if (!targetPattern) {
+        return { sourcePattern, pattern: sourcePattern };
+    }
+    return { sourcePattern, pattern: morphPatterns(sourcePattern, targetPattern, morph.position) };
 }
