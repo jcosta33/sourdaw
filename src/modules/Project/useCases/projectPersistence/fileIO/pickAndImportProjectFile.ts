@@ -3,12 +3,16 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
+import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
+import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
+import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
 import { pickFiles } from '../../fileDialog';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { pendingProjectReplacements } from '../pendingProjectReplacements';
 import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
+import { readProjectOriginalMediaArchive } from './projectOriginalMediaArchive';
 
 export async function pickAndImportProjectFile(): Promise<boolean> {
     const paths = await pickFiles({
@@ -50,6 +54,23 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             return false;
         }
         const data: unknown = JSON.parse(content);
+        const archive = readProjectOriginalMediaArchive(data);
+        const normalized = normalizeLegacyProjectData(data);
+        if (archive) {
+            if (!isHydratableProjectData(normalized) || !normalized.meta.projectId) {
+                throw new Error('Project archive has no stable identity');
+            }
+            const expected = new Set(collectProjectOriginalHashes(normalized));
+            const described = new Set([...archive.media.keys(), ...archive.unavailable]);
+            if (expected.size !== described.size || [...expected].some((hash) => !described.has(hash))) {
+                throw new Error('Project archive originals differ from its clip references');
+            }
+            const { restoreProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
+            await restoreProjectOriginalMedia(normalized.meta.projectId, archive.media, isStillChosen);
+            if (!isStillChosen()) {
+                return false;
+            }
+        }
 
         const imported = await applyImportedProjectData({ data, shouldProceed: isStillChosen, transaction });
         if (!imported) {
@@ -69,6 +90,10 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             }
             notifyUser('Invalid project file format', 'error');
             return false;
+        }
+        if (archive && isHydratableProjectData(normalized) && normalized.meta.projectId) {
+            const { activateProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
+            await activateProjectOriginalMedia(normalized.meta.projectId, [...archive.media.keys()], isStillChosen);
         }
         return true;
     } catch (error) {

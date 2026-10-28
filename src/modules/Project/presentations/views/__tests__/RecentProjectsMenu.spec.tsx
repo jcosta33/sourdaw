@@ -6,6 +6,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { pickFiles } from '../../../useCases/fileDialog';
 import { applyImportedProjectData } from '../../../useCases/projectPersistence/fileIO/applyImportedProjectData';
 import { newProject } from '../../../useCases/projectPersistence/newProject';
+import { openProjectDirectoryFromPicker } from '../../../useCases/projectPersistence/openProjectDirectoryFromPicker';
 import { saveProject } from '../../../useCases/projectPersistence/saveProject/saveProject';
 import { loadRecentProject } from '../../../useCases/recentProjects/loadRecentProject';
 import { removeFromRecentProjects } from '../../../useCases/recentProjects/removeFromRecentProjects';
@@ -47,6 +48,10 @@ vi.mock('../../../useCases/recentProjects/helpers', () => ({
 
 vi.mock('../../../useCases/projectPersistence/newProject', () => ({
     newProject: vi.fn(),
+}));
+
+vi.mock('../../../useCases/projectPersistence/openProjectDirectoryFromPicker', () => ({
+    openProjectDirectoryFromPicker: vi.fn(),
 }));
 
 vi.mock('../../../useCases/projectPersistence/saveProject/saveProject', () => ({
@@ -214,6 +219,18 @@ describe('RecentProjectsMenu', () => {
         const button = screen.getByLabelText(/Project menu/i);
         fireEvent.click(button);
         expect(screen.getByText(/Import Project File/i)).toBeInTheDocument();
+    });
+
+    it('opens the project folder picker when the browser supports it', () => {
+        vi.stubGlobal('showDirectoryPicker', vi.fn());
+        try {
+            render(<RecentProjectsMenu />);
+            fireEvent.click(screen.getByLabelText(/Project menu/i));
+            fireEvent.click(screen.getByRole('menuitem', { name: 'Open Project Folder…' }));
+            expect(openProjectDirectoryFromPicker).toHaveBeenCalledOnce();
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('should display recent projects section', () => {

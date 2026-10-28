@@ -86,7 +86,7 @@ export function loadCrdtProject({ shouldCommit }: LoadCrdtProjectInput = {}): Pr
     });
 }
 
-function restoreActiveBranchSlot(): void {
+export function restoreActiveBranchSlot(): void {
     const state = branchStore.value;
     if (!state) {
         return;

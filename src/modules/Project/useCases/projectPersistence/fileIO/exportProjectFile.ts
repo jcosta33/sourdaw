@@ -6,6 +6,8 @@ import { downloadProjectFile } from '../../../repositories/project/downloadProje
 import { captureExternalPluginStates } from '../saveProject/captureExternalPluginStates';
 
 import { buildProjectData } from './buildProjectData';
+import { buildProjectOriginalMediaArchive } from './projectOriginalMediaArchive';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 export async function exportProjectFile(): Promise<void> {
     // Capture live native plugin state into project truth first, so an export that
@@ -28,9 +30,14 @@ export async function exportProjectFile(): Promise<void> {
     }
 
     try {
-        const outcome = await downloadProjectFile({
+        const archiveData = await buildProjectOriginalMediaArchive(
             data,
-            shouldWrite: () => agentProjectRepairStateStore.value === null,
+            () => agentProjectRepairStateStore.value === null && captureProjectRevision() === built.snapshotRevision
+        );
+        const outcome = await downloadProjectFile({
+            data: archiveData,
+            shouldWrite: () =>
+                agentProjectRepairStateStore.value === null && captureProjectRevision() === built.snapshotRevision,
         });
         if (outcome !== 'written') {
             return;

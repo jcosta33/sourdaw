@@ -333,6 +333,72 @@ function decodedBuffer(): AudioBuffer {
 }
 
 describe('local library fulfillment through the real asset request boundary', () => {
+    it('serves a mapped original from project ownership after the library grant is gone', async () => {
+        const bytes = new Uint8Array([82, 73, 70, 70, 9, 3, 7, 1, 4]);
+        const original = endpoint();
+        const hash = await original.transfer.addLocalAsset(new Blob([bytes]), 'kick.wav');
+        await seedBinding(hash);
+        original.transfer.dispose();
+        const read = armNativeLibrary(bytes);
+        const nativeClone = structuredClone;
+        vi.stubGlobal('structuredClone', (value: unknown) => {
+            const cloned: unknown = nativeClone(value);
+            if (
+                typeof value === 'object' &&
+                value !== null &&
+                'blob' in value &&
+                value.blob instanceof Blob &&
+                typeof cloned === 'object' &&
+                cloned !== null
+            ) {
+                Reflect.set(cloned, 'blob', value.blob.slice(0, value.blob.size, value.blob.type));
+            }
+            return cloned;
+        });
+        vi.stubGlobal('showDirectoryPicker', vi.fn());
+
+        const mapped = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        mapped.transfer.requestAsset(hash);
+        expect(await mapped.settled).toBe('available');
+        expect(mapped.sent).toEqual([]);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect((await mapped.transfer.reopenDurableAsset(hash)).status).toBe('opened');
+        mapped.transfer.dispose();
+
+        read.mockRejectedValue(new DOMException('Library grant revoked', 'NotAllowedError'));
+        const cold = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        cold.transfer.requestAsset(hash);
+        expect(await cold.settled).toBe('available');
+        expect(cold.sent).toEqual([]);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(Array.from(new Uint8Array(await cold.transfer.getAsset(hash)!.arrayBuffer()))).toEqual(
+            Array.from(bytes)
+        );
+
+        cold.transfer.dispose();
+        const held = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const reopen = held.transfer.reopenDurableAsset.bind(held.transfer);
+        vi.spyOn(held.transfer, 'reopenDurableAsset').mockImplementation(async (requestedHash) => {
+            entered.resolve();
+            await release.promise;
+            return reopen(requestedHash);
+        });
+        held.transfer.requestAsset(hash);
+        await entered.promise;
+        const oldRecovery = admittedRecovery(held.transfer, hash);
+        held.transfer.dispose();
+        const successor = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        successor.transfer.requestAsset(hash);
+        release.resolve();
+        await oldRecovery;
+        expect(held.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+        expect(held.sent).toEqual([]);
+        expect(await successor.settled).toBe('available');
+        expect(successor.sent).toEqual([]);
+    });
+
     it('reopens a persisted raw binding in a new manager without emitting an asset request', async () => {
         const bytes = new Uint8Array([82, 73, 70, 70, 9, 3, 7, 1]);
         const original = endpoint();

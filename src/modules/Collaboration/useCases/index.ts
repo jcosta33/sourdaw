@@ -6,6 +6,11 @@ export { leaveSession } from './collaboration/leaveSession';
 export { broadcastPresence } from './collaboration/broadcastPresence';
 export { onPresence } from './collaboration/onPresence';
 export { getAssetTransfer } from './collaboration/getAssetTransfer';
+export {
+    captureProjectOriginalMedia,
+    restoreProjectOriginalMedia,
+    activateProjectOriginalMedia,
+} from './projectOriginalMedia';
 export { configureCollaborationAssetOwner } from './collaboration/getCollaborationAssetOwnerId';
 export { configureDurableAssetCommitProof } from './configureDurableAssetCommitProof';
 export { canMutateBranchMetadata } from './collaboration/canMutateBranchMetadata';

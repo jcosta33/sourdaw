@@ -3,20 +3,34 @@ import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioSto
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, exportSdawFile, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { countSettledTakes } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isDesktopRuntime } from '#/utils/desktopBridge';
 
+import { writeProjectDirectory } from '../../../repositories/project/projectDirectory';
+import {
+    beginProjectDirectorySelection,
+    bindProjectDirectoryRoot,
+    cachedProjectDirectoryRoot,
+    loadProjectDirectoryRoot,
+    openProjectDirectory,
+} from '../../../repositories/project/projectDirectoryBinding';
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
+import {
+    collectProjectFreezeOnlyBufferIds,
+    collectProjectOriginalHashes,
+} from '../helpers/collectProjectOriginalHashes';
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
 import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
+import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
 
 type AudioDurabilityReceipt = {
     isCurrent: () => boolean;
@@ -67,6 +81,16 @@ export async function saveProject(): Promise<boolean> {
     // mutable display name — so duplicate names don't collide and a rename
     // doesn't orphan the old key.
     const recentKey = getProjectSnapshotKey(project.createdAt);
+    const projectIdAtEntry = project.projectId;
+    const folderSaveAvailable = !isDesktopRuntime() && typeof window.showDirectoryPicker === 'function';
+    // The picker must start in the same user-gesture turn, before migration or plugin capture awaits.
+    const selectedRoot =
+        folderSaveAvailable && (!projectIdAtEntry || !cachedProjectDirectoryRoot(projectIdAtEntry))
+            ? navigator.userActivation?.isActive
+                ? beginProjectDirectorySelection()
+                : null
+            : null;
+    void selectedRoot?.catch(() => undefined);
 
     try {
         await migrateActiveProjectIdentity();
@@ -173,6 +197,71 @@ export async function saveProject(): Promise<boolean> {
 
                     await persistCrdtProject();
                     assertSnapshotContinuation(audioDurabilityReceipt);
+
+                    if (folderSaveAvailable) {
+                        const root = selectedRoot
+                            ? await selectedRoot
+                            : await loadProjectDirectoryRoot(persistedProject.projectId!);
+                        if (!root) {
+                            throw new Error(
+                                '[saveProject] Choose a project folder with Save before autosave can commit'
+                            );
+                        }
+                        assertSnapshotContinuation(audioDurabilityReceipt);
+                        const directory = await openProjectDirectory(root, persistedProject.projectId!, true);
+                        assertSnapshotContinuation(audioDurabilityReceipt);
+                        const { captureProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
+                        const originals = await captureProjectOriginalMedia(
+                            persistedProject.projectId!,
+                            collectProjectOriginalHashes(built.data),
+                            () => {
+                                try {
+                                    assertSnapshotContinuation(audioDurabilityReceipt);
+                                    return true;
+                                } catch {
+                                    return false;
+                                }
+                            }
+                        );
+                        assertSnapshotContinuation(audioDurabilityReceipt);
+                        const pcm = await collectProjectDirectoryPcm(built.requiredAudioBufferIds, () => {
+                            try {
+                                assertSnapshotContinuation(audioDurabilityReceipt);
+                                return true;
+                            } catch {
+                                return false;
+                            }
+                        });
+                        assertSnapshotContinuation(audioDurabilityReceipt);
+                        const document = new Uint8Array(await exportSdawFile().arrayBuffer());
+                        assertSnapshotContinuation(audioDurabilityReceipt);
+                        await writeProjectDirectory({
+                            directory,
+                            projectId: persistedProject.projectId!,
+                            document,
+                            snapshot: JSON.stringify(built.data),
+                            media: originals.media,
+                            unavailableOriginals: originals.unavailable,
+                            pcm,
+                            freezeProjectIdByBufferId: new Map(
+                                collectProjectFreezeOnlyBufferIds(built.data).map((id) => [
+                                    id,
+                                    persistedProject.createdAt,
+                                ])
+                            ),
+                            isCurrent: () => {
+                                try {
+                                    assertSnapshotContinuation(audioDurabilityReceipt);
+                                    return true;
+                                } catch {
+                                    return false;
+                                }
+                            },
+                        });
+                        assertSnapshotContinuation(audioDurabilityReceipt);
+                        await bindProjectDirectoryRoot(persistedProject.projectId!, root, recentKey);
+                        assertSnapshotContinuation(audioDurabilityReceipt);
+                    }
 
                     // Awaited, so a rejected transaction reaches the catch below
                     // rather than being reported as a successful save.

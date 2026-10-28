@@ -60,3 +60,5 @@ export { commitCheckpointCatalog } from './commitCheckpointCatalog';
 export { readCheckpointArtifact } from './readCheckpointArtifact';
 export { readCheckpointCatalog } from './readCheckpointCatalog';
 export { inspectCheckpointRootMedia } from './inspectCheckpointRootMedia';
+export { exportSdawFile } from './crdtMerge/exportSdawFile';
+export { prepareExternalProjectDocument } from './prepareExternalProjectDocument';

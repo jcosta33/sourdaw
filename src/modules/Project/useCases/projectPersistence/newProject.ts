@@ -11,6 +11,7 @@ import { clearUndoHistory } from '#/modules/Command/useCases';
 import { compactProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
@@ -296,7 +297,18 @@ async function activateNewProject(input: ActivateNewProjectInput): Promise<boole
     if (replaced === null) {
         return false;
     }
-    return commitNewProject({ name: input.name, finalize: replaced.finalize });
+    const committed = await commitNewProject({ name: input.name, finalize: replaced.finalize });
+    if (!committed) {
+        return false;
+    }
+    const { clearLastProjectDirectoryBinding } = await import('../../repositories/project/projectDirectoryBinding');
+    try {
+        await clearLastProjectDirectoryBinding(projectStore.value?.projectId);
+    } catch (error) {
+        logger.warn('Previous project folder binding could not be cleared:', error);
+        notifyUser('New project opened, but this browser could not update its startup folder.', 'warning');
+    }
+    return true;
 }
 
 export function newProject(

@@ -20,11 +20,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';
 import { pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO/pickAndImportProjectFile';
 import { newProject } from '../../useCases/projectPersistence/newProject';
+import { openProjectDirectoryFromPicker } from '../../useCases/projectPersistence/openProjectDirectoryFromPicker';
 import { pendingProjectReplacements } from '../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
 import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/saveProject/saveProjectBeforeReplacement';
@@ -116,6 +118,11 @@ export const RecentProjectsMenu = (): ReactElement => {
     const handleImportProject = () => {
         setOpen(false);
         void pickAndImportProjectFile();
+    };
+
+    const handleOpenProjectFolder = () => {
+        void openProjectDirectoryFromPicker();
+        setOpen(false);
     };
 
     const handleLoad = (entry: RecentProjectEntry) => {
@@ -266,6 +273,19 @@ export const RecentProjectsMenu = (): ReactElement => {
                     <div className="mx-2 my-1 h-px bg-border" role="separator" />
 
                     {/* ── Project File I/O ── */}
+                    {!isDesktopRuntime() && typeof window.showDirectoryPicker === 'function' && (
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                            role="menuitem"
+                            onClick={handleOpenProjectFolder}
+                        >
+                            <FileUp className="size-3 text-muted-foreground" aria-hidden="true" />
+                            Open Project Folder…
+                        </Button>
+                    )}
                     <Button
                         variant="bare"
                         size="bare"

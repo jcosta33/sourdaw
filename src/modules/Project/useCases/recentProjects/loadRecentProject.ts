@@ -1,7 +1,15 @@
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
+import {
+    bindProjectDirectoryRoot,
+    clearLastProjectDirectoryBinding,
+    loadProjectDirectoryBinding,
+} from '../../repositories/project/projectDirectoryBinding';
 import { writeProjectJson } from '../../repositories/project/writeProjectJson';
+import { loadProject } from '../projectPersistence/loadProject';
+import { prepareProjectDirectoryRead } from '../projectPersistence/projectDirectoryRead';
 import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normalizeLegacyProjectData';
 import { replaceProjectData } from '../projectPersistence/helpers/replaceProjectData';
@@ -47,6 +55,32 @@ export async function loadRecentProject(
         transaction = runProjectLoadTransaction(),
     }: LoadRecentProjectOptions = {}
 ): Promise<LoadRecentProjectOutcome> {
+    if (typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function') {
+        try {
+            const binding = await loadProjectDirectoryBinding(`recent:${key}`);
+            if (binding) {
+                const canContinue = () => transaction.canActivate() && shouldProceed?.() !== false;
+                const directory = await prepareProjectDirectoryRead(binding, canContinue);
+                if (!canContinue()) {
+                    return 'aborted';
+                }
+                const loaded = await loadProject({ directory, transaction, explicit: true, shouldProceed });
+                if (!loaded) {
+                    return isTransitionSuperseded(transaction, shouldProceed) ? 'aborted' : 'failed';
+                }
+                try {
+                    await bindProjectDirectoryRoot(binding.projectId, binding.root, key);
+                } catch (error) {
+                    logger.warn('Opened recent project folder could not be remembered:', error);
+                    notifyUser('Project opened, but this browser could not remember its folder.', 'warning');
+                }
+                return 'committed';
+            }
+        } catch (error) {
+            logger.error(new Error('Failed to read or open recent project directory', { cause: error }));
+            return isTransitionSuperseded(transaction, shouldProceed) ? 'aborted' : 'failed';
+        }
+    }
     let raw: string | null;
     try {
         // Reads IndexedDB, the only store project content is written to. A
@@ -98,6 +132,7 @@ export async function loadRecentProject(
     }
 
     if (result.status === 'committed') {
+        await clearLastProjectDirectoryBinding(data.meta.projectId);
         return requireDurable && !result.durable ? 'failed' : 'committed';
     }
     if (result.status === 'failed') {

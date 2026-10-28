@@ -29,6 +29,17 @@ const mocks = vi.hoisted(() => {
     };
 });
 
+const originalMedia = vi.hoisted(() => ({
+    restore: vi.fn(),
+    activate: vi.fn(),
+}));
+
+vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
+    restoreProjectOriginalMedia: originalMedia.restore,
+    activateProjectOriginalMedia: originalMedia.activate,
+}));
+
 vi.mock('../../../fileDialog', () => ({
     pickFiles: mocks.pickFiles,
 }));
@@ -70,6 +81,8 @@ function makeFile(content: string, name = 'song.sourdaw'): File {
 describe('pickAndImportProjectFile', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        originalMedia.restore.mockResolvedValue(undefined);
+        originalMedia.activate.mockResolvedValue(undefined);
         mocks.runProjectLoadTransaction.mockReturnValue(transactionSentinel);
         mocks.saveProject.mockResolvedValue(true);
         mocks.projectStoreValue.value = null;
@@ -113,6 +126,72 @@ describe('pickAndImportProjectFile', () => {
             transaction: transactionSentinel,
         });
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('restores an additive raw-media archive before publishing the imported project', async () => {
+        const bytes = new Uint8Array([1, 2, 3, 4]);
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+        const hash = `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+        const data = {
+            version: 2,
+            meta: {
+                projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                name: 'Imported original',
+                createdAt: 1,
+                updatedAt: 1,
+                keyRoot: 0,
+                scaleName: 'Major',
+                tuning: { name: '12-TET', frequencies: [] },
+            },
+            arrangement: {
+                tracks: [
+                    {
+                        id: 'track',
+                        name: 'Audio',
+                        kind: 'audio',
+                        clips: [
+                            {
+                                id: 'clip',
+                                trackId: 'track',
+                                name: 'Take',
+                                startBeat: 0,
+                                endBeat: 4,
+                                type: 'audio',
+                                bufferId: 'pcm',
+                                assetHash: hash,
+                                fadeInBeats: 0,
+                                fadeOutBeats: 0,
+                                gain: 1,
+                                color: '#fff',
+                                locked: false,
+                                muted: false,
+                            },
+                        ],
+                    },
+                ],
+            },
+            originalMedia: {
+                format: 'sourdaw-original-media-v1',
+                assets: [{ hash, bytes: btoa(String.fromCharCode(...bytes)) }],
+                unavailable: [],
+            },
+        };
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(data))]);
+        mocks.applyImportedProjectData.mockResolvedValue(true);
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(true);
+
+        expect(originalMedia.restore).toHaveBeenCalledExactlyOnceWith(
+            data.meta.projectId,
+            new Map([[hash, bytes]]),
+            expect.any(Function)
+        );
+        expect(mocks.applyImportedProjectData).toHaveBeenCalledOnce();
+        expect(originalMedia.activate).toHaveBeenCalledExactlyOnceWith(
+            data.meta.projectId,
+            [hash],
+            expect.any(Function)
+        );
     });
 
     it('notifies the user and returns false when the decoded data is rejected as unhydratable', async () => {
