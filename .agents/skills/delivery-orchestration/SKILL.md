@@ -57,7 +57,10 @@ The delivery sequence, in order:
    may trigger a pre-approval `Gate` failure; that separate run is not awaited before
    independent review and reviewer-App approval. Then `review:prepare <pr>` — write
    the [bundle](references/review-records.md) and dispatch blind reviewers against it
-   under the root Review rules.
+   under the root Review rules. Use one observer per PR; back off on read failures
+   or use a connected reader that returns complete checks. Job pages can omit results:
+   establish completion from the whole exact-head workflow or a complete check rollup,
+   never a green subset, and do not rerun CI because a status read failed.
    A head that conflicts with its base gets no GitHub merge ref, so no
    `pull_request` workflow run is created and no check can ever appear: waiting
    on it waits forever. When `lane:publish` reports a conflicted head, read
