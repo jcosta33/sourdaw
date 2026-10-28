@@ -6,7 +6,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
+import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory } from '#/modules/Command/useCases';
@@ -319,6 +319,10 @@ describe('Explain reaches the shared answer kernel', () => {
                 workLeases: [expect.objectContaining({ workId: 'provider-planning', terminalState: 'completed' })],
             });
             expect(runs[0]?.providerUsage).toHaveLength(3);
+            expect(runs[0]?.budgetAttempts.filter((attempt) => attempt.attemptId.startsWith('measurement:'))).toEqual([
+                expect.objectContaining({ category: 'maxRenderJobs', reserved: 1, actual: 1, final: true }),
+                expect.objectContaining({ category: 'localAnalysis', reserved: 1, actual: 1, final: true }),
+            ]);
             expect(
                 runs[0]?.budgetAttempts.filter((attempt) =>
                     runs[0]?.providerUsage.some((usage) => usage.correlationId === attempt.attemptId)
@@ -535,6 +539,15 @@ describe('Explain reaches the shared answer kernel', () => {
             verifyProject();
         }
         expect(provider).toHaveBeenCalledTimes(1);
+        expect(getAgentMeasurementArtifacts()).toEqual([]);
+        expect(
+            agentRunStore.value?.runs[0]?.budgetAttempts.filter((attempt) =>
+                attempt.attemptId.startsWith('measurement:')
+            )
+        ).toEqual([
+            expect.objectContaining({ category: 'maxRenderJobs', actual: 1, final: true }),
+            expect.objectContaining({ category: 'localAnalysis', actual: 0, final: true }),
+        ]);
         expect(chatStore.value?.messages.some((message) => message.content === 'LATE MEASUREMENT ANSWER')).toBe(false);
         expect(agentRunStore.value?.runs).toEqual([expect.objectContaining({ phase: 'cancelled' })]);
     });

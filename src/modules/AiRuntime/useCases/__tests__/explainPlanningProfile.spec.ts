@@ -145,6 +145,37 @@ describe('application-selected Explain profile', () => {
         }
     );
 
+    it('does not undo or continue the thread last commit in Explain', async () => {
+        script([
+            {
+                id: 'answer',
+                name: 'answer.respond',
+                arguments: { text: 'The last change is described without undoing it.', evidenceCallIds: [] },
+            },
+        ]);
+        const result = await parsePromptToActions({
+            prompt: 'undo that',
+            context: getProjectContext(),
+            projectRevision: 'revision',
+            profile: 'readonly-answer',
+            thread: {
+                requests: ['Turn the Vocal down 1 dB'],
+                pendingProposal: null,
+                lastCommit: {
+                    runId: 'previous-run',
+                    receiptIds: ['previous-receipt'],
+                    standing: 'standing',
+                    commands: [
+                        { name: 'setTrackGain', label: 'Turn Vocal down', arguments: { trackId: 'vocal', gainDb: -1 } },
+                    ],
+                    measuredDeltas: [],
+                },
+            },
+        });
+        expect(result).toMatchObject({ actions: [], planningOutcome: { kind: 'answer' } });
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(1);
+    });
+
     it('allows a legitimate clarification without asking for an actionable perceptual plan', async () => {
         script([
             {
