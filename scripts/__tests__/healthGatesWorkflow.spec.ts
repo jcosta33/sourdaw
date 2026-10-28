@@ -3262,7 +3262,7 @@ describe('health gates workflow contract', () => {
             );
             const { result } = acquirePrSecretHistory(fixture, validationWorkflow, {
                 depth: 1,
-                run: script.replace(/git fetch[^\n]+/g, ':'),
+                run: script.replaceAll(/git fetch[^\n]+/g, ':'),
             });
             expect(result.error).toBeUndefined();
             expect(result.status).not.toBe(0);
