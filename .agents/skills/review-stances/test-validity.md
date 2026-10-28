@@ -1277,6 +1277,18 @@ Probe that would have caught it: attach to the browser before template loading, 
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
 
+## Exact inverses need actual Command, reciprocal capture and hydration proof
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+Integer row figures and a JSON-round-tripped pure planner omit the execution boundary,
+the discarded skipUndo description, actual history counterpart refresh and session admission.
+Use fractional note, controller and bend figures, real snapshot admission, peer edits before
+Undo and Redo, and saved history from both stacks. Mutating restoration, counterpart refresh,
+hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
+CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
+exact stored restoration.
+
 ### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
 
 PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and
@@ -1459,18 +1471,6 @@ whole/scoped/parent inspection failures. Require retained storage and a stable, 
 on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
 or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
 or add inspection diagnostics to the warning-success allowlist.
-
-## Exact inverses need actual Command, reciprocal capture and hydration proof
-
-The fractional inverse escape from PR #5495 and PR #5578 is detailed in
-[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
-Integer row figures and a JSON-round-tripped pure planner omit the execution boundary,
-the discarded skipUndo description, actual history counterpart refresh and session admission.
-Use fractional note, controller and bend figures, real snapshot admission, peer edits before
-Undo and Redo, and saved history from both stacks. Mutating restoration, counterpart refresh,
-hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
-CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
-exact stored restoration.
 
 ## Escape: sanitizer tests did not prove project-file admission (PR #4987)
 
