@@ -739,6 +739,21 @@ combine a positive fader protection and an exception through the basis producer 
 
 ## Lessons from escapes
 
+### Late-content probes must observe both failed fallback and the successor store (PR #967)
+
+The content callback and failed fallback introduced by PR #967 (`e63f1745e282e8491477b63c4ad6ccd6bca8f26f`
+and `5e4f5a2412f1794ab241f5e71b2efcded20e4172`) escaped terminal-owner coverage.
+Historical private reviewer prompts and tiers are unknown. A collector-only assertion misses the
+separate failed-ID set, and a callback-only spy misses the descriptor's later store write.
+
+Capture a promoted TrackNode's actual content callback, dispose normally and with a throwing strip
+release, and require no failure revival after the old callback. Hold real Levain registration across
+same-ID replacement and route its readiness sink through the public store mutator; both old success
+and old failure must leave the successor entry identical. Exercise a pending and settled successor,
+first-terminal reentry, aborted and timed-out owners, and actual Crumbs preparation success and failure.
+Retain current promoted ready, failed and cancelled controls. Each isolated rollback must fail its
+named regression; these controlled lifecycle probes do not establish physical playback.
+
 ### 2026-10-25 — fixed protected IDs proved forwarding without source resolution (introduced by PR #2811)
 
 PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)

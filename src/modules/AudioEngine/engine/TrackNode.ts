@@ -1256,6 +1256,7 @@ export class TrackNode {
                     resolved: false,
                 };
                 awaitsAsyncNode = true;
+                let contentSettled = false;
                 let created: ReturnType<typeof descriptor.create>;
                 try {
                     created = descriptor.create({
@@ -1269,6 +1270,16 @@ export class TrackNode {
                         signal: pendingLoad.abortController.signal,
                         onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
                         onContentLoadSettled: (outcome) => {
+                            if (
+                                contentSettled ||
+                                this._disposed ||
+                                this._pendingDeviceLoads.get(deviceId) !== pendingLoad ||
+                                pendingLoad.abortController.signal.aborted ||
+                                this._deviceReadinessTokens.get(deviceId) !== readinessToken
+                            ) {
+                                return;
+                            }
+                            contentSettled = true;
                             if (outcome === 'failed') {
                                 this._failedDeviceLoads.add(deviceId);
                             }

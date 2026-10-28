@@ -458,6 +458,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
         deviceId,
         deviceType,
         signal,
+        isCurrent,
         onLoaded,
         onContentLoadSettled,
         onContentProgress,
@@ -469,6 +470,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: LevainNodeResult | null = null;
         let runtimeFailureHandled = false;
+        let disposed = false;
+        const canSettleContent = (): boolean =>
+            !disposed && !runtimeFailureHandled && !signal?.aborted && isCurrent?.() !== false;
         const applyRuntimeFailure = (): void => {
             if (
                 runtimeFailureHandled ||
@@ -535,6 +539,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                 // node's own registration, so a rejected or superseded node
                 // leaves a newer registration under the same id alone.
                 const destroy = (): void => {
+                    disposed = true;
                     result.destroy();
                     try {
                         getAudioDeviceRuntimeSink().unregisterLevainDevice(deviceId, result.workletNode.port);
@@ -579,7 +584,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                 publishedNode = loadedNode;
                 publishedResult = result;
                 applyRuntimeFailure();
-                if (runtimeFailureHandled) {
+                if (!canSettleContent()) {
                     return;
                 }
                 const contentOutcome = await getAudioDeviceRuntimeSink().registerLevainDevice({
@@ -591,7 +596,14 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     port: result.workletNode.port,
                     onProgress: onContentProgress,
                 });
+                if (!canSettleContent()) {
+                    return;
+                }
                 onContentLoadSettled?.(contentOutcome);
+                // The callback can retire this owner before the store write.
+                if (!canSettleContent()) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().setLevainEngineReady({ deviceId, isReady: contentOutcome === 'ready' });
                 return;
             })
@@ -612,6 +624,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
         deviceId,
         deviceType,
         signal,
+        isCurrent,
         onLoaded,
         onContentLoadSettled,
         onRuntimeFailure: replaceRuntimeFailure,
@@ -622,6 +635,17 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
         let publishedNode: BuiltinDeviceNode | null = null;
         let publishedResult: CrumbsNodeResult | null = null;
         let runtimeFailureHandled = false;
+        let disposed = false;
+        let contentSettled = false;
+        const canSettleContent = (): boolean =>
+            !disposed && !runtimeFailureHandled && !signal?.aborted && isCurrent?.() !== false;
+        const settleContent = (outcome: DeviceContentLoadOutcome): void => {
+            if (contentSettled || !canSettleContent()) {
+                return;
+            }
+            contentSettled = true;
+            onContentLoadSettled?.(outcome);
+        };
         const applyRuntimeFailure = (): void => {
             if (
                 runtimeFailureHandled ||
@@ -680,13 +704,17 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                const destroy = (): void => {
+                    disposed = true;
+                    result.destroy();
+                };
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    dispose: result.destroy,
+                    dispose: destroy,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -694,7 +722,7 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                     crumbsControls: {
                         ready: true,
@@ -704,19 +732,18 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         setParam: result.setParam,
                         setMode: result.setMode,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy,
                     },
                 };
                 const accepted = onLoaded(loadedNode);
                 if (accepted === false) {
-                    onContentLoadSettled?.('cancelled');
+                    settleContent('cancelled');
                     return;
                 }
                 publishedNode = loadedNode;
                 publishedResult = result;
                 applyRuntimeFailure();
-                if (runtimeFailureHandled) {
-                    onContentLoadSettled?.('failed');
+                if (!canSettleContent()) {
                     return;
                 }
                 // Load the project's sample into the live instance through the
@@ -728,9 +755,9 @@ const crumbsDescriptor: WasmDeviceDescriptor = {
                         port: result.workletNode.port,
                         signal,
                     });
-                    onContentLoadSettled?.(outcome);
+                    settleContent(outcome);
                 } catch (error) {
-                    onContentLoadSettled?.('failed');
+                    settleContent('failed');
                     throw error;
                 }
                 return;
