@@ -315,7 +315,7 @@ async function refusePlannedRequest(
     request: PromptChatRequestInput,
     admission: PromptRequestAdmission,
     reason: string,
-    category: 'authorization' | 'conflict',
+    category: 'authorization' | 'conflict' | 'resolution',
     actions: PromptPlanResult['actions']
 ): Promise<void> {
     await discardUntransferredPreparedStems(admission.runId, actions);
@@ -563,7 +563,7 @@ async function dispatchPromptPlan(input: {
         });
         return undefined;
     }
-    if (request.interactionMode !== 'explain' && request.options?.resume && result.actions.length === 0) {
+    if (request.options?.resume && result.actions.length === 0) {
         throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
     }
     if (result.actions.length === 0) {
@@ -928,7 +928,7 @@ export async function orchestratePromptChatRequest(
     try {
         const { context, result, projectRevision } = await planPromptActions({
             prompt: input.userText,
-            ...(input.interactionMode === 'explain' ? { profile: 'readonly-answer' as const } : {}),
+            ...(input.interactionMode === 'explain' && { profile: 'readonly-answer' as const }),
             signal: aborter.signal,
             onProviderResult: admission.providerPlanning
                 ? (providerResult) => {
