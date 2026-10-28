@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/__tests__/formatReceiptContext.spec.ts
+  s_29d8df116c5b92::t_0e972384dd3809 9-14,17-22,26-28,56,66,73-77,82,85-100,102,106-107,140,143,148-150,156-158,162-164,167-168
+src/modules/AiRuntime/useCases/__tests__/recipePreset24Command.integration.spec.ts
+  s_3168504f6ce387::t_057b838c3b99aa 54,218-220,223-225,230-235,238-243,247-249,252,254,339-341,471-473,475-477,588-590,611,616-617,631,634-637,653,675-677,679-681,724,726,808-810
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_3168504f6ce387::t_4896bfb64372f7 2062
+src/modules/AiRuntime/useCases/formatReceiptContext.ts
+  s_3168504f6ce387::t_bc6f08704eed04 17-21,25-27,29-35,39-41,43-48,51,53-58,60-65,68-74,77-79,84,86-89,93-97,99-107,122-186,190-198,209,211-214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ed9596d356fb41206f6ac212ca35ec01fbe9442",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
