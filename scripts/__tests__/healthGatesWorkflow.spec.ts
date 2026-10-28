@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -879,6 +880,123 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
 
 function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
     assertContainerBrowserRuntime(jobAt(candidate, 'e2e'), 'the heavy E2E job', E2E_JOB_MINUTES);
+}
+
+function fixtureGit(directory: string, args: string[]): string {
+    const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-C', directory, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    });
+    if (result.error || result.status !== 0) {
+        throw new Error(`Git fixture ${args[0]} failed: ${result.error?.message ?? result.stderr}`);
+    }
+    return result.stdout.trim();
+}
+
+function withPrSecretHistory(
+    run: (fixture: { root: string; source: string; remote: string; base: string; head: string }) => void
+): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-pr-secret-history-'));
+    const source = join(root, 'source');
+    mkdirSync(source);
+    try {
+        const git = (...args: string[]) => fixtureGit(source, args);
+        const commit = (name: string) => {
+            git('add', '.');
+            git(
+                '-c',
+                'user.name=Fixture',
+                '-c',
+                'user.email=fixture@example.invalid',
+                '-c',
+                'commit.gpgsign=false',
+                'commit',
+                '-m',
+                name
+            );
+            return git('rev-parse', 'HEAD');
+        };
+        const credential = ['AKIA', 'QAZ2WSX3', 'EDC4RFV5'].join('');
+        git('init', '--initial-branch=main');
+        writeFileSync(join(source, 'excluded-common.txt'), `aws_access_key_id = "${credential}"\n`);
+        writeFileSync(join(source, 'conflict.txt'), 'common\n');
+        commit('common ancestor excluded by base');
+        git('checkout', '-b', 'pr');
+        writeFileSync(join(source, 'intermediate.txt'), `aws_access_key_id = "${credential}"\n`);
+        commit('intermediate credential');
+        git('rm', 'intermediate.txt');
+        commit('remove intermediate credential');
+        git('checkout', '-b', 'side');
+        writeFileSync(join(source, 'side.txt'), `aws_access_key_id = "${credential}"\n`);
+        writeFileSync(join(source, 'conflict.txt'), 'side\n');
+        commit('side parent credential');
+        git('checkout', 'pr');
+        writeFileSync(join(source, 'conflict.txt'), 'pr\n');
+        commit('other merge parent');
+        const merge = spawnSync(
+            'git',
+            [
+                '-C',
+                source,
+                '-c',
+                'user.name=Fixture',
+                '-c',
+                'user.email=fixture@example.invalid',
+                'merge',
+                '--no-ff',
+                '--no-commit',
+                'side',
+            ],
+            { encoding: 'utf8' }
+        );
+        expect(merge.status).toBe(1);
+        writeFileSync(join(source, 'conflict.txt'), `aws_access_key_id = "${credential}"\n`);
+        const head = commit('merge resolution credential');
+        git('checkout', 'main');
+        writeFileSync(join(source, 'base-only.txt'), 'newer divergent base\n');
+        const base = commit('pinned newer base');
+        writeFileSync(join(source, 'moved-base.txt'), 'not the pinned base\n');
+        commit('base branch moved');
+        git('checkout', 'pr');
+        writeFileSync(join(source, 'moved-head.txt'), 'not the pinned head\n');
+        commit('head branch moved');
+        git('checkout', '-b', 'unrelated', 'main');
+        writeFileSync(join(source, 'unrelated.txt'), 'outside both pinned histories\n');
+        commit('unrelated branch');
+        git('tag', 'unrelated-tag');
+        const remote = join(root, 'remote.git');
+        git('clone', '--bare', source, remote);
+        run({ root, source, remote, base, head });
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function acquirePrSecretHistory(
+    fixture: { root: string; remote: string; base: string; head: string },
+    candidate: UnknownRecord,
+    overrides: { base?: string; head?: string; run?: string; depth?: number } = {}
+) {
+    const directory = mkdtempSync(join(fixture.root, 'target-'));
+    const checkout = recordAt(stepNamed(jobAt(candidate, 'pr-secrets'), 'Checkout scan target'), 'with');
+    const depth = overrides.depth ?? checkout['fetch-depth'];
+    fixtureGit(directory, ['init', '--initial-branch=main']);
+    fixtureGit(directory, ['remote', 'add', 'origin', pathToFileURL(fixture.remote).href]);
+    // Mirror the pinned checkout action's depth-dependent refspec, using real Git transport.
+    const refs =
+        depth === 0
+            ? ['+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*']
+            : [`--depth=${String(depth)}`, fixture.head];
+    fixtureGit(directory, ['fetch', '--no-tags', 'origin', ...refs]);
+    fixtureGit(directory, ['checkout', '--detach', fixture.head]);
+    const script =
+        overrides.run ?? stringAt(stepNamed(jobAt(candidate, 'pr-secrets'), 'Fetch immutable base SHA'), 'run');
+    const result = spawnSync('bash', ['-c', script], {
+        cwd: directory,
+        encoding: 'utf8',
+        env: { ...process.env, BASE_SHA: overrides.base ?? fixture.base, HEAD_SHA: overrides.head ?? fixture.head },
+    });
+    return { directory, result };
 }
 
 function assertPullRequestSecretScan(candidate: UnknownRecord): void {
@@ -3092,6 +3210,58 @@ describe('health gates workflow contract', () => {
         expect(() => assertAptRoutesFiltered(addedRoute)).toThrow(
             'validation.yml job lint step Install a package must run apt through the Microsoft apt feed filter'
         );
+    });
+
+    it('acquires only trusted scanner files and starts from the pinned target instead of every ref', () => {
+        const job = jobAt(validationWorkflow, 'pr-secrets');
+        const trusted = recordAt(stepNamed(job, 'Checkout trusted scanner'), 'with');
+        expect(trusted['sparse-checkout']).toBe('/.gitleaks.toml\n/.gitleaksignore\n');
+        expect(trusted['sparse-checkout-cone-mode']).toBe(false);
+        expect(recordAt(stepNamed(job, 'Checkout scan target'), 'with')['fetch-depth']).toBe(1);
+        expect(job['timeout-minutes']).toBe(10);
+    });
+
+    it('acquires the exact complete pinned commit and merge-parent patch set despite moved and unrelated refs', () => {
+        withPrSecretHistory((fixture) => {
+            const { directory, result } = acquirePrSecretHistory(fixture, validationWorkflow);
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr).toBe(0);
+            expect(fixtureGit(directory, ['rev-parse', '--is-shallow-repository'])).toBe('false');
+            const range = `${fixture.base}..${fixture.head}`;
+            const args = ['log', '--format=%H:%P', '-p', '-U0', range, '-m'];
+            const expected = fixtureGit(fixture.source, args);
+            expect(expected).toContain('intermediate.txt');
+            expect(expected).toContain('side.txt');
+            expect(expected).toContain('+aws_access_key_id');
+            expect(expected).not.toContain('excluded-common.txt');
+            expect(expected).not.toContain('moved-head.txt');
+            expect(fixtureGit(directory, args)).toBe(expected);
+            expect(fixtureGit(directory, ['for-each-ref', '--format=%(refname)'])).toBe('');
+            expect(fixtureGit(directory, ['rev-parse', 'HEAD'])).toBe(fixture.head);
+        });
+    });
+
+    it.each(['base', 'head'] as const)('refuses a missing pinned %s before the scan', (endpoint) => {
+        withPrSecretHistory((fixture) => {
+            const { result } = acquirePrSecretHistory(fixture, validationWorkflow, { [endpoint]: 'f'.repeat(40) });
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+        });
+    });
+
+    it('refuses a remaining shallow boundary if history acquisition is omitted', () => {
+        withPrSecretHistory((fixture) => {
+            const script = stringAt(
+                stepNamed(jobAt(validationWorkflow, 'pr-secrets'), 'Fetch immutable base SHA'),
+                'run'
+            );
+            const { result } = acquirePrSecretHistory(fixture, validationWorkflow, {
+                depth: 1,
+                run: script.replace(/git fetch[^\n]+/g, ':'),
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+        });
     });
 
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
