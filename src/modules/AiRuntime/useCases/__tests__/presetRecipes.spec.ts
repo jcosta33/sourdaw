@@ -393,6 +393,50 @@ describe('preset recipes', () => {
             expect(receipt.error?.safeMessage).toContain('no legal setting');
         });
 
+        it('refuses a primitive command alongside the 24-command guitar recipe', async () => {
+            setTracks([createTrack({ id: 'guitar-1', name: 'Guitar' })]);
+            const requestTurn = vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'expand-1',
+                            name: 'recipe.expand',
+                            arguments: {
+                                recipeId: 'preset:fx-chain-guitar-clean:warm',
+                                targetId: 'guitar-1',
+                                role: 'guitar',
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'propose-1',
+                            name: 'command.batch.propose',
+                            arguments: {
+                                commands: [{ name: 'setTempo', arguments: { bpm: 120 } }],
+                                compiledCallIds: ['expand-1'],
+                            },
+                        },
+                    ],
+                });
+            const result = await runApplicationOwnedToolLoop({
+                loopId: 'guitar-plus-one',
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn,
+                recipe: recipeExpansionTool(),
+            });
+            expect(result.receipts.find((entry) => entry.callId === 'expand-1')?.status).toBe('success');
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider command proposal exceeds the command budget.',
+            });
+        });
+
         it('expands the real guitar strip after the existing insert with all stored values', async () => {
             const chain: ChainDevice[] = [
                 {

@@ -6,6 +6,7 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
 
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
+import { parseSemanticCommandList } from '../../models/SemanticCommandList';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
@@ -1325,6 +1326,16 @@ describe('recipe.expand adoption by command.batch.propose', () => {
 });
 
 describe('recipe expansion argument boundaries', () => {
+    it('keeps the provider semantic list ceiling at 16 items', () => {
+        const items = Array.from({ length: 17 }, (_, index) => ({
+            id: `item-${index}`,
+            name: 'muteTrack',
+            arguments: { trackId: `track-${index}`, muted: true },
+        }));
+        expect(parseSemanticCommandList({ schemaVersion: 1, items: items.slice(0, 16) }).status).toBe('accepted');
+        expect(parseSemanticCommandList({ schemaVersion: 1, items }).status).toBe('rejected');
+    });
+
     it('accepts 24 supplied values through step 23 but refuses 25 values or step 24', () => {
         const values = Array.from({ length: 24 }, (_, step) => ({ step, paramId: `p-${step}`, value: 1 }));
         const input = { recipeId: 'recipe', targetId: 'track', values };
