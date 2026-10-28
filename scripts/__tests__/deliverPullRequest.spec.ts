@@ -436,6 +436,9 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
         capture: (command, args) => {
             captures.push({ command, args });
             const joined = args.join(' ');
+            if (args[0] === 'for-each-ref') {
+                return '';
+            }
             if (command === 'git' && joined === 'rev-parse HEAD') {
                 return 'head';
             }
@@ -10458,6 +10461,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -10524,6 +10530,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     captures.push(joined);
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
@@ -10603,6 +10612,9 @@ describe('delivery shell boundary', () => {
             const port = shellPort('jcosta33/sourdaw', {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(shellSnapshot));
                     }
@@ -10661,6 +10673,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     captures.push(joined);
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
@@ -10718,6 +10733,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view 42')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
                     }
@@ -11175,6 +11193,9 @@ describe('delivery shell boundary', () => {
                 {
                     capture: (_command, args) => {
                         const joined = args.join(' ');
+                        if (args[0] === 'for-each-ref') {
+                            return '';
+                        }
                         captures.push(joined);
                         if (joined.includes('pr view 42')) {
                             return JSON.stringify(shellPullRequest(pullRequest({ body: closes })));
@@ -11732,6 +11753,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -11787,6 +11811,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
