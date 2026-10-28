@@ -687,7 +687,9 @@ function assertRepositoryIndependentScope(
     for (const [file, workflow] of Object.entries(workflows)) {
         for (const value of Object.values(recordAt(workflow, 'jobs'))) {
             const job = asRecord(value, 'job');
-            if (job.uses !== './.github/workflows/validation.yml') continue;
+            if (job.uses !== './.github/workflows/validation.yml') {
+                continue;
+            }
             callers.push(file);
             if (JSON.stringify(Object.keys(recordAt(workflow, 'on'))) !== JSON.stringify(['pull_request'])) {
                 throw new Error(`${file} must call validation only on pull_request`);
