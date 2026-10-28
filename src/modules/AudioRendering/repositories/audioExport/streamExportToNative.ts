@@ -7,12 +7,44 @@ import {
     sealExportFile,
 } from '#/utils/desktopBridge';
 
+import { type ExportByteWriter } from '../../models/ExportAudioSource';
+
+type NativeExportBatch = {
+    beginFile: (name: string) => Promise<{ writer: ExportByteWriter; finish: () => Promise<void> }>;
+    commit: (onCommitBegin: () => void) => Promise<void>;
+    abort: () => Promise<void>;
+};
+
+function createNativeExportEntry(
+    token: string,
+    checkOpen: () => void,
+    checkCancelled: () => void,
+    onFinish: () => void
+): Awaited<ReturnType<NativeExportBatch['beginFile']>> {
+    return {
+        writer: {
+            checkCancelled,
+            async write(bytes: Uint8Array) {
+                checkOpen();
+                await appendExportFile(token, bytes);
+                checkOpen();
+            },
+        },
+        async finish() {
+            checkOpen();
+            await sealExportFile(token);
+            checkOpen();
+            onFinish();
+        },
+    };
+}
+
 /** A batch owns only native-issued transaction tokens; paths are granted and checked in Rust. */
 export async function streamExportToNative(input: {
     directoryPath?: string;
     selectedFilePath?: string;
     checkCancelled: () => void;
-}) {
+}): Promise<NativeExportBatch> {
     const tokens: string[] = [];
     const pendingBegins = new Set<Promise<string>>();
     const names = new Set<string>();
@@ -82,22 +114,9 @@ export async function streamExportToNative(input: {
             }
             names.add(name);
             fileOpen = true;
-            return {
-                writer: {
-                    checkCancelled: input.checkCancelled,
-                    async write(bytes: Uint8Array) {
-                        checkOpen();
-                        await appendExportFile(token, bytes);
-                        checkOpen();
-                    },
-                },
-                async finish() {
-                    checkOpen();
-                    await sealExportFile(token);
-                    checkOpen();
-                    fileOpen = false;
-                },
-            };
+            return createNativeExportEntry(token, checkOpen, input.checkCancelled, () => {
+                fileOpen = false;
+            });
         },
         async commit(onCommitBegin: () => void) {
             checkOpen();
