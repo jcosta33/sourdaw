@@ -1,0 +1,160 @@
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  h_beb54bf43b47b7 5,20-23,71-74
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  h_beb54bf43b47b7 31-39,82,129-134
+.agents/decisions/README.md
+  h_beb54bf43b47b7 67-68
+.agents/decisions/open-decision-docket.md
+  h_beb54bf43b47b7 166
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 165-182
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 137-150
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 59-70
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 12-27,237-252,503-508
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-30,438-453,468-483,513-529,1734-1739
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 149-151
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 421,424,1049-1052,1059,1062,1067-1079
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 193-196,812,816,1383-1385,1394,1401
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 5,854-857,867-868,888-1004,1017-1019,1029,1032,2525-2531,2533-2548,3243-3294,3592-3622,3625-3627,3629,3637
+scripts/test-health-gate-scripts.sh
+  h_beb54bf43b47b7 347-362,368,755-756,765,767-775
+src/components/daw/visualizers/ADSREnvelope.tsx
+  h_beb54bf43b47b7 29-30,35,285-297,302,363-370
+src/components/daw/visualizers/__tests__/ADSREnvelope.spec.tsx
+  h_beb54bf43b47b7 173-346
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  h_beb54bf43b47b7 46-51,342,374
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessEffectCommands.integration.spec.ts
+  h_beb54bf43b47b7 1-247
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  h_beb54bf43b47b7 15,250,589-622
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  h_beb54bf43b47b7 857-861
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredRangeVsKnobTravel.spec.ts
+  h_beb54bf43b47b7 2676-2678
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  h_beb54bf43b47b7 1059-1061
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  h_beb54bf43b47b7 621-638
+src/modules/Arrangement/useCases/__tests__/runtimeGraphTopology.spec.ts
+  h_beb54bf43b47b7 95-130
+src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts
+  h_beb54bf43b47b7 15,32
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  h_beb54bf43b47b7 116,137,139-140,574-719
+src/modules/Arrangement/useCases/device/__tests__/coldImportedDeviceEdits.integration.spec.ts
+  h_beb54bf43b47b7 130
+src/modules/Arrangement/useCases/device/applyDeviceChainRuntimeDelta.ts
+  h_beb54bf43b47b7 4,138-201,206,210-215,218-230
+src/modules/Arrangement/useCases/runtimeGraphTopology.ts
+  h_beb54bf43b47b7 2,35-43,59,72,75
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  h_beb54bf43b47b7 241-269
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  h_beb54bf43b47b7 39-40
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/reverbImpulse.spec.ts
+  h_beb54bf43b47b7 4,10,13,47-58,282-386
+src/modules/AudioEngine/repositories/devices/reverbDelay/reverbImpulse.ts
+  h_beb54bf43b47b7 65,124-125,148-149,155-157
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  h_beb54bf43b47b7 160,181,194-196,199-208,378,384-386,388-396,878-905
+src/modules/AudioEngine/services/levainProcessor.ts
+  h_beb54bf43b47b7 71-74,321-328,347-349,539
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  h_beb54bf43b47b7 300-611,1140,1157-1164,1183,1186-1196
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  h_beb54bf43b47b7 46-50,161-170
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  h_beb54bf43b47b7 50,801-819,828,831-834,930
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  h_beb54bf43b47b7 78-83,85-86,261,268,299,325-330,339,373,430,476,527,600,603,624-838,863-1017
+src/modules/DawInterchange/useCases/__tests__/mapToProjectData.spec.ts
+  h_beb54bf43b47b7 318-367
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  h_beb54bf43b47b7 556-558,675-683,753-768,806-817,977-998,1300,1302,1371,1380-1383,1385-1387,1389-1400,1440,1442,1485,1487,1972-1981,2023,2032,2054-2060,2067-2074,2107-2110,2123-2130,2646,2648,2666-2672,2675,2768-3355
+src/modules/DawInterchange/useCases/dawProjectTypes.ts
+  h_beb54bf43b47b7 31,43-44
+src/modules/DawInterchange/useCases/importDawProject.ts
+  h_beb54bf43b47b7 25-27,32-33,36-38,45-62,98
+src/modules/DawInterchange/useCases/mapToProjectData.ts
+  h_beb54bf43b47b7 177,185-189
+src/modules/DawInterchange/useCases/parseProjectXml.ts
+  h_beb54bf43b47b7 1-3,64-66,85-86,88-103,110-189,193-234,329-335,382-398,401-403,415-418,440,490-516,679-680,696-715,722-734,740-764,790-810,835-837,880-905,929-933,979-987,1005-1007,1018-1023,1033-1049,1064-1071,1092-1110,1112-1146,1182-1187,1204-1207,1470-1478,1483-1485,1499-1547,1560,1574-1583,1587-1588,1598,1611-1612,1619-1620,1629,1635,1649-1654,1660,1663-1687,1709-1711,1714-1755,1759-1810,1818,1823,1826-1854
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/synthEnvelopeGestureUndo.integration.spec.tsx
+  h_beb54bf43b47b7 301,321,328-330,332-341,345,631-670
+src/modules/Toaster/models/ToasterKit.ts
+  h_beb54bf43b47b7 93-100,107-108,233-235,244-267,286
+src/modules/Toaster/models/ToasterKitCommitMarkers.ts
+  h_beb54bf43b47b7 1-8
+src/modules/Toaster/models/ToasterKitState.ts
+  h_beb54bf43b47b7 1,262-270
+src/modules/Toaster/models/__tests__/ToasterKitState.spec.ts
+  h_beb54bf43b47b7 14-42
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  h_beb54bf43b47b7 25,36,45-48,152-153,222,339-341,722-813,883-892,902-906
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx
+  h_beb54bf43b47b7 17,20,183,187-229
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  h_beb54bf43b47b7 1,6,29-31,110-133,398-408
+src/modules/Toaster/stores/toasterStore.ts
+  h_beb54bf43b47b7 91-103,134,170,183
+src/modules/Toaster/useCases/__tests__/exportPatternToTimeline.integration.spec.ts
+  h_beb54bf43b47b7 1-286
+src/modules/Toaster/useCases/__tests__/exportPatternToTimeline.spec.ts
+  h_beb54bf43b47b7 1,3,5,7-10,14,16-22,29-31,33-61,63-77,79-84,89-92,96-114,117-135,138-146,149-151,153-154,156-157,159,164-165,168-174,177-197,199-202,205-220,223-233,235-248
+src/modules/Toaster/useCases/__tests__/listToasterPatternsOutsideArrangement.spec.ts
+  h_beb54bf43b47b7 97-117
+src/modules/Toaster/useCases/__tests__/patternMorph.spec.ts
+  h_beb54bf43b47b7 32-40
+src/modules/Toaster/useCases/__tests__/reconcileToasterKitsFromProject.spec.ts
+  h_beb54bf43b47b7 93-109
+src/modules/Toaster/useCases/__tests__/sequencerPlayback.spec.ts
+  h_beb54bf43b47b7 142-179
+src/modules/Toaster/useCases/__tests__/setMorphPosition.spec.ts
+  h_beb54bf43b47b7 1,3-7,9-20,23-27,32-42,44-50,53-59,61-63,66-78,81-91,94-111
+src/modules/Toaster/useCases/copyMorphTargetPattern.ts
+  h_beb54bf43b47b7 1-24
+src/modules/Toaster/useCases/exportPatternToTimeline.ts
+  h_beb54bf43b47b7 1-4,7,10,14-142,166,169,172-177,179,183,188,194,215-241,243-246,248-259,261-268,270
+src/modules/Toaster/useCases/getEffectiveToasterPattern.ts
+  h_beb54bf43b47b7 1-19
+src/modules/Toaster/useCases/initToasterKitPersistence.ts
+  h_beb54bf43b47b7 1,41
+src/modules/Toaster/useCases/listToasterPatternsOutsideArrangement.ts
+  h_beb54bf43b47b7 7-8,30,53-54
+src/modules/Toaster/useCases/patternMorph.ts
+  h_beb54bf43b47b7 27
+src/modules/Toaster/useCases/reconcileToasterKitFromProject.ts
+  h_beb54bf43b47b7 4,22-24,51-53
+src/modules/Toaster/useCases/sequencerPlayback.ts
+  h_beb54bf43b47b7 14,135-136,139
+src/modules/Toaster/useCases/setMorphPosition/commitToasterMorphKitChange.ts
+  h_beb54bf43b47b7 1-110
+src/modules/Toaster/useCases/setMorphPosition/selectMorphSourcePattern.ts
+  h_beb54bf43b47b7 1-10
+src/modules/Toaster/useCases/setMorphPosition/setMorphPosition.ts
+  h_beb54bf43b47b7 1,3-7,9-15
+src/modules/Toaster/useCases/setMorphPosition/setMorphTarget.ts
+  h_beb54bf43b47b7 1,3-17
+src/modules/Toaster/useCases/setMorphPosition/toggleMorph.ts
+  h_beb54bf43b47b7 1,3-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba398dbc4ee29531afcc6f56110baf360bcb636f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
