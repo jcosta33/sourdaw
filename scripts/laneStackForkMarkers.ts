@@ -506,6 +506,9 @@ export function nativeParentInspectionInvocation(
     const directories = [
         ...new Set([dirname(input.gitPath), dirname(input.ghPath), dirname(process.execPath), '/bin']),
     ];
+    if (directories.some((directory) => directory.includes(delimiter))) {
+        fail('native inspection executable directory cannot be represented in PATH');
+    }
     env.PATH = directories.join(delimiter);
     assertNativeInspectionExecutable('git', input.gitPath, directories);
     assertNativeInspectionExecutable('gh', input.ghPath, directories);

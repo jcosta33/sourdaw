@@ -2276,6 +2276,37 @@ function inspectionToolFixture() {
 }
 
 describe('native inspection executable identity', () => {
+    it.each(['git', 'gh'] as const)('refuses a canonical colon-directory %s reached through a normal alias', (name) => {
+        const tools = inspectionToolFixture();
+        const physical = join(tools.root, `physical:${name}`);
+        const splitPrefix = join(tools.root, 'physical');
+        const aliases = join(tools.root, 'aliases');
+        mkdirSync(physical);
+        mkdirSync(splitPrefix);
+        mkdirSync(aliases);
+        const selected = tools.executable(join(physical, name));
+        const competing = tools.executable(join(splitPrefix, name));
+        symlinkSync(selected, join(aliases, name));
+        const gitPath = name === 'git' ? selected : tools.gitPath;
+        const ghPath = name === 'gh' ? selected : tools.ghPath;
+        const operatorPath = [aliases, tools.ghDir, tools.gitDir, dirname(process.execPath), '/bin'].join(delimiter);
+        expect(resolveTrustedExecutable(name, { PATH: operatorPath }, 'darwin')).toBe(selected);
+        const reconstructed = [dirname(gitPath), dirname(ghPath), dirname(process.execPath), '/bin'].join(delimiter);
+        expect(resolveTrustedExecutable(name, { PATH: reconstructed }, 'darwin')).toBe(competing);
+        const { f, input } = closedParentFixture();
+        let launches = 0;
+        expect(() => {
+            nativeParentInspectionInvocation(
+                { primaryRoot: tools.root, gitPath, ghPath, localEnv: { PATH: operatorPath } },
+                input.closedParent,
+                f.observation().parent,
+                'darwin'
+            );
+            launches += 1;
+        }).toThrow('native inspection executable directory cannot be represented in PATH');
+        expect(launches).toBe(0);
+    });
+
     it('retains the actual selected tools and canonical system ps through legitimate aliases', () => {
         const tools = inspectionToolFixture();
         symlinkSync(tools.ghPath, join(tools.gitDir, 'gh'));
