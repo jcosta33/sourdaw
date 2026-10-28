@@ -32,6 +32,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: () => false,
     startFaustNote: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -259,6 +260,7 @@ describe('event-time recording beat (#4875)', () => {
 
         // The one-wrap bound answered 7, the epoch start.
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6.2, 9);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(2);
     });
 
     // #4935 review — the seam window: between the seam instant and the arrival

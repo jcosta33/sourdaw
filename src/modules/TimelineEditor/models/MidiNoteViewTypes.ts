@@ -16,6 +16,7 @@ export type MidiNote = {
     pitchBendRangeSemitones?: number;
     channel?: number;
     articulation?: string;
+    recordingPassIndex?: number;
     expression?: {
         pressure?: Array<{ offsetBeats: number; value: number }>;
         slide?: Array<{ offsetBeats: number; value: number }>;

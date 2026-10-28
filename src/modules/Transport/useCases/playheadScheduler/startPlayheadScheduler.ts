@@ -260,7 +260,7 @@ function stageLoopWrapTakes(
         // Every wrap take is provisional: the whole recording — audio
         // or MIDI — commits as the one entry its terminal callback (or
         // `stopRecording`) opens rather than one entry per pass.
-        const finalizeClock = stageRecordingTake({
+        const stagedTake: Parameters<typeof stageRecordingTake>[0] = {
             trackId: track.id,
             clipId: recordingClip.id,
             name: `Take ${takeNum}`,
@@ -270,7 +270,11 @@ function stageLoopWrapTakes(
             plannedPassEnd: boundary.planned,
             nextPassStartBeat: boundary.nextPassStartBeat,
             passEndContextSeconds: boundary.deferredClock ? undefined : passEndContextSeconds,
-        });
+        };
+        if (track.kind === 'midi') {
+            stagedTake.recordingPassIndex = passIndex;
+        }
+        const finalizeClock = stageRecordingTake(stagedTake);
         if (boundary.deferredClock && finalizeClock) {
             finalizeClocks.push(finalizeClock);
         }

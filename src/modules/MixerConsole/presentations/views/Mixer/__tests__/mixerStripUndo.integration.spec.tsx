@@ -144,6 +144,10 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
         isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,

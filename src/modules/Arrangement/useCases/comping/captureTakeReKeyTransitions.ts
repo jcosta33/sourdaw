@@ -1,3 +1,5 @@
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
+import { getMidiStoreState, snapshotMidiClipData } from '#/modules/MIDI/useCases';
 import {
     captureAudioSourceSnapshot,
     type AudioSourceSnapshot,
@@ -5,6 +7,7 @@ import {
     resolveAudioUnwrappedOffsetSeconds,
 } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
@@ -13,6 +16,8 @@ import { type Clip } from '../../models/Track';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import { prepareMidiTakeSourceCapture } from './prepareMidiTakeSourceCapture';
+import { relocateMidiTakeSource } from './relocateMidiTakeSource';
 import { resolveCompingProgramme } from './resolveCompingProgramme';
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
@@ -21,6 +26,8 @@ type CaptureTakeReKeyTransitionsInput = {
     windowsByTrackId: ReadonlyMap<string, readonly TakeReKeyClipWindow[]>;
     /** Exact source clips captured before the clip producer publishes. */
     sourceClips?: readonly Clip[];
+    /** Exact pre-partition rows from the same clip plan, when the caller already prepared them. */
+    sourceMidiByClipId?: ReadonlyMap<string, MidiClipDataActionSnapshot>;
     lanes?: readonly TakeLane[];
     timeline?: TempoTimeline;
     /** Clip ids the same operation removes outright — their takes retire separately (#4520), never re-key. */
@@ -128,24 +135,50 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
     return windowsByClipId;
 }
 
-/**
- * One take's surviving pieces as fragment takes and the region-mapping view of
- * the same split. The leftmost fragment keeps the take's id — the split
- * convention — so regions naming it keep resolving. A take mints at most one
- * id: its clip contributes at most two windows (its own surviving fragment and
- * the re-keyed right one) and a window at most one piece, so the second piece
- * is the only mint, over a base id the source take's id makes unique. Deriving
- * it from the take id and the deleted span keeps a replayed redo re-minting
- * the same id, exactly like the clip identities it replays. Uniqueness rests
- * on take ids being unique — true for every lane an app route mints, but not
- * enforced by the store's sanitize: two takes sharing an id on corrupt
- * hydrated state would mint colliding fragment ids here, an accepted
- * divergence on state no route produces.
- */
-function captureTakeSource(take: Take, clip: Clip | undefined, timeline: TempoTimeline): Take {
+function captureMidiTakeSource(
+    take: Take,
+    siblingTakes: readonly Take[],
+    clip: Clip,
+    input: CaptureTakeReKeyTransitionsInput
+): Take {
+    if (take.midiSource !== undefined) {
+        if (!isFrozenMidiTakeSource(take.midiSource)) {
+            throw new Error('MIDI take source is malformed');
+        }
+        return take;
+    }
+    const rows = input.sourceMidiByClipId?.get(clip.id);
+    const state = rows === undefined ? getMidiStoreState() : null;
+    const sourceRows = rows ?? (state ? snapshotMidiClipData(state, clip.id) : null);
+    if (!sourceRows) {
+        throw new Error('MIDI take source is unavailable');
+    }
+    const midiSource = prepareMidiTakeSourceCapture({
+        clip,
+        take,
+        siblingTakes,
+        rows: sourceRows,
+        timeline: input.timeline ?? liveTempoTimeline,
+    });
+    if (!midiSource) {
+        throw new Error('MIDI take source cannot be captured');
+    }
+    return { ...take, midiSource };
+}
+
+function captureTakeSource(
+    take: Take,
+    siblingTakes: readonly Take[],
+    clip: Clip | undefined,
+    input: CaptureTakeReKeyTransitionsInput
+): Take {
+    if (clip?.type === 'midi') {
+        return captureMidiTakeSource(take, siblingTakes, clip, input);
+    }
     if (clip?.type !== 'audio') {
         return take;
     }
+    const timeline = input.timeline ?? liveTempoTimeline;
     const tempo = timeline.tempoAtBeat(clip.startBeat);
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
         if (take.passOriginBeat !== undefined && take.passOriginSourceSeconds !== undefined) {
@@ -163,6 +196,20 @@ function captureTakeSource(take: Take, clip: Clip | undefined, timeline: TempoTi
     return { ...take, sourceOffsetSeconds: (take.sourceOffsetBeats * 60) / tempo };
 }
 
+/**
+ * One take's surviving pieces as fragment takes and the region-mapping view of
+ * the same split. The leftmost fragment keeps the take's id — the split
+ * convention — so regions naming it keep resolving. A take mints at most one
+ * id: its clip contributes at most two windows (its own surviving fragment and
+ * the re-keyed right one) and a window at most one piece, so the second piece
+ * is the only mint, over a base id the source take's id makes unique. Deriving
+ * it from the take id and the deleted span keeps a replayed redo re-minting
+ * the same id, exactly like the clip identities it replays. Uniqueness rests
+ * on take ids being unique — true for every lane an app route mints, but not
+ * enforced by the store's sanitize: two takes sharing an id on corrupt
+ * hydrated state would mint colliding fragment ids here, an accepted
+ * divergence on state no route produces.
+ */
 function buildTakeFragments(
     take: Take,
     pieces: readonly MappedPiece[],
@@ -189,6 +236,13 @@ function buildTakeFragments(
         };
         if (take.passOriginBeat !== undefined) {
             fragmentTake.passOriginBeat = take.passOriginBeat + piece.startBeat - piece.preImageStartBeat;
+        }
+        if (take.midiSource !== undefined) {
+            const moved = relocateMidiTakeSource(take.midiSource, piece.preImageStartBeat, piece.startBeat);
+            if (!moved) {
+                throw new Error('MIDI take source cannot be re-keyed');
+            }
+            fragmentTake.midiSource = moved;
         }
         fragmentTakes.push(fragmentTake);
         fragments.push({
@@ -226,8 +280,9 @@ function mapLaneTakes(
         }
         const capturedTake = captureTakeSource(
             take,
+            lane.takes,
             input.sourceClips?.find((clip) => clip.id === take.clipId),
-            input.timeline ?? liveTempoTimeline
+            input
         );
         const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
         if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {

@@ -1,3 +1,4 @@
+import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
 import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 import { type RestoreStoredControllersInput } from './restoreStoredControllers';
 
@@ -21,7 +22,12 @@ export function resolveStoredControllerClips({
     clips,
     ccByClipId,
 }: ResolveStoredControllerClipsInput): RestoreStoredControllersInput['clips'] {
-    return resolvePlayedMidiClips(trackId, clips).flatMap((clip) => {
+    return resolvePlayedMidiClips(trackId, clips).flatMap<RestoreStoredControllersInput['clips'][number]>((clip) => {
+        if (clip.midiTakeSource !== undefined) {
+            return resolveFrozenMidiControllerPasses(clip).flatMap((pass) =>
+                pass.controlChanges.length > 0 ? [{ clip: pass.clip, controlChanges: pass.controlChanges }] : []
+            );
+        }
         const controlChanges = ccByClipId[clip.id];
         return controlChanges ? [{ clip, controlChanges }] : [];
     });
