@@ -1,0 +1,21 @@
+tests/e2e/punchRecordingClockWitness.ts
+  s_29d8df116c5b92::t_daa949dd902b08 301,318
+evidence/agent-campaign/manifest.json
+  s_29d8df116c5b92::t_474cabd48547ff 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e5d2d2b178776e3adfa655877e1e5c95175ee74",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
