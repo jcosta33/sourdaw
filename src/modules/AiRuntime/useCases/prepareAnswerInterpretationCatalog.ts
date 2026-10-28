@@ -76,7 +76,7 @@ function prepareScopes(context: ProjectContext): AnswerScopeCandidate[] {
 }
 
 function prepareRanges(context: ProjectContext): AnswerInterpretationCatalog['ranges'] {
-    const ranges = (context.sections ?? [])
+    const ranges: AnswerInterpretationCatalog['ranges'] = (context.sections ?? [])
         .filter(
             (section) =>
                 Number.isFinite(section.startBeat) &&

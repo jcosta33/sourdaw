@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
+
 import { ANSWER_RESPOND_MAX_STATEMENTS } from '../../models/AnswerRespond';
 import {
     projectPlanningProviderToolSchemas,
@@ -29,14 +31,37 @@ describe('parseAnswerRespond', () => {
         expect(matchesJsonSchema(document, entry.function.parameters)).toBe(false);
         expect(matchesJsonSchema({}, complete.function.parameters)).toBe(false);
         expect(matchesJsonSchema(document, complete.function.parameters)).toBe(true);
-        expect(parseAnswerRespond({}).status).toBe('rejected');
+        expect(parseAnswerRespond({}, getAgentMeasurementMetricIds()).status).toBe('rejected');
         expect(entry.function.parameters).not.toEqual(complete.function.parameters);
         expect(getPlanningProviderSchemaContract().identity).toBe(contract.identity);
         expect(complete.function.description).not.toContain('{}');
     });
 
+    it.each([
+        { intakeCallId: 'intake' },
+        { statements: document.statements },
+        { ...document, extra: 'provider text' },
+        { text: 'The master is minus fourteen LUFS.', evidenceCallIds: [] },
+        { intakeCallId: 'intake', statements: [] },
+        { intakeCallId: 123, statements: document.statements },
+    ])('keeps the canonical catalog closed and refuses partial or extra completion fields: %j', (value) => {
+        expect(schema.additionalProperties).toBe(false);
+        expect(matchesJsonSchema(value, schema)).toBe(false);
+        const entry = projectPlanningProviderToolSchemas(getPlanningProviderToolSchemas(), 'planning').find(
+            (tool) => tool.function.name === 'answer.respond'
+        )!;
+        const complete = projectPlanningProviderToolSchemas(getPlanningProviderToolSchemas(), 'answer').find(
+            (tool) => tool.function.name === 'answer.respond'
+        )!;
+        expect(matchesJsonSchema(value, entry.function.parameters)).toBe(false);
+        expect(matchesJsonSchema(value, complete.function.parameters)).toBe(false);
+    });
+
     it('accepts the closed document through parser and actual published schema', () => {
-        expect(parseAnswerRespond(document)).toEqual({ status: 'accepted', answer: document });
+        expect(parseAnswerRespond(document, getAgentMeasurementMetricIds())).toEqual({
+            status: 'accepted',
+            answer: document,
+        });
         expect(matchesJsonSchema(document, schema)).toBe(true);
     });
     it('accepts all finite statement forms', () => {
@@ -49,7 +74,9 @@ describe('parseAnswerRespond', () => {
             { kind: 'source-onsets', callId: 'onset' },
             { kind: 'limitation', code: 'timing-unavailable' },
         ];
-        expect(parseAnswerRespond({ intakeCallId: 'intake', statements }).status).toBe('accepted');
+        expect(parseAnswerRespond({ intakeCallId: 'intake', statements }, getAgentMeasurementMetricIds()).status).toBe(
+            'accepted'
+        );
         expect(matchesJsonSchema({ intakeCallId: 'intake', statements }, schema)).toBe(true);
     });
     it.each([
@@ -73,7 +100,7 @@ describe('parseAnswerRespond', () => {
         { ...document, statements: [{ kind: 'prose', text: 'ten LUFS' }] },
         { ...document, statements: [{ kind: 'project-fact', fact: 'loudness' }] },
     ])('refuses raw prose, arbitrary values and malformed document: %j', (value) => {
-        expect(parseAnswerRespond(value).status).toBe('rejected');
+        expect(parseAnswerRespond(value, getAgentMeasurementMetricIds()).status).toBe('rejected');
         expect(matchesJsonSchema(value, schema)).toBe(false);
     });
 });

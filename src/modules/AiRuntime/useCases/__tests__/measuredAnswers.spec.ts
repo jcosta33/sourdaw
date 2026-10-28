@@ -3,10 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
 
-import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
-import { type AnswerRespondArguments } from '../../models/AnswerRespond';
 import { type ToolCallResult } from '../../models/ToolCallResult';
 import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
+import {
+    type AnalysisMeasureRead,
+    type AnswerMetricReference,
+    type AnswerRespondArguments,
+} from '../answerContractTypes';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
 import { getProjectContext } from '../getProjectContext';
@@ -131,7 +134,7 @@ beforeEach(() => {
             liveAudibility: 'audible',
             buffer: sine(targetId === 'b' ? 0.2 : 0.1),
             artifact: {
-                contentAddress: 'sha256:' + targetId,
+                contentAddress: `sha256:${targetId}`,
                 sampleRate: 48_000,
                 frameCount: 192_000,
                 channelCount: 2,
@@ -222,10 +225,12 @@ describe('AC002 measured answers use actual successful audio reductions', () => 
         'a measured obligation cannot evade measurement with %s',
         async (kind) => {
             const { intake, run } = setup();
-            const statements: AnswerRespondArguments['statements'] =
-                kind === 'project-fact'
-                    ? [{ kind, fact: 'summary' }]
-                    : [{ kind, callId: 'recipe', recipeId: 'vocal-warm' }];
+            let statements: AnswerRespondArguments['statements'];
+            if (kind === 'project-fact') {
+                statements = [{ kind, fact: 'summary' }];
+            } else {
+                statements = [{ kind, callId: 'recipe', recipeId: 'vocal-warm' }];
+            }
             const result = await run([[intake], [terminal(statements)]]);
             expect(result).toMatchObject({
                 status: 'complete',
@@ -350,12 +355,17 @@ describe('AC002 measured answers use actual successful audio reductions', () => 
         'rejects %s reference without invented figures',
         async (defect) => {
             const { intake, measure, run } = setup();
-            const ref = {
-                ...reference,
-                ...(defect === 'foreign-call' ? { callId: 'foreign' } : {}),
-                ...(defect === 'wrong-target' ? { targetId: 'foreign' } : {}),
-                ...(defect === 'wrong-band' ? { metricId: 'frequencyBandEnergy' as const, band: 'invented-band' } : {}),
-            };
+            const ref: AnswerMetricReference = { ...reference };
+            if (defect === 'foreign-call') {
+                ref.callId = 'foreign';
+            }
+            if (defect === 'wrong-target') {
+                ref.targetId = 'foreign';
+            }
+            if (defect === 'wrong-band') {
+                ref.metricId = 'frequencyBandEnergy';
+                ref.band = 'invented-band';
+            }
             const result = await run(
                 [[intake], [measure], [terminal([{ kind: 'metric', reference: ref }])]],
                 (produced) => {

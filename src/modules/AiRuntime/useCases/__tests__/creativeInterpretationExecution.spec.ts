@@ -846,14 +846,11 @@ describe('creative interpretation execution', () => {
             const calls = scriptedCalls.map((call, index) => {
                 const id = `hosted-${String(turnIndex)}-${String(index)}`;
                 if (call.name !== 'command.batch.propose') {
-                    return {
-                        id,
-                        name: call.name,
-                        arguments:
-                            call.name === 'selectCreativeInterpretation'
-                                ? { ...call.arguments, answer: null }
-                                : call.arguments,
-                    };
+                    let argumentsValue = call.arguments;
+                    if (call.name === 'selectCreativeInterpretation') {
+                        argumentsValue = { ...call.arguments, answer: null };
+                    }
+                    return { id, name: call.name, arguments: argumentsValue };
                 }
                 return {
                     id,

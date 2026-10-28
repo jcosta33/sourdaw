@@ -1,5 +1,3 @@
-import { type getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
-
 import { type CreativeSelectionSnapshot } from './CreativeInterpretation';
 import { type ProjectContext } from './ProjectContext';
 import { type ToolSchema } from './ToolDefinitions';
@@ -7,7 +5,6 @@ import { type ToolSchema } from './ToolDefinitions';
 export const ANSWER_INTERPRETATION_TOOL_NAME = 'selectAnswerInterpretation';
 export const ANSWER_KINDS = ['measured-audio', 'project-facts', 'catalog-knowledge', 'source-onsets'] as const;
 export const ANSWER_TOPICS = ['level', 'tone', 'dynamics', 'stereo', 'timing'] as const;
-export type AnswerMetricId = ReturnType<typeof getAgentMeasurementMetricIds>[number];
 export type AnswerKind = (typeof ANSWER_KINDS)[number];
 export type AnswerTopic = (typeof ANSWER_TOPICS)[number];
 export type AnswerScopeCandidate = {
@@ -34,7 +31,7 @@ export type AnswerInterpretationCatalog = {
     /** Complete captured context, held only by the application. */
     context: ProjectContext;
 };
-export type AnswerRequestAuthority = Readonly<{
+export type AnswerRequestAuthority<MetricId extends string> = Readonly<{
     schemaVersion: 1;
     catalogId: string;
     requestDigest: string;
@@ -45,7 +42,7 @@ export type AnswerRequestAuthority = Readonly<{
     scopes: readonly AnswerScopeCandidate[];
     scopeCandidateIds: readonly string[];
     range: AnswerRangeCandidate | null;
-    requiredMetrics: readonly AnswerMetricId[];
+    requiredMetrics: readonly MetricId[];
     context: ProjectContext;
 }>;
 
@@ -54,9 +51,8 @@ export function createAnswerInterpretationToolSchema(catalog: AnswerInterpretati
         type: 'function',
         function: {
             name: ANSWER_INTERPRETATION_TOOL_NAME,
-            description:
-                'Interpret an information request, alone and once; this freezes read-only scope. Select measured-audio for acoustic questions, project-facts for metadata, catalog-knowledge for recipes, source-onsets for available source-buffer reads. Uncertainty clarifies. Candidate rows: scopes [id,kind,objectIds,labels], ranges [id,label,startBeat,endBeat]. Candidates: ' +
-                JSON.stringify({
+            description: `Interpret an information request, alone and once; this freezes read-only scope. Select measured-audio for acoustic questions, project-facts for metadata, catalog-knowledge for recipes, source-onsets for available source-buffer reads. Uncertainty clarifies. Candidate rows: scopes [id,kind,objectIds,labels], ranges [id,label,startBeat,endBeat]. Candidates: ${JSON.stringify(
+                {
                     scopes: catalog.scopes.map((scope) => [
                         scope.candidateId,
                         scope.kind,
@@ -69,7 +65,8 @@ export function createAnswerInterpretationToolSchema(catalog: AnswerInterpretati
                         range.startBeat,
                         range.endBeat,
                     ]),
-                }),
+                }
+            )}`,
             parameters: {
                 type: 'object',
                 additionalProperties: false,

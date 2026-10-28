@@ -3,6 +3,7 @@ import {
     getMixRecipeCatalog,
     getPlatformPlugins,
 } from '#/modules/Arrangement/useCases';
+import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
 import {
     getExecutableAppActionIntentCatalogUnicodeLength,
@@ -24,9 +25,8 @@ import {
     AGENT_CATALOG_CATEGORIES,
     type AgentCatalogCategory,
 } from '../models/AgentToolCatalogNames';
-import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type AnswerOnsets } from '../models/AnswerEvidence';
-import { ANSWER_INTERPRETATION_TOOL_NAME, type AnswerRequestAuthority } from '../models/AnswerInterpretation';
+import { ANSWER_INTERPRETATION_TOOL_NAME } from '../models/AnswerInterpretation';
 import { type PlanningAnswer } from '../models/AnswerRespond';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -76,6 +76,7 @@ import {
     type RECIPE_EXPANSION_TOOL_NAME,
     type TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
+import { type AnalysisMeasureRead, type AnswerRequestAuthority } from './answerContractTypes';
 import {
     composeMeasuredAnswer,
     type AdmittedAnswerRead,
@@ -1701,7 +1702,7 @@ function validateAnswerIsAlone(
     if (calls.length > 1) {
         return { status: 'rejected', reason: 'Provider combined an answer with another terminal call.' };
     }
-    const parsed = parseAnswerRespond(answerCalls[0]!.call.arguments);
+    const parsed = parseAnswerRespond(answerCalls[0]!.call.arguments, getAgentMeasurementMetricIds());
     if (parsed.status === 'rejected') {
         return parsed;
     }
@@ -2316,10 +2317,10 @@ export async function runApplicationOwnedToolLoop(
             }
             const selected = answerSelections[0]!;
             const admitted = input.answerInterpretation.admit(selected.call);
-            if (admitted.status === 'rejected') {
-                return { status: 'rejected', reason: admitted.reason, receipts, turns: turn };
-            }
-            if (admitted.status === 'clarify') {
+            if (admitted.status !== 'admitted') {
+                if (admitted.status === 'rejected') {
+                    return { status: 'rejected', reason: admitted.reason, receipts, turns: turn };
+                }
                 return {
                     status: 'complete',
                     toolCalls: [],
@@ -2356,7 +2357,7 @@ export async function runApplicationOwnedToolLoop(
                         range: authority.range,
                         requiredMetrics: authority.requiredMetrics,
                     },
-                    summary: `Interpreted ${authority.kind}: ${authority.scopes.flatMap((scope) => scope.labels).join(', ') || 'project context'}${authority.range === null ? '' : ' over ' + authority.range.label}.`,
+                    summary: `Interpreted ${authority.kind}: ${authority.scopes.flatMap((scope) => scope.labels).join(', ') || 'project context'}${authority.range === null ? '' : ` over ${authority.range.label}`}.`,
                     warnings: [],
                     error: null,
                 },

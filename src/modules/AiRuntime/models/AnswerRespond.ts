@@ -1,4 +1,3 @@
-import { type AnswerMetricId } from './AnswerInterpretation';
 import { type AnswerEvidenceEntry } from './PlanningOutcome';
 import { type ToolSchema } from './ToolDefinitions';
 
@@ -13,13 +12,18 @@ export const ANSWER_LIMITATIONS = [
     'bounded-evidence',
     'perception-not-inferred',
 ] as const;
-export type AnswerMetricReference = { callId: string; targetId: string; metricId: AnswerMetricId; band?: string };
-export type AnswerStatement =
-    | { kind: 'metric'; reference: AnswerMetricReference }
-    | { kind: 'difference'; left: AnswerMetricReference; right: AnswerMetricReference }
+export type AnswerMetricReference<MetricId extends string> = {
+    callId: string;
+    targetId: string;
+    metricId: MetricId;
+    band?: string;
+};
+export type AnswerStatement<MetricId extends string> =
+    | { kind: 'metric'; reference: AnswerMetricReference<MetricId> }
+    | { kind: 'difference'; left: AnswerMetricReference<MetricId>; right: AnswerMetricReference<MetricId> }
     | {
           kind: 'ranking';
-          references: AnswerMetricReference[];
+          references: AnswerMetricReference<MetricId>[];
           operation: 'ascending' | 'descending' | 'minimum' | 'maximum';
       }
     | { kind: 'project-fact'; fact: (typeof ANSWER_PROJECT_FACTS)[number] }
@@ -27,11 +31,16 @@ export type AnswerStatement =
     | { kind: 'recipe'; callId: string; recipeId: string }
     | { kind: 'source-onsets'; callId: string }
     | { kind: 'limitation'; code: (typeof ANSWER_LIMITATIONS)[number] };
-export type AnswerRespondArguments = { intakeCallId: string; statements: AnswerStatement[] };
+export type AnswerRespondArguments<MetricId extends string> = {
+    intakeCallId: string;
+    statements: AnswerStatement<MetricId>[];
+};
 /** Existing renderer contract; factual text is composed by the application. */
 export type PlanningAnswer = { text: string; evidence: AnswerEvidenceEntry[] };
 
-function createAnswerStatementSchemas(metricIds: readonly AnswerMetricId[]): Record<string, unknown>[] {
+function createAnswerStatementSchemas<MetricId extends string>(
+    metricIds: readonly MetricId[]
+): Record<string, unknown>[] {
     const callId = { type: 'string', minLength: 1, maxLength: ANSWER_RESPOND_MAX_CALL_ID_LENGTH };
     const reference = {
         type: 'object',
@@ -61,8 +70,8 @@ function createAnswerStatementSchemas(metricIds: readonly AnswerMetricId[]): Rec
 }
 
 /** One closed grammar for advertisement and admission, without provider-authored factual text. */
-export function createAnswerRespondParameters(
-    metricIds: readonly AnswerMetricId[]
+export function createAnswerRespondParameters<MetricId extends string>(
+    metricIds: readonly MetricId[]
 ): ToolSchema['function']['parameters'] {
     return {
         type: 'object',

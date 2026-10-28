@@ -87,7 +87,7 @@ const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
 
 // Retain the established ceiling while phases publish fewer mandatory tools. Exactly one optional
 // or discovered tool is selected below; spare ceiling capacity never admits another command.
-export const WEBLLM_TOOL_BUDGET = 38;
+export const WEBLLM_TOOL_BUDGET = 37;
 
 /**
  * What one hosted turn replays: the run's first user message, the turns behind it, and the note

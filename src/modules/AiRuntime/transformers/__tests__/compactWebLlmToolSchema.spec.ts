@@ -175,7 +175,20 @@ function survives(compacted: unknown, fact: Fact): boolean {
         return true;
     }
     const names = Array.isArray(fact.value) ? fact.value : [];
-    return names.every((name) => at(compacted, [...fact.path, 'properties', String(name)]) !== undefined);
+    return names.every((name) => {
+        let objectPath = fact.path;
+        while (true) {
+            if (at(compacted, [...objectPath, 'properties', String(name)]) !== undefined) {
+                return true;
+            }
+            const combinator = objectPath.at(-2);
+            // A combinator constrains the same object as its parent; a property/items step does not.
+            if (typeof combinator !== 'string' || !(COMBINATORS as readonly string[]).includes(combinator)) {
+                return false;
+            }
+            objectPath = objectPath.slice(0, -2);
+        }
+    });
 }
 
 function maxItemsOf(toolName: string, property: string): number {
@@ -199,6 +212,31 @@ function projectQueryType(): string {
 }
 
 describe('compactWebLlmToolSchema', () => {
+    it('finds inherited required properties through same-object combinators only', () => {
+        const inherited = {
+            properties: { intakeCallId: { type: 'string' } },
+            anyOf: [{ required: ['intakeCallId'] }],
+        };
+        expect(survives(inherited, { keyword: 'required', path: ['anyOf', 0], value: ['intakeCallId'] })).toBe(true);
+        expect(
+            survives({ anyOf: inherited.anyOf }, { keyword: 'required', path: ['anyOf', 0], value: ['intakeCallId'] })
+        ).toBe(false);
+        const anotherObject = {
+            properties: {
+                intakeCallId: { type: 'string' },
+                nested: { anyOf: inherited.anyOf },
+            },
+        };
+        expect(
+            survives(anotherObject, {
+                keyword: 'required',
+                path: ['properties', 'nested', 'anyOf', 0],
+                value: ['intakeCallId'],
+            })
+        ).toBe(false);
+        expect(survives(inherited, { keyword: 'required', path: ['anyOf', 0], value: [] })).toBe(false);
+    });
+
     it('keeps a tool description word for word, however long', () => {
         const description = `${'A long sentence about one thing. '.repeat(20)}And the rule that matters last.`;
         const compacted = compactWebLlmToolSchema({

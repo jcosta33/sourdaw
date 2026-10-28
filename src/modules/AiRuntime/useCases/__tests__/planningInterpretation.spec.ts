@@ -53,7 +53,11 @@ describe('joint planning interpretation consumes the actual printed context view
         const value = fixture();
         const original = legacyCall(value.creative.catalogId);
         const input = { creative: value.creative, answer: value.answer, projectRevision: 'revision' };
-        const call = { ...original, arguments: { ...original.arguments, ...(answer === undefined ? {} : { answer }) } };
+        const argumentsValue: Record<string, unknown> = { ...original.arguments };
+        if (answer !== undefined) {
+            argumentsValue.answer = answer;
+        }
+        const call = { ...original, arguments: argumentsValue };
         const expected = admitCreativeInterpretation({
             catalog: value.creative,
             call: original,
@@ -280,7 +284,9 @@ describe('joint planning interpretation consumes the actual printed context view
                 });
             }
         }
-        view.fallback.forEach((row, index) => byReference.set(`f${String(index)}`, { id: row[1], label: row[2] }));
+        for (const [index, row] of view.fallback.entries()) {
+            byReference.set(`f${String(index)}`, { id: row[1], label: row[2] });
+        }
         byReference.set('master', { id: 'master', label: 'Master output' });
         const resolved = view.scopes.map((row) => {
             const [kind, references, overrides] = row as [string, string[], string[] | undefined];
@@ -297,9 +303,10 @@ describe('joint planning interpretation consumes the actual printed context view
                     return { label: row[0], startBeat: row[1], endBeat: row[2] };
                 }
                 const section = printed.sections?.[Number(row.slice(1))];
-                return section === undefined
-                    ? null
-                    : { label: section.name.value, startBeat: section.startBeat, endBeat: section.endBeat };
+                if (section === undefined) {
+                    return null;
+                }
+                return { label: section.name.value, startBeat: section.startBeat, endBeat: section.endBeat };
             })
         ).toEqual(
             answer.ranges.map((range) => ({
@@ -335,11 +342,12 @@ describe('joint planning interpretation consumes the actual printed context view
                 row[0] === 'exclude-dimension' ? row : [row[0], byReference.get(String(row[1]))!.id, row[2]]
             )
         ).toEqual(
-            creative.constraints.map((entry) =>
-                entry.kind === 'exclude-dimension'
-                    ? [entry.kind, entry.dimension]
-                    : [entry.kind, entry.objectId, entry.label]
-            )
+            creative.constraints.map((entry) => {
+                if (entry.kind === 'exclude-dimension') {
+                    return [entry.kind, entry.dimension];
+                }
+                return [entry.kind, entry.objectId, entry.label];
+            })
         );
         expect(view.activeView).toBe(creative.selection.activeView);
         expect(view.unresolved).toEqual(creative.unresolvedExplicitReferences);

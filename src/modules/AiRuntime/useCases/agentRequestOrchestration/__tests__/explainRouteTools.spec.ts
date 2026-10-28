@@ -26,6 +26,15 @@ import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores
 import * as projectReads from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from '../../__tests__/aiWorkflowCommandPreflightFixture';
+import {
+    advertisedAnswerIntake,
+    advertisedAnswerCandidateId,
+    structuralAnswerArguments,
+} from '../../__tests__/answerWireFixture';
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
 import { type ToolCallResult } from '../../../models/ToolCallResult';
@@ -43,15 +52,6 @@ import {
     clearPendingActionConfirmations,
     pendingActionConfirmationStore,
 } from '../../../stores/pendingActionConfirmationStore';
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from '../../__tests__/aiWorkflowCommandPreflightFixture';
-import {
-    advertisedAnswerIntake,
-    advertisedAnswerCandidateId,
-    structuralAnswerArguments,
-} from '../../__tests__/answerWireFixture';
 import * as preparation from '../../agentReference/prepareStemImport';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunWorkLease } from '../../agentRunWorkLease';
@@ -118,13 +118,15 @@ function selectedAnswerScopes(params: unknown, measured: boolean, selection: Int
     return (selection.objectIds ?? [vocalId]).map((id) => advertisedAnswerCandidateId(params, id));
 }
 function intakeCall(params: unknown, measured: boolean, selection: IntakeSelection = {}): ToolCallResult {
+    let rangeCandidateId: string | null = null;
+    if (measured) {
+        rangeCandidateId = advertisedAnswerCandidateId(params, selection.sectionId ?? sectionId, 'ranges');
+    }
     return advertisedAnswerIntake(params, {
         kind: measured ? 'measured-audio' : 'project-facts',
         topicIds: measured ? (selection.topics ?? ['level']) : [],
         scopeCandidateIds: selectedAnswerScopes(params, measured, selection),
-        rangeCandidateId: measured
-            ? advertisedAnswerCandidateId(params, selection.sectionId ?? sectionId, 'ranges')
-            : null,
+        rangeCandidateId,
         uncertainty: 'none',
     });
 }
@@ -830,6 +832,12 @@ describe('Explain reaches the shared answer kernel', () => {
             );
             const loudness = (targetId: string) => ({ callId: 'measure', targetId, metricId: 'integratedLoudness' });
             const peak = (targetId: string) => ({ callId: 'measure', targetId, metricId: 'truePeak' });
+            const intakeSelection: IntakeSelection = { sectionId: 'chorus' };
+            if (group) {
+                intakeSelection.candidateId = 'all-tracks';
+            } else {
+                intakeSelection.objectIds = selected;
+            }
             script(
                 [
                     [query, section],
@@ -856,7 +864,7 @@ describe('Explain reaches the shared answer kernel', () => {
                         },
                     ],
                 ],
-                { ...(group ? { candidateId: 'all-tracks' } : { objectIds: selected }), sectionId: 'chorus' }
+                intakeSelection
             );
             const verifyProject = observeProject();
             try {
@@ -880,7 +888,11 @@ describe('Explain reaches the shared answer kernel', () => {
             if (group) {
                 expect(receipt?.data).toMatchObject({ scopeCandidateIds: ['all-tracks'] });
             } else {
-                expect((receipt?.data as { scopeCandidateIds: string[] }).scopeCandidateIds).toHaveLength(2);
+                const receiptData = receipt?.data;
+                if (receiptData === null || typeof receiptData !== 'object' || !('scopeCandidateIds' in receiptData)) {
+                    throw new TypeError('Expected the genuine intake receipt scope candidates.');
+                }
+                expect(receiptData.scopeCandidateIds).toHaveLength(2);
             }
             expect(boundary.render.mock.calls.map(([input]) => input.targetTrackId)).toEqual(selected);
             const reply = chatStore.value?.messages.at(-1);

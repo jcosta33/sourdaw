@@ -27,36 +27,28 @@ describe('loopback OpenAI provider', () => {
                 toolCalls: createLoopbackAnswerToolCalls(),
             });
             try {
+                const answer = {
+                    kind: 'project-facts',
+                    topicIds: [],
+                    scopeCandidateIds: [],
+                    rangeCandidateId: null,
+                    uncertainty: 'none',
+                };
+                let intakeArguments: Record<string, unknown> = { catalogId: 'dynamic-answer-catalog', ...answer };
+                if (intakeName === 'selectCreativeInterpretation') {
+                    intakeArguments = {
+                        catalogId: 'dynamic-answer-catalog',
+                        modeId: 'read-only',
+                        targetCandidateIds: [],
+                        editDimensionCandidateIds: [],
+                        constraintCandidateIds: [],
+                        creationSlotIds: [],
+                        uncertainty: 'none',
+                        answer,
+                    };
+                }
                 for (const [id, name, args] of [
-                    [
-                        'loopback-intake',
-                        intakeName,
-                        intakeName === 'selectCreativeInterpretation'
-                            ? {
-                                  catalogId: 'dynamic-answer-catalog',
-                                  modeId: 'read-only',
-                                  targetCandidateIds: [],
-                                  editDimensionCandidateIds: [],
-                                  constraintCandidateIds: [],
-                                  creationSlotIds: [],
-                                  uncertainty: 'none',
-                                  answer: {
-                                      kind: 'project-facts',
-                                      topicIds: [],
-                                      scopeCandidateIds: [],
-                                      rangeCandidateId: null,
-                                      uncertainty: 'none',
-                                  },
-                              }
-                            : {
-                                  catalogId: 'dynamic-answer-catalog',
-                                  kind: 'project-facts',
-                                  topicIds: [],
-                                  scopeCandidateIds: [],
-                                  rangeCandidateId: null,
-                                  uncertainty: 'none',
-                              },
-                    ],
+                    ['loopback-intake', intakeName, intakeArguments],
                     ['loopback-query', 'project_query', { type: 'project-summary' }],
                     [
                         'loopback-answer',

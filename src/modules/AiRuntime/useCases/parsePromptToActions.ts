@@ -994,11 +994,10 @@ const planPromptIntent = inject({ logger })(
                             planningContext.localMessage
                         );
                         // Admit the complete turn before the loop can dispatch even its first safe read.
-                        if (turn.status === 'complete') {
+                        if (turn.status === 'complete' && (readonly || phase !== 'planning')) {
                             if (
-                                ((readonly || phase !== 'planning') &&
-                                    (turn.toolCalls.length === 0 ||
-                                        (turn.proposal !== undefined && turn.proposal !== null))) ||
+                                turn.toolCalls.length === 0 ||
+                                (turn.proposal !== undefined && turn.proposal !== null) ||
                                 turn.toolCalls.some((call) => {
                                     const schema = phaseSchemas.find((tool) => tool.function.name === call.name);
                                     return (

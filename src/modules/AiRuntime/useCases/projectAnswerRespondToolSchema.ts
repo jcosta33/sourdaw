@@ -15,26 +15,27 @@ export const ANSWER_ENTRY_PARAMETERS: ToolSchema['function']['parameters'] = {
 
 /** Canonical catalog exposes both real consuming forms; requests expose only their active phase. */
 export function createCanonicalAnswerRespondParameters(): ToolSchema['function']['parameters'] {
-    const parameters = {
-        type: 'object' as const,
-        properties: {},
+    const completion = createAnswerRespondParameters(getAgentMeasurementMetricIds());
+    return {
+        ...completion,
         required: [],
-        anyOf: [ANSWER_ENTRY_PARAMETERS, createAnswerRespondParameters(getAgentMeasurementMetricIds())],
+        anyOf: [ANSWER_ENTRY_PARAMETERS, { required: completion.required }],
     };
-    return parameters;
 }
 
 export function projectAnswerRespondToolSchema(schema: ToolSchema, complete: boolean): ToolSchema {
-    return {
+    const view = {
         ...schema,
         function: {
             ...schema.function,
-            description: complete
-                ? ANSWER_COMPLETION_DESCRIPTION
-                : 'Enter read-only answering alone with {}. This publishes no answer and grants no extra turn. Prefer the joint interpretation answer branch for questions.',
-            parameters: complete
-                ? createAnswerRespondParameters(getAgentMeasurementMetricIds())
-                : ANSWER_ENTRY_PARAMETERS,
+            description:
+                'Enter read-only answering alone with {}. This publishes no answer and grants no extra turn. Prefer the joint interpretation answer branch for questions.',
+            parameters: ANSWER_ENTRY_PARAMETERS,
         },
     };
+    if (complete) {
+        view.function.description = ANSWER_COMPLETION_DESCRIPTION;
+        view.function.parameters = createAnswerRespondParameters(getAgentMeasurementMetricIds());
+    }
+    return view;
 }

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 
+import { createPlanningProject } from '../../__tests__/planningProjectFixture';
+import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
     createCreativeInterpretationToolSchema,
@@ -36,8 +38,6 @@ import { readAgentResourceLimits } from '../../../stores/agentResourceLimitsStor
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
-import { createPlanningProject } from '../../__tests__/planningProjectFixture';
-import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -367,7 +367,7 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(WEBLLM_TOOL_BUDGET).toBe(38);
+            expect(WEBLLM_TOOL_BUDGET).toBe(37);
             expect(WEBLLM_TOOL_BUDGET).toBeGreaterThanOrEqual(mandatory.size + 1);
             expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
             expect(advertised).toHaveLength(mandatory.size + 1);
@@ -456,10 +456,12 @@ describe('mandatory planning tools', () => {
                     })),
                     thread,
                 });
-                const tools =
-                    phase === 'answer'
-                        ? projectPlanningProviderToolSchemas(getPlanningProviderToolSchemas(), 'answer')
-                        : productionToolSchemas(catalog, context, built.planningBinding, REQUEST);
+                let tools: readonly ToolSchema[];
+                if (phase === 'answer') {
+                    tools = projectPlanningProviderToolSchemas(getPlanningProviderToolSchemas(), 'answer');
+                } else {
+                    tools = productionToolSchemas(catalog, context, built.planningBinding, REQUEST);
+                }
                 const { generateWebLlmToolCalls } = await vi.importActual<
                     typeof import('../../../repositories/webLlm/toolCalling')
                 >('../../../repositories/webLlm/toolCalling');

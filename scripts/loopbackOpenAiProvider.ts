@@ -69,23 +69,20 @@ export function createLoopbackAnswerIntake(
             uncertainty: 'none',
             ...selection,
         };
-        return {
-            id,
-            name: String(definition.name),
-            arguments:
-                definition.name === 'selectCreativeInterpretation'
-                    ? {
-                          catalogId: catalog.const,
-                          modeId: 'read-only',
-                          targetCandidateIds: [],
-                          editDimensionCandidateIds: [],
-                          constraintCandidateIds: [],
-                          creationSlotIds: [],
-                          uncertainty: 'none',
-                          answer,
-                      }
-                    : { catalogId: catalog.const, ...answer },
-        };
+        let argumentsValue: Record<string, unknown> = { catalogId: catalog.const, ...answer };
+        if (definition.name === 'selectCreativeInterpretation') {
+            argumentsValue = {
+                catalogId: catalog.const,
+                modeId: 'read-only',
+                targetCandidateIds: [],
+                editDimensionCandidateIds: [],
+                constraintCandidateIds: [],
+                creationSlotIds: [],
+                uncertainty: 'none',
+                answer,
+            };
+        }
+        return { id, name: String(definition.name), arguments: argumentsValue };
     }
     throw new Error('Answer fixture did not receive the dynamic intake schema.');
 }

@@ -2,17 +2,18 @@ import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useC
 import { compareAgentScopeMeasurements } from '#/modules/AudioAnalysis/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
-import { type AnswerMeasurement, type AnswerOnsets } from '../models/AnswerEvidence';
-import { type AnswerRequestAuthority, type AnswerMetricId } from '../models/AnswerInterpretation';
+import { type AnswerOnsets } from '../models/AnswerEvidence';
+import { ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS, type PlanningAnswer } from '../models/AnswerRespond';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+
 import {
-    ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS,
+    type AnswerMeasurement,
+    type AnswerRequestAuthority,
+    type AnswerMetricId,
     type AnswerMetricReference,
     type AnswerRespondArguments,
     type AnswerStatement,
-    type PlanningAnswer,
-} from '../models/AnswerRespond';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
-
+} from './answerContractTypes';
 import { type RecipeDiscoveryReceiptData } from './discoverMixRecipes';
 
 export type AnswerReadSource =
@@ -75,7 +76,7 @@ const LIMITATIONS = {
 };
 /** Names are attributed data, including digits, units and Markdown metacharacters. */
 function quoteSourceData(value: string): string {
-    return '“' + value.replaceAll(/[\\`*_{}\[\]()<>!#|~]/g, '\\$&').replaceAll(/[\r\n]/g, ' ') + '”';
+    return `“${value.replaceAll(/[\\`*_{}[\]()<>!#|~]/g, '\\$&').replaceAll(/[\r\n]/g, ' ')}”`;
 }
 function formatAnswerNumber(value: number): string {
     if (!Number.isFinite(value)) {
@@ -231,8 +232,13 @@ function projectFact(
                 : `Named sections: ${context.sections!.map((section) => `${quoteSourceData(section.name)}, beats ${formatAnswerNumber(section.startBeat)}–${formatAnswerNumber(section.endBeat)}`).join('; ')}.`;
         case 'transport':
             return `Transport is ${context.isPlaying ? 'playing' : 'stopped'}; recording is ${context.isRecording ? 'on' : 'off'}; looping is ${context.isLooping ? 'on' : 'off'}.`;
-        case 'settings':
-            return `Project fader settings (linear gain, not measured audio): master ${formatAnswerNumber(context.masterGain)}${context.tracks.length === 0 ? '' : '; ' + context.tracks.map((track) => `${quoteSourceData(track.name)} ${formatAnswerNumber(track.gain)}`).join('; ')}.`;
+        case 'settings': {
+            let trackSettings = '';
+            if (context.tracks.length > 0) {
+                trackSettings = `; ${context.tracks.map((track) => `${quoteSourceData(track.name)} ${formatAnswerNumber(track.gain)}`).join('; ')}`;
+            }
+            return `Project fader settings (linear gain, not measured audio): master ${formatAnswerNumber(context.masterGain)}${trackSettings}.`;
+        }
     }
 }
 function recipeText(recipe: RecipeDiscoveryReceiptData['candidates'][number]): string {
@@ -242,16 +248,29 @@ function recipeText(recipe: RecipeDiscoveryReceiptData['candidates'][number]): s
             const descriptor = descriptors
                 .find((entry) => entry.type === step.deviceType)
                 ?.parameters.find((entry) => entry.id === parameter.paramId);
-            return descriptor === undefined ||
+            if (
+                descriptor === undefined ||
                 !Number.isFinite(parameter.minimum) ||
                 !Number.isFinite(parameter.maximum)
-                ? []
-                : [
-                      `${quoteSourceData(descriptor.name)} ${formatAnswerNumber(parameter.minimum)}–${formatAnswerNumber(parameter.maximum)} ${quoteSourceData(descriptor.unit)}`,
-                  ];
+            ) {
+                return [];
+            }
+            return [
+                `${quoteSourceData(descriptor.name)} ${formatAnswerNumber(parameter.minimum)}–${formatAnswerNumber(parameter.maximum)} ${quoteSourceData(descriptor.unit)}`,
+            ];
         })
     );
-    return `The catalog recipe ${quoteSourceData(recipe.title)} describes ${quoteSourceData(recipe.descriptor)} (${quoteSourceData(recipe.effect)}). These are authored suggestions, not measurements of this project.${recipe.prerequisites.length === 0 ? '' : ' Prerequisites: ' + recipe.prerequisites.map(quoteSourceData).join('; ') + '.'}${recipe.contraindications.length === 0 ? '' : ' Contraindications: ' + recipe.contraindications.map(quoteSourceData).join('; ') + '.'}${windows.length === 0 ? '' : ' Authored parameter windows: ' + windows.join('; ') + '.'}`;
+    let text = `The catalog recipe ${quoteSourceData(recipe.title)} describes ${quoteSourceData(recipe.descriptor)} (${quoteSourceData(recipe.effect)}). These are authored suggestions, not measurements of this project.`;
+    if (recipe.prerequisites.length > 0) {
+        text += ` Prerequisites: ${recipe.prerequisites.map(quoteSourceData).join('; ')}.`;
+    }
+    if (recipe.contraindications.length > 0) {
+        text += ` Contraindications: ${recipe.contraindications.map(quoteSourceData).join('; ')}.`;
+    }
+    if (windows.length > 0) {
+        text += ` Authored parameter windows: ${windows.join('; ')}.`;
+    }
+    return text;
 }
 
 type StatementText = { text: string; callIds: string[] };
@@ -304,10 +323,10 @@ function composeRanking(
     }
     const descending = statement.operation === 'descending' || statement.operation === 'maximum';
     resolved.sort((left, right) => (descending ? right.value - left.value : left.value - right.value));
-    const shown =
-        statement.operation === 'minimum' || statement.operation === 'maximum'
-            ? resolved.filter((value) => value.value === resolved[0]!.value)
-            : resolved;
+    let shown = resolved;
+    if (statement.operation === 'minimum' || statement.operation === 'maximum') {
+        shown = resolved.filter((value) => value.value === resolved[0]!.value);
+    }
     const groups = shown.map(
         (value, index) =>
             `${shown[index - 1]?.value === value.value ? 'tied: ' : ''}${describeMetric(value, authority)}`
@@ -375,21 +394,24 @@ function composeStatement(
     const authority = intake.authority;
     switch (statement.kind) {
         case 'limitation':
-            return statement.code === 'measurement-unavailable' && hasCompleteMeasurement(intake, reads)
-                ? null
-                : { text: LIMITATIONS[statement.code], callIds: [] };
+            if (statement.code === 'measurement-unavailable' && hasCompleteMeasurement(intake, reads)) {
+                return null;
+            }
+            return { text: LIMITATIONS[statement.code], callIds: [] };
         case 'project-fact':
-            return authority.kind === 'project-facts' || authority.kind === 'measured-audio'
-                ? { text: projectFact(statement.fact, authority), callIds: [] }
-                : null;
+            if (authority.kind === 'project-facts' || authority.kind === 'measured-audio') {
+                return { text: projectFact(statement.fact, authority), callIds: [] };
+            }
+            return null;
         case 'metric': {
             const value = resolveMetricReference(statement.reference, intake, reads);
-            return value === null
-                ? null
-                : {
-                      text: `${formatRangeLabel(authority)}, ${describeMetric(value, authority)}.`,
-                      callIds: [statement.reference.callId],
-                  };
+            if (value === null) {
+                return null;
+            }
+            return {
+                text: `${formatRangeLabel(authority)}, ${describeMetric(value, authority)}.`,
+                callIds: [statement.reference.callId],
+            };
         }
         case 'difference':
             return composeDifference(statement, intake, reads);
@@ -445,17 +467,17 @@ export function composeMeasuredAnswer(input: {
         return rejection;
     }
     const missingMeasurement = authority.kind === 'measured-audio' && !completeMeasurement;
-    const statements =
-        missingMeasurement || unsupportedTiming
-            ? [
-                  {
-                      text: unsupportedTiming
-                          ? LIMITATIONS['timing-unavailable']
-                          : LIMITATIONS['measurement-unavailable'],
-                      callIds: [],
-                  },
-              ]
-            : document.statements.map((statement) => composeStatement(statement, intake, reads));
+    let statements: Array<StatementText | null>;
+    if (missingMeasurement || unsupportedTiming) {
+        statements = [
+            {
+                text: unsupportedTiming ? LIMITATIONS['timing-unavailable'] : LIMITATIONS['measurement-unavailable'],
+                callIds: [],
+            },
+        ];
+    } else {
+        statements = document.statements.map((statement) => composeStatement(statement, intake, reads));
+    }
     if (statements.some((statement) => statement === null)) {
         return rejection;
     }

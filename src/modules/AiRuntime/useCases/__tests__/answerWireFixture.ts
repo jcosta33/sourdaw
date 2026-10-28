@@ -65,23 +65,20 @@ export function advertisedAnswerIntake(value: unknown, selection: Record<string,
         uncertainty: 'none',
         ...selection,
     };
-    return {
-        id: 'intake',
-        name: schema.name,
-        arguments:
-            schema.name === 'selectCreativeInterpretation'
-                ? {
-                      catalogId: properties.catalogId!.const,
-                      modeId: 'read-only',
-                      targetCandidateIds: [],
-                      editDimensionCandidateIds: [],
-                      constraintCandidateIds: [],
-                      creationSlotIds: [],
-                      uncertainty: 'none',
-                      answer,
-                  }
-                : { catalogId: properties.catalogId!.const, ...answer },
-    };
+    let argumentsValue: Record<string, unknown> = { catalogId: properties.catalogId!.const, ...answer };
+    if (schema.name === 'selectCreativeInterpretation') {
+        argumentsValue = {
+            catalogId: properties.catalogId!.const,
+            modeId: 'read-only',
+            targetCandidateIds: [],
+            editDimensionCandidateIds: [],
+            constraintCandidateIds: [],
+            creationSlotIds: [],
+            uncertainty: 'none',
+            answer,
+        };
+    }
+    return { id: 'intake', name: schema.name, arguments: argumentsValue };
 }
 /** Read the dynamic catalog actually advertised to the controlled provider. */
 export function answerIntakeFromTools(
@@ -147,16 +144,17 @@ export function advertisedAnswerCandidateId(
             const [track, clip] = reference.slice(1).split('.').map(Number);
             return targets[track!]?.clips[clip!]?.id === objectId;
         }
-        const index =
-            family === 'scopes'
-                ? view.scopes.findIndex((row) => row[1].some(matches))
-                : view.ranges.findIndex(
-                      (row) =>
-                          (typeof row === 'string'
-                              ? sections[Number(row.slice(1))]?.name.value
-                              : row[0]
-                          )?.toLowerCase() === objectId.toLowerCase()
-                  );
+        let index: number;
+        if (family === 'scopes') {
+            index = view.scopes.findIndex((row) => row[1].some(matches));
+        } else {
+            index = view.ranges.findIndex((row) => {
+                if (typeof row === 'string') {
+                    return sections[Number(row.slice(1))]?.name.value.toLowerCase() === objectId.toLowerCase();
+                }
+                return row[0].toLowerCase() === objectId.toLowerCase();
+            });
+        }
         const properties = schema.parameters.properties as {
             answer: {
                 anyOf: Array<{
@@ -165,13 +163,15 @@ export function advertisedAnswerCandidateId(
             };
         };
         const answerProperties = properties.answer.anyOf.find((branch) => branch.properties !== undefined)!.properties!;
-        const ids =
-            family === 'scopes'
-                ? answerProperties.scopeCandidateIds!.items!.enum
-                : answerProperties.rangeCandidateId!.enum!.filter((id) => id !== null);
+        let ids: string[];
+        if (family === 'scopes') {
+            ids = answerProperties.scopeCandidateIds!.items!.enum;
+        } else {
+            ids = answerProperties.rangeCandidateId!.enum!.filter((id) => id !== null);
+        }
         const id = ids[index];
         if (index < 0 || typeof id !== 'string') {
-            throw new Error('Missing joint candidate for ' + objectId);
+            throw new Error(`Missing joint candidate for ${objectId}`);
         }
         return id;
     }
@@ -208,9 +208,10 @@ export function advertisedAnswerCandidateId(
                         scopes: Array<[string, string, string[], string[]]>;
                         ranges: Array<[string, string, number, number]>;
                     };
-                    return family === 'scopes'
-                        ? (catalog.scopes.find((row) => row[2].includes(objectId))?.[0] ?? null)
-                        : (catalog.ranges.find((row) => row[1].toLowerCase() === objectId.toLowerCase())?.[0] ?? null);
+                    if (family === 'scopes') {
+                        return catalog.scopes.find((row) => row[2].includes(objectId))?.[0] ?? null;
+                    }
+                    return catalog.ranges.find((row) => row[1].toLowerCase() === objectId.toLowerCase())?.[0] ?? null;
                 }
             }
             return null;
@@ -235,7 +236,7 @@ export function advertisedAnswerCandidateId(
     }
     const id = find(value);
     if (id === null) {
-        throw new Error('Missing advertised answer candidate for ' + objectId);
+        throw new Error(`Missing advertised answer candidate for ${objectId}`);
     }
     return id;
 }

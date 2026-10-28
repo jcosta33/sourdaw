@@ -1,12 +1,12 @@
 import { digest } from '#/utils/canonicalDigest';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type MeasurementAdmitter, type MeasurementFailure } from '../models/MeasurementBudget';
 import { type ProjectContextSection } from '../models/ProjectContext';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
+import { type AnalysisMeasureRead } from './answerContractTypes';
 import { executePreviewMeasurement } from './executePreviewMeasurement';
 import { measureProjectScope, type MeasuredRange, type ReducedTarget } from './measureProjectScope';
 import { parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';

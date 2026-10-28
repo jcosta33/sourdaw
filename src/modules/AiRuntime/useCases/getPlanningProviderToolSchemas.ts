@@ -59,20 +59,23 @@ export function projectPlanningProviderToolSchemas(
     phase: PlanningAnswerPhase,
     profile?: PlanningProfile
 ): ToolSchema[] {
-    const names = new Set([
-        ...READONLY_ANSWER_TOOL_NAMES,
-        ...(profile === 'readonly-answer' ? [] : ['agent.catalog.discover', 'analysis.detectTransients']),
-    ]);
+    const names = new Set(READONLY_ANSWER_TOOL_NAMES);
+    if (profile !== 'readonly-answer') {
+        names.add('agent.catalog.discover');
+        names.add('analysis.detectTransients');
+    }
     return schemas
-        .filter(
-            (schema) =>
-                phase === 'planning' ||
-                (phase === 'intake'
-                    ? ['selectAnswerInterpretation', 'project.query', 'command.batch.decline'].includes(
-                          schema.function.name
-                      )
-                    : names.has(schema.function.name))
-        )
+        .filter((schema) => {
+            if (phase === 'planning') {
+                return true;
+            }
+            if (phase === 'intake') {
+                return ['selectAnswerInterpretation', 'project.query', 'command.batch.decline'].includes(
+                    schema.function.name
+                );
+            }
+            return names.has(schema.function.name);
+        })
         .map((schema) => {
             if (schema.function.name === 'answer.respond') {
                 return projectAnswerRespondToolSchema(schema, phase === 'answer');

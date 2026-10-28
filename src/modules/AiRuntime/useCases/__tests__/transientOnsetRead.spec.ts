@@ -20,6 +20,7 @@ import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
 import { encodeWireToolName } from '../../repositories/cloudLlm/cloudInference/encodeWireToolName';
 import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
 import { getAgentToolCatalogSchemas } from '../agentToolCatalog';
+import { type AnswerStatement } from '../answerContractTypes';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
@@ -373,16 +374,19 @@ function onsetCall(id = 'onsets-1', cursor?: string) {
     return { id, name: READ, arguments: argumentsValue };
 }
 function answer(evidenceCallIds: string[] = []) {
+    let statements: AnswerStatement[];
+    if (evidenceCallIds.length === 0) {
+        statements = [{ kind: 'limitation', code: 'bounded-evidence' }];
+    } else {
+        statements = evidenceCallIds.map((callId) => ({ kind: 'source-onsets', callId }));
+    }
     return [
         {
             id: 'answer',
             name: 'answer.respond',
             arguments: {
                 intakeCallId: 'intake',
-                statements:
-                    evidenceCallIds.length === 0
-                        ? [{ kind: 'limitation', code: 'bounded-evidence' }]
-                        : evidenceCallIds.map((callId) => ({ kind: 'source-onsets', callId })),
+                statements,
             },
         },
     ];

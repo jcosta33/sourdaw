@@ -1,4 +1,3 @@
-import { type AnswerMeasurement } from './AnswerEvidence';
 import { type ApplicationToolReceipt } from './ApplicationOwnedTool';
 import { type MeasuredPreview } from './MeasuredPreview';
 import { type RetainedCommand } from './RetainedCompilation';
@@ -10,7 +9,6 @@ import { type RetainedCommand } from './RetainedCompilation';
  */
 export type AnalysisMeasureRead = {
     receipt: ApplicationToolReceipt;
-    answerMeasurement?: AnswerMeasurement;
     commands: readonly RetainedCommand[] | null;
     measuredPreview: MeasuredPreview | null;
 };

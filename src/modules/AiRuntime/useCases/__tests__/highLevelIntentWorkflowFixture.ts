@@ -348,6 +348,7 @@ export function readCreativeInterpretationCatalog(
     if (!isRecord(properties)) {
         throw new Error('Expected selector properties.');
     }
+    const selectorProperties = properties;
     function resolved(value: unknown): Record<string, unknown> {
         if (!isRecord(value)) {
             throw new Error('Expected a candidate schema.');
@@ -363,7 +364,7 @@ export function readCreativeInterpretationCatalog(
         return value;
     }
     function ids(key: string): string[] {
-        const items = resolved(resolved(properties[key]).items);
+        const items = resolved(resolved(selectorProperties[key]).items);
         if (!Array.isArray(items.enum) || !items.enum.every((id) => typeof id === 'string')) {
             throw new Error('Missing published candidate ids.');
         }
@@ -387,7 +388,9 @@ export function readCreativeInterpretationCatalog(
             objects.set(`c${String(trackIndex)}.${String(clipIndex)}`, clip.id);
         }
     }
-    view.fallback.forEach((row, index) => objects.set(`f${String(index)}`, row[1]));
+    for (const [index, row] of view.fallback.entries()) {
+        objects.set(`f${String(index)}`, row[1]);
+    }
     objects.set('master', 'master');
     const targetIds = ids('targetCandidateIds');
     const dimensionIds = ids('editDimensionCandidateIds');
@@ -395,7 +398,7 @@ export function readCreativeInterpretationCatalog(
     const catalog = resolved(properties.catalogId);
     const modes = resolved(properties.modeId).enum;
     if (typeof catalog.const !== 'string' || !Array.isArray(modes)) {
-        throw new Error('Missing joint catalog binding.');
+        throw new TypeError('Missing joint catalog binding.');
     }
     return {
         catalogId: catalog.const,

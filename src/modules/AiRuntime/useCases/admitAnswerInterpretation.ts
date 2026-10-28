@@ -5,11 +5,12 @@ import {
     ANSWER_TOPICS,
     createAnswerInterpretationToolSchema,
     type AnswerInterpretationCatalog,
-    type AnswerRequestAuthority,
     type AnswerScopeCandidate,
 } from '../models/AnswerInterpretation';
 import { type ToolCallResult } from '../models/ToolCallResult';
 import { matchesJsonSchema } from '../validators/matchesJsonSchema';
+
+import { type AnswerRequestAuthority } from './answerContractTypes';
 
 export type AnswerInterpretationAdmission =
     { status: 'admitted'; authority: AnswerRequestAuthority } | { status: 'clarify' | 'rejected'; reason: string };
@@ -26,17 +27,16 @@ function resolveScopes(catalog: AnswerInterpretationCatalog, ids: unknown): Answ
     const groups = new Map<AnswerScopeCandidate['kind'], AnswerScopeCandidate>();
     for (const scope of selected) {
         const prior = groups.get(scope.kind);
-        groups.set(
-            scope.kind,
-            prior === undefined
-                ? structuredClone(scope)
-                : {
-                      candidateId: `selected-${scope.kind}`,
-                      kind: scope.kind,
-                      objectIds: [...prior.objectIds, ...scope.objectIds],
-                      labels: [...prior.labels, ...scope.labels],
-                  }
-        );
+        if (prior === undefined) {
+            groups.set(scope.kind, structuredClone(scope));
+            continue;
+        }
+        groups.set(scope.kind, {
+            candidateId: `selected-${scope.kind}`,
+            kind: scope.kind,
+            objectIds: [...prior.objectIds, ...scope.objectIds],
+            labels: [...prior.labels, ...scope.labels],
+        });
     }
     return [...groups.values()];
 }
@@ -80,8 +80,8 @@ export function admitAnswerInterpretation(input: {
             (scopes.length === 0 ||
                 scopes.some((scope) => scope.kind !== 'clips') ||
                 range !== null ||
-                topics.length !== 0)) ||
-        ((kind === 'project-facts' || kind === 'catalog-knowledge') && (topics.length !== 0 || range !== null))
+                topics.length > 0)) ||
+        ((kind === 'project-facts' || kind === 'catalog-knowledge') && (topics.length > 0 || range !== null))
     ) {
         return { status: 'rejected', reason: 'Answer interpretation has contradictory kind, scope, range or topics.' };
     }
