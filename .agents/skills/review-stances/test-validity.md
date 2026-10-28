@@ -1664,3 +1664,22 @@ specifically on unused-engine signature verification, not missing fixture depend
 generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
 Remove launcher-ownership admission, composite preparation and the target-version gate separately;
 the original focused checks must reject each mutation while their baseline controls pass.
+
+### Process-catalog fixtures must carry the production transport boundary (#5331)
+
+PR #5331 (`4781fe4e1e`) introduced a controlled process monitor whose nested
+`execFileSync` calls retained Node's smaller default output buffer while the real
+monitor allowed a bounded larger catalog. A valid catalog above that fixture
+limit failed before readiness and hid the actual error behind ignored supervisor
+output and a later wait timeout. Historical private reviewer prompts and tiers
+are unknown; the mechanical gap was an untested nested transport boundary.
+
+Exercise the actual generated monitor with a synthetic valid catalog above the
+old default and below the production ceiling through both forwarding routes.
+Require exact complete bytes, and make the old-default mutation fail. Reject
+over-ceiling output without forwarding partial bytes; reject opaque catalog
+rows before admission. Keep production monitoring unavailable on incomplete
+input. When readiness fails, capture the supervisor's actual error, exit and
+private readiness records before teardown; a later pass does not explain the
+original failure. Use synthetic process data in durable evidence rather than
+publishing real process environment values.

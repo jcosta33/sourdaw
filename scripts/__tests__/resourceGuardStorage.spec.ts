@@ -1,4 +1,4 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
     appendFileSync,
@@ -1284,8 +1284,7 @@ setInterval(() => {}, 1000);
         20_000
     );
 
-    async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
-        const deadline = Date.now() + 20_000;
+    function emptyProcessCensusFixture(holdPreparedRecord: boolean) {
         const root = fixture();
         const marker = join(root, 'empty.json');
         const resultPath = join(root, 'result.json');
@@ -1306,11 +1305,11 @@ setInterval(() => {}, 1000);
 const fs=require('node:fs');const {execFileSync}=require('node:child_process');
 const args=process.argv.slice(2),marker=${JSON.stringify(marker)},rootMarker=${JSON.stringify(rootMarker)},childMarker=${JSON.stringify(childMarker)};
 if(!args.includes('pid=,ppid=,pgid=,rss=,command=')){
- process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8'}));
+ process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8',maxBuffer:16*1024*1024}));
 }else if(fs.existsSync(marker)){
  fs.appendFileSync(${JSON.stringify(samplesPath)},JSON.stringify({empty:true})+'\\n');
 }else{
- const output=execFileSync('/bin/ps',args,{encoding:'utf8'});
+ const output=execFileSync('/bin/ps',args,{encoding:'utf8',maxBuffer:16*1024*1024});
  const rootPid=fs.existsSync(rootMarker)?Number(fs.readFileSync(rootMarker,'utf8')):undefined;
  const rows=output.trimEnd().split('\\n').map(line=>{
   const match=/^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+/.exec(line);
@@ -1346,6 +1345,104 @@ if(!args.includes('pid=,ppid=,pgid=,rss=,command=')){
 `
         );
         chmodSync(fakePs, 0o700);
+        return {
+            root,
+            marker,
+            resultPath,
+            rootMarker,
+            childMarker,
+            admitted,
+            prepared,
+            preparationReady,
+            publishPrepared,
+            samplesPath,
+            bin,
+            fakePs,
+        };
+    }
+
+    function syntheticProcessCatalog(
+        input: ReturnType<typeof emptyProcessCensusFixture>,
+        catalog: string,
+        args: string[]
+    ) {
+        const producer = join(input.root, 'catalog.cjs');
+        const preload = join(input.root, 'catalog-transport.cjs');
+        writeFileSync(producer, `process.stdout.write(${JSON.stringify(catalog)});\n`);
+        writeFileSync(
+            preload,
+            `const cp=require('node:child_process');const execute=cp.execFileSync;
+cp.execFileSync=(file,args,options)=>{
+ if(file!=='/bin/ps')throw new Error('Unexpected fixture transport');
+ return execute(process.execPath,[${JSON.stringify(producer)}],options);
+};\n`
+        );
+        return spawnSync(process.execPath, ['--require', preload, input.fakePs, ...args], {
+            encoding: 'utf8',
+            timeout: 5_000,
+            maxBuffer: 20 * 1024 * 1024,
+        });
+    }
+
+    it.each(['catalog', 'forwarded'])(
+        'forwards a valid process catalog above one MiB through the %s fixture route',
+        (route) => {
+            const input = emptyProcessCensusFixture(false);
+            const catalog = `${process.pid} 1 ${process.pid} 1 ${'synthetic-opaque-command '.repeat(50_000)}end\n`;
+            expect(Buffer.byteLength(catalog)).toBeGreaterThan(1024 * 1024);
+            const args = route === 'catalog' ? ['-axo', 'pid=,ppid=,pgid=,rss=,command='] : ['-p', String(process.pid)];
+            const result = syntheticProcessCatalog(input, catalog, args);
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr.slice(0, 512)).toBe(0);
+            expect(Buffer.byteLength(result.stdout)).toBe(Buffer.byteLength(catalog));
+            expect(Buffer.from(result.stdout).equals(Buffer.from(catalog))).toBe(true);
+            expect(result.stderr).toBe('');
+        }
+    );
+
+    it.each(['catalog', 'forwarded'])(
+        'refuses an over-ceiling process catalog without forwarding partial %s output',
+        (route) => {
+            const input = emptyProcessCensusFixture(false);
+            const catalog = `${process.pid} 1 ${process.pid} 1 ${'x'.repeat(16 * 1024 * 1024 + 65_536)}\n`;
+            const args = route === 'catalog' ? ['-axo', 'pid=,ppid=,pgid=,rss=,command='] : ['-p', String(process.pid)];
+            const result = syntheticProcessCatalog(input, catalog, args);
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+            expect(result.stdout).toBe('');
+            expect(result.stderr).toContain('ENOBUFS');
+        }
+    );
+
+    it('refuses opaque process catalog output before publishing a readiness record', () => {
+        const input = emptyProcessCensusFixture(false);
+        const result = syntheticProcessCatalog(input, 'not a process catalog\n', [
+            '-axo',
+            'pid=,ppid=,pgid=,rss=,command=',
+        ]);
+        expect(result.error).toBeUndefined();
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('unusable controlled monitor row');
+        expect(existsSync(input.admitted)).toBe(false);
+        expect(existsSync(input.preparationReady)).toBe(false);
+    });
+
+    async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
+        const deadline = Date.now() + 20_000;
+        const {
+            root,
+            marker,
+            resultPath,
+            rootMarker,
+            childMarker,
+            admitted,
+            prepared,
+            preparationReady,
+            publishPrepared,
+            samplesPath,
+            bin,
+        } = emptyProcessCensusFixture(holdPreparedRecord);
         const descendant = `
 const fs=require('node:fs');const {execFileSync}=require('node:child_process');
 fs.writeFileSync(${JSON.stringify(childMarker)},String(process.pid));
