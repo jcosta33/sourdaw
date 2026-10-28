@@ -53,7 +53,7 @@ export type {
 
 // @see ../.agents/skills/delivery-orchestration/historical-stack-admission.md
 export const SYNC_PARENT_USAGE =
-    'usage: pnpm lane:sync-parent --lane <absolute-child-lane> [--admit-historical --child-pr <number> --parent-pr <number> --expected-head <sha>]';
+    'usage: pnpm lane:sync-parent --lane <absolute-child-lane> [--admit-historical --child-pr <number> --parent-pr <number> --expected-head <sha> [--legacy-fork <sha>]]';
 
 const fullSha = /^[0-9a-f]{40}$/;
 
@@ -151,6 +151,18 @@ function historicalStackQuery(child: number, parent: number): string[] {
     ];
 }
 
+function assertLegacyFork(input: HistoricalAdmissionInput, descriptor: LaneStack, markers: string[]): void {
+    if (
+        input.legacyFork !== undefined &&
+        (!fullSha.test(input.legacyFork) ||
+            input.legacyFork !== descriptor.forkHead ||
+            markers.length !== 1 ||
+            markers[0] !== input.legacyFork)
+    ) {
+        fail('historical legacy fork must match the proven creation anchor and sole existing marker');
+    }
+}
+
 export function admitHistoricalStack(input: HistoricalAdmissionInput, port: HistoricalAdmissionPort): LaneStack {
     if (!port.clean() || port.head() !== input.expectedHead) {
         fail('historical child is dirty, foreign or changed');
@@ -164,9 +176,10 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
     const prior = port.readReceipt();
     const stored = port.readDescriptor();
     const initialMarkers = port.markers();
+    assertLegacyFork(input, descriptor, initialMarkers);
     let receiptSnapshot = JSON.stringify(prior);
     let markerSnapshot = JSON.stringify(initialMarkers);
-    const descriptorSnapshot = JSON.stringify(stored);
+    let descriptorSnapshot = JSON.stringify(stored);
     descriptor = descriptorForHistoricalReplay(input, descriptor, prior, stored, initialMarkers, port);
     const registered = historicalRegisteredDescriptor(
         descriptor,
@@ -208,7 +221,7 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
         fail('historical admission receipt changed');
     }
     revalidate();
-    if (port.markers().length === 0) {
+    if (input.legacyFork === undefined && port.markers().length === 0) {
         port.addMarker(descriptor.forkHead);
     }
     markerSnapshot = JSON.stringify([descriptor.forkHead]);
@@ -237,6 +250,8 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
     ) {
         fail('historical descriptor installation failed');
     }
+    descriptorSnapshot = JSON.stringify(registered);
+    revalidate();
     // Return the immutable admission; synchronization owns later registered parent-head progress.
     return descriptor;
 }
@@ -260,29 +275,14 @@ function installExclusiveJson(path: string, value: unknown): void {
     }
 }
 
-export function parseSyncParentArgs(args: string[]): {
-    lane: string;
-    admission?: Omit<HistoricalAdmissionInput, 'branch'>;
-} {
-    const lane = args[1];
-    if (args[0] !== '--lane' || lane === undefined || !isAbsolute(lane)) {
-        fail(SYNC_PARENT_USAGE);
-    }
-    if (args.length === 2) {
-        return { lane };
-    }
-    if (
-        args.length !== 9 ||
-        args[2] !== '--admit-historical' ||
-        args[3] !== '--child-pr' ||
-        args[5] !== '--parent-pr' ||
-        args[7] !== '--expected-head'
-    ) {
-        fail(SYNC_PARENT_USAGE);
-    }
+function parseHistoricalAdmissionArgs(args: string[]): Omit<HistoricalAdmissionInput, 'branch'> {
     const child = args[4];
     const parent = args[6];
     const head = args[8];
+    const legacyFork = args[10];
+    if (args.length === 11 && (args[9] !== '--legacy-fork' || legacyFork === undefined || !fullSha.test(legacyFork))) {
+        fail(SYNC_PARENT_USAGE);
+    }
     if (
         child === undefined ||
         parent === undefined ||
@@ -296,10 +296,38 @@ export function parseSyncParentArgs(args: string[]): {
     ) {
         fail(SYNC_PARENT_USAGE);
     }
-    return {
-        lane,
-        admission: { childPullRequest: Number(child), parentPullRequest: Number(parent), expectedHead: head },
+    const admission: Omit<HistoricalAdmissionInput, 'branch'> = {
+        childPullRequest: Number(child),
+        parentPullRequest: Number(parent),
+        expectedHead: head,
     };
+    if (legacyFork !== undefined) {
+        admission.legacyFork = legacyFork;
+    }
+    return admission;
+}
+
+export function parseSyncParentArgs(args: string[]): {
+    lane: string;
+    admission?: Omit<HistoricalAdmissionInput, 'branch'>;
+} {
+    const lane = args[1];
+    if (args[0] !== '--lane' || lane === undefined || !isAbsolute(lane)) {
+        fail(SYNC_PARENT_USAGE);
+    }
+    if (args.length === 2) {
+        return { lane };
+    }
+    if (
+        (args.length !== 9 && args.length !== 11) ||
+        args[2] !== '--admit-historical' ||
+        args[3] !== '--child-pr' ||
+        args[5] !== '--parent-pr' ||
+        args[7] !== '--expected-head'
+    ) {
+        fail(SYNC_PARENT_USAGE);
+    }
+    return { lane, admission: parseHistoricalAdmissionArgs(args) };
 }
 
 export function historicalAdmissionShellPort(

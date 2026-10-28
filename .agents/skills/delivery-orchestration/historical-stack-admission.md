@@ -7,6 +7,14 @@ its original parent through the protected primary route:
 pnpm lane:sync-parent --lane <absolute-child-lane> --admit-historical --child-pr <child> --parent-pr <parent> --expected-head <full-child-sha>
 ```
 
+For a child with no descriptor or admission receipt but exactly one legacy fork marker, append
+`--legacy-fork <full-lowercase-fork-sha>` after the complete admission arguments. This opt-in must
+name both the sole existing marker and the independently proven native creation anchor. It never
+replaces, adds, deduplicates or removes a marker. Missing, duplicate, foreign or contradictory
+markers refuse; a descriptor without a receipt still refuses. Omitting the option keeps the original
+marker-only refusal. A matching receipt or completed admission may replay with the option, but the
+named fork and sole marker must still match the independently proven anchor on every invocation.
+
 This explicit mode records lineage only. Then use ordinary `lane:sync-parent --lane <child>` to
 merge parent history. Both PRs must remain open, same-repository author-App PRs. Complete all-state
 head-ref queries must identify exactly those original PRs. The child's original parent link is
@@ -30,3 +38,11 @@ ordinary publication, review, closure and synchronization through their common r
 reader. Repeat the exact admission to finish a matching interruption or replay matching completion;
 conflicting records are never overwritten. The receipt remains as evidence, while ordinary native
 sync may advance the descriptor's parent head without changing its recorded parent/fork/PR identity.
+
+Legacy-marker admission writes the same version-1 immutable receipt first and the same descriptor
+last, preserving the existing marker and native histories. There is no new stored format, so old
+readers remain compatible and refuse incomplete registration. A failure retains the journal for
+forward replay with the exact admission arguments; never delete partial records to retry. Rolling
+back the tooling leaves existing data unchanged and may leave admission incomplete. Removing any
+retained evidence would require a separate owner-controlled decision outside this procedure; this
+recovery has no destructive rollback or contraction stage.
