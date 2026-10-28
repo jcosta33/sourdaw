@@ -345,6 +345,12 @@ landed entry and exactly one settled gesture through Transport's public count co
 Project's owed-save comparison. All-refused adds zero; downstream count filtering cannot prove
 that either Stop caller rejected registration.
 
+### 2026-10-27 — audio capture authority must survive the real commit queue (issue #5517)
+
+The scheduler audio terminal originated in `4f410257b212` (no associated PR), gained failed-capture removal in PR #4270 (`9a0cbea8d62b`) and semantic commit/catch discard in PR #4564 (`40c5218228c5`). PR #5373 (`eecc1c5a8457`) explicitly deferred audio queue and scheduler authority; PR #5658 (`71e358df7415`) covered Stop only. Historical reviewer prompts and tiers are unknown. A callback-entry guard cannot own a later queued invocation or the actual action wait. Captured-take placement also writes synchronously before dispatch.
+
+Capture the opening root for every audio terminal. With the real commit and command executor, hold an active snapshot transaction without reserving root, observe the real unresolved action wait, publicly replace/project a clone carrying the same provisional clip ID, then release. Neither raw/projected clips, takes, durable action history, undo stacks/tree nor the actual session mirror may change; the notice must report refusal. Pair real same-root completed takes and remove only the post-wait guard to require failure. Separately replace before queued invocation with nontrivial staged passes: no pre-dispatch placement may reach the successor. A false execution guard must have a caller-visible refusal rather than silently resolving as success.
+
 ## Legacy inverse refusal must reach the history consumer
 
 The pre-#5578 trim handler records inverses without an offset capture. The current handler
