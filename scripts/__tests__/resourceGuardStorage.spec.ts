@@ -4457,15 +4457,22 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         }
     });
 
-    it.skipIf(process.platform !== 'darwin').each([
-        { payload: 'outside', type: 'REG', expected: 'dead' },
-        { payload: 'original', type: 'REG', expected: 'alive' },
-        { payload: 'moved claim', type: 'REG', expected: 'alive' },
-        { payload: 'original', type: 'DIR', expected: 'alive' },
-        { payload: 'moved claim', type: 'DIR', expected: 'alive' },
-    ])(
-        'inspects complete Darwin fileport paths: $type $payload',
-        async ({ payload, type, expected }) => {
+    it.skipIf(process.platform !== 'darwin').each(
+        [
+            { payload: 'outside', type: 'REG', expected: 'dead' },
+            { payload: 'original', type: 'REG', expected: 'alive' },
+            { payload: 'moved claim', type: 'REG', expected: 'alive' },
+            { payload: 'original', type: 'DIR', expected: 'alive' },
+            { payload: 'moved claim', type: 'DIR', expected: 'alive' },
+            { payload: 'outside', type: 'LINK', expected: 'dead' },
+            { payload: 'original', type: 'LINK', expected: 'alive' },
+            { payload: 'moved claim', type: 'LINK', expected: 'alive' },
+            { payload: 'original', type: 'LINK', expected: 'alive', deleted: true },
+            { payload: 'moved claim', type: 'LINK', expected: 'alive', deleted: true },
+        ].map((testCase) => ({ deleted: false, ...testCase }))
+    )(
+        'inspects complete Darwin fileport paths: $type $payload deleted=$deleted',
+        async ({ payload, type, expected, deleted }) => {
             const root = fixture();
             const bin = join(root, 'bin');
             mkdirSync(bin);
@@ -4497,7 +4504,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                     const claims=join(root,'.claims');const claim=join(claims,readdirSync(claims)[0]);
                     current=join(claim,readdirSync(claim).find(name=>name!=='claim.json'),'tmp');
                 }
-                const path=${JSON.stringify(payload)}==='outside'?${JSON.stringify(root)}:${JSON.stringify(type)}==='DIR'?current:join(current,'held');
+                const name=${JSON.stringify(type === 'LINK' ? `held link ${'long '.repeat(30)}` : 'held')};
+                const path=(${JSON.stringify(payload)}==='outside'?${JSON.stringify(root)}:${JSON.stringify(type)}==='DIR'?current:join(current,name))+${JSON.stringify(deleted ? ' (deleted)' : '')};
                 writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path,type:${JSON.stringify(type)}}));
                 const state=storageFileState([storage.tempDirectory,current],[]);
                 let released;
@@ -4528,6 +4536,30 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         },
         15_000
     );
+
+    it('retains absolute symbolic-link paths in a complete census', () => {
+        const link = `/outside/held link ${'long '.repeat(30)} (deleted)`;
+        const catalog = `p10\0\nf5\0tLINK\0n${link}\0\nf6\0tREG\0n/outside/file\0\nf7\0tDIR\0n/outside/directory\0\n`;
+        expect(parseLsofCensus(catalog)).toEqual({
+            pids: new Set([10]),
+            paths: [link, '/outside/file', '/outside/directory'],
+        });
+    });
+
+    it.each([
+        { fields: 'f5\0tLINK', reason: 'missing-file-path' },
+        { fields: 'f5\0tLINK\0n', reason: 'missing-file-path' },
+        { fields: 'f5\0tLINK\0nrelative/link', reason: 'missing-file-path' },
+        { fields: 'f5\0tLINK\0n/denied (readlink: Permission denied)', reason: 'file-inspection-diagnostic' },
+        { fields: 'f5\0tLINK\0n/held\0n/other', reason: 'invalid-file-fields' },
+        { fields: 'f5\0tLINK\0n/held\0xopaque', reason: 'invalid-file-fields' },
+        { fields: 'f5\0n/held', reason: 'descriptor-type-missing' },
+        { fields: 'f5\0tunknown\0n/held', reason: 'unknown-file-type' },
+    ])('rejects uncertain symbolic-link evidence: $reason', ({ fields, reason }) => {
+        const reasons: string[] = [];
+        expect(parseLsofCensus(`p10\0\n${fields}\0\n`, (value) => reasons.push(value))).toBeUndefined();
+        expect(reasons).toEqual([reason]);
+    });
 
     it('parses complete NUL file records and rejects malformed, truncated or opaque file evidence', () => {
         const valid = 'p10\0\nfcwd\0tDIR\0n/owned/tmp\0\nf3\0tREG\0n/owned/tmp/held\0\n';
