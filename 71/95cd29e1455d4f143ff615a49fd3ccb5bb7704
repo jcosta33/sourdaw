@@ -1,0 +1,24 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_59e31a5c6f3e31::t_8bb76340b2773b 15-23,65,73,245-247,259,330-394
+  s_59e31a5c6f3e31::t_dac6c7f031db39 395
+src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts
+  s_59e31a5c6f3e31::t_8bb76340b2773b 39
+src/modules/Project/useCases/projectPersistence/fileIO/projectOriginalMediaArchive.ts
+  s_59e31a5c6f3e31::t_8bb76340b2773b 36-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7195cd29e1455d4f143ff615a49fd3ccb5bb7704",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
