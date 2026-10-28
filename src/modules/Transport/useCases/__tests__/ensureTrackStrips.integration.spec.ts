@@ -225,7 +225,11 @@ describe('project strip initialization before bus facade and send publication', 
         const target = createTrack({ id: 'target', name: 'Dormant VCA', kind: 'audio' });
         Object.defineProperty(target, 'kind', { value: 'vca' });
         source.sends = [{ busId: target.id, level: 0.5, preFader: true }];
-        installTracks([source, target]);
+        // Restore sanitizes legacy kinds. Exercise the legacy current projection
+        // directly, as the existing projector admission specs do.
+        configureAutomergeStoragePort(null);
+        trackStore.set({ tracks: [source, target], selectedTrackId: null });
+        expect(trackStore.value?.tracks.find((track) => track.id === target.id)).toMatchObject({ kind: 'vca' });
         expect(ensureTrackStrips().status).toBe('ready');
         expect(audioEngine.getTrackStrip(source.id)).toBeDefined();
         expect(audioEngine.getTrackStrip(target.id)).toBeUndefined();
