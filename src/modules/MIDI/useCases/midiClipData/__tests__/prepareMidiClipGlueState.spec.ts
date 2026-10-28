@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SEQUENCER_TICK_BEATS } from '../../../models/SequencerTick';
 import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => ({
@@ -11,10 +12,20 @@ vi.mock('../../../stores/midiStore', () => ({
         get value(): MidiStoreStateInput | null {
             return mocks.state.value;
         },
+        set: vi.fn((next: MidiStoreStateInput | null) => {
+            mocks.state.value = next;
+        }),
     },
 }));
 
+const { addMidiCC } = await import('../../midiEvent/addMidiCC');
+const { removeHandEditedReturnFamily } = await import('../../midiEvent/removeHandEditedReturnFamily');
+const { removeMidiCC } = await import('../../midiEvent/removeMidiCC');
+const { restoreMidiCCPoints } = await import('../../midiEvent/restoreMidiCCPoints');
+const { revisitHandEditedCCReturns } = await import('../../midiEvent/revisitHandEditedCCReturns');
+const { createStoredBendRangeReader } = await import('../createStoredBendRangeReader');
 const { prepareMidiClipGlueState } = await import('../prepareMidiClipGlueState');
+const { projectChannelBend } = await import('../projectChannelBend');
 
 const sources = [
     { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
@@ -173,8 +184,8 @@ describe('prepareMidiClipGlueState', () => {
             },
             pitchBendByClipId: {
                 'source-a': [
-                    { id: 'z-down', value: -0.5, beat: 3, channel: 0 },
-                    { id: 'a-up', value: 0.5, beat: 3, channel: 0 },
+                    { id: 'z-down', value: -4096, beat: 3, channel: 0 },
+                    { id: 'a-up', value: 4096, beat: 3, channel: 0 },
                 ],
             },
         };
@@ -189,8 +200,8 @@ describe('prepareMidiClipGlueState', () => {
             ['b-press', 5, 127],
         ]);
         expect(target?.data.pitchBends.value.map(({ id, value }) => [id, value])).toEqual([
-            ['z-down', -0.5],
-            ['a-up', 0.5],
+            ['z-down', -4096],
+            ['a-up', 4096],
         ]);
     });
 
@@ -332,8 +343,8 @@ describe('prepareMidiClipGlueState', () => {
             },
             pitchBendByClipId: {
                 'source-b': [
-                    { id: 'bend-hidden', value: 0.25, beat: 1, channel: 2 },
-                    { id: 'bend-late', value: 0.75, beat: 5, channel: 2 },
+                    { id: 'bend-hidden', value: 2048, beat: 1, channel: 2 },
+                    { id: 'bend-late', value: 6144, beat: 5, channel: 2 },
                 ],
             },
         };
@@ -350,8 +361,682 @@ describe('prepareMidiClipGlueState', () => {
             ['at-start', 6, 40],
         ]);
         expect(target?.data.pitchBends.value.map(({ id, beat, value }) => [id, beat, value])).toEqual([
-            ['bend-hidden', 6, 0.25],
-            ['bend-late', 9, 0.75],
+            ['bend-hidden', 6, 2048],
+            ['bend-late', 9, 6144],
         ]);
+    });
+
+    describe('the bend range a registered parameter declared', () => {
+        type Row = { id: string; beat: number; controller: number; value: number; channel: number };
+
+        function row(id: string, beat: number, controller: number, value: number): Row {
+            return { id, beat, controller, value, channel: 0 };
+        }
+
+        /** RPN 0 = `semitones`, then the Null RPN a controller sends after a data entry. */
+        function nullTerminatedRange(prefix: string, beat: number, semitones: number): Row[] {
+            return [
+                row(`${prefix}-msb`, beat, 101, 0),
+                row(`${prefix}-lsb`, beat + 0.25, 100, 0),
+                row(`${prefix}-data-msb`, beat + 0.5, 6, semitones),
+                row(`${prefix}-data-lsb`, beat + 0.75, 38, 0),
+                row(`${prefix}-null-msb`, beat + 1, 101, 127),
+                row(`${prefix}-null-lsb`, beat + 1.25, 100, 127),
+            ];
+        }
+
+        /** The depth each move of the glued clip's channel bend plays under. */
+        function rangesPlayed(plan: ReturnType<typeof prepareMidiClipGlueState>) {
+            const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+            return projectChannelBend({
+                clips: [
+                    {
+                        clip: { startBeat: 0, endBeat: 8 },
+                        controlChanges: target?.data.controlChanges.value ?? [],
+                        pitchBends: target?.data.pitchBends.value ?? [],
+                    },
+                ],
+                frameAtBeat: (beat) => beat * 24_000,
+            }).map(({ beat, rangeSemitones }) => ({ beat, rangeSemitones }));
+        }
+
+        it('plays a source trimmed after the take declared its range at the range the source played', () => {
+            mocks.state.value = {
+                notesByClipId: {},
+                ccByClipId: { 'source-a': nullTerminatedRange('range', 0.5, 12) },
+                pitchBendByClipId: { 'source-a': [{ id: 'bend', value: 4096, beat: 3, channel: 0 }] },
+            };
+            const trimmed = [
+                { clipId: 'source-a', beatOffset: -2, visibleStartBeat: 2, visibleEndBeat: 4 },
+                { clipId: 'source-b', beatOffset: 2, visibleStartBeat: 0, visibleEndBeat: 4 },
+            ];
+
+            const plan = prepareMidiClipGlueState({ sources: trimmed, targetClipId: 'target' });
+            const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+            expect(rangesPlayed(plan)).toEqual([{ beat: 1, rangeSemitones: 12 }]);
+            // The declaration opens the window where it starts in the glued clip; the next source's head, where
+            // the range the trimmed source declared is returned to the default, is on the seam at beat 2.
+            expect(target?.data.controlChanges.value.map(({ beat }) => beat)).toEqual([
+                0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2,
+            ]);
+            expect(new Set(target?.data.controlChanges.value.map(({ id }) => id)).size).toBe(12);
+        });
+
+        it('reads the rows of the sources in beat order, whatever order they are stored in', () => {
+            mocks.state.value = {
+                notesByClipId: {},
+                ccByClipId: { 'source-a': nullTerminatedRange('range', 0.5, 12).toReversed() },
+                pitchBendByClipId: { 'source-b': [{ id: 'bend-b', value: 4096, beat: 1, channel: 0 }] },
+            };
+
+            const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+
+            expect(rangesPlayed(plan)).toEqual([{ beat: 5, rangeSemitones: 2 }]);
+        });
+
+        it('counts a message on the window start once: it is the window’s own row, not one the window is cut away from', () => {
+            mocks.state.value = {
+                notesByClipId: {},
+                ccByClipId: {
+                    'source-a': [
+                        row('rpn-msb', 0.5, 101, 0),
+                        row('rpn-lsb', 0.75, 100, 0),
+                        row('data-msb', 1, 6, 2),
+                        row('increment-on-start', 2, 96, 0),
+                    ],
+                },
+                pitchBendByClipId: { 'source-a': [{ id: 'bend', value: 4096, beat: 3, channel: 0 }] },
+            };
+            const trimmed = [
+                { clipId: 'source-a', beatOffset: -2, visibleStartBeat: 2, visibleEndBeat: 4 },
+                { clipId: 'source-b', beatOffset: 2, visibleStartBeat: 0, visibleEndBeat: 4 },
+            ];
+
+            const plan = prepareMidiClipGlueState({ sources: trimmed, targetClipId: 'target' });
+
+            expect(rangesPlayed(plan)).toEqual([{ beat: 1, rangeSemitones: 3 }]);
+        });
+
+        it('plays a source that declared no range at the default, not at the range of the source before it', () => {
+            mocks.state.value = {
+                notesByClipId: {},
+                ccByClipId: { 'source-a': nullTerminatedRange('range', 0.5, 12) },
+                pitchBendByClipId: {
+                    'source-a': [{ id: 'bend-a', value: 4096, beat: 3, channel: 0 }],
+                    'source-b': [{ id: 'bend-b', value: 4096, beat: 1, channel: 0 }],
+                },
+            };
+
+            const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+
+            expect(rangesPlayed(plan)).toEqual([
+                { beat: 3, rangeSemitones: 12 },
+                { beat: 5, rangeSemitones: 2 },
+            ]);
+        });
+
+        it('plays each source at the range it declared itself', () => {
+            mocks.state.value = {
+                notesByClipId: {},
+                ccByClipId: {
+                    'source-a': nullTerminatedRange('range-a', 0.5, 12),
+                    'source-b': nullTerminatedRange('range-b', 0.5, 24),
+                },
+                pitchBendByClipId: {
+                    'source-a': [{ id: 'bend-a', value: 4096, beat: 3, channel: 0 }],
+                    'source-b': [{ id: 'bend-b', value: 4096, beat: 3, channel: 0 }],
+                },
+            };
+
+            const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+
+            expect(rangesPlayed(plan)).toEqual([
+                { beat: 3, rangeSemitones: 12 },
+                { beat: 7, rangeSemitones: 24 },
+            ]);
+        });
+
+        describe('a bend the trimmed source carries onto its window start', () => {
+            /** RPN 0 = `semitones`, every message on `beat`. */
+            function rangeAt(prefix: string, beat: number, semitones: number): Row[] {
+                return [
+                    row(`${prefix}-msb`, beat, 101, 0),
+                    row(`${prefix}-lsb`, beat, 100, 0),
+                    row(`${prefix}-data-msb`, beat, 6, semitones),
+                    row(`${prefix}-data-lsb`, beat, 38, 0),
+                ];
+            }
+
+            const recordedUnderTwelve = [...rangeAt('twelve', 0.1, 12), ...rangeAt('two', 1.3, 2)];
+            const carried = { id: 'carried', value: 8191, beat: 1.2, channel: 0 };
+            const trimmedSources = [
+                { clipId: 'source-a', beatOffset: -1.35, visibleStartBeat: 1.35, visibleEndBeat: 4 },
+                { clipId: 'source-b', beatOffset: 2.65, visibleStartBeat: 0, visibleEndBeat: 4 },
+            ];
+
+            /** The depth each move of source A's bend plays under, on the clip trimmed to start at content beat 1.35. */
+            function rangesTheTrimmedSourcePlayed(
+                controlChanges: readonly Row[],
+                pitchBends: readonly (typeof carried)[]
+            ) {
+                return projectChannelBend({
+                    clips: [
+                        { clip: { startBeat: 0, endBeat: 2.65, midiOffsetBeats: 1.35 }, controlChanges, pitchBends },
+                    ],
+                    frameAtBeat: (beat) => beat * 24_000,
+                }).map(({ beat, rangeSemitones }) => ({ beat, rangeSemitones }));
+            }
+
+            it('plays the carried bend at the range its row was recorded under, as the trimmed source did', () => {
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': recordedUnderTwelve },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+
+                const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+
+                expect(rangesTheTrimmedSourcePlayed(recordedUnderTwelve, [carried])).toEqual([
+                    { beat: 0, rangeSemitones: 12 },
+                ]);
+                expect(rangesPlayed(plan)).toEqual([{ beat: 0, rangeSemitones: 12 }]);
+            });
+
+            it('plays the window’s own later rows at the range in force at the window start', () => {
+                const later = { id: 'later', value: 4096, beat: 2, channel: 0 };
+                const dataEntry = row('data-entry-after', 3, 6, 5);
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': [...recordedUnderTwelve, dataEntry] },
+                    pitchBendByClipId: {
+                        'source-a': [carried, later, { id: 'after-data-entry', value: 4096, beat: 3.5, channel: 0 }],
+                    },
+                };
+
+                const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+                const played = [
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: 2 - 1.35, rangeSemitones: 2 },
+                    { beat: 3.5 - 1.35, rangeSemitones: 5 },
+                ];
+
+                expect(
+                    rangesTheTrimmedSourcePlayed(
+                        [...recordedUnderTwelve, dataEntry],
+                        mocks.state.value.pitchBendByClipId['source-a'] ?? []
+                    )
+                ).toEqual(played);
+                expect(rangesPlayed(plan)).toEqual(played);
+            });
+
+            /** The depth each bend of the glued clip plays under, with `added` drawn onto it after the glue. */
+            function rangesPlayedWith(plan: ReturnType<typeof prepareMidiClipGlueState>, added: typeof carried) {
+                const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+                const gluedBends = target?.data.pitchBends.value ?? [];
+                return projectChannelBend({
+                    clips: [
+                        {
+                            clip: { startBeat: 0, endBeat: 8 },
+                            controlChanges: target?.data.controlChanges.value ?? [],
+                            pitchBends: [...gluedBends, added],
+                        },
+                    ],
+                    frameAtBeat: (beat) => beat * 24_000,
+                }).map(({ beat, rangeSemitones }) => ({ beat, rangeSemitones }));
+            }
+
+            it.each([
+                { name: 'no row of its own after the window start', controlChanges: recordedUnderTwelve },
+                {
+                    name: 'its first row of its own after the added bend',
+                    controlChanges: [...recordedUnderTwelve, row('volume-after', 3.5, 7, 100)],
+                },
+            ])(
+                'plays a bend added after the carried one at the range in force at the window start, with $name',
+                ({ controlChanges }) => {
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { 'source-a': controlChanges },
+                        pitchBendByClipId: { 'source-a': [carried] },
+                    };
+
+                    const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+
+                    expect(rangesPlayedWith(plan, { id: 'added', value: 4096, beat: 1, channel: 0 })).toEqual([
+                        { beat: 0, rangeSemitones: 12 },
+                        { beat: 1, rangeSemitones: 2 },
+                    ]);
+                }
+            );
+
+            it.each([
+                { name: 'two ticks after the window start', addedBeat: 2 * SEQUENCER_TICK_BEATS },
+                { name: 'half a beat after the window start', addedBeat: 0.5 },
+                { name: 'just under a beat after the window start', addedBeat: 1 - SEQUENCER_TICK_BEATS },
+            ])('reads the state at the window start for a bend drawn $name', ({ addedBeat }) => {
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': recordedUnderTwelve },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+
+                const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+
+                expect(rangesPlayedWith(plan, { id: 'added', value: 4096, beat: addedBeat, channel: 0 })).toEqual([
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: addedBeat, rangeSemitones: 2 },
+                ]);
+            });
+
+            it('honors an equal-value hand range after writer fine rows were deleted from a later glued head', () => {
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': rangeAt('prior', 0.1, 12), 'source-b': recordedUnderTwelve },
+                    pitchBendByClipId: { 'source-b': [carried] },
+                };
+                const plan = prepareMidiClipGlueState({
+                    sources: [
+                        { clipId: 'source-a', beatOffset: -1, visibleStartBeat: 1, visibleEndBeat: 3 },
+                        { clipId: 'source-b', beatOffset: 2 - 1.35, visibleStartBeat: 1.35, visibleEndBeat: 4 },
+                    ],
+                    targetClipId: 'target',
+                });
+                const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+                expect(target).toBeDefined();
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { target: Array.from(target!.data.controlChanges.value) },
+                    pitchBendByClipId: { target: Array.from(target!.data.pitchBends.value) },
+                };
+                const fineRows = (mocks.state.value.ccByClipId.target ?? []).filter(
+                    (row) => row.beat === 2 && row.controller === 38 && row.id.includes(':rpn-')
+                );
+                expect(fineRows).toHaveLength(2);
+                for (const row of fineRows) {
+                    removeMidiCC('target', row.id);
+                    revisitHandEditedCCReturns(
+                        'target',
+                        { channel: 0, beat: 2 },
+                        { editedController: 38, editedRowId: row.id }
+                    );
+                }
+                addMidiCC('target', 6, 12, 2, 0);
+                expect(createStoredBendRangeReader(mocks.state.value.ccByClipId.target ?? [])(0, 3)).toBe(12);
+            });
+
+            it.each([
+                { name: 'first head', editedSource: 0, expectedRange: 5, protectedSource: 1 },
+                {
+                    name: 'next head coincident with the preceding return',
+                    editedSource: 1,
+                    expectedRange: 7,
+                    protectedSource: 0,
+                },
+            ])(
+                'keeps the neighboring return family when editing the $name',
+                ({ editedSource, expectedRange, protectedSource }) => {
+                    const length = 1 / 2000;
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: {
+                            'source-a': recordedUnderTwelve,
+                            'source-b': [
+                                ...rangeAt('nine', 0.1, 9),
+                                ...rangeAt('five', 1.3, 5),
+                                row('b-volume', 1.35025, 7, 100),
+                            ],
+                        },
+                        pitchBendByClipId: { 'source-a': [carried], 'source-b': [{ ...carried, id: 'b-carried' }] },
+                    };
+                    const plan = prepareMidiClipGlueState({
+                        sources: [
+                            {
+                                clipId: 'source-a',
+                                beatOffset: -1.35,
+                                visibleStartBeat: 1.35,
+                                visibleEndBeat: 1.35 + length,
+                            },
+                            {
+                                clipId: 'source-b',
+                                beatOffset: length - 1.35,
+                                visibleStartBeat: 1.35,
+                                visibleEndBeat: 4,
+                            },
+                        ],
+                        targetClipId: 'target',
+                    });
+                    const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+                    expect(target).toBeDefined();
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { target: Array.from(target!.data.controlChanges.value) },
+                        pitchBendByClipId: { target: Array.from(target!.data.pitchBends.value) },
+                    };
+                    const headRows = (mocks.state.value.ccByClipId.target ?? []).filter(
+                        ({ id }) =>
+                            id.startsWith(`cc-glue:target:${editedSource}:rpn-`) && !id.includes('rpn-after-carried')
+                    );
+                    expect(headRows.length).toBeGreaterThan(0);
+                    const editedBeat = Math.min(...headRows.map(({ beat }) => beat));
+                    const nextReturn = (mocks.state.value.ccByClipId.target ?? []).filter(
+                        (row) =>
+                            row.id.startsWith(`cc-glue:target:${protectedSource}:rpn-after-carried`) &&
+                            !(row.beat === editedBeat && row.controller === 6 && row.channel === 0)
+                    );
+                    expect(nextReturn.length).toBeGreaterThan(0);
+                    const read = () => {
+                        const pitchBends = mocks.state.value?.pitchBendByClipId.target ?? [];
+                        return projectChannelBend({
+                            clips: [
+                                {
+                                    clip: { startBeat: 0, endBeat: 8 },
+                                    controlChanges: mocks.state.value?.ccByClipId.target ?? [],
+                                    pitchBends: [...pitchBends, { id: 'later', value: 4096, beat: 1, channel: 0 }],
+                                },
+                            ],
+                            frameAtBeat: (beat) => beat * 24_000,
+                        }).find(({ beat }) => beat === 1)?.rangeSemitones;
+                    };
+                    expect(read()).toBe(5);
+                    addMidiCC('target', 6, 7, editedBeat, 0);
+                    expect(read()).toBe(expectedRange);
+                    expect(
+                        (mocks.state.value.ccByClipId.target ?? []).filter(({ id }) =>
+                            nextReturn.some((row) => row.id === id)
+                        )
+                    ).toEqual(nextReturn);
+                }
+            );
+
+            describe('a range set by hand on the window start', () => {
+                /** The glued clip, as the store holds it before the hand edit. */
+                function storeGluedClip(sourceRows: readonly Row[] = recordedUnderTwelve) {
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { 'source-a': Array.from(sourceRows) },
+                        pitchBendByClipId: { 'source-a': [carried] },
+                    };
+                    const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+                    const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+                    const controlChanges = Array.from(target?.data.controlChanges.value ?? []);
+                    const pitchBends = Array.from(target?.data.pitchBends.value ?? []);
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { target: controlChanges },
+                        pitchBendByClipId: { target: pitchBends },
+                    };
+                }
+
+                function storedRows() {
+                    return mocks.state.value?.ccByClipId.target ?? [];
+                }
+
+                it('governs a bend drawn after it, in place of the state at the window start', () => {
+                    storeGluedClip();
+
+                    addMidiCC('target', 6, 7, 0, 0);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(7);
+                    expect(createStoredBendRangeReader(storedRows())(0, SEQUENCER_TICK_BEATS * 2)).toBe(7);
+                });
+
+                it.each([
+                    {
+                        name: 'an NRPN',
+                        selected: [row('cut-nrpn-msb', 1.3, 99, 1), row('cut-nrpn-lsb', 1.3, 98, 1)],
+                    },
+                    {
+                        name: 'the Null RPN',
+                        selected: [row('cut-null-msb', 1.3, 101, 127), row('cut-null-lsb', 1.3, 100, 127)],
+                    },
+                ])(
+                    'keeps $name the cut left selected, so the window’s own later Data Entry stays ignored under the hand-set range',
+                    ({ selected }) => {
+                        storeGluedClip([
+                            ...rangeAt('twelve', 0.1, 12),
+                            ...rangeAt('two', 1.3, 2),
+                            ...selected,
+                            row('own-data-entry', 3, 6, 40),
+                        ]);
+                        const before = Array.from(storedRows());
+                        const read = () => {
+                            const reader = createStoredBendRangeReader(storedRows());
+                            return [0.5, 1.7].map((beat) => reader(0, beat));
+                        };
+                        expect(read()).toEqual([2, 2]);
+
+                        const edit = addMidiCC('target', 6, 7, 0, 0);
+                        const afterEdit = Array.from(storedRows());
+
+                        expect(read()).toEqual([7, 7]);
+                        expect(storedRows().some(({ id }) => id.includes('rpn-after-carried'))).toBe(true);
+
+                        // The CC lane's undo: sweep the head's return family (whatever ids its
+                        // revisits left standing), remove the clicked point, put back what the add
+                        // displaced in place.
+                        removeHandEditedReturnFamily('target', { channel: 0, beat: 0 });
+                        removeMidiCC('target', edit.id);
+                        const afterIds = new Set(storedRows().map(({ id }) => id));
+                        restoreMidiCCPoints(
+                            'target',
+                            before.filter(({ id }) => !afterIds.has(id)),
+                            before
+                        );
+
+                        expect(storedRows()).toEqual(before);
+                        expect(read()).toEqual([2, 2]);
+
+                        addMidiCC('target', 6, 7, 0, 0, edit.id);
+
+                        expect(storedRows()).toEqual(afterEdit);
+                    }
+                );
+
+                it.each([
+                    { name: 'an RPN MSB select', controller: 101, value: 127 },
+                    { name: 'an RPN LSB select', controller: 100, value: 0 },
+                    { name: 'an NRPN MSB select', controller: 99, value: 1 },
+                    { name: 'an NRPN LSB select', controller: 98, value: 1 },
+                    { name: 'a Null RPN half', controller: 100, value: 127 },
+                    { name: 'a Data Entry LSB', controller: 38, value: 0 },
+                ])(
+                    'leaves the state at the window start for a bend drawn after $name on it, which sets no range',
+                    ({ controller, value }) => {
+                        storeGluedClip();
+
+                        addMidiCC('target', controller, value, 0, 0);
+
+                        expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                    }
+                );
+
+                it.each([
+                    {
+                        name: 'a Null RPN, as a keyboard leaves it after a data entry',
+                        selected: (beat: number) => [
+                            row(`null-msb-${beat}`, beat, 101, 127),
+                            row(`null-lsb-${beat}`, beat, 100, 127),
+                        ],
+                    },
+                    {
+                        name: 'an NRPN',
+                        selected: (beat: number) => [
+                            row(`nrpn-msb-${beat}`, beat, 99, 1),
+                            row(`nrpn-lsb-${beat}`, beat, 98, 1),
+                        ],
+                    },
+                ])(
+                    'keeps the state at the window start for a Data Entry on it that the state machine ignores, with $name selected there',
+                    ({ selected }) => {
+                        storeGluedClip([
+                            ...rangeAt('twelve', 0.1, 12),
+                            ...selected(0.1),
+                            ...rangeAt('two', 1.3, 2),
+                            ...selected(1.3),
+                        ]);
+                        const returns = storedRows().filter(({ id }) => id.includes('rpn-after-carried'));
+
+                        addMidiCC('target', 6, 7, 0, 0);
+
+                        expect(returns.length).toBeGreaterThan(0);
+                        expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                        expect(storedRows().filter(({ id }) => id.includes('rpn-after-carried'))).toEqual(returns);
+                    }
+                );
+
+                it('leaves the state at the window start for a bend drawn after a hand edit on another channel', () => {
+                    storeGluedClip();
+
+                    addMidiCC('target', 6, 7, 0, 1);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                });
+
+                it('leaves the state at the window start for a hand edit that sets no registered parameter', () => {
+                    storeGluedClip();
+
+                    addMidiCC('target', 7, 100, 0, 0);
+
+                    expect(createStoredBendRangeReader(storedRows())(0, 1)).toBe(2);
+                });
+            });
+
+            it('places the return of a window ending a rounding step past the next source’s head ahead of that head', () => {
+                const windowLength = 1 / 2000;
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': recordedUnderTwelve, 'source-b': rangeAt('b', 0, 5) },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+                const overlapping = [
+                    {
+                        clipId: 'source-a',
+                        beatOffset: -1.35,
+                        visibleStartBeat: 1.35,
+                        visibleEndBeat: 1.35 + windowLength,
+                    },
+                    { clipId: 'source-b', beatOffset: windowLength - 1e-12, visibleStartBeat: 0, visibleEndBeat: 4 },
+                ];
+
+                const plan = prepareMidiClipGlueState({ sources: overlapping, targetClipId: 'target' });
+
+                expect(rangesPlayedWith(plan, { id: 'added', value: 4096, beat: 1, channel: 0 })).toEqual([
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: 1, rangeSemitones: 5 },
+                ]);
+            });
+
+            it('returns to the state at the window start inside a window shorter than the return offset', () => {
+                const windowLength = 1 / 2000;
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': recordedUnderTwelve, 'source-b': rangeAt('b', 0, 5) },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+                const sources = [
+                    {
+                        clipId: 'source-a',
+                        beatOffset: -1.35,
+                        visibleStartBeat: 1.35,
+                        visibleEndBeat: 1.35 + windowLength,
+                    },
+                    { clipId: 'source-b', beatOffset: windowLength, visibleStartBeat: 0, visibleEndBeat: 4 },
+                ];
+
+                const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+
+                expect(rangesPlayedWith(plan, { id: 'added', value: 4096, beat: 1, channel: 0 })).toEqual([
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: 1, rangeSemitones: 5 },
+                ]);
+            });
+
+            it('returns to the state at the window start ahead of a Data Entry of its own on the beat the return takes', () => {
+                const controlChanges = [
+                    ...recordedUnderTwelve,
+                    row('data-entry-first', 1.35 + SEQUENCER_TICK_BEATS / 2, 6, 5),
+                ];
+                const pitchBends = [carried, { id: 'after-data-entry', value: 4096, beat: 3, channel: 0 }];
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': controlChanges },
+                    pitchBendByClipId: { 'source-a': pitchBends },
+                };
+
+                const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+                const played = [
+                    { beat: 0, rangeSemitones: 12 },
+                    { beat: 3 - 1.35, rangeSemitones: 5 },
+                ];
+
+                expect(rangesTheTrimmedSourcePlayed(controlChanges, pitchBends)).toEqual(played);
+                expect(rangesPlayed(plan)).toEqual(played);
+            });
+
+            it.each([
+                {
+                    name: 'a bend',
+                    controlChanges: recordedUnderTwelve,
+                    pitchBends: [carried, { id: 'own', value: 4096, beat: 1.35 + 1e-12, channel: 0 }],
+                    range: 2,
+                },
+                {
+                    name: 'a Data Entry',
+                    controlChanges: [...recordedUnderTwelve, row('own-data-entry', 1.35 + 1e-12, 6, 5)],
+                    pitchBends: [carried, { id: 'later', value: 4096, beat: 3, channel: 0 }],
+                    range: 5,
+                },
+            ])(
+                'reads the state in force at the window start for $name of its own within the same-beat tolerance of it',
+                ({ controlChanges, pitchBends, range }) => {
+                    mocks.state.value = {
+                        notesByClipId: {},
+                        ccByClipId: { 'source-a': controlChanges },
+                        pitchBendByClipId: { 'source-a': pitchBends },
+                    };
+
+                    const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+
+                    expect(rangesTheTrimmedSourcePlayed(controlChanges, pitchBends).at(-1)?.rangeSemitones).toBe(range);
+                    expect(rangesPlayed(plan).at(-1)?.rangeSemitones).toBe(range);
+                }
+            );
+
+            it('adds nothing for a carried bend recorded under the state in force at the window start', () => {
+                const rangeTwelve = rangeAt('twelve', 0.1, 12);
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': rangeTwelve },
+                    pitchBendByClipId: {},
+                };
+                const withoutBend = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+                mocks.state.value = {
+                    notesByClipId: {},
+                    ccByClipId: { 'source-a': rangeTwelve },
+                    pitchBendByClipId: { 'source-a': [carried] },
+                };
+
+                const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+                const controllersOf = (glue: typeof plan) =>
+                    glue?.next.clips.find((clip) => clip.clipId === 'target')?.data.controlChanges.value;
+
+                expect(controllersOf(plan)).toEqual(controllersOf(withoutBend));
+                expect(rangesPlayed(plan)).toEqual([{ beat: 0, rangeSemitones: 12 }]);
+            });
+        });
+
+        it('adds nothing to a glue whose sources never addressed a registered parameter', () => {
+            mocks.state.value = {
+                notesByClipId: {},
+                ccByClipId: { 'source-a': [row('pedal', 1, 64, 127)] },
+                pitchBendByClipId: {},
+            };
+
+            const plan = prepareMidiClipGlueState({ sources, targetClipId: 'target' });
+            const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+            expect(target?.data.controlChanges.value.map(({ id }) => id)).toEqual(['pedal']);
+        });
     });
 });

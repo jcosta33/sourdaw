@@ -236,6 +236,29 @@ describe('Anthropic thinking blocks in a tool-planning reply', () => {
 describe('Anthropic forced tool choice under extended thinking', () => {
     const forced: HostedToolChoiceDirective = { mode: 'required', toolNames: ['project.query'] };
 
+    it.each(['claude-opus-5-5', 'claude-opus-5-5-20261001', 'claude-sonnet-5-5', 'claude-sonnet-5-5-20261001'])(
+        'narrows the advertised tools without forcing the choice for %s',
+        async (model) => {
+            respondWith(THINKING_TURN_RESPONSE);
+
+            await planTurn({ runtime: runtimeFor({ model }), directive: forced });
+
+            const body = readBody(0);
+            expect((body.tools as Array<{ name: string }>).map((tool) => tool.name)).toEqual(['project_query']);
+            expect('tool_choice' in body).toBe(false);
+        }
+    );
+
+    it.each(['claude-opus-5', 'claude-sonnet-5'])('keeps forcing the choice for %s', async (model) => {
+        respondWith(THINKING_TURN_RESPONSE);
+
+        await planTurn({ runtime: runtimeFor({ model, thinking: { type: 'adaptive' } }), directive: forced });
+
+        const body = readBody(0);
+        expect((body.tools as Array<{ name: string }>).map((tool) => tool.name)).toEqual(['project_query']);
+        expect(body.tool_choice).toEqual({ type: 'any' });
+    });
+
     it('forces the tool choice on a model that accepts it', async () => {
         respondWith(THINKING_TURN_RESPONSE);
 

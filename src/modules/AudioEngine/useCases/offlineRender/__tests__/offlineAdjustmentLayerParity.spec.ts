@@ -134,6 +134,30 @@ describe('offline render composes adjustment layers the way live playback does',
         expect(level.pan).toBe(PAN_SCALE_MAX);
     });
 
+    it('retains each DSP layer’s own constancy and stack order beside historical mixer moves', () => {
+        const earlyRegions = [{ id: 'early', startBeat: 0, endBeat: 4, blend: 1, fadeInBeats: 0, fadeOutBeats: 4 }];
+        const layers = [
+            makeLayer({ effectType: 'volume', regions: earlyRegions }),
+            makeLayer({ id: 'steady-eq', effectType: 'eq' }),
+            makeLayer({ id: 'moving-filter', effectType: 'filter', regions: earlyRegions }),
+            makeLayer({ id: 'steady-filter', effectType: 'filter', mix: 0.7 }),
+        ];
+        const composition = resolveTrackAdjustmentComposition({
+            layers,
+            trackId: 'track-1',
+            allTrackIds: ALL_TRACKS,
+            spanStartBeat: 0,
+            spanEndBeat: 8,
+        });
+
+        expect(composition.constant).toBe(false);
+        expect(composition.dsp).toMatchObject([
+            { layerId: 'steady-eq', constant: true, blend: 1 },
+            { layerId: 'moving-filter', constant: false, blend: 1 },
+            { layerId: 'steady-filter', constant: true, blend: 0.7 },
+        ]);
+    });
+
     it('reports a region layer whose blend moves across the span as not constant', () => {
         const layer = makeLayer({
             effectType: 'volume',

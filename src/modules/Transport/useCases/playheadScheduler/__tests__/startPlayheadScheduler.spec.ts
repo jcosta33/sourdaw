@@ -5,10 +5,12 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { applyAutomation } from '../../scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from '../../scheduling/applyAutomation/applyVcaGains';
+import { holdNoteExpression } from '../../scheduling/holdNoteExpression';
 import { resetMetronomeBeat } from '../../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
+import { takeHeldNoteExpression } from '../../scheduling/takeHeldNoteExpression';
 import { panicYeastRuntime } from '../../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
@@ -62,7 +64,23 @@ const audioEngineMocks = {
     readNativeEnginePlayheadSeconds: vi.fn((): number | null => null),
 };
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'root-identity'
+    ),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    updateClipInStore: vi.fn(() => false),
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -102,7 +120,9 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 // Arrangement + Automation mock holders (same binding-split workaround).
 const arrangementMocks = {
     startRecording: vi.fn(() => [] as { trackId: string; id: string }[]),
-    stopRecording: vi.fn(),
+    // The real `stopRecording` is async: its promise is the take's commit, which
+    // the recording lifecycle tracks.
+    stopRecording: vi.fn((_atBeat?: number): Promise<void> => Promise.resolve()),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     stageRecordingTake: vi.fn(),
@@ -123,6 +143,13 @@ const evaluateFollowActionsMock = vi.fn<
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        })),
     startRecording: (...args: unknown[]) => (arrangementMocks.startRecording as (...a: unknown[]) => unknown)(...args),
     stopRecording: (...args: unknown[]) => (arrangementMocks.stopRecording as (...a: unknown[]) => unknown)(...args),
     addTakeLane: (...args: unknown[]) => (arrangementMocks.addTakeLane as (...a: unknown[]) => unknown)(...args),
@@ -136,11 +163,49 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         (arrangementMocks.discardRecording as (...a: unknown[]) => unknown)(...args),
     updateTransportState: (...args: unknown[]) =>
         (arrangementMocks.updateTransportState as (...a: unknown[]) => unknown)(...args),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
+    shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
+        if (probabilityPercent <= 0) {
+            return false;
+        }
+        if (probabilityPercent >= 100) {
+            return true;
+        }
+        throw new Error('This scheduler fixture requires deterministic note probability');
+    },
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
+    // A held note that survived would still have a change due, so a test that expects none sees it.
+    advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
+        timeline,
+        changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
+    }),
     getAudioContext: () => audioEngineMocks.getAudioContext(),
     getTrackStrip: vi.fn(),
     getCompensationDelay: (...args: unknown[]) =>
@@ -527,6 +592,41 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.scheduledAudioClips.size).toBe(0);
         // lastTempoMapChanges now matches the new identity.
         expect(schedulerSession.lastTempoMapChanges).toBe(tempoMapStoreState.value?.changes);
+    });
+
+    it('forgets the expression changes a previous playback parked, which a play pressed during a pause would keep', () => {
+        // A play pressed in the pause's recording-flush window skips the pause teardown, so the previous
+        // playback's parked changes are still here when the new one starts.
+        holdNoteExpression({
+            trackId: 'track-1',
+            pitch: 64,
+            channel: 0,
+            receiverId: 'device-1',
+            releaseBeat: 4,
+            followsChannelBend: false,
+            timeline: {
+                startFrame: 0,
+                releaseFrame: 192_000,
+                frameAtBeat: (beat) => beat * 48_000,
+                own: { pressure: 10 },
+                channel: undefined,
+                bendOwner: 'note',
+                advancedBeat: Number.NEGATIVE_INFINITY,
+                pending: [{ beat: 2, frame: 96_000, expression: { pressure: 80 }, claimsBend: false }],
+            },
+        });
+
+        startPlayheadScheduler();
+
+        expect(
+            takeHeldNoteExpression({
+                trackId: 'track-1',
+                fromBeat: 0,
+                toBeat: 8,
+                fromFrame: 0,
+                readChannelBend: () => [],
+            })
+        ).toEqual([]);
     });
 
     it('wraps the playhead at loopEnd and clears scheduling state for the next pass', async () => {
@@ -1367,11 +1467,15 @@ describe('startPlayheadScheduler', () => {
             buffer: { duration: 1 },
             bufferId: expect.any(String),
         });
-        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith({
-            trackId: 'rec-1',
-            id: 'clip-rec-1',
-            audioBufferId: expect.any(String),
-        });
+        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
+            {
+                trackId: 'rec-1',
+                id: 'clip-rec-1',
+                audioBufferId: expect.any(String),
+            },
+            undefined,
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
+        );
         // A delivered take is kept: no retirement and no failure notice.
         expect(arrangementMocks.discardRecording).not.toHaveBeenCalled();
         expect(notifyUserMock).not.toHaveBeenCalled();
@@ -1431,6 +1535,7 @@ describe('startPlayheadScheduler', () => {
             if (clip && typeof atBeat === 'number') {
                 clip.endBeat = atBeat;
             }
+            return Promise.resolve();
         });
         let capturedOnTerminal: ((result: { kind: string; buffer?: unknown }) => void) | null = null;
         audioEngineMocks.startAudioRecording.mockImplementationOnce(((
@@ -1465,7 +1570,9 @@ describe('startPlayheadScheduler', () => {
         // Zero-length payloads here mean the entry captured the pre-finalization
         // anchor and can overwrite the span the finalizer owns.
         expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 })
+            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 }),
+            undefined,
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
         );
     });
 
@@ -1523,6 +1630,9 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        // A punch take is open and owns the root, so the finalizer registers
+        // its commit on the lifecycle (#5517).
+        activeRecordingRefState.current = ['punch-take'];
         // The finalizer's own promise is pending: the tick must still complete,
         // and the promise must be owned so a user-facing stop can await it.
         let release!: () => void;
@@ -1550,6 +1660,7 @@ describe('startPlayheadScheduler', () => {
         expect(settled).toBe(false);
         release();
         await waiting;
+        activeRecordingRefState.current = [];
     });
 
     it('does not cache or update a punched clip for a failed recording result', async () => {

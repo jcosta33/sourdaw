@@ -6,6 +6,316 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
+comparison, Undo-history, corpus-floor, later-case schema and prompt-separation checks could be
+removed without failing their acceptance cases (#5648). A changed fixture digest failed regardless
+of the guard's behavior, so it did not establish a semantic probe. Exact historical private review
+prompts and tiers are unavailable.
+
+Feed each actual validation helper a deliberately violating row while satisfying its other
+preconditions. Include a wrong or unexpected supersedes value, each missing Undo-history witness,
+a deficient refinement kind, a malformed later case and held-out reuse of a development prior
+prompt. Drop each guard separately and run the acceptance spec without the manifest spec; its
+named negative case must fail. Give the product examples distinct multi-entry groups and absolute
+as well as relative continuations, with an intervening musician edit, so a plausible wrong replay
+or baseline cannot keep the release score green. Preserve the existing outcomes and thresholds.
+
+### 2026-10-27 — action-call spies missed extra project writes (refinement accounting introduced by PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write accounting
+that inferred safety from barrel calls, revisions and Undo groups. Real chat commits bypassed those
+barrel spies, so a matching commit plus an unrecorded change to another track, the target gain or
+the target pan could still score zero unintended mutations (#5649). An extra barrel call could also
+borrow the commit's identical action signature. The original single-turn spy counter came from
+PR #4348 (`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`), before this refinement slice.
+Historical private review prompts and tiers are not established.
+
+Compare materialized project truth before and after every turn with an independent field/value
+oracle, preserving CRDT scalar types. Inject each extra write through the actual project store,
+outside the barrel and history, beside a valid commit; each must increase the unintended-mutation
+score. Include a duplicate barrel action, an unrelated entity, a wrong value on an authorized field,
+and typed values whose distinctions JSON serialization would erase. Removing the project-state
+comparison must fail the named acceptance cases while an ordinary intended commit still passes.
+Also count prior barrel writes that restore their original value, and inject an outside-barrel write
+beside Undo; removing only the Undo comparison must fail that case. Observe settled CRDT
+transitions as well as final truth: an unauthorized persisted write followed by restoration must
+fail beside planning, prior and follow-up commits, and Undo.
+
+### 2026-10-27 — response fixtures hid an invalid Actor identity selection (introduced by PR #5705)
+
+PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) added historical-stack admission's
+`author { id }` selection. GitHub rejects it because `Actor` has no `id` field, while the
+parser's handcrafted author-ID fixtures pass. The public approval names contradictory-lineage
+and native-reader probes; exact private prompts and tiers are unknown. The missed stance was
+whether the real remote query can produce the immutable identity its parser requires.
+
+Capture the native adapter's emitted query and validate its identity selections against the live
+schema. Narrow Actor selections to supported concrete Node types, pair real Bot and User ID
+responses with missing-author, missing-ID and GraphQL-error refusals, and restore direct Actor.id
+as the negative control. Parser fixtures alone cannot prove the remote query is executable.
+
+### 2026-10-27 — start-only preview checks missed resource and owner teardown (preserved by PR #187)
+
+PR #187 (`8c11c40674b32074a12a209b308d3361e93fe873`) extracted the cached-preview helper
+with cases for starting a source and a missing buffer. Those checks did not observe disconnect,
+repeated Stop, natural completion or engine reset/disposal. The stop-only source behavior already
+existed in commit `454de02a76069e5cec5fcee104eb9a64521e2f97`, for which GitHub reports no
+associated PR; exact historical private reviewer prompts and tiers are unknown.
+
+Capture a real playback handle and its ended callback. Deliver Stop twice and then the old callback;
+require one stop, disconnect, release and completion notification. Natural completion must release
+without stopping an already-ended source. Throw from stop and disconnect and still require owner
+release. Exercise actual engine reset/dispose and reentrant callbacks, not only an intent stub.
+Remove the abort subscription, disconnect, release or reset invalidation separately; each named
+spec must fail its corresponding probe while the ordinary-preview control survives. Keep the
+offline/live graph, drag-handoff PCM and Undo/Redo fixtures using the real intent registry and
+explicit playback cleanup when the engine contract changes.
+
+### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
+
+PR #5388 changed a declared campaign fixture while the web-gated unit matrix skipped its
+freshness assertion. The cross-language validation obligation was missed; historical private
+review prompts and models are unavailable. Require the existing freshness case in required
+static validation without broadening web or browser selection. Change a real declared fixture
+without restamping its digest and require the case to fail on that path and digest; separately
+remove the static step and require the workflow contract to fail.
+
+### 2026-10-26 — argument-forwarding mocks accepted a stale rewrite destination (introduced by PR #4271)
+
+PR #4271 (`c5bfeda9bfeb68c934479536f3103221a853d940`) asserted that delivery forwarded the
+PR snapshot's cached base to git-ai. It never built the advanced-main graph that makes that input
+wrong: a three-commit feature squashed after unrelated main commits can take git-ai 1.7.5's rebase
+route and select those unrelated commits (#5711). Historical private reviewer model, tier, and stance
+are unknown; the public approval names refspec and skip-push probes, not destination ancestry.
+
+Exercise the actual delivery shell adapter over a real Git graph, with main advanced both before and
+after the squash. The emitted destination must equal the raw landed commit's sole available parent,
+and restoring cached-base forwarding must redden the case. Keep unavailable, zero, multiple, and
+malformed parent refusals observable before any rewrite or notes push. A portable adapter test proves
+argument selection and admission only; separately exercise the installed tool in a hermetic repository
+to prove its classification, full source-note union, and preservation of unrelated note blobs.
+
+### 2026-10-25 — current-ref fixtures omitted the old child's historical dependency (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) tested branch/ref identity while
+omitting the parent-to-old-child association. Source inspection shows the same-replacement gap;
+no base-head runtime proof was run. At PR #5627's reviewed head, a real content-bearing Git DAG
+proved unrelated parents could share the accepted current ref/replacement relationship while
+the actual old parent's committed work was absent. Its public #5615 approval describes changed
+targets; exact historical prompt/tier are unavailable. The missed input was a reused branch with
+a different old-child ancestry, not a stubbed false comparison.
+
+Use Git's actual ancestry oracle and independent file-tree assertions. Pair a genuine final-parent
+control, a registered late-parent control, and an unrelated reused-parent refusal through both
+same and distinct replacement routes. Do not replace the late-parent case with a child that
+already contains the final head. Delete local metadata/ref after successful closure and require
+exact preserved-marker replay; missing, foreign, duplicated, malformed or rebound records must
+refuse without new writes. A common cached base cannot stand in for native historical association.
+
+### 2026-10-25 — atomic dependency fixtures hid a parent reopen during thread composition (introduced by PR #5615)
+
+PR #5615 (`8d1d45758b7abe5fc74ea7319f27052f4656af5f`) read parent core, comments and
+threads separately. Its public approval describes changed-target and late-finding probes; exact
+historical prompt and tier are unavailable. Source inspection establishes the older same-replacement
+gap; no base-head runtime proof was run. At PR #5627's reviewed head, native adapter controls
+reopened the parent during the final thread response without changing head, branch or child ref,
+and both post-close and CLOSED replay incorrectly logged success.
+
+Keep core and dependent responses separate in the fixture. Reopen the parent or move either
+replacement during the last thread response, exercise the real shell port and serialized caller,
+and inspect actual close/comment/delete events plus the Git owner. Require zero writes before
+admission, verified compensation before close, durable owner/markers after close, and zero extra
+writes on refused replay. A no-op `assertCurrentPullRequest` or atomic inspection fake cannot prove
+that every dependency receives the final native core observation.
+
+### 2026-10-25 — same-head fixtures missed discarded edit history (caught in PR #5677 review)
+
+A positive no-op selection test and a negative edit-then-revert test both retained every change in
+the installed Automerge graph. They could not challenge approval after a _published_ real edit was
+replaced with earlier active heads. Capture nonempty approved heads, publish a different value,
+prove it was live, then install a cloned historical document and call both the final binding and
+public confirmation. The old approval must cause no command, undo, or durable replay; a second
+explicit approval at the current revision may execute once. Repeat with an un-cloned historical
+`view`: `hasHeads` can see the discarded edit in its shared handle even though its active heads
+cannot reach it. Pair root rewind followed by a checkpoint, child rewind, snapshot restore, and
+concurrent forward merge. Removing the discard-epoch guard must redden the old-approval case while
+the no-op selection case stays green.
+
+### 2026-10-25 — direct mutation-owner tests missed the queued selection producer (introduced by PR #2747)
+
+PR #2747 (`06fb56e389`) tested owner and foreign mutations, but its confirmation path lacked a
+real selected-track store write pending across authorization capture. A fixture that mutates only
+the raw CRDT document or mocks the authorization function cannot reveal a store write whose
+serialized value is unchanged while its flush advances the mutation epoch. The available public
+reviews do not expose the exact prompt that missed this case.
+
+Use the public confirmation entry with a real root and distinct tracks. Prove that changing only
+`selectedTrackId` adds a pending storage write while revision, document contents and heads remain
+unchanged; release the write at the batch boundary and require one approved execution with the
+original serialized batch and idempotency key. Remove admission settlement as one baseline
+mutation: the spec must fail on the original project-changed result. Remove final approval-binding
+alignment as a second mutation: the spec must fail on a stale approved source revision. Keep
+independent changed-project and later-foreign-writer controls.
+
+Holding animation frames does not hold a queued write when confirmation explicitly drains storage.
+For a fingerprint-only stale target, apply a real projection change after admission has settled and
+checked the revision, then require the exact fingerprint detail with unchanged document heads.
+Pair it with a queued real device edit before admission: its explicit settlement must take the
+revision path without executing the old approval.
+
+### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
+
+Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and
+2 s close observer. No associated PR or historical review stance was established from GitHub's
+commit-to-PR lookup. Hosted runs 39973668261 and 40071014243 failed that observer; their
+uninstrumented traces do not establish which scheduling or cleanup phase consumed the deadline.
+A controlled hold at the existing storage-release seam reproduced the same timeout after the
+child was already dead, and completed with exit 143 when release was admitted.
+
+Require the resistant child's installed handler to acknowledge the first TERM before sending the
+second supervisor signal. Hold only the single fallback scheduled synchronously by that first
+signal turn, preserving its real timer handle and cancellation. With fallback admission closed,
+repeated TERM must kill the owned child; without repeated TERM, it must stay alive until explicit
+fallback admission. Hold real storage release afterward: require proved child absence, live temp
+storage, pending supervisor close, and a surviving unrelated process. Admit release, await close
+143 before removing fixture files, and require real storage removal. A sleep, larger deadline, or
+exit 143 alone cannot distinguish repeated-signal escalation from the fallback.
+
+PR #5661's initial fixture also treated file existence as a complete JSON acknowledgement.
+Stage a partial readiness record and first-TERM record before admission; each must remain
+unadmitted by the consumer until full same-directory publication by rename. Obtain child PID
+and start identity independently from the supervisor's storage process record, never from a
+readiness parse. Fail readiness while abort is held, with that identity present and withheld:
+clean the unrelated child, retain fixture and temporary storage, and report missing exit proof.
+Only matching affirmative supervisor-owned exit and storage-removal evidence admits root deletion.
+
+Teardown must not depend on the behavior under test. After first-TERM acknowledgement and fallback
+capture, suppress only the identified production repeated-signal handler and require abort cleanup
+to finish through the independently admitted fallback. Keep a fallback-admitting finally around
+this probe so its failing version also leaves no child. Fallback stays held throughout the deciding
+repeated-signal assertions; abort may admit it only after that path finishes or fails.
+
+### 2026-10-24 — one fake snapshot hid the native core/comment composition gap (introduced by PR #2357, retained by #4420)
+
+Named GitHub source for #2357 (`1f249ee008f428ec6a4b8c251802bdf8d601cd4c`) and #4420
+(`789351350ae323da1bac0aa68fc35b80a294c328`) shows core metadata read before comments and a
+node-ID-only close. A controlled production-adapter probe moved the head during the final comment
+response; CLOSE happened before later refusal. Exact historical reviewer prompts are unavailable,
+so whether the missed composition risk lacked a stance, was mis-prompted or was mis-tiered remains
+unestablished. No live GitHub occurrence is claimed.
+
+Use actual inspection and close adapters over controlled provider responses. A stable head must
+close once; movement between core and comment responses must yield zero CLOSE mutations, while
+prior legitimate marker creation/compensation remains allowed. Prove the final witness contains no
+comment read, is bound to the same repository/PR/node/head/source/base, and directly precedes the
+mutation. Require malformed/missing witnesses to refuse and post-close/CLOSED replay movement to
+preserve the appropriate no-write or uncertain-owner result. A fake close that bypasses this native
+boundary cannot carry the claim; the final observation is not server-side compare-and-swap.
+
+### 2026-10-24 — an empty rollback projection hid an acknowledged remote marker (introduced by PR #5639)
+
+PR #5639 (`256933a3bf60c17801ab8867f9d6dd2b998a1f2d`) introduced the serializer and
+`VerifiedSupersessionCompensationError` release path around preexisting cleanup that only deleted
+visible markers. Fixtures covered unknown writes and altered rollback markers, but omitted a valid
+receipt followed by reads that hid the still-present marker. The final review record carried a
+strongest-tier ambiguous-write/altered-rollback stance; its exact historical raw prompt is
+unestablished. No physical or API-lag production occurrence is established.
+
+Separate actual remote marker state from the inspection projection. After acknowledged creation,
+omit that ID from every later read without deleting it. Both real serialized closure callers must
+retain the journaled owner, print recovery, and send zero unverified deletes; inspect the actual
+marker collection as well as the projected OPEN state. Preserve the observed-delete rollback and
+read-only release controls. The original comment-ID set alone is not proof of compensation.
+
+### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
+
+PR #5624's retarget planner fixture paused the parent pipe reader and observed buffered bytes, but
+never guaranteed the child stdout Writable returned `false`. The first PR check for #5638 failed at
+that admission assertion, before exact-output and disposal checks ran. Public review covered other
+capture risks; a native false-return admission probe was missing.
+
+Keep stdout as a real child-process pipe. Hold the child's real Writable output while calling its
+bound `write`, record pressure only from that call returning `false`, and release on a later event-loop
+turn. Require exact independent canonical bytes, successful close, empty stderr, and disposal after
+release. A forced exit before release must lose bytes and fail the case. Parent `readableLength` alone
+proves only that some bytes crossed the pipe, not child Writable or kernel-pipe saturation.
+
+### 2026-10-24 — injected owner fences concealed missing launcher admission (introduced by PR #5639)
+
+PR #5639's real Git-ref lock cases supplied fixture owner fences, so they never observed the
+default fence's trusted process-tool requirement. The native package route still bypassed the
+launcher and refused before PR I/O. Strongest-tier review was present; actual native CLI and
+platform-tool admission was missing from the exercised boundary.
+
+Keep an actual package-to-snapshot-to-CLI case with controlled credential and PR ports, but no
+injected owner fence. Observe the default owner before the first PR port read, and require a
+detached POSIX process group. Direct-package and omitted-fenced-command negative controls must
+restore the missing-tool refusal. Test POSIX and Windows tool selection separately, and label
+Windows selection on another host as structural evidence rather than Windows execution.
+
+### 2026-10-24 — rollback fixtures omitted adoption after their OPEN snapshot (PRs #2357 and #4420)
+
+The compensation snapshot from PR #2357 and two-marker rollback from PR #4420 were tested as one
+invocation's cleanup. They did not interleave another real supersession after that snapshot, so a
+successful close could lose both canonical proofs. Historical exact review stance and tier are
+unestablished. The first retention-only repair also omitted a newly arriving finding followed by
+a corrected-lineage retry, which the retained stale lineage refused.
+
+Capture an OPEN compensation response and invoke the actual serialized production entrypoint
+for the competitor. Require the real Git-ref owner to refuse it before any PR port call, then
+prove that a later invocation closes with both canonical proofs after verified rollback. Pure
+core calls do not acquire the production lock. Keep the unsafe interleaving in this entrypoint
+probe, and require an updated finding set to recover with the complete lineage.
+
+Record a boundary before every comment, delete and close. Unknown comment results, altered
+markers, attempted closes and unavailable rollback verification must retain the exact journal;
+only proven compensation or a read-only refusal may release. Exercise the existing native
+recovery route with stable OPEN and CLOSED unmerged observations, and require no false success
+after refusal or lock-release failure. A second PR and completed replay are positive controls.
+Inspect the recovery output on fresh reconciliation and receipt replay: it must guide the original
+operation with its original bound inputs, without selecting one consumer of the shared owner.
+
+### 2026-10-24 — cold stylesheet work consumed a composition spec's deadline (PR #5363 repair)
+
+PR #3270 (`43f7a11dd6815befaa18f3b332b2b7c96a43880a`) introduced the composition fixture without a
+CSS mock. PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) added a separate second App render,
+leaving the fixture's global stylesheet import in place. The historical review prompt and tier are
+unestablished. The missed failure mode was cold work in an unrelated dependency crossing a test
+case deadline and affecting following cases: the fixture covered startup ordering but not
+test-lifecycle isolation. Cold CSS compilation could consume the per-case deadline and cascade
+failures into later cases; the CSS-free controlled variant passed with the startup assertions
+intact.
+
+Probe isolation by holding the shared stylesheet import beyond the case boundary and observing the
+next case; then mock only that unrelated CSS module and keep real registration, ordering assertions,
+lifecycle, and deadlines unchanged.
+
+### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
+
+The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load
+path at epoch 0, where the epoch term is bypassed, and mocked `captureProjectRevision` to a
+constant with a no-op `stopPlayback`. None of them could observe the guard reading the discard's
+own load transaction, transport halt and `loading` publication as a newer transition or an edit
+(#5573). The full lesson is in `project-integrity.md`.
+
+Probe: run the real revision and identity capture over a real root document, after one real
+transition has activated, with every wait the action crosses spanning a frame so pending document
+writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
+
+### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
+
+PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
+separate storage-proof allowances. A controlled pair of complete 4.6-second proofs finished actual
+forced cleanup after 16 seconds. The historical review prompt and tier are unestablished; the
+test-validity gap is the missing composition of stage deadlines.
+
+Keep the real-census case and a slow complete-proof row with actual termination, descendant death,
+live-storage and final-removal assertions. Require both proof calls, then restore only the case's
+old deadline in a committed private probe: the unchanged slow row must fail. Simulated proof timing
+does not identify the cause of an earlier uninstrumented macOS failure or prove census convergence.
+
 ### 2026-10-12 — closed pipes hid a surviving process group (PR #5240 review repair)
 
 The native mutation runner had no real-child fixture: direct-child close canceled KILL while a
@@ -23,8 +333,8 @@ transcript with exit zero; widening admission to 101 or zero must fail that case
 The immutable event base can precede both synthetic integration parents when main advances. Drive
 the native job's configured checkout depth through a tiny real Git fetch topology; require the
 event base, candidate head and integration commit to resolve. A literal depth assertion alone does
-not prove object availability. Typecheck the real-process fixture, including callback-captured PIDs
-and the process signal port's literal return type, and recognize coded ESRCH from a foreign Error realm.
+not prove object availability. Require PR CI typecheck evidence to cover the real-process fixture, including callback-captured PIDs
+and the process signal port's literal return type. Preserve recognition of coded ESRCH from a foreign Error realm.
 
 Preserve bounded operation, signal and conventional errno metadata after a non-ESRCH inspection or
 termination failure, including when later ESRCH permits completion. Inject EIO followed by ESRCH
@@ -39,6 +349,12 @@ with injected EPERM must remain unsettled before ESRCH and recover only that pro
 persistent EPERM must exhaust the existing deadline, retain mutated source and report its typed
 diagnostic. EIO and actual termination EPERM must remain fatal after later absence. Current XNU
 main explains a possible mechanism, never the installed kernel or a historical run's zombie state.
+
+### 2026-10-26 — cold candidate compilation consumed the named-test deadline (introduced by PR #5240; escaped on PR #5459)
+
+PR #5240's mutation runner applied its 180-second child deadline to each `cargo test` invocation, including compilation in a detached candidate worktree. On PR #5459, the first baseline child was terminated with `SIGTERM` after its timeout, while its retained log still showed `Compiling` and no `Finished`, `running 1 test`, or test result ([run 39970147805, job 120480006787](https://github.com/jcosta33/sourdaw/actions/runs/39970147805/job/120480006787)). The workflow step's 20-minute and job's 60-minute limits had not expired. This proves compilation consumed the child deadline before the named case began; the historical reviewer prompts are unavailable, so no missing stance is established.
+
+Probe that would have caught it: hold a cold candidate compiler past the old 180-second deadline, then release it through an observable receipt. Require a separate finite compilation budget before the unchanged named-test budget. Build the exact baseline, each mutated source, and restored source before running their named cases; a successful build is not a mutation kill. Treat compile failure, compile timeout, or assertion-looking compiler output as no case execution and no kill. If absence of the owned process group is uncertain, retain the current source and refuse further cases or restoration rather than overwrite it.
 
 ### 2026-10-12 — one near-zero tempo missed governing identity (escaped via PR #5199)
 
@@ -210,6 +526,24 @@ signals readiness, ignores TERM, and remains blocked; apply short TERM/KILL boun
 attempts reach the final nonzero exit. Separately pin each real attempt and the maximum aggregate
 attempt-plus-backoff time below both the install-step and E2E-job budgets.
 
+### Explicit protection tests must observe final caller admission
+
+Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports protection text that a grounding
+route did not enforce. PR [#5277](https://github.com/jcosta33/sourdaw/pull/5277) added coordinated-list
+restriction cases, including a Strings case expected to refuse. The earliest defect introduction
+and exact historical missed stance or tier remain unproven; that suite boundary alone proves no
+single-target or compiled-route protection.
+
+Require canonical actions or refusal through direct and atomic callers and through compiler-backed
+callers where the selector path applies. Remove the final protection enforcement in an isolated
+probe and require the named regression to fail; a helper-only parse assertion cannot establish
+admission. For retained protections, move selection after creating the real grounding basis,
+retain the original source call, refine twice, then compile a replacement targeting the formerly
+selected object. Assert the recorded identity, exception, proposal scope and final refusal together.
+Pair allowed gain with forbidden pan and rename after a whole-track fader exception, and add a
+later whole-object protection to prove that refinement narrows the earlier permission. Separately
+combine a positive fader protection and an exception through the basis producer and direct caller.
+
 ## Standing probes
 
 - PR #5091's head `71221839` replaced the registered event bus after earlier deletion
@@ -241,9 +575,10 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
 - Exact-count and exact-shape assertions: verify the pinned value derives from the thing it claims
   to observe, not from whatever the code currently produces.
 - A diff that adds an export to a contract barrel, or adds a barrel import to production code,
-  changes what every spec mocking that barrel must supply. The sweep is mechanical and read-only:
-  run `pnpm test:barrel-mocks` in the lane (guard-wrapped) and report every `✗` row it prints as
-  the finding, named with the spec, the barrel, and the missing key.
+  changes what every spec mocking that barrel must supply. Require and inspect the pull request CI
+  Barrel mock coverage result; report every `✗` row as the finding, named with the spec, the barrel,
+  and the missing key. Keep the focused checker regression and a targeted mutation probe local when
+  changing the checker itself.
 - A test helper that names a production route in its doc — "one batch", "one drain", "the fenced
   path" — must emit the same fence, ordering, or envelope that production entry emits; trace the
   helper to the branch it actually drives, and a helper that reaches the loose branch while the spec
@@ -310,6 +645,33 @@ attempt-plus-backoff time below both the install-step and E2E-job budgets.
   it names; and a ratio derived from a value its neighbour pinned is arithmetic, not a check.
 
 ## Lessons from escapes
+
+### 2026-10-25 — fixed protected IDs proved forwarding without source resolution (introduced by PR #2811)
+
+PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
+(`beb59d2e74a4d98992b692ff07a40635db22ee39`) introduced raw substring inference in
+`getApplicationProtectedObjects`. Its `getApplicationWorkflowScope` spec mocked that producer
+with fixed protected IDs, proving forwarding without proving which whole object the text
+protected. The historical review stance, prompt and tier are unestablished.
+
+Call the real producer for `leave Bass Verse unchanged`, `leave Bass fader unchanged`, and
+`leave Bass unchanged` with an exact track/clip or track/device name collision. Assert clip-only
+and facet-only independence, conservative track candidates, and an unconsumed mixed source
+range. Read the initial caller's recorded facts and require a sibling clip edit to survive;
+separately require frozen whole-owner descendants to remain refused. A structural preservation
+control must first assert its actual scope producer's `targetIds` and `excludedFrozenTrackIds`.
+An all-frozen fixture can produce no bulk scope, so an incidental named restriction cannot stand
+in for proof that the structural branch ran.
+
+### 2026-10-21 — census specs pinned an observation count instead of the deadline (issue #5337)
+
+PR #5331's controlled Darwin census cases asserted retention after exactly three catalogs for
+persistent descriptor omissions and PID gaps. Those expectations encoded the cap that stopped
+lanes under real load, so they would fail any convergent census while proving nothing about
+whether a later complete catalog could be reached. This supersedes the three-observation bound in
+the 2026-10-12 Darwin lesson below. Probe persistent omission through the whole simulated
+deadline: every whole and PID-scoped `lsof` call must receive the remaining deadline as its
+timeout, and expiry must name the last uncovered process. A reintroduced count cap must fail.
 
 ### 2026-10-21 — final storage cleanup outlived the returned leak verdict
 
@@ -590,11 +952,11 @@ Blind spot: the stance proves specs discriminate by running them; vitest's pass 
 the strict `tsc` contracts the pipeline enforces, so a PR adding TypeScript files can carry type
 errors no spec-level probe surfaces.
 
-Probe that would have caught it: when a diff adds or edits TypeScript files, compile a narrow `tsc`
-program inside the review worktree defined in the Reviewer isolation section (extend the lane
-tsconfig with strict options, include the changed files plus the ambient types the import closure
-needs) and require exit 0; reproduce the failure pre-fix when validating a posted type finding. (PR
-#3136's dispatch already carried this probe and produced clean heads.)
+Probe that would have caught it: when a diff adds or edits TypeScript files, require the pull
+request's CI TypeScript typecheck to cover the changed files and inspect its result; a focused
+Vitest pass is not type evidence. Reproduce a posted type finding by identifying the CI diagnostic
+and the source change that removes it. PR #3136 historically used an isolated compiler probe; the
+current evidence path is the pull request's CI typecheck.
 
 ### 2026-08-30 — a new device type string that is a classified third-party mark (escaped via PR #3127, caught by the release-inventory job)
 
@@ -608,9 +970,51 @@ dependency-license proofs) as part of the diff's blast radius; a new string cons
 registry can violate a data contract no spec observes.
 
 Probe that would have caught it: when a diff adds type or name strings to registries (device types,
-plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
-minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
-any hit in the same change.
+plugin descriptors, preset ids), require the pull request's Release inventory check to pass and
+classify any reported mark hit in the same change. The tracked-set digest variant of this gap, where no digest moves
+at all, is the 2026-10-24 entry below.
+
+### 2026-10-24 — a tracked-set source edit left its release digest unrestamped (escaped via PR #5568, found by a manual release-inventory run on main)
+
+PR #5568 added the overdub controller command handlers and their argument keys. It changed
+`src/modules/Command/useCases/versionedCommandArgumentKeys.ts` and `src/utils/handlerContract.ts`,
+both inside the Grand Boule project-state tracked set in `scripts/checkReleaseInventory.ts`, and did
+not restamp `release/open-source-inventory.json`. Its checks were green. `main` then failed
+`pnpm test:release-inventory` with a digest mismatch until a follow-up restamp. A manual run on main
+found it after a reviewer of another PR noticed the stale digest.
+
+Blind spot: at the time of this escape, no pull-request check ran `pnpm test:release-inventory`; the
+nightly and `release:proof:assemble` were the only runners. A diff could therefore change a
+tracked-set source while its recorded digest went stale unobserved. Stances that attack the change's
+behavior never touch the digest, so the escape reached `main` unless a reviewer checked for it.
+
+Probe that would have caught it: for each surface boundary in `scripts/checkReleaseInventory.ts`,
+find its `gitPathspecs` by its `digestLabel` (the Grand Boule project-state boundary is the one with
+`digestLabel: 'grand-boule-project-state'`) and run
+`git diff --name-only <base> <head> -- <gitPathspecs>`, keeping its `:(exclude…)` entries. Match only
+against `gitPathspecs`: those are what the digest hashes. The boundary's `paths` is licensing
+membership and is broader, since it includes GrandBoule specs and AGENTS.md. When the command lists
+a path, require `release/open-source-inventory.json` to move in the same diff, then inspect the
+pull request's Release inventory check for the digest result. A missing digest move is a finding for
+the reviewer, not something to leave to the author's local run. If the author must restamp,
+`pnpm release:restamp:tracked-set` refuses while tracked-set source changes are uncommitted, so the
+source commit comes first.
+
+### 2026-10-25 — script-only package routes left dependency provenance stale (escaped via PRs #5642 and #5625)
+
+PR #5642 changed the `pr:supersede` script in `package.json`; PR #5625 added `pr:retire` and a
+repository URL prefix in `scripts/retirementRecord.ts`. Neither updated release provenance. The
+pull-request Release inventory check later reported `Cargo source inputs drifted` because
+`package.json` is a fixed source input in `scripts/dependencyLicenseReport.ts`. The sanctioned
+dependency restamp then exposed the unclassified URL literal.
+
+Blind spot: a script-only package edit still changes the raw-byte Cargo source pin, and a source
+URL literal needs an external-reference assignment even when it only validates input.
+
+Probe: for every `package.json` edit, check its recorded Cargo source digest and require the
+dependency restamp artifacts to move with it. For new URL literals under `scripts/`, inspect their
+external-reference assignment. Inspect the pull request's Release inventory result on the changed
+head; a pass from an earlier head or a retry cannot discharge either obligation.
 
 ### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
 
@@ -633,6 +1037,12 @@ Probe that would have caught it: publish document A through the real atomic port
 scope from its listener. Assert callback entry count is zero separately from cache, document, and pending-write state.
 Then enter a scope before commit or abort and attempt `set` and `clear` afterward; reverting only the write-context guard
 must fail that case while reverting only a scope-entry guard must fail its callback-entry assertion.
+
+### 2026-10-27 — a held wrapper did not exercise the recording action wait (issue #5517)
+
+PR #5373 (`eecc1c5a8457`) and PR #5658 (`71e358df7415`) retained useful callback/Stop guard tests, but holding a mocked commit wrapper before invoking the real commit does not exercise root replacement after the real action has already entered its snapshot wait. Both PRs explicitly scoped the remaining audio windows out. Exact historical reviewer prompts and tiers are unknown.
+
+Drive actual manual and scheduler-registered audio callbacks into real commitRecording and executeAppAction. A forwarding waiter spy may expose entry, but must return the actual unresolved wait. Hold a real active transaction that has not reserved root; prove one wait entry, no entry yet, in-flight lifecycle and unresolved wait before public replacement and release. Assert raw CRDT, projections, takes, durable action history, undo stacks/tree and the actual mirror against the successor snapshot. Internal recording commands can be omitted from that mirror, so do not invent session contracts or require mirror entry counts. A targeted post-wait guard mutation on a committed head must redden the unchanged owning spec; pair same-root successful completion and guarded stale callback/failure/catch cases. Queue proof establishes authority and history, not physical audio, full fork persistence or browser UI acceptance.
 
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
@@ -703,9 +1113,9 @@ Blind spot: the 2026-08-29 probe was phrased as a manual grep-and-judge sweep, s
 time pressure judged the specs in the diff and the modules the diff touched, never the mocks in
 modules the diff never named. Nothing in the changed lines points at them.
 
-Probe that would have caught it: the checker exists and is cheap, so the probe is to run it, not to
-reproduce it by hand — `pnpm test:barrel-mocks` on the head, every `✗` row reported. The author's
-dispatch carries the same command whenever the change adds a barrel export or a barrel import.
+Probe that would have caught it: require the pull request's Barrel mock coverage check on the head;
+report every `✗` row, named with its spec, barrel, and missing key. Keep local checker execution for
+focused checker regressions or a targeted mutation probe of the checker itself.
 
 ### 2026-09-09 — storage tests observed one terminal but not reentrant execution (escaped via PR #576)
 
@@ -802,7 +1212,20 @@ Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').fi
 
 Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
 
-Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` because Gate will not; a locator whose precondition no helper in the test produces is the finding.
+Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` as the focused regression check, and inspect the selected PR CI E2E result. A locator whose precondition no helper in the test produces is the finding.
+
+### 2026-10-28 — Grinder shard assertions disagreed with the configured origin (introduced across PRs #5437 and #5723)
+
+PR #5437 added a Grinder-only dev-companion assertion using `localhost`; PR #5723 pinned
+`e2eOrigin` to `127.0.0.1` because Vite binds IPv4 loopback. The exact shard assertion therefore
+contradicted the shared serving-origin contract and failed in PR #5371's unit suite. Passing adjacent
+shard cases did not exercise this pairing.
+
+Probe that would have caught it: run `runs a shard selecting only Grinder PCM parity through its
+matching dev companion` with `SOURDAW_E2E_PORT=6123`. Require the companion `baseURL` and both
+readiness URLs to use the explicit `http://127.0.0.1` origin. Keep literal expectations so changing
+the production origin back to `localhost` makes the unchanged named case fail; deriving expected
+values from `e2eOrigin` would couple the oracle to the helper.
 
 ### Parameter replay-operation escape — unregistered alternatives hide owner-validation gaps
 
@@ -862,10 +1285,9 @@ reader's suite red; the producer and consumer of a CI-generated name lived in un
 no case tied either side to the other.
 
 Probe that would have caught it: for a consumer of a CI-produced artifact, check, or payload name,
-derive the spec's fixture from the producer's own definition — here, `SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME`
-in `scripts/semanticReviewWorkflowContract.ts`, itself pinned against the live workflow YAML by
-`healthGatesWorkflow.spec.ts` — with concrete values substituted for its template placeholders, and
-assert the reader selects an artifact under that derived name; then mutate the producer's shape (add
+derive the spec's fixture from the producer's own definition, with concrete values substituted for
+its template placeholders, and assert the reader selects an artifact under that derived name. Then
+mutate the producer's shape (add
 or drop a segment, as the attempt scoping did) and require the derived case to fail rather than the
 hand-written fixture staying silently valid.
 
@@ -909,6 +1331,27 @@ The EDM status-bar E2E cases asserted rate and latency text but did not observe 
 Probe that would have caught it: attach to the browser before template loading, capture the full console and exception stack, and require no compiler abort while the real Supersaw and reverb nodes load. Pair that check with the real compiler's factory inputs and an offline `keyOn` PCM assertion; status text alone proves neither clean compilation nor audible output.
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
+
+## Exact inverses need actual Command, reciprocal capture and hydration proof
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+Integer row figures and a JSON-round-tripped pure planner omit the execution boundary,
+the discarded skipUndo description, actual history counterpart refresh and session admission.
+Use fractional note, controller and bend figures, real snapshot admission, peer edits before
+Undo and Redo, and saved history from both stacks. Mutating restoration, counterpart refresh,
+hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
+CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
+exact stored restoration.
+
+For the [macro restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+introduced by PR #5495 and PR #5578, a fixture's expected result must come from
+independent real public commands, not retained inverse fields or the normalization
+helper under test. Record public history reversion, serialize it, change loop
+basis or anchor, and run both routes from an exactly restored common prestate.
+Compare full rows and clip state, then check each saved Undo/Redo checkpoint.
+Include zero and null restoration hints; keeping only those scalar hints while
+stripping coordinate captures must fail the unchanged macro comparison.
 
 ### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
 
@@ -1037,3 +1480,84 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+## Historical replay fixtures must retain the real producer and reader
+
+PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
+that old saved inverses remain safe. Generate historical actions, document records and the
+witness-stamped session mirror with the untouched historical producer. Keep those bytes
+and hydrate them with the current production reader before invoking real Undo. A `.sdaw`
+file alone does not contain the session Undo mirror. Historical review prompts and model
+tiers are unverified; the missing proof joined historical production, current hydration and real Undo.
+
+Assert the actual pending entry, tree cursor and settled mirror alongside raw project
+contents. Reverting admission must consume the unsafe entry or alter its coordinates and
+fail the named case. Preserve independently produced compatible controls. Historical
+trim/slip handlers are singleton handlers, and hydration excludes internal restore
+prefixes; synthetic direct groups test defensive APIs, not supported saved grouped history.
+
+Derive hydrated entry counts from the saved mirror: the historical producer may run
+setup commands without retaining them in that mirror. Admit the genuine trim and its
+keyless inverse unconditionally before checking refusal. A zero-distance regression
+must include an unnormalized offset produced with looping off, then enable a loop and
+trim at the same start. Preserve its exact saved bytes and require the old reader's
+consumed history, absent warning and displaced raw rows to fail the new refusal oracle.
+The normalized zero-distance control is also a conservative refusal, not proof that
+the current phase identifies the old offset. Keep real current captures of zero and
+a whole-loop offset and compare raw owner coordinates through Undo and Redo.
+
+Current loop mode cannot stand in for historical mode. Load the authentic looping
+fixture, disable looping through a peer mutation and real projection, then require
+visible refusal with all peer state and pending history intact. The original loop-off
+MIDI fixture is also a conservative refusal; genuine audio remains the replay control.
+When broader refusal makes a former post-wait or prefix test reject from its starting
+state, replace that test with an eligible audio target. Hold the actual snapshot wait,
+remove the target through public CRDT mutation and projection, and capture the peer
+snapshot before releasing the transaction. Moving admission before the wait must
+consume history and fail the case. In a synthetic direct unit, a callback prefix that
+removes the audio target must remain uncalled: removing only its early guard must fail
+full state preservation even though later admission still throws the same error class.
+Snapshot all action payloads, history IDs and tree entries while retaining callback
+function identity; do not drop callback members or attempt to structured-clone them.
+
+### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
+
+PR #5274 (`40baa0716b`) introduced fail-closed file-inspection diagnostics; PR #5365 (`75b10ca71b`)
+refreshed whole and scoped catalogs for missing descriptor types while diagnostics still stopped
+immediately. Exact historical private reviewer prompts and tiers are unknown. Before merge, #5730's
+initial repair retained the diagnostic only at expiry: a later failed process list instead reported
+transient-eligible `process-users-unavailable`, without complete replacement proof.
+
+Run `refreshes an incomplete Darwin` whole/scoped cases with complete clear and holder replacements,
+persistent diagnostics, and later omissions. Run `keeps a Darwin ... diagnostic stable after` sequence
+cases with failed/unusable opening and closing process lists, missing/changed-UID identity, and later
+whole/scoped/parent inspection failures. Require retained storage and a stable, non-transient reason
+on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
+or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
+or add inspection diagnostics to the warning-success allowlist.
+
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
+## Escape: sanitizer tests did not prove project-file admission (PR #4987)
+
+PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
+and valid saved-lane compatibility, but the file admission predicate ignored the
+new fields. PR #4222 (`120c9e2b418e`) had already left the same gap for
+malformed `sourceOffsetBeats`. A selected take carrying only `passAnchorSeconds` beside offset zero
+passed admission and disappeared with its comp region during real hydration.
+The missed input was malformed placement entering the full import route; private
+review prompts are unavailable, so do not infer a named historical stance or tier.
+
+Use a current-version file with a canonical project ID and a valid referenced
+track and clip, and first prove the valid control is admitted. Reject malformed
+placement in both top-level and saved-arrangement take lanes before replacement
+of an existing project. Assert raw authority, tracks, arrangement and selected
+material remain unchanged. Separately admit a JSON roundtrip of legacy takes and
+complete placed passes, including negative finite anchors, and assert exact
+selected-take and comp-region retention after real owner hydration. Removing only
+placement admission must redden the rejection case; testing a store sanitizer
+alone cannot observe the file admission gap.

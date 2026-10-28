@@ -1,37 +1,51 @@
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
 import { ANALYSIS_COMPARE_REFERENCE_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../models/ToolDefinitions';
+import { type PlanningProfile, READONLY_ANSWER_TOOL_NAMES } from '../models/PlanningProfile';
+import { type ToolSchema } from '../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../models/WorkflowCapability';
 import { readAgentReference } from '../stores/agentReferenceStore';
 
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 
+function readonlyMeasurementView(schema: ToolSchema): ToolSchema {
+    const { scope, range, metrics } = schema.function.parameters.properties;
+    return {
+        ...schema,
+        function: {
+            ...schema.function,
+            description:
+                'Measure the current project scope and range without preparing or previewing changes. Returns figures and evidence, never audio.',
+            parameters: {
+                type: 'object',
+                properties: { scope, range, metrics },
+                required: ['scope', 'range'],
+                additionalProperties: false,
+            },
+        },
+    };
+}
+
 /**
- * The provider-visible planning tool list parsePromptToActions sends to the backend. The WebLLM
- * narrowing in inference.ts caps what it advertises at 30, so the production-shape case in
- * inference.spec.ts reads this list to pin which tools survive that cap.
- *
- * Every workflow tool here resolves from a single source: the registry schemas carry the bounds
- * the application enforces (ADR 0042), so no parallel unbounded copy may shadow them in the
- * name-keyed dedup below.
+ * The provider-visible planning list uses Command's published workflow schemas, including their
+ * bounds and visibility. An operation its owner stops publishing must disappear here too.
  *
  * `analysis.compareReference` is offered only while the user has a reference loaded. The schema
  * contract the decision-resume identity reads still lists it, so loading or clearing a reference
  * never invalidates a decision that is waiting.
  */
-export function getPlanningProviderToolSchemas(): readonly ToolSchema[] {
-    const executableAppActionToolSchemas = getExecutableAppActionToolSchemas();
-    const workflowToolSchemas = [
-        ...DAW_TOOL_SCHEMAS.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)),
-        ...executableAppActionToolSchemas.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)),
-    ];
-    const uniqueWorkflowToolSchemas = Array.from(
-        new Map(workflowToolSchemas.map((tool) => [tool.function.name, tool])).values()
+export function getPlanningProviderToolSchemas(profile?: PlanningProfile): readonly ToolSchema[] {
+    if (profile === 'readonly-answer') {
+        return getPlanningProviderSchemaContract()
+            .schemas.filter((schema) => READONLY_ANSWER_TOOL_NAMES.has(schema.function.name))
+            .map((schema) => (schema.function.name === 'analysis.measure' ? readonlyMeasurementView(schema) : schema));
+    }
+    const workflowToolSchemas = getExecutableAppActionToolSchemas().filter((tool) =>
+        WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)
     );
     const referenceLoaded = readAgentReference() !== null;
     const offeredSchemas = getPlanningProviderSchemaContract().schemas.filter(
         (schema) => referenceLoaded || schema.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
     );
-    return [...offeredSchemas, ...uniqueWorkflowToolSchemas];
+    return [...offeredSchemas, ...workflowToolSchemas];
 }

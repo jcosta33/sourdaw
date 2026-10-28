@@ -138,6 +138,21 @@ function createDrumVariant(id: string, name: string, kitIndex: number): PluginDe
     };
 }
 
+// Legacy projects use `kitId`, not the catalog's `kit` contract. Only Level
+// is shared, so expose that contract for existing instances without advertising
+// a second creatable kit or assigning contracts to the legacy stored fields.
+const legacyDrumKit = createDrumVariant('drum-kit', 'Drum Kit', 0);
+const LEGACY_DRUM_KIT_DESCRIPTOR: PluginDescriptor = {
+    ...legacyDrumKit,
+    parameters: legacyDrumKit.parameters.filter((parameter) => parameter.id === 'level'),
+    guidance: legacyDrumKit.guidance && {
+        ...legacyDrumKit.guidance,
+        parameters: Object.fromEntries(
+            Object.entries(legacyDrumKit.guidance.parameters).filter(([id]) => id === 'level')
+        ),
+    },
+};
+
 const DRUM_VARIANTS: PluginDescriptor[] = [
     createDrumVariant('builtin-drum-machine-808', '808 Drum Machine', 0),
     createDrumVariant('builtin-drum-machine-analog', 'Analog Drum Machine', 1),
@@ -172,6 +187,9 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
 // ── Utility functions ──────────────────────────────────────────────────────
 
 export function getPluginById(pluginId: string): PluginDescriptor | undefined {
+    if (pluginId === 'drum-kit') {
+        return LEGACY_DRUM_KIT_DESCRIPTOR;
+    }
     return BUILTIN_PLUGINS.find((param) => param.id === pluginId);
 }
 

@@ -5,14 +5,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const MEASUREMENT_RECEIPT_KINDS: readonly string[] = ['analysis-measurement', 'reference-measurement'];
+const MEASUREMENT_RECEIPT_KINDS: readonly string[] = [
+    'analysis-measurement',
+    'reference-measurement',
+    'transient-onset-read',
+];
 
 /**
- * The data categories a tool receipt adds to a hosted request that replays it. A measurement receipt
- * carries figures the application reduced from its own render, or from a reference the user supplied
- * and the application measured locally, so it names the evidence category and never a render, a
- * stem, reference audio or raw audio; every other receipt adds nothing beyond what a request already
- * declares.
+ * The data categories a tool receipt adds to a hosted request that replays it. Measurement receipts
+ * carry local numeric evidence from a render, a reference, or source-buffer onset detection, never
+ * audio samples. Every other receipt adds nothing beyond what a request already declares.
  */
 export function classifyApplicationToolReceiptData(receipt: ApplicationToolReceipt): readonly AgentDataCategory[] {
     if (

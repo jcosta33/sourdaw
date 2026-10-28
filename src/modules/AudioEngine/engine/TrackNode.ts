@@ -1,8 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { clampFaderGain, configureDualMonoPannerInput, toStereoPan } from '#/utils/audioLevelLaw';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
+import { runAllEffects } from '#/utils/runEffects';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
+import { captureDeviceParameterRuntimeWriteReceipt } from '../useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
@@ -172,7 +174,12 @@ export class RuntimeGraphMutationRejected extends Error {
 }
 
 type PendingParameterWrite =
-    | Readonly<{ kind: 'immediate'; name: string; value: number }>
+    | Readonly<{
+          kind: 'immediate';
+          name: string;
+          value: number;
+          receipt: ReturnType<typeof captureDeviceParameterRuntimeWriteReceipt>;
+      }>
     | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
 
 type PendingDeviceLoad = {
@@ -180,6 +187,7 @@ type PendingDeviceLoad = {
     bypassed?: boolean;
     parameterIds: readonly string[];
     parameterWrites: PendingParameterWrite[];
+    parameterReceipts: Map<string, ReturnType<typeof captureDeviceParameterRuntimeWriteReceipt>>;
     loadPromise?: Promise<unknown>;
     placeholder?: BuiltinDeviceNode;
     readinessToken: DeviceReadinessToken;
@@ -783,16 +791,26 @@ export class TrackNode {
                     pendingLoad.parameterWrites.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
                     return;
                 }
+                const receipt = captureDeviceParameterRuntimeWriteReceipt(this.trackId, deviceId, name);
+                receipt.pending();
                 const previous = pendingLoad.parameterWrites.at(-1);
                 if (previous?.kind === 'immediate' && previous.name === name) {
                     pendingLoad.parameterWrites[pendingLoad.parameterWrites.length - 1] = Object.freeze({
                         kind: 'immediate',
                         name,
                         value,
+                        receipt,
                     });
                     return;
                 }
-                pendingLoad.parameterWrites.push(Object.freeze({ kind: 'immediate', name, value }));
+                pendingLoad.parameterWrites.push(
+                    Object.freeze({
+                        kind: 'immediate',
+                        name,
+                        value,
+                        receipt,
+                    })
+                );
             },
         };
     }
@@ -875,8 +893,16 @@ export class TrackNode {
                 if (pending.kind === 'scheduled') {
                     finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
                 } else {
-                    finalDn.controller?.setParam(pending.name, pending.value);
+                    if (finalDn.controller) {
+                        const complete = pending.receipt.begin();
+                        finalDn.controller.setParam(pending.name, pending.value);
+                        complete();
+                    }
                 }
+            }
+            // Descriptors with their own placeholder controller replay before onLoaded.
+            for (const receipt of pendingLoad.parameterReceipts.values()) {
+                receipt.begin()();
             }
             if (pendingLoad.bypassed !== undefined) {
                 finalDn.controller?.setBypass?.(pendingLoad.bypassed);
@@ -1225,6 +1251,7 @@ export class TrackNode {
                     abortController: new AbortController(),
                     parameterIds: Object.freeze([...parameterIds]),
                     parameterWrites: [],
+                    parameterReceipts: new Map(),
                     readinessToken,
                     resolved: false,
                 };
@@ -1484,7 +1511,22 @@ export class TrackNode {
         if (!dn || !dn.controller) {
             return;
         }
+        const receipt = captureDeviceParameterRuntimeWriteReceipt(this.trackId, deviceId, paramId);
+        const complete = receipt.begin();
         dn.controller.setParam(paramId, value);
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (pendingLoad && !pendingLoad.resolved) {
+            // The generic placeholder already retains one receipt per actual queued write.
+            if (!pendingLoad.parameterWrites.some((write) => write.name === paramId) && receipt.pending()) {
+                pendingLoad.parameterReceipts.set(paramId, receipt);
+            }
+            return;
+        }
+        // Placeholders only queue; their promotion publishes the captured producer.
+        // Hosted plugin IPC has no synchronous application receipt.
+        if (dn.controller.ready !== false && dn.type !== 'external-plugin') {
+            complete();
+        }
     }
 
     public updatePatch(deviceId: string, patch: Record<string, unknown>): void {
@@ -1560,51 +1602,80 @@ export class TrackNode {
         }
         this._disposed = true;
         this._rebuildScheduled = false;
+        const pendingLoads = [...this._pendingDeviceLoads.values()];
+        const readinessTokens = [...this._deviceReadinessTokens.values()];
+        const devices = [...this.strip.deviceNodes];
+        const meter = this.strip.meterNode;
+        const fallbackMeter = this._analyserFallbackMeter;
+
+        // Retire ownership before callbacks can throw or re-enter the strip.
+        this._pendingDeviceLoads.clear();
         this._pendingGraphReadinessTokens.clear();
-        for (const deviceId of this._pendingDeviceLoads.keys()) {
-            this.invalidatePendingDeviceLoad({ deviceId, abortPublished: true, clearFailure: true });
-        }
-        for (const readinessToken of this._deviceReadinessTokens.values()) {
-            this.deps.readinessDiagnostics.removeDevice(readinessToken);
-        }
         this._deviceReadinessTokens.clear();
         this._failedDeviceLoads.clear();
         this._runtimeRecoveryAttempts.clear();
-        this.strip.preFaderTap.disconnect();
-        this.strip.gainNode.disconnect();
-        this.strip.faderNode.disconnect();
-        this.strip.postFaderGain.disconnect();
-        this.strip.panNode.disconnect();
-        this.strip.analyserNode.disconnect();
-        this.strip.carrierGate.disconnect();
-        this.strip.preFaderSendGate.disconnect();
+        this.strip.deviceNodes = [];
         this._outputDestination = null;
-        if (this.strip.meterNode) {
-            this.strip.meterNode.port.postMessage({ type: 'shutdown' });
-            this.strip.meterNode.port.close();
-            this.strip.meterNode.disconnect();
-        }
-        const fallbackMeter = this._analyserFallbackMeter;
-        if (fallbackMeter) {
-            // The panNode sweep above already dropped the tap edge; detach the
-            // splitter from its analysers so none of the three stays live.
-            fallbackMeter.splitter.disconnect();
-            for (const analyser of fallbackMeter.analysers) {
-                analyser.disconnect();
+        this._analyserFallbackMeter = null;
+        for (const pendingLoad of pendingLoads) {
+            pendingLoad.parameterWrites.length = 0;
+            if (pendingLoad.loadPromise) {
+                this.deps.pendingDevicePromises.delete(pendingLoad.loadPromise);
             }
         }
-        for (const dn of this.strip.deviceNodes) {
-            this.destroyPublishedDeviceNode(dn);
+
+        // Keep each required attempt at this level so errors retain effect order.
+        const effects = [
+            ...pendingLoads.flatMap((pendingLoad) => [
+                () => {
+                    if (!pendingLoad.resolved) {
+                        this.deps.readinessDiagnostics.cancel(pendingLoad.readinessToken);
+                    }
+                },
+                () => pendingLoad.abortController.abort(),
+            ]),
+            ...readinessTokens.map((token) => () => this.deps.readinessDiagnostics.removeDevice(token)),
+            () => this.strip.preFaderTap.disconnect(),
+            () => this.strip.gainNode.disconnect(),
+            () => this.strip.faderNode.disconnect(),
+            () => this.strip.postFaderGain.disconnect(),
+            () => this.strip.panNode.disconnect(),
+            () => this.strip.analyserNode.disconnect(),
+            () => this.strip.carrierGate.disconnect(),
+            () => this.strip.preFaderSendGate.disconnect(),
+        ];
+        if (meter) {
+            effects.push(
+                () => meter.port.postMessage({ type: 'shutdown' }),
+                () => meter.port.close(),
+                () => meter.disconnect()
+            );
         }
-        this.strip.deviceNodes = [];
+        if (fallbackMeter) {
+            effects.push(
+                () => fallbackMeter.splitter.disconnect(),
+                ...fallbackMeter.analysers.map((analyser) => () => analyser.disconnect())
+            );
+        }
+        effects.push(
+            ...devices.flatMap((device) => [
+                () => {
+                    if (device.controller?.destroy) {
+                        device.controller.destroy();
+                    } else if (device.dispose) {
+                        device.dispose();
+                    }
+                },
+                () => this.disconnectDeviceNode(device),
+            ])
+        );
+        runAllEffects(effects);
     }
 
     /** Disposes the strip of a track that left the project, announcing each device it held as leaving too. */
     public disposeLeavingProject(): void {
         const devices = [...this.strip.deviceNodes];
-        this.dispose();
-        for (const device of devices) {
-            this.announceDeviceLeftProject(device);
-        }
+        // A disposal aggregate remains one failure here; notification failures follow it.
+        runAllEffects([() => this.dispose(), ...devices.map((device) => () => this.announceDeviceLeftProject(device))]);
     }
 }

@@ -39,8 +39,7 @@
             "pendingContract": "measured vibe decomposition"
         },
         "refinement": {
-            "sealed": false,
-            "pendingContract": "bounded thread context to the planner"
+            "sealed": true
         },
         "question": {
             "sealed": false,
@@ -1517,6 +1516,1189 @@
                     "maxCommands": 1
                 }
             }
+        },
+        {
+            "id": "AC004-HO-SCALE-1",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "scale-pending",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB and turn Keys down 2 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            },
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-keys",
+                                    "deltaDb": -2
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "pending"
+            },
+            "prompt": "make the guitar 2 dB",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose-commands",
+                    "commands": [
+                        {
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "trackId": "track-guitar",
+                                "deltaDb": -2
+                            }
+                        },
+                        {
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "trackId": "track-keys",
+                                "deltaDb": -2
+                            }
+                        }
+                    ],
+                    "refinesPriorProposal": true
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "replaces": "prior-proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deltaDb": -2
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "deltaDb": -2
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-SCALE-2",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "scale-pending",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB and turn Keys down 2 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            },
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-keys",
+                                    "deltaDb": -2
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "pending"
+            },
+            "prompt": "make the keys 1 dB",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose-commands",
+                    "commands": [
+                        {
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "trackId": "track-guitar",
+                                "deltaDb": -4
+                            }
+                        },
+                        {
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "trackId": "track-keys",
+                                "deltaDb": -1
+                            }
+                        }
+                    ],
+                    "refinesPriorProposal": true
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "replaces": "prior-proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deltaDb": -4
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "deltaDb": -1
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-SCALE-3",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "scale-pending",
+            "prior": {
+                "prompt": "Turn Overheads down 3 dB and mute Hi-Hat",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-overheads",
+                                    "deltaDb": -3
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-hi-hat",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "pending"
+            },
+            "prompt": "make it 1.5 dB please",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain", "mute track"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain", "muteTrack"]
+                },
+                {
+                    "kind": "propose-commands",
+                    "commands": [
+                        {
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "trackId": "track-overheads",
+                                "deltaDb": -1.5
+                            }
+                        },
+                        {
+                            "name": "muteTrack",
+                            "arguments": {
+                                "trackId": "track-hi-hat",
+                                "muted": true
+                            }
+                        }
+                    ],
+                    "refinesPriorProposal": true
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "replaces": "prior-proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "deltaDb": -1.5
+                        }
+                    },
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-hi-hat",
+                            "muted": true
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-EXCLUDE-1",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "exclude-pending",
+            "prior": {
+                "prompt": "Turn Kick down 2 dB and turn Hi-Hat down 3 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-kick",
+                                    "deltaDb": -2
+                                }
+                            },
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-hi-hat",
+                                    "deltaDb": -3
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "pending"
+            },
+            "prompt": "not the kick",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose-commands",
+                    "commands": [
+                        {
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "trackId": "track-hi-hat",
+                                "deltaDb": -3
+                            }
+                        }
+                    ],
+                    "refinesPriorProposal": true
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "replaces": "prior-proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-hi-hat",
+                            "deltaDb": -3
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-EXCLUDE-2",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "exclude-pending",
+            "prior": {
+                "prompt": "Turn Overheads down 2 dB and mute Backing Vocals R",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-overheads",
+                                    "deltaDb": -2
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-backing-vocal-right",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "pending"
+            },
+            "prompt": "drop the Overheads change",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain", "mute track"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain", "muteTrack"]
+                },
+                {
+                    "kind": "propose-commands",
+                    "commands": [
+                        {
+                            "name": "muteTrack",
+                            "arguments": {
+                                "trackId": "track-backing-vocal-right",
+                                "muted": true
+                            }
+                        }
+                    ],
+                    "refinesPriorProposal": true
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "replaces": "prior-proposal",
+                "actions": [
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-backing-vocal-right",
+                            "muted": true
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-EXCLUDE-3",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "exclude-pending",
+            "prior": {
+                "prompt": "Turn Overheads down 2 dB and mute Backing Vocals R",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-overheads",
+                                    "deltaDb": -2
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-backing-vocal-right",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "pending"
+            },
+            "prompt": "remove the Backing Vocals R mute",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose-commands",
+                    "commands": [
+                        {
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "trackId": "track-overheads",
+                                "deltaDb": -2
+                            }
+                        }
+                    ],
+                    "refinesPriorProposal": true
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "replaces": "prior-proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "deltaDb": -2
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-RELATIVE-1",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "relative-to-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "an extra 1 dB",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deltaDb": -1
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-RELATIVE-2",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "relative-to-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "a further 2 dB",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deltaDb": -2
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-RELATIVE-3",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "relative-to-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "make it 1 dB less than that",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "deltaDb": 1
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-UNDO-1",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "undo-commit",
+            "prior": {
+                "prompt": "Turn Keys down 2 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-keys",
+                                    "deltaDb": -2
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "Undo that, please.",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "revert",
+                "group": "prior-commit"
+            }
+        },
+        {
+            "id": "AC004-HO-UNDO-2",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "undo-commit",
+            "prior": {
+                "prompt": "Turn Keys down 2 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-keys",
+                                    "deltaDb": -2
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "undo the last edit",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "revert",
+                "group": "prior-commit"
+            }
+        },
+        {
+            "id": "AC004-HO-UNDO-3",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "undo-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "take that back",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "revert",
+                "group": "prior-commit"
+            }
+        },
+        {
+            "id": "AC004-HO-RETARGET-1",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "retarget-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "do the same to Overheads",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "deltaDb": -4
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-RETARGET-2",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "retarget-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 4 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -4
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "Keys too",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "deltaDb": -4
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-RETARGET-3",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "retarget-commit",
+            "prior": {
+                "prompt": "Turn Keys down 2 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-keys",
+                                    "deltaDb": -2
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "do the same to both Kick and Snare",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "deltaDb": -2
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "deltaDb": -2
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-UNDO-MULTI-TRACK",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "undo-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 1 dB and turn Keys down 2 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -1
+                                }
+                            },
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-keys",
+                                    "deltaDb": -2
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "undo your last change",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "revert",
+                "group": "prior-commit"
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-hi-hat",
+                    "gainDb": -7
+                }
+            ]
+        },
+        {
+            "id": "AC004-HO-UNDO-MULTI-COMMAND",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "undo-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 1 dB and mute Guitar",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -1
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "undo that change",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "revert",
+                "group": "prior-commit"
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-hi-hat",
+                    "gainDb": -7
+                }
+            ]
+        },
+        {
+            "id": "AC004-HO-RETARGET-MULTI-TRACK",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "retarget-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 2 dB and mute Keys",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -2
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-keys",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "do the same to Overheads",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "deltaDb": -2
+                        }
+                    },
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "muted": true
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-RETARGET-MULTI-COMMAND",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "retarget-commit",
+            "prior": {
+                "prompt": "Turn Guitar down 1 dB and mute Guitar",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain", "mute track"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain", "muteTrack"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "deltaDb": -1
+                                }
+                            },
+                            {
+                                "name": "muteTrack",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "muted": true
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "do the same to both Keys and Overheads",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "deltaDb": -1
+                        }
+                    },
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-keys",
+                            "muted": true
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "deltaDb": -1
+                        }
+                    },
+                    {
+                        "type": "muteTrack",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "muted": true
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "AC004-HO-RELATIVE-ABSOLUTE",
+            "promptClass": "refinement",
+            "class": "execute-exact",
+            "refinementKind": "relative-to-commit",
+            "prior": {
+                "prompt": "Set Guitar to -9 dB",
+                "providerTurns": [
+                    {
+                        "kind": "search",
+                        "intents": ["set track gain"]
+                    },
+                    {
+                        "kind": "discover",
+                        "names": ["setTrackGain"]
+                    },
+                    {
+                        "kind": "propose-commands",
+                        "commands": [
+                            {
+                                "name": "setTrackGain",
+                                "arguments": {
+                                    "trackId": "track-guitar",
+                                    "gainDb": -9
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "outcome": "committed"
+            },
+            "prompt": "make it 3 dB more",
+            "providerTurns": [],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-guitar",
+                            "gainDb": -6
+                        }
+                    }
+                ]
+            },
+            "interveningFaderEdits": [
+                {
+                    "trackId": "track-guitar",
+                    "gainDb": -15
+                }
+            ]
         }
     ]
 }

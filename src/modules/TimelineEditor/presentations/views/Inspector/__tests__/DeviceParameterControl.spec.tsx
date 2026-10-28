@@ -1,7 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getPluginById } from '#/modules/Arrangement/useCases';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { createTrack, getPluginById } from '#/modules/Arrangement/useCases';
+import * as audioEngineUseCases from '#/modules/AudioEngine/useCases';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { TrackAutomationSection } from '../TrackAutomationSection';
@@ -11,6 +14,16 @@ import type { Device, Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetDeviceParameter = vi.fn();
+const mockExecuteUserAppAction = vi.hoisted(() =>
+    vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve())
+);
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
+}));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: () => ({ isCurrent: () => true }),
+}));
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
@@ -141,6 +154,10 @@ describe('DeviceParameterControl', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        mockSetDeviceParameter.mockReturnValue(true);
+        const track = createTrack({ id: 'track-1', name: 'Test', kind: 'audio', withoutDefaultDevice: true });
+        trackStore.set({ tracks: [{ ...track, devices: [mockDevice] }], selectedTrackId: 'track-1', ghostClips: [] });
         mockUseStore.mockImplementation((_store: unknown, defaultState: unknown) => defaultState);
     });
 
@@ -232,10 +249,99 @@ describe('DeviceParameterControl', () => {
         }
     });
 
-    it('should call setDeviceParameter when knob value changes', () => {
+    it('commits a settled knob through the guarded user action', async () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
-        fireEvent.click(screen.getByTestId('rotary-knob'));
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1.5);
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('rotary-knob'));
+        });
+        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1.5, {
+            transient: true,
+            runtimeOwner: expect.any(Symbol),
+            automationRecordingOwner: expect.any(Symbol),
+        });
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-1',
+                    paramId: 'gain',
+                    value: 1.5,
+                    expectedValue: 0.5,
+                    automationRecordingPolicy: 'suppressed',
+                }),
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function), onCommitted: expect.any(Function) })
+        );
+    });
+
+    it('keeps a transient callback off Command and commits its captured starting value once', async () => {
+        render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+        const props = mockMidiLearnRotaryKnob.mock.calls.at(-1)![0] as {
+            onChange: (value: number, transient?: boolean) => void;
+        };
+        act(() => {
+            props.onChange(0.7, true);
+            props.onChange(0.9, true);
+        });
+        const runtimeOwner = mockSetDeviceParameter.mock.calls[0]![3].runtimeOwner;
+        const automationRecordingOwner = mockSetDeviceParameter.mock.calls[0]![3].automationRecordingOwner;
+        expect(runtimeOwner).toEqual(expect.any(Symbol));
+        expect(automationRecordingOwner).toEqual(expect.any(Symbol));
+        expect(automationRecordingOwner).not.toBe(runtimeOwner);
+        expect(mockSetDeviceParameter.mock.calls).toEqual([
+            ['device-1', 'gain', 0.7, { transient: true, runtimeOwner, automationRecordingOwner }],
+            ['device-1', 'gain', 0.9, { transient: true, runtimeOwner, automationRecordingOwner }],
+        ]);
+        expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
+        await act(async () => {
+            props.onChange(0.9, false);
+        });
+        expect(mockSetDeviceParameter).toHaveBeenLastCalledWith('device-1', 'gain', 0.9, {
+            transient: true,
+            runtimeOwner,
+            automationRecordingOwner,
+        });
+        expect(mockExecuteUserAppAction).toHaveBeenCalledOnce();
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    value: 0.9,
+                    expectedValue: 0.5,
+                    expectedValuePresent: true,
+                    automationRecordingPolicy: 'suppressed',
+                }),
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
+        );
+    });
+
+    it('does not restore an applied preview over a later pending producer on unmount', () => {
+        const release = vi.fn();
+        const capture = vi.spyOn(audioEngineUseCases, 'captureDeviceParameterRuntimeWriteAuthority');
+        capture.mockReturnValueOnce({
+            owner: Symbol('applied preview'),
+            isCurrent: () => true,
+            canCommit: () => false,
+            release,
+        });
+        try {
+            const view = render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+            const props = mockMidiLearnRotaryKnob.mock.calls.at(-1)![0] as {
+                onChange: (value: number, transient?: boolean) => void;
+            };
+            act(() => props.onChange(0.7, true));
+            expect(mockSetDeviceParameter).toHaveBeenCalledOnce();
+            mockSetDeviceParameter.mockClear();
+
+            view.unmount();
+
+            expect(mockSetDeviceParameter).not.toHaveBeenCalled();
+            expect(release).toHaveBeenCalledOnce();
+            expect(mockExecuteUserAppAction).not.toHaveBeenCalled();
+        } finally {
+            capture.mockRestore();
+        }
     });
 
     it('should render select for choice parameters', () => {
@@ -248,7 +354,7 @@ describe('DeviceParameterControl', () => {
         expect(screen.getByTestId('compact-select')).toBeInTheDocument();
     });
 
-    it('should call setDeviceParameter when choice selection changes', () => {
+    it('dispatches one guarded action when choice selection changes', () => {
         const choiceParam: DeviceParameterView = {
             ...mockParam,
             type: 'choice',
@@ -256,7 +362,24 @@ describe('DeviceParameterControl', () => {
         };
         render(<DeviceParameterControl param={choiceParam} device={mockDevice} trackId="track-1" />);
         fireEvent.change(screen.getByTestId('compact-select'), { target: { value: '1' } });
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 1);
+        expect(mockSetDeviceParameter).not.toHaveBeenCalled();
+        expect(mockExecuteUserAppAction).toHaveBeenCalledOnce();
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-1',
+                    paramId: 'gain',
+                    value: 1,
+                    expectedTrackId: 'track-1',
+                    expectedDeviceType: 'effect',
+                    expectedDeviceIds: ['device-1'],
+                    expectedValue: 0.5,
+                    expectedValuePresent: true,
+                }),
+            },
+            { shouldExecute: expect.any(Function) }
+        );
     });
 
     // ── A parameter whose engine distinguishes fewer settings than its range ──
@@ -305,7 +428,20 @@ describe('DeviceParameterControl', () => {
         render(<DeviceParameterControl param={crustOversamplingParam()} device={crustDevice} trackId="track-1" />);
 
         fireEvent.change(screen.getByTestId('compact-select'), { target: { value: '2' } });
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-crust', 'oversampling', 2);
+        expect(mockSetDeviceParameter).not.toHaveBeenCalled();
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({
+                    deviceId: 'device-crust',
+                    paramId: 'oversampling',
+                    value: 2,
+                    expectedValue: 4,
+                    expectedValuePresent: true,
+                }),
+            },
+            { shouldExecute: expect.any(Function) }
+        );
     });
 
     it('shows the member in force when the stored value sits between two of them', () => {

@@ -60,11 +60,27 @@ describe('openViaNative', () => {
         const filters = [{ name: 'Audio', extensions: ['wav', 'mp3'] }];
         const options = { multiple: true, filters };
         vi.mocked(desktopOpenDialog).mockRejectedValue(new Error('native dialog unavailable'));
-        vi.mocked(openViaBrowser).mockResolvedValue(['fallback.wav']);
+        const file = new File(['fallback bytes'], 'fallback.wav');
+        vi.mocked(openViaBrowser).mockResolvedValue([file]);
 
         const result = await openViaNative(options);
 
-        expect(result).toEqual(['fallback.wav']);
+        expect(result).toEqual({ kind: 'browser-files', files: [file] });
         expect(openViaBrowser).toHaveBeenCalledWith(options);
+    });
+
+    it('keeps fallback cancellation distinct from native cancellation', async () => {
+        vi.mocked(desktopOpenDialog).mockRejectedValue(new Error('native grant rejected'));
+        vi.mocked(openViaBrowser).mockResolvedValue(null);
+
+        await expect(openViaNative({})).resolves.toEqual({ kind: 'browser-files', files: null });
+    });
+
+    it('propagates browser picker errors after the native opening rejects', async () => {
+        vi.mocked(desktopOpenDialog).mockRejectedValue(new Error('native grant rejected'));
+        const failure = new Error('browser picker failed');
+        vi.mocked(openViaBrowser).mockRejectedValue(failure);
+
+        await expect(openViaNative({})).rejects.toBe(failure);
     });
 });

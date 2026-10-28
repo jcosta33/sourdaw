@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { quantiseDeviceParameterValue, setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 import {
     automationStore,
     modulationStore,
@@ -16,13 +16,17 @@ import {
     type ModulationStoreState,
 } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
 import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
+import { useDeviceParameterGesture } from '../../hooks/useDeviceParameterGesture';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;
@@ -185,7 +189,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const laneLookup = buildLaneLookup(autoState.lanes);
     const targetId = createDeviceAutomationTargetId(device.id, param.id);
-    const devices = trackState.tracks.find((track) => track.id === trackId)?.devices ?? [device];
+    const owner = trackState.tracks.find((track) => track.id === trackId);
+    const devices = owner?.devices ?? [device];
     const activeLane =
         laneLookup.get(`${trackId}|${targetId}`) ??
         findEquivalentAutomationLane(
@@ -195,20 +200,46 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         );
     const hasAutomation = !!activeLane;
 
-    const value = device.parameterValues[param.id] ?? param.value;
+    const {
+        value,
+        gestureOwner,
+        startGesture,
+        isGestureCurrent,
+        change: handleKnobChange,
+    } = useDeviceParameterGesture({ param, device, trackId });
     const step = deriveStep(param);
     const fineStep = step / 10;
     const displayValue = formatDisplayValue(value, param);
-
-    const handleKnobChange = (value1: number) => {
-        setDeviceParameter(device.id, param.id, value1);
-    };
 
     // Shared by both select branches, which put different numbers in `value`:
     // a `choice` option carries its index, a legal-set option carries the
     // setting itself. Either way what the option carries is what gets written.
     const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>) => {
-        setDeviceParameter(device.id, param.id, Number(event.target.value));
+        const selectedValue = Number(event.target.value);
+        if (device.parameterValues[param.id] === selectedValue) {
+            return;
+        }
+        const authority = captureProjectTransitionAuthority();
+        const valuePresent = Object.hasOwn(device.parameterValues, param.id);
+        void executeUserAppAction(
+            {
+                type: 'setDeviceParameter',
+                payload: {
+                    deviceId: device.id,
+                    paramId: param.id,
+                    value: selectedValue,
+                    expectedTrackId: trackId,
+                    expectedDeviceType: device.type,
+                    expectedDeviceIds: devices.map((candidate) => candidate.id),
+                    expectedValuePresent: valuePresent,
+                    expectedValue: valuePresent ? device.parameterValues[param.id] : undefined,
+                    expectedTrackFrozen: owner?.frozen,
+                },
+            },
+            { shouldExecute: authority.isCurrent }
+        ).catch((error: unknown) => {
+            notifyUser(error instanceof Error ? error.message : 'Device parameter change failed', 'error');
+        });
     };
 
     const isChoice = param.type === 'choice' && param.choices && param.choices.length > 0;
@@ -294,23 +325,38 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             ? toLinear(param.defaultValue ?? param.value)
             : (param.defaultValue ?? param.value);
 
-        const onChange = (value1: number) => {
-            handleKnobChange(isLog ? toLog(value1) : value1);
+        const onChange = (value1: number, isTransient = false, recordingSample = true) => {
+            handleKnobChange(isLog ? toLog(value1) : value1, isTransient, recordingSample);
         };
 
         if (isSlider) {
             return (
-                <BipolarSlider
-                    value={mappedValue}
-                    onValueChange={onChange}
-                    min={min}
-                    max={max}
-                    step={mappedStep}
-                    defaultValue={mappedDefaultValue}
-                    aria-label={param.name}
-                    formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
+                <div
                     className="w-full"
-                />
+                    onPointerDownCapture={() => startGesture()}
+                    onKeyDownCapture={(event) => {
+                        if (
+                            ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(
+                                event.key
+                            )
+                        ) {
+                            startGesture();
+                        }
+                    }}
+                >
+                    <BipolarSlider
+                        value={mappedValue}
+                        onValueChange={(nextValue) => onChange(nextValue, true)}
+                        onValueCommit={(nextValue) => onChange(nextValue, false, false)}
+                        min={min}
+                        max={max}
+                        step={mappedStep}
+                        defaultValue={mappedDefaultValue}
+                        aria-label={param.name}
+                        formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
+                        className="w-full"
+                    />
+                </div>
             );
         }
 
@@ -322,6 +368,11 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 deviceId={device.id}
                 value={mappedValue}
                 onChange={onChange}
+                gestureOwner={gestureOwner}
+                gestureAuthority={{
+                    acquire: startGesture,
+                    isCurrent: isGestureCurrent,
+                }}
                 min={min}
                 max={max}
                 step={mappedStep}

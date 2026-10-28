@@ -23,6 +23,7 @@ const OVERLAY_LABEL = 'Sourdaw — start a project';
 const OVERLAY_LABEL_CONSTANT = 'LAUNCH_SCREEN_NAME';
 const ALIAS_DEPTH_LIMIT = 8;
 const DISAPPEARANCE_STATES = new Set(['hidden', 'detached']);
+const UNRESOLVED_OPTIONS = '<unresolved options>';
 
 type OverlayWait = { line: number; timeout: string | undefined };
 type FirstPaintArgument = { line: number; milliseconds: number };
@@ -70,16 +71,24 @@ function isOverlayLabel(expression: ts.Expression | undefined): boolean {
     return ts.isIdentifier(expression) && expression.text === OVERLAY_LABEL_CONSTANT;
 }
 
+function namedPropertyValue(property: ts.ObjectLiteralElementLike, name: string): ts.Expression | undefined {
+    if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === name) {
+        return property.initializer;
+    }
+    if (ts.isShorthandPropertyAssignment(property) && property.name.text === name) {
+        return property.name;
+    }
+    return undefined;
+}
+
 function propertyInitializer(options: ts.Expression | undefined, name: string): ts.Expression | undefined {
     if (options === undefined || !ts.isObjectLiteralExpression(options)) {
         return undefined;
     }
     for (const property of options.properties) {
-        if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === name) {
-            return property.initializer;
-        }
-        if (ts.isShorthandPropertyAssignment(property) && property.name.text === name) {
-            return property.name;
+        const value = namedPropertyValue(property, name);
+        if (value !== undefined) {
+            return value;
         }
     }
     return undefined;
@@ -156,10 +165,77 @@ function waitsForDisappearance(options: ts.Expression | undefined): boolean {
 }
 
 /**
+ * The timeout an options argument carries, as source text. Options reached
+ * through a `const` or an object spread are followed; options the census cannot
+ * resolve to an object literal read as `UNRESOLVED_OPTIONS`, never as "no
+ * explicit timeout".
+ */
+function timeoutOf(
+    options: ts.Expression | undefined,
+    checker: ts.TypeChecker,
+    sourceFile: ts.SourceFile,
+    depth = 0
+): string | undefined {
+    if (options === undefined) {
+        return undefined;
+    }
+    const subject = unwrap(options);
+    if (ts.isIdentifier(subject)) {
+        const initializer = constInitializerOf(subject, checker);
+        if (depth >= ALIAS_DEPTH_LIMIT || initializer === undefined) {
+            return UNRESOLVED_OPTIONS;
+        }
+        return timeoutOf(initializer, checker, sourceFile, depth + 1);
+    }
+    if (!ts.isObjectLiteralExpression(subject)) {
+        return UNRESOLVED_OPTIONS;
+    }
+    let timeout: string | undefined;
+    for (const property of subject.properties) {
+        if (ts.isSpreadAssignment(property)) {
+            timeout = timeoutOf(property.expression, checker, sourceFile, depth + 1) ?? timeout;
+        } else {
+            timeout = namedPropertyValue(property, 'timeout')?.getText(sourceFile) ?? timeout;
+        }
+    }
+    return timeout;
+}
+
+/**
+ * `expect.poll(...)` reads as an appearance wait unless its terminal matcher
+ * asserts the overlay is gone: any `.not`, `.toBe(false)`, or `.toBeFalsy()`.
+ * A poll with no terminal matcher, or one the census does not recognise, stays
+ * judged.
+ */
+function pollAssertsDisappearance(poll: ts.CallExpression): boolean {
+    let negated = false;
+    let node: ts.Node = poll;
+    while (ts.isPropertyAccessExpression(node.parent) && node.parent.expression === node) {
+        const access: ts.PropertyAccessExpression = node.parent;
+        if (access.name.text === 'not') {
+            negated = true;
+            node = access;
+            continue;
+        }
+        const matcher = access.parent;
+        if (!ts.isCallExpression(matcher) || matcher.expression !== access) {
+            return negated;
+        }
+        const expected = matcher.arguments[0];
+        return (
+            negated ||
+            access.name.text === 'toBeFalsy' ||
+            (access.name.text === 'toBe' && expected !== undefined && expected.kind === ts.SyntaxKind.FalseKeyword)
+        );
+    }
+    return negated;
+}
+
+/**
  * The three first-paint forms: `expect(<overlay>).toBeVisible(opts)`,
  * `<overlay>.waitFor(opts)` for the visible state, and `expect.poll(() =>
- * <overlay>.isVisible(), opts)`. Disappearance matchers and states are not
- * waits for the overlay to appear, and are not judged.
+ * <overlay>.isVisible(), opts)`. Disappearance matchers, states, and poll
+ * outcomes are not waits for the overlay to appear, and are not judged.
  */
 function describeFirstPaintWait(call: ts.CallExpression, checker: ts.TypeChecker): WaitOptions | undefined {
     const callee = call.expression;
@@ -178,7 +254,7 @@ function describeFirstPaintWait(call: ts.CallExpression, checker: ts.TypeChecker
     }
     if (method === 'poll') {
         const isExpectPoll = ts.isIdentifier(callee.expression) && callee.expression.text === 'expect';
-        if (!isExpectPoll || !pollsOverlayVisibility(call.arguments[0], checker)) {
+        if (!isExpectPoll || !pollsOverlayVisibility(call.arguments[0], checker) || pollAssertsDisappearance(call)) {
             return undefined;
         }
         return { options: call.arguments[1] };
@@ -211,7 +287,7 @@ function analyzeSource(text: string, fileName: string): SourceAnalysis {
             if (wait !== undefined) {
                 waits.push({
                     line: lineOf(node),
-                    timeout: propertyInitializer(wait.options, 'timeout')?.getText(sourceFile),
+                    timeout: timeoutOf(wait.options, checker, sourceFile),
                 });
             }
         }
@@ -387,6 +463,66 @@ describe('launch overlay first-paint bound', () => {
             expect(waitsOffTheBound(waits).map((wait) => wait.line)).toEqual([3, 4]);
         });
 
+        it('flags a short timeout passed through an options variable', () => {
+            const { waits } = analyzeSynthetic(
+                'const opts = { timeout: 5_000 };',
+                'await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible(opts);',
+                'const nested = { ...opts };',
+                'await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ ...nested, state: "visible" });'
+            );
+
+            expect(waitsOffTheBound(waits)).toEqual([
+                { line: 2, timeout: '5_000' },
+                { line: 4, timeout: '5_000' },
+            ]);
+        });
+
+        it('accepts the shared bound passed through an options variable', () => {
+            const { waits } = analyzeSynthetic(
+                'const opts = { timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS };',
+                'await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible(opts);',
+                'const ceiling = { state: "visible" } as const;',
+                'await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor(ceiling);'
+            );
+
+            expect(waits).toHaveLength(2);
+            expect(waitsOffTheBound(waits)).toEqual([]);
+        });
+
+        it('keeps a same-named options variable in a sibling test bound to its own object', () => {
+            const { waits } = analyzeSynthetic(
+                "test('first', async ({ page }) => {",
+                '    const opts = { timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS };',
+                '    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible(opts);',
+                '});',
+                "test('second', async ({ page }) => {",
+                '    const opts = { timeout: 5_000 };',
+                '    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible(opts);',
+                '});'
+            );
+
+            expect(waitsOffTheBound(waits)).toEqual([{ line: 7, timeout: '5_000' }]);
+        });
+
+        it('flags options the census cannot resolve to an object literal', () => {
+            const { waits } = analyzeSynthetic(
+                'await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible(launchOptions());',
+                'await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ ...unknownOptions });',
+                'let reassigned = { timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS };',
+                'await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible(reassigned);',
+                'async function waitForLaunch(page, options) {',
+                '    await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor(options);',
+                '}'
+            );
+
+            expect(waitsOffTheBound(waits).map((wait) => wait.timeout)).toEqual([
+                '<unresolved options>',
+                '<unresolved options>',
+                '<unresolved options>',
+                '<unresolved options>',
+            ]);
+        });
+
         it('accepts the shared bound and the suite ceiling', () => {
             const { waits } = analyzeSynthetic(
                 'await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });',
@@ -454,6 +590,38 @@ describe('launch overlay first-paint bound', () => {
             );
 
             expect(waits).toEqual([]);
+        });
+
+        it('does not judge an expect.poll that waits for the overlay to disappear', () => {
+            const { waits } = analyzeSynthetic(
+                'const overlay = page.getByLabel(LAUNCH_SCREEN_NAME);',
+                'await expect.poll(() => overlay.isVisible(), { timeout: 5_000 }).toBe(false);',
+                'await expect.poll(() => overlay.isVisible(), { timeout: 5_000 }).toBeFalsy();',
+                'await expect.poll(() => overlay.isVisible(), { timeout: 5_000 }).not.toBe(true);',
+                'await expect.poll(() => overlay.isVisible(), { timeout: 5_000 }).not.toBeTruthy();'
+            );
+
+            expect(waits).toEqual([]);
+        });
+
+        it('judges an expect.poll whose terminal matcher asserts the overlay is visible', () => {
+            const { waits } = analyzeSynthetic(
+                'const overlay = page.getByLabel(LAUNCH_SCREEN_NAME);',
+                'await expect.poll(() => overlay.isVisible(), { timeout: 5_000 }).toBe(true);',
+                'await expect.poll(() => overlay.isVisible(), { timeout: 5_000 }).toBeTruthy();'
+            );
+
+            expect(waitsOffTheBound(waits).map((wait) => wait.line)).toEqual([2, 3]);
+        });
+
+        it('keeps judging an expect.poll with no terminal matcher or an unrecognised one', () => {
+            const { waits } = analyzeSynthetic(
+                'const overlay = page.getByLabel(LAUNCH_SCREEN_NAME);',
+                'const pending = expect.poll(() => overlay.isVisible(), { timeout: 5_000 });',
+                'await expect.poll(() => overlay.isVisible(), { timeout: 5_000 }).toEqual(expected);'
+            );
+
+            expect(waitsOffTheBound(waits).map((wait) => wait.line)).toEqual([2, 3]);
         });
 
         it('reads the first-paint argument of launch_new_project from code, not comments', () => {

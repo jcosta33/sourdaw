@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
 import { type BuiltinDeviceNode, type SendNode } from '../../models/AudioEngineState';
+import {
+    deviceParameterRuntimeWriteOwners,
+    deviceParameterRuntimeWriteSequences,
+} from '../../stores/deviceParameterRuntimeWriteOwners';
+import { captureDeviceParameterRuntimeWriteAuthority } from '../../useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority';
+import { withDeviceParameterRuntimeWriteOwner } from '../../useCases/deviceControls/withDeviceParameterRuntimeWriteOwner';
 import { createDeviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeDeps } from '../TrackNode';
 
@@ -253,6 +259,15 @@ function createLoadedDevice(deviceId = 'wasm-1') {
         dispose,
     };
     return { device, node, controller, dispose };
+}
+
+function captureFailure(effect: () => void): unknown {
+    try {
+        effect();
+    } catch (error) {
+        return error;
+    }
+    throw new Error('expected a disposal failure');
 }
 
 describe('TrackNode — metering, devices, sends, and teardown', () => {
@@ -1008,6 +1023,239 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.strip.deviceNodes).toHaveLength(0);
         });
 
+        it('changes runtime ownership only after a ready controller accepts an actual write', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const loaded = createLoadedDevice();
+            loaded.device.parameterIds = ['gain'];
+            track.strip.deviceNodes.push(loaded.device);
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            expect(preview.isCurrent()).toBe(true);
+            loaded.controller.setParam.mockImplementationOnce(() => {
+                throw new Error('refused');
+            });
+            expect(() => track.updateParam('wasm-1', 'gain', 0.8)).toThrow('refused');
+            expect(preview.isCurrent()).toBe(true);
+            track.updateParam('missing', 'gain', 0.8);
+            expect(preview.isCurrent()).toBe(true);
+            track.updateParam('wasm-1', 'gain', 0.25);
+            expect(preview.isCurrent()).toBe(false);
+        });
+
+        it('does not let an outer controller return overtake a newer effective nested write', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const loaded = createLoadedDevice();
+            track.strip.deviceNodes.push(loaded.device);
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            loaded.controller.setParam.mockImplementationOnce(() => {
+                withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', undefined, () =>
+                    track.updateParam('wasm-1', 'gain', 0.8)
+                );
+            });
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            expect(preview.isCurrent()).toBe(false);
+            expect(loaded.controller.setParam.mock.calls).toEqual([
+                ['gain', 0.25],
+                ['gain', 0.8],
+            ]);
+        });
+
+        it('waits for a descriptor-owned placeholder to publish its replay before changing ownership', () => {
+            const queued: Array<[string, number]> = [];
+            const deferred = installDeferredWasmDevice({
+                controller: {
+                    setParam: (name, value) => {
+                        queued.push([name, value]);
+                    },
+                },
+                beforeLoaded: (node) => {
+                    for (const [name, value] of queued) {
+                        node.controller?.setParam(name, value);
+                    }
+                },
+            });
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('wasm-1', 'levain');
+            const earlier = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', earlier.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            expect(earlier.isCurrent()).toBe(true);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.controller.setParam.mock.calls).toEqual([['gain', 0.25]]);
+            expect(earlier.isCurrent()).toBe(true);
+            track.updateParam('wasm-1', 'gain', 0.8);
+            expect(earlier.isCurrent()).toBe(false);
+        });
+
+        it('retains an applied stamp but fences restoration and settlement behind a later queued write', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const original = createLoadedDevice();
+            track.strip.deviceNodes.push(original.device);
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            track.strip.deviceNodes.length = 0;
+            const deferred = installDeferredWasmDevice();
+            track.addDevice('wasm-1', 'levain');
+            const appliedSequence = deviceParameterRuntimeWriteSequences.get(JSON.stringify(['t1', 'wasm-1', 'gain']));
+            track.updateParam('wasm-1', 'gain', 0.8);
+            expect(preview.isCurrent()).toBe(true);
+            expect(deviceParameterRuntimeWriteOwners.get('t1')?.get('wasm-1')?.get('gain')).toBe(preview.owner);
+            expect(deviceParameterRuntimeWriteSequences.get(JSON.stringify(['t1', 'wasm-1', 'gain']))).toBe(
+                appliedSequence
+            );
+            expect(preview.canCommit()).toBe(false);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.controller.setParam).toHaveBeenCalledWith('gain', 0.8);
+            expect(preview.isCurrent()).toBe(false);
+        });
+
+        it.each(['generic', 'descriptor-owned'] as const)(
+            'preserves a later ownerless queued write when an obsolete %s preview cancels',
+            (route) => {
+                const queued = new Map<string, number>();
+                const options: Parameters<typeof installDeferredWasmDevice>[0] = {};
+                if (route === 'descriptor-owned') {
+                    options.controller = {
+                        setParam: (name, value) => {
+                            queued.set(name, value);
+                        },
+                    };
+                    options.beforeLoaded = (node) => {
+                        for (const [name, value] of queued) {
+                            node.controller?.setParam(name, value);
+                        }
+                    };
+                }
+                const deferred = installDeferredWasmDevice(options);
+                const track = new TrackNode('t1', makeDeps(ctx));
+                track.addDevice('wasm-1', 'levain');
+                const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+                withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                    track.updateParam('wasm-1', 'gain', 0.25)
+                );
+                track.updateParam('wasm-1', 'gain', 0.8);
+                const obsoleteCurrent = preview.isCurrent();
+                if (obsoleteCurrent) {
+                    track.updateParam('wasm-1', 'gain', 0.1);
+                }
+                preview.release();
+                const loaded = createLoadedDevice();
+                deferred.resolve(loaded.device);
+
+                expect(loaded.controller.setParam.mock.calls).toEqual([['gain', 0.8]]);
+                expect(obsoleteCurrent).toBe(false);
+                expect(preview.canCommit()).toBe(false);
+            }
+        );
+
+        it.each(['ownerless', 'owned'] as const)(
+            'refuses obsolete settlement after a later %s queued producer replaces its preview',
+            (producer) => {
+                installDeferredWasmDevice();
+                const track = new TrackNode('t1', makeDeps(ctx));
+                track.addDevice('wasm-1', 'levain');
+                const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+                withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                    track.updateParam('wasm-1', 'gain', 0.25)
+                );
+                const newer = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+                withDeviceParameterRuntimeWriteOwner(
+                    't1',
+                    'wasm-1',
+                    'gain',
+                    producer === 'owned' ? newer.owner : undefined,
+                    () => track.updateParam('wasm-1', 'gain', 0.8)
+                );
+
+                expect(preview.isCurrent()).toBe(false);
+                expect(preview.canCommit()).toBe(false);
+                preview.release();
+                expect(newer.canCommit()).toBe(producer === 'owned');
+            }
+        );
+
+        it('clears obsolete pending cancellation authority after a later ready producer effectively writes', () => {
+            installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('wasm-1', 'levain');
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            track.removeDevice('wasm-1');
+            const loaded = createLoadedDevice();
+            track.strip.deviceNodes.push(loaded.device);
+            const newer = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', newer.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.8)
+            );
+
+            expect(preview.isCurrent()).toBe(false);
+            expect(preview.canCommit()).toBe(false);
+            expect(newer.isCurrent()).toBe(true);
+            expect(newer.canCommit()).toBe(true);
+        });
+
+        it('retains the newer queued producer when a descriptor controller reenters its write route', () => {
+            const queued = new Map<string, number>();
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            const newer = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            const deferred = installDeferredWasmDevice({
+                controller: {
+                    setParam: (name, value) => {
+                        queued.set(name, value);
+                        if (value === 0.25) {
+                            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', newer.owner, () =>
+                                track.updateParam('wasm-1', 'gain', 0.8)
+                            );
+                        }
+                    },
+                },
+                beforeLoaded: (node) => {
+                    for (const [name, value] of queued) {
+                        node.controller?.setParam(name, value);
+                    }
+                },
+            });
+            track.addDevice('wasm-1', 'levain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            expect(preview.canCommit()).toBe(false);
+            expect(newer.canCommit()).toBe(true);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+
+            expect(loaded.controller.setParam.mock.calls).toEqual([['gain', 0.8]]);
+            expect(preview.isCurrent()).toBe(false);
+            expect(newer.isCurrent()).toBe(true);
+        });
+
+        it('retains cancellable pending ownership without displacing a current effective producer', () => {
+            const deferred = installDeferredWasmDevice();
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('wasm-1', 'levain');
+            const preview = captureDeviceParameterRuntimeWriteAuthority('t1', 'wasm-1', 'gain');
+            withDeviceParameterRuntimeWriteOwner('t1', 'wasm-1', 'gain', preview.owner, () =>
+                track.updateParam('wasm-1', 'gain', 0.25)
+            );
+            expect(preview.isCurrent()).toBe(true);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.controller.setParam).toHaveBeenCalledWith('gain', 0.25);
+            expect(preview.isCurrent()).toBe(true);
+        });
+
         it('replays placeholder parameter writes once and in order when a wasm device resolves', async () => {
             const deferred = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
@@ -1461,6 +1709,107 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await Promise.resolve();
         });
 
+        it('rejects a late wasm completion after disposal reported an early strip fault', async () => {
+            const deferred = installDeferredWasmDevice();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const onDeviceLoaded = vi.fn();
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode(
+                't1',
+                makeDeps(ctx, {
+                    pendingDevicePromises,
+                    readinessDiagnostics,
+                    onDeviceLoaded,
+                    onAsyncRuntimeGraphMutation,
+                })
+            );
+            track.addDevice('wasm-1', 'levain');
+            const capturedPromises = [...pendingDevicePromises];
+            expect(capturedPromises).toHaveLength(1);
+            const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
+            const fault = new Error('strip disconnect failed');
+            vi.mocked(track.strip.preFaderTap.disconnect).mockImplementationOnce(() => {
+                throw fault;
+            });
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            expect(deferred.signal?.aborted).toBe(true);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            deferred.settle();
+            await Promise.all(capturedPromises);
+
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+            expect(loaded.controller.destroy).not.toHaveBeenCalled();
+            expect(loaded.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+            expect(scheduleRebuild).not.toHaveBeenCalled();
+            expect(onDeviceLoaded).not.toHaveBeenCalled();
+            expect(onAsyncRuntimeGraphMutation).not.toHaveBeenCalled();
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot()).toMatchObject({
+                counts: { requested: 1, cancelled: 1 },
+                devices: [],
+            });
+        });
+
+        it('aborts every pending generation and clears ownership when readiness cancellation throws', async () => {
+            const first = installDeferredWasmDevice({ deviceId: 'wasm-1' });
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const readinessDiagnostics = createDeviceReadinessDiagnostics();
+            const onDeviceLoaded = vi.fn();
+            const onAsyncRuntimeGraphMutation = vi.fn();
+            const track = new TrackNode(
+                't1',
+                makeDeps(ctx, {
+                    pendingDevicePromises,
+                    readinessDiagnostics,
+                    onDeviceLoaded,
+                    onAsyncRuntimeGraphMutation,
+                })
+            );
+            track.addDevice('wasm-1', 'levain');
+            const second = installDeferredWasmDevice({ deviceId: 'wasm-2' });
+            track.addDevice('wasm-2', 'levain');
+            const capturedPromises = [...pendingDevicePromises];
+            expect(capturedPromises).toHaveLength(2);
+            const fault = new Error('readiness cancellation failed');
+            const cancel = vi.spyOn(readinessDiagnostics, 'cancel').mockImplementationOnce(() => {
+                throw fault;
+            });
+            const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            expect(first.signal?.aborted).toBe(true);
+            expect(second.signal?.aborted).toBe(true);
+            expect(cancel).toHaveBeenCalledTimes(4);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+            const loadedFirst = createLoadedDevice('wasm-1');
+            const loadedSecond = createLoadedDevice('wasm-2');
+            first.resolve(loadedFirst.device);
+            second.resolve(loadedSecond.device);
+            first.settle();
+            second.settle();
+            await Promise.all(capturedPromises);
+
+            for (const loaded of [loadedFirst, loadedSecond]) {
+                expect(loaded.dispose).toHaveBeenCalledTimes(1);
+                expect(loaded.node.disconnect).toHaveBeenCalledTimes(1);
+            }
+            expect(track.strip.deviceNodes).toEqual([]);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(readinessDiagnostics.snapshot().devices).toEqual([]);
+            expect(scheduleRebuild).not.toHaveBeenCalled();
+            expect(onDeviceLoaded).not.toHaveBeenCalled();
+            expect(onAsyncRuntimeGraphMutation).not.toHaveBeenCalled();
+        });
+
         it('does not report or resurrect an async device after its track node is disposed', () => {
             const deferred = installDeferredWasmDevice();
             const onAsyncRuntimeGraphMutation = vi.fn();
@@ -1537,6 +1886,60 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     });
 
     describe('dispose', () => {
+        it('disconnects a failed controller device and still releases later devices', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const dispose = vi.fn();
+            const first = pushControllerDevice(track, { deviceId: 'first', dispose });
+            const second = pushControllerDevice(track, { deviceId: 'second' });
+            const additionalNode = createMockAudioNode('gain');
+            track.strip.deviceNodes[0]!.nodes.push(additionalNode);
+            const fault = new Error('controller destroy failed');
+            vi.mocked(first.controller.destroy!).mockImplementationOnce(() => {
+                throw fault;
+            });
+            first.node.disconnect.mockImplementationOnce(() => {
+                throw new Error('already detached');
+            });
+
+            expect(captureFailure(() => track.dispose())).toBe(fault);
+
+            expect(first.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(dispose).not.toHaveBeenCalled();
+            expect(first.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(additionalNode.disconnect).toHaveBeenCalledTimes(1);
+            expect(second.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(second.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+            track.dispose();
+            expect(first.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(second.controller.destroy).toHaveBeenCalledTimes(1);
+        });
+
+        it('disconnects a failed dispose-only device and reports later release faults in order', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            const dispose = vi.fn();
+            const first = pushControllerDevice(track, { deviceId: 'first', controller: undefined, dispose });
+            const second = pushControllerDevice(track, { deviceId: 'second' });
+            const firstFault = new Error('factory dispose failed');
+            const secondFault = new Error('controller destroy failed');
+            dispose.mockImplementationOnce(() => {
+                throw firstFault;
+            });
+            vi.mocked(second.controller.destroy!).mockImplementationOnce(() => {
+                throw secondFault;
+            });
+
+            const failure = captureFailure(() => track.dispose());
+
+            expect(failure).toBeInstanceOf(AggregateError);
+            expect((failure as AggregateError).errors).toEqual([firstFault, secondFault]);
+            expect((failure as AggregateError).errors[0]).toBe(firstFault);
+            expect((failure as AggregateError).errors[1]).toBe(secondFault);
+            expect(first.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(second.node.disconnect).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes).toEqual([]);
+        });
+
         it('tears down strip nodes, closes the meter port, and destroys devices', () => {
             const track = new TrackNode('t1', makeDeps(ctx));
             const { node, controller } = pushControllerDevice(track);

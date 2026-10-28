@@ -11,6 +11,7 @@ import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
@@ -47,6 +48,7 @@ import {
     RECIPE_EXPANSION_MAX_VALUES,
 } from '../models/RecipeExpansionLimits';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
+import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
 export {
@@ -55,6 +57,7 @@ export {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
@@ -158,7 +161,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
     };
     return tool(
         AGENT_CATALOG_DISCOVERY_TOOL_NAME,
-        'Request exact schemas by canonical catalog names. Primitive schemas are returned only for explicitly requested operation names.',
+        'Read only named schemas. For drum timing or clip onsets, request analysis.detectTransients in category analysis.',
         {
             category: { type: 'string', enum: AGENT_CATALOG_CATEGORIES },
             names: {
@@ -285,13 +288,27 @@ function getProjectMeasurementProperties() {
 function getAnalysisMeasureSchema(): ToolSchema {
     return tool(
         ANALYSIS_MEASURE_TOOL_NAME,
-        `Measure objective figures of the rendered audio of one scope over a section or beat range: the master mix (kind "master" or "project", with mute and solo applied), or up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks or buses, each rendered in isolation with its inserts and send returns and without solo. The application renders at the current project revision and returns loudness, peak, dynamics, spectral, stereo and transient figures, never audio. Name the range by sectionId or by startBeat and endBeat. With subject "preview", also pass proposal, a semantic command list in the form command.batch.propose takes as list: the application compiles it, previews it without changing the project, and measures the same scope and range before and after it, returning both figures and their deltas. To propose exactly the measured change, pass this call's callId in command.batch.propose compiledCallIds.`,
+        `Measure loudness, peak, dynamics, spectral, stereo and transient figures at the current revision; never audio. Scope master/project applies mute/solo; up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks/buses render isolated with inserts/send returns, without solo. Range: sectionId or startBeat/endBeat. Project takes neither proposal nor recipeCallId. Preview takes exactly one: recipeCallId from a successful earlier-turn recipe.expand receipt in this run, or proposal in command.batch.propose list form. Validate and preview exact commands without project changes; return baseline, preview and deltas over that scope/range. Adopt via this callId in command.batch.propose compiledCallIds.`,
         {
             subject: { type: 'string', enum: ['project', 'preview'] },
             proposal: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
+            recipeCallId: { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH },
             ...getProjectMeasurementProperties(),
         },
         ['scope', 'range']
+    );
+}
+
+function getTransientOnsetReadSchema(): ToolSchema {
+    return tool(
+        ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+        'Read whole-source transient onsets for one audio clip without creating markers or changing the project. Returns at most 64 source-buffer onset times in seconds with confidence per page, never audio. Continue with the returned cursor and the same clipId and sensitivity.',
+        {
+            clipId: { type: 'string', minLength: 1, maxLength: 256 },
+            sensitivity: { type: 'number', minimum: 0, maximum: 1 },
+            cursor: { type: 'string', minLength: 1, maxLength: 128 },
+        },
+        ['clipId']
     );
 }
 
@@ -383,6 +400,13 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     maxItems: MAX_LLM_ACTIONS_PER_BATCH,
                     uniqueItems: true,
                     items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+                refines: {
+                    type: 'string',
+                    minLength: 1,
+                    maxLength: PROPOSAL_REFINES_MAX_LENGTH,
+                    description:
+                        'Only when this request refines the pending proposal in thread_context: the confirmation id that pending proposal carries. This batch then replaces it whole, so it holds every pending command with only the requested change. Omit for any other request.',
                 },
                 plan: {
                     type: 'object',
@@ -494,6 +518,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             ['scope']
         ),
         getAnalysisMeasureSchema(),
+        getTransientOnsetReadSchema(),
         getAnalysisCompareReferenceSchema(),
         getRecipeDiscoverySchema(),
         getRecipeExpansionSchema(),

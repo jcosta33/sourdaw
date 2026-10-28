@@ -37,8 +37,12 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     getGainEnvelopeSeries: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
     trackStore: mocks.trackStore,
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
     adjustmentLayerStore: { value: { layers: [] }, subscribe: vi.fn() },
     takeLaneStore: { value: { lanes: [] }, subscribe: vi.fn() },
+    vcaGroupStore: { value: { groups: [] }, subscribe: vi.fn(() => () => {}) },
     deriveVcaMultiplier: vi.fn(() => 1),
     getVcaGroupsState: vi.fn(() => ({})),
     shouldCreateLiveTrackStrip: vi.fn(() => false),
@@ -775,6 +779,41 @@ describe('captureCommandBatchPreflightState', () => {
 
         expect(live.audioGraphValid).toBe(true);
         expect(staged).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
+    });
+
+    it('admits warp states whose clips share marker ids, the deliberate copy contract', () => {
+        // Warp-marker identity is clip-local (#5570): duplication, paste and
+        // Strip Silence copy marker ids into independent states, so the
+        // duplicate scan validates each clip's state in its own namespace
+        // instead of counting the shared ids globally.
+        mocks.getCrdtDoc.mockReturnValue({
+            tracks: { tracks: [] },
+            warpStates: {
+                states: {
+                    'clip-a': { markers: [{ id: 'm-1' }] },
+                    'clip-b': { markers: [{ id: 'm-1' }, { id: 'm-2' }] },
+                },
+            },
+        });
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(true);
+    });
+
+    it('still fails a marker id repeated inside one clip warp state', () => {
+        mocks.getCrdtDoc.mockReturnValue({
+            tracks: { tracks: [] },
+            warpStates: {
+                states: {
+                    'clip-a': { markers: [{ id: 'm-1' }, { id: 'm-1' }] },
+                },
+            },
+        });
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
     });
 
     it('fails closed when there is no project document at all', () => {

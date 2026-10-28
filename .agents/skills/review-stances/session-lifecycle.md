@@ -36,6 +36,43 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
+
+Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
+Stop stopped it and natural completion cleared UI state, without disconnect or engine-lifetime
+cleanup. GitHub's commit-to-PR lookup returns no associated PR. PR #187
+(`8c11c40674b32074a12a209b308d3361e93fe873`) moved that behavior into AudioEngine's cached
+preview helper. Historical private review prompts and tiers are unavailable.
+
+Start a cached preview through its real owner, then reset or dispose the engine. Require the source
+to stop and disconnect before the outgoing graph is retired, with one completion notification and
+no admission against the outgoing lifetime. Start a successor during an old callback and deliver
+the old completion and release afterward; the successor must survive. Pair nested reset, cleanup
+failure and disposed-engine refusal with ordinary previews that still coexist. Removing reset
+invalidation or the disposed-owner guard must fail those cases. Intent currentness permits
+preparation only; native monitoring readiness, programme isolation and audible A/B need their own
+evidence.
+
+### 2026-10-22 — a store hydrate on a sync reset the runtime-only fields (introduced by PR #171)
+
+PR #171 (commit `d764229f1`) gave `transportStore` a `fromCrdt` that expands the partial document slot to a
+full state seeded from defaults, and rewrote the hydrate spec to expect the cached `isPlaying`,
+`isRecording` and `playheadPosition` to be dropped ("without preserving stale cached fields"). The adapter's
+hydrate merge, `{ ...localValue, ...authorityValue }`, then overwrote those runtime keys on every
+projection that was not a project load. A collaborator's tempo edit, or any remote change after a local
+transport edit, stopped playback and recording and left the open take uncommitted. Only the local-commit
+path restored the keys (`projectCommittedLocalState`).
+
+Blind spot: the stance walked the project-load gesture, for which "start from defaults" is the contract,
+and took the spec asserting it as proof it was right for a sync. A store hydrate has two callers with
+opposite contracts: a load starts every field from the document, a re-projection of the open project
+(sync, merge, branch switch) must leave the fields the store never persists alone. Drive the real
+repository, `setupProjectionBridge`, the store and `replaceCrdtDocInLineage` with the runtime fields set
+(playing, recording, playhead at a nonzero beat), apply a remote change to that store's own slot and one
+to an unrelated slot after a local edit, and require the runtime fields to survive while the durable field
+takes the remote value. A spec that sets a runtime field and expects hydrate to drop it is the escape's
+fingerprint: ask which caller it speaks for.
+
 ### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
 
 The native CI failure on PR #5064 occurred after the plugin's stop and destroy assertions passed;
@@ -313,3 +350,89 @@ capture in the successor. A fresh successor On admission must then connect both 
 without the stale settlement deleting their authority or stopping their shared stream. Removal
 continuation probes do not exercise this incoming grant boundary; deleting the root-identity
 fencing in shared admission, including its retained reader, must redden both replacement cases.
+
+### 2026-10-26 — user and automatic Stop outlived their recording root (issue #5517)
+
+Unfenced recording closure originates in commit `0249a95cc5292` (associated PR unverified);
+PR #4564 (`40c5218228c5`) added the asynchronous MIDI commit and failure-discard continuation.
+Neither route captured the installed root when the take opened. Successful Stop/Undo tests
+missed an outgoing recording resumed under a replacement root; historical review dispatch is
+unverified. A capture-terminal guard does not cover these separate Stop routes.
+
+Drive both user Stop and automatic punch-out with a real captured-root identity. Replace the
+root before entry and independently while the real commit is held: preserve the owning staged
+result, reject successor writes/cleanup and emit the branch-move warning. Spy directly on
+`trackTakeCommit`: neither refused entry may register, even when downstream outcome filtering
+would hide that error. Remove each caller's ownership conjunct separately and require its own
+spy assertion to fail. Clear refs, then finalize again: no second gesture counts. Pair a genuine
+closure, legacy null witness and a landed sibling with a refused sibling; capture authority
+before clearing refs, retain it across every queued wait, and distinguish refused resume from
+success that settled just before replacement.
+
+### 2026-10-27 — a retired audio terminal cannot borrow a successor opening (issue #5517)
+
+The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0cbea8d62b`) added same-ID failure cleanup and PR #4564 (`40c5218228c5`) added asynchronous commit cleanup. PR #5373 explicitly deferred these scheduler windows. Historical review dispatch and tier are unknown. Capture the public root identity at each punch opening, before callback registration, and retain that opening through success, failure, commit wait and catch. Guard before caching media, reading a same-ID live clip or discarding it.
+
+Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
+
+### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
+
+PR #5453 added `material.prepare` to every native backend apply. The live session computes its
+rolling join position before calling `rollNativeTransport`, whose second `backend.apply` awaits
+material owner/lease preparation before sending `set-transport` to native IPC. That preparation
+also runs for a transport command with no clip PCM, so the clock gap is shared by the ordinary
+no-NAM path in source; no no-NAM runtime failure was observed. PR #4020's projection remains
+necessary for an already-rolling re-arm, as the adjacent #4089 lesson records.
+
+In Alpha's hosted run `40258854873`, Unit 1 job `121366976610`, the actual-model-drain cases
+failed at `maps` and `roll-material` because the NAM strip was already claimed while those
+checkpoints were held. At `roll-position`, Web Audio's anchor advanced from 10 to 10.4 while
+preparation was held; the sent position stayed at 2.5 instead of the expected 2.9. The
+`roll-admission` positive control passed. These results establish the NAM RED case, not a no-NAM
+runtime failure or live audibility. The public #5453 review record has four draws covering lease
+generation, admission capacity, callback retirement, and project repair preservation; it has no
+clock-handoff draw. The private historical prompts are unavailable.
+
+Blind spot: the reviewer checked asynchronous lease safety and capacity but missed that the
+position is consumed by a second apply with its own await after the position snapshot. A first
+topology apply's clock projection does not cover later awaits in the roll apply.
+
+Probe: hold roll material preparation after maps and MIDI are armed, advance the anchored Web
+Audio clock from 10 to 10.4, then require the `set-transport` position to be refreshed to 2.9
+after every pre-IPC await. For NAM, keep Web Audio sounding through model readback and all
+material/bank awaits; validate and claim the matching admission, then close the actual rebound
+strip gate in the same turn that constructs the refreshed command immediately before roll IPC.
+Do not wait for the roll reply to gate. Keep the no-NAM source-level exposure distinct from a
+runtime RED claim. This probe establishes ordering and admission, not live hardware audibility.
+
+### 2026-10-26 — a deferred seek finalized into a successor transport (introduced by PR #305; repaired by PR #5374)
+
+PR #305 (`b077ef6d34c7fc72bf3907a55bcaa7d7102a1584`) moved seek finalization behind the recording-flush promise while retaining only the pre-wait `wasPlaying` snapshot. During that wait, Stop→Play or Stop→Record can install a successor scheduler; the old finalizer can then stop that scheduler, write its stale seek target, or restart against successor state. Checking live `isPlaying` only gates restart; it does not establish ownership. Commit `983371455c147465033d6ac9ccd27706cc2210fa` later relocated the path into `executePlayheadSeek.ts` without introducing the race. PR #5374 (`ddceec4283b3715f267773b33bccfc21c3778e0f`) added the scheduler-generation ownership check before deferred side effects. The available public history does not contain the private reviewer prompts, so the exact missed stance or reviewer responsibility cannot be established.
+
+Probe: through the real seek/transport coordinator, hold a controlled promise returned at the `stopActiveRecording` boundary after a playing, recording seek is admitted. While it is held, exercise Stop→Play and Stop→Record, then resolve and reject the promise. Require the successor worker identity, generation, epoch, transport state, and position to remain intact; on rejection, require the original error to remain reported. Remove the generation-ownership guard and require both successor cases to fail. This controlled scheduler probe tests deferred ownership; it does not establish real capture, PCM flushing, browser behavior, or hardware audibility.
+
+### 2026-10-27 — dense loop-off inherited a linear window that replenished after its frames (introduced by PR #3912)
+
+PR #3912 (`cb8a0c81fc`) admitted a capacity-sized linear prefix but kept its spent entries until
+more than three seconds into playback. A 1200-pair, three-second phrase filled the 2048-entry
+store; the remaining 352 events arrived only after their frames. Loop-window work in #5346
+exposed the same path by disabling looping near the start. The original public review checked
+prefix limits, refusal bookkeeping and trail counts without rendering the unadmitted suffix.
+Private historical dispatches are unavailable, so the exact reviewer prompt is unverified.
+
+Blind spot: capacity-safe admission does not establish timely delivery. A lifecycle stance must
+walk dense loop-on to loop-off at the start and near-start, then seek and edit-rearm in the
+resulting linear mode. Drive the real writer against a persistent store and render through the
+entire phrase; require every expected event identity before its frame, bounded residency and no
+callback overflow. Carry a distant real off and a same-key reattack through those transitions,
+without replaying the old onset. Restore the linear prefix/three-second-clear path and require
+the suffix assertions to fail. Model host queue admission separately from callback application:
+a later note-store refusal leaves preceding clears applied and cannot be retried from an
+already-applied host response. Native output peaks supplement this probe; they cannot count all
+attacks/releases or establish zero callback refusals when the wire omits those counters.
+
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.

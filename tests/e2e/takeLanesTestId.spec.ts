@@ -32,6 +32,7 @@ test.describe('Take lanes & comp — test-id targeted', () => {
         await launch_from_template({ page, template_name: /EDM/i });
     });
 
+    // Owns the required variation control and expansion formerly guarded in inputMonitoringTestId.
     test('variation lanes toggle expands the take panel', async ({ page }) => {
         await openTakeLanes(page);
         await expect(page.getByText('Takes · Bass')).toBeVisible();

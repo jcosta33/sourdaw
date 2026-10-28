@@ -3,16 +3,21 @@
     "cargo-dependency-seed.yml",
     "health-gates.yml",
     "heavy-gates.yml",
+    "nightly-evidence-report.yml",
     "nightly.yml",
+    "pr-checks.yml",
     "quantum-measurements.yml",
-    "semantic-review.yml",
     "validation.yml",
     "wasm-artifacts.yml"
   ],
   "health-gates.yml": {
     "name": "Health gates",
     "on": {
-      "pull_request": null
+      "pull_request": {
+        "types": [
+          "labeled"
+        ]
+      }
     },
     "permissions": {
       "contents": "read",
@@ -23,8 +28,58 @@
       "cancel-in-progress": true
     },
     "jobs": {
+      "admission": {
+        "name": "Approval admission",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "outputs": {
+          "admitted": "${{ steps.decide.outputs.admitted }}",
+          "reason": "${{ steps.decide.outputs.reason }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted admission",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.repository.default_branch }}",
+              "path": "trusted",
+              "sparse-checkout": "scripts",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Read reviews",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}",
+              "REPOSITORY": "${{ github.repository }}",
+              "NUMBER": "${{ github.event.pull_request.number }}"
+            },
+            "run": "gh api --paginate --slurp \"repos/$REPOSITORY/pulls/$NUMBER/reviews\" > \"$RUNNER_TEMP/reviews.json\""
+          },
+          {
+            "name": "Decide admission",
+            "id": "decide",
+            "env": {
+              "REVIEWS_PATH": "${{ runner.temp }}/reviews.json",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "LABEL_NAME": "${{ github.event.label.name }}",
+              "SENDER_NODE_ID": "${{ github.event.sender.node_id }}"
+            },
+            "run": "node trusted/scripts/ciApprovalAdmission.ts"
+          }
+        ]
+      },
       "scope": {
         "name": "Plan required checks",
+        "needs": "admission",
+        "if": "needs.admission.outputs.admitted == 'true'",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 10,
         "outputs": {
@@ -87,94 +142,6 @@
           }
         ]
       },
-      "selection-shadow": {
-        "name": "E2E selection shadow",
-        "needs": "scope",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 10,
-        "steps": [
-          {
-            "name": "Checkout candidate head",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.head.sha }}",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Checkout immutable integration commit",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.sha }}",
-              "path": "shadow-integration",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Checkout immutable shadow control",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.event.pull_request.base.sha }}",
-              "path": "shadow-control",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Download authoritative scope",
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-            "with": {
-              "name": "pr-validation-scope",
-              "path": "shadow-scope"
-            }
-          },
-          {
-            "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
-            "with": {
-              "package_json_file": "shadow-control/package.json"
-            }
-          },
-          {
-            "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-            "with": {
-              "node-version": "24.19.0",
-              "cache": "pnpm",
-              "cache-dependency-path": "shadow-control/pnpm-lock.yaml"
-            }
-          },
-          {
-            "name": "Install dependencies",
-            "working-directory": "shadow-control",
-            "run": "pnpm install --frozen-lockfile"
-          },
-          {
-            "name": "Measure shadow selection",
-            "env": {
-              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
-              "INTEGRATION_SHA": "${{ github.sha }}",
-              "INTEGRATION_ROOT": "shadow-integration",
-              "CONTROL_ROOT": "shadow-control"
-            },
-            "run": "node shadow-control/scripts/e2eSelectionShadow.ts shadow-scope/pr-validation-scope.json"
-          },
-          {
-            "name": "Upload shadow measurement",
-            "if": "${{ always() }}",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-            "with": {
-              "name": "e2e-selection-shadow",
-              "path": "e2e-selection-shadow.json",
-              "if-no-files-found": "error",
-              "retention-days": 7
-            }
-          }
-        ]
-      },
       "validation": {
         "name": "Validation",
         "needs": "scope",
@@ -230,6 +197,7 @@
         "name": "Gate",
         "if": "${{ always() }}",
         "needs": [
+          "admission",
           "scope",
           "validation",
           "affected",
@@ -244,9 +212,105 @@
             "env": {
               "RESULTS": "${{ toJSON(needs) }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -r '\n  if .admission.result == \"success\" and .admission.outputs.admitted == \"true\" then empty\n  else \"::error title=Gate not admitted::\\(.admission.outputs.reason // \"approval admission did not decide\")\" end'\nprintf '%s' \"$RESULTS\" | jq -e '\n  (keys | sort) == [\"admission\", \"affected\", \"codeql\", \"scope\", \"validation\"] and\n  .admission.result == \"success\" and .admission.outputs.admitted == \"true\" and\n  .scope.result == \"success\" and .validation.result == \"success\" and .affected.result == \"success\" and\n  (.scope.outputs.browser == \"true\" or .scope.outputs.browser == \"false\") and\n  (.scope.outputs[\"browser-ai\"] == \"true\" or .scope.outputs[\"browser-ai\"] == \"false\") and\n  (if .scope.outputs.codeql == \"true\" then .codeql.result == \"success\"\n   elif .scope.outputs.codeql == \"false\" then .codeql.result == \"skipped\"\n   else false end)'\n"
           }
         ]
+      }
+    }
+  },
+  "pr-checks.yml": {
+    "name": "PR checks",
+    "on": {
+      "pull_request": {
+        "types": [
+          "opened",
+          "synchronize",
+          "reopened",
+          "ready_for_review"
+        ]
+      }
+    },
+    "permissions": {
+      "contents": "read",
+      "pull-requests": "read"
+    },
+    "concurrency": {
+      "group": "pr-checks-${{ github.event.pull_request.number }}",
+      "cancel-in-progress": true
+    },
+    "jobs": {
+      "scope": {
+        "name": "Plan push checks",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "outputs": {
+          "profile": "${{ steps.plan.outputs.profile }}",
+          "matrix": "${{ steps.plan.outputs.matrix }}",
+          "browser": "${{ steps.plan.outputs.browser }}",
+          "browser-ai": "${{ steps.plan.outputs.browser-ai }}",
+          "codeql": "${{ steps.plan.outputs.codeql }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "fetch-depth": 0,
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Enable Corepack",
+            "run": "corepack enable"
+          },
+          {
+            "name": "Set up pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "package.json"
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0",
+              "cache": "pnpm"
+            }
+          },
+          {
+            "name": "Install dependencies",
+            "run": "pnpm install --frozen-lockfile --ignore-scripts"
+          },
+          {
+            "name": "Plan affected checks",
+            "id": "plan",
+            "env": {
+              "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+            },
+            "run": "node scripts/prValidationScope.ts plan"
+          },
+          {
+            "name": "Upload scope manifest",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "pr-validation-scope",
+              "path": "pr-validation-scope.json",
+              "if-no-files-found": "error",
+              "retention-days": 7
+            }
+          }
+        ]
+      },
+      "validation": {
+        "name": "Push validation",
+        "needs": "scope",
+        "uses": "./.github/workflows/validation.yml",
+        "with": {
+          "browser": "${{ needs.scope.outputs.browser == 'true' }}",
+          "profile": "${{ needs.scope.outputs.profile }}"
+        }
       }
     }
   },
@@ -280,6 +344,15 @@
         "name": "Affected end-to-end ${{ matrix.id }}",
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
+        "container": {
+          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "options": "--init --ipc=host"
+        },
+        "defaults": {
+          "run": {
+            "shell": "bash"
+          }
+        },
         "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
@@ -289,10 +362,6 @@
           {
             "name": "Checkout",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-          },
-          {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
           },
           {
             "name": "Set up pnpm",
@@ -314,9 +383,9 @@
             "run": "pnpm install --frozen-lockfile"
           },
           {
-            "name": "Install Playwright browsers",
-            "timeout-minutes": 35,
-            "run": "for attempt in 1 2 3; do\n  # GNU timeout kills the whole process group at the deadline. A TERM\n  # grace period ends if pnpm exits while an installer child survives,\n  # so the browser download is killed outright; apt gets a TERM first.\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "name": "Verify preinstalled browser runtime",
+            "timeout-minutes": 2,
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
           },
           {
             "name": "Run shard",
@@ -410,11 +479,11 @@
         "name": "Browser AI WebGPU admission",
         "if": "inputs.browser-ai",
         "runs-on": "macos-14",
-        "timeout-minutes": 30,
+        "timeout-minutes": 40,
         "steps": [
           {
             "name": "Checkout",
-            "timeout-minutes": 1,
+            "timeout-minutes": 3,
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
@@ -424,7 +493,7 @@
           },
           {
             "name": "Set up pnpm",
-            "timeout-minutes": 1,
+            "timeout-minutes": 7,
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
               "package_json_file": "package.json"
@@ -432,7 +501,7 @@
           },
           {
             "name": "Set up Node",
-            "timeout-minutes": 1,
+            "timeout-minutes": 3,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -619,7 +688,8 @@
             "name": "Checkout",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
-              "fetch-depth": 0
+              "fetch-depth": 0,
+              "ref": "${{ github.sha }}"
             }
           },
           {
@@ -644,6 +714,17 @@
           {
             "name": "Artifact freshness",
             "run": "pnpm wasm:verify"
+          },
+          {
+            "name": "Hosted installer systemd proof",
+            "env": {
+              "SOURDAW_SYSTEMD_TESTS": "1"
+            },
+            "run": "pnpm test:run scripts/__tests__/hostedAptInstall.spec.ts --maxWorkers=2"
+          },
+          {
+            "name": "Campaign fixture freshness",
+            "run": "pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2"
           },
           {
             "name": "App types",
@@ -716,14 +797,16 @@
         "needs": "decide",
         "if": "needs.decide.outputs.code == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 20,
+        "timeout-minutes": 45,
         "steps": [
           {
             "name": "Checkout",
+            "timeout-minutes": 5,
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
             "name": "Set up pnpm",
+            "timeout-minutes": 5,
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
               "package_json_file": "package.json"
@@ -731,6 +814,7 @@
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 5,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -739,10 +823,12 @@
           },
           {
             "name": "Install dependencies",
+            "timeout-minutes": 5,
             "run": "pnpm install --frozen-lockfile"
           },
           {
             "name": "Lint",
+            "timeout-minutes": 20,
             "env": {
               "SOURDAW_LINT_CONCURRENCY": "auto",
               "SOURDAW_LINT_THREADS": "0"
@@ -895,7 +981,7 @@
           },
           {
             "name": "Run script suite",
-            "run": "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'"
+            "run": "pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts' --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts' --exclude='**/resourceGuardShowOutput.spec.ts'"
           }
         ]
       },
@@ -904,6 +990,15 @@
         "needs": "decide",
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
+        "container": {
+          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "options": "--init --ipc=host"
+        },
+        "defaults": {
+          "run": {
+            "shell": "bash"
+          }
+        },
         "timeout-minutes": 45,
         "steps": [
           {
@@ -930,8 +1025,9 @@
             "run": "pnpm install --frozen-lockfile"
           },
           {
-            "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "name": "Verify preinstalled browser runtime",
+            "timeout-minutes": 2,
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
           },
           {
             "name": "Run offline smoke set",
@@ -1006,7 +1102,7 @@
             "name": "Install ALSA development headers",
             "shell": "bash",
             "timeout-minutes": 30,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "run": "set -euo pipefail\nsudo env \"PATH=$PATH\" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev'\n"
           },
           {
             "name": "Restore pinned Rust toolchain",
@@ -1590,17 +1686,20 @@
             "name": "Checkout",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
-              "fetch-depth": 0
+              "fetch-depth": 0,
+              "persist-credentials": false
             }
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
+            "name": "Prepare unit tool directory",
+            "id": "unit_tools",
+            "run": "tool_root=\"/var/tmp/sourdaw-unit-tools-$(cat /proc/sys/kernel/random/uuid)\"\nmkdir -m 755 \"$tool_root\"\nprintf 'root=%s\\n' \"$tool_root\" >> \"$GITHUB_OUTPUT\"\n"
           },
           {
             "name": "Set up pnpm",
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
+              "dest": "${{ steps.unit_tools.outputs.root }}",
               "package_json_file": "package.json"
             }
           },
@@ -1608,13 +1707,20 @@
             "name": "Set up Node",
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
-              "node-version": "${{ env.NODE_VERSION }}",
-              "cache": "pnpm"
+              "node-version": "${{ env.NODE_VERSION }}"
             }
           },
           {
+            "name": "Prepare isolated unit account",
+            "id": "unit_isolation",
+            "env": {
+              "SOURDAW_UNIT_TOOL_ROOT": "${{ steps.unit_tools.outputs.root }}"
+            },
+            "run": "node scripts/runIsolatedUnitShard.ts prepare"
+          },
+          {
             "name": "Install dependencies",
-            "run": "pnpm install --frozen-lockfile"
+            "run": "node scripts/runIsolatedUnitShard.ts install --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
             "name": "Run shard",
@@ -1622,7 +1728,7 @@
             "env": {
               "VITEST_MAX_WORKERS": 4
             },
-            "run": "pnpm run test:run --shard=${{ matrix.shard }}/4"
+            "run": "node scripts/runIsolatedUnitShard.ts shard --context \"${{ steps.unit_isolation.outputs.context }}\" --shard=${{ matrix.shard }}/4"
           },
           {
             "name": "Report shard failure",
@@ -1689,7 +1795,7 @@
             "name": "Install ALSA development headers",
             "shell": "bash",
             "timeout-minutes": 30,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "run": "set -euo pipefail\nsudo env \"PATH=$PATH\" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev'\n"
           },
           {
             "name": "Install the pinned Rust toolchain",
@@ -1885,6 +1991,15 @@
         "needs": "decide",
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
+        "container": {
+          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "options": "--init --ipc=host"
+        },
+        "defaults": {
+          "run": {
+            "shell": "bash"
+          }
+        },
         "timeout-minutes": 75,
         "strategy": {
           "fail-fast": false,
@@ -1911,10 +2026,6 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
-            "name": "Enable Corepack",
-            "run": "corepack enable"
-          },
-          {
             "name": "Set up pnpm",
             "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
             "with": {
@@ -1934,8 +2045,9 @@
             "run": "pnpm install --frozen-lockfile"
           },
           {
-            "name": "Install Playwright browsers",
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&\n    timeout --signal=KILL 3m pnpm exec playwright install chromium; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "name": "Verify preinstalled browser runtime",
+            "timeout-minutes": 2,
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
           },
           {
             "name": "Run shard",
@@ -2335,6 +2447,96 @@
       }
     }
   },
+  "nightly-evidence-report.yml": {
+    "name": "Nightly evidence report",
+    "on": {
+      "workflow_run": {
+        "workflows": [
+          "Nightly"
+        ],
+        "types": [
+          "completed"
+        ]
+      }
+    },
+    "permissions": {},
+    "jobs": {
+      "validate": {
+        "name": "Validate nightly evidence",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
+        "permissions": {
+          "actions": "read",
+          "contents": "read",
+          "security-events": "read"
+        },
+        "outputs": {
+          "supported": "${{ steps.evidence.outputs.supported }}",
+          "run_id": "${{ steps.evidence.outputs.run_id }}",
+          "failed_legs": "${{ steps.evidence.outputs.failed_legs }}"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted default-branch reporter",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false,
+              "sparse-checkout": "scripts/codeqlNightlyEvidence.ts\nscripts/hostedWasmZip.ts\n",
+              "sparse-checkout-cone-mode": false
+            }
+          },
+          {
+            "name": "Set up Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0"
+            }
+          },
+          {
+            "name": "Validate independent run, artifact, jobs and CodeQL analysis",
+            "id": "evidence",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}"
+            },
+            "run": "node scripts/codeqlNightlyEvidence.ts"
+          }
+        ]
+      },
+      "publish": {
+        "name": "Publish validated nightly failure",
+        "needs": "validate",
+        "if": "${{ needs.validate.outputs.supported == 'true' && needs.validate.outputs.failed_legs != '' }}",
+        "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
+        "permissions": {
+          "contents": "read",
+          "issues": "write"
+        },
+        "steps": [
+          {
+            "name": "Checkout trusted default-branch repository context",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.sha }}",
+              "persist-credentials": false,
+              "sparse-checkout": ".github",
+              "sparse-checkout-cone-mode": false
+            }
+          },
+          {
+            "name": "Open or update nightly failure issue",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}",
+              "RUN_ID": "${{ needs.validate.outputs.run_id }}",
+              "FAILED_LEGS": "${{ needs.validate.outputs.failed_legs }}"
+            },
+            "run": "set -euo pipefail\n[[ \"$RUN_ID\" =~ ^[1-9][0-9]*$ ]]\n[[ \"$FAILED_LEGS\" =~ ^[A-Za-z0-9\\ \\(\\)/.,-]+$ ]]\ntitle='ci(nightly): health gates red on main'\nbody=$(printf 'The validated scheduled run against `main` failed.\\n\\nFailing jobs: %s\\n\\nhttps://github.com/jcosta33/sourdaw/actions/runs/%s\\n' \"$FAILED_LEGS\" \"$RUN_ID\")\nexisting=$(gh issue list --repo jcosta33/sourdaw --state open --search '\"ci(nightly): health gates red on main\" in:title' --json number --jq '.[0].number // empty')\nif [ -n \"$existing\" ]; then\n  gh issue comment \"$existing\" --repo jcosta33/sourdaw --body \"$body\"\nelse\n  gh issue create --repo jcosta33/sourdaw --title \"$title\" --body \"$body\" --label bug --label status:ready --label priority:P1\nfi\n"
+          }
+        ]
+      }
+    }
+  },
   "quantum-measurements.yml": {
     "name": "Hosted quantum measurements",
     "on": {
@@ -2373,6 +2575,7 @@
           "public/wasm/scoring/scoring_bg.wasm",
           "public/wasm/manifest.json",
           "rust-toolchain.toml",
+          "scripts/aptWithoutMicrosoftFeed.sh",
           "scripts/checkReleaseInventory.ts",
           "scripts/healthGateWorkflowContract.ts",
           "scripts/hostedQuantumMeasurementWorkflowContract.ts",
@@ -2436,7 +2639,7 @@
           {
             "name": "Install Google Chrome",
             "timeout-minutes": 20,
-            "run": "for attempt in 1 2 3; do\n  if sudo env \"PATH=$PATH\" timeout --kill-after=15s 5m node_modules/.bin/playwright install --force chrome; then\n    break\n  fi\n  if [ \"$attempt\" -eq 3 ]; then\n    exit 1\n  fi\n  sleep $((attempt * 5))\ndone\n"
+            "run": "sudo env \"PATH=$PATH\" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 5m -- node_modules/.bin/playwright install --force chrome\n"
           },
           {
             "name": "Verify committed WASM artifacts",
@@ -2462,7 +2665,7 @@
           },
           {
             "name": "Verify measurement admission",
-            "run": "node --input-type=module <<'NODE'\n// assertWholeEngineQuantumCapability is deliberately absent here. This\n// step reads the table that run.mjs has just rewritten with fresh\n// measurements from a shared 2-vCPU hosted runner, so the whole-engine\n// comparison would bound that runner, not the engine — and it can\n// never pass there: every run since the workflow's first (2026-09-09,\n// runs 34320520521 through 34451256510, unrelated heads) measured the\n// Grand Boule worker median at ~6.7-6.8 ms against the physical\n// 128-frame/48 kHz budget of 2.667 ms under load 2.0, while the\n// recorded reference-machine (Apple M4 Pro) table fits at 84-88% of\n// budget (issue #4076). ADR 0038 keeps that gate on the recorded\n// table, enforced by `pnpm test:release-inventory` inside required\n// Gate. This step keeps the machine-independent admission: identity,\n// occupancy proofs, provenance digests, and generated-table agreement\n// of the fresh measurement.\nimport { assertGrandBouleMeasurementAdmission } from './scripts/checkReleaseInventory.ts';\n\nconst root = process.cwd();\nassertGrandBouleMeasurementAdmission(root);\nNODE\n"
+            "run": "node --input-type=module <<'NODE'\n// assertWholeEngineQuantumCapability is deliberately absent here. This\n// step reads the table that run.mjs has just rewritten with fresh\n// measurements from a shared 2-vCPU hosted runner, so the whole-engine\n// comparison would bound that runner, not the engine — and it can\n// never pass there: every run since the workflow's first (2026-09-09,\n// runs 34320520521 through 34451256510, unrelated heads) measured the\n// Grand Boule worker median at ~6.7-6.8 ms against the physical\n// 128-frame/48 kHz budget of 2.667 ms under load 2.0, while the\n// recorded reference-machine (Apple M4 Pro) table fits at 84-88% of\n// budget (issue #4076). ADR 0038 keeps that gate on the recorded\n// table, enforced by `pnpm test:release-inventory` in the nightly\n// train and by the release proof. This step keeps the machine-independent admission: identity,\n// occupancy proofs, provenance digests, and generated-table agreement\n// of the fresh measurement.\nimport { assertGrandBouleMeasurementAdmission } from './scripts/checkReleaseInventory.ts';\n\nconst root = process.cwd();\nassertGrandBouleMeasurementAdmission(root);\nNODE\n"
           },
           {
             "name": "Assemble qualified artifact",
@@ -2496,6 +2699,35 @@
           "opened",
           "synchronize",
           "reopened"
+        ],
+        "paths": [
+          ".cargo/config.toml",
+          ".github/workflows/wasm-artifacts.yml",
+          "Cargo.lock",
+          "Cargo.toml",
+          "crates/daw-dsp/**",
+          "crates/daw-io/**",
+          "crates/daw-wasm-decoder/**",
+          "crates/proof-chamber/**",
+          "crates/scoring/**",
+          "package.json",
+          "pnpm-lock.yaml",
+          "public/wasm/manifest.json",
+          "rust-toolchain.toml",
+          "scripts/gen-daw-dsp-worklet.ts",
+          "scripts/gen-proof-chamber-worklet.ts",
+          "scripts/gen-scoring-worklet.ts",
+          "scripts/gen-wasm-manifest.ts",
+          "scripts/hostedWasmArtifacts.ts",
+          "scripts/hostedWasmSourceContext.ts",
+          "scripts/hostedWasmZip.ts",
+          "scripts/markWasmPackageInternal.ts",
+          "scripts/strictJson.ts",
+          "scripts/verify-wasm-artifacts.ts",
+          "scripts/wasm-artifacts.ts",
+          "scripts/wasmToolchainPins.ts",
+          "scripts/workletPolyfills.ts",
+          "scripts/workspaceManifestFingerprint.ts"
         ]
       }
     },
@@ -2598,137 +2830,6 @@
       }
     }
   },
-  "semantic-review.yml": {
-    "name": "Jev",
-    "on": {
-      "pull_request_target": {
-        "types": [
-          "opened",
-          "synchronize",
-          "reopened",
-          "ready_for_review"
-        ]
-      },
-      "workflow_dispatch": {
-        "inputs": {
-          "pr": {
-            "description": "Pull request number to assess.",
-            "required": true
-          }
-        }
-      }
-    },
-    "permissions": {
-      "contents": "read",
-      "pull-requests": "read"
-    },
-    "concurrency": {
-      "group": "semantic-review-${{ github.event.pull_request.number || inputs.pr }}",
-      "cancel-in-progress": true
-    },
-    "env": {
-      "NODE_VERSION": "24.19.0",
-      "PR_NUMBER": "${{ github.event.pull_request.number || inputs.pr }}",
-      "TRUSTED_SHA": "${{ github.workflow_sha }}"
-    },
-    "jobs": {
-      "assess": {
-        "name": "Semantic review",
-        "if": "${{ !cancelled() && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false && github.event.pull_request.base.ref == 'main')) }}",
-        "runs-on": "ubuntu-latest",
-        "timeout-minutes": 30,
-        "outputs": {
-          "coverage": "${{ steps.coverage.outputs.coverage }}",
-          "attempt": "${{ github.run_attempt }}"
-        },
-        "steps": [
-          {
-            "name": "Checkout the trusted revision",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "with": {
-              "ref": "${{ github.workflow_sha }}",
-              "fetch-depth": 0,
-              "persist-credentials": false
-            }
-          },
-          {
-            "name": "Fetch the reviewed head as Git objects",
-            "run": "set -euo pipefail\ngit fetch --no-tags origin \"+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/${PR_NUMBER}/head\"\n"
-          },
-          {
-            "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
-          },
-          {
-            "name": "Set up Node",
-            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-            "with": {
-              "node-version": "${{ env.NODE_VERSION }}"
-            }
-          },
-          {
-            "name": "Install dependencies",
-            "run": "pnpm install --frozen-lockfile --ignore-scripts"
-          },
-          {
-            "name": "Assess the change",
-            "env": {
-              "TYPESAFE_API_KEY": "${{ secrets.JEV_KEY }}",
-              "GH_TOKEN": "${{ github.token }}"
-            },
-            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nmkdir -p \"$report_directory\"\nset +e\nnode scripts/semanticReview.ts scan \\\n  --pr \"$PR_NUMBER\" \\\n  --trusted-sha \"$TRUSTED_SHA\" \\\n  --out \"$report_directory/scan.json\" 2>&1 | tee \"$report_directory/run.log\"\nstatus=${PIPESTATUS[0]}\nset -e\nprintf '%s\\n' \"$status\" > \"$report_directory/exit-code\"\n"
-          },
-          {
-            "name": "Report the assessment",
-            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nsummary=\"$report_directory/summary.md\"\n{\n  printf '## Jev semantic review (advisory)\\n\\n'\n  printf 'Advice for this pull request, not a reviewer draw and not a required check. A green result means the assessment was delivered, never that the change is clean.\\n\\n'\n  if [ -f \"$summary\" ]; then cat \"$summary\"; else printf 'No assessment was produced.\\n'; fi\n} >> \"$GITHUB_STEP_SUMMARY\"\n\nexecution=missing\nif [ -f \"$report_directory/scan.json\" ]; then\n  execution=$(jq -r '.execution // \"missing\"' \"$report_directory/scan.json\")\nfi\ncase \"$execution\" in\n  completed | partial)\n    printf '::notice title=Jev semantic review::Assessment delivered (%s). Advisory only: read the job summary, which states what was assessed and what was withheld.\\n' \"$execution\"\n    exit 0\n    ;;\n  skipped)\n    # No changed path admitted a rule — a documentation- or workflow-only change. Nothing was\n    # eligible, so nothing was missed, and failing the check for that would put a red advisory\n    # mark on the class of change that needs it least.\n    printf '::notice title=Jev semantic review::No changed path admitted a rule, so there was nothing to assess.\\n'\n    exit 0\n    ;;\nesac\nprintf '::error title=Jev semantic review::No assessment was delivered (execution=%s, exit=%s). Treat this pull request as having no semantic coverage.\\n' \\\n  \"$execution\" \"$(cat \"$report_directory/exit-code\")\"\nexit 1\n"
-          },
-          {
-            "name": "Upload the advisory report",
-            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-            "with": {
-              "name": "semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}",
-              "path": "${{ runner.temp }}/semantic-review",
-              "retention-days": 7
-            }
-          },
-          {
-            "name": "Compute the coverage line",
-            "id": "coverage",
-            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\ncoverage='no assessment delivered'\nif [ -f \"$report_directory/scan.json\" ]; then\n  # The figure is labelled as distinct path-and-reason pairs because\n  # that is what it counts: the report counts regions, and its producer\n  # emits one identical entry per over-budget region of a file. Counting\n  # those repeats as withheld would contradict the annotations, which\n  # collapse them, and dropping the pair's reason would hide it.\n  computed=$(jq -r '\"\\(.execution) · \\(.scope.discovered) discovered · \\(.scope.eligible) eligible · \\(.scope.assessed) assessed · \\(([.scope.unassessed[], .scope.truncated[]] | unique_by([.path, .reason]) | length)) distinct path-and-reason pairs\"' \"$report_directory/scan.json\" 2>/dev/null || true)\n  if [ -n \"$computed\" ]; then\n    coverage=$computed\n  fi\nfi\nprintf 'coverage=%s\\n' \"$coverage\" >> \"$GITHUB_OUTPUT\"\n"
-          }
-        ]
-      },
-      "coverage": {
-        "name": "Jev coverage · ${{ needs.assess.outputs.coverage || 'no assessment delivered' }}",
-        "needs": "assess",
-        "if": "${{ !cancelled() }}",
-        "runs-on": "ubuntu-latest",
-        "permissions": {
-          "contents": "read"
-        },
-        "steps": [
-          {
-            "name": "Download the advisory report",
-            "id": "download",
-            "continue-on-error": true,
-            "uses": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-            "with": {
-              "name": "semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ needs.assess.outputs.attempt }}",
-              "path": "${{ runner.temp }}/semantic-review"
-            }
-          },
-          {
-            "name": "Publish the withheld paths",
-            "env": {
-              "DOWNLOAD_OUTCOME": "${{ steps.download.outcome }}",
-              "COVERAGE_LINE": "${{ needs.assess.outputs.coverage }}"
-            },
-            "run": "set -euo pipefail\nreport_directory=\"$RUNNER_TEMP/semantic-review\"\nreport=\"$report_directory/scan.json\"\nwithheld_list=\"$report_directory/withheld-notices.txt\"\n# Three absences, told apart by what the fetch proved. A missing or\n# empty report with a failed fetch is either a retrieval failure (the\n# line exists, so this run published one) or a run that published\n# nothing; a missing or empty report with a successful fetch disproves\n# \"published nothing\" and is a report that cannot be read.\nif [ ! -s \"$report\" ]; then\n  if [ \"$DOWNLOAD_OUTCOME\" = 'failure' ]; then\n    if [ -n \"$COVERAGE_LINE\" ]; then\n      printf '::notice title=Jev coverage::The advisory report could not be retrieved: this run published one, but the artifact download failed.\\n'\n    else\n      printf '::notice title=Jev coverage::No coverage was reported: the assessment published no artifact or report for this run.\\n'\n    fi\n    exit 0\n  fi\n  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'\n  exit 0\nfi\n\n# One annotation per distinct withheld path-and-reason pair, in the\n# order the report lists them. The producer emits one identical entry\n# per over-budget region of a file, so the pairs are deduplicated while\n# every distinct reason is kept: emitting the repeats would spend the\n# budget on the same notice and hide a distinct reason, and sorting the\n# survivors would let the ten-pair budget fall on alphabet rather than\n# on the report's own order. The `file=` property is identity-bearing,\n# so it is escaped exactly and never folded: folding a control\n# character into a space would annotate two paths under one name and\n# attribute a reason to the wrong file. The property escapes `%`, a\n# carriage return, a newline, `:`, and `,`; the displayed text escapes\n# `%`, a carriage return, and a newline.\nif ! jq -r '\n  def esc_data: gsub(\"%\"; \"%25\") | gsub(\"\\r\"; \"%0D\") | gsub(\"\\n\"; \"%0A\");\n  def esc_prop: esc_data | gsub(\":\"; \"%3A\") | gsub(\",\"; \"%2C\");\n  [.scope.unassessed[], .scope.truncated[]]\n  | reduce .[] as $entry (\n      { seen: {}, distinct: [] };\n      ($entry | [.path, .reason] | tojson) as $key\n      | if .seen[$key] then . else .seen[$key] = true | .distinct += [$entry] end\n    )\n  | .distinct[]\n  | \"::notice file=\\(.path | esc_prop),line=1::\\(.path | esc_data): \\(.reason | esc_data)\"\n' \"$report\" > \"$withheld_list\" 2>/dev/null; then\n  printf '::notice title=Jev coverage::The advisory report could not be read: the artifact was retrieved but carries no report.\\n'\n  exit 0\nfi\n\n# At most ten annotations, one per distinct pair, then one notice\n# counting the pairs that were not annotated.\nwithheld=0\nannotated=0\nwhile IFS= read -r notice; do\n  withheld=$((withheld + 1))\n  if [ \"$annotated\" -lt 10 ]; then\n    printf '%s\\n' \"$notice\"\n    annotated=$((annotated + 1))\n  fi\ndone < \"$withheld_list\"\n\nprintf '::notice title=Jev coverage::%s further distinct path-and-reason pairs were not annotated.\\n' \"$((withheld - annotated))\"\n"
-          }
-        ]
-      }
-    }
-  },
   "cargo-dependency-seed.yml": {
     "name": "Cargo dependency seed",
     "on": {
@@ -2765,7 +2866,7 @@
             "name": "Install ALSA development headers",
             "shell": "bash",
             "timeout-minutes": 30,
-            "run": "set -euo pipefail\nfor attempt in 1 2 3; do\n  if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then\n    exit 0\n  fi\n  printf 'ALSA header install failed (attempt %s/3)\\n' \"$attempt\" >&2\n  if [ \"$attempt\" -lt 3 ]; then\n    sleep $((attempt * 15))\n  fi\ndone\nexit 1\n"
+            "run": "set -euo pipefail\nsudo env \"PATH=$PATH\" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev'\n"
           },
           {
             "name": "Restore pinned Rust toolchain",

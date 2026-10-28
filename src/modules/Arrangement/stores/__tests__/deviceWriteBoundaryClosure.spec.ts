@@ -541,17 +541,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: import, Parameters/ReturnType projections, and call
         // lower a validated transform into command descriptions; no device write.
         'src/modules/AiRuntime/useCases/executeTransformCompile.ts': 4,
-        // Count provenance: new file entry, measured 7 — `compileArbitraryCommandList`
-        // and `compilePlannedActionCommandBatch` (each an import, its module path in
-        // that import line, and one call) plus the exported declaration. A preview
-        // measurement compiles its proposal into an immutable Command batch only;
-        // the batch is previewed in an isolated workspace, never written to a device.
-        'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 7,
-        // Count provenance: new file entry, measured 5 — the
-        // `compilePreviewMeasurementProposal` import, its module path and its one
-        // call, plus the local `compileProposal` declaration and call. Command
-        // batch compilation for an isolated preview; no device hydration or write.
-        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 5,
+        // Count provenance: new file entry, measured 11 — `compileArbitraryCommandList`
+        // and `compilePlannedActionCommandBatch` (each an import, module-path literal,
+        // and call), the exported `compilePreviewMeasurementProposal` declaration,
+        // plus `compileSemanticList` and `compileRetainedPreview` (each a declaration
+        // and call). These pure helpers compile or admit data into a versioned Command
+        // envelope; they do not perform device IO or hydration.
+        'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 11,
+        // Count provenance: new file entry, measured 6 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal, call and type-level
+        // `Parameters<typeof compilePreviewMeasurementProposal>` reference, plus the
+        // local `compileProposal` declaration and call. The type reference adds no IO;
+        // measurement still uses the same grounding and versioned-envelope route, with
+        // no device hydration or write.
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 6,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
@@ -655,7 +658,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // scheduleCompiledEventsOnParam references sit inside the apply
         // closures the post-loop pass owns; the file still writes no project
         // device state.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 11,
+        // Count provenance (#5329): one more compileAutomationEvents call turns
+        // the resolved modulated lane into local canonical device-unit events.
+        // The existing audioParam, curveWrite, and segments bindings own output.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 12,
         // Count provenance: new with the export scope law (#4912) — the
         // shared events-to-segments conversion compileAutomationSegments
         // also calls; one family member for its own conversion call.
@@ -1050,9 +1056,9 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/preset/presetStorage/saveCurrentAsPreset.ts': 3,
         'src/modules/Arrangement/useCases/preset/presetStorage/saveUserPreset.ts': 2,
         'src/modules/Arrangement/useCases/saveTrackAsTemplate.ts': 1,
-        // Count provenance: measured 2 — type field plus a read-only Yeast-stripped
-        // projection for the runtime graph. No store write.
-        'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 2,
+        // Count provenance: measured 3 — type field, read-only Yeast-stripped
+        // project identity, and read-only synth/drum-filtered Web Audio projection.
+        'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 3,
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
         // Count provenance: measured 7 in code — the `parameterValues:` patch
@@ -1778,12 +1784,31 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
 describe('device write boundary closure', () => {
     let productionFiles: ProductionSource[];
 
+    // A full production-source census can exceed Vitest's default setup timeout on a cold checkout.
     beforeAll(() => {
         productionFiles = readProductionSources(process.cwd());
-    });
+    }, 30_000);
 
     it('classifies every production sink by family, path, and exact count', () => {
         expect(() => assertProductionClosure(productionFiles)).not.toThrow();
+    });
+
+    it('rejects an immediate device writer added to the classified offline scheduler', () => {
+        const path = 'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts';
+        const scheduler = productionFiles.find((file) => file.path === path);
+        if (!scheduler) {
+            throw new Error(`missing production source: ${path}`);
+        }
+
+        const files = productionFiles.map((file) => {
+            if (file === scheduler) {
+                return productionSource(path, `${scheduler.source}\nsetCrumbsParamImmediate('instance', 'gain', 1);`);
+            }
+            return file;
+        });
+        expect(() => assertProductionClosure(files)).toThrow(
+            `load-compile-hydration sink census changed: ${path}: expected 12, received 13`
+        );
     });
 
     it('skips comment stripping when raw source has no census tokens', () => {

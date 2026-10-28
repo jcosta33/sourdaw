@@ -90,8 +90,8 @@ describe('glueClips MIDI state integration', () => {
                 'clip-b': [{ id: 'cc-b', controller: 1, value: 0.5, beat: 2, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-a': [{ id: 'bend-a-hidden', value: 0.1, beat: 6, channel: 0 }],
-                'clip-b': [{ id: 'bend-b', value: 0.25, beat: 3, channel: 0 }],
+                'clip-a': [{ id: 'bend-a-hidden', value: 800, beat: 6, channel: 0 }],
+                'clip-b': [{ id: 'bend-b', value: 2048, beat: 3, channel: 0 }],
             },
         });
         automationStore.set({ lanes: [] });

@@ -52,10 +52,14 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     const overlap = clipAEndBeat - clipBStartBeat;
     const clipBDelta = clipBStartBeat - clipB.startBeat;
     const contentDelta = clipBDelta * stretchFactor;
-    const newClipBAudioOffsetBeats =
-        clipB.audioOffsetBeats !== undefined ? Math.max(0, clipB.audioOffsetBeats + contentDelta) : undefined;
-    const newClipBMidiOffsetBeats =
-        clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
+    let newClipBAudioOffsetBeats: number | undefined;
+    if (clipB.audioOffsetBeats !== undefined) {
+        newClipBAudioOffsetBeats = Math.max(Math.min(0, clipB.audioOffsetBeats), clipB.audioOffsetBeats + contentDelta);
+    }
+    let newClipBMidiOffsetBeats: number | undefined;
+    if (clipB.midiOffsetBeats !== undefined) {
+        newClipBMidiOffsetBeats = Math.max(0, clipB.midiOffsetBeats + clipBDelta);
+    }
 
     if (
         !isValidCrossfadeGeometry(
@@ -76,6 +80,7 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
         clipBFadeInBeats: number;
         clipBAudioOffsetBeats?: number;
         clipBMidiOffsetBeats?: number;
+        clipBLoopOriginBeat?: number;
     } = {
         clipAEndBeat: clipA.endBeat,
         clipAFadeOutBeats: clipA.fadeOutBeats,
@@ -88,6 +93,9 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     if (clipB.midiOffsetBeats !== undefined) {
         previous.clipBMidiOffsetBeats = clipB.midiOffsetBeats;
     }
+    if (clipB.loopOriginBeat !== undefined) {
+        previous.clipBLoopOriginBeat = clipB.loopOriginBeat;
+    }
 
     const next: {
         clipAEndBeat: number;
@@ -96,6 +104,7 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
         clipBFadeInBeats: number;
         clipBAudioOffsetBeats?: number;
         clipBMidiOffsetBeats?: number;
+        clipBLoopOriginBeat?: number;
     } = {
         clipAEndBeat,
         clipAFadeOutBeats: overlap,
@@ -107,6 +116,14 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     }
     if (newClipBMidiOffsetBeats !== undefined) {
         next.clipBMidiOffsetBeats = newClipBMidiOffsetBeats;
+    }
+    if (clipB.loopOriginBeat !== undefined) {
+        // The forward leg shifts an audio clip B's anchor by
+        // `clipBDelta - contentDelta` and leaves a MIDI clip B's untouched;
+        // the redo snapshot records the same result so both legs restore the
+        // anchor their side of the crossfade held (#5198).
+        next.clipBLoopOriginBeat =
+            clipB.type === 'audio' ? clipB.loopOriginBeat + (clipBDelta - contentDelta) : clipB.loopOriginBeat;
     }
 
     return { previous, next };

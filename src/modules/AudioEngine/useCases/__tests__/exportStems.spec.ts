@@ -156,8 +156,12 @@ vi.mock('../offlineRender/scheduleTrackClips', () => ({
     scheduleTrackClips: offlineRenderMocks.scheduleTrackClips,
 }));
 
+/** The channel bend projection the composition root hands the render; a stem must pass it on to its track's schedule. */
+const channelBendProjector = () => [];
+
 function createRenderContext(tracks: unknown[] | null) {
     return {
+        projectChannelBend: channelBendProjector,
         tracks: tracks ? { selectedTrackId: null, tracks } : null,
         midi: tracks ? { notesByClipId: {}, probabilitySeed: 1 } : null,
         transport: null,
@@ -423,7 +427,12 @@ describe('exportStems', () => {
         expect(childOutput.connect).toHaveBeenCalledWith(parentInput);
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenNthCalledWith(
             1,
-            expect.objectContaining({ track: toasterFolder, allTracks: groupedTracks, honorMuted: false })
+            expect.objectContaining({
+                track: toasterFolder,
+                allTracks: groupedTracks,
+                honorMuted: false,
+                projections: expect.objectContaining({ projectChannelBend: channelBendProjector }),
+            })
         );
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenNthCalledWith(
             2,
@@ -467,7 +476,11 @@ describe('exportStems', () => {
             refuseFailedFaustDevices: true,
         });
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
-            expect.objectContaining({ track: child, allTracks: [child] })
+            expect.objectContaining({
+                track: child,
+                allTracks: [child],
+                projections: expect.objectContaining({ projectChannelBend: channelBendProjector }),
+            })
         );
         expect(stems).toEqual(new Map([[child.id, renderedBuffer]]));
     });
@@ -816,7 +829,10 @@ describe('exportStems', () => {
             expect(kickSchedules).toHaveLength(2);
             for (const call of kickSchedules) {
                 expect(call[0]).toMatchObject({
-                    projections: { beatAtSecondsFromAnchor: context.beatAtSecondsFromAnchor },
+                    projections: {
+                        beatAtSecondsFromAnchor: context.beatAtSecondsFromAnchor,
+                        projectChannelBend: channelBendProjector,
+                    },
                 });
             }
             // The key-source strip carries the stem set's cancellation scope
@@ -1172,36 +1188,39 @@ describe('exportStems — option parsing, validation & control flow', () => {
             vi.unstubAllGlobals();
         });
 
-        it('refuses the complete stem set when one stem omits an audible Faust device', async () => {
-            offlineRenderMocks.resolveRenderContext.mockReturnValue(
-                createRenderContext([stemTrack('keys'), stemTrack('broken'), stemTrack('bass')])
-            );
-            primeStemPool('broken');
-            const construct = offlineRenderMocks.createOfflineTrackStrip.getMockImplementation()!;
-            const destroy = vi.fn();
-            const failure = createAppError('Export', 'Track "broken" could not render "Tape Delay"', {
-                failureKind: 'faust-device',
-            });
-            offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
-                async (ctx: unknown, track: { id: string }) => {
-                    if (track.id === 'broken') {
-                        throw failure;
+        it.each(['faust-device', 'offline-grinder-setup'] as const)(
+            'refuses the complete stem set for %s',
+            async (failureKind) => {
+                offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                    createRenderContext([stemTrack('keys'), stemTrack('broken'), stemTrack('bass')])
+                );
+                primeStemPool('broken');
+                const construct = offlineRenderMocks.createOfflineTrackStrip.getMockImplementation()!;
+                const destroy = vi.fn();
+                const failure = createAppError('Export', 'Track "broken" could not render "Tape Delay"', {
+                    failureKind,
+                });
+                offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
+                    async (ctx: unknown, track: { id: string }) => {
+                        if (track.id === 'broken') {
+                            throw failure;
+                        }
+                        const strip = await construct(ctx, track);
+                        return {
+                            ...strip,
+                            deviceEntries: [{ deviceId: track.id, deviceType: 'faust-ok', strategy: { destroy } }],
+                        };
                     }
-                    const strip = await construct(ctx, track);
-                    return {
-                        ...strip,
-                        deviceEntries: [{ deviceId: track.id, deviceType: 'faust-ok', strategy: { destroy } }],
-                    };
+                );
+                try {
+                    await expect(exportStems(4)).rejects.toBe(failure);
+                    expect(destroy).toHaveBeenCalledTimes(2);
+                    expect(isExportActive()).toBe(false);
+                } finally {
+                    vi.unstubAllGlobals();
                 }
-            );
-            try {
-                await expect(exportStems(4)).rejects.toBe(failure);
-                expect(destroy).toHaveBeenCalledTimes(2);
-                expect(isExportActive()).toBe(false);
-            } finally {
-                vi.unstubAllGlobals();
             }
-        });
+        );
 
         // Delivering an empty set silently would repeat the defect this branch
         // exists to stop: a dialog reporting success over a file that contains

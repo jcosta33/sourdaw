@@ -46,7 +46,7 @@ const mocks = vi.hoisted(() => {
         commitRecording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
         discardRecording: vi.fn<(clipId: string) => boolean>(() => true),
         startRecording: vi.fn<(atBeat?: number) => TestRecordingClip[]>(() => []),
-        startPlayback: vi.fn<() => Promise<void>>(),
+        startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
         cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
         startAudioRecording: vi.fn<StartAudioRecording>(),
@@ -110,7 +110,17 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     stopAllScheduled: mocks.stopAllScheduled,
     repositionNativeLiveGraphSession: mocks.repositionNativeLiveGraphSession,
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mocks.resetMidiState }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    resetMidiState: mocks.resetMidiState,
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    // The recording terminal's root-identity witness reads one function; these
+    // specs exercise no branch machinery, so the identity never moves.
+    captureProjectRootIdentity: () => 'root-identity',
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 // Audit #4591 — a take whose latency-compensated start would fall before
@@ -133,7 +143,9 @@ describe('toggleRecording — take recorded from the top of the song', () => {
         // `startPlayback` now resolves when the transport has actually rolled,
         // and the recording path waits on it; the default here is a roll that
         // costs nothing.
-        mocks.startPlayback.mockResolvedValue(undefined);
+        mocks.startPlayback.mockImplementation(async (onRoll) => {
+            onRoll?.(audioClock.currentTime, 0);
+        });
         mocks.stopActiveRecording.mockImplementation(() => {
             recordingLifecycle.cancelPendingRecordingStart();
             const timerId = recordingLifecycle.countInTimerId;

@@ -37,6 +37,7 @@ import {
     PROJECT_OBJECT_CREATING_COMMANDS,
     resolveBatchLocalBindingProducer,
 } from './agentReference/batchLocalBindingProducers';
+import { findTargetOwnerTrackIds } from './agentReference/findTargetOwnerTrackIds';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import { isBatchLocalDeviceParameterTarget } from './agentReference/isBatchLocalDeviceParameterTarget';
 import { CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
@@ -53,6 +54,11 @@ export type ArbitraryCommandListSelectorEvidence = {
     excludedIds: string[];
     protectedExclusions: string[];
     preconditions: Array<{ stableId: string; fingerprint: string }>;
+    /**
+     * The selector's `where` fields, present only when the selector used them, so grounding can ask
+     * whether the request states the name or owner track a selection picks its targets by.
+     */
+    where?: SemanticCommandListSelector['where'];
     /**
      * The selector fields a `match` was compiled with, present only when the selector used one.
      * The evidence validator re-resolves this against its own context through the same shared
@@ -227,31 +233,32 @@ function resolveSelector(input: {
     }
     const { stableIds } = resolution;
     const explicitlyExcludedIds = input.selector.excludeIds ?? [];
-    return {
+    const evidence: ArbitraryCommandListSelectorEvidence = {
+        itemId: input.itemId,
         stableIds,
-        evidence: {
-            itemId: input.itemId,
-            stableIds,
-            excludedIds: [...explicitlyExcludedIds],
-            protectedExclusions: [],
-            preconditions: stableIds.map((stableId) => {
-                const candidate = input.candidates.find((entry) => entry.id === stableId);
-                return { stableId, fingerprint: JSON.stringify(candidate) };
-            }),
-            ...(input.selector.match === undefined
-                ? {}
-                : {
-                      predicate: {
-                          entity: input.selector.entity,
-                          where: input.selector.where,
-                          match: input.selector.match,
-                          condition: input.selector.condition,
-                          excludeIds: input.selector.excludeIds,
-                          quantity: input.selector.quantity,
-                      },
-                  }),
-        },
+        excludedIds: [...explicitlyExcludedIds],
+        protectedExclusions: [],
+        preconditions: stableIds.map((stableId) => {
+            const candidate = input.candidates.find((entry) => entry.id === stableId);
+            return { stableId, fingerprint: JSON.stringify(candidate) };
+        }),
+        ...(input.selector.match === undefined
+            ? {}
+            : {
+                  predicate: {
+                      entity: input.selector.entity,
+                      where: input.selector.where,
+                      match: input.selector.match,
+                      condition: input.selector.condition,
+                      excludeIds: input.selector.excludeIds,
+                      quantity: input.selector.quantity,
+                  },
+              }),
     };
+    if (input.selector.where !== undefined) {
+        evidence.where = structuredClone(input.selector.where);
+    }
+    return { stableIds, evidence };
 }
 
 function toBulkSetReplaySelector(selector: SemanticCommandListSelector): BulkSetReplaySelector {
@@ -453,25 +460,10 @@ function resolveParentTrackId(
     if (targetId.startsWith('$')) {
         return resolveBatchLocalParentTrackId(capability, targetId.slice(1), producersByBinding);
     }
-    switch (capability) {
-        case 'track':
-        case 'routable-source':
-        case 'bus':
-            return targetId;
-        case 'device':
-        case 'sidechain-capable-device':
-            return context.tracks.find((track) => track.devices.some((device) => device.id === targetId))?.id ?? null;
-        case 'automation-lane':
-            return (context.automationLanes ?? []).find((lane) => lane.id === targetId)?.trackId ?? null;
-        case 'clip':
-        case 'editable-clip':
-        case 'editable-audio-clip':
-        case 'editable-midi-clip':
-        case 'writable-midi-clip':
-            return context.tracks.find((track) => track.clips.some((clip) => clip.id === targetId))?.id ?? null;
+    if (capability === 'track' || capability === 'routable-source' || capability === 'bus') {
+        return targetId;
     }
-    const exhaustiveCapability: never = capability;
-    return exhaustiveCapability;
+    return findTargetOwnerTrackIds(capability, targetId, context)[0] ?? null;
 }
 
 function isParentTrackTargetCapability(

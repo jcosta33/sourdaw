@@ -39,6 +39,7 @@ import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProviderRouteView } from '../../getProviderRouteView';
+import { parseAnalysisMeasureArguments } from '../../parseAnalysisMeasureArguments';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
@@ -474,6 +475,139 @@ describe('generateToolPlanningOutcome', () => {
         expect(outcome).toMatchObject({
             status: 'complete',
             toolCalls: [{ arguments: { commands: [], compiledCallIds: ['compile-1'] } }],
+        });
+    });
+
+    // Red when the strict wire loses a refinement's `refines`, or keeps the `null` an OpenAI strict
+    // reply must send for it when the proposal refines nothing, which the canonical schema refuses.
+    it.each([
+        { label: 'carries the confirmation id a strict reply names', refines: 'prompt-confirmation-pending' },
+        { label: 'drops the null a strict reply sends for no refinement', refines: null },
+    ])('$label in refines', async ({ refines }) => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        const proposalSchema = getPlanningProviderToolSchemas().find(
+            (schema) => schema.function.name === 'command.batch.propose'
+        );
+        expect(proposalSchema).toBeDefined();
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            calls: [
+                {
+                    id: 'refinement-1',
+                    name: 'command.batch.propose',
+                    arguments: {
+                        commands: [{ name: 'setTrackGain', argumentsJson: '{"trackId":"track-kick","gainDb":-1.5}' }],
+                        list: null,
+                        plan: null,
+                        compiledCallIds: null,
+                        refines,
+                    },
+                },
+            ],
+            strictToolSchemas: true,
+            usage: null,
+        });
+
+        const outcome = await generateToolPlanningOutcome('system', 'less, make it 1.5', [proposalSchema!]);
+
+        const advertised: unknown = mocks.generateCloudToolCalls.mock.calls[0]?.[2];
+        expect(advertised).toHaveProperty([0, 'function', 'parameters', 'properties', 'refines', 'type'], 'string');
+        const expected: Record<string, unknown> = {
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'track-kick', gainDb: -1.5 } }],
+        };
+        if (refines !== null) {
+            expected.refines = refines;
+        }
+        expect(outcome.status === 'complete' ? outcome.toolCalls[0]?.arguments : null).toEqual(expected);
+    });
+
+    describe('recipe preview reference admission', () => {
+        const semantic = {
+            schemaVersion: 1,
+            items: [{ id: 'gain', name: 'setTrackGain', arguments: { trackId: 'drums', gainDb: -3 } }],
+        };
+        const strictSemantic = {
+            schemaVersion: 1,
+            items: [
+                {
+                    id: 'gain',
+                    name: 'setTrackGain',
+                    argumentsJson: JSON.stringify({ trackId: 'drums', gainDb: -3 }),
+                },
+            ],
+        };
+        it.each([
+            ['strict-hosted', 'recipe'],
+            ['hosted', 'recipe'],
+            ['webllm', 'recipe'],
+            ['strict-hosted', 'semantic'],
+            ['hosted', 'semantic'],
+            ['webllm', 'semantic'],
+            ['strict-hosted', 'project'],
+            ['hosted', 'project'],
+            ['webllm', 'project'],
+        ] as const)('admits the %s %s source through production inference', async (backend, source) => {
+            const local = backend === 'webllm';
+            const strict = backend === 'strict-hosted';
+            mocks.backendChain.value = local ? ['webllm'] : ['cloud'];
+            mocks.usesStrictCloudToolSchemas.mockReturnValue(strict);
+            const args: Record<string, unknown> = {
+                scope: { kind: 'master' },
+                range: { startBeat: 0, endBeat: 8 },
+                subject: source === 'project' ? 'project' : 'preview',
+            };
+            if (strict) {
+                args.scope = { kind: 'master', ids: null };
+                args.range = { startBeat: 0, endBeat: 8, sectionId: null };
+                args.metrics = null;
+            }
+            if (source === 'recipe') {
+                args.recipeCallId = 'expand-1';
+            } else if (strict) {
+                args.recipeCallId = null;
+            }
+            if (source === 'semantic') {
+                if (strict) {
+                    args.proposal = strictSemantic;
+                } else {
+                    args.proposal = semantic;
+                }
+            } else if (strict) {
+                args.proposal = null;
+            }
+            const call = { id: 'measure-1', name: 'analysis.measure', arguments: args };
+            if (local) {
+                mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [call] });
+            } else {
+                mocks.generateCloudToolCalls.mockResolvedValue({
+                    providerRequestId: null,
+                    calls: [call],
+                    strictToolSchemas: strict,
+                    usage: null,
+                });
+            }
+            const tool = getPlanningProviderToolSchemas().find((entry) => entry.function.name === 'analysis.measure');
+            if (tool === undefined) {
+                throw new Error('Missing analysis.measure');
+            }
+            const result = await generateToolPlanningOutcome('system', 'preview expansion', [tool]);
+            expect(result.status).toBe('complete');
+            if (result.status !== 'complete') {
+                throw new Error('Expected admitted tool call');
+            }
+            const admitted = result.toolCalls[0]?.arguments;
+            expect(admitted).not.toHaveProperty(source === 'recipe' ? 'proposal' : 'recipeCallId');
+            expect(parseAnalysisMeasureArguments(admitted)).toMatchObject({
+                status: 'valid',
+                value: { subject: { kind: source === 'project' ? 'project' : 'preview' } },
+            });
+            if (source === 'recipe') {
+                expect(admitted).toHaveProperty('recipeCallId', 'expand-1');
+            }
+            if (source === 'semantic') {
+                expect(admitted).toHaveProperty('proposal', semantic);
+            }
         });
     });
 

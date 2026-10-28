@@ -16,6 +16,12 @@ Standalone WebSocket collaboration relay server (`sourdaw-collab-server`): room 
 
 ## Verification
 
+Run the changed server spec locally under the root resource guard, with an RSS estimate from the
+nearest measured command:
+
 ```bash
-cd server && npm test
+pnpm guard --profile focused --max-rss-mib <estimate> -- sh -c 'cd server && npm exec -- tsx --test __tests__/<changed-spec>.spec.ts'
 ```
+
+PR CI runs the full server suite and build through the server health gate. Inspect that result for
+routine whole-server validation.

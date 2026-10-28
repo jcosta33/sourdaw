@@ -1,31 +1,20 @@
 import {
-    CC_DATA_DECREMENT,
-    CC_DATA_ENTRY_LSB,
-    CC_DATA_ENTRY_MSB,
-    CC_DATA_INCREMENT,
-    CC_NRPN_LSB,
-    CC_NRPN_MSB,
-    CC_RPN_LSB,
-    CC_RPN_MSB,
+    CC_RESET_ALL_CONTROLLERS,
     HIGH_RESOLUTION_MAX,
-    MAX_BEND_RANGE_SEMITONES,
     SEVEN_BIT_MAX,
     clampSevenBit,
     combineHighResolution,
     createMidiChannelControllerState,
-    getSelectedParameterNumber,
     highResolutionMsbCcFor,
-    isDataEntryCc,
     isHighResolutionLsbCc,
+    isHeldPedalCc,
     isHighResolutionMsbCc,
-    isParameterSelectCc,
-    isPitchBendSensitivitySelected,
-    toBendRangeSemitones,
     type MidiChannelControllerState,
-    type SelectedParameterKind,
 } from '../../models/MidiControllerState';
+import { applyRegisteredParameterChange } from '../../services/applyRegisteredParameterChange';
 
 import { channelControllerState } from './channelControllerState';
+import { heldPedalState } from './heldPedalState';
 
 type IngestChannelControlChangeInput = {
     /** Zero-based MIDI channel the message arrived on. */
@@ -76,6 +65,16 @@ function resolveChannelState(channel: number): MidiChannelControllerState {
     return created;
 }
 
+function resolveHeldPedals(channel: number): Map<number, number> {
+    const existing = heldPedalState.get(channel);
+    if (existing) {
+        return existing;
+    }
+    const created = new Map<number, number>();
+    heldPedalState.set(channel, created);
+    return created;
+}
+
 function sevenBitResult(cc: number, value: number): IngestChannelControlChangeOutput {
     return {
         consumed: false,
@@ -100,95 +99,6 @@ function highResolutionResult(cc: number, value14: number): IngestChannelControl
 
 function consumedResult(cc: number, value: number): IngestChannelControlChangeOutput {
     return { ...sevenBitResult(cc, value), consumed: true };
-}
-
-function selectParameter(
-    state: MidiChannelControllerState,
-    kind: SelectedParameterKind,
-    isMsb: boolean,
-    value: number
-): void {
-    if (state.selectedParameterKind !== kind) {
-        // Switching banks abandons the other bank's half-written number; keeping
-        // it would let an RPN MSB and an NRPN LSB compose a parameter neither
-        // the device nor we ever meant to select.
-        state.selectedParameterMsb = 0;
-        state.selectedParameterLsb = 0;
-    }
-    state.selectedParameterKind = kind;
-    if (isMsb) {
-        state.selectedParameterMsb = value;
-    } else {
-        state.selectedParameterLsb = value;
-    }
-    // A new parameter starts with no data written to it.
-    state.dataEntryMsb = 0;
-    state.dataEntryLsb = 0;
-}
-
-function applyParameterSelect(state: MidiChannelControllerState, cc: number, value: number): void {
-    if (cc === CC_RPN_MSB) {
-        selectParameter(state, 'rpn', true, value);
-        return;
-    }
-    if (cc === CC_RPN_LSB) {
-        selectParameter(state, 'rpn', false, value);
-        return;
-    }
-    if (cc === CC_NRPN_MSB) {
-        selectParameter(state, 'nrpn', true, value);
-        return;
-    }
-    if (cc === CC_NRPN_LSB) {
-        selectParameter(state, 'nrpn', false, value);
-    }
-}
-
-function stepBendRange(state: MidiChannelControllerState, step: number): void {
-    const current = state.bendRangeSemitones ?? toBendRangeSemitones(state.dataEntryMsb, state.dataEntryLsb);
-    const next = Math.max(0, Math.min(MAX_BEND_RANGE_SEMITONES, current + step));
-    const semitones = Math.trunc(next);
-    state.bendRangeSemitones = next;
-    state.dataEntryMsb = semitones;
-    state.dataEntryLsb = Math.round((next - semitones) * 100);
-}
-
-function applyDataEntry(state: MidiChannelControllerState, cc: number, value: number): void {
-    // Data Entry always advances the selected parameter's tracked bytes. Only
-    // RPN 0 has a meaning we act on; an NRPN or any other RPN writes its own
-    // parameter, which we do not implement — the bytes are consumed and
-    // deliberately dropped rather than leaking into the bend range.
-    const isPitchBendSensitivity = isPitchBendSensitivitySelected(state);
-
-    if (cc === CC_DATA_ENTRY_MSB) {
-        state.dataEntryMsb = value;
-        // The MSB is the whole-unit half; a fresh one supersedes the fractional
-        // remainder of the previous value rather than combining with it.
-        state.dataEntryLsb = 0;
-        if (isPitchBendSensitivity) {
-            state.bendRangeSemitones = toBendRangeSemitones(value, 0);
-        }
-        return;
-    }
-
-    if (cc === CC_DATA_ENTRY_LSB) {
-        state.dataEntryLsb = value;
-        if (isPitchBendSensitivity) {
-            state.bendRangeSemitones = toBendRangeSemitones(state.dataEntryMsb, value);
-        }
-        return;
-    }
-
-    if (!isPitchBendSensitivity) {
-        return;
-    }
-    if (cc === CC_DATA_INCREMENT) {
-        stepBendRange(state, 1);
-        return;
-    }
-    if (cc === CC_DATA_DECREMENT) {
-        stepBendRange(state, -1);
-    }
 }
 
 function ingestHighResolutionMsb(
@@ -245,16 +155,10 @@ export function ingestChannelControlChange({
     const state = resolveChannelState(channel);
     const byte = clampSevenBit(value);
 
-    if (isParameterSelectCc(cc)) {
-        applyParameterSelect(state, cc, byte);
-        return consumedResult(cc, byte);
-    }
-
-    // Data Entry only belongs to a parameter while one is selected. After the
-    // Null RPN (0x3FFF) nothing is, which is exactly why controllers send it —
-    // so controller 6 goes back to being an ordinary control.
-    if (isDataEntryCc(cc) && getSelectedParameterNumber(state) !== null) {
-        applyDataEntry(state, cc, byte);
+    // Parameter selection is decoded first, and Data Entry only belongs to a parameter while one
+    // is selected: after the Null RPN (0x3FFF) nothing is, which is exactly why controllers send
+    // it, so controller 6 goes back to being an ordinary control.
+    if (applyRegisteredParameterChange(state, cc, byte)) {
         return consumedResult(cc, byte);
     }
 
@@ -264,6 +168,15 @@ export function ingestChannelControlChange({
 
     if (isHighResolutionLsbCc(cc)) {
         return ingestHighResolutionLsb(state, cc, byte);
+    }
+
+    if (isHeldPedalCc(cc)) {
+        resolveHeldPedals(channel).set(cc, byte);
+    } else if (cc === CC_RESET_ALL_CONTROLLERS) {
+        // The message that lifts every pedal; remembering one past it would
+        // press it back onto the next take. The wheel it recentres is
+        // recorded when the message is admitted (`admitResetAllControllers`).
+        heldPedalState.get(channel)?.clear();
     }
 
     return sevenBitResult(cc, byte);

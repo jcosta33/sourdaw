@@ -8,15 +8,14 @@ import {
 import { type AgentRunPhase } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus } from '../models/Chat';
 import { type SemanticCommandListMatchSelectorRecord } from '../models/SemanticCommandList';
-import { appendChatMessage, updateChatMessage } from '../stores/chatStore';
+import { appendChatMessage } from '../stores/chatStore';
 import {
     type PendingAppActionConfirmation,
     getPendingActionConfirmation,
-    supersedePendingActionConfirmation,
 } from '../stores/pendingActionConfirmationStore';
 
-import { pendingActionResourceSettlement } from './agentRequestOrchestration/pendingActionResourceSettlement';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
+import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
@@ -43,6 +42,7 @@ type WorkingBatch = NonNullable<PendingAppActionConfirmation['approvalSnapshot']
 
 const SUPERSEDED_REASON = 'Superseded by a re-preview against the current project.';
 const SUPERSEDED_MESSAGE = 'This proposal was replaced by a re-preview against the current project.';
+const RE_PREVIEW_SUPERSESSION = { reason: SUPERSEDED_REASON, content: SUPERSEDED_MESSAGE };
 const REPROPOSED_CONTENT = 'Re-previewed against the current project.';
 const ALREADY_REPLACED_REASON = 'A newer proposal already replaced this one.';
 const MISSING_RUN_REASON = 'The run this proposal belongs to is no longer recorded.';
@@ -258,27 +258,6 @@ function rebindToCurrentProject(workingBatch: WorkingBatch) {
     return { status: 'rebound' as const, approval, parsed, refreshed };
 }
 
-/** Retire the replaced proposal: invalidate it, discard its prepared resources, and say so in chat. */
-async function retireSupersededConfirmation(
-    confirmation: PendingAppActionConfirmation,
-    reproposedConfirmationId: string
-): Promise<void> {
-    supersedePendingActionConfirmation({
-        confirmationId: confirmation.id,
-        supersededBy: reproposedConfirmationId,
-        reason: SUPERSEDED_REASON,
-    });
-    await pendingActionResourceSettlement.settleBestEffort({
-        confirmationId: confirmation.id,
-        disposition: 'discard',
-    });
-    updateChatMessage(confirmation.assistantMessageId, {
-        pendingActionConfirmationStatus: 'invalidated',
-        error: SUPERSEDED_REASON,
-        content: SUPERSEDED_MESSAGE,
-    });
-}
-
 /** The fresh batch awaits approval; the batch it replaced is cancelled unless it is the same batch. */
 function recordReplacementBatch(
     runId: string,
@@ -360,8 +339,6 @@ export async function reproposePendingChatActions(
     if (carriedSelection.status === 'rejected') {
         return carriedSelection;
     }
-    const { affectedIds, matchSelectorPredicates: carriedMatchSelectorPredicates } = carriedSelection;
-
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
         id: assistantMessageId,
@@ -379,7 +356,7 @@ export async function reproposePendingChatActions(
         commandEnvelopes: refreshed.commandEnvelopes,
         commandBatch: refreshed.commandBatch,
         agentApproval: approval,
-        affectedIds: [...affectedIds],
+        affectedIds: [...carriedSelection.affectedIds],
         protectedUnchanged: confirmation.protectedUnchanged,
         // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
         // in the working batch's commands rather than re-resolving any `match` selector, so this
@@ -389,14 +366,17 @@ export async function reproposePendingChatActions(
         // survives that check is carried forward so a later `resolveConfirmationAdmission`
         // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
         // guards a first-proposed one.
-        matchSelectorPredicates: carriedMatchSelectorPredicates,
+        matchSelectorPredicates: carriedSelection.matchSelectorPredicates,
         // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
         // carried only for the whole proposal, never guessed for a part of it.
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
-        // Persisting binds the figures to the rebuilt batch, so a subset or changed batch drops them.
-        measuredPreview: confirmation.approvalSnapshot.measuredPreview,
+        // Subsets drop evidence unconditionally; persistence binds whole batches to their digest and revision.
+        measuredPreview: selectsSubset ? undefined : confirmation.approvalSnapshot.measuredPreview,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
+        // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
+        groundingBasis: selectsSubset ? undefined : confirmation.approvalSnapshot.groundingBasis,
+        protectionFacts: confirmation.approvalSnapshot.protectionFacts,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,
@@ -411,7 +391,7 @@ export async function reproposePendingChatActions(
         return { status: 'rejected', reason: 'Prepared action resources exceed the live confirmation limit.' };
     }
 
-    await retireSupersededConfirmation(confirmation, reproposedConfirmationId);
+    await retireSupersededConfirmation(confirmation, reproposedConfirmationId, RE_PREVIEW_SUPERSESSION);
     recordReplacementBatch(confirmation.runId, parsedOriginal.envelope.batchId, parsedRefreshed.envelope);
 
     return {

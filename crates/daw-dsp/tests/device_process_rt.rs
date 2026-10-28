@@ -1694,6 +1694,48 @@ fn levain_process_does_not_allocate_with_notes_held() {
     );
 }
 
+/// Ensemble timing holds each fresh attack for its pitch's onset offset. The
+/// offset is computed at note-on, which the worklet runs from its message drain
+/// on the render thread, and counted down per frame inside `process`, so both
+/// run inside the guard. Legato is off so every chord note is a fresh attack
+/// rather than a glide of the voice before it.
+#[test]
+fn levain_ensemble_onsets_do_not_allocate() {
+    use daw_dsp::levain::LevainInstance;
+
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    spread_levain_mics(&mut instance);
+    instance.begin_sample_bank("violin-1");
+    let sample_id = instance
+        .add_sample(levain_rt_sample(), LEVAIN_RT_FRAMES, 1, SAMPLE_RATE)
+        .expect("test sample should fit the bank");
+    stage_two_mic_levain_zones(&mut instance, sample_id);
+    assert!(instance.build_zone_map(1, LEVAIN_RT_MICS));
+    assert!(instance.commit_sample_bank());
+    instance.set_param("legato_enabled", 0.0);
+    instance.set_param("ensemble_timing", 1.0);
+
+    let warmup = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&warmup, "levain ensemble onsets");
+
+    assert_no_alloc(|| {
+        for note in [55_u8, 60, 64, 67] {
+            instance.note_on(note, 100);
+        }
+        for _ in 0..GUARDED_BLOCKS {
+            instance.process(BLOCK as u32);
+        }
+    });
+
+    let out = unsafe { read_output(instance.process(BLOCK as u32), BLOCK) };
+    assert_all_finite(&out, "levain ensemble onsets");
+    assert!(
+        peak(&out) > 1e-6,
+        "levain fell silent after its delayed ensemble onsets, so the guarded \
+         region did not exercise the held attacks it exists to cover"
+    );
+}
+
 /// The guard above holds two notes for its whole run, so it never executes a
 /// note-off or a slur — `LevainVoice::release` (and the `exit_loop` on every
 /// stream of every mic layer) and `start_crossfade` (and its `SamplePlayback`
@@ -1963,6 +2005,86 @@ fn levain_sample_chunks_and_seal_do_not_allocate() {
         });
         assert!(sealed, "a complete sample should seal");
     }
+}
+
+/// The worklet stages a bank's zone tables a bounded chunk per message after
+/// reserving them once; neither the chunk commits nor the seal may allocate or
+/// free, and neither may build the tables.
+#[test]
+fn levain_zone_table_chunks_and_seal_do_not_allocate() {
+    use daw_dsp::levain::{
+        LevainInstance, LevainZoneTableBuilder, LEVAIN_ZONE_TABLE_CHUNK_ENTRIES,
+    };
+
+    let chunk = LEVAIN_ZONE_TABLE_CHUNK_ENTRIES;
+    let mut instance = LevainInstance::new(SAMPLE_RATE, 8);
+    instance.begin_sample_bank("violin-1");
+    let mut builder = LevainZoneTableBuilder::new();
+    for zone_id in 0..48_u32 {
+        let key = 36 + (zone_id % 24) as u8;
+        let (articulation, mic) = ((zone_id % 4) as u16, (zone_id % 2) as u8);
+        instance.add_zone(
+            zone_id,
+            0,
+            articulation,
+            key,
+            0.0,
+            key,
+            key + 2,
+            0,
+            127,
+            0,
+            1,
+            mic,
+            false,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.005,
+            0.1,
+            1.0,
+            0.3,
+        );
+        builder.add_zone(zone_id, articulation, mic, key, key + 2, 0, 127);
+    }
+    assert!(builder.build(4, 2));
+    let (lut, arena) = (builder.lut(), builder.arena());
+    assert!(instance.reserve_zone_tables(4, 2, (lut.len() / 2) as u32, arena.len() as u32));
+
+    let mut accepted = true;
+    assert_no_alloc(|| {
+        for (index, words) in lut.chunks(2 * chunk).enumerate() {
+            // SAFETY: the window holds one full LUT chunk and this one fits it.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    words.as_ptr(),
+                    instance.zone_table_write_ptr(),
+                    words.len(),
+                )
+            };
+            accepted &=
+                instance.commit_zone_lut_chunk((index * chunk) as u32, (words.len() / 2) as u32);
+        }
+        for (index, ids) in arena.chunks(chunk).enumerate() {
+            // SAFETY: as above; an arena chunk is at most half the window.
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    ids.as_ptr(),
+                    instance.zone_table_write_ptr(),
+                    ids.len(),
+                )
+            };
+            accepted &= instance.commit_zone_arena_chunk((index * chunk) as u32, ids.len() as u32);
+        }
+    });
+    assert!(accepted, "every zone-table chunk should have been accepted");
+    let mut sealed = false;
+    assert_no_alloc(|| {
+        sealed = instance.seal_zone_tables();
+    });
+    assert!(sealed, "complete zone tables should seal");
 }
 
 #[test]

@@ -51,6 +51,7 @@ const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string 
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     trackStore: { value: { tracks: [] } },
     // Pulled in transitively: the real MIDI use-case barrel below reaches
     // Levain's param bridge, whose dependency bundle destructures these off
@@ -103,10 +104,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: vi.fn(),
+    startNoteExpression: vi.fn(),
+    advanceNoteExpression: vi.fn(),
+    relocateNoteExpression: vi.fn(),
     registerScheduledSource: registerScheduledSourceMock,
     // The one definition of the MPE member default, as the production barrel
     // exports it (audit MD-8).
     getDefaultBendRangeSemitones: () => 48,
+    getNoteExpressionDimensions: () => [],
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getTrackStrip: vi.fn(),
@@ -548,6 +553,123 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                     grooveState: defaultGrooveTemplateState,
                 })
             ).toEqual([{ pitch: 60, beat: 0, durationBeats: 0.5 }]);
+        });
+    });
+
+    // #5198 review — the synth chain's loop-window membership is one figure:
+    // the committed clip groove displaces the stored start FIRST and every
+    // gate (the generator's admission, the per-note test, the shared
+    // projection) windows the GROOVED figure, so a groove carrying a note
+    // across a bound flips its admission on the live and offline twins
+    // together. These cases run the plain synth path (no Yeast device) over
+    // the review's diverging populations.
+    describe('the committed clip groove and the anchored loop window read one figure', () => {
+        /**
+         * A 1/8-grid groove displacing EVERY note +0.25 beats at full amount:
+         * all eight slots carry the 0.5-step `timingOffset`, so the
+         * displacement never depends on where the note sits on the grid.
+         */
+        function clipGrooveState(): GrooveTemplateState {
+            return {
+                templates: [
+                    {
+                        id: 'groove-clip-push',
+                        name: 'Clip push',
+                        schemaVersion: 1,
+                        subdivision: '1/8',
+                        slots: Array.from({ length: 8 }, (_slot, index) => ({
+                            index,
+                            timingOffset: 0.5,
+                            dynamicsOffset: 0,
+                        })),
+                        provenance: { type: 'user', sourceId: 'spec' },
+                    },
+                ],
+                assignments: [
+                    { consumerType: 'clip', consumerId: 'clip-1', templateId: 'groove-clip-push', amount: 1 },
+                ],
+            };
+        }
+
+        // Clip start 2 under anchor 0 is a +2 advance whose window reads
+        // [−2, 2); the +1 slip stores offset 3. Both probe figures are dyadic,
+        // so every gate compares exact floats.
+        function anchoredSlippedClip(): Record<string, unknown> {
+            return {
+                startBeat: 2,
+                endBeat: 10,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                midiOffsetBeats: 3,
+            };
+        }
+
+        const probeNotes = [
+            { id: 'n-grooved-in', pitch: 60, startBeat: 0.75, duration: 0.25, velocity: 100 },
+            { id: 'n-grooved-out', pitch: 72, startBeat: 4.75, duration: 0.25, velocity: 100 },
+        ];
+
+        async function sweepSynthVoices(grooveState: GrooveTemplateState): Promise<ScheduledVoice[]> {
+            grooveTemplateStore.set(grooveState);
+            const track = midiTrack({ clips: [midiClip(anchoredSlippedClip())] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': probeNotes } };
+            vi.mocked(scheduleNote).mockClear();
+            const windowCount = Math.round(6 / WINDOW_BEATS);
+            for (let step = 0; step < windowCount; step++) {
+                const fromBeat = step * WINDOW_BEATS;
+                await scheduleMidiNotes(
+                    fromBeat,
+                    fromBeat + WINDOW_BEATS,
+                    0,
+                    new Set<string>(),
+                    [],
+                    defaultTransportState,
+                    120
+                );
+            }
+            return vi.mocked(scheduleNote).mock.calls.map((call) => ({
+                pitch: call[2],
+                beat: call[3] * BEATS_PER_SECOND,
+                durationBeats: call[4] * BEATS_PER_SECOND,
+            }));
+        }
+
+        it('sounds the raw-below-floor row the groove pulls inside and silences the raw-inside row it pushes past the ceiling, on both twins', async () => {
+            // The row at 0.75 reads raw −2.25 — below the floor, refused by
+            // every gate that reads the stored figure — while its grooved
+            // figure −2.0 sits exactly on the inclusive floor. The row at 4.75
+            // reads raw 1.75 — inside — while its grooved figure 2.0 sits past
+            // the exclusive ceiling. The live chain must voice the first at
+            // its displaced pass placement (wrapped onto beat 4) and never
+            // voice the second; the offline projection over the whole stored
+            // set must emit exactly the same single event.
+            const voices = await sweepSynthVoices(clipGrooveState());
+            expect(voices).toEqual([{ pitch: 60, beat: 4, durationBeats: 0.25 }]);
+
+            expect(
+                projectClipMidiEvents({
+                    events: probeNotes,
+                    clipId: 'clip-1',
+                    clipStartBeat: 2,
+                    clipEndBeat: 10,
+                    iterationStartBeat: 2,
+                    loopLengthBeats: 4,
+                    midiOffsetBeats: 3,
+                    loopEnabled: true,
+                    loopOriginBeat: 0,
+                }).map((event) => ({ id: event.id, startBeat: event.startBeat, duration: event.duration }))
+            ).toEqual([{ id: 'n-grooved-in', startBeat: 4, duration: 0.25 }]);
+        });
+
+        it('control: without the groove the same stored rows admit the other way', async () => {
+            // The stored figures alone refuse the 0.75 row (raw −2.25, below
+            // the floor) and admit the 4.75 row (raw 1.75, inside): the flip
+            // above is the groove's doing, and the admitted row places
+            // undisplaced at 3.75.
+            const voices = await sweepSynthVoices(defaultGrooveTemplateState);
+            expect(voices).toEqual([{ pitch: 72, beat: 3.75, durationBeats: 0.25 }]);
         });
     });
 });

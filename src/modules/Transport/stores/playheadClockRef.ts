@@ -18,4 +18,17 @@ export const playheadClockRef = {
     beat: 0,
     /** The AudioContext.currentTime that `beat` is the position for. */
     audioTimeSeconds: 0,
+    /** Requested beat while this browser roll's programme is not admitted yet. */
+    hold: null as { generation: number; beat: number } | null,
 };
+
+export function holdPlayheadClock(generation: number, beat: number): void {
+    playheadClockRef.hold = { generation, beat };
+}
+
+/** An outgoing preparation may settle after a newer play acquired this clock. */
+export function releasePlayheadClockHold(generation: number): void {
+    if (playheadClockRef.hold?.generation === generation) {
+        playheadClockRef.hold = null;
+    }
+}
