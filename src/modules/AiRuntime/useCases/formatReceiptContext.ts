@@ -170,6 +170,51 @@ function buildFactored(value: Json, omitted: ReadonlySet<string>): JsonObject {
     return { layouts, strings: dictionary, ...factorShared(encode(value)) };
 }
 
+/** Drop dictionary entries whose remaining references cost at least as much as literals. */
+function pruneStrings(factored: JsonObject): JsonObject {
+    const strings = factored.strings as string[];
+    const counts = strings.map(() => 0);
+    function count(node: Json): void {
+        if (Array.isArray(node)) {
+            node.forEach(count);
+        } else if (node !== null && typeof node === 'object') {
+            const keys = Object.keys(node);
+            if (keys.length === 1 && keys[0] === '$s' && typeof node.$s === 'number') {
+                counts[node.$s] = (counts[node.$s] ?? 0) + 1;
+            } else {
+                Object.values(node).forEach(count);
+            }
+        }
+    }
+    count(factored.shared!);
+    count(factored.receipts!);
+    const indexes = new Map<number, number>();
+    const kept = strings.filter((text, index) => {
+        const length = json(text).length;
+        const referenceLength = json({ $s: index }).length;
+        const useful = counts[index]! * (length - referenceLength) > length + 1;
+        if (useful) {
+            indexes.set(index, indexes.size);
+        }
+        return useful;
+    });
+    function rewrite(node: Json): Json {
+        if (Array.isArray(node)) {
+            return node.map(rewrite);
+        }
+        if (node === null || typeof node !== 'object') {
+            return node;
+        }
+        const keys = Object.keys(node);
+        if (keys.length === 1 && keys[0] === '$s' && typeof node.$s === 'number') {
+            const index = indexes.get(node.$s);
+            return index === undefined ? strings[node.$s]! : { $s: index };
+        }
+        return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, rewrite(child)]));
+    }
+    return { ...factored, strings: kept, shared: rewrite(factored.shared!), receipts: rewrite(factored.receipts!) };
+}
+
 function isJson(value: unknown): value is Json {
     if (value === null || typeof value === 'boolean' || typeof value === 'string') {
         return true;
@@ -196,27 +241,16 @@ export function formatReceiptContext(raw: string, turn: number, maxCharacters: n
         return raw;
     }
     const value = parsed.receipts;
-    const omitted = new Set<string>();
-    let factored = buildFactored(value, omitted);
-    // A shared subtree can make a string definition unprofitable. Remove only definitions whose
-    // removal actually shortens the whole representation, then re-evaluate the remaining ones.
-    for (let iteration = 0; iteration < MAX_DICTIONARY; iteration += 1) {
-        let best: { text: string; value: JsonObject; length: number } | undefined;
-        const current = json(factored).length;
-        for (const text of factored.strings as string[]) {
-            const candidate = buildFactored(value, new Set([...omitted, text]));
-            const length = json(candidate).length;
-            if (length < current && (best === undefined || length < best.length)) {
-                best = { text, value: candidate, length };
-            }
-        }
-        if (best === undefined) {
-            break;
-        }
-        omitted.add(best.text);
-        factored = best.value;
-    }
     const header = `Application-owned tool receipts from turn ${String(turn)} follow as JSON.`;
-    const compact = `${header}\n${LEGEND}\n${JSON.stringify({ version: 1, ...factored })}`;
-    return compact.length <= maxCharacters && compact.length < raw.length ? compact : raw;
+    const render = (factored: JsonObject): string =>
+        `${header}\n${LEGEND}\n${JSON.stringify({ version: 1, ...factored })}`;
+    const factored = buildFactored(value, new Set());
+    const compact = render(factored);
+    if (compact.length <= maxCharacters && compact.length < raw.length) {
+        return compact;
+    }
+    // Sharing whole subtrees can leave dictionary entries more expensive than literals.
+    // Prune them in one pass over the encoded tree instead of rebuilding per entry.
+    const pruned = render(pruneStrings(factored));
+    return pruned.length <= maxCharacters && pruned.length < raw.length ? pruned : raw;
 }
