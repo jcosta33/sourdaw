@@ -53,7 +53,7 @@ describe('joint planning interpretation consumes the actual printed context view
         const value = fixture();
         const original = legacyCall(value.creative.catalogId);
         const input = { creative: value.creative, answer: value.answer, projectRevision: 'revision' };
-        const argumentsValue: Record<string, unknown> = { ...original.arguments };
+        const argumentsValue: Record<string, unknown> = structuredClone(original.arguments);
         if (answer !== undefined) {
             argumentsValue.answer = answer;
         }

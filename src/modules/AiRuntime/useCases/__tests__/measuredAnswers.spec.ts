@@ -355,7 +355,7 @@ describe('AC002 measured answers use actual successful audio reductions', () => 
         'rejects %s reference without invented figures',
         async (defect) => {
             const { intake, measure, run } = setup();
-            const ref: AnswerMetricReference = { ...reference };
+            const ref: AnswerMetricReference = structuredClone(reference);
             if (defect === 'foreign-call') {
                 ref.callId = 'foreign';
             }

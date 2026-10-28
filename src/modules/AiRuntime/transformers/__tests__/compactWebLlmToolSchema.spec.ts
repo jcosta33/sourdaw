@@ -177,10 +177,7 @@ function survives(compacted: unknown, fact: Fact): boolean {
     const names = Array.isArray(fact.value) ? fact.value : [];
     return names.every((name) => {
         let objectPath = fact.path;
-        while (true) {
-            if (at(compacted, [...objectPath, 'properties', String(name)]) !== undefined) {
-                return true;
-            }
+        while (at(compacted, [...objectPath, 'properties', String(name)]) === undefined) {
             const combinator = objectPath.at(-2);
             // A combinator constrains the same object as its parent; a property/items step does not.
             if (typeof combinator !== 'string' || !(COMBINATORS as readonly string[]).includes(combinator)) {
@@ -188,6 +185,7 @@ function survives(compacted: unknown, fact: Fact): boolean {
             }
             objectPath = objectPath.slice(0, -2);
         }
+        return true;
     });
 }
 

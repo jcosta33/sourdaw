@@ -14,7 +14,7 @@ export const ANSWER_ENTRY_PARAMETERS: ToolSchema['function']['parameters'] = {
 };
 
 /** Canonical catalog exposes both real consuming forms; requests expose only their active phase. */
-export function createCanonicalAnswerRespondParameters(): ToolSchema['function']['parameters'] {
+export function createCanonicalAnswerRespondParameters() {
     const completion = createAnswerRespondParameters(getAgentMeasurementMetricIds());
     return {
         ...completion,
