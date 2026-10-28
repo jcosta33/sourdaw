@@ -40,7 +40,6 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'nightly-evidence-report.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
-    'semantic-review.yml',
     'cargo-dependency-seed.yml',
 ] as const;
 
@@ -246,20 +245,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
-    },
-    'semantic-review.yml': {
-        assess: [
-            'Checkout the trusted revision',
-            'Fetch the reviewed head as Git objects',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Assess the change',
-            'Report the assessment',
-            'Upload the advisory report',
-            'Compute the coverage line',
-        ],
-        coverage: ['Download the advisory report', 'Publish the withheld paths'],
     },
     'nightly.yml': {
         decide: ['Resolve scope'],
