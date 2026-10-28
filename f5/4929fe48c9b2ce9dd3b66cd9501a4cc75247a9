@@ -1,0 +1,19 @@
+tests/e2e/negativeOffsetCrossfadePcm.acceptance.spec.ts
+  s_d99a62fe2de3a3::t_990be44d197160 134-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f54929fe48c9b2ce9dd3b66cd9501a4cc75247a9",
+  "prompts": {},
+  "sessions": {
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
