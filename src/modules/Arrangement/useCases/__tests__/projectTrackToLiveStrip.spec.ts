@@ -618,4 +618,62 @@ describe('projectTrackToLiveStrip', () => {
             ['audio-1', 'crust-1', 'algorithm', 6],
         ]);
     });
+
+    it('defers sends and sidechains while replaying controls and native activation exactly once', () => {
+        const track = createTrack({ id: 'audio', name: 'Audio', kind: 'audio' });
+        track.devices = [{ id: 'plugin', type: 'external-plugin', name: 'Plugin', bypassed: true, parameterValues: { mix: 0.5 }, externalPluginId: 'plugin-id', externalInstanceId: 'instance-id' }];
+        track.sends = [{ busId: 'missing-compatible-target', level: 0.4, preFader: true }];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        const activation = Promise.resolve({ status: 'active' as const });
+        mocks.activateExternalPlugin.mockReturnValue(activation);
+        const onExternalPluginActivation = vi.fn();
+        expect(projectTrackToLiveStrip({ trackId: track.id, deferSends: true, deferSidechainWiring: true, activateDormantExternalPlugins: true, onExternalPluginActivation })).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+        expect(projectTrackToLiveStrip({ mode: 'sends', trackId: track.id })).toEqual({ status: 'projected' });
+        expect(mocks.setSend).toHaveBeenCalledExactlyOnceWith(track.id, 'missing-compatible-target', 0.4, true);
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledOnce();
+        expect(mocks.setTrackGain).toHaveBeenCalledOnce();
+        expect(mocks.setTrackPan).toHaveBeenCalledOnce();
+        expect(mocks.updateDeviceParam).toHaveBeenCalledExactlyOnceWith(track.id, 'plugin', 'mix', 0.5);
+        expect(mocks.updateDeviceBypass).toHaveBeenCalledExactlyOnceWith(track.id, 'plugin', true);
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledOnce();
+        expect(onExternalPluginActivation).toHaveBeenCalledExactlyOnceWith(activation);
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+    });
+
+    it('projects only current sends without strip, device, solo or native activation writes', () => {
+        const track = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
+        track.sends = [{ busId: 'bus', level: 0.25, preFader: false }];
+        track.devices = [{ id: 'plugin', type: 'external-plugin', name: 'Plugin', bypassed: true, parameterValues: { mix: 0.5 }, externalPluginId: 'plugin-id', externalInstanceId: 'instance-id' }];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        expect(projectTrackToLiveStrip({ mode: 'sends', trackId: track.id })).toEqual({ status: 'projected' });
+        expect(mocks.setSend).toHaveBeenCalledExactlyOnceWith(track.id, 'bus', 0.25, false);
+        for (const method of [mocks.initializeTrackStripFromSnapshot, mocks.setTrackGain, mocks.setTrackPan, mocks.setTrackMute, mocks.setTrackSoloGate, mocks.updateDeviceParam, mocks.updateDeviceBypass, mocks.activateExternalPlugin, mocks.wireSidechainRoutes]) expect(method).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing', 'duplicate', 'folder', 'vca'] as const)('rejects send projection for a %s source', (state) => {
+        const track = createTrack({ id: 'source', name: 'Source', kind: state === 'vca' ? 'vca' : state === 'folder' ? 'folder' : 'audio' });
+        track.sends = [{ busId: 'bus', level: 0.5, preFader: false }];
+        trackStore.set({ tracks: state === 'missing' ? [] : state === 'duplicate' ? [track, { ...track }] : [track], selectedTrackId: null });
+        expect(projectTrackToLiveStrip({ mode: 'sends', trackId: track.id }).status).toBe('rejected');
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('rejects send projection when project tracks are unavailable', () => {
+        trackStore.set(null);
+        expect(projectTrackToLiveStrip({ mode: 'sends', trackId: 'source' })).toEqual({ status: 'rejected', reason: 'Project tracks are unavailable' });
+        expect(mocks.setSend).not.toHaveBeenCalled();
+    });
+
+    it.each(['duplicate', 'vca'] as const)('retains canonical %s send-target admission in the send-only phase', (state) => {
+        const source = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
+        const target = createTrack({ id: 'target', name: 'Target', kind: state === 'vca' ? 'vca' : 'bus' });
+        source.sends = [{ busId: target.id, level: 0.5, preFader: true }];
+        trackStore.set({ tracks: state === 'duplicate' ? [source, target, { ...target }] : [source, target], selectedTrackId: null });
+        expect(projectTrackToLiveStrip({ mode: 'sends', trackId: source.id })).toEqual({ status: 'projected' });
+        expect(mocks.setSend).not.toHaveBeenCalled();
+    });
+
 });
