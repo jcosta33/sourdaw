@@ -6,7 +6,7 @@ import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
-import { isMoveClipSessionEntry } from './validateClipEditSessionEntries';
+import { isMoveClipSessionEntry } from './validateClipPlacementSessionEntries';
 
 function moveState(
     trackId: string,

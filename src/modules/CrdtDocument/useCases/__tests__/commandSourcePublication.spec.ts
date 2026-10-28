@@ -6,17 +6,18 @@ import {
     createAutomergeStorage,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { type CommandSourceProof } from '#/utils/handlerContract';
 import { digest } from '#/utils/canonicalDigest';
+import { type CommandSourceProof } from '#/utils/handlerContract';
 
 import { setSemanticContext, clearSemanticContext } from '../../stores/semanticChangeContext';
-import { commandSourcePublicationMatches, stageCommandSourcePublication } from '../commandSourcePublication';
+import { commandSourcePublicationMatches } from '../commandSourcePublicationMatches';
 import { createCrdtDoc } from '../createCrdtDoc';
 import { getCrdtDoc } from '../getCrdtDoc';
 import { mutateCrdtDoc } from '../mutateCrdtDoc';
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
 import { removeCrdtDoc } from '../removeCrdtDoc';
 import { replaceCrdtDocInLineage } from '../replaceCrdtDocInLineage';
+import { stageCommandSourcePublication } from '../stageCommandSourcePublication';
 
 describe('command source publication references', () => {
     beforeEach(() => {

@@ -1,16 +1,11 @@
 import { getHeads } from '@automerge/automerge';
 
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
-import {
-    getCrdtDoc,
-    stageCommandSourcePublication,
-    commandSourcePublicationMatches,
-} from '#/modules/CrdtDocument/useCases';
+import { getCrdtDoc, stageCommandSourcePublication } from '#/modules/CrdtDocument/useCases';
 import {
     type CommandSourceProof,
     type HandlerCommitValidation,
     type RetiredTakeLaneSnapshot,
-    type TakeSnapshot,
 } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
@@ -18,60 +13,7 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
 
-type SourceKind = 'removeClip' | 'splitClipUndo';
-
-function sourceOwners(clipIds: readonly string[], captures: readonly RetiredTakeLaneSnapshot[], undoEntryId: string) {
-    // Preserve the complete capture, omitting only unset domain optionals as
-    // saved JSON does. Store sanitization could discard meaningful invalid data.
-    const owners = captures.map((capture) => {
-        const takes = capture.lane.takes.map((take) => {
-            const { sourceOffsetBeats, passAnchorSeconds, passDepthSeconds, ...requiredFields } = take;
-            const savedTake: TakeSnapshot = requiredFields;
-            if (sourceOffsetBeats !== undefined) {
-                savedTake.sourceOffsetBeats = sourceOffsetBeats;
-            }
-            if (passAnchorSeconds !== undefined) {
-                savedTake.passAnchorSeconds = passAnchorSeconds;
-            }
-            if (passDepthSeconds !== undefined) {
-                savedTake.passDepthSeconds = passDepthSeconds;
-            }
-            return savedTake;
-        });
-        const lane = { ...capture.lane, takes };
-        if (lane.automationLaneId === undefined) {
-            delete lane.automationLaneId;
-        }
-        const savedCapture = { ...capture, lane };
-        if (savedCapture.retiredTakeIds === undefined) {
-            delete savedCapture.retiredTakeIds;
-        }
-        return savedCapture;
-    });
-    return { undoEntryId, clipIds: [...clipIds], owners };
-}
-
-export function retiredTakeSourceMatches(
-    kind: SourceKind,
-    clipIds: readonly string[],
-    captures: readonly RetiredTakeLaneSnapshot[],
-    reference: unknown,
-    undoEntryId: string | undefined
-): boolean {
-    // Empty producer placeholders and legacy omissions carry no issued proof.
-    // Once issued, evidence authenticates the exact capture, even an empty one.
-    const proofless =
-        reference === undefined ||
-        (isRecord(reference) &&
-            Object.keys(reference).length === 2 &&
-            reference.changeHash === '' &&
-            reference.memberId === '');
-    return (
-        (captures.length === 0 && proofless) ||
-        (typeof undoEntryId === 'string' &&
-            commandSourcePublicationMatches(kind, sourceOwners(clipIds, captures, undoEntryId), reference))
-    );
-}
+import { sourceOwners, type SourceKind } from './retiredTakeSourceOwners';
 
 /** Capture only from the actual retirement plan in an entered owner scope. */
 export function captureRetiredTakeSource(

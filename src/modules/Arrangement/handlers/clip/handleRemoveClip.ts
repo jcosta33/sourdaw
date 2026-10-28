@@ -316,6 +316,83 @@ function batchMembersAreIndependent(action: RemoveClipAction, context: HandlerVa
     );
 }
 
+function prepareRemovalCapturePublication(
+    alpha: RemoveClipAction,
+    context: HandlerValidationContext | undefined,
+    paired: ReturnType<typeof pairedInverseForRedo>,
+    pendingRedo: RemoveClipAction | undefined,
+    ripple: boolean
+) {
+    const pendingInverse = pendingInverseCaptures.get(alpha);
+    pendingInverseCaptures.delete(alpha);
+    const actualInverse = handleRemoveClip.describe(alpha).inverseAction;
+    pendingInverseCaptures.delete(alpha);
+    if (pendingInverse) {
+        if (actualInverse?.type === 'restoreClip') {
+            pendingInverse.payload = actualInverse.payload;
+        }
+    }
+    // Redo runs with skipUndo. Retain its actual producer capture so the
+    // following Undo authenticates the shifted owners this replay wrote,
+    // and restores exactly the material this replay retired.
+    const fresh = paired?.type === 'restoreClip' ? actualInverse : null;
+    pendingRedoCaptures.delete(alpha);
+    const sourceProof =
+        actualInverse?.type === 'restoreClip' && actualInverse.payload.retiredTakeSourceProof
+            ? captureRetiredTakeSource(
+                  'removeClip',
+                  actualInverse.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [alpha.payload.clipId],
+                  actualInverse.payload.retiredTakeLanes ?? [],
+                  actualInverse.payload.retiredTakeSourceProof,
+                  context?.undoEntryId
+              )
+            : undefined;
+    const documentBeforeReplay = pendingRedo ? captureDurableDocumentWitness() : null;
+    const ownsPublication = fresh || pendingRedo ? captureProjectMutationAuthorization() : null;
+    // Bind now, inside the actual handler scope, while its exact transaction
+    // owner is visible. Later group members publish under this same owner.
+    ownsPublication?.();
+    if (fresh && ownsPublication) {
+        commitRedoInverseCapture({
+            phase: 'stage',
+            action: alpha,
+            inverseAction: fresh,
+            publicationAuthority: {
+                captureIdentity: captureProjectIdentity,
+                captureWitness: captureDurableDocumentWitness,
+                captureOwnedPublication: captureRemovalPublication,
+            },
+        });
+    }
+    const installCapture = () => {
+        // Publish the resolved preference only for its producer's own write.
+        if (
+            pendingRedo &&
+            getCrdtDoc('root') &&
+            captureDurableDocumentWitness() !== documentBeforeReplay &&
+            ownsPublication?.()
+        ) {
+            pendingRedo.payload.ripple = ripple;
+        }
+    };
+    const committedResult = () => {
+        if (sourceProof && !sourceProof.captureWrittenState()) {
+            sourceProof.validation.release();
+            return { status: 'conflict' as const };
+        }
+        if (!fresh && !pendingRedo && !sourceProof) {
+            return undefined;
+        }
+        return {
+            status: 'written' as const,
+            commitValidation: sourceProof?.validation,
+            afterCommit: installCapture,
+            afterAmbiguousCommit: installCapture,
+        };
+    };
+    return { sourceProof, committedResult };
+}
+
 export const handleRemoveClip: ActionHandler<RemoveClipAction> = createHandler<'removeClip'>({
     validateSessionEntry: (entry) => {
         if (!isRemoveClipSessionEntry(entry)) {
@@ -359,73 +436,13 @@ export const handleRemoveClip: ActionHandler<RemoveClipAction> = createHandler<'
         const ripple = alpha.payload.ripple ?? workspaceStore.value?.rippleEditing ?? false;
         const pendingRedo = pendingRedoCaptures.get(alpha);
         pendingRedoCaptures.delete(alpha);
-        const pendingInverse = pendingInverseCaptures.get(alpha);
-        pendingInverseCaptures.delete(alpha);
-        const actualInverse = handleRemoveClip.describe(alpha).inverseAction;
-        pendingInverseCaptures.delete(alpha);
-        if (pendingInverse) {
-            if (actualInverse?.type === 'restoreClip') {
-                pendingInverse.payload = actualInverse.payload;
-            }
-        }
-        // Redo runs with skipUndo. Retain its actual producer capture so the
-        // following Undo authenticates the shifted owners this replay wrote,
-        // and restores exactly the material this replay retired.
-        const fresh = paired?.type === 'restoreClip' ? actualInverse : null;
-        pendingRedoCaptures.delete(alpha);
-        const sourceProof =
-            actualInverse?.type === 'restoreClip' && actualInverse.payload.retiredTakeSourceProof
-                ? captureRetiredTakeSource(
-                      'removeClip',
-                      actualInverse.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [alpha.payload.clipId],
-                      actualInverse.payload.retiredTakeLanes ?? [],
-                      actualInverse.payload.retiredTakeSourceProof,
-                      context?.undoEntryId
-                  )
-                : undefined;
-        const documentBeforeReplay = pendingRedo ? captureDurableDocumentWitness() : null;
-        const ownsPublication = fresh || pendingRedo ? captureProjectMutationAuthorization() : null;
-        // Bind now, inside the actual handler scope, while its exact transaction
-        // owner is visible. Later group members publish under this same owner.
-        ownsPublication?.();
-        if (fresh && ownsPublication) {
-            commitRedoInverseCapture({
-                phase: 'stage',
-                action: alpha,
-                inverseAction: fresh,
-                publicationAuthority: {
-                    captureIdentity: captureProjectIdentity,
-                    captureWitness: captureDurableDocumentWitness,
-                    captureOwnedPublication: captureRemovalPublication,
-                },
-            });
-        }
-        const installCapture = () => {
-            // Publish the resolved preference only for its producer's own write.
-            if (
-                pendingRedo &&
-                getCrdtDoc('root') &&
-                captureDurableDocumentWitness() !== documentBeforeReplay &&
-                ownsPublication?.()
-            ) {
-                pendingRedo.payload.ripple = ripple;
-            }
-        };
-        const committedResult = () => {
-            if (sourceProof && !sourceProof.captureWrittenState()) {
-                sourceProof.validation.release();
-                return { status: 'conflict' as const };
-            }
-            if (!fresh && !pendingRedo && !sourceProof) {
-                return undefined;
-            }
-            return {
-                status: 'written' as const,
-                commitValidation: sourceProof?.validation,
-                afterCommit: installCapture,
-                afterAmbiguousCommit: installCapture,
-            };
-        };
+        const { sourceProof, committedResult } = prepareRemovalCapturePublication(
+            alpha,
+            context,
+            paired,
+            pendingRedo,
+            ripple
+        );
 
         try {
             const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId], ripple });

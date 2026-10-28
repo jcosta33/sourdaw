@@ -10,7 +10,8 @@ export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRe
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
 export { readOwnedProjectPublications } from './readOwnedProjectPublications';
-export { stageCommandSourcePublication, commandSourcePublicationMatches } from './commandSourcePublication';
+export { commandSourcePublicationMatches } from './commandSourcePublicationMatches';
+export { stageCommandSourcePublication } from './stageCommandSourcePublication';
 export { hasForeignPendingProjectWrites } from './hasForeignPendingProjectWrites';
 export { captureUnownedProjectMutations } from './captureUnownedProjectMutations';
 export { agentProjectInspectionPort } from './agentProjectInspectionPort';

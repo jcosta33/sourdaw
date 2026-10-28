@@ -10,31 +10,19 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { projectClipSplitSourceWindow } from '../../useCases/clipEditing/projectClipSplitSourceWindow';
-import { retiredTakeSourceMatches } from '../../useCases/comping/captureRetiredTakeSource';
+import { retiredTakeSourceMatches } from '../../useCases/comping/retiredTakeSourceMatches';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import { hasFiniteNumbers } from './hasFiniteNumbers';
 import { isClipSplitOrderSnapshot } from './isClipSplitOrderSnapshot';
 import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
 
 import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
-
-function hasFiniteNumbers(value: unknown): boolean {
-    if (typeof value === 'number') {
-        return Number.isFinite(value);
-    }
-    if (Array.isArray(value)) {
-        return value.every(hasFiniteNumbers);
-    }
-    if (isRecord(value)) {
-        return Object.values(value).every(hasFiniteNumbers);
-    }
-    return true;
-}
 
 function isFiniteNumber(value: unknown): boolean {
     return typeof value === 'number' && Number.isFinite(value);
@@ -285,6 +273,16 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     );
 }
 
+function removalSourceMatches(inverse: RestoreClipPayload, clipId: string, undoEntryId: string): boolean {
+    return retiredTakeSourceMatches(
+        'removeClip',
+        inverse.ripplePlan?.removedClips.map((clip) => clip.id) ?? [clipId],
+        inverse.retiredTakeLanes ?? [],
+        inverse.retiredTakeSourceProof,
+        undoEntryId
+    );
+}
+
 export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): boolean {
     if (entry.action.type !== 'removeClip' || entry.inverseAction?.type !== 'restoreClip') {
         return false;
@@ -294,15 +292,7 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
         isRemoveClipSessionPayload(entry.action.payload) &&
         entry.action.payload.clipId === entry.inverseAction.payload.clipId &&
         isRestoreClipSessionPayload(entry.inverseAction.payload) &&
-        retiredTakeSourceMatches(
-            'removeClip',
-            entry.inverseAction.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [
-                entry.action.payload.clipId,
-            ],
-            entry.inverseAction.payload.retiredTakeLanes ?? [],
-            entry.inverseAction.payload.retiredTakeSourceProof,
-            entry.id
-        ) &&
+        removalSourceMatches(entry.inverseAction.payload, entry.action.payload.clipId, entry.id) &&
         (shiftedClips.length === 0 ||
             (entry.action.payload.ripple !== false &&
                 (entry.redoAction?.type !== 'removeClip' || entry.redoAction.payload.ripple !== false))) &&
@@ -312,81 +302,6 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
                 entry.redoAction.payload.clipId === entry.action.payload.clipId &&
                 (entry.action.payload.ripple === undefined ||
                     entry.redoAction.payload.ripple === entry.action.payload.ripple)))
-    );
-}
-
-function isPlacementOrder(value: Record<string, unknown>, clipId: string): boolean {
-    const hasIndex = Object.hasOwn(value, 'clipIndex');
-    const hasBefore = Object.hasOwn(value, 'beforeClipId');
-    const hasAfter = Object.hasOwn(value, 'afterClipId');
-    if (!hasIndex) {
-        return !hasBefore && !hasAfter;
-    }
-    if (typeof value.clipIndex !== 'number' || !Number.isSafeInteger(value.clipIndex) || value.clipIndex < 0) {
-        return false;
-    }
-    if (hasBefore !== value.clipIndex > 0) {
-        return false;
-    }
-    return (
-        (!hasBefore || (typeof value.beforeClipId === 'string' && value.beforeClipId.length > 0)) &&
-        (!hasAfter || (typeof value.afterClipId === 'string' && value.afterClipId.length > 0)) &&
-        value.beforeClipId !== clipId &&
-        value.afterClipId !== clipId &&
-        (!hasBefore || !hasAfter || value.beforeClipId !== value.afterClipId)
-    );
-}
-
-function isPlacement(value: unknown, clipId: string): boolean {
-    return (
-        isRecord(value) &&
-        typeof value.trackId === 'string' &&
-        value.trackId.length > 0 &&
-        typeof value.startBeat === 'number' &&
-        Number.isFinite(value.startBeat) &&
-        value.startBeat >= 0 &&
-        typeof value.endBeat === 'number' &&
-        Number.isFinite(value.endBeat) &&
-        value.endBeat > value.startBeat &&
-        isExactClipAutomationMoveSnapshots(value.automationLanes) &&
-        value.automationLanes.every((lane) => lane.trackId === value.trackId) &&
-        hasFiniteNumbers(value.automationLanes) &&
-        isPlacementOrder(value, clipId)
-    );
-}
-
-export function isRestoreClipPlacementSessionPayload(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        typeof value.clipId === 'string' &&
-        value.clipId.length > 0 &&
-        isPlacement(value.expected, value.clipId) &&
-        isPlacement(value.replacement, value.clipId)
-    );
-}
-
-export function isMoveClipSessionEntry(entry: HandlerSessionActionEntry): boolean {
-    if (
-        entry.action.type !== 'moveClip' ||
-        entry.inverseAction?.type !== 'restoreClipPlacement' ||
-        entry.redoAction?.type !== 'restoreClipPlacement'
-    ) {
-        return false;
-    }
-    const action = entry.action.payload;
-    const inverse = entry.inverseAction.payload;
-    const redo = entry.redoAction.payload;
-    return (
-        action.clipId === inverse.clipId &&
-        action.clipId === redo.clipId &&
-        isRestoreClipPlacementSessionPayload(inverse) &&
-        isRestoreClipPlacementSessionPayload(redo) &&
-        inverse.expected.trackId === action.trackId &&
-        inverse.expected.startBeat === action.startBeat &&
-        Object.hasOwn(inverse.expected, 'clipIndex') === Object.hasOwn(inverse.replacement, 'clipIndex') &&
-        inverse.expected.endBeat === action.startBeat + (inverse.replacement.endBeat - inverse.replacement.startBeat) &&
-        valuesEqual(inverse.expected, redo.replacement) &&
-        valuesEqual(inverse.replacement, redo.expected)
     );
 }
 
@@ -618,6 +533,22 @@ function splitReplaySnapshotsMatch(
     );
 }
 
+function splitResolvedBeatMatches(
+    action: Extract<AppAction, { type: 'splitClip' }>['payload'],
+    inverse: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload']
+): boolean {
+    return (
+        typeof action.resolvedBeat === 'number' &&
+        Number.isFinite(action.resolvedBeat) &&
+        inverse.expected.rightClip !== null &&
+        inverse.replacement.rightClip === null &&
+        inverse.expected.leftClip.endBeat === action.resolvedBeat &&
+        inverse.expected.rightClip.startBeat === action.resolvedBeat &&
+        inverse.replacement.leftClip.startBeat < action.resolvedBeat &&
+        inverse.replacement.leftClip.endBeat > action.resolvedBeat
+    );
+}
+
 export function isSplitClipSessionEntry(entry: HandlerSessionActionEntry): boolean {
     if (
         entry.action.type !== 'splitClip' ||
@@ -644,14 +575,7 @@ export function isSplitClipSessionEntry(entry: HandlerSessionActionEntry): boole
             inverse.retiredTakeSourceProof,
             entry.id
         ) &&
-        typeof action.resolvedBeat === 'number' &&
-        Number.isFinite(action.resolvedBeat) &&
-        inverse.expected.rightClip !== null &&
-        inverse.replacement.rightClip === null &&
-        inverse.expected.leftClip.endBeat === action.resolvedBeat &&
-        inverse.expected.rightClip.startBeat === action.resolvedBeat &&
-        inverse.replacement.leftClip.startBeat < action.resolvedBeat &&
-        inverse.replacement.leftClip.endBeat > action.resolvedBeat &&
+        splitResolvedBeatMatches(action, inverse) &&
         splitReplaySnapshotsMatch(inverse, redo)
     );
 }

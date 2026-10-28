@@ -24,8 +24,8 @@ import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipR
 import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSplitIdentityIds';
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { applyTakeReKeyTransitions } from '../../useCases/comping/applyTakeReKeyTransitions';
-import { planTakeRetirement } from '../../useCases/comping/planTakeRetirement';
 import { captureRetiredTakeSource } from '../../useCases/comping/captureRetiredTakeSource';
+import { planTakeRetirement } from '../../useCases/comping/planTakeRetirement';
 import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../../useCases/comping/restoreTakeReKeyTransitions';
@@ -221,6 +221,76 @@ function prepareSplitHistoryCapturePublication(
     };
 }
 
+function prepareSplitRetirementCommit(
+    action: RestoreClipSplitStateAction,
+    context: HandlerValidationContext | undefined,
+    proof: ReturnType<typeof captureRestoreClipSplitCommitValidation>
+) {
+    const reKeyedTakeIds = new Set(
+        (action.payload.reKeyedTakeLanes ?? []).flatMap((lane) => lane.takesAfter.map((take) => take.id))
+    );
+    let retiredSource: readonly RetiredTakeLaneSnapshot[] = [];
+    if (!action.payload.replacement.rightClip) {
+        retiredSource = planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
+    }
+    const stagedSourceProof: CommandSourceProof = { changeHash: '', memberId: '' };
+    let sourceProof: ReturnType<typeof captureRetiredTakeSource> = undefined;
+    if (action.payload.retiredTakeSourceProof) {
+        sourceProof = captureRetiredTakeSource(
+            'splitClipUndo',
+            [action.payload.rightClipId],
+            retiredSource,
+            stagedSourceProof,
+            context?.undoEntryId
+        );
+    }
+    const guards = [proof?.validation, sourceProof?.validation].filter(
+        (guard): guard is HandlerCommitValidation => guard !== undefined
+    );
+    let commitValidation: HandlerCommitValidation | undefined;
+    if (guards.length > 0) {
+        commitValidation = {
+            documentId: 'root',
+            beforeCommit: () => {
+                for (const guard of guards) {
+                    const reason = guard.beforeCommit();
+                    if (reason) {
+                        return reason;
+                    }
+                }
+                return null;
+            },
+            validateDocument: (document) => {
+                for (const guard of guards) {
+                    const reason = guard.validateDocument(document);
+                    if (reason) {
+                        return reason;
+                    }
+                }
+                return null;
+            },
+            release: () => {
+                for (const guard of guards) {
+                    guard.release();
+                }
+            },
+            afterPublication: () => {
+                for (const guard of guards) {
+                    guard.afterPublication?.();
+                }
+            },
+        };
+    }
+    return { retiredSource, stagedSourceProof, sourceProof, commitValidation };
+}
+
+function splitWrittenStateMatches(
+    proof: ReturnType<typeof captureRestoreClipSplitCommitValidation>,
+    sourceProof: ReturnType<typeof captureRetiredTakeSource>
+): boolean {
+    return !((proof && !proof.captureWrittenState()) || (sourceProof && !sourceProof.captureWrittenState()));
+}
+
 export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'>({
     validateSessionActionArguments: isRestoreClipSplitSessionPayload,
     // `expected`/`replacement` are mandatory on this payload, so every instance carries a real
@@ -233,61 +303,11 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             return { status: 'conflict' };
         }
         const proof = captureRestoreClipSplitCommitValidation(action);
-        const reKeyedTakeIds = new Set(
-            (action.payload.reKeyedTakeLanes ?? []).flatMap((lane) => lane.takesAfter.map((take) => take.id))
+        const { retiredSource, stagedSourceProof, sourceProof, commitValidation } = prepareSplitRetirementCommit(
+            action,
+            context,
+            proof
         );
-        let retiredSource: readonly RetiredTakeLaneSnapshot[] = [];
-        if (!action.payload.replacement.rightClip) {
-            retiredSource = planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
-        }
-        const stagedSourceProof: CommandSourceProof = { changeHash: '', memberId: '' };
-        let sourceProof: ReturnType<typeof captureRetiredTakeSource> = undefined;
-        if (action.payload.retiredTakeSourceProof) {
-            sourceProof = captureRetiredTakeSource(
-                'splitClipUndo',
-                [action.payload.rightClipId],
-                retiredSource,
-                stagedSourceProof,
-                context?.undoEntryId
-            );
-        }
-        const guards = [proof?.validation, sourceProof?.validation].filter(
-            (guard): guard is HandlerCommitValidation => guard !== undefined
-        );
-        let commitValidation: HandlerCommitValidation | undefined;
-        if (guards.length > 0) {
-            commitValidation = {
-                documentId: 'root',
-                beforeCommit: () => {
-                    for (const guard of guards) {
-                        const reason = guard.beforeCommit();
-                        if (reason) {
-                            return reason;
-                        }
-                    }
-                    return null;
-                },
-                validateDocument: (document) => {
-                    for (const guard of guards) {
-                        const reason = guard.validateDocument(document);
-                        if (reason) {
-                            return reason;
-                        }
-                    }
-                    return null;
-                },
-                release: () => {
-                    for (const guard of guards) {
-                        guard.release();
-                    }
-                },
-                afterPublication: () => {
-                    for (const guard of guards) {
-                        guard.afterPublication?.();
-                    }
-                },
-            };
-        }
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
         const orderCapture = !action.payload.replacement.rightClip ? action.payload.expected.rightClipOrder : undefined;
         const stagedOrder =
@@ -317,7 +337,7 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             }
             stagedRetired = applySplitTakeTransition(action.payload, retiredSource);
             createdMidi?.complete();
-            if ((proof && !proof.captureWrittenState()) || (sourceProof && !sourceProof.captureWrittenState())) {
+            if (!splitWrittenStateMatches(proof, sourceProof)) {
                 return conflict();
             }
             // The paired arrays belong to history, outside the project transaction.

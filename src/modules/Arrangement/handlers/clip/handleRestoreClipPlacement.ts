@@ -6,7 +6,7 @@ import { moveClip } from '../../useCases/clip/moveClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
 
-import { isRestoreClipPlacementSessionPayload } from './validateClipEditSessionEntries';
+import { isRestoreClipPlacementSessionPayload } from './validateClipPlacementSessionEntries';
 
 function placementsMatch(left: ClipMoveActionSnapshot, right: ClipMoveActionSnapshot): boolean {
     return (
