@@ -1,5 +1,24 @@
 # Lesson library: project integrity
 
+## 2026-10-27 — a matching commit did not prove that only its fields changed (PR #5646 refinement escape)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) introduced refinement bookkeeping
+whose barrel-call and history checks missed real project writes beside a valid chat commit (#5649).
+The original single-turn spy counter came from PR #4348
+(`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`). The missed observable was complete project truth,
+not whether the intended action also ran; exact historical reviewer prompts and tiers are unavailable.
+
+Take typed materialized snapshots around each turn. Derive allowed fields and values from the frozen
+oracle rather than the executed action log, and compare every other entity and field as well. Add a
+real outside-barrel write to another track and to an unauthorized field on the target; both must be
+counted even when the expected commit and Undo history look correct. Compare Undo with its pre-commit
+values only for oracle-authorized fields, atop pre-Undo truth, retaining unrelated later user edits.
+Count prior barrel writes even when their net field effect is zero. Observe persisted transitions
+against authorized prefixes so an unauthorized write followed by restoration cannot disappear.
+Keep a valid commit control and require removal
+of the state comparison to fail these cases; call counts, unchanged history and lossy JSON snapshots
+cannot establish preservation.
+
 ## 2026-10-25 — restored heads can revive stale confirmation authority (caught in PR #5677 review)
 
 An approval may tolerate a mutation-epoch advance when the active project heads are unchanged,
@@ -361,3 +380,27 @@ eligible audio target for the held-snapshot removal above and for a synthetic di
 revert unit whose newest callback would remove that target. The early callback guard
 must refuse before invoking the callback, preserving raw project, full history and tree.
 Retain callback identity when snapshotting history rather than cloning its functions.
+
+## Escape: admitted take placement was discarded during project hydration (PR #4987)
+
+PR #4987 (`62a116ee0073`) added paired `passAnchorSeconds` and `passDepthSeconds`
+with a required `sourceOffsetBeats` to the take-store sanitizer, while project-file
+admission still checked only the take's older required shape. A current-version
+file containing a selected take with offset zero and only an anchor was admitted,
+then real hydration removed both that take and its comp region. The top-level and
+saved-arrangement take-lane routes both admitted the loss. The public approval
+attacked saved lanes and persistence, but no published evidence covers malformed
+placement at admission; the exact private stance prompts are unavailable. The
+missed failure mode is admission accepting metadata its owning hydrator discards.
+The older malformed-offset variant began with PR #4222 (`120c9e2b418e`), which
+added offset rejection to the store without extending project admission.
+
+Probe the serialized candidate before project replacement, then its real owner
+hydration. Reject anchor-only, depth-only, negative or nonfinite depth, malformed
+offset, and complete placement without an offset before any current project,
+raw document, or store replacement. Exercise both take-lane routes. Pair these
+with JSON-roundtripped legacy takes without placement and complete finite
+placement with a negative anchor: the selected takes and their comp regions
+must survive real hydration unchanged, including an active saved arrangement's
+top-level fallback. Reverting placement admission must fail the rejection cases;
+a sanitizer-only assertion cannot establish safe file admission.

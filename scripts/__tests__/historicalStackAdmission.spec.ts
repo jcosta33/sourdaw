@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -198,6 +198,85 @@ function synchronizedProgressFixture() {
     return { f, original, progressed, ancestry, merges, result, receipt };
 }
 
+function nativeLegacyFixture() {
+    const fixtures = join(process.cwd(), '.agents', 'guard-storage-fixtures', 'historical-legacy');
+    mkdirSync(fixtures, { recursive: true });
+    const root = mkdtempSync(join(fixtures, 'native-'));
+    const localEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+    const git = (args: string[], time = 1792614000) =>
+        execFileSync('git', args, {
+            cwd: root,
+            env: { ...localEnv, GIT_AUTHOR_DATE: `${time} +0000`, GIT_COMMITTER_DATE: `${time} +0000` },
+            encoding: 'utf8',
+            stdio: 'pipe',
+        }).trim();
+    git(['init', '--initial-branch=main']);
+    git(['config', 'user.name', AUTHOR_BOT_COMMIT_NAME]);
+    git(['config', 'user.email', AUTHOR_BOT_COMMIT_EMAIL]);
+    git(['config', 'core.hooksPath', '/dev/null']);
+    git(['config', 'commit.gpgsign', 'false']);
+    writeFileSync(join(root, '.git/info/exclude'), '.agents/\nsession/\n');
+    git(['commit', '--allow-empty', '-m', 'initial']);
+    git(['branch', parentBranch, git(['rev-parse', 'HEAD'])], 1792614584);
+    git(['switch', parentBranch]);
+    git(['commit', '--allow-empty', '-m', 'anchor'], 1792619550);
+    const fork = git(['rev-parse', 'HEAD']);
+    git(['branch', childBranch, fork], 1792620751);
+    git(['commit', '--allow-empty', '-m', 'parent advance'], 1792621386);
+    const parentHead = git(['rev-parse', 'HEAD']);
+    git(['switch', childBranch]);
+    git(['commit', '--allow-empty', '-m', 'child advance'], 1792723381);
+    const head = git(['rev-parse', 'HEAD']);
+    git(['config', '--add', `branch.${childBranch}.sourdaw-stack-fork`, fork]);
+    const input = { ...fixture().input, expectedHead: head, legacyFork: fork };
+    const observation = fixture().observation();
+    observation.child.headSha = head;
+    observation.parent.headSha = parentHead;
+    const disk = historicalAdmissionShellPort(
+        {
+            lane: root,
+            branch: childBranch,
+            primaryRoot: root,
+            gitPath: 'git',
+            ghPath: 'unused-gh',
+            session: { configDir: join(root, 'session'), env: {}, dispose: () => undefined },
+            localEnv,
+        },
+        input
+    );
+    const childLog = () => readFileSync(join(root, '.git/logs/refs/heads', childBranch), 'utf8');
+    const parentLog = () => readFileSync(join(root, '.git/logs/refs/heads', parentBranch), 'utf8');
+    const port: HistoricalAdmissionPort = {
+        ...disk,
+        head: () => git(['rev-parse', 'HEAD']),
+        clean: () => git(['status', '--porcelain=v1', '--untracked-files=all']) === '',
+        observe: () => structuredClone(observation),
+        childLog,
+        parentLog,
+        parentLocalHead: () => git(['rev-parse', `refs/heads/${parentBranch}`]),
+        isAncestor: (ancestor, descendant) => {
+            try {
+                git(['merge-base', '--is-ancestor', ancestor, descendant]);
+                return true;
+            } catch {
+                return false;
+            }
+        },
+        addMarker: () => {
+            throw new Error('legacy marker must never be written');
+        },
+    };
+    const snapshot = () => ({
+        config: readFileSync(join(root, '.git/config'), 'utf8'),
+        head: port.head(),
+        headRef: readFileSync(join(root, '.git/HEAD'), 'utf8'),
+        headLog: readFileSync(join(root, '.git/logs/HEAD'), 'utf8'),
+        childLog: childLog(),
+        parentLog: parentLog(),
+    });
+    return { root, input, port, disk, snapshot };
+}
+
 function runNativeLogProbe(contents: string, scenario: string): void {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-native-log-read-'));
     const path = join(root, 'branch-log');
@@ -344,6 +423,38 @@ describe('native historical reflog byte bound', () => {
 });
 
 describe('historical stack native admission', () => {
+    it('selects immutable author IDs only on concrete Actor types in the native query', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-historical-query-'));
+        const queries: string[] = [];
+        const port = historicalAdmissionShellPort(
+            {
+                lane: '/owned/child',
+                branch: childBranch,
+                primaryRoot: '/primary',
+                gitPath: 'git',
+                ghPath: 'gh',
+                localEnv: {},
+                session: { configDir: root, env: {}, dispose: () => undefined },
+                capture: (command, args) => {
+                    expect(command).toBe('gh');
+                    expect(args.slice(0, 3)).toEqual(['api', 'graphql', '-f']);
+                    queries.push(args[3] ?? '');
+                    throw new Error('captured historical query');
+                },
+            },
+            { childPullRequest: 5438, parentPullRequest: 5425, expectedHead: child }
+        );
+
+        expect(() => port.observe()).toThrow('captured historical query');
+        expect(queries).toHaveLength(1);
+        const query = queries[0] ?? '';
+        expect(query).toContain('child:pullRequest(number:5438)');
+        expect(query).toContain('parent:pullRequest(number:5425)');
+        // Actor has no id field; identity must be selected on supported concrete Node types.
+        const authors = Array.from(query.matchAll(/author\s*\{(.*?)\}\s*repository/g), (match) => match[1]?.trim());
+        expect(authors).toEqual(['... on Bot { id } ... on User { id }', '... on Bot { id } ... on User { id }']);
+    });
+
     it('replays when two matching resumes both observed the missing marker', () => {
         const f = fixture();
         const expected = admitHistoricalStack(f.input, f.port);
@@ -699,11 +810,23 @@ describe('historical stack native admission', () => {
         ];
         expect(parseSyncParentArgs(['--lane', '/owned/child'])).toEqual({ lane: '/owned/child' });
         expect(parseSyncParentArgs(args).admission?.expectedHead).toBe(child);
+        expect(parseSyncParentArgs([...args, '--legacy-fork', anchor]).admission).toEqual({
+            childPullRequest: 5438,
+            parentPullRequest: 5425,
+            expectedHead: child,
+            legacyFork: anchor,
+        });
         for (const invalid of [
             args.slice(0, -2),
             [...args, '--force'],
             args.map((v) => (v === '5425' ? '5438' : v)),
             args.map((v) => (v === child ? 'HEAD' : v)),
+            [...args, '--legacy-fork'],
+            [...args, '--legacy-fork', 'HEAD'],
+            [...args, '--legacy-fork', anchor.toUpperCase()],
+            [...args, '--legacy-fork', anchor, '--legacy-fork', anchor],
+            ['--lane', '/owned/child', '--legacy-fork', anchor],
+            [...args.slice(0, 2), '--legacy-fork', anchor, ...args.slice(2)],
         ]) {
             expect(() => parseSyncParentArgs(invalid)).toThrow(/usage/);
         }
@@ -800,6 +923,14 @@ describe('historical stack native admission', () => {
                 parents
             )
         ).toThrow(/errors/);
+        for (const author of [null, {}, { login: 'hplovecraft208' }, { id: '' }]) {
+            expect(() =>
+                parseHistoricalStackObservation(raw({ ...core, child: { ...core.child, author } }), children, parents)
+            ).toThrow(/historical/);
+            expect(() =>
+                parseHistoricalStackObservation(raw({ ...core, parent: { ...core.parent, author } }), children, parents)
+            ).toThrow(/historical/);
+        }
     });
     it('blocks every normal registered-lineage reader during a receipt-only crash and accepts only matching completion', () => {
         const f = fixture();
@@ -845,6 +976,254 @@ describe('historical stack native admission', () => {
         expect(f.writes).toEqual(['receipt', 'marker', 'descriptor']);
     });
 
+    it('admits only an explicitly named existing sole legacy marker and never writes that marker', () => {
+        const f = fixture();
+        f.setMarkers([anchor]);
+        expect(() => admitHistoricalStack(f.input, f.port)).toThrow('unjournaled partial');
+        expect(f.writes).toEqual([]);
+        const input = { ...f.input, legacyFork: anchor };
+        const result = admitHistoricalStack(input, f.port);
+        expect(result.forkHead).toBe(anchor);
+        expect(f.writes).toEqual(['receipt', 'descriptor']);
+        expect(f.receipt()).toEqual({
+            version: 1,
+            childPullRequest: input.childPullRequest,
+            expectedChildHead: child,
+            descriptor: result,
+        });
+        expect(admitHistoricalStack(input, f.port)).toEqual(result);
+        expect(f.writes).toEqual(['receipt', 'descriptor']);
+        expect(f.port.markers()).toEqual([anchor]);
+    });
+
+    it.each([
+        { name: 'missing', markers: [] },
+        { name: 'foreign', markers: [sha('d')] },
+        { name: 'duplicate', markers: [anchor, anchor] },
+        { name: 'contradictory', markers: [anchor, sha('d')] },
+    ])('refuses $name legacy markers before writing', ({ markers }) => {
+        const f = fixture();
+        f.setMarkers(markers);
+        expect(() => admitHistoricalStack({ ...f.input, legacyFork: anchor }, f.port)).toThrow(/legacy fork/);
+        expect(f.writes).toEqual([]);
+        expect(f.port.markers()).toEqual(markers);
+    });
+
+    it.each(['HEAD', anchor.toUpperCase(), sha('d')])(
+        'refuses a legacy fork flag %s differing from proven birth',
+        (legacyFork) => {
+            const f = fixture();
+            f.setMarkers([anchor]);
+            expect(() => admitHistoricalStack({ ...f.input, legacyFork }, f.port)).toThrow(/legacy fork/);
+            expect(f.writes).toEqual([]);
+        }
+    );
+
+    it.each(['unjournaled descriptor', 'corrupt receipt', 'conflicting receipt', 'conflicting descriptor'])(
+        'never adopts %s under legacy opt-in',
+        (kind) => {
+            const f = fixture();
+            const admitted = admitHistoricalStack(f.input, f.port);
+            if (kind === 'unjournaled descriptor') {
+                f.setReceipt(undefined);
+            }
+            if (kind === 'corrupt receipt') {
+                const receipt = f.receipt();
+                if (receipt === undefined) {
+                    throw new Error('missing fixture receipt');
+                }
+                f.setReceipt({ ...receipt, childPullRequest: 0 });
+            }
+            if (kind === 'conflicting receipt') {
+                const receipt = f.receipt();
+                if (receipt === undefined) {
+                    throw new Error('missing fixture receipt');
+                }
+                f.setReceipt({ ...receipt, expectedChildHead: sha('d') });
+            }
+            if (kind === 'conflicting descriptor') {
+                f.setDescriptor({ ...admitted, parentPullRequest: 9999 });
+            }
+            const writes = [...f.writes];
+            expect(() => admitHistoricalStack({ ...f.input, legacyFork: anchor }, f.port)).toThrow();
+            expect(f.writes).toEqual(writes);
+        }
+    );
+
+    it.each(['receipt retained', 'descriptor installed'])('validates the legacy flag on %s replay', (phase) => {
+        const f = fixture();
+        f.setMarkers([anchor]);
+        const input = { ...f.input, legacyFork: anchor };
+        if (phase === 'receipt retained') {
+            expect(() =>
+                admitHistoricalStack(input, {
+                    ...f.port,
+                    installDescriptor: () => {
+                        throw new Error('interrupted');
+                    },
+                })
+            ).toThrow('interrupted');
+            expect(f.receipt()).toBeDefined();
+            expect(f.stored()).toBeUndefined();
+        } else {
+            admitHistoricalStack(input, f.port);
+        }
+        const writes = [...f.writes];
+        expect(() => admitHistoricalStack({ ...input, legacyFork: sha('d') }, f.port)).toThrow(/legacy fork/);
+        expect(f.writes).toEqual(writes);
+        f.setMarkers([]);
+        expect(() => admitHistoricalStack(input, f.port)).toThrow(/legacy fork/);
+        expect(f.writes).toEqual(writes);
+        f.setMarkers([anchor]);
+        expect(admitHistoricalStack(input, f.port).forkHead).toBe(anchor);
+        expect(f.port.markers()).toEqual([anchor]);
+    });
+
+    it.each(['complete', 'receipt interruption', 'descriptor interruption'])(
+        'preserves real Git config, head and full native histories through %s and replay',
+        (phase) => {
+            const { root, input, port, snapshot } = nativeLegacyFixture();
+            const before = snapshot();
+            expect(before.childLog.startsWith(`${'0'.repeat(40)} ${input.legacyFork} `)).toBe(true);
+            expect(port.markers()).toEqual([input.legacyFork]);
+            expect(() => port.readStack(childBranch)).toThrow(/descriptor missing/);
+            if (phase !== 'complete') {
+                expect(() =>
+                    admitHistoricalStack(input, {
+                        ...port,
+                        installDescriptor: (descriptor) => {
+                            if (phase === 'descriptor interruption') {
+                                port.installDescriptor(descriptor);
+                            }
+                            throw new Error('interrupted');
+                        },
+                    })
+                ).toThrow('interrupted');
+                expect(port.readReceipt()).toBeDefined();
+                if (phase === 'receipt interruption') {
+                    expect(port.readDescriptor()).toBeUndefined();
+                    expect(() => port.readStack(childBranch)).toThrow(/historical admission/);
+                }
+                expect(snapshot()).toEqual(before);
+            }
+            const result = admitHistoricalStack(input, port);
+            const descriptorPath = laneStackPath(root, childBranch);
+            const receiptPath = `${descriptorPath}.admission.json`;
+            const receiptBytes = readFileSync(receiptPath, 'utf8');
+            const descriptorBytes = readFileSync(descriptorPath, 'utf8');
+            expect(port.readStack(childBranch)).toEqual(result);
+            expect(port.readReceipt()).toEqual({
+                version: 1,
+                childPullRequest: input.childPullRequest,
+                expectedChildHead: input.expectedHead,
+                descriptor: result,
+            });
+            expect(admitHistoricalStack(input, port)).toEqual(result);
+            expect(readFileSync(receiptPath, 'utf8')).toBe(receiptBytes);
+            expect(readFileSync(descriptorPath, 'utf8')).toBe(descriptorBytes);
+            expect(port.markers()).toEqual([input.legacyFork]);
+            expect(snapshot()).toEqual(before);
+        }
+    );
+
+    it.each(['receipt', 'descriptor'])(
+        'retains a conflicting real exclusive %s winner without overwriting it',
+        (record) => {
+            const { input, port, disk, snapshot } = nativeLegacyFixture();
+            const before = snapshot();
+            const racingPort = {
+                ...port,
+                saveReceipt: (receipt: HistoricalAdmissionReceipt) => {
+                    if (record === 'receipt') {
+                        disk.saveReceipt({ ...receipt, expectedChildHead: sha('d') });
+                    }
+                    disk.saveReceipt(receipt);
+                },
+                installDescriptor: (descriptor: LaneStack) => {
+                    disk.installDescriptor({ ...descriptor, parentPullRequest: 9999 });
+                    disk.installDescriptor(descriptor);
+                },
+            };
+            expect(() => admitHistoricalStack(input, racingPort)).toThrow();
+            if (record === 'receipt') {
+                expect(disk.readReceipt()?.expectedChildHead).toBe(sha('d'));
+                expect(disk.readDescriptor()).toBeUndefined();
+            } else {
+                expect(disk.readDescriptor()?.parentPullRequest).toBe(9999);
+            }
+            expect(() => admitHistoricalStack(input, port)).toThrow();
+            expect(snapshot()).toEqual(before);
+        }
+    );
+
+    it.each(['parent', 'head', 'marker', 'receipt', 'descriptor'])(
+        'refuses legacy %s movement while retaining its newly written receipt',
+        (change) => {
+            const f = fixture();
+            f.setMarkers([anchor]);
+            const input = { ...f.input, legacyFork: anchor };
+            expect(() =>
+                admitHistoricalStack(input, {
+                    ...f.port,
+                    saveReceipt: (receipt) => {
+                        f.port.saveReceipt(receipt);
+                        if (change === 'parent') {
+                            f.observation().parent.headSha = sha('d');
+                        }
+                        if (change === 'head') {
+                            f.setHead(sha('d'));
+                        }
+                        if (change === 'marker') {
+                            f.setMarkers([]);
+                        }
+                        if (change === 'receipt') {
+                            f.setReceipt({ ...receipt, expectedChildHead: sha('d') });
+                        }
+                        if (change === 'descriptor') {
+                            f.setDescriptor(receipt.descriptor);
+                        }
+                    },
+                })
+            ).toThrow(/changed/);
+            expect(f.writes).toEqual(['receipt']);
+            expect(f.receipt()).toBeDefined();
+        }
+    );
+
+    it.each(['parent', 'head', 'native history', 'marker'])(
+        'refuses legacy %s movement during descriptor installation and retains the journal',
+        (change) => {
+            const f = fixture();
+            f.setMarkers([anchor]);
+            expect(() =>
+                admitHistoricalStack(
+                    { ...f.input, legacyFork: anchor },
+                    {
+                        ...f.port,
+                        installDescriptor: (descriptor) => {
+                            f.port.installDescriptor(descriptor);
+                            if (change === 'parent') {
+                                f.observation().parent.headSha = sha('d');
+                            }
+                            if (change === 'head') {
+                                f.setHead(sha('d'));
+                            }
+                            if (change === 'native history') {
+                                f.setChildLog('changed');
+                            }
+                            if (change === 'marker') {
+                                f.setMarkers([sha('d')]);
+                            }
+                        },
+                    }
+                )
+            ).toThrow(/changed|installation failed/);
+            expect(f.writes).toEqual(['receipt', 'descriptor']);
+            expect(f.receipt()).toBeDefined();
+            expect(f.stored()).toBeDefined();
+        }
+    );
+
     it('uses the actual 5447 temporal anchor rather than its later cached base or merge-base', () => {
         const f = fixture();
         const fork = '9e6179d26ae464a402c520d8ddea5828cd2c72a5';
@@ -887,22 +1266,34 @@ describe('historical stack native admission', () => {
         expect(result.parentPullRequest).toBe(5438);
     });
 
-    it.each([
-        'moved child',
-        'foreign child',
-        'wrong repository',
-        'retargeted child',
-        'reused parent',
-        'replacement parent',
-        'deleted parent',
-        'force pushed parent',
-        'late parent',
-        'dirty child',
-    ])('refuses %s before any record write', (change) => {
+    it.each(
+        [
+            'moved child',
+            'wrong child ref',
+            'foreign child',
+            'wrong repository',
+            'retargeted child',
+            'reused parent',
+            'replacement parent',
+            'deleted parent',
+            'force pushed parent',
+            'late parent',
+            'dirty child',
+        ].flatMap((change) => [
+            { change, mode: 'ordinary', legacyFork: undefined },
+            { change, mode: 'legacy', legacyFork: anchor },
+        ])
+    )('refuses $change before any $mode record write', ({ change, legacyFork }) => {
         const f = fixture();
+        if (legacyFork !== undefined) {
+            f.setMarkers([legacyFork]);
+        }
         const remote = f.observation();
         if (change === 'moved child') {
             f.setHead(sha('b'));
+        }
+        if (change === 'wrong child ref') {
+            remote.child.branch = 'agent/other';
         }
         if (change === 'foreign child') {
             remote.child.authorId = 'foreign';
@@ -932,20 +1323,28 @@ describe('historical stack native admission', () => {
             f.setClean(false);
         }
         f.setObservation(remote);
-        expect(() => admitHistoricalStack(f.input, f.port)).toThrow();
+        expect(() => admitHistoricalStack({ ...f.input, legacyFork }, f.port)).toThrow();
         expect(f.writes).toEqual([]);
     });
 
-    it.each([
-        'missing birth',
-        'wrong actor',
-        'ambiguous time',
-        'parent at another commit',
-        'discontinuous log',
-        'rewritten log',
-        'unrelated history',
-    ])('refuses %s as a historical creation witness', (change) => {
+    it.each(
+        [
+            'missing birth',
+            'wrong actor',
+            'ambiguous time',
+            'parent at another commit',
+            'discontinuous log',
+            'rewritten log',
+            'unrelated history',
+        ].flatMap((change) => [
+            { change, mode: 'ordinary', legacyFork: undefined },
+            { change, mode: 'legacy', legacyFork: anchor },
+        ])
+    )('refuses $change as a $mode historical creation witness', ({ change, legacyFork }) => {
         const f = fixture();
+        if (legacyFork !== undefined) {
+            f.setMarkers([legacyFork]);
+        }
         if (change === 'missing birth') {
             f.setChildLog(
                 reflog([
@@ -1013,7 +1412,7 @@ describe('historical stack native admission', () => {
                 },
             };
         }
-        expect(() => admitHistoricalStack(f.input, port)).toThrow();
+        expect(() => admitHistoricalStack({ ...f.input, legacyFork }, port)).toThrow();
         expect(f.writes).toEqual([]);
     });
 
@@ -1052,6 +1451,28 @@ describe('historical stack native admission', () => {
             expect(() => admitHistoricalStack(f.input, port)).toThrow();
             expect(f.writes).toEqual([]);
         }
+    });
+
+    it('refuses a legacy cycle before journaling the proven marker', () => {
+        const f = fixture();
+        f.setMarkers([anchor]);
+        expect(() =>
+            admitHistoricalStack(
+                { ...f.input, legacyFork: anchor },
+                {
+                    ...f.port,
+                    readStack: () => ({
+                        version: 1,
+                        childBranch: parentBranch,
+                        parentBranch: childBranch,
+                        forkHead: anchor,
+                        parentHead: parent,
+                    }),
+                }
+            )
+        ).toThrow(/cycle/);
+        expect(f.writes).toEqual([]);
+        expect(f.port.markers()).toEqual([anchor]);
     });
 
     it('retains an unusable marker-only crash and safely resumes before installing the descriptor', () => {

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createTrack } from '#/modules/Arrangement/useCases';
+
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { repairRuntimeGraphFromProject } from '../repairRuntimeGraphFromProject';
 
@@ -20,11 +22,12 @@ const mocks = vi.hoisted(() => ({
     resetAudioGraph: vi.fn(),
     resetExternalPluginRuntimeForGraphRebuild: vi.fn(() => Promise.resolve()),
     resetMidiState: vi.fn(),
-    startInputMonitoring: vi.fn(() => Promise.resolve(true)),
+    rearmCommittedTrackInputMonitoring: vi.fn(() => Promise.resolve(true)),
     startPlayheadScheduler: vi.fn(),
     stopAllScheduled: vi.fn(),
     stopPlayheadScheduler: vi.fn(),
-    trackStoreValue: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
+    rootIdentity: 'root-a',
+    committedTracks: { value: null as { tracks: MonitoredTrack[]; selectedTrackId: null } | null },
     updateTransportState: vi.fn(),
 }));
 
@@ -35,25 +38,15 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         forgetProjectLatchedPedals: mocks.forgetProjectLatchedPedals,
         reconcileAutoInputMonitoring: mocks.reconcileAutoInputMonitoring,
         resetAudioGraph: mocks.resetAudioGraph,
-        startInputMonitoring: mocks.startInputMonitoring,
+        rearmCommittedTrackInputMonitoring: mocks.rearmCommittedTrackInputMonitoring,
         stopAllScheduled: mocks.stopAllScheduled,
     };
 });
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return {
-        ...actual,
-        // The repair imports the Arrangement use-case barrel, whose transitive
-        // graph registers a trackStore subscriber at module scope (Yeast). Keep
-        // the real store's methods and override only the readable value.
-        trackStore: {
-            ...actual.trackStore,
-            get value() {
-                return mocks.trackStoreValue.value;
-            },
-        },
-    };
-});
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    getCrdtDoc: () => ({ tracks: mocks.committedTracks.value }),
+    captureProjectRootIdentity: () => mocks.rootIdentity,
+}));
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
@@ -89,7 +82,12 @@ function monitoredTrack(
     inputId: string | null = null,
     armed = false
 ): MonitoredTrack {
-    return { id, inputMonitoring, inputId, armed };
+    return {
+        ...createTrack({ id, name: id, kind: 'audio', withoutDefaultDevice: true }),
+        inputMonitoring,
+        inputId,
+        armed,
+    };
 }
 
 describe('repairRuntimeGraphFromProject', () => {
@@ -98,10 +96,11 @@ describe('repairRuntimeGraphFromProject', () => {
         playheadPositionRef.current = 8.5;
         mocks.getTransportState.mockReturnValue({ isPlaying: true, isRecording: false, playheadPosition: 4 });
         mocks.ensureTrackStrips.mockReturnValue({ status: 'ready', externalPluginActivations: [] });
-        mocks.startInputMonitoring.mockReset();
+        mocks.rearmCommittedTrackInputMonitoring.mockReset();
         mocks.reconcileAutoInputMonitoring.mockReset();
-        mocks.startInputMonitoring.mockResolvedValue(true);
-        mocks.trackStoreValue.value = null;
+        mocks.rearmCommittedTrackInputMonitoring.mockResolvedValue(true);
+        mocks.committedTracks.value = null;
+        mocks.rootIdentity = 'root-a';
     });
 
     it('pauses, rebuilds, awaits plugins, and reschedules from the live playhead', async () => {
@@ -194,8 +193,8 @@ describe('repairRuntimeGraphFromProject', () => {
         expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
     });
 
-    it('re-arms input monitoring for a track whose persisted intent is on, with its inputId', async () => {
-        mocks.trackStoreValue.value = {
+    it('re-arms input monitoring through the committed owner for each committed On track', async () => {
+        mocks.committedTracks.value = {
             tracks: [monitoredTrack('t1', 'on', 'in-1')],
             selectedTrackId: null,
         };
@@ -204,12 +203,12 @@ describe('repairRuntimeGraphFromProject', () => {
 
         // The reset released the capture and the rebuild produced a fresh
         // strip, so the musician's own signal has to be re-armed on that strip.
-        expect(mocks.startInputMonitoring).toHaveBeenCalledOnce();
-        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', 'in-1');
+        expect(mocks.rearmCommittedTrackInputMonitoring).toHaveBeenCalledOnce();
+        expect(mocks.rearmCommittedTrackInputMonitoring).toHaveBeenCalledWith('t1');
     });
 
-    it('does not re-arm tracks whose persisted intent is off or auto', async () => {
-        mocks.trackStoreValue.value = {
+    it('does not re-arm tracks whose committed intent is off or auto', async () => {
+        mocks.committedTracks.value = {
             tracks: [
                 monitoredTrack('t-off', 'off', 'in-off'),
                 monitoredTrack('t-auto', 'auto', 'in-auto'),
@@ -222,12 +221,12 @@ describe('repairRuntimeGraphFromProject', () => {
 
         await repairRuntimeGraphFromProject();
 
-        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.rearmCommittedTrackInputMonitoring).not.toHaveBeenCalled();
         expect(mocks.reconcileAutoInputMonitoring).toHaveBeenCalledOnce();
     });
 
     it('does not re-arm when the repair itself fails', async () => {
-        mocks.trackStoreValue.value = {
+        mocks.committedTracks.value = {
             tracks: [monitoredTrack('t1', 'on', 'in-1')],
             selectedTrackId: null,
         };
@@ -237,18 +236,46 @@ describe('repairRuntimeGraphFromProject', () => {
             'Runtime graph repair failed: strips unavailable'
         );
 
-        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.rearmCommittedTrackInputMonitoring).not.toHaveBeenCalled();
     });
 
     it('settles a re-arm that refuses without failing the repair', async () => {
-        mocks.trackStoreValue.value = {
+        mocks.committedTracks.value = {
             tracks: [monitoredTrack('t1', 'on', 'in-1')],
             selectedTrackId: null,
         };
-        mocks.startInputMonitoring.mockRejectedValueOnce(new Error('microphone refused'));
+        mocks.rearmCommittedTrackInputMonitoring.mockRejectedValueOnce(new Error('microphone refused'));
 
         await expect(repairRuntimeGraphFromProject()).resolves.toBeUndefined();
 
-        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1', 'in-1');
+        expect(mocks.rearmCommittedTrackInputMonitoring).toHaveBeenCalledWith('t1');
+    });
+    it('does not rearm or resume a replaced root after plugin activation settles', async () => {
+        let settlePlugin!: (value: { status: 'active' }) => void;
+        const pluginActivation = new Promise<{ status: 'active' }>((resolve) => {
+            settlePlugin = resolve;
+        });
+        mocks.ensureTrackStrips.mockReturnValue({ status: 'ready', externalPluginActivations: [pluginActivation] });
+        mocks.committedTracks.value = { tracks: [monitoredTrack('t1', 'on')], selectedTrackId: null };
+        const repair = repairRuntimeGraphFromProject();
+        await vi.waitFor(() => expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce());
+        mocks.rootIdentity = 'root-b';
+        settlePlugin({ status: 'active' });
+        await repair;
+        expect(mocks.rearmCommittedTrackInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.startPlayheadScheduler).not.toHaveBeenCalled();
+        expect(mocks.updateTransportState).toHaveBeenCalledOnce();
+    });
+
+    it('does not resume the outgoing transport if the root changes while rearm settles', async () => {
+        mocks.committedTracks.value = { tracks: [monitoredTrack('t1', 'on')], selectedTrackId: null };
+        mocks.rearmCommittedTrackInputMonitoring.mockImplementationOnce(() => {
+            mocks.rootIdentity = 'root-b';
+            return Promise.resolve(true);
+        });
+        await repairRuntimeGraphFromProject();
+        expect(mocks.rearmCommittedTrackInputMonitoring).toHaveBeenCalledWith('t1');
+        expect(mocks.startPlayheadScheduler).not.toHaveBeenCalled();
+        expect(mocks.updateTransportState).toHaveBeenCalledOnce();
     });
 });

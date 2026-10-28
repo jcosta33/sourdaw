@@ -371,6 +371,7 @@ export type HistoricalAdmissionInput = {
     parentPullRequest: number;
     expectedHead: string;
     branch: string;
+    legacyFork?: string;
 };
 
 export type HistoricalAdmissionPort = {
@@ -586,7 +587,8 @@ export function descriptorForHistoricalReplay(
     initialMarkers: string[],
     port: HistoricalAdmissionPort
 ): LaneStack {
-    if (prior === undefined && (stored !== undefined || initialMarkers.length > 0)) {
+    const unjournaledMarker = initialMarkers.length > 0 && input.legacyFork === undefined;
+    if (prior === undefined && (stored !== undefined || unjournaledMarker)) {
         fail('historical admission refuses unjournaled partial or existing lineage');
     }
     if (prior !== undefined) {

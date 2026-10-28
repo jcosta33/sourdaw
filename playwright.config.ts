@@ -50,7 +50,10 @@ const devServerProjects: Project[] = [
     },
 ];
 const devServerWebServer: WebServer = {
-    command: `pnpm dev --mode e2e --port ${port} --strictPort`,
+    command: `node scripts/e2eDevServer.ts ${port}`,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
     url: e2eOrigin(port),
     reuseExistingServer: !env.CI,
 };
@@ -87,7 +90,10 @@ function builtShardWebServers(): WebServer[] {
     if (shardNeedsDevServer) {
         const companionPort = devServerPort();
         servers.push({
-            command: `pnpm dev --mode e2e --port ${companionPort} --strictPort`,
+            command: `node scripts/e2eDevServer.ts ${companionPort}`,
+            stdout: 'pipe',
+            stderr: 'pipe',
+            gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
             url: e2eOrigin(companionPort),
             reuseExistingServer: false,
         });

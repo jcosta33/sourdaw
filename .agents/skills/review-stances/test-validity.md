@@ -6,6 +6,40 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — action-call spies missed extra project writes (refinement accounting introduced by PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write accounting
+that inferred safety from barrel calls, revisions and Undo groups. Real chat commits bypassed those
+barrel spies, so a matching commit plus an unrecorded change to another track, the target gain or
+the target pan could still score zero unintended mutations (#5649). An extra barrel call could also
+borrow the commit's identical action signature. The original single-turn spy counter came from
+PR #4348 (`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`), before this refinement slice.
+Historical private review prompts and tiers are not established.
+
+Compare materialized project truth before and after every turn with an independent field/value
+oracle, preserving CRDT scalar types. Inject each extra write through the actual project store,
+outside the barrel and history, beside a valid commit; each must increase the unintended-mutation
+score. Include a duplicate barrel action, an unrelated entity, a wrong value on an authorized field,
+and typed values whose distinctions JSON serialization would erase. Removing the project-state
+comparison must fail the named acceptance cases while an ordinary intended commit still passes.
+Also count prior barrel writes that restore their original value, and inject an outside-barrel write
+beside Undo; removing only the Undo comparison must fail that case. Observe settled CRDT
+transitions as well as final truth: an unauthorized persisted write followed by restoration must
+fail beside planning, prior and follow-up commits, and Undo.
+
+### 2026-10-27 — response fixtures hid an invalid Actor identity selection (introduced by PR #5705)
+
+PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) added historical-stack admission's
+`author { id }` selection. GitHub rejects it because `Actor` has no `id` field, while the
+parser's handcrafted author-ID fixtures pass. The public approval names contradictory-lineage
+and native-reader probes; exact private prompts and tiers are unknown. The missed stance was
+whether the real remote query can produce the immutable identity its parser requires.
+
+Capture the native adapter's emitted query and validate its identity selections against the live
+schema. Narrow Actor selections to supported concrete Node types, pair real Bot and User ID
+responses with missing-author, missing-ID and GraphQL-error refusals, and restore direct Actor.id
+as the negative control. Parser fixtures alone cannot prove the remote query is executable.
+
 ### 2026-10-27 — start-only preview checks missed resource and owner teardown (preserved by PR #187)
 
 PR #187 (`8c11c40674b32074a12a209b308d3361e93fe873`) extracted the cached-preview helper
@@ -1446,3 +1480,23 @@ whole/scoped/parent inspection failures. Require retained storage and a stable, 
 on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
 or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
 or add inspection diagnostics to the warning-success allowlist.
+
+## Escape: sanitizer tests did not prove project-file admission (PR #4987)
+
+PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
+and valid saved-lane compatibility, but the file admission predicate ignored the
+new fields. PR #4222 (`120c9e2b418e`) had already left the same gap for
+malformed `sourceOffsetBeats`. A selected take carrying only `passAnchorSeconds` beside offset zero
+passed admission and disappeared with its comp region during real hydration.
+The missed input was malformed placement entering the full import route; private
+review prompts are unavailable, so do not infer a named historical stance or tier.
+
+Use a current-version file with a canonical project ID and a valid referenced
+track and clip, and first prove the valid control is admitted. Reject malformed
+placement in both top-level and saved-arrangement take lanes before replacement
+of an existing project. Assert raw authority, tracks, arrangement and selected
+material remain unchanged. Separately admit a JSON roundtrip of legacy takes and
+complete placed passes, including negative finite anchors, and assert exact
+selected-take and comp-region retention after real owner hydration. Removing only
+placement admission must redden the rejection case; testing a store sanitizer
+alone cannot observe the file admission gap.

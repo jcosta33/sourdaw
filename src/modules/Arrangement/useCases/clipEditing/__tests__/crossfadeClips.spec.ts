@@ -207,6 +207,48 @@ describe('crossfadeClips', () => {
         expect(sourceAtBeat5).toBe(3.0);
     });
 
+    it.each([
+        { stretchRatio: 1, loopOriginBeat: undefined },
+        { stretchRatio: 1, loopOriginBeat: 4 },
+        { stretchRatio: 2, loopOriginBeat: undefined },
+        { stretchRatio: 2, loopOriginBeat: 4 },
+    ])(
+        'preserves recorded leading silence at stretch $stretchRatio with anchor $loopOriginBeat',
+        ({ stretchRatio, loopOriginBeat }) => {
+            // A recording begun inside a loop starts its clip before captured media.
+            const clipOverrides: Partial<Clip> = {
+                audioOffsetBeats: -1,
+                stretchMode: 'timestretch',
+                stretchRatio,
+                loopEnabled: true,
+                loopLength: 4,
+            };
+            if (loopOriginBeat !== undefined) {
+                clipOverrides.loopOriginBeat = loopOriginBeat;
+            }
+            const recordedClip = makeClip('b', 4, 8, clipOverrides);
+            const track = makeTrack([makeClip('a', 0, 4), recordedClip]);
+            mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' });
+            const mediaOrigin = recordedClip.startBeat - recordedClip.audioOffsetBeats! / stretchRatio;
+            const transientBeat = mediaOrigin + 1 / stretchRatio;
+
+            expect(crossfadeClips('a', 'b', 1)).toBe(true);
+
+            const result = capturedMapper()(track);
+            const clipB = result.clips.find((clip) => clip.id === 'b');
+            if (!clipB) {
+                throw new Error('Expected recorded clip B');
+            }
+            expect(result.clips[0]).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
+            expect(clipB).toMatchObject({ startBeat: 4, endBeat: 8, fadeInBeats: 0.5 });
+            expect.soft(clipB.audioOffsetBeats).toBe(-1);
+            expect.soft(clipB.startBeat - clipB.audioOffsetBeats! / stretchRatio).toBe(mediaOrigin);
+            expect.soft(clipB.audioOffsetBeats! + (transientBeat - clipB.startBeat) * stretchRatio).toBe(1);
+            expect(clipB.loopOriginBeat).toBe(loopOriginBeat);
+            expect(Object.hasOwn(clipB, 'loopOriginBeat')).toBe(loopOriginBeat !== undefined);
+        }
+    );
+
     it('scales audioOffsetBeats by consumed stretch factor when clip B is stretched', () => {
         const clips = [
             makeClip('a', 0, 4),

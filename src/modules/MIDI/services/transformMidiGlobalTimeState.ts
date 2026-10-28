@@ -2,6 +2,7 @@ import { clampMidiData7, clampVelocity, DEFAULT_NOTE_PROBABILITY, DEFAULT_NOTE_V
 
 import {
     carriedBendReturnBeat,
+    carriedBendReturnIdKey,
     isRegisteredParameterController,
     reconcileCarriedBendRanges,
     reconcileRegisteredParameterMessages,
@@ -584,7 +585,7 @@ function declareRegisteredParameterRows(
             ...placeDeclaration(carried.onHead, 0, (index) => createId(`rpn-carried-${index}`)),
         ],
         beforeMoved: placeDeclaration(carried.afterHead, carriedBendReturnBeat(head), (index) =>
-            createId(`rpn-after-carried-${index}`)
+            createId(carriedBendReturnIdKey(index))
         ),
     };
 }
