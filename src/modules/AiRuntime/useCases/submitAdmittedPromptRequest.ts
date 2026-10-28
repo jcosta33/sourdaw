@@ -317,6 +317,7 @@ export async function submitAdmittedPromptRequest(
         );
         const compiled = compileAgentActionExecution({
             actions: planned.result.actions,
+            metricGoalState: planned.result.metricGoalState,
             actionCommandGraph: planned.result.actionCommandGraph,
             actionLabels,
             context: planned.context,
@@ -342,6 +343,7 @@ export async function submitAdmittedPromptRequest(
         agentRunLifecycle.recordPlan({
             runId,
             summary: actionLabels.join('\n'),
+            metricGoalState: compiled.metricGoalState,
             commandIds: parsed.envelope.commands.map((command) => command.commandId),
             serializedBatchIdentity: parsed.envelope.idempotencyKey,
             revision: planned.projectRevision,
@@ -411,6 +413,7 @@ export async function submitAdmittedPromptRequest(
                 matchSelectorPredicates: planned.result.matchSelectorPredicates,
                 adoptedRecipes: planned.result.adoptedRecipes,
                 measuredPreview: planned.result.measuredPreview,
+                metricGoalState: compiled.metricGoalState,
                 executionMode: planned.result.executionMode,
                 group: { groupId: `prompt-${runId}`, groupLabel: 'Prompt action' },
                 projectRevision: planned.projectRevision,

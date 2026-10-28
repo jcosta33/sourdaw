@@ -13,6 +13,8 @@ import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
 
 export type IntentResult = {
+    /** Versioned app-owned intent and actual preview proof; absent legacy work stays unverified. */
+    metricGoalState?: string;
     actions: ExecutableRuntimeAction[];
     rawText: string;
     requiresConfirmation: boolean;

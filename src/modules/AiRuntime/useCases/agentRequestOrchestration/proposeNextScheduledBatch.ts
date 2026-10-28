@@ -133,6 +133,7 @@ function groundScheduledSlice(
         revision,
         result: {
             actions: grounded.actions,
+            metricGoalState: schedule.metricGoalState,
             actionCommandGraph: grounded.actionCommandGraph,
             rawText: run.request,
             requiresConfirmation: grounded.requiresConfirmation,
@@ -205,6 +206,7 @@ async function dispatchScheduledBatch(
             commandEnvelopes,
             commandBatch,
             agentApproval: compiledActionExecution.agentApproval,
+            metricGoalState: compiledActionExecution.metricGoalState,
             affectedIds: description.affectedIds,
             protectedUnchanged: description.protectedUnchanged,
             protectionFacts: grounded.result.protectionFacts,

@@ -1,8 +1,9 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
-import { canonicalJson } from '#/utils/canonicalDigest';
+import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
@@ -14,6 +15,7 @@ import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
     createCreativeInterpretationToolSchema,
     type CreativeRequestAuthority,
+    getCreativeSelectionSnapshot,
 } from '../models/CreativeInterpretation';
 import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
@@ -85,6 +87,7 @@ import {
 } from './agentToolCatalog';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
+import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
@@ -103,9 +106,12 @@ import {
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
+import { type MetricRequestAuthority, type MetricGoalState } from './metricGoalContractTypes';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { planLastCommitContinuation } from './planLastCommitContinuation';
 import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
+import { prepareMetricIntentCatalog } from './prepareMetricIntentCatalog';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
@@ -132,6 +138,7 @@ type ParsePromptToActionsInput = {
 };
 
 type CreateFastPathResultInput = {
+    projectRevision?: string;
     actions: RuntimeAction[];
     context: ProjectContext;
     prompt: string;
@@ -440,6 +447,29 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
 
     return {
         actions: materialized.actions,
+        metricGoalState: JSON.stringify({
+            schemaVersion: 1,
+            authorities: [
+                {
+                    schemaVersion: 1,
+                    authorityId: `literal-${digest(input.prompt)}`,
+                    origin: 'complete-literal-parser',
+                    callId: null,
+                    turn: null,
+                    catalogId: 'complete-literal-parser-v1',
+                    requestDigest: digest(input.prompt.trim()),
+                    revision: input.projectRevision ?? '',
+                    projectId: captureProjectIdentity(),
+                    selection: getCreativeSelectionSnapshot(input.context),
+                    kind: 'literal',
+                    goals: [],
+                    creativeAuthority: null,
+                },
+            ],
+            steps: [],
+            proofs: [],
+            binding: null,
+        } satisfies MetricGoalState),
         rawText: input.prompt,
         requiresConfirmation: requiresAppActionConfirmation(materialized.actions),
     };
@@ -453,14 +483,15 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
 function createLastCommitContinuationResult(
     prompt: string,
     context: ProjectContext,
-    thread: ThreadContext | null
+    thread: ThreadContext | null,
+    projectRevision?: string
 ): IntentResult | null {
     const continuation = planLastCommitContinuation({ prompt, context, thread });
     switch (continuation.status) {
         case 'none':
             return null;
         case 'actions':
-            return createFastPathResult({ actions: continuation.actions, context, prompt });
+            return createFastPathResult({ actions: continuation.actions, context, prompt, projectRevision });
         case 'revert':
             return {
                 actions: [],
@@ -536,7 +567,7 @@ const planPromptIntent = inject({ logger })(
                 // A chat request that continues, re-targets or undoes the thread's last commit compiles from
                 // the committed batch, never from a provider re-deriving its values.
                 if (thread !== undefined) {
-                    const continuation = createLastCommitContinuationResult(prompt, context, thread);
+                    const continuation = createLastCommitContinuationResult(prompt, context, thread, projectRevision);
                     if (continuation !== null) {
                         return continuation;
                     }
@@ -546,19 +577,19 @@ const planPromptIntent = inject({ logger })(
                 const presetCtx = buildPresetContext(context);
                 const presetResult = tryPresetMatch(normalized, presetCtx);
                 if (presetResult.length > 0) {
-                    return createFastPathResult({ actions: presetResult, context, prompt });
+                    return createFastPathResult({ actions: presetResult, context, prompt, projectRevision });
                 }
 
                 // 3. Try parameterized patterns (need value extraction)
                 const paramResult = tryParameterizedPath(trimmedPrompt, context);
                 if (paramResult.length > 0) {
-                    return createFastPathResult({ actions: paramResult, context, prompt });
+                    return createFastPathResult({ actions: paramResult, context, prompt, projectRevision });
                 }
 
                 // 4. Try compound fast path (multi-track creation etc.)
                 const compoundResult = tryCompoundFastPath(trimmedPrompt, context);
                 if (compoundResult !== null) {
-                    return createFastPathResult({ actions: compoundResult, context, prompt });
+                    return createFastPathResult({ actions: compoundResult, context, prompt, projectRevision });
                 }
             }
 
@@ -644,6 +675,7 @@ const planPromptIntent = inject({ logger })(
                     context,
                     projectRevision: projectRevision ?? '',
                 });
+                const metricCatalog = prepareMetricIntentCatalog({ prompt, answer: answerCatalog });
                 const providerToolSchemas = [
                     ...(readonly ? [createAnswerInterpretationToolSchema(answerCatalog)] : []),
                     ...(readonly ? getPlanningProviderToolSchemas(profile) : getPlanningProviderToolSchemas()),
@@ -736,6 +768,7 @@ const planPromptIntent = inject({ logger })(
                 // The loop is told only whether a call was admitted. The record itself stays here, so a
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
+                let metricAuthority: MetricRequestAuthority | undefined;
                 const transformSnapshot =
                     readonly || projectRevision === undefined || projectRevision === ''
                         ? null
@@ -771,35 +804,93 @@ const planPromptIntent = inject({ logger })(
                         // spends the same one measurement per turn.
                         companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
                         revision: projectRevision,
-                        execute: (call, { callId, turn, signal: loopSignal, retainedCompilations }) =>
-                            call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
-                                ? executeReferenceMeasurement({
-                                      call,
-                                      callId,
-                                      turn,
-                                      projectRevision,
-                                      sections: context.sections ?? [],
-                                      signal: loopSignal,
-                                      admit: onMeasurementAttempt,
-                                  })
-                                : executeAnalysisMeasure({
-                                      call,
-                                      callId,
-                                      turn,
-                                      projectRevision,
-                                      sections: context.sections ?? [],
-                                      signal: loopSignal,
-                                      admit: onMeasurementAttempt,
-                                      // A preview is compiled and grounded against what an adopting
-                                      // proposal is: this run's read model, request and authority.
-                                      preview: {
-                                          context,
-                                          retainedCompilations,
-                                          prompt,
-                                          runId: streamIdentity?.runId ?? 'preview-measurement',
-                                          readCreativeAuthority: () => creativeAuthority,
-                                      },
-                                  }),
+                        execute: (call, { callId, turn, signal: loopSignal, retainedCompilations }) => {
+                            if (call.arguments.subject === 'preview' && metricAuthority === undefined) {
+                                return Promise.resolve({
+                                    commands: null,
+                                    measuredPreview: null,
+                                    receipt: {
+                                        schema: 'sourdaw.application-tool-receipt' as const,
+                                        schemaVersion: 1 as const,
+                                        callId,
+                                        toolName: call.name,
+                                        turn,
+                                        status: 'failure' as const,
+                                        revision: projectRevision,
+                                        data: null,
+                                        warnings: [],
+                                        summary: 'Positive whole-request metric intent is required before a preview.',
+                                        error: {
+                                            code: 'metric-intent-required',
+                                            safeMessage:
+                                                'Positive whole-request metric intent is required before a preview.',
+                                            retryable: true,
+                                        },
+                                    },
+                                });
+                            }
+                            let measurementCall = call;
+                            const range = call.arguments.range;
+                            if (
+                                isRecord(range) &&
+                                typeof range.startBeat === 'number' &&
+                                typeof range.endBeat === 'number'
+                            ) {
+                                const namedRanges =
+                                    metricAuthority?.goals.flatMap((goal) =>
+                                        goal.range !== null &&
+                                        goal.range.sectionId !== null &&
+                                        goal.range.startBeat === range.startBeat &&
+                                        goal.range.endBeat === range.endBeat
+                                            ? [goal.range]
+                                            : []
+                                    ) ?? [];
+                                const identities = [...new Set(namedRanges.map((entry) => entry.sectionId))];
+                                const frozen = namedRanges[0];
+                                if (
+                                    identities.length === 1 &&
+                                    frozen !== undefined &&
+                                    context.sections?.some(
+                                        (section) =>
+                                            section.id === frozen.sectionId &&
+                                            section.startBeat === frozen.startBeat &&
+                                            section.endBeat === frozen.endBeat
+                                    )
+                                ) {
+                                    measurementCall = {
+                                        ...call,
+                                        arguments: { ...call.arguments, range: { sectionId: frozen.sectionId } },
+                                    };
+                                }
+                            }
+                            if (call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME) {
+                                return executeReferenceMeasurement({
+                                    call: measurementCall,
+                                    callId,
+                                    turn,
+                                    projectRevision,
+                                    sections: context.sections ?? [],
+                                    signal: loopSignal,
+                                    admit: onMeasurementAttempt,
+                                });
+                            }
+                            return executeAnalysisMeasure({
+                                call: measurementCall,
+                                callId,
+                                turn,
+                                projectRevision,
+                                sections: context.sections ?? [],
+                                signal: loopSignal,
+                                admit: onMeasurementAttempt,
+                                preview: {
+                                    context,
+                                    retainedCompilations,
+                                    prompt,
+                                    runId: streamIdentity?.runId ?? 'preview-measurement',
+                                    readCreativeAuthority: () => creativeAuthority,
+                                },
+                            });
+                        },
                     };
                 };
                 const planningOutcome = await runApplicationOwnedToolLoop({
@@ -859,15 +950,39 @@ const planPromptIntent = inject({ logger })(
                             ? undefined
                             : {
                                   toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
-                                  admit: (call) => {
+                                  admit: (call, identity) => {
                                       const admission = admitPlanningInterpretation({
                                           creative: creativeCatalog,
                                           answer: answerCatalog,
+                                          metric: metricCatalog,
+                                          turn: identity.turn,
                                           call,
                                           projectRevision: projectRevision ?? '',
                                       });
                                       if (admission.status !== 'admitted') {
                                           return admission;
+                                      }
+                                      if ('metricAuthority' in admission) {
+                                          metricAuthority = admission.metricAuthority;
+                                      }
+                                      if (admission.kind === 'literal') {
+                                          return {
+                                              status: 'admitted',
+                                              providerProjection: {
+                                                  kind: 'metric-intent',
+                                                  catalogId: metricCatalog.catalogId,
+                                              },
+                                              receipt: {
+                                                  data: {
+                                                      kind: 'metric-intent',
+                                                      catalogId: metricCatalog.catalogId,
+                                                      intentKind: 'literal',
+                                                      goals: [],
+                                                  },
+                                                  summary:
+                                                      'Whole-request literal intent admitted without creative mutation authority.',
+                                              },
+                                          };
                                       }
                                       if (admission.kind !== 'creative') {
                                           return {
@@ -878,8 +993,16 @@ const planPromptIntent = inject({ logger })(
                                       creativeAuthority = admission.authority;
                                       return {
                                           status: 'admitted',
+                                          providerProjection:
+                                              metricAuthority === undefined
+                                                  ? undefined
+                                                  : { kind: 'metric-intent', catalogId: metricCatalog.catalogId },
                                           receipt: {
                                               data: {
+                                                  kind: 'metric-intent',
+                                                  catalogId: metricCatalog.catalogId,
+                                                  intentKind: metricAuthority?.kind ?? 'unverified',
+                                                  goals: metricAuthority?.goals ?? [],
                                                   authorityId: admission.authority.authorityId,
                                                   mode: admission.authority.mode,
                                                   targets: admission.authority.targets,
@@ -887,7 +1010,8 @@ const planPromptIntent = inject({ logger })(
                                                   prohibitions: admission.authority.prohibitions,
                                                   creationSlots: admission.authority.creationSlots,
                                               },
-                                              summary: 'Creative interpretation admitted.',
+                                              summary:
+                                                  'Creative interpretation admitted; acoustic goals require actual compatible preview proof before approval.',
                                           },
                                       };
                                   },
@@ -899,6 +1023,7 @@ const planPromptIntent = inject({ logger })(
                                 const admission = admitPlanningInterpretation({
                                     creative: creativeCatalog,
                                     answer: answerCatalog,
+                                    metric: metricCatalog,
                                     call,
                                     projectRevision: projectRevision ?? '',
                                 });
@@ -951,6 +1076,7 @@ const planPromptIntent = inject({ logger })(
                                               creative: creativeCatalog,
                                               answer: answerCatalog,
                                               binding: planningContext.planningBinding,
+                                              metric: metricCatalog,
                                           }),
                                       ]),
                             ],
@@ -1145,6 +1271,20 @@ const planPromptIntent = inject({ logger })(
                     compiled.kind === 'recipe' ? [compiled.recipe] : []
                 );
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
+                const inheritedMetricState = metricGoalStateCodec(refinedCard?.approvalSnapshot.metricGoalState);
+                const authorities = [...(inheritedMetricState?.authorities ?? [])];
+                if (
+                    metricAuthority !== undefined &&
+                    !authorities.some((authority) => authority.authorityId === metricAuthority.authorityId)
+                ) {
+                    authorities.push(metricAuthority);
+                }
+                const metricProofs = collectMetricGoalProof({
+                    authorities,
+                    compilations: planningOutcome.retainedCompilations,
+                    receipts: planningOutcome.receipts,
+                });
+
                 // The adopted compilations and the refined proposal are both read above, so the
                 // compiler sees only the commands the batch states.
                 const ordinaryProposalCalls = planningOutcome.toolCalls.map((call) => {
@@ -1474,7 +1614,62 @@ const planPromptIntent = inject({ logger })(
                             };
                         }
                     }
+                    const steps: MetricGoalState['steps'][number][] = [];
+                    const usedRecipes = selectedCompilations.flatMap((compilation) => {
+                        if (compilation.kind === 'recipe') return [compilation];
+                        if (compilation.kind !== 'preview' || compilation.measuredPreview.recipeSource === undefined)
+                            return [];
+                        const source = compilation.measuredPreview.recipeSource;
+                        return planningOutcome.retainedCompilations.filter(
+                            (entry): entry is Extract<RetainedCompilation, { kind: 'recipe' }> =>
+                                entry.kind === 'recipe' &&
+                                entry.recipe.recipeId === source.recipeId &&
+                                entry.recipe.targetId === source.targetId
+                        );
+                    });
+                    for (const compilation of usedRecipes) {
+                        const stepId = `recipe:${compilation.recipe.recipeId}:${compilation.recipe.targetId}`;
+                        if (
+                            compilation.metricRecipe === undefined ||
+                            !authorities.some((authority) =>
+                                authority.goals.some(
+                                    (goal) =>
+                                        goal.stepId === stepId &&
+                                        goal.source.kind === 'recipe' &&
+                                        goal.source.recipeDigest === compilation.metricRecipe?.recipeDigest
+                                )
+                            )
+                        )
+                            continue;
+                        steps.push({
+                            stepId,
+                            commandCount: compilation.commands.length,
+                            operationTypes: compilation.commands.map((command) => command.operation),
+                        });
+                    }
+                    const onlyAction = grounded.actions[0];
+                    if (
+                        steps.length === 0 &&
+                        grounded.actions.length === 1 &&
+                        onlyAction?.type === 'setTrackGain' &&
+                        authorities.some((authority) =>
+                            authority.goals.some(
+                                (goal) =>
+                                    goal.stepId === 'overall' && goal.targetIds.includes(onlyAction.payload.trackId)
+                            )
+                        )
+                    ) {
+                        steps.push({ stepId: 'overall', commandCount: 1, operationTypes: ['setTrackGain'] });
+                    }
+                    const metricGoalState: MetricGoalState = {
+                        schemaVersion: 1,
+                        authorities,
+                        steps,
+                        proofs: metricProofs,
+                        binding: null,
+                    };
                     return {
+                        metricGoalState: JSON.stringify(metricGoalState),
                         actions: grounded.actions,
                         ...(grounded.actionCommandGraph === undefined
                             ? {}

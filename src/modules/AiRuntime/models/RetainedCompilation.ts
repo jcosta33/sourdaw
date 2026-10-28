@@ -1,5 +1,6 @@
 import { type AdoptedRecipe } from './AdoptedRecipe';
 import { type MeasuredPreview } from './MeasuredPreview';
+import { type MetricRecipeSource } from './MetricGoalAdmission';
 
 export { type AdoptedRecipe } from './AdoptedRecipe';
 
@@ -38,6 +39,6 @@ export type RetainedCommandSet = {
 export type RetainedCompilation = RetainedCommandSet &
     (
         | { kind: 'transform' }
-        | { kind: 'recipe'; recipe: AdoptedRecipe }
+        | { kind: 'recipe'; recipe: AdoptedRecipe; metricRecipe?: MetricRecipeSource }
         | { kind: 'preview'; measuredPreview: MeasuredPreview }
     );

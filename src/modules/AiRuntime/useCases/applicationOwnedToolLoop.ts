@@ -39,6 +39,7 @@ import {
 } from '../models/HostedTurnHistory';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
+import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
 import {
     type AdoptedRecipe,
     type RetainedCommand,
@@ -92,7 +93,7 @@ import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 import { projectAnswerProviderReceipt } from './projectAnswerProviderReceipt';
 
-const DEFAULT_LIMITS = {
+export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxTurns: 4,
     maxCallsPerTurn: 4,
     maxTotalCalls: 8,
@@ -174,10 +175,14 @@ export class ApplicationOwnedToolLoopRequestError extends Error {
     }
 }
 
-type ToolLoopLimits = Partial<Record<keyof typeof DEFAULT_LIMITS, number>>;
+type ToolLoopLimits = Partial<Record<keyof typeof APPLICATION_OWNED_TOOL_LOOP_LIMITS, number>>;
 
 export type ApplicationOwnedToolLoopInterpretationAdmission =
-    | { status: 'admitted'; receipt: { data: unknown; summary: string } }
+    | {
+          status: 'admitted';
+          receipt: { data: unknown; summary: string };
+          providerProjection?: { kind: 'metric-intent'; catalogId: string };
+      }
     | { status: 'clarify'; reason: string }
     | { status: 'rejected'; reason: string };
 
@@ -215,7 +220,10 @@ type RunApplicationOwnedToolLoopInput = {
      */
     interpretation?: {
         toolName: string;
-        admit: (call: ToolCallResult) => ApplicationOwnedToolLoopInterpretationAdmission;
+        admit: (
+            call: ToolCallResult,
+            identity: { callId: string; turn: number }
+        ) => ApplicationOwnedToolLoopInterpretationAdmission;
     };
     /**
      * The application's rule for which declines it admits. A refused decline is not the run's
@@ -1368,6 +1376,7 @@ type ExecutedRead = {
     commands: readonly RetainedCommand[] | null;
     /** Set only by a recipe expansion; it is what makes the entry the loop retains a recipe, not a transform. */
     recipe?: AdoptedRecipe | null;
+    metricRecipe?: MetricRecipeSource;
     /** Set only by a preview measurement; it is what makes the entry the loop retains a measured preview. */
     measuredPreview?: MeasuredPreview | null;
 };
@@ -1377,7 +1386,7 @@ function retainedCompilationOf(executed: ExecutedRead, retainable: RetainedComma
         return { kind: 'preview', ...retainable, measuredPreview: executed.measuredPreview };
     }
     if (executed.recipe !== undefined && executed.recipe !== null) {
-        return { kind: 'recipe', ...retainable, recipe: executed.recipe };
+        return { kind: 'recipe', ...retainable, recipe: executed.recipe, metricRecipe: executed.metricRecipe };
     }
     return { kind: 'transform', ...retainable };
 }
@@ -1819,7 +1828,7 @@ function toHostedTurnCalls(identifiedCalls: readonly IdentifiedToolCall[]): Host
     return identifiedCalls.map(({ call, callId }) => ({ id: callId, name: call.name, arguments: call.arguments }));
 }
 
-function boundReceipt(receipt: ApplicationToolReceipt, maxBytes: number): ApplicationToolReceipt {
+export function boundReceipt(receipt: ApplicationToolReceipt, maxBytes: number): ApplicationToolReceipt {
     if (byteLength(JSON.stringify(receipt)) <= maxBytes) {
         return receipt;
     }
@@ -1839,7 +1848,7 @@ const RECEIPT_STANDING_INSTRUCTIONS = [
     'Use the correlated callId values for evidence. Do not repeat completed calls.',
 ] as const;
 
-function serializeReceiptContext(receipts: readonly ApplicationToolReceipt[], turn: number): string {
+export function serializeReceiptContext(receipts: readonly ApplicationToolReceipt[], turn: number): string {
     return [
         `Application-owned tool receipts from turn ${String(turn)} follow as JSON.`,
         ...RECEIPT_STANDING_INSTRUCTIONS,
@@ -2021,7 +2030,7 @@ function reclassifyUnfittingRetries(input: {
  * instruct would not together fit what the run leaves after this turn, so a refusal is never left
  * retryable when the retry it instructs cannot be honoured.
  */
-function admitTurnReadReceipts(input: {
+export function admitTurnReadReceipts(input: {
     realReceipts: readonly ApplicationToolReceipt[];
     turn: number;
     totalReceiptBytesSoFar: number;
@@ -2063,7 +2072,7 @@ export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = getAgentToo
 export async function runApplicationOwnedToolLoop(
     input: RunApplicationOwnedToolLoopInput
 ): Promise<ApplicationOwnedToolLoopOutcome> {
-    const limits = { ...DEFAULT_LIMITS, ...input.limits };
+    const limits = { ...APPLICATION_OWNED_TOOL_LOOP_LIMITS, ...input.limits };
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
     const disclosedCommandSchemas = new Map<string, string>();
@@ -2080,6 +2089,7 @@ export async function runApplicationOwnedToolLoop(
     const history: HostedTurnRecord[] = [];
     let transientOnsetsDiscovered = false;
     let answerIntake: AdmittedAnswerIntake | null = null;
+    let metricProviderProjection: { kind: 'metric-intent'; catalogId: string } | undefined;
     let answerEntry = false;
     const answerReads = new Map<string, AdmittedAnswerRead>();
     let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
@@ -2103,7 +2113,7 @@ export async function runApplicationOwnedToolLoop(
         turn: number,
         outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
         identifiedCalls: readonly IdentifiedToolCall[],
-        selectedAnswerAuthority?: AnswerRequestAuthority
+        selectedAnswerAuthority?: Parameters<typeof projectAnswerProviderReceipt>[1]
     ): { reason: string; receipts: ApplicationToolReceipt[] } | null => {
         const overBudget = 'Application tool receipts exceeded the bounded context budget.';
         const turnBytes = byteLength(serializeReceiptContext(turnReceipts, turn));
@@ -2116,7 +2126,7 @@ export async function runApplicationOwnedToolLoop(
         if (byteLength(receiptContext) > limits.maxTotalReceiptBytes) {
             return { reason: overBudget, receipts };
         }
-        const providerAnswerAuthority = selectedAnswerAuthority ?? answerIntake?.authority;
+        const providerAnswerAuthority = selectedAnswerAuthority ?? answerIntake?.authority ?? metricProviderProjection;
         if (providerAnswerAuthority !== undefined) {
             receiptContext = serializeReceiptContext(
                 receipts.map((receipt) => projectAnswerProviderReceipt(receipt, providerAnswerAuthority)),
@@ -2178,7 +2188,7 @@ export async function runApplicationOwnedToolLoop(
                 receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
             };
             const lastRecordedTurn = history.at(-1)?.turn;
-            const answerAuthorityForTurn = answerIntake?.authority;
+            const answerAuthorityForTurn = answerIntake?.authority ?? metricProviderProjection;
             outcome = await input.requestTurn({
                 turn,
                 receiptContext,
@@ -2428,7 +2438,7 @@ export async function runApplicationOwnedToolLoop(
                 };
             }
             const { call, callId } = interpretationCalls[0]!;
-            const admission = input.interpretation!.admit(call);
+            const admission = input.interpretation!.admit({ ...call, id: callId }, { callId, turn });
             if (admission.status === 'rejected') {
                 return { status: 'rejected', reason: admission.reason, receipts, turns: turn };
             }
@@ -2471,11 +2481,13 @@ export async function runApplicationOwnedToolLoop(
                 ],
                 turn,
                 outcome,
-                interpretationCalls
+                interpretationCalls,
+                admission.providerProjection
             );
             if (overBudget !== null) {
                 return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
             }
+            metricProviderProjection = admission.providerProjection;
             interpretation = 'admitted';
             continue;
         }

@@ -17,6 +17,7 @@ type ApprovalBindingRejection = {
 export function issueAgentCommandApprovalBinding(input: {
     approval: ReturnType<typeof compileAgentRiskApproval>;
     commandBatch: Pick<CommandApprovalInput, 'authority' | 'serialized'>;
+    confirmationId?: string;
     onRejection?: (rejection: ApprovalBindingRejection) => void;
 }) {
     return issueCommandApprovalBinding({
@@ -34,6 +35,7 @@ export function issueAgentCommandApprovalBinding(input: {
                 approval: input.approval,
                 commandBatch: input.commandBatch,
                 currentRevision,
+                confirmationId: input.confirmationId,
             });
             if (validation.status === 'invalid' && input.onRejection) {
                 input.onRejection({ reason: validation.reason, stale: validation.stale });

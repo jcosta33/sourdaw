@@ -3,9 +3,11 @@ import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
 
+import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type CompileAgentActionExecutionInput = Omit<
@@ -14,11 +16,18 @@ type CompileAgentActionExecutionInput = Omit<
 > & {
     mode?: AgentExecutionMode;
     requiresConfirmation: boolean;
+    metricGoalState?: string;
     trustCeiling?: AgentTrustCeiling;
 };
 
 export function compileAgentActionExecution(input: CompileAgentActionExecutionInput) {
-    const { mode = 'apply', requiresConfirmation, trustCeiling = 'destructive-commit', ...commandInput } = input;
+    const {
+        mode = 'apply',
+        requiresConfirmation,
+        trustCeiling = 'destructive-commit',
+        metricGoalState,
+        ...commandInput
+    } = input;
     if (mode === 'explain' || mode === 'plan') {
         throw new Error(`Agent execution mode ${mode} does not produce an executable command batch`);
     }
@@ -30,6 +39,12 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
     const agentApproval = compileAgentRiskApproval({
         commandBatch: proposed.commandBatch,
         requireExplicitApproval: requiresConfirmation,
+        metricGoalState: JSON.stringify(
+            bindMetricGoalsToBatch({
+                state: metricGoalStateCodec(metricGoalState),
+                commandBatch: proposed.commandBatch,
+            })
+        ),
     });
     const authorityFailure = getAgentExecutionModeFailure({
         mode,
@@ -44,6 +59,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
     if (mode === 'preview') {
         return {
             ...proposed,
+            metricGoalState: agentApproval.metricGoalState ?? undefined,
             agentApproval,
             allowApproval: null,
             interactionMode: mode,
@@ -54,6 +70,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
     if (agentApproval.policy.decision === 'confirm') {
         return {
             ...proposed,
+            metricGoalState: agentApproval.metricGoalState ?? undefined,
             agentApproval,
             allowApproval: null,
             interactionMode: mode,
@@ -109,6 +126,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
     // observer-capable approval binding, replacing the compile-minted one.
     return {
         commandBatch,
+        metricGoalState: agentApproval.metricGoalState ?? undefined,
         commandEnvelopes: proposed.commandEnvelopes,
         agentApproval: null,
         allowApproval: agentApproval,

@@ -471,6 +471,7 @@ function transitionAgentRunPhase(input: {
 }
 
 function recordAgentRunPlan(input: {
+    metricGoalState?: string;
     runId: string;
     summary: string;
     commandIds: string[];
@@ -495,17 +496,20 @@ function recordAgentRunPlan(input: {
             grants: structuredClone(refuseDeferredMediaGrants(input.grants)),
             budgets: mergeAgentRunBudgets(run.budgets, input.budgets),
             plan: carryBatchSchedule(
-                structuredClone(
-                    input.plan ??
-                        createLegacyAgentRunPlan({
-                            summary: input.summary,
-                            commandIds: input.commandIds,
-                            serializedBatchIdentity: input.serializedBatchIdentity,
-                            applicationToolReceipts: input.applicationToolReceipts ?? [],
-                            revision: input.revision,
-                            scope: input.scope,
-                        })
-                ),
+                {
+                    ...structuredClone(
+                        input.plan ??
+                            createLegacyAgentRunPlan({
+                                summary: input.summary,
+                                commandIds: input.commandIds,
+                                serializedBatchIdentity: input.serializedBatchIdentity,
+                                applicationToolReceipts: input.applicationToolReceipts ?? [],
+                                revision: input.revision,
+                                scope: input.scope,
+                            })
+                    ),
+                    metricGoalState: input.metricGoalState ?? input.plan?.metricGoalState,
+                },
                 run.plan
             ),
         };
@@ -514,6 +518,9 @@ function recordAgentRunPlan(input: {
 
 /** A plan recorded for a later batch replaces the earlier one but never drops the schedule both belong to. */
 function carryBatchSchedule(next: AgentRunPlan, previous: AgentRunPlan | null): AgentRunPlan {
+    if (next.metricGoalState === undefined && previous?.metricGoalState !== undefined) {
+        next = { ...next, metricGoalState: previous.metricGoalState };
+    }
     if (next.batchSchedule !== undefined || previous?.batchSchedule === undefined) {
         return next;
     }

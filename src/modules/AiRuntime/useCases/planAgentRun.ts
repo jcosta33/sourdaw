@@ -30,6 +30,7 @@ const DEFERRED_CAPABILITY_POLICIES = [
 ] as const;
 
 type PlanAgentRunInput = {
+    metricGoalState?: string;
     request: string;
     revision: string;
     actions: readonly { type: string }[];
@@ -281,6 +282,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
     return {
         status: 'planned',
         plan: {
+            metricGoalState: input.metricGoalState,
             summary: input.actionLabels.join('\n'),
             commandIds: [],
             serializedBatchIdentity: null,
@@ -321,6 +323,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             ],
             stoppingConditions: [
                 'Stop before mutation if the project revision changes.',
+                'Stop before any fresh write unless positive literal intent or all compatible actual metric goals are verified. Objective metrics do not establish perceived sound quality.',
                 'Stop before mutation if capability, asset, budget, or command authority validation fails.',
                 'Stop when the approved command batch reaches a terminal receipt.',
                 ...(input.providerProposal?.stoppingConditions ?? []),

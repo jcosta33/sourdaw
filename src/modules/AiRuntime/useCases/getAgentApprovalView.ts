@@ -2,6 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
+import { type MetricGoalEvaluation } from '../models/MetricGoalAdmission';
 import {
     type PendingAppActionConfirmation,
     getPendingActionConfirmation,
@@ -9,7 +10,9 @@ import {
 import { diffProposalCommands } from '../transformers/diffProposalCommands';
 
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getProviderRouteView } from './getProviderRouteView';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
@@ -95,6 +98,10 @@ type ApprovalFreshness =
     | { status: 'settled'; currentRevision: string | null };
 
 export type AgentApprovalView = {
+    canConfirm: boolean;
+    metricGoals: Omit<MetricGoalEvaluation, 'criteria'> & {
+        criteria: ReadonlyArray<MetricGoalEvaluation['criteria'][number] & { criterionText: string }>;
+    };
     confirmationId: string;
     runId: string;
     status: ChatActionConfirmationStatus;
@@ -187,7 +194,15 @@ function getFreshness(confirmation: PendingAppActionConfirmation): ApprovalFresh
     }
     try {
         const validation = validateAgentRiskApproval({ approval: agentApproval, commandBatch, currentRevision });
-        if (validation.status === 'valid') {
+        const metric = evaluateMetricGoalAdmission({
+            state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+            commandBatch,
+            currentRevision,
+        });
+        if (
+            validation.status === 'valid' ||
+            (!validation.stale && metric.status === 'blocked' && validation.reason === metric.reason)
+        ) {
             return { status: 'current', currentRevision };
         }
         return { status: validation.stale ? 'stale' : 'mismatched', reason: validation.reason, currentRevision };
@@ -212,7 +227,12 @@ function getRePreviewAvailability(
     if (!confirmation.approvalSnapshot.commandBatch) {
         return { available: false, reason: 'The confirmation has no approved command batch to re-preview.' };
     }
-    if (freshness.status !== 'stale' && freshness.status !== 'mismatched') {
+    const batch = confirmation.approvalSnapshot.commandBatch;
+    const metric = evaluateMetricGoalAdmission({
+        state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+        commandBatch: batch,
+    });
+    if (freshness.status !== 'stale' && freshness.status !== 'mismatched' && metric.status !== 'blocked') {
         return { available: false, reason: 'The proposal still matches the current project.' };
     }
     return { available: true, reason: null };
@@ -368,7 +388,59 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
     if (measuredPreview?.revision === confirmation.projectRevision && measuredPreview.recipeSource !== undefined) {
         recipes.push(measuredPreview.recipeSource);
     }
+    let metricEvaluation: MetricGoalEvaluation = {
+        status: 'blocked',
+        failure: 'missing',
+        reason: 'This proposal has no command batch to verify.',
+        criteria: [],
+    };
+    if (commandBatch !== undefined) {
+        metricEvaluation = evaluateMetricGoalAdmission({
+            state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+            commandBatch,
+            currentRevision: freshness.currentRevision ?? undefined,
+        });
+    }
+    const metricGoals: AgentApprovalView['metricGoals'] = {
+        ...metricEvaluation,
+        criteria: metricEvaluation.criteria.map((criterion) => {
+            const names = (ids: readonly string[]) =>
+                ids
+                    .map((id) =>
+                        id === 'master'
+                            ? 'Master output'
+                            : (trackStore.value?.tracks.find((track) => track.id === id)?.name ?? id)
+                    )
+                    .map((name) => `“${name}”`)
+                    .join(', ');
+            const unit = criterion.unit ?? 'unavailable';
+            const range =
+                criterion.range === null
+                    ? 'range unavailable'
+                    : `beats ${String(criterion.range.startBeat)}–${String(criterion.range.endBeat)}`;
+            let source = 'Application objective policy';
+            if (criterion.source.kind === 'recipe')
+                source = `Recipe ${criterion.source.recipeId}, catalog ${String(criterion.source.catalogVersion)}, expectation ${String(criterion.source.expectationIndex + 1)}`;
+            if (criterion.source.kind === 'policy') source = criterion.source.policyId;
+            let reference = '';
+            if (criterion.referenceTargetIds.length > 0)
+                reference = `; current preview reference ${names(criterion.referenceTargetIds)}: ${criterion.reference.map(String).join(', ')} ${unit}`;
+            let tolerance = '';
+            if (criterion.relation === 'match-current')
+                tolerance = `; absolute difference ≤ ${String(criterion.tolerance)} LU (application objective policy)`;
+            return {
+                ...criterion,
+                criterionText: `${source}: ${criterion.metricId ?? 'unsupported metric'}${criterion.band === null ? '' : `, band ${criterion.band}`} on ${names(criterion.targetIds)}, ${range}; criterion ${criterion.relation}${tolerance}; actual baseline ${criterion.baseline.map(String).join(', ') || 'unavailable'} ${unit}; actual preview ${criterion.observed.map(String).join(', ') || 'unavailable'} ${unit}${reference}. ${criterion.status}.`,
+            };
+        }),
+    };
     return {
+        canConfirm:
+            confirmation.status === 'proposed' &&
+            freshness.status === 'current' &&
+            metricGoals.status !== 'blocked' &&
+            agentApproval !== undefined,
+        metricGoals,
         confirmationId: confirmation.id,
         runId: confirmation.runId,
         status: confirmation.status,

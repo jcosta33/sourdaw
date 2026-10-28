@@ -127,6 +127,7 @@ function bindBatchSchedule(input: MaterializePromptCommandPlanInput): AgentRunBa
     }
     return {
         ...structuredClone(planned),
+        metricGoalState: input.result.metricGoalState,
         interactionMode: input.interactionMode,
         trustCeiling: input.trustCeiling ?? null,
     };
@@ -157,6 +158,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
             intent: input.userText,
             projectRevision: input.projectRevision,
             requiresConfirmation: input.result.requiresConfirmation,
+            metricGoalState: input.result.metricGoalState,
             runId: input.runId,
             mode,
             protectedTargetIds: [...input.protectedTargetIds],
@@ -164,7 +166,8 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
         });
 
     if (input.interactionMode === 'plan') {
-        const plannedCommandBatch = compile('apply').commandBatch;
+        const plannedExecution = compile('apply');
+        const plannedCommandBatch = plannedExecution.commandBatch;
         const parsedPlannedBatch = parseVersionedCommandBatchEnvelope(
             plannedCommandBatch.serialized,
             plannedCommandBatch.authority
@@ -189,6 +192,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
             grants: planGrants,
             budgets: admittedRun.budgets,
             requiresConfirmation: false,
+            metricGoalState: plannedExecution.metricGoalState,
             applicationToolReceipts: input.result.applicationToolReceipts,
             providerProposal: input.result.providerProposal,
             providerKnownScope: getProviderKnownScope(planScope, input.result.providerKnownTargetIds),
@@ -284,6 +288,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
         grants: planGrants,
         budgets: admittedRun.budgets,
         requiresConfirmation: compiledActionExecution.requiresConfirmation,
+        metricGoalState: compiledActionExecution.metricGoalState,
         applicationToolReceipts: input.result.applicationToolReceipts,
         providerProposal: input.result.providerProposal,
         providerKnownScope: getProviderKnownScope(planScope, input.result.providerKnownTargetIds),

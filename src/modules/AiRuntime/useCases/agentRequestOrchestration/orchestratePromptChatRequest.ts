@@ -716,6 +716,7 @@ async function dispatchPromptPlan(input: {
                 matchSelectorPredicates: result.matchSelectorPredicates,
                 adoptedRecipes: result.adoptedRecipes,
                 measuredPreview: result.measuredPreview,
+                metricGoalState: compiledActionExecution.metricGoalState,
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
                 protectionFacts,

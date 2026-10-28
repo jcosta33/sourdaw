@@ -18,8 +18,12 @@ import { persistPromptActionConfirmation } from './agentRequestOrchestration/per
 import { retireSupersededConfirmation } from './agentRequestOrchestration/retireSupersededConfirmation';
 import { revalidateApprovedMatchSelectors } from './agentRequestOrchestration/revalidateApprovedMatchSelectors';
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
+import { getProjectContext } from './getProjectContext';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { prepareMetricGoalPreview } from './prepareMetricGoalPreview';
 
 type ReproposePendingChatActionsInput = {
     confirmationId: string;
@@ -234,7 +238,7 @@ function selectIncludedPlan(
  * Re-anchor a batch to the live project: refresh it onto the current revision, mint the exact
  * risk approval binding that revision earns, and read back the envelope the caller records.
  */
-function rebindToCurrentProject(workingBatch: WorkingBatch) {
+function rebindToCurrentProject(workingBatch: WorkingBatch, metricGoalState: string | undefined) {
     const refreshed = refreshVersionedCommandBatchForApproval(workingBatch);
     if (refreshed.status === 'conflicted') {
         return { status: 'conflicted' as const, reason: refreshed.reason };
@@ -244,7 +248,16 @@ function rebindToCurrentProject(workingBatch: WorkingBatch) {
     }
     let approval: ReturnType<typeof compileAgentRiskApproval>;
     try {
-        approval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch, requireExplicitApproval: true });
+        approval = compileAgentRiskApproval({
+            commandBatch: refreshed.commandBatch,
+            requireExplicitApproval: true,
+            metricGoalState: JSON.stringify(
+                bindMetricGoalsToBatch({
+                    state: metricGoalStateCodec(metricGoalState),
+                    commandBatch: refreshed.commandBatch,
+                })
+            ),
+        });
     } catch (error) {
         return { status: 'rejected' as const, reason: failureReason(error) };
     }
@@ -324,11 +337,12 @@ export async function reproposePendingChatActions(
         includedOriginalCommandIds = selected.includedOriginalCommandIds;
     }
 
-    const rebound = rebindToCurrentProject(workingBatch);
+    const rebound = rebindToCurrentProject(workingBatch, confirmation.approvalSnapshot.metricGoalState);
     if (rebound.status !== 'rebound') {
         return rebound;
     }
-    const { approval, parsed: parsedRefreshed, refreshed } = rebound;
+    const { parsed: parsedRefreshed, refreshed } = rebound;
+    let approval = rebound.approval;
 
     const { actions, actionLabels, includedActionIndexes } = selectIncludedPlan(
         confirmation,
@@ -338,6 +352,62 @@ export async function reproposePendingChatActions(
     const carriedSelection = resolveCarriedSelection(confirmation, actions, includedActionIndexes, selectsSubset);
     if (carriedSelection.status === 'rejected') {
         return carriedSelection;
+    }
+    let goalState = metricGoalStateCodec(approval.metricGoalState);
+    if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
+        if (selectsSubset) goalState = { ...goalState, proofs: [] };
+        let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+        try {
+            refreshedProof = await prepareMetricGoalPreview({
+                state: goalState,
+                commandBatch: refreshed.commandBatch,
+                context: getProjectContext(),
+                prompt: confirmation.prompt,
+                runId: confirmation.runId,
+            });
+        } catch (error) {
+            return { status: 'rejected', reason: failureReason(error) };
+        }
+        const live = getPendingActionConfirmation(confirmation.id);
+        const liveRun = agentRunLifecycle.get(confirmation.runId);
+        if (
+            live?.status !== 'proposed' ||
+            live.supersededBy !== null ||
+            live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
+            liveRun === null ||
+            TERMINAL_RUN_PHASES.has(liveRun.phase)
+        ) {
+            return {
+                status: 'rejected',
+                reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
+            };
+        }
+        goalState = refreshedProof.state;
+        approval = compileAgentRiskApproval({
+            commandBatch: refreshed.commandBatch,
+            requireExplicitApproval: true,
+            metricGoalState: JSON.stringify(goalState),
+        });
+        if (liveRun.plan !== null) {
+            agentRunLifecycle.recordPlan({
+                runId: liveRun.runId,
+                summary: liveRun.plan.summary,
+                commandIds: liveRun.plan.commandIds,
+                serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
+                revision: refreshed.currentRevision,
+                scope: liveRun.scope,
+                grants: liveRun.grants,
+                budgets: liveRun.budgets,
+                plan: {
+                    ...liveRun.plan,
+                    metricGoalState: approval.metricGoalState ?? undefined,
+                    applicationToolReceipts: [
+                        ...(liveRun.plan.applicationToolReceipts ?? []),
+                        ...refreshedProof.receipts,
+                    ],
+                },
+            });
+        }
     }
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
@@ -356,6 +426,7 @@ export async function reproposePendingChatActions(
         commandEnvelopes: refreshed.commandEnvelopes,
         commandBatch: refreshed.commandBatch,
         agentApproval: approval,
+        metricGoalState: approval.metricGoalState ?? undefined,
         affectedIds: [...carriedSelection.affectedIds],
         protectedUnchanged: confirmation.protectedUnchanged,
         // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded

@@ -4,21 +4,92 @@ import { type ToolCallResult } from '../models/ToolCallResult';
 
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
+import { admitMetricIntent } from './admitMetricIntent';
+import { type MetricIntentCatalog } from './prepareMetricIntentCatalog';
 
 export function admitPlanningInterpretation(input: {
     creative: CreativeInterpretationCatalog;
     answer: AnswerInterpretationCatalog;
     call: ToolCallResult;
     projectRevision: string;
+    metric?: MetricIntentCatalog;
+    turn?: number;
 }) {
-    const { answer, ...legacyArguments } = input.call.arguments;
+    const { answer, metricIntent, ...legacyArguments } = input.call.arguments;
     if (answer === undefined || answer === null) {
+        if (metricIntent !== undefined && metricIntent !== null && input.metric === undefined) {
+            return { status: 'rejected' as const, reason: 'Metric interpretation has no published catalog.' };
+        }
+        if (legacyArguments.modeId === 'literal') {
+            if (
+                input.metric === undefined ||
+                legacyArguments.catalogId !== input.creative.catalogId ||
+                legacyArguments.uncertainty !== 'none' ||
+                Object.keys(legacyArguments).length !== 7 ||
+                !['targetCandidateIds', 'editDimensionCandidateIds', 'constraintCandidateIds', 'creationSlotIds'].every(
+                    (key) => {
+                        const entries = legacyArguments[key];
+                        return Array.isArray(entries) && entries.length === 0;
+                    }
+                )
+            ) {
+                return {
+                    status: 'rejected' as const,
+                    reason: 'Literal metric intake cannot grant creative authority.',
+                };
+            }
+            const admitted = admitMetricIntent({
+                catalog: input.metric,
+                value: metricIntent,
+                creativeAuthority: null,
+                callId: input.call.id ?? '',
+                turn: input.turn ?? 0,
+            });
+            if (admitted.status !== 'admitted') {
+                return admitted;
+            }
+            if (admitted.authority.kind !== 'literal') {
+                return {
+                    status: 'rejected' as const,
+                    reason: 'Literal mode requires positive whole-request literal intent.',
+                };
+            }
+            return { status: 'admitted' as const, kind: 'literal' as const, metricAuthority: admitted.authority };
+        }
         const result = admitCreativeInterpretation({
             catalog: input.creative,
             call: { ...input.call, arguments: legacyArguments },
             projectRevision: input.projectRevision,
         });
-        return result.status === 'admitted' ? { ...result, kind: 'creative' as const } : result;
+        if (result.status !== 'admitted') {
+            return result;
+        }
+        if (metricIntent === undefined || metricIntent === null) {
+            return { ...result, kind: 'creative' as const };
+        }
+        if (input.metric === undefined) {
+            return { status: 'rejected' as const, reason: 'Metric interpretation has no captured catalog.' };
+        }
+        const admitted = admitMetricIntent({
+            catalog: input.metric,
+            value: metricIntent,
+            creativeAuthority: result.authority,
+            callId: input.call.id ?? '',
+            turn: input.turn ?? 0,
+        });
+        if (admitted.status !== 'admitted') {
+            return admitted;
+        }
+        if (admitted.authority.kind === 'literal') {
+            return {
+                status: 'rejected' as const,
+                reason: 'A literal intake must use the isolated literal control mode.',
+            };
+        }
+        return { ...result, kind: 'creative' as const, metricAuthority: admitted.authority };
+    }
+    if (metricIntent !== undefined && metricIntent !== null) {
+        return { status: 'rejected' as const, reason: 'Answer and mutation metric intent cannot be mixed.' };
     }
     if (
         typeof answer !== 'object' ||
@@ -37,7 +108,7 @@ export function admitPlanningInterpretation(input: {
     }
     const keys = Object.keys(input.call.arguments);
     if (
-        keys.length !== 8 ||
+        keys.length !== (Object.hasOwn(input.call.arguments, 'metricIntent') ? 9 : 8) ||
         !keys.every((key) =>
             [
                 'catalogId',
@@ -48,6 +119,7 @@ export function admitPlanningInterpretation(input: {
                 'constraintCandidateIds',
                 'creationSlotIds',
                 'answer',
+                'metricIntent',
             ].includes(key)
         ) ||
         Object.hasOwn(answer, 'catalogId')

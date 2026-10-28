@@ -1,4 +1,5 @@
 import { type AdoptedRecipe } from './AdoptedRecipe';
+import { type MetricPreviewProvenance } from './MetricGoalAdmission';
 
 /** One objective figure as an agent measurement reports it: read from the audio, or why it could not be. */
 export type MeasuredMetricEntry =
@@ -35,6 +36,8 @@ export type MeasuredPreviewTarget = {
  * hashes the same.
  */
 export type MeasuredPreview = {
+    /** App-only source projection; legacy figures without actual renders cannot approve an acoustic goal. */
+    readonly provenance?: MetricPreviewProvenance;
     /** Application-authored identity of the retained expansion this exact preview measured. */
     readonly recipeSource?: AdoptedRecipe;
     readonly scope:

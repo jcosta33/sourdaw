@@ -22,14 +22,17 @@ import {
     setChatMode,
     stopGenerating,
 } from '../../stores/chatStore';
+import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
+import { getAgentApprovalView } from '../../useCases/getAgentApprovalView';
 import { agentRunControls } from '../../useCases/getAgentRunControlProjection';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
 import { recoverAgentRunPendingEffects } from '../../useCases/recoverAgentRunPendingEffects';
+import { reproposePendingChatActions } from '../../useCases/reproposePendingChatActions';
 import { selectRetainedSectionRenderManualReviews } from '../../useCases/selectRetainedSectionRenderManualReviews';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { AgentRunDecisionControls } from '../components/AgentRunDecisionControls';
@@ -127,6 +130,14 @@ const ChatMessageItem = ({
 
     const pendingConfirmationId =
         msg.pendingActionConfirmationStatus === 'proposed' ? msg.pendingActionConfirmationId : undefined;
+    const pendingState = useStore(pendingActionConfirmationStore);
+    let approval: ReturnType<typeof getAgentApprovalView> = null;
+    if (
+        pendingConfirmationId !== undefined &&
+        pendingState?.confirmations.some((confirmation) => confirmation.id === pendingConfirmationId)
+    ) {
+        approval = getAgentApprovalView({ confirmationId: pendingConfirmationId });
+    }
     const retryableFollowUpId =
         msg.pendingActionFollowUpStatus === 'retryable' ? msg.pendingActionConfirmationId : undefined;
 
@@ -158,6 +169,17 @@ const ChatMessageItem = ({
                     <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                 )}
                 {msg.answerEvidence ? <AnswerEvidenceDisclosure evidence={msg.answerEvidence} /> : null}
+                {approval === null ? null : (
+                    <div aria-label="Metric goal verification">
+                        <p>{`Objective verification: ${approval.metricGoals.status}`}</p>
+                        {approval.metricGoals.reason === null ? null : <p>{approval.metricGoals.reason}</p>}
+                        <ul>
+                            {approval.metricGoals.criteria.map((criterion) => (
+                                <li key={`${criterion.stepId}:${criterion.goalId}`}>{criterion.criterionText}</li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
                 {pendingConfirmationId ? (
                     <Row gap={2} className="mt-3 border-t border-emerald-500/20 pt-2">
                         <Button
@@ -165,6 +187,7 @@ const ChatMessageItem = ({
                             variant="secondary"
                             onClick={() => onConfirmPendingActions(pendingConfirmationId)}
                             aria-label="Confirm pending actions"
+                            disabled={approval?.canConfirm !== true}
                             className="h-7 gap-1.5 text-[11px]"
                         >
                             <Check className="size-3" />
@@ -179,6 +202,17 @@ const ChatMessageItem = ({
                         >
                             <X className="size-3" />
                             Cancel
+                        </Button>
+                        <Button
+                            size="xs"
+                            variant="ghost"
+                            aria-label="Re-preview pending actions"
+                            disabled={approval?.rePreview.available !== true}
+                            onClick={() => {
+                                void reproposePendingChatActions({ confirmationId: pendingConfirmationId });
+                            }}
+                        >
+                            Re-preview
                         </Button>
                     </Row>
                 ) : null}

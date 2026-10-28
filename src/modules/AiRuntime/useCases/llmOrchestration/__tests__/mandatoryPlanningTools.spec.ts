@@ -58,6 +58,7 @@ import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSch
 import { getProjectContext } from '../../getProjectContext';
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
+import { prepareMetricIntentCatalog } from '../../prepareMetricIntentCatalog';
 import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 
@@ -125,7 +126,12 @@ function productionToolSchemas(
     return projectPlanningProviderToolSchemas(
         [
             ...getPlanningProviderToolSchemas(),
-            createPlanningInterpretationToolSchema({ creative: catalog, answer, binding: actualBinding }),
+            createPlanningInterpretationToolSchema({
+                creative: catalog,
+                answer,
+                metric: prepareMetricIntentCatalog({ prompt, answer }),
+                binding: actualBinding,
+            }),
         ],
         'planning'
     );

@@ -38,6 +38,7 @@ import {
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
+import { MAX_METRIC_GOAL_STATE_BYTES } from '../models/MetricGoalAdmission';
 import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import {
     THREAD_COMMIT_STANDINGS,
@@ -1359,6 +1360,12 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     if (requestProtections !== undefined && requestProtections !== null) {
         schedule.requestProtections = requestProtections;
     }
+    if (
+        typeof value.metricGoalState === 'string' &&
+        new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+    ) {
+        schedule.metricGoalState = value.metricGoalState;
+    }
     return schedule;
 }
 
@@ -1511,6 +1518,11 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               commandIds,
               serializedBatchIdentity,
               applicationToolReceipts,
+              metricGoalState:
+                  typeof value.metricGoalState === 'string' &&
+                  new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+                      ? value.metricGoalState
+                      : undefined,
               revision,
               classification,
               showPlanPanel,

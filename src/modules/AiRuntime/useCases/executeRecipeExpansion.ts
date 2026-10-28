@@ -1,7 +1,9 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { digest } from '#/utils/canonicalDigest';
 
 import { RECIPE_EXPANSION_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type MetricRecipeSource } from '../models/MetricGoalAdmission';
 import { type ProjectContext } from '../models/ProjectContext';
 import { type AdoptedRecipe, type RetainedCommand, type RetainedCompilation } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
@@ -14,6 +16,7 @@ type RecipeExpansionResult = {
     receipt: ApplicationToolReceipt;
     commands: readonly RetainedCommand[] | null;
     recipe: AdoptedRecipe | null;
+    metricRecipe?: MetricRecipeSource;
 };
 
 /**
@@ -57,16 +60,36 @@ export function executeRecipeExpansion(input: {
     if (expansion.status === 'refused') {
         return failure(expansion.reason);
     }
+    const catalog = getMixRecipeCatalog();
+    const authored = catalog.recipes.find(
+        (recipe) => recipe.id === expansion.recipe.recipeId && recipe.origin === undefined
+    );
+    let metricRecipe: MetricRecipeSource | undefined;
+    if (authored !== undefined) {
+        metricRecipe = {
+            recipeId: authored.id,
+            targetId: expansion.recipe.targetId,
+            catalogVersion: catalog.version,
+            recipeDigest: digest(authored),
+            expectations: authored.metrics.map((expectation) => ({
+                metric: expectation.metric,
+                band: expectation.band ?? null,
+                direction: expectation.direction,
+            })),
+        };
+    }
     const retained: RetainedCompilation = {
         kind: 'recipe',
         callId,
         revision,
         commands: expansion.commands,
         recipe: expansion.recipe,
+        metricRecipe,
     };
     return {
         commands: expansion.commands,
         recipe: expansion.recipe,
+        metricRecipe,
         receipt: {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
@@ -84,6 +107,7 @@ export function executeRecipeExpansion(input: {
                 targetId: expansion.recipe.targetId,
                 commands: materializeTransformToolCalls([retained]),
                 values: expansion.values,
+                metricExpectations: metricRecipe ?? null,
             },
             summary: `Expanded recipe ${expansion.recipe.recipeId} into ${String(expansion.commands.length)} ordinary command(s).`,
             warnings: [],

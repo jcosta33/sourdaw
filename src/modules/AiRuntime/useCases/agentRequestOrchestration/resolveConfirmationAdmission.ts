@@ -15,7 +15,9 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
 import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderRetry';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
@@ -66,6 +68,9 @@ function hasSameAdmissionBinding(
         current.runId === admitted.runId &&
         current.status === admitted.status &&
         current.projectRevision === admitted.projectRevision &&
+        current.approvalSnapshot.metricGoalState === admitted.approvalSnapshot.metricGoalState &&
+        current.approvalSnapshot.agentApproval?.metricGoalState ===
+            admitted.approvalSnapshot.agentApproval?.metricGoalState &&
         currentBatch?.serialized === admittedBatch?.serialized &&
         (currentBatch === undefined ||
             admittedBatch === undefined ||
@@ -304,7 +309,13 @@ async function resolveConfirmationAdmission(input: {
                 result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation),
             };
         }
-        const agentApproval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch });
+        const metricGoalState = JSON.stringify(
+            bindMetricGoalsToBatch({
+                state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+                commandBatch: refreshed.commandBatch,
+            })
+        );
+        const agentApproval = compileAgentRiskApproval({ commandBatch: refreshed.commandBatch, metricGoalState });
         const rebound = refreshPendingActionConfirmationApproval({
             agentApproval,
             commandBatch: refreshed.commandBatch,

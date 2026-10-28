@@ -2,6 +2,8 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { type CreativeInterpretationCatalog } from '../models/CreativeInterpretation';
 import { type PlanningContextBinding, type PlanningContextObject } from '../models/PlanningContextBinding';
 
+import { type MetricIntentCatalog } from './prepareMetricIntentCatalog';
+
 function collectCandidateObjectFacts(
     creative: CreativeInterpretationCatalog,
     answer: AnswerInterpretationCatalog
@@ -77,7 +79,8 @@ function collectCandidateObjectFacts(
 export function createPlanningCandidateView(
     creative: CreativeInterpretationCatalog,
     answer: AnswerInterpretationCatalog,
-    binding: PlanningContextBinding
+    binding: PlanningContextBinding,
+    metric?: MetricIntentCatalog
 ) {
     if (!binding.authorityComplete) {
         throw new Error('Incomplete production authority cannot be disclosed through candidate fallback.');
@@ -172,5 +175,19 @@ export function createPlanningCandidateView(
         scopes,
         ranges,
         fallback,
+        metricObjectives:
+            metric?.objectives.map((objective) => [
+                objective.id,
+                objective.label,
+                objective.eligibleScopeIds,
+                objective.goals.map((goal) => [
+                    goal.metricId,
+                    goal.band,
+                    goal.relation,
+                    goal.targetValue,
+                    goal.tolerance,
+                    goal.source,
+                ]),
+            ]) ?? [],
     };
 }

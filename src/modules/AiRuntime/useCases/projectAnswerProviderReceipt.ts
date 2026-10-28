@@ -9,7 +9,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Called only after the genuine receipt passed its byte/status admission; never metric authority. */
 export function projectAnswerProviderReceipt(
     receipt: ApplicationToolReceipt,
-    authority: AnswerRequestAuthority
+    authority: Pick<AnswerRequestAuthority, 'kind' | 'catalogId'> | { kind: 'metric-intent'; catalogId: string }
 ): ApplicationToolReceipt {
     if (receipt.status !== 'success' || !isRecord(receipt.data)) {
         return receipt;
@@ -18,6 +18,19 @@ export function projectAnswerProviderReceipt(
     if (data.kind === authority.kind && data.catalogId === authority.catalogId && isRecord(data.range)) {
         const { sectionId: _sectionId, ...range } = data.range;
         return { ...receipt, data: { ...data, range } };
+    }
+    if (data.kind === 'metric-intent' && data.catalogId === authority.catalogId && Array.isArray(data.goals)) {
+        return {
+            ...receipt,
+            data: {
+                ...data,
+                goals: data.goals.map((goal: unknown) => {
+                    if (!isRecord(goal) || !isRecord(goal.range)) return goal;
+                    const { sectionId: _sectionId, ...range } = goal.range;
+                    return { ...goal, range };
+                }),
+            },
+        };
     }
     if (data.kind === 'analysis-measurement' && isRecord(data.range)) {
         const { sectionId: _sectionId, ...range } = data.range;

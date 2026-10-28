@@ -25,7 +25,9 @@ type CompilePreviewMeasurementProposalInput = {
     callId: string;
     /** An uncompiled semantic list, or the exact application-retained recipe commands. */
     source:
-        { proposal: Readonly<Record<string, unknown>> } | { recipe: Extract<RetainedCompilation, { kind: 'recipe' }> };
+        | { proposal: Readonly<Record<string, unknown>> }
+        | { recipe: Extract<RetainedCompilation, { kind: 'recipe' }> }
+        | { preparedBatch: CommandBatchEnvelope };
     context: ProjectContext;
     prompt: string;
     revision: string;
@@ -176,6 +178,26 @@ function withPreviewColor(action: AdmittedAction): AdmittedAction {
 export function compilePreviewMeasurementProposal(
     input: CompilePreviewMeasurementProposalInput
 ): CompiledPreviewProposal {
+    if ('preparedBatch' in input.source) {
+        const envelope = input.source.preparedBatch;
+        if (envelope.baseRevision !== input.revision || envelope.runId !== input.runId) {
+            return { status: 'rejected', reason: 'The prepared preview batch has a different run or revision.' };
+        }
+        return {
+            status: 'compiled',
+            envelope,
+            commands: envelope.commands.map((command, index) => ({
+                key: String(index),
+                stepId: command.commandId,
+                operation: command.operation,
+                arguments: command.arguments,
+                reason: 'Application-requested proof refresh of the exact prepared batch.',
+                expectedEffect: '',
+                binding: null,
+                dependencyKeys: [],
+            })),
+        };
+    }
     const retained = 'recipe' in input.source ? input.source.recipe : compileSemanticList(input, input.source.proposal);
     if ('status' in retained) {
         return retained;
