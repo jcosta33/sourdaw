@@ -1,0 +1,34 @@
+tests/e2e/entryLoadRecovery.spec.ts
+  s_29d8df116c5b92::t_3eb365bf91797e 2,4,10-26,39-42,44-52,55-65,68-71,160,257,290
+  s_29d8df116c5b92::t_1fc6fd839346af 1,27-29,36-38,54,67,82,159,206,240,252-254,258-264,269,277-279,283,286-288
+  s_29d8df116c5b92::t_12339cc298c533 3,5-9,72-81,83-101,134-158,161-205,207-239,241-251,255-256,265-268,270-276,280-282,284-285,289
+  s_29d8df116c5b92::t_032d49847cbeff 30-35,43,53,66
+  s_29d8df116c5b92::t_04da848cbcdd41 102-133
+  s_29d8df116c5b92::t_442ec666f0b067 291-293
+src/app/main.tsx
+  s_29d8df116c5b92::t_682708ce3f0b1a 5-8
+public/entryLoadRecovery.js
+  s_29d8df116c5b92::t_682708ce3f0b1a 1-51,53-55,61-76
+  s_29d8df116c5b92::t_0654f87d620729 52,56-60
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_29d8df116c5b92::t_da5589f22a6903 273,294-299
+index.html
+  s_29d8df116c5b92::t_682708ce3f0b1a 12,15-29
+  s_29d8df116c5b92::t_689833e2b7669e 30-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c29e6693562f2c256afec9ebb2b5f06955e609e",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
