@@ -1,0 +1,118 @@
+src/modules/AiRuntime/models/MeasuredPreview.ts
+  s_3168504f6ce387::t_027939b6459e6e 2,38-39
+  s_3168504f6ce387::t_4ee1c725974b74 1
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_3168504f6ce387::t_60eeca204d3869 54-81,83-95
+  s_3168504f6ce387::t_2ccdc9fdee158b 82
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_3168504f6ce387::t_ccc46e3348dade 333-353
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_3168504f6ce387::t_2b926b3ade4915 107-154
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_26f70b851e8f7a::t_86776d2eb1a042 419-440
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_59e31a5c6f3e31::t_2b327852f5509d 24-29,33,37,41
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_59e31a5c6f3e31::t_a0bf3d913738bb 13
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_3168504f6ce387::t_513d3d99b008b9 15,48,50,325-351,360,362-402,533,674,676,678-679,704-727,775-782,786-788,1026-1062,1069-1097,1099-1101,1102-1122,1128-1259
+src/modules/AiRuntime/useCases/__tests__/recipePreviewSource.spec.ts
+  s_3168504f6ce387::t_003c836bdcfdb9 1-11,12-66,68-70,71-79,81-96,102-177,188-209
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_59e31a5c6f3e31::t_b2965123f583fc 291,295
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_26f70b851e8f7a::t_d111ce5d50b2a9 249-255,1345,1419-1425,2371
+  s_3168504f6ce387::t_4896bfb64372f7 2062
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  s_3168504f6ce387::t_17d8d4a5692eae 7-12,26-28,42-47,172-173,179-196,198,204,208,215-221
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  s_3168504f6ce387::t_4cc8103fdea0e1 86,110
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_3168504f6ce387::t_2c36ac7cd2e777 19,49,53-54,192,248-258,261-267,276-278,281,331-336,371,408
+  s_3168504f6ce387::t_56a1ae8779b021 174-183,200-209
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_3168504f6ce387::t_aa3362f215cf70 525-529,540-554,558,559,579-613
+src/modules/AiRuntime/useCases/parseAnalysisMeasureArguments.ts
+  s_3168504f6ce387::t_a1b88ca8578570 13-14,16-19,105,107,109,112-114,134,138,141,145
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3168504f6ce387::t_3818d84df8fab0 777,800
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_3168504f6ce387::t_959521a3091b6e 373-374
+src/modules/AiRuntime/models/AdoptedRecipe.ts
+  s_3168504f6ce387::t_4ee1c725974b74 1-6
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  s_3168504f6ce387::t_4ee1c725974b74 1,3-4
+  s_3168504f6ce387::t_c8f655521787ab 2
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_3168504f6ce387::t_532e3c63f16833 544-551,557
+  s_3168504f6ce387::t_dcd13bcdbb0dcc 552-556
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_3168504f6ce387::t_56a1ae8779b021 367
+src/modules/AiRuntime/useCases/__tests__/formatReceiptContext.spec.ts
+  s_26f70b851e8f7a::t_842b5239b74ace 1-8,15-16,23-25,29-55,57-65,67-72,78-81,83-84,101,103-105,108-139,141-142,144-147,151-155,159-161,165-166,169-170
+  s_29d8df116c5b92::t_0e972384dd3809 9-14,17-22,26-28,56,66,73-77,82,85-100,102,106-107,140,143,148-150,156-158,162-164,167-168
+src/modules/AiRuntime/useCases/formatReceiptContext.ts
+  s_3168504f6ce387::t_7caeab9a3bfb29 1-16,22-24,28,42,123-125,127-128,131-133,135,138-153,160-161,168-169,181,190,191,202,208,218,236-238,242,248,260
+  s_3168504f6ce387::t_bc6f08704eed04 17-21,25-27,29-35,39-41,43-48,51,53-58,60-65,68-74,77-79,84,86-89,93-97,99-107,122-172,222-235,239-247
+  s_3168504f6ce387::t_a65d46c1bdecfd 179-181,187-189
+src/modules/AiRuntime/useCases/__tests__/receiptTextBudget.spec.ts
+  s_3168504f6ce387::t_34dbc33025887d 1-2,7-9,13,21-23,27-53,57-67
+  s_3168504f6ce387::t_05284c05a9f7e2 6,16-18,24-26,54-56
+  s_3168504f6ce387::t_de3ef2bb81a08d 88
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_567a084d0540c4::t_49bd029a9e9f0b 2218-2219,2227-2230
+src/modules/AiRuntime/useCases/__tests__/receiptContextFixture.ts
+  s_3168504f6ce387::t_e4742aae222f61 1-106
+src/modules/AiRuntime/useCases/__tests__/retainedTransformLocalContext.integration.spec.ts
+  s_3168504f6ce387::t_404df2df52f9cf 29,34,213
+src/modules/AiRuntime/useCases/__tests__/transientOnsetRead.spec.ts
+  s_3168504f6ce387::t_c2a9080a3418df 29-30,97,99-109,111,140-145,147-151,153,155,724,757-758,782-816,832-834,837-844,867-869,873-892,905-910
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a39b1ce68c9d834e25f3b52fec6f844abb6e0f1",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
