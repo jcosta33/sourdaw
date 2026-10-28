@@ -1,0 +1,20 @@
+src/modules/CrdtDocument/useCases/__tests__/replaceCrdtDoc.spec.ts
+  h_beb54bf43b47b7 23-32
+src/modules/CrdtDocument/useCases/replaceCrdtDoc.ts
+  h_beb54bf43b47b7 10,21
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackVcaSection.command.integration.spec.tsx
+  h_beb54bf43b47b7 20,25,192-193,201,206-210
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackVcaSection.spec.tsx
+  h_beb54bf43b47b7 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d84e7fb3d086f6deb3ab16360d5063f7c85a2b74",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
