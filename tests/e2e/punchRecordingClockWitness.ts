@@ -298,6 +298,7 @@ export async function bindPunchRecordingClockWitness(page: Page, trackId: string
         ) {
             throw new TypeError('Punch clock source modules did not expose their expected contracts');
         }
+        const captureGestureBeat = gestureModule.captureGestureBeat;
         const host = window as DiagnosticWindow;
         const state = host.__punchRecordingClockWitness;
         if (!state) {
@@ -314,7 +315,7 @@ export async function bindPunchRecordingClockWitness(page: Page, trackId: string
             trackCompensationSeconds: compensation,
         };
         state.readOutput = () => {
-            const gestureBeat: unknown = Reflect.apply(gestureModule.captureGestureBeat, undefined, []);
+            const gestureBeat: unknown = Reflect.apply(captureGestureBeat, undefined, []);
             const playhead: unknown = playheadModule.playheadClockRef;
             const wraps: unknown = wrapModule.playheadWrapCountRef;
             const transport: unknown = transportModule.transportStore;

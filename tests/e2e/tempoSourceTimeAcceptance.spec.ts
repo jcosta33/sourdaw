@@ -200,7 +200,11 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
                 import('/src/modules/Project/stores/projectStore.ts'),
                 import('/src/modules/AudioEngine/stores/audioBufferCache.ts'),
             ]);
-            const document = getCrdtDoc('root');
+            const document = getCrdtDoc<{
+                tracks?: Pick<NonNullable<typeof trackStore.value>, 'tracks'>;
+                takeLanes?: NonNullable<typeof takeLaneStore.value>;
+                tempoMap?: NonNullable<typeof tempoMapStore.value>;
+            }>('root');
             const project = projectStore.value;
             const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio');
             const rawTrack = document?.tracks?.tracks.find((entry) => entry.id === track?.id);
