@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MidiDevicePicker } from '../MidiDevicePicker';
@@ -117,7 +117,9 @@ describe('MidiDevicePicker', () => {
         expect(screen.queryByText('MIDI not supported in this browser')).not.toBeInTheDocument();
 
         expect(mockInitWebMidi).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
+        await act(async () => {
+            fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
+        });
         expect(mockInitWebMidi).toHaveBeenCalledTimes(1);
     });
 

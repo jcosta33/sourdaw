@@ -58,6 +58,7 @@ describe('Web MIDI capability snapshot at repository startup', () => {
 
     afterEach(() => {
         vi.unstubAllGlobals();
+        localStorage.removeItem('sourdaw:midi:selectedInputId:web-midi');
         if (originalSourdaw) {
             Object.defineProperty(window, 'sourdaw', originalSourdaw);
         } else {
@@ -170,5 +171,99 @@ describe('Web MIDI capability snapshot at repository startup', () => {
         if (desktop) {
             expect(desktopInvokeMock).not.toHaveBeenCalled();
         }
+    });
+    it('does not install a browser grant that resolves after teardown', async () => {
+        const permission = deferred<ReturnType<typeof browserAccess>>();
+        const requestMIDIAccess = vi
+            .fn()
+            .mockRejectedValueOnce(new Error('Permission denied'))
+            .mockReturnValueOnce(permission.promise);
+        vi.stubGlobal('navigator', { requestMIDIAccess });
+        localStorage.setItem('sourdaw:midi:selectedInputId:web-midi', 'preferred');
+        const { initWebMidi } = await import('../initWebMidi');
+        const { destroyWebMidi } = await import('../destroyWebMidi');
+        const { webMidiRuntime } = await import('../../state');
+        const { webMidiStore } = await import('../../../../stores/webMidiStore');
+        const callback = vi.fn();
+        expect(await initWebMidi({ onMidiMessage: callback })).toBe(false);
+        const retry = initWebMidi({ onMidiMessage: callback });
+        const access = browserAccess('preferred');
+        const input = access.inputs.get('preferred')!;
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
+        permission.resolve(access);
+        expect(await retry).toBe(false);
+        expect(webMidiRuntime.midiAccess).toBeNull();
+        expect(webMidiRuntime.activeInput).toBeNull();
+        expect(webMidiRuntime.midiMessageListener).toBeNull();
+        expect(access.onstatechange).toBeNull();
+        expect(input.addEventListener).not.toHaveBeenCalled();
+        expect(webMidiStore.value).toMatchObject({
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: 'Permission denied',
+        });
+        input.dispatchEvent(new Event('midimessage'));
+        expect(callback).not.toHaveBeenCalled();
+        expect(localStorage.getItem('sourdaw:midi:selectedInputId:web-midi')).toBe('preferred');
+    });
+
+    it.each([
+        { desktop: false, route: 'browser' },
+        { desktop: true, route: 'desktop' },
+    ])('ignores a late rejection after teardown on the $route route', async ({ desktop }) => {
+        setDesktopMarker(desktop);
+        const permission = deferred<never>();
+        const requestMIDIAccess = vi
+            .fn()
+            .mockRejectedValueOnce(new Error('Permission denied'))
+            .mockReturnValueOnce(permission.promise);
+        vi.stubGlobal('navigator', { requestMIDIAccess });
+        if (desktop) desktopInvokeMock.mockRejectedValueOnce(new Error('native denied'));
+        const { initWebMidi } = await import('../initWebMidi');
+        const { destroyWebMidi } = await import('../destroyWebMidi');
+        const { webMidiStore } = await import('../../../../stores/webMidiStore');
+        expect(await initWebMidi({ onMidiMessage: vi.fn() })).toBe(false);
+        const retry = initWebMidi({ onMidiMessage: vi.fn() });
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
+        const stateAfterDestroy = webMidiStore.value;
+        desktopInvokeMock.mockClear();
+        permission.reject(new Error('late denial'));
+        expect(await retry).toBe(false);
+        expect(webMidiStore.value).toEqual(stateAfterDestroy);
+        expect(desktopInvokeMock).not.toHaveBeenCalled();
+    });
+
+    it('preserves a fresh successor when an older grant settles after teardown', async () => {
+        const permission = deferred<ReturnType<typeof browserAccess>>();
+        const successor = browserAccess('successor');
+        const oldAccess = browserAccess('old');
+        const requestMIDIAccess = vi
+            .fn()
+            .mockRejectedValueOnce(new Error('Permission denied'))
+            .mockReturnValueOnce(permission.promise)
+            .mockResolvedValueOnce(successor);
+        vi.stubGlobal('navigator', { requestMIDIAccess });
+        const { initWebMidi } = await import('../initWebMidi');
+        const { destroyWebMidi } = await import('../destroyWebMidi');
+        const { webMidiRuntime } = await import('../../state');
+        const { webMidiStore } = await import('../../../../stores/webMidiStore');
+        const oldCallback = vi.fn();
+        const successorCallback = vi.fn();
+        expect(await initWebMidi({ onMidiMessage: oldCallback })).toBe(false);
+        const retry = initWebMidi({ onMidiMessage: oldCallback });
+        destroyWebMidi({ getTrackStrip: () => undefined, releaseNativeNote: () => {} });
+        expect(await initWebMidi({ onMidiMessage: successorCallback })).toBe(true);
+        const listener = webMidiRuntime.midiMessageListener;
+        permission.resolve(oldAccess);
+        expect(await retry).toBe(false);
+        expect(webMidiRuntime.midiAccess).toBe(successor);
+        expect(webMidiRuntime.activeInput?.id).toBe('successor');
+        expect(webMidiRuntime.midiMessageListener).toBe(listener);
+        expect(webMidiStore.value).toMatchObject({ selectedInputId: 'successor', enumerationError: null });
+        expect(oldAccess.onstatechange).toBeNull();
+        oldAccess.inputs.get('old')!.dispatchEvent(new Event('midimessage'));
+        expect(oldCallback).not.toHaveBeenCalled();
+        successor.inputs.get('successor')!.dispatchEvent(new Event('midimessage'));
+        expect(successorCallback).toHaveBeenCalledOnce();
     });
 });

@@ -10,7 +10,7 @@ import { setNativeEventUnlisten } from '../setNativeEventUnlisten';
 import { setNativeMode } from '../setNativeMode';
 import { setState } from '../setState';
 import { setTargetTrackId } from '../setTargetTrackId';
-import { midiLearn } from '../state';
+import { midiLearn, webMidiRuntime } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';
 
@@ -30,6 +30,7 @@ export function destroyWebMidi(input: {
     getTrackStrip: GetWebMidiTrackStrip;
     releaseNativeNote: ReleaseNativeLiveNote;
 }): void {
+    webMidiRuntime.initGeneration += 1;
     detachActiveInput();
 
     if (getNativeMode()) {
