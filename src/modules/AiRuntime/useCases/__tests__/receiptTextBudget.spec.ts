@@ -1,25 +1,20 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
-import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
-import { createCrdtProject } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
+import { createCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../../models/AgentContext';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 
-let indexedDb: ReturnType<typeof installTransactionalIndexedDb> | undefined;
-afterEach(async () => {
-    await indexedDb?.dispose();
-    indexedDb = undefined;
-    vi.unstubAllGlobals();
+afterEach(() => {
+    removeCrdtDoc('receipt-budget-fixture');
+    projectStore.set(structuredClone(defaultProjectStoreState));
 });
 
 it('refuses a real project receipt that cannot fit the local text context before another turn', async () => {
-    vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
-    indexedDb = installTransactionalIndexedDb();
-    await createCrdtProject('Receipt budget');
-    const project = projectStore.value!;
+    // The query needs an in-memory revision and project metadata, not durable project bootstrap.
+    createCrdtDoc('receipt-budget-fixture');
+    const project = structuredClone(defaultProjectStoreState);
     projectStore.set({
         ...project,
         projectId: '405e744b-dead-843a-9395-86fdcd66368c',
@@ -47,7 +42,9 @@ it('refuses a real project receipt that cannot fit the local text context before
         textReceiptCharacterBudget: AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
     });
     expect(result.status).toBe('rejected');
-    if (result.status !== 'rejected') throw new Error('Expected text budget refusal');
+    if (result.status !== 'rejected') {
+        throw new Error('Expected text budget refusal');
+    }
     expect(result.receipts).toMatchObject([{ status: 'success' }]);
     expect(result.reason).toBe('Application tool receipts exceeded the bounded text context budget.');
     expect(requestTurn).toHaveBeenCalledTimes(1);
