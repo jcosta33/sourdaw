@@ -1,13 +1,13 @@
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
-import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
-import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
+import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';
 
@@ -190,6 +190,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         }
         await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems);
     };
+    const profileOptions = input.profile === undefined ? {} : { profile: input.profile };
     let result;
     try {
         result = await parsePromptToActions({
@@ -203,7 +204,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             providerPlanning: input.providerPlanning,
             onMeasurementAttempt,
             thread: input.thread,
-            ...(input.profile === undefined ? {} : { profile: input.profile }),
+            ...profileOptions,
         });
         if (input.profile === 'readonly-answer') {
             result = guardReadonlyPlanningResult(result);
@@ -285,7 +286,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 providerPlanning: input.providerPlanning,
                 onMeasurementAttempt,
                 thread: input.thread,
-                ...(input.profile === undefined ? {} : { profile: input.profile }),
+                ...profileOptions,
             });
         }
         if (input.profile === 'readonly-answer') {
@@ -327,7 +328,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 providerPlanning: input.providerPlanning,
                 onMeasurementAttempt,
                 thread: input.thread,
-                ...(input.profile === undefined ? {} : { profile: input.profile }),
+                ...profileOptions,
             });
         }
     } catch (error) {

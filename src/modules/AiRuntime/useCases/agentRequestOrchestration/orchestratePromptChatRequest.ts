@@ -6,8 +6,8 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
-import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
+import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../../models/AgentExecutionMode';
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
 import {
@@ -19,8 +19,8 @@ import {
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
-import { guardReadonlyPlanningResult } from '../../models/PlanningProfile';
 import { type PlanningOutcome } from '../../models/PlanningOutcome';
+import { guardReadonlyPlanningResult } from '../../models/PlanningProfile';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { appendChatMessage, setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
@@ -925,10 +925,11 @@ export async function orchestratePromptChatRequest(
         releasePlanningCancellation();
         setActiveAborter(null);
     };
+    const profileOptions = input.interactionMode === 'explain' ? { profile: 'readonly-answer' as const } : {};
     try {
         const { context, result, projectRevision } = await planPromptActions({
             prompt: input.userText,
-            ...(input.interactionMode === 'explain' && { profile: 'readonly-answer' as const }),
+            ...profileOptions,
             signal: aborter.signal,
             onProviderResult: admission.providerPlanning
                 ? (providerResult) => {

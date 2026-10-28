@@ -19,12 +19,12 @@ import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
+import { type PlanningOutcome } from '../models/PlanningOutcome';
 import {
     type PlanningProfile,
     READONLY_ANSWER_MAX_OUTPUT_TOKENS,
     READONLY_ANSWER_TERMINAL_NAMES,
 } from '../models/PlanningProfile';
-import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -47,8 +47,8 @@ import {
     tryCompoundFastPath,
 } from '../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../transformers/toolCallParser';
-import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
+import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
@@ -723,6 +723,64 @@ const planPromptIntent = inject({ logger })(
                     readonly || projectRevision === undefined || projectRevision === ''
                         ? undefined
                         : executeTransientOnsetRead({ projectRevision, signal, admit: onMeasurementAttempt });
+                // Measurements require the revision the run read.
+                const createMeasurement = (): Parameters<typeof runApplicationOwnedToolLoop>[0]['measurement'] => {
+                    if (projectRevision === undefined || projectRevision === '') {
+                        return undefined;
+                    }
+                    if (readonly) {
+                        return {
+                            toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                            revision: projectRevision,
+                            execute: (call, { callId, turn, signal: loopSignal }) =>
+                                executeAnalysisMeasure({
+                                    call,
+                                    callId,
+                                    turn,
+                                    projectRevision,
+                                    sections: context.sections ?? [],
+                                    signal: loopSignal,
+                                    admit: onMeasurementAttempt,
+                                }),
+                        };
+                    }
+                    return {
+                        toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                        // The reference comparison renders the project the same way, so it
+                        // spends the same one measurement per turn.
+                        companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
+                        revision: projectRevision,
+                        execute: (call, { callId, turn, signal: loopSignal, retainedCompilations }) =>
+                            call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
+                                ? executeReferenceMeasurement({
+                                      call,
+                                      callId,
+                                      turn,
+                                      projectRevision,
+                                      sections: context.sections ?? [],
+                                      signal: loopSignal,
+                                      admit: onMeasurementAttempt,
+                                  })
+                                : executeAnalysisMeasure({
+                                      call,
+                                      callId,
+                                      turn,
+                                      projectRevision,
+                                      sections: context.sections ?? [],
+                                      signal: loopSignal,
+                                      admit: onMeasurementAttempt,
+                                      // A preview is compiled and grounded against what an adopting
+                                      // proposal is: this run's read model, request and authority.
+                                      preview: {
+                                          context,
+                                          retainedCompilations,
+                                          prompt,
+                                          runId: streamIdentity?.runId ?? 'preview-measurement',
+                                          readCreativeAuthority: () => creativeAuthority,
+                                      },
+                                  }),
+                    };
+                };
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     transientOnsetRead: transientRead,
                     textReceiptCharacterBudget: AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
@@ -806,62 +864,7 @@ const planPromptIntent = inject({ logger })(
                                       };
                                   },
                               },
-                    // A measurement is bound to the revision the run read; without one it could only
-                    // ever report the project stale, so the tool stays unavailable to the run.
-                    measurement:
-                        projectRevision === undefined || projectRevision === ''
-                            ? undefined
-                            : readonly
-                              ? {
-                                    toolName: ANALYSIS_MEASURE_TOOL_NAME,
-                                    revision: projectRevision,
-                                    execute: (call, { callId, turn, signal: loopSignal }) =>
-                                        executeAnalysisMeasure({
-                                            call,
-                                            callId,
-                                            turn,
-                                            projectRevision,
-                                            sections: context.sections ?? [],
-                                            signal: loopSignal,
-                                            admit: onMeasurementAttempt,
-                                        }),
-                                }
-                              : {
-                                    toolName: ANALYSIS_MEASURE_TOOL_NAME,
-                                    // The reference comparison renders the project the same way, so it
-                                    // spends the same one measurement per turn.
-                                    companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
-                                    revision: projectRevision,
-                                    execute: (call, { callId, turn, signal: loopSignal, retainedCompilations }) =>
-                                        call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
-                                            ? executeReferenceMeasurement({
-                                                  call,
-                                                  callId,
-                                                  turn,
-                                                  projectRevision,
-                                                  sections: context.sections ?? [],
-                                                  signal: loopSignal,
-                                                  admit: onMeasurementAttempt,
-                                              })
-                                            : executeAnalysisMeasure({
-                                                  call,
-                                                  callId,
-                                                  turn,
-                                                  projectRevision,
-                                                  sections: context.sections ?? [],
-                                                  signal: loopSignal,
-                                                  admit: onMeasurementAttempt,
-                                                  // A preview is compiled and grounded against what an adopting
-                                                  // proposal is: this run's read model, request and authority.
-                                                  preview: {
-                                                      context,
-                                                      retainedCompilations,
-                                                      prompt,
-                                                      runId: streamIdentity?.runId ?? 'preview-measurement',
-                                                      readCreativeAuthority: () => creativeAuthority,
-                                                  },
-                                              }),
-                                },
+                    measurement: createMeasurement(),
                     requestTurn: async ({
                         receiptContext,
                         directive,

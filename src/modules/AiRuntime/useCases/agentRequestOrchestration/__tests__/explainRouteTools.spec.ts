@@ -10,6 +10,7 @@ import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifacts } from '#/
 import { capabilityStore } from '#/modules/BrowserAi/stores';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory } from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     captureProjectRevision,
     createCrdtDoc,
@@ -20,22 +21,21 @@ import {
     resetCrdtProjectAuthority,
     subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
 import * as projectReads from '#/modules/Project/useCases';
-import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
-import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
-import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
 import { type ToolCallResult } from '../../../models/ToolCallResult';
+import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
 import { cloudSession } from '../../../repositories/cloudLlm/cloudSession';
-import { getWebLlmArtifactManifestModel } from '../../../repositories/webLlm/webLlmArtifactManifest';
 import { engineState } from '../../../repositories/webLlm/engineLifecycleState';
-import { aiActionHistoryStore } from '../../../stores/aiActionHistoryStore';
+import { getWebLlmArtifactManifestModel } from '../../../repositories/webLlm/webLlmArtifactManifest';
 import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsStore';
 import { agentRunStore } from '../../../stores/agentRunStore';
+import { aiActionHistoryStore } from '../../../stores/aiActionHistoryStore';
 import { aiBackendPreferenceStore } from '../../../stores/aiBackendPreferenceStore';
 import { chatStore, clearChatMessages, stopGenerating } from '../../../stores/chatStore';
 import { llmStatusStore } from '../../../stores/llmStatusStore';
@@ -43,18 +43,18 @@ import {
     clearPendingActionConfirmations,
     pendingActionConfirmationStore,
 } from '../../../stores/pendingActionConfirmationStore';
-import { agentRunLifecycle } from '../../agentRunLifecycle';
-import { getAgentExecutionModeAuthority } from '../../getAgentExecutionModeAuthority';
-import * as commandPlanning from '../../compileArbitraryCommandList';
-import * as preparation from '../../agentReference/prepareStemImport';
-import * as preview from '../executePromptCommandPreview';
-import * as materialization from '../materializePromptCommandPlan';
-import * as execution from '../executeImmediatePromptCommand';
-import { sendChatMessage } from '../../sendChatMessage';
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from '../../__tests__/aiWorkflowCommandPreflightFixture';
+import * as preparation from '../../agentReference/prepareStemImport';
+import { agentRunLifecycle } from '../../agentRunLifecycle';
+import * as commandPlanning from '../../compileArbitraryCommandList';
+import { getAgentExecutionModeAuthority } from '../../getAgentExecutionModeAuthority';
+import { sendChatMessage } from '../../sendChatMessage';
+import * as execution from '../executeImmediatePromptCommand';
+import * as preview from '../executePromptCommandPreview';
+import * as materialization from '../materializePromptCommandPlan';
 
 const boundary = vi.hoisted(() => ({ render: vi.fn(), cloud: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', async (original) => ({
@@ -157,28 +157,28 @@ function observeProject() {
 
 function asRecord(value: unknown): Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        throw new Error('Expected record');
+        throw new TypeError('Expected record');
     }
     return value as Record<string, unknown>;
 }
 function localReceiptText(params: Record<string, unknown>): string {
     if (!Array.isArray(params.messages)) {
-        throw new Error('Expected provider messages');
+        throw new TypeError('Expected provider messages');
     }
     const user = params.messages.map(asRecord).find((message) => message.role === 'user');
     if (typeof user?.content !== 'string') {
-        throw new Error('Expected provider user text');
+        throw new TypeError('Expected provider user text');
     }
     const lines = user.content.split('\n');
     const line = lines[lines.indexOf('relevant_evidence:') + 1];
     const evidence = asRecord(JSON.parse(line ?? 'null'));
     if (!Array.isArray(evidence.receipts)) {
-        throw new Error('Expected receipt evidence');
+        throw new TypeError('Expected receipt evidence');
     }
     const summary = asRecord(asRecord(evidence.receipts[0]).summary);
     expect(summary.truncated).toBe(false);
     if (typeof summary.value !== 'string') {
-        throw new Error('Expected complete receipt text');
+        throw new TypeError('Expected complete receipt text');
     }
     return summary.value;
 }
