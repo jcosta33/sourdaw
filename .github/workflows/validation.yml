@@ -65,7 +65,7 @@ jobs:
       code: ${{ steps.scope.outputs.code }}
       tooling: ${{ steps.scope.outputs.tooling }}
     steps:
-      # Both callers run only on pull_request. With a token and inline filters,
+      # Both callers run only on pull_request. With the default token and inline filters,
       # paths-filter lists files through the API; no repository checkout is needed.
       - name: Filter changed paths
         id: filter
@@ -75,7 +75,6 @@ jobs:
         continue-on-error: true
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
-          token: ${{ github.token }}
           # Negated patterns only subtract under this quantifier. The default
           # `some` would let `**` alone satisfy `unclassified`, which would then
           # match every change and force the full lane on documentation too.
@@ -155,7 +154,6 @@ jobs:
         if: steps.filter.outcome == 'failure'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
-          token: ${{ github.token }}
           # Must stay identical to the `Filter changed paths` step's `with:`
           # block above: a retry that filtered differently would resolve the
           # scope from rules no pin reads.

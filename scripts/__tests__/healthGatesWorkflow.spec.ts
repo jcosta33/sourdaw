@@ -715,12 +715,12 @@ function assertRepositoryIndependentScope(
         const options = recordAt(step, 'with');
         if (
             step.uses !== PATHS_FILTER_ACTION ||
-            options.token !== '${{ github.token }}' ||
-            JSON.stringify(Object.keys(options).sort()) !==
-                JSON.stringify(['filters', 'predicate-quantifier', 'token']) ||
+            JSON.stringify(Object.keys(options).sort()) !== JSON.stringify(['filters', 'predicate-quantifier']) ||
             !stringAt(options, 'filters').includes('\n')
         ) {
-            throw new Error('both scope filters must use the pinned PR API path with a token and inline filters');
+            throw new Error(
+                'both scope filters must use the pinned PR API path with its default token and inline filters'
+            );
         }
     }
 }
