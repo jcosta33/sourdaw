@@ -1,0 +1,98 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 434-437
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 814-817
+crates/sourdaw-native/src/addon/mod.rs
+  h_beb54bf43b47b7 20,113,136-139,161,266-275,457-520,997-1005
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  h_beb54bf43b47b7 134,310-330,333,494-496,630-1220,1937-2617
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 344,351,355,368,411
+electron/commands.ts
+  h_beb54bf43b47b7 54,61,65,78,120
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  h_beb54bf43b47b7 332,1217,1240,1274,1285,1287-1288,1329,1334,1336,1339,1343
+src/modules/AudioEngine/useCases/exportStems.ts
+  h_beb54bf43b47b7 10-11,43,239-242,244-245,254,476-501,507,509-521,523-526,534
+src/modules/AudioEngine/useCases/offlineRender/cropHistoryFromRenderedBuffer.ts
+  h_beb54bf43b47b7 5,8-13,19-20,32-40
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  h_beb54bf43b47b7 43,103-108
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  h_beb54bf43b47b7 148-160
+src/modules/AudioEngine/useCases/renderOffline.ts
+  h_beb54bf43b47b7 7
+src/modules/AudioRendering/models/ExportAudioSource.ts
+  h_beb54bf43b47b7 1-14
+src/modules/AudioRendering/models/PcmDitherOptions.ts
+  h_beb54bf43b47b7 1-9
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_beb54bf43b47b7 42,45,187-188,195-211,213,397,401,408-411,430-439,441-454,461-467,470-471,475,477,481,484,486,488-505,507-531,534-535,538-540,543-545,548-555,560-568,581,588,594,622,637,639-640,642-654,659-660,692,723-724,729-738,749,756-757,782,791-792,794-801,816,825-833,835,838,841-846,851
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 11,81-89,94-96,107,119,144-146,157,167,174-176,283-291,295-299,352-368,371-385,387-450,701-703,747,749,755-759,769-784,786-795,797-802,804-807,809-814,816-821,823,840,854,856,865-870,918,1349-1363,1379-1380,1402,1415-1416,1456,1474-1475,1531-1536,1543-1544,1553,1715-1717,1738-1740,2000,2311,2313-2344,2346-2392,2395-2514,2516-2519,2521-2523,2526-2527,2529-2531,2537-2593,2607-2612,2615,2618-2619
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  h_beb54bf43b47b7 1-1209
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createIncrementalMd5.spec.ts
+  h_beb54bf43b47b7 1-28
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createPcmBlockReader.spec.ts
+  h_beb54bf43b47b7 1-54
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/exportFormatParity.spec.ts
+  h_beb54bf43b47b7 2-4,21-22,25-41,107,195-280
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/flacEncoder.spec.ts
+  h_beb54bf43b47b7 45,47
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/mp3Encoder.spec.ts
+  h_beb54bf43b47b7 29,49
+src/modules/AudioRendering/repositories/audioEncoders/applyExportNormalization.ts
+  h_beb54bf43b47b7 4-5,10-11,43,64
+src/modules/AudioRendering/repositories/audioEncoders/convertFloatChannelsToPcm.ts
+  h_beb54bf43b47b7 1-6,43,45-63,65-67,69,71
+src/modules/AudioRendering/repositories/audioEncoders/createIncrementalMd5.ts
+  h_beb54bf43b47b7 1-94
+src/modules/AudioRendering/repositories/audioEncoders/createPcmBlockReader.ts
+  h_beb54bf43b47b7 1-96
+src/modules/AudioRendering/repositories/audioEncoders/flacEncoder.ts
+  h_beb54bf43b47b7 1,3-5,141,144,146,324-333,336-344,349-380,382-404,406-407,411-422,424-425,427-428,430-433,435-440,442-446,448,450-451,453,458,460-469
+src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts
+  h_beb54bf43b47b7 3,5-6,8-17,20-28,30-31,33-45,47-48,52,55,57,59-68
+src/modules/AudioRendering/repositories/audioEncoders/wavEncoder.ts
+  h_beb54bf43b47b7 1,3-4,6-20,22,24-38,40-41,45-49,51-62,66-68,72,75-76,78-123,125-134
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToBrowser.spec.ts
+  h_beb54bf43b47b7 1-173
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  h_beb54bf43b47b7 1-276
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  h_beb54bf43b47b7 1-247
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  h_beb54bf43b47b7 1-113
+src/modules/AudioRendering/useCases/audioBufferToMp3.ts
+  h_beb54bf43b47b7 1,12-26,28,32-34,36-43
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.nativeCancellation.spec.ts
+  h_beb54bf43b47b7 1-180
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  h_beb54bf43b47b7 1-123
+src/modules/AudioRendering/useCases/normalizeExportBuffer.ts
+  h_beb54bf43b47b7 7-8
+src/utils/__tests__/desktopBridge.spec.ts
+  h_beb54bf43b47b7 5-9,79-114
+src/utils/desktopBridge.ts
+  h_beb54bf43b47b7 253-283
+src/utils/sourdawCommandArguments.ts
+  h_beb54bf43b47b7 29,36,40,53,96
+tests/e2e/exportAudioEvidence.spec.ts
+  h_beb54bf43b47b7 8,90-92,94-101,103-120,122-127,129-172
+tests/e2e/exportFilePickerCapture.ts
+  h_beb54bf43b47b7 1-216
+tests/e2e/exportStemsModeTestId.spec.ts
+  h_beb54bf43b47b7 1-2,4,7,15-73,96,98-139,141-150,156,158-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6fab4a4ca118d0b35159408ab57f4e8c535e06f5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
