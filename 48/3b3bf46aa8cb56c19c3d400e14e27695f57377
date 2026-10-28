@@ -1,0 +1,16 @@
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  h_beb54bf43b47b7 701,732-736
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.integration.spec.ts
+  h_beb54bf43b47b7 143-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "483b3bf46aa8cb56c19c3d400e14e27695f57377",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
