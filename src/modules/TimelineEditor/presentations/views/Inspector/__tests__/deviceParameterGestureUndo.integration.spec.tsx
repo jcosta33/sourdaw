@@ -762,6 +762,76 @@ describe('Inspector continuous parameter gestures through real history', () => {
         }
     });
 
+    it.each(['touch', 'read', 'latch', 'write'] as const)(
+        'accepts physical knob release after an intervening runtime write in %s mode',
+        async (automationMode) => {
+            let beat = 1;
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(synth)]), automationMode }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            render(<Control />);
+            beginKnob();
+            moveKnob(85);
+            updateDeviceParam('track-1', synth.id, 'detune', 65);
+            expect(writes()).toEqual([25, 65]);
+            expect(rawValues()?.detune).toBe(5);
+            expect(depth()).toBe(0);
+
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            const snapshot = transactSnapshot(async () => {
+                entered.resolve();
+                await release.promise;
+            });
+            try {
+                await entered.promise;
+                beat = 2;
+                endKnob();
+                const expectedSamples =
+                    automationMode === 'read'
+                        ? []
+                        : [
+                              ['track-1', 'synth-1:detune', 25, 1, expect.any(Symbol)],
+                              ['track-1', 'synth-1:detune', 25, 2, expect.any(Symbol)],
+                          ];
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(
+                    automationMode === 'latch' || automationMode === 'write'
+                );
+                expect(writes()).toEqual([25, 65, 25]);
+                expect(rawValues()?.detune).toBe(5);
+                expect(depth()).toBe(0);
+
+                updateDeviceParam('track-1', synth.id, 'detune', 85);
+                beat = 19;
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+                await expectCommitted('detune', 25, 1);
+                expect(writes()).toEqual([25, 65, 25, 85]);
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                await act(() => undo());
+                expect(rawValues()?.detune).toBe(5);
+                expect(writes().at(-1)).toBe(5);
+                await act(() => redo());
+                expect(rawValues()?.detune).toBe(25);
+                expect(writes().at(-1)).toBe(25);
+                expect(depth()).toBe(1);
+                expect(recording.mock.calls).toEqual(expectedSamples);
+            } finally {
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+            }
+        }
+    );
+
     it.each(['read', 'touch'] as const)(
         'admits fresh Ratio movement after an intervening runtime write in %s mode',
         async (automationMode) => {

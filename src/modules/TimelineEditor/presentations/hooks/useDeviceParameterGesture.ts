@@ -199,12 +199,12 @@ function finishGesture(context: GestureContext, gesture: ParameterGesture): void
     }
 }
 
-function canAcceptGestureInput(gesture: ParameterGesture, isTransient: boolean): boolean {
+function canAcceptGestureInput(gesture: ParameterGesture, isPhysicalInput: boolean): boolean {
     return (
         !gesture.invalidated &&
         (gesture.previewValue === undefined ||
             ownsDeviceParameterPreview(gesture.previewKey, gesture.runtimeAuthority.owner)) &&
-        (isTransient || gesture.runtimeAuthority.canCommit()) &&
+        (isPhysicalInput || gesture.runtimeAuthority.canCommit()) &&
         !!readGestureDevice(gesture, true)
     );
 }
@@ -225,7 +225,9 @@ function handleKnobChange(
     if (!gesture || gesture.settling) {
         return;
     }
-    if (!canAcceptGestureInput(gesture, isTransient)) {
+    // Physical release is a fresh knob sample; slider settlement only repeats
+    // an earlier sample and must retain its runtime-authority fence.
+    if (!canAcceptGestureInput(gesture, isTransient || recordingSample)) {
         cancelGesture(context, gesture);
         if (!isTransient) {
             context.gestureRef.current = null;
