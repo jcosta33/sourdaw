@@ -806,11 +806,11 @@
         "needs": "decide",
         "if": "needs.decide.outputs.code == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 45,
+        "timeout-minutes": 50,
         "steps": [
           {
             "name": "Checkout",
-            "timeout-minutes": 5,
+            "timeout-minutes": 10,
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {

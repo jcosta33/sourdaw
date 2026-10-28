@@ -344,6 +344,22 @@ const concurrency = workflow.concurrency;
 const decide = validationWorkflow.jobs?.decide;
 const staticJob = validationWorkflow.jobs?.static;
 const lint = validationWorkflow.jobs?.lint;
+const lintPhaseMinutes = [
+    ['Checkout', 10],
+    ['Set up pnpm', 5],
+    ['Set up Node', 5],
+    ['Install dependencies', 5],
+    ['Lint', 20],
+];
+for (const [name, minutes] of lintPhaseMinutes) {
+    expect(stepNamed(lint, name)?.['timeout-minutes'] === minutes, `lint phase ${name} must retain its bounded allowance`);
+}
+expect(
+    lint?.['timeout-minutes'] === 50 &&
+        lint['timeout-minutes'] - lintPhaseMinutes.reduce((total, [, minutes]) => total + minutes, 0) >= 5,
+    'lint job must retain five minutes for cleanup after all setup and execution caps'
+);
+expect(stepNamed(lint, 'Checkout')?.with === undefined, 'lint checkout must preserve the full input tree');
 const boundaries = validationWorkflow.jobs?.boundaries;
 const smoke = validationWorkflow.jobs?.smoke;
 const prSecrets = validationWorkflow.jobs?.['pr-secrets'];
