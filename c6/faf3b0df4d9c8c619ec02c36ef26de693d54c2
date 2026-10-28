@@ -1,0 +1,14 @@
+scripts/__tests__/productionFaustProbe.spec.ts
+  h_beb54bf43b47b7 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c6faf3b0df4d9c8c619ec02c36ef26de693d54c2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
