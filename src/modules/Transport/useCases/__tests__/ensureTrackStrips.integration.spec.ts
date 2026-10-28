@@ -28,7 +28,7 @@ describe('project strip initialization before bus facade and send publication', 
         first.outputId = later.id;
         for (const bus of [first, later]) {
             bus.gain = 0.4;
-            bus.devices = [{ id: `${bus.id}-eq`, type: 'eq', name: 'EQ', bypassed: false, parameterValues: { 'eq-low-gain': 2 } }];
+            bus.devices = [{ id: `${bus.id}-eq`, type: 'builtin-eq', name: 'EQ', bypassed: false, parameterValues: { 'eq-low-gain': 2 } }];
         }
         source.sends = [{ busId: first.id, level: 0.3, preFader: true }];
         first.sends = [{ busId: later.id, level: 0.4, preFader: false }];
@@ -157,6 +157,7 @@ describe('project strip initialization before bus facade and send publication', 
     it.each(['muted', 'sip', 'pfl'] as const)('preserves %s bus gain and send gates after facade creation', (mode) => {
         const tracks = tracksWithSends();
         const first = tracks[1]!;
+        first.soloSafe = false;
         first.muted = mode === 'muted';
         first.soloed = mode === 'pfl';
         tracks[0]!.soloed = mode === 'sip';
