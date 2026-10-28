@@ -1,0 +1,26 @@
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 114
+.github/workflows/pr-checks.yml
+  h_beb54bf43b47b7 68
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 10-14,230,249-252,494,651,683,789,891,933,1195,1198,1203-1204,1210,1212-1216
+AGENTS.md
+  h_beb54bf43b47b7 484,490
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 150,312,576-581,679,686,888,1050,1086,1160,1241,1280,1445-1446,1448
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 102-103,324-328,339-343,575,612,615-616,639-640,669-671,1754-1755,1770-1780,1817-1818,4573,4589-4590,4599-4640
+scripts/test-health-gate-scripts.sh
+  h_beb54bf43b47b7 288,554,662,666,670,674
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "541e95732b35c489b06dff2299b39655cd77dd69",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
