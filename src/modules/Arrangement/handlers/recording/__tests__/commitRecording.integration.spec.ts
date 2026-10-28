@@ -14,6 +14,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -594,5 +595,35 @@ describe('recording gesture commit (issue #4439)', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(recordedPlacements()).toEqual(placed);
+    });
+    it('rejects lost authority before changing captured pass placement', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('Expected provisional recording clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Take 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        flushAutomergeStorageWrites();
+        const takesBefore = structuredClone(takeLaneStore.value);
+        const rootBefore = JSON.stringify(getCrdtDoc('root'));
+
+        await expect(
+            commitRecording(
+                { ...provisional, audioBufferId: 'rec-refused', startBeat: 3.5, endBeat: 6 },
+                { provisionalStartBeat: 4, mediaOriginSeconds: 1.75 },
+                { shouldExecute: () => false }
+            )
+        ).rejects.toThrow('Recording commit was refused by its execution guard');
+        flushAutomergeStorageWrites();
+
+        expect(takeLaneStore.value).toEqual(takesBefore);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBefore);
+        expect(undoHistoryStore.value?.past).toEqual([]);
     });
 });

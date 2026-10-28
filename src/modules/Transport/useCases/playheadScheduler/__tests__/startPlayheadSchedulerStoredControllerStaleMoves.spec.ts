@@ -157,6 +157,11 @@ const trackStripStub = {
 };
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'root-identity'
+    ),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
     adjustmentLayerStore: { value: null },
     gainEnvelopeStore: { value: null },

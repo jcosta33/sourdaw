@@ -201,21 +201,35 @@ function commitResolvedCapture(input: {
     // result instead of leaving it visible with no entry (#4439),
     // and says so the way the capture-failure sibling does.
     recordingLifecycle.trackCommit(
-        Promise.resolve().then(() =>
-            commitRecording(recordedClip, capture).catch((error: unknown) => {
-                logger.error(new Error('Recording commit failed', { cause: error }));
-                // The failure cleanup re-checks the root: the catch
-                // runs after the commit's awaits, by which time a
-                // branch switch may have replaced the document — and
-                // the notice states only what actually ran.
-                if (stillOwnsCaptureRoot()) {
-                    discardRecording(recordedClip.id);
-                    notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
-                } else {
-                    notifyUser('Recording failed — the take was not kept on this branch.', 'error');
+        Promise.resolve().then(() => {
+            // This continuation runs after the terminal returned; a fork can
+            // replace the root before commitRecording's synchronous placement.
+            if (!stillOwnsCaptureRoot()) {
+                notifyUser(
+                    'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                    'warning'
+                );
+                return undefined;
+            }
+            return commitRecording(recordedClip, capture, { shouldExecute: stillOwnsCaptureRoot }).catch(
+                (error: unknown) => {
+                    // The failure cleanup re-checks the root: the catch
+                    // runs after the commit's awaits, by which time a
+                    // branch switch may have replaced the document — and
+                    // the notice states only what actually ran.
+                    if (stillOwnsCaptureRoot()) {
+                        logger.error(new Error('Recording commit failed', { cause: error }));
+                        discardRecording(recordedClip.id);
+                        notifyUser('Recording failed — the take was discarded. Try recording again.', 'error');
+                    } else {
+                        notifyUser(
+                            'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                            'warning'
+                        );
+                    }
                 }
-            })
-        )
+            );
+        })
     );
 }
 

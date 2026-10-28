@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type HostedProviderTurn } from '../../models/HostedTurnHistory';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { projectAnthropicStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectAnthropicStrictToolSchema';
 import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
@@ -108,16 +109,22 @@ const DOCUMENT = {
     assertions: [],
 };
 
-function planCalls(selected: string[] = ['compile-1'], document: unknown = DOCUMENT) {
+function planCalls(
+    selected: string[] = ['compile-1'],
+    document: unknown = DOCUMENT,
+    providerTurn?: HostedProviderTurn
+) {
     vi.mocked(generateToolPlanningOutcome)
         .mockResolvedValueOnce({
             status: 'complete',
+            providerTurn,
             toolCalls: [
                 { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
             ],
         })
         .mockResolvedValueOnce({
             status: 'complete',
+            providerTurn,
             toolCalls: [
                 {
                     id: 'propose-1',
@@ -2196,25 +2203,33 @@ describe('transform.compile planner tool', () => {
         }
     });
 
-    it('applies the combined 24-command batch ceiling before a proposal can reach approval', async () => {
-        const document = {
-            ...DOCUMENT,
-            steps: Array.from({ length: 25 }, (_, index) => ({
-                id: `emit-${String(index)}`,
-                kind: 'emit',
-                operation: 'setAllVelocities',
-                arguments: { clipId: { literal: 'clip-verse' }, velocity: { literal: 90 } },
-            })),
-        };
-        planCalls(['compile-1'], document);
-        const result = await parsePromptToActions({
-            prompt: 'set note velocities in Verse MIDI clip to 90',
-            context: CONTEXT,
-            projectRevision: 'revision-transform-1',
-        });
-        expect(result.actions).toEqual([]);
-        expect(result.rejectionReason).toContain('command budget');
-    });
+    it.each(['hosted', 'local'] as const)(
+        'refuses an over-ceiling compilation before approval with %s receipt transport',
+        async (transport) => {
+            const document = {
+                ...DOCUMENT,
+                steps: Array.from({ length: 25 }, (_, index) => ({
+                    id: `emit-${String(index)}`,
+                    kind: 'emit',
+                    operation: 'setAllVelocities',
+                    arguments: { clipId: { literal: 'clip-verse' }, velocity: { literal: 90 } },
+                })),
+            };
+            const providerTurn: HostedProviderTurn | undefined =
+                transport === 'hosted' ? { provider: 'openai', assistantItems: null } : undefined;
+            planCalls(['compile-1'], document, providerTurn);
+            const result = await parsePromptToActions({
+                prompt: 'set note velocities in Verse MIDI clip to 90',
+                context: CONTEXT,
+                projectRevision: 'revision-transform-1',
+            });
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toBe(
+                'Provider planning rejected: Provider command proposal exceeds the command budget.'
+            );
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
+        }
+    );
 
     it('enforces seeds, units, selector limits and emitted-command limits in the runtime route', () => {
         const snapshot = projectDeclarativeTransformSnapshot(CONTEXT, 'revision-transform-1');

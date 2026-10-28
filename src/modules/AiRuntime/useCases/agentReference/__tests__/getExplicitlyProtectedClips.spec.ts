@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../../models/ProjectContext';
 import { getExplicitClipProtection } from '../getExplicitlyProtectedClips';
+import { resolveAgentReference } from '../resolveAgentReference';
 
 function createTrack(id: string, name: string, clips: ProjectContextTrack['clips']): ProjectContextTrack {
     return {
@@ -88,6 +89,103 @@ function getProtectedClips(prompt: string, projectContext = context) {
 }
 
 describe('getExplicitlyProtectedClips', () => {
+    it('retains the exact clip candidate beside a same-name track in an aggregate protection', () => {
+        const clip = createClip('clip-overall-level', 'Overall Level');
+        const project = {
+            ...context,
+            tracks: [
+                createTrack('track-drums', 'Drums', [clip]),
+                createTrack('track-overall-level', 'Overall Level', []),
+            ],
+        };
+        expect(
+            resolveAgentReference({
+                prompt: 'the Overall Level',
+                assertedId: clip.id,
+                capability: 'clip',
+                context: project,
+            })
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+            candidates: [{ id: clip.id, name: clip.name, evidence: ['exact-name'] }],
+        });
+        expect(getExplicitClipProtection('keep the Overall Level the same', project)).toEqual({
+            clips: [{ id: clip.id, name: clip.name }],
+            complete: true,
+        });
+    });
+
+    it('does not borrow the same-name clip for an explicitly track-only fader protection', () => {
+        const clip = createClip('clip-overall-level', 'Overall Level');
+        const project = {
+            ...context,
+            tracks: [
+                createTrack('track-drums', 'Drums', [clip]),
+                createTrack('track-overall-level', 'Overall Level', []),
+            ],
+        };
+        expect(getExplicitClipProtection('keep the fader of "Overall Level" the same', project).clips).toEqual([]);
+    });
+
+    it.each([
+        'add an EQ to every audio track but leave the vocal alone',
+        'turn down the drums by 3 dB but leave Bass Verse alone',
+    ])('leaves an ordinary restriction to target authority when it names no clip in %s', (prompt) => {
+        const project = { ...context, tracks: [createTrack('track-drums', 'Drums', [])] };
+        expect(getExplicitClipProtection(prompt, project)).toEqual({ clips: [], complete: true });
+    });
+
+    it.each(['Overall Level', 'Overall level'])(
+        'fully reads a closed unbound aggregate control %s without inventing a clip',
+        (quality) => {
+            expect(getExplicitClipProtection(`keep the ${quality} the same`, context)).toEqual({
+                clips: [],
+                complete: true,
+            });
+        }
+    );
+
+    it.each(['Overall', 'Overall Level'])(
+        'keeps the actual clip %s protected before interpreting aggregate control wording',
+        (name) => {
+            const clip = createClip('clip-overall', name);
+            const project = { ...context, tracks: [createTrack('track-drums', 'Drums', [clip])] };
+            expect(getExplicitClipProtection('keep the Overall Level the same', project)).toEqual({
+                clips: [{ id: clip.id, name }],
+                complete: true,
+            });
+        }
+    );
+
+    it.each([
+        'keep the "Overall Level" the same',
+        'keep "the" Overall Level the same',
+        'keep the Overall clip the same',
+        'keep the Overall Level and Missing clip the same',
+        'keep the Overall Level the same; keep the Missing clip unchanged',
+        'keep the Overall Level the same with the Missing clip',
+        'keep the Overall Level the same; keep the fader of "Ghost" the same',
+        'keep the Overall Level the same; keep unchanged',
+    ])('retains an incomplete protection beside aggregate wording in %s', (prompt) => {
+        expect(getExplicitClipProtection(prompt, context).complete).toBe(false);
+    });
+
+    it.each(['keep “Bass Verse” the same', 'keep Bass Verse as is', "leave Drummer's Cut alone"])(
+        'uses the shared closed grammar without losing a clip name in %s',
+        (prompt) => {
+            expect(getExplicitClipProtection(prompt, context)).toEqual({
+                clips: [
+                    {
+                        id: prompt.includes('Drummer') ? apostrophe.id : bassVerse.id,
+                        name: prompt.includes('Drummer') ? apostrophe.name : bassVerse.name,
+                    },
+                ],
+                complete: true,
+            });
+        }
+    );
+
     it.each([
         ['leave Bass Verse unchanged', bassVerse],
         ['leaving "Bass Verse" unchanged', bassVerse],

@@ -39,6 +39,7 @@ vi.mock('#/modules/Project/useCases', () => ({
 vi.mock('#/modules/Transport/stores', () => ({
     DEFAULT_TEMPO_BPM: 120,
     transportStore: { value: { tempo: 120 } },
+    readBarStartBeat: vi.fn<typeof import('#/modules/Transport/stores').readBarStartBeat>(() => null),
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';

@@ -27,6 +27,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     readMusicalRangeInputs: vi.fn(() => []),
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
     trackStore: {
         get value() {
             return { tracks: arrangementState.tracks, selectedTrackId: null };

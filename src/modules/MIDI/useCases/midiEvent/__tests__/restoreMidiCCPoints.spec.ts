@@ -87,6 +87,51 @@ describe('restoreMidiCCPoints', () => {
         expect(midiStore.value?.ccByClipId.c2).toEqual([{ id: 'z', controller: 2, value: 1, beat: 0, channel: 0 }]);
     });
 
+    describe('with the list as it stood before the gesture', () => {
+        const row = (id: string, beat: number) => ({ id, controller: 6, value: 1, beat, channel: 0 });
+        const previous = [row('a', 0), row('displaced', 1), row('b', 1), row('c', 2)];
+
+        function seed(rows: readonly ReturnType<typeof row>[]) {
+            midiStore.set({ notesByClipId: {}, ccByClipId: { c1: [...rows] }, pitchBendByClipId: {} });
+        }
+
+        function idsAfter() {
+            return midiStore.value?.ccByClipId.c1?.map(({ id }) => id);
+        }
+
+        it('puts a displaced row back ahead of the first surviving row that followed it', () => {
+            seed([row('a', 0), row('b', 1), row('c', 2)]);
+
+            restoreMidiCCPoints('c1', [row('displaced', 1)], previous);
+
+            expect(idsAfter()).toEqual(['a', 'displaced', 'b', 'c']);
+        });
+
+        it('skips a follower that is gone and uses the next surviving one', () => {
+            seed([row('a', 0), row('c', 2)]);
+
+            restoreMidiCCPoints('c1', [row('displaced', 1), row('b', 1)], previous);
+
+            expect(idsAfter()).toEqual(['a', 'displaced', 'b', 'c']);
+        });
+
+        it('appends a displaced row none of whose followers survive', () => {
+            seed([row('a', 0)]);
+
+            restoreMidiCCPoints('c1', [row('b', 1), row('c', 2)], previous);
+
+            expect(idsAfter()).toEqual(['a', 'b', 'c']);
+        });
+
+        it('appends a row the previous list does not hold', () => {
+            seed([row('a', 0), row('c', 2)]);
+
+            restoreMidiCCPoints('c1', [row('unknown', 1)], previous);
+
+            expect(idsAfter()).toEqual(['a', 'c', 'unknown']);
+        });
+    });
+
     it('should not mutate when the store is missing', () => {
         midiStore.set(null);
 
