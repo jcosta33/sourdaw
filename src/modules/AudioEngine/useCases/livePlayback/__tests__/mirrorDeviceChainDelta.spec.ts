@@ -61,11 +61,13 @@ const APPLIED: AudioGraphApplyResult = {
 
 const apply = vi.fn<(batch: AudioGraphCommandBatch) => Promise<AudioGraphApplyResult>>();
 
-const backend: AudioGraphBackend = {
-    backendId: 'spec-double',
-    apply: (batch) => apply(batch),
-    dispose: () => undefined,
-};
+function createBackend(): AudioGraphBackend {
+    return {
+        backendId: 'spec-double',
+        apply: (batch) => apply(batch),
+        dispose: () => undefined,
+    };
+}
 
 function device(id: string, overrides?: Partial<Device>): Device {
     return { id, name: id, type: 'knead', bypassed: false, parameterValues: {}, ...overrides };
@@ -136,7 +138,7 @@ beforeEach(() => {
     apply.mockResolvedValue(APPLIED);
     mocks.notifyUser.mockReset();
     mocks.markExternalPluginEngineAttached.mockReset();
-    nativeLiveGraphSession.backend = backend;
+    nativeLiveGraphSession.backend = createBackend();
     nativeLiveGraphSession.rolling = true;
     nativeLiveGraphSession.lastDeferredChainNotice = null;
     nativeLiveGraphSession.nativeChainByStripId = new Map([['audio-1', ['eq', 'comp']]]);
@@ -513,6 +515,24 @@ describe('mirrorDeviceChainDelta', () => {
         await mirrorDeviceChainDelta(change);
 
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a declined removal in the next edit instead of leaving the removed device sounding', async () => {
+        apply.mockResolvedValueOnce({ acceptance: 'rejected', application: 'not-applied', reason: 'chain busy' });
+        await mirrorDeviceChainDelta({
+            before: track([device('eq'), device('comp')]),
+            after: track([device('comp')]),
+        });
+
+        await mirrorDeviceChainDelta({
+            before: track([device('comp')]),
+            after: track([device('comp'), device('knead')]),
+        });
+
+        expect(apply.mock.calls[1]?.[0].commands).toEqual([
+            { kind: 'remove-device', trackId: 'audio-1', deviceId: 'eq' },
+            { kind: 'insert-device', trackId: 'audio-1', device: device('knead'), index: 1 },
+        ]);
     });
 
     /**

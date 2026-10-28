@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     applyRuntimeGraphDelta: vi.fn(),
     notifyUser: vi.fn(),
     declineNativeChain: true,
+    declineFirstNativeChain: false,
 }));
 
 // Physical persistent nodes are fixtures. Both topology classification and the
@@ -90,11 +91,15 @@ const drum: Device = {
     parameterValues: {},
 };
 const applyNative = vi.fn<(batch: AudioGraphCommandBatch) => Promise<AudioGraphApplyResult>>();
-const backend: AudioGraphBackend = {
-    backendId: 'native-boundary-double',
-    apply: (batch) => applyNative(batch),
-    dispose: () => {},
-};
+let nativeDeviceIds: string[] = [];
+let nativeTopologyReadbacks: string[][] = [];
+function createBackend(): AudioGraphBackend {
+    return {
+        backendId: 'native-boundary-double',
+        apply: (batch) => applyNative(batch),
+        dispose: () => {},
+    };
+}
 
 function persistentNode(device: Device): BuiltinDeviceNode {
     const node = asAudioNode(createMockAudioNode('gain'));
@@ -127,27 +132,34 @@ beforeEach(() => {
     vi.clearAllMocks();
     disarmNativeLiveMidiWriter();
     mocks.declineNativeChain = true;
+    mocks.declineFirstNativeChain = false;
+    nativeDeviceIds = [fermenter.id];
+    nativeTopologyReadbacks = [];
     mocks.strip = { trackId: TRACK_ID, deviceNodes: [persistentNode(fermenter)] };
     mocks.applyRuntimeGraphDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
-    nativeLiveGraphSession.backend = backend;
+    nativeLiveGraphSession.backend = createBackend();
     nativeLiveGraphSession.rolling = true;
     nativeLiveGraphSession.carriedStripIds = new Set([TRACK_ID]);
     nativeLiveGraphSession.nativeChainByStripId = new Map([[TRACK_ID, [fermenter.id]]]);
     nativeLiveGraphSession.lastDeferredChainNotice = null;
     nativeLiveGraphSession.pending = Promise.resolve();
+    let topologyRequests = 0;
     applyNative.mockImplementation((batch) => {
         const topology = batch.commands.some(
             (command) => command.kind === 'insert-device' || command.kind === 'remove-device'
         );
-        if (topology && mocks.declineNativeChain) {
+        if (topology) {
+            topologyRequests += 1;
+        }
+        if (topology && (mocks.declineNativeChain || (mocks.declineFirstNativeChain && topologyRequests === 1))) {
+            nativeTopologyReadbacks.push([...nativeDeviceIds]);
             return Promise.resolve({
                 acceptance: 'rejected',
                 application: 'not-applied',
                 reason: 'injected native chain refusal',
             });
         }
-        const heldDeviceIds = nativeLiveGraphSession.nativeChainByStripId.get(TRACK_ID) ?? [];
-        let deviceIds = [...heldDeviceIds];
+        let deviceIds = [...nativeDeviceIds];
         for (const command of batch.commands) {
             if (command.kind === 'remove-device') {
                 deviceIds = deviceIds.filter((id) => id !== command.deviceId);
@@ -162,6 +174,10 @@ beforeEach(() => {
                 }
                 deviceIds.splice(command.index, 0, command.device.id);
             }
+        }
+        nativeDeviceIds = deviceIds;
+        if (topology) {
+            nativeTopologyReadbacks.push([...nativeDeviceIds]);
         }
         return Promise.resolve({
             acceptance: 'accepted',
@@ -227,55 +243,78 @@ describe('native obligations behind a matching persistent Web Audio chain', () =
         expect(requests[0]).toContainEqual(
             expect.objectContaining({ kind: 'insert-device', device: expect.objectContaining({ id: drum.id }) })
         );
-        expect(requests[1]?.map((command) => command.kind)).toEqual([
-            'remove-device',
-            'insert-device',
-            'insert-device',
-        ]);
+        expect(requests[1]).toContainEqual(
+            expect.objectContaining({
+                kind: 'insert-device',
+                device: expect.objectContaining({ id: drum.id }),
+                index: 0,
+            })
+        );
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             expect.stringContaining('takes effect on the next play: injected native chain refusal'),
             'warning'
         );
     });
 
-    it('does not insert the same native devices twice when grouped steps already share their final persistent chain', async () => {
-        mocks.declineNativeChain = false;
-        nativeLiveGraphSession.nativeChainByStripId = new Map([[TRACK_ID, []]]);
-        const eqOne: Device = {
-            id: 'eq-one',
-            name: 'EQ One',
-            type: 'builtin-eq',
-            bypassed: false,
-            parameterValues: {},
-        };
-        const eqTwo: Device = { ...eqOne, id: 'eq-two', name: 'EQ Two' };
-        publishTrack([]);
-        const actions = [
-            {
-                type: 'addDevice' as const,
-                payload: { trackId: TRACK_ID, deviceType: 'builtin-eq', deviceId: eqOne.id },
-            },
-            {
-                type: 'addDevice' as const,
-                payload: { trackId: TRACK_ID, deviceType: 'builtin-eq', deviceId: eqTwo.id },
-            },
-        ];
-        const first = await getArrangementHandlers().addDevice.execute(actions[0]!, { actions, actionIndex: 0 });
-        const second = await getArrangementHandlers().addDevice.execute(actions[1]!, { actions, actionIndex: 1 });
-        if (!first || first.status !== 'written' || !second || second.status !== 'written') {
-            throw new Error('Expected both grouped additions');
-        }
-        const final = trackStore.value?.tracks.find((track) => track.id === TRACK_ID);
-        if (!final) {
-            throw new Error('Expected the final EQ pair');
-        }
-        mocks.strip = { trackId: TRACK_ID, deviceNodes: final.devices.map(persistentNode) };
-        await first.afterCommit?.();
-        await second.afterCommit?.();
-        await nativeLiveGraphSession.pending;
+    it.each([false, true])(
+        'mirrors the complete grouped chain without duplicate inserts when the first request declines: %s',
+        async (declineFirst) => {
+            mocks.declineNativeChain = false;
+            mocks.declineFirstNativeChain = declineFirst;
+            nativeDeviceIds = [];
+            nativeLiveGraphSession.nativeChainByStripId = new Map([[TRACK_ID, []]]);
+            const eqOne: Device = {
+                id: 'eq-one',
+                name: 'EQ One',
+                type: 'builtin-eq',
+                bypassed: false,
+                parameterValues: {},
+            };
+            const eqTwo: Device = { ...eqOne, id: 'eq-two', name: 'EQ Two' };
+            publishTrack([]);
+            const actions = [
+                {
+                    type: 'addDevice' as const,
+                    payload: { trackId: TRACK_ID, deviceType: 'builtin-eq', deviceId: eqOne.id },
+                },
+                {
+                    type: 'addDevice' as const,
+                    payload: { trackId: TRACK_ID, deviceType: 'builtin-eq', deviceId: eqTwo.id },
+                },
+            ];
+            const first = await getArrangementHandlers().addDevice.execute(actions[0]!, { actions, actionIndex: 0 });
+            const second = await getArrangementHandlers().addDevice.execute(actions[1]!, { actions, actionIndex: 1 });
+            if (!first || first.status !== 'written' || !second || second.status !== 'written') {
+                throw new Error('Expected both grouped additions');
+            }
+            const final = trackStore.value?.tracks.find((track) => track.id === TRACK_ID);
+            if (!final) {
+                throw new Error('Expected the final EQ pair');
+            }
+            mocks.strip = { trackId: TRACK_ID, deviceNodes: final.devices.map(persistentNode) };
+            await first.afterCommit?.();
+            await second.afterCommit?.();
+            await nativeLiveGraphSession.pending;
 
-        expect(nativeLiveGraphSession.nativeChainByStripId.get(TRACK_ID)).toEqual([eqOne.id, eqTwo.id]);
-        expect(nativeTopologyRequests()).toHaveLength(1);
-        expect(mocks.notifyUser).not.toHaveBeenCalled();
-    });
+            const finalDeviceIds = final.devices.map((device) => device.id);
+            expect(nativeDeviceIds).toEqual(finalDeviceIds);
+            expect(nativeLiveGraphSession.nativeChainByStripId.get(TRACK_ID)).toEqual(finalDeviceIds);
+            const requests = nativeTopologyRequests();
+            expect(requests).toHaveLength(declineFirst ? 2 : 1);
+            for (const commands of requests) {
+                expect(
+                    commands.map((command) => (command.kind === 'insert-device' ? command.device.id : command.kind))
+                ).toEqual(finalDeviceIds);
+            }
+            expect(nativeTopologyReadbacks).toEqual(declineFirst ? [[], finalDeviceIds] : [finalDeviceIds]);
+            if (declineFirst) {
+                expect(mocks.notifyUser).toHaveBeenCalledWith(
+                    expect.stringContaining('takes effect on the next play: injected native chain refusal'),
+                    'warning'
+                );
+            } else {
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+            }
+        }
+    );
 });
