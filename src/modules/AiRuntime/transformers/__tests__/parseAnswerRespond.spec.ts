@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 
 import { ANSWER_RESPOND_MAX_STATEMENTS } from '../../models/AnswerRespond';
-import {
-    projectPlanningProviderToolSchemas,
-    getPlanningProviderToolSchemas,
-} from '../../useCases/getPlanningProviderToolSchemas';
+import { getPlanningProviderToolSchemas } from '../../useCases/getPlanningProviderToolSchemas';
+import { projectPlanningProviderToolSchemas } from '../../useCases/projectPlanningProviderToolSchemas';
 import { getPlanningProviderSchemaContract } from '../../useCases/planningProviderSchema';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { parseAnswerRespond } from '../parseAnswerRespond';

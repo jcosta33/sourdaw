@@ -46,7 +46,7 @@ import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandL
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
-import { createCanonicalAnswerRespondParameters } from './projectAnswerRespondToolSchema';
+import { createCanonicalAnswerRespondParameters } from './createCanonicalAnswerRespondParameters';
 
 export {
     AGENT_CAPABILITIES_TOOL_NAME,

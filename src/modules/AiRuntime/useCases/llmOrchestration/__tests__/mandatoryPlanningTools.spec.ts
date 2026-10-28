@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 
-import { createPlanningProject } from '../../__tests__/planningProjectFixture';
-import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
 import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
     createCreativeInterpretationToolSchema,
@@ -38,6 +36,8 @@ import { readAgentResourceLimits } from '../../../stores/agentResourceLimitsStor
 import { buildPlanningSystemPrompt } from '../../../transformers/buildPlanningSystemPrompt';
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
+import { createPlanningProject } from '../../__tests__/planningProjectFixture';
+import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -54,10 +54,8 @@ import {
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { buildAgentContext } from '../../buildAgentContext';
 import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
-import {
-    getPlanningProviderToolSchemas,
-    projectPlanningProviderToolSchemas,
-} from '../../getPlanningProviderToolSchemas';
+import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
+import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';

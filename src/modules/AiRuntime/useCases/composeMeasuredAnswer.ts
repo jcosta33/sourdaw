@@ -105,6 +105,36 @@ function formatRangeLabel(authority: AnswerRequestAuthority): string {
 function sameMembers(left: readonly string[], right: readonly string[]): boolean {
     return left.length === right.length && new Set(left).size === left.length && left.every((id) => right.includes(id));
 }
+function hasMasterCoverage(measurement: AnswerMeasurement): boolean {
+    return (
+        (measurement.scope.kind === 'master' || measurement.scope.kind === 'project') &&
+        measurement.targets.length === 1 &&
+        measurement.targets[0]?.targetKind === 'master' &&
+        measurement.targets[0].targetId === 'master' &&
+        measurement.targets[0].route === 'mixdown' &&
+        measurement.targets[0].artifact.contentAddress.length > 0
+    );
+}
+function hasCollectionCoverage(
+    measurement: AnswerMeasurement,
+    scope: AnswerRequestAuthority['scopes'][number]
+): boolean {
+    return (
+        (measurement.scope.kind === 'tracks' || measurement.scope.kind === 'buses') &&
+        scope.kind === measurement.scope.kind &&
+        measurement.scope.ids.every((id) => scope.objectIds.includes(id)) &&
+        sameMembers(
+            measurement.scope.ids,
+            measurement.targets.map((target) => target.targetId)
+        ) &&
+        measurement.targets.every(
+            (target) =>
+                target.targetKind === (scope.kind === 'tracks' ? 'track' : 'bus') &&
+                target.route === 'isolated-subgraph' &&
+                target.artifact.contentAddress.length > 0
+        )
+    );
+}
 function compatibleCoverage(measurement: AnswerMeasurement, authority: AnswerRequestAuthority): boolean {
     const { range } = authority;
     const scope = authority.scopes.find(
@@ -123,30 +153,9 @@ function compatibleCoverage(measurement: AnswerMeasurement, authority: AnswerReq
         return false;
     }
     if (scope.kind === 'master') {
-        return (
-            (measurement.scope.kind === 'master' || measurement.scope.kind === 'project') &&
-            measurement.targets.length === 1 &&
-            measurement.targets[0]?.targetKind === 'master' &&
-            measurement.targets[0].targetId === 'master' &&
-            measurement.targets[0].route === 'mixdown' &&
-            measurement.targets[0].artifact.contentAddress.length > 0
-        );
+        return hasMasterCoverage(measurement);
     }
-    return (
-        (measurement.scope.kind === 'tracks' || measurement.scope.kind === 'buses') &&
-        scope.kind === measurement.scope.kind &&
-        measurement.scope.ids.every((id) => scope.objectIds.includes(id)) &&
-        sameMembers(
-            measurement.scope.ids,
-            measurement.targets.map((target) => target.targetId)
-        ) &&
-        measurement.targets.every(
-            (target) =>
-                target.targetKind === (scope.kind === 'tracks' ? 'track' : 'bus') &&
-                target.route === 'isolated-subgraph' &&
-                target.artifact.contentAddress.length > 0
-        )
-    );
+    return hasCollectionCoverage(measurement, scope);
 }
 function resolveMetricReference(
     reference: AnswerMetricReference,
@@ -240,6 +249,7 @@ function projectFact(
             return `Project fader settings (linear gain, not measured audio): master ${formatAnswerNumber(context.masterGain)}${trackSettings}.`;
         }
     }
+    throw new Error('Unknown project fact');
 }
 function recipeText(recipe: RecipeDiscoveryReceiptData['candidates'][number]): string {
     const descriptors = getAgentBuiltinDeviceFactoryManifest(recipe.steps.map((step) => step.deviceType));

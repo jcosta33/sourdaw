@@ -41,6 +41,27 @@ function resolveScopes(catalog: AnswerInterpretationCatalog, ids: unknown): Answ
     return [...groups.values()];
 }
 
+function hasContradictorySelection(
+    kind: AnswerRequestAuthority['kind'],
+    scopes: readonly AnswerScopeCandidate[],
+    range: AnswerRequestAuthority['range'],
+    topics: AnswerRequestAuthority['topics']
+): boolean {
+    return (
+        (kind === 'measured-audio' &&
+            (scopes.length === 0 ||
+                scopes.some((scope) => scope.kind === 'clips') ||
+                range === null ||
+                topics.length === 0)) ||
+        (kind === 'source-onsets' &&
+            (scopes.length === 0 ||
+                scopes.some((scope) => scope.kind !== 'clips') ||
+                range !== null ||
+                topics.length > 0)) ||
+        ((kind === 'project-facts' || kind === 'catalog-knowledge') && (topics.length > 0 || range !== null))
+    );
+}
+
 export function admitAnswerInterpretation(input: {
     catalog: AnswerInterpretationCatalog;
     call: ToolCallResult;
@@ -70,19 +91,7 @@ export function admitAnswerInterpretation(input: {
     if (args.uncertainty !== 'none') {
         return { status: 'clarify', reason: 'Please clarify the question, target or range to analyze.' };
     }
-    if (
-        (kind === 'measured-audio' &&
-            (scopes.length === 0 ||
-                scopes.some((scope) => scope.kind === 'clips') ||
-                range === null ||
-                topics.length === 0)) ||
-        (kind === 'source-onsets' &&
-            (scopes.length === 0 ||
-                scopes.some((scope) => scope.kind !== 'clips') ||
-                range !== null ||
-                topics.length > 0)) ||
-        ((kind === 'project-facts' || kind === 'catalog-knowledge') && (topics.length > 0 || range !== null))
-    ) {
+    if (hasContradictorySelection(kind, scopes, range, topics)) {
         return { status: 'rejected', reason: 'Answer interpretation has contradictory kind, scope, range or topics.' };
     }
     const selectedTopics = ANSWER_TOPICS.filter((topic) => topics.includes(topic));

@@ -27,15 +27,6 @@ import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores
 import * as projectReads from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
-import {
-    configureAiWorkflowCommandPreflightFixture,
-    resetAiWorkflowCommandPreflightFixture,
-} from '../../__tests__/aiWorkflowCommandPreflightFixture';
-import {
-    advertisedAnswerIntake,
-    advertisedAnswerCandidateId,
-    structuralAnswerArguments,
-} from '../../__tests__/answerWireFixture';
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
 import { type ToolCallResult } from '../../../models/ToolCallResult';
@@ -53,6 +44,15 @@ import {
     clearPendingActionConfirmations,
     pendingActionConfirmationStore,
 } from '../../../stores/pendingActionConfirmationStore';
+import {
+    configureAiWorkflowCommandPreflightFixture,
+    resetAiWorkflowCommandPreflightFixture,
+} from '../../__tests__/aiWorkflowCommandPreflightFixture';
+import {
+    advertisedAnswerIntake,
+    advertisedAnswerCandidateId,
+    structuralAnswerArguments,
+} from '../../__tests__/answerWireFixture';
 import * as preparation from '../../agentReference/prepareStemImport';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunWorkLease } from '../../agentRunWorkLease';
