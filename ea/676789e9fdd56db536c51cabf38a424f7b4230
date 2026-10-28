@@ -1,0 +1,18 @@
+src/modules/AudioEngine/engine/TrackNode.ts
+  h_beb54bf43b47b7 7,1433,1442,1479
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  h_beb54bf43b47b7 1320,1336
+src/modules/AudioEngine/services/matchesRuntimeDeviceChainTopology.ts
+  h_beb54bf43b47b7 6-10,16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea676789e9fdd56db536c51cabf38a424f7b4230",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
