@@ -33,7 +33,7 @@ test.describe('Proof limiter section true-peak ceiling — keyboard response', (
         await inspector.getByText('Proof', { exact: false }).first().click();
         await expect(
             page
-                .getByRole('region', { name: 'Build controls', exact: true })
+                .getByRole('region', { name: 'Play controls', exact: true })
                 .getByRole('slider', { name: 'Mission limiter ceiling' })
         ).toBeVisible({
             timeout: 15_000,
