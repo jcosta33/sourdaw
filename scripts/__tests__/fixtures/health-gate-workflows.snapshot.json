@@ -190,7 +190,10 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
+            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "with": {
+              "category": ".github/workflows/nightly.yml:codeql"
+            }
           }
         ]
       },
