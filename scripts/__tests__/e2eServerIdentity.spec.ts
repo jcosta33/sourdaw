@@ -352,9 +352,9 @@ describe('playwright config port derivation', () => {
         expect(builtProject?.testIgnore).toContain(specPath);
         expect(devProject?.testMatch).toContain(specPath);
         expect(devProject?.testIgnore).toBeUndefined();
-        expect(devProject?.use?.baseURL).toBe('http://localhost:6124');
+        expect(devProject?.use?.baseURL).toBe('http://127.0.0.1:6124');
         const servers = webServers(config);
-        expect(servers.map((server) => server.url)).toEqual(['http://localhost:6123', 'http://localhost:6124']);
+        expect(servers.map((server) => server.url)).toEqual(['http://127.0.0.1:6123', 'http://127.0.0.1:6124']);
         expect(servers[1]?.command).toBe('node scripts/e2eDevServer.ts 6124');
         expect(servers[1]?.stdout).toBe('pipe');
         expect(servers[1]?.stderr).toBe('pipe');
