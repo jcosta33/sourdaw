@@ -1,0 +1,23 @@
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_59e31a5c6f3e31::t_8a52c6406790e9 391-393,395-397,409-411,413-415,427-435,441-442,448,1138-1139
+src/modules/Collaboration/useCases/__tests__/assetTransferLibrary.spec.ts
+  s_59e31a5c6f3e31::t_2ddb6aed72dcbb 336-362,370-391,393-394,398-400
+  s_59e31a5c6f3e31::t_5e0824a6fc29fd 363-369,392
+  s_59e31a5c6f3e31::t_cd57a46c3628ac 395-397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "782f158a0adeab0f895417d96a509af8d6ce02a8",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
