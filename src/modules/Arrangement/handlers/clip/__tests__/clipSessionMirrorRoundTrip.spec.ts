@@ -760,20 +760,22 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 name: 'Cold created',
                 type: 'midi' as const,
             };
-            const action: AppAction =
-                type === 'duplicateClipAt'
-                    ? {
-                          type,
-                          payload: {
-                              clipId: 'clip-a',
-                              targetClipId: 'cold-created',
-                              destinationTrackId: TRACK_ID,
-                              startBeat: 12,
-                          },
-                      }
-                    : type === 'drawClip'
-                      ? { type, payload: { ...clip, ripple: false } }
-                      : { type, payload: clip };
+            let action: AppAction;
+            if (type === 'duplicateClipAt') {
+                action = {
+                    type,
+                    payload: {
+                        clipId: 'clip-a',
+                        targetClipId: 'cold-created',
+                        destinationTrackId: TRACK_ID,
+                        startBeat: 12,
+                    },
+                };
+            } else if (type === 'drawClip') {
+                action = { type, payload: { ...clip, ripple: false } };
+            } else {
+                action = { type, payload: clip };
+            }
             await executeAppAction(action, { source: 'manual' });
             for (const retireTake of [false, true]) {
                 if (retireTake) {
@@ -862,11 +864,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     throw new Error('Expected actual split recording lane');
                 }
                 takeLaneStore.set({
-                    lanes: lanes.lanes.map((lane) =>
-                        lane.id === 'comp-lane'
-                            ? { ...lane, takes: [...lane.takes, createTake('clip-right', 'Late right pass', 14, 16)] }
-                            : lane
-                    ),
+                    lanes: lanes.lanes.map((lane) => {
+                        if (lane.id !== 'comp-lane') {
+                            return lane;
+                        }
+                        return { ...lane, takes: [...lane.takes, createTake('clip-right', 'Late right pass', 14, 16)] };
+                    }),
                 });
                 flushAutomergeStorageWrites();
                 expect((await undo()).headConsumed).toBe(true);

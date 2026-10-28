@@ -81,7 +81,7 @@ describe('deferred boot session restore', () => {
     ])('rejects owner %s / %s before any document-dependent validation', async (projectId, witness) => {
         const pending = await pendingRestore();
         pending.installDocument();
-        pending.subject.reconcileUndoStoreForProject(projectId, () => witness!);
+        pending.subject.reconcileUndoStoreForProject(projectId, () => witness);
         expect(pending.validateEntry).not.toHaveBeenCalled();
         expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
         pending.subject.reconcileUndoStoreForProject('saved-project', () => 'saved-root');
