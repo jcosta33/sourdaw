@@ -1818,6 +1818,89 @@ describe('AudioEngine', () => {
         inputMonitoringSession.pendingRequests.clear();
     });
 
+    describe('preview intent lifecycle', () => {
+        it('owns ordinary and exclusive intents inside this engine instance', () => {
+            const first = engine.beginAudioPreviewIntent();
+            const second = engine.beginAudioPreviewIntent();
+            expect(first.isCurrent()).toBe(true);
+            expect(second.isCurrent()).toBe(true);
+            const exclusive = engine.beginExclusiveAudioPreviewIntent();
+            expect(first.isCurrent()).toBe(false);
+            expect(second.isCurrent()).toBe(false);
+            expect(exclusive.isCurrent()).toBe(true);
+            const ordinary = engine.beginAudioPreviewIntent();
+            expect(exclusive.isCurrent()).toBe(false);
+            expect(ordinary.isCurrent()).toBe(true);
+        });
+
+        it('invalidates preview work before the old graph is retired and opens a fresh lifetime afterward', () => {
+            engine.ensureTrackStrip('preview-track');
+            const outgoing = engine.beginAudioPreviewIntent();
+            let graphExistedWhenCancelled = false;
+            outgoing.signal.addEventListener('abort', () => {
+                graphExistedWhenCancelled = engine.getTrackStrip('preview-track') !== undefined;
+            });
+            engine.resetGraph();
+            expect(graphExistedWhenCancelled).toBe(true);
+            expect(outgoing.isCurrent()).toBe(false);
+            expect(outgoing.signal.reason).toBe('disposed');
+            const current = engine.beginExclusiveAudioPreviewIntent();
+            outgoing.release();
+            expect(current.isCurrent()).toBe(true);
+            engine.resetGraph();
+            expect(current.isCurrent()).toBe(false);
+        });
+
+        it('keeps reentrant teardown callbacks in the outgoing disposed lifetime', () => {
+            const outgoing = engine.beginExclusiveAudioPreviewIntent();
+            const attempted: ReturnType<AudioEngine['beginAudioPreviewIntent']>[] = [];
+            outgoing.signal.addEventListener('abort', () => {
+                engine.resetGraph();
+                attempted.push(engine.beginAudioPreviewIntent());
+            });
+            engine.resetGraph();
+            expect(attempted).toHaveLength(1);
+            expect(attempted[0]?.isCurrent()).toBe(false);
+            expect(attempted[0]?.signal.reason).toBe('disposed');
+            expect(engine.beginAudioPreviewIntent().isCurrent()).toBe(true);
+        });
+
+        it('retires preview intents even when an independent monitor cleanup fails', () => {
+            const strip = engine.ensureTrackStrip('preview-monitor-track');
+            const capture = seedMonitorCapture(null, 'preview-monitor-track', strip.gainNode);
+            const failure = new Error('preview fixture monitor teardown failed');
+            capture.sourceDisconnect.mockImplementation((...destinations) => {
+                if (destinations.length === 0) {
+                    throw failure;
+                }
+            });
+            const outgoing = engine.beginAudioPreviewIntent();
+            expect(() => engine.resetGraph()).toThrow(failure);
+            expect(outgoing.isCurrent()).toBe(false);
+            expect(engine.beginAudioPreviewIntent().isCurrent()).toBe(true);
+        });
+
+        it('invalidates previews synchronously on disposal and never reopens a disposed engine', async () => {
+            const outgoing = engine.beginAudioPreviewIntent();
+            const disposal = engine.dispose();
+            expect(outgoing.isCurrent()).toBe(false);
+            expect(engine.beginAudioPreviewIntent().isCurrent()).toBe(false);
+            await disposal;
+            engine.resetGraph();
+            expect(engine.beginExclusiveAudioPreviewIntent().isCurrent()).toBe(false);
+            expect(mockCtx.close).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not let another engine instance own or retire this instance’s previews', () => {
+            const current = engine.beginAudioPreviewIntent();
+            const other = createAudioEngine(asAudioContext(createMockAudioContext()));
+            const otherExclusive = other.beginExclusiveAudioPreviewIntent();
+            other.resetGraph();
+            expect(otherExclusive.isCurrent()).toBe(false);
+            expect(current.isCurrent()).toBe(true);
+        });
+    });
+
     // The graph teardown owns monitor teardown on every path — a project switch
     // reaches it through resetAudioGraph(), disposal through disposeOnce() — so a
     // reset that leaves the microphone live would leak it on the switch path.

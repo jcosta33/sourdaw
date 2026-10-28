@@ -2,13 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { getTempoAtBeat, secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { transportStore } from '../../../stores/transportStore';
+import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';
+
+import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 
 type TestRecordingClip = {
     id: string;
@@ -44,7 +49,7 @@ const mocks = vi.hoisted(() => ({
     stopRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     startNativeLiveGraphSession: vi.fn<() => Promise<unknown>>(),
     startAudioRecording: vi.fn<StartAudioRecording>(),
-    startPlayheadScheduler: vi.fn<() => void>(),
+    startPlayheadScheduler: vi.fn<typeof startPlayheadScheduler>(),
     scheduleClick: vi.fn<(...args: unknown[]) => void>(),
     startSource: vi.fn<StartSource>(),
     resolveClipsWithComping: vi.fn<(trackId: string, clips: unknown[]) => unknown[]>(() => []),
@@ -54,6 +59,8 @@ vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrack
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: mocks.startPlayheadScheduler,
 }));
+vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
+vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: mocks.resolveClipsWithComping,
     takeOwnsRecordingRoot: vi.fn(() => true),
@@ -200,6 +207,30 @@ describe('toggleRecording — take aligned to the timeline under pre-roll', () =
         mocks.resolveClipsWithComping.mockReturnValue([]);
         mocks.resumeEngine.mockResolvedValue(undefined);
         mocks.startAudioRecording.mockResolvedValue(true);
+        vi.mocked(prepareInitialBrowserPlayback).mockImplementation((generation) => ({
+            generation,
+            epoch: schedulerSession.discontinuityEpoch,
+            seam: null,
+            ownsSession: () => true,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+            prepareMidiWindows: async () => ({
+                isCurrent: () => true,
+                midiWindow: () => {
+                    throw new Error('Scheduler boundary is controlled by this recording spec');
+                },
+            }),
+        }));
+        mocks.startPlayheadScheduler.mockImplementation((prepared, onRoll) => {
+            const state = transportStore.value;
+            if (!state) {
+                throw new Error('Expected the real playback owner to publish its roll position');
+            }
+            playheadClockRef.beat = state.playheadPosition;
+            playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+            onRoll?.(playheadClockRef.audioTimeSeconds, playheadClockRef.beat);
+            return prepared ? Promise.resolve(true) : undefined;
+        });
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         audioClock.currentTime = 0;
         audioClock.baseLatency = BASE_LATENCY_SEC;

@@ -38,6 +38,40 @@ outside the barrel and history, beside a valid commit; each must increase the un
 score. Include a duplicate barrel action, an unrelated entity, a wrong value on an authorized field,
 and typed values whose distinctions JSON serialization would erase. Removing the project-state
 comparison must fail the named acceptance cases while an ordinary intended commit still passes.
+Also count prior barrel writes that restore their original value, and inject an outside-barrel write
+beside Undo; removing only the Undo comparison must fail that case. Observe settled CRDT
+transitions as well as final truth: an unauthorized persisted write followed by restoration must
+fail beside planning, prior and follow-up commits, and Undo.
+
+### 2026-10-27 — response fixtures hid an invalid Actor identity selection (introduced by PR #5705)
+
+PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) added historical-stack admission's
+`author { id }` selection. GitHub rejects it because `Actor` has no `id` field, while the
+parser's handcrafted author-ID fixtures pass. The public approval names contradictory-lineage
+and native-reader probes; exact private prompts and tiers are unknown. The missed stance was
+whether the real remote query can produce the immutable identity its parser requires.
+
+Capture the native adapter's emitted query and validate its identity selections against the live
+schema. Narrow Actor selections to supported concrete Node types, pair real Bot and User ID
+responses with missing-author, missing-ID and GraphQL-error refusals, and restore direct Actor.id
+as the negative control. Parser fixtures alone cannot prove the remote query is executable.
+
+### 2026-10-27 — start-only preview checks missed resource and owner teardown (preserved by PR #187)
+
+PR #187 (`8c11c40674b32074a12a209b308d3361e93fe873`) extracted the cached-preview helper
+with cases for starting a source and a missing buffer. Those checks did not observe disconnect,
+repeated Stop, natural completion or engine reset/disposal. The stop-only source behavior already
+existed in commit `454de02a76069e5cec5fcee104eb9a64521e2f97`, for which GitHub reports no
+associated PR; exact historical private reviewer prompts and tiers are unknown.
+
+Capture a real playback handle and its ended callback. Deliver Stop twice and then the old callback;
+require one stop, disconnect, release and completion notification. Natural completion must release
+without stopping an already-ended source. Throw from stop and disconnect and still require owner
+release. Exercise actual engine reset/dispose and reentrant callbacks, not only an intent stub.
+Remove the abort subscription, disconnect, release or reset invalidation separately; each named
+spec must fail its corresponding probe while the ordinary-preview control survives. Keep the
+offline/live graph, drag-handoff PCM and Undo/Redo fixtures using the real intent registry and
+explicit playback cleanup when the engine contract changes.
 
 ### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
 
@@ -1407,6 +1441,45 @@ download. Exercise grouped stem strips and auxiliary detector keys; a refusal mu
 whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
+
+## Historical replay fixtures must retain the real producer and reader
+
+PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
+that old saved inverses remain safe. Generate historical actions, document records and the
+witness-stamped session mirror with the untouched historical producer. Keep those bytes
+and hydrate them with the current production reader before invoking real Undo. A `.sdaw`
+file alone does not contain the session Undo mirror. Historical review prompts and model
+tiers are unverified; the missing proof joined historical production, current hydration and real Undo.
+
+Assert the actual pending entry, tree cursor and settled mirror alongside raw project
+contents. Reverting admission must consume the unsafe entry or alter its coordinates and
+fail the named case. Preserve independently produced compatible controls. Historical
+trim/slip handlers are singleton handlers, and hydration excludes internal restore
+prefixes; synthetic direct groups test defensive APIs, not supported saved grouped history.
+
+Derive hydrated entry counts from the saved mirror: the historical producer may run
+setup commands without retaining them in that mirror. Admit the genuine trim and its
+keyless inverse unconditionally before checking refusal. A zero-distance regression
+must include an unnormalized offset produced with looping off, then enable a loop and
+trim at the same start. Preserve its exact saved bytes and require the old reader's
+consumed history, absent warning and displaced raw rows to fail the new refusal oracle.
+The normalized zero-distance control is also a conservative refusal, not proof that
+the current phase identifies the old offset. Keep real current captures of zero and
+a whole-loop offset and compare raw owner coordinates through Undo and Redo.
+
+Current loop mode cannot stand in for historical mode. Load the authentic looping
+fixture, disable looping through a peer mutation and real projection, then require
+visible refusal with all peer state and pending history intact. The original loop-off
+MIDI fixture is also a conservative refusal; genuine audio remains the replay control.
+When broader refusal makes a former post-wait or prefix test reject from its starting
+state, replace that test with an eligible audio target. Hold the actual snapshot wait,
+remove the target through public CRDT mutation and projection, and capture the peer
+snapshot before releasing the transaction. Moving admission before the wait must
+consume history and fail the case. In a synthetic direct unit, a callback prefix that
+removes the audio target must remain uncalled: removing only its early guard must fail
+full state preservation even though later admission still throws the same error class.
+Snapshot all action payloads, history IDs and tree entries while retaining callback
+function identity; do not drop callback members or attempt to structured-clone them.
 
 ### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
 

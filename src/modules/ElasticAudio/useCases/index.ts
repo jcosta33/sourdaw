@@ -2,6 +2,7 @@
 // and time-stretch algorithm-selection orchestration (ADR 0011 W4).
 
 export { detectTransients } from './elasticAudio/detectTransients';
+export { readClipTransientOnsets } from './elasticAudio/readClipTransientOnsets';
 export { detectTransientsForClip } from './elasticAudio/detectTransientsForClip';
 export { markElasticDetectionComplete } from './elasticAudio/markElasticDetectionComplete';
 export { selectElasticMarkers } from './elasticAudio/selectElasticMarkers';

@@ -24,6 +24,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
+    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -480,8 +481,7 @@ type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number 
 type ProjectTruth = Record<string, Record<string, unknown>>;
 
 /** Materialized project values, independent of the route that wrote them. */
-function captureProjectTruth(): ProjectTruth {
-    captureSettledRevision();
+function materializeProjectTruth(): ProjectTruth {
     const truth: ProjectTruth = {};
     for (const id of getCrdtDocIds()) {
         const document = getCrdtDoc(id);
@@ -499,6 +499,80 @@ function captureProjectTruth(): ProjectTruth {
         truth[id] = value;
     }
     return truth;
+}
+
+function captureProjectTruth(): ProjectTruth {
+    captureSettledRevision();
+    return materializeProjectTruth();
+}
+
+/** Capture applied CRDT content without settling from inside a repository notification. */
+async function observeProjectChanges<T>(
+    run: () => Promise<T>,
+    materialize: () => ProjectTruth = materializeProjectTruth
+): Promise<{ result: T; transitions: ProjectTruth[] }> {
+    const transitions: ProjectTruth[] = [];
+    let failure: Error | undefined;
+    const unsubscribe = subscribeToCrdtChanges(() => {
+        try {
+            transitions.push(materialize());
+        } catch (error) {
+            failure ??= error instanceof Error ? error : new Error('Project truth capture failed.', { cause: error });
+        }
+    });
+    let result: T;
+    try {
+        result = await run();
+        captureSettledRevision();
+    } finally {
+        unsubscribe();
+    }
+    if (failure !== undefined) {
+        throw failure;
+    }
+    return { result, transitions };
+}
+
+/** Every applied state must match one oracle-authorized prefix. */
+function transitionDifferences(transitions: readonly ProjectTruth[], allowed: readonly ProjectTruth[]): number {
+    let earliest = 0;
+    let differences = 0;
+    for (const transition of transitions) {
+        const remaining = allowed.slice(earliest);
+        const counts = remaining.map((state) => projectDifferences(state, transition));
+        const nearest = Math.min(...counts);
+        differences = Math.max(differences, nearest);
+        if (nearest === 0) {
+            earliest += counts.indexOf(0);
+        }
+    }
+    return differences;
+}
+
+function commitPrefixes(before: ProjectTruth, actions: readonly CorpusOracleAction[]): ProjectTruth[] {
+    return Array.from({ length: actions.length + 1 }, (_, index) =>
+        projectAfterOracleActions(before, actions.slice(0, index))
+    );
+}
+
+function undoPrefixes(
+    beforeCommit: ProjectTruth,
+    beforeUndo: ProjectTruth,
+    actions: readonly CorpusOracleAction[]
+): ProjectTruth[] {
+    const committedPrefixes = commitPrefixes(beforeCommit, actions);
+    const states = [beforeUndo];
+    let current = beforeUndo;
+    for (let index = actions.length - 1; index >= 0; index--) {
+        const prior = committedPrefixes[index];
+        const action = actions[index];
+        if (prior === undefined || action === undefined) {
+            throw new Error('Missing undo oracle prefix.');
+        }
+        current = projectAfterOracleUndo(prior, current, [action]);
+        states.push(current);
+    }
+    return states;
 }
 
 function isProjectMap(value: unknown): value is Record<string, unknown> {
@@ -591,6 +665,40 @@ function projectAfterOracleActions(before: ProjectTruth, actions: readonly Corpu
     return expected;
 }
 
+/** Undo restores only the fields authorized by the prior commit, atop the current project. */
+function projectAfterOracleUndo(
+    beforeCommit: ProjectTruth,
+    beforeUndo: ProjectTruth,
+    actions: readonly CorpusOracleAction[]
+): ProjectTruth {
+    // Validate every operation and its original field before deriving an inverse.
+    projectAfterOracleActions(beforeCommit, actions);
+    const trackSlot = beforeCommit.root?.tracks;
+    if (!isProjectMap(trackSlot) || !Array.isArray(trackSlot.tracks)) {
+        throw new TypeError('The acceptance project has no materialized track collection.');
+    }
+    const tracks = trackSlot.tracks;
+    const inverses = actions.toReversed().map((action) => {
+        const track = tracks.find(
+            (candidate: unknown) => isProjectMap(candidate) && candidate.id === action.payload.trackId
+        );
+        if (!isProjectMap(track)) {
+            throw new TypeError('The acceptance project has no original track value.');
+        }
+        if (action.type === 'muteTrack') {
+            if (typeof track.muted !== 'boolean') {
+                throw new TypeError('The acceptance project has no original boolean mute value.');
+            }
+            return { type: action.type, payload: { trackId: action.payload.trackId, muted: track.muted } };
+        }
+        if (typeof track.gain !== 'number' || !Number.isFinite(track.gain)) {
+            throw new TypeError('The acceptance project has no original finite fader value.');
+        }
+        return { type: action.type, payload: { trackId: action.payload.trackId, gain: track.gain } };
+    });
+    return projectAfterOracleActions(beforeUndo, inverses);
+}
+
 /** The prior's frozen scripted commands declare the setup a committed refinement may establish. */
 function priorCommitOracleActions(prior: CorpusPriorTurn): CorpusOracleAction[] {
     const proposals = prior.providerTurns.filter((turn) => turn.kind === 'propose-commands');
@@ -659,18 +767,27 @@ function assertProposalInvariants(id: string, actions: PlannedActions, invariant
  * classes cannot cover is a corpus defect, never a silently-coerced result, so it throws instead of
  * scoring.
  */
-async function runCorpusCase(testCase: CorpusCase, barrel: BarrelWriteLog): Promise<CaseRun> {
+async function runCorpusCase(
+    testCase: CorpusCase,
+    barrel: BarrelWriteLog,
+    alongside?: () => Promise<void>
+): Promise<CaseRun> {
     if (testCase.promptClass === 'refinement') {
         return runRefinementCase(testCase, barrel);
     }
     const writesBefore = barrel.count();
     const projectBefore = captureProjectTruth();
-    const result = await runPlannedCorpusCase(testCase);
+    const observed = await observeProjectChanges(async () => {
+        const result = await runPlannedCorpusCase(testCase);
+        await alongside?.();
+        return { result, projectAfter: captureProjectTruth() };
+    });
     return {
-        result,
+        result: observed.result.result,
         unintendedMutations: Math.max(
             barrel.count() - writesBefore,
-            projectDifferences(projectBefore, captureProjectTruth())
+            projectDifferences(projectBefore, observed.result.projectAfter),
+            transitionDifferences(observed.transitions, [projectBefore])
         ),
     };
 }
@@ -865,6 +982,7 @@ type ChatTurnWrites = {
     newGroups: PastEntry[][];
     projectBefore: ProjectTruth;
     projectAfter: ProjectTruth;
+    transitions: ProjectTruth[];
 };
 
 /** A write the turn made, counted once even where only the project revision shows it. */
@@ -872,7 +990,8 @@ function anyWrites(writes: ChatTurnWrites): number {
     return Math.max(
         writes.barrelActions.length,
         writes.moved ? 1 : 0,
-        projectDifferences(writes.projectBefore, writes.projectAfter)
+        projectDifferences(writes.projectBefore, writes.projectAfter),
+        transitionDifferences(writes.transitions, [writes.projectBefore])
     );
 }
 
@@ -931,27 +1050,30 @@ async function sendScriptedChatTurn(input: {
     const entriesBefore = new Set(pastEntries());
     const mark = input.barrel.mark();
 
-    await sendChatMessage(input.prompt);
-    await input.alongside?.();
-
-    expect(
-        runtimeMocks.generateWebLlmCompletion,
-        `Case ${input.id} turn "${input.prompt}" declares ${String(input.providerTurns.length)} scripted provider turns but the run consumed a different number`
-    ).toHaveBeenCalledTimes(input.providerTurns.length);
-    return {
-        barrelActions: input.barrel.actionsSince(mark),
-        moved: captureSettledRevision() !== revision || pastEntries().length !== pastLength,
-        newGroups: groupsAddedSince(entriesBefore),
-        projectBefore,
-        projectAfter: captureProjectTruth(),
-    };
+    const observed = await observeProjectChanges(async () => {
+        await sendChatMessage(input.prompt);
+        await input.alongside?.();
+        expect(
+            runtimeMocks.generateWebLlmCompletion,
+            `Case ${input.id} turn "${input.prompt}" declares ${String(input.providerTurns.length)} scripted provider turns but the run consumed a different number`
+        ).toHaveBeenCalledTimes(input.providerTurns.length);
+        return {
+            barrelActions: input.barrel.actionsSince(mark),
+            moved: captureSettledRevision() !== revision || pastEntries().length !== pastLength,
+            newGroups: groupsAddedSince(entriesBefore),
+            projectBefore,
+            projectAfter: captureProjectTruth(),
+        };
+    });
+    return { ...observed.result, transitions: observed.transitions };
 }
 
-/** The prior card or commit, with the project an Undo must restore while preserving later user edits. */
+/** The prior card or commit, with frozen originals for Undo atop the current project. */
 type PriorTurnState = {
     proposalId: string | undefined;
     commitGroupId: string | undefined;
-    projectAfterRevert: ProjectTruth;
+    projectBeforeCommit: ProjectTruth;
+    commitActions: readonly CorpusOracleAction[];
 };
 
 /**
@@ -962,12 +1084,13 @@ type PriorTurnState = {
 async function settlePriorTurn(
     id: string,
     outcome: CorpusPriorTurn['outcome'],
-    projectAfterRevert: ProjectTruth
+    projectBeforeCommit: ProjectTruth,
+    commitActions: readonly CorpusOracleAction[]
 ): Promise<PriorTurnState> {
     const proposed = proposedConfirmationIds();
     if (outcome === 'pending') {
         expect(proposed, `Case ${id} prior turn left no single card pending: ${lastAssistantReply()}`).toHaveLength(1);
-        return { proposalId: proposed[0], commitGroupId: undefined, projectAfterRevert };
+        return { proposalId: proposed[0], commitGroupId: undefined, projectBeforeCommit, commitActions };
     }
     expect(proposed.length, `Case ${id} prior turn left more than one card pending`).toBeLessThanOrEqual(1);
     for (const confirmationId of proposed) {
@@ -977,7 +1100,12 @@ async function settlePriorTurn(
         readChatThreadContext()?.lastCommit?.standing,
         `Case ${id} prior turn committed nothing that stands: ${lastAssistantReply()}`
     ).toBe('standing');
-    return { proposalId: undefined, commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId, projectAfterRevert };
+    return {
+        proposalId: undefined,
+        commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId,
+        projectBeforeCommit,
+        commitActions,
+    };
 }
 
 /** The commands one undo group holds applied, or `null` when any member is no plain action. */
@@ -1032,7 +1160,8 @@ function writesBeyondCommit(
     }
     return Math.max(
         writes.barrelActions.length,
-        projectDifferences(projectAfterOracleActions(writes.projectBefore, oracle), writes.projectAfter)
+        projectDifferences(projectAfterOracleActions(writes.projectBefore, oracle), writes.projectAfter),
+        transitionDifferences(writes.transitions, commitPrefixes(writes.projectBefore, oracle))
     );
 }
 
@@ -1086,7 +1215,14 @@ function scoreFollowUp(input: {
                 matchesOracle: true,
                 unintendedMutations: Math.max(
                     writes.barrelActions.length,
-                    projectDifferences(prior.projectAfterRevert, writes.projectAfter)
+                    projectDifferences(
+                        projectAfterOracleUndo(prior.projectBeforeCommit, writes.projectBefore, prior.commitActions),
+                        writes.projectAfter
+                    ),
+                    transitionDifferences(
+                        writes.transitions,
+                        undoPrefixes(prior.projectBeforeCommit, writes.projectBefore, prior.commitActions)
+                    )
                 ),
             };
         case 'proposal': {
@@ -1126,7 +1262,8 @@ async function runRefinementCase(
     testCase: CorpusCase,
     barrel: BarrelWriteLog,
     alongside?: () => Promise<void>,
-    alongsidePrior?: () => Promise<void>
+    alongsidePrior?: () => Promise<void>,
+    beforeFollowUp?: () => Promise<void>
 ): Promise<CaseRun> {
     const { prior, refinementKind } = testCase;
     if (prior === undefined || refinementKind === undefined) {
@@ -1136,20 +1273,26 @@ async function runRefinementCase(
     openChatProject();
     try {
         const projectBeforePrior = captureProjectTruth();
-        const priorWrites = await sendScriptedChatTurn({
-            id: testCase.id,
-            prompt: prior.prompt,
-            providerTurns: prior.providerTurns,
-            priorProposalId: () => undefined,
-            barrel,
-            alongside: alongsidePrior,
+        const priorActions = prior.outcome === 'committed' ? priorCommitOracleActions(prior) : [];
+        const observedPrior = await observeProjectChanges(async () => {
+            const priorWrites = await sendScriptedChatTurn({
+                id: testCase.id,
+                prompt: prior.prompt,
+                providerTurns: prior.providerTurns,
+                priorProposalId: () => undefined,
+                barrel,
+                alongside: alongsidePrior,
+            });
+            const priorState = await settlePriorTurn(testCase.id, prior.outcome, projectBeforePrior, priorActions);
+            return { priorWrites, priorState };
         });
-        const priorState = await settlePriorTurn(testCase.id, prior.outcome, projectBeforePrior);
+        const { priorWrites, priorState } = observedPrior.result;
         let priorUnintendedMutations = anyWrites(priorWrites);
         if (prior.outcome === 'committed') {
-            priorUnintendedMutations = projectDifferences(
-                projectAfterOracleActions(projectBeforePrior, priorCommitOracleActions(prior)),
-                captureProjectTruth()
+            priorUnintendedMutations = Math.max(
+                priorWrites.barrelActions.length,
+                projectDifferences(projectAfterOracleActions(projectBeforePrior, priorActions), captureProjectTruth()),
+                transitionDifferences(observedPrior.transitions, commitPrefixes(projectBeforePrior, priorActions))
             );
         }
         for (const edit of testCase.interveningFaderEdits ?? []) {
@@ -1161,11 +1304,8 @@ async function runRefinementCase(
                 type: 'setTrackGain',
                 payload: { trackId: edit.trackId, gainDb: edit.gainDb, expectedGain },
             });
-            // Reverting the AI batch must preserve the musician's independent later edit.
-            priorState.projectAfterRevert = projectAfterOracleActions(priorState.projectAfterRevert, [
-                { type: 'setTrackGain', payload: { trackId: edit.trackId, gainDb: edit.gainDb } },
-            ]);
         }
+        await beforeFollowUp?.();
         const writes = await sendScriptedChatTurn({
             id: testCase.id,
             prompt: testCase.prompt,
@@ -1536,6 +1676,7 @@ describe('agent acceptance corpora', () => {
                             {
                                 id: 'track-lead-vocal',
                                 gain: 1,
+                                muted: false,
                                 pan: 0,
                                 groupId: 'group-a',
                                 clips: [{ id: 'clip-a', startBeat: 0 }],
@@ -1555,6 +1696,7 @@ describe('agent acceptance corpora', () => {
                 newGroups: [],
                 projectBefore,
                 projectAfter: structuredClone(projectBefore),
+                transitions: [],
                 ...overrides,
             };
         }
@@ -1702,6 +1844,121 @@ describe('agent acceptance corpora', () => {
             expect(projectDifferences(before, after)).toBe(1);
         });
 
+        it('surfaces capture failures, preserves run failures and unsubscribes', async () => {
+            openChatProject();
+            let captures = 0;
+            const captureFailure = new Error('capture failure');
+            const capture = () => {
+                captures++;
+                throw captureFailure;
+            };
+            let writes = 0;
+            const write = () =>
+                mutateCrdtDoc<Record<string, unknown>>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.observerProbe = ++writes;
+                    },
+                });
+            try {
+                await expect(
+                    observeProjectChanges(async () => {
+                        write();
+                    }, capture)
+                ).rejects.toBe(captureFailure);
+                const afterCapture = captures;
+                write();
+                expect(captures).toBe(afterCapture);
+                const runFailure = new Error('run failure');
+                await expect(
+                    observeProjectChanges(async () => {
+                        write();
+                        throw runFailure;
+                    }, capture)
+                ).rejects.toBe(runFailure);
+                const afterRun = captures;
+                expect(afterRun).toBeGreaterThan(afterCapture);
+                write();
+                expect(captures).toBe(afterRun);
+            } finally {
+                closeChatProject();
+            }
+        });
+
+        it('accepts each authorized commit and undo prefix without admitting another field', () => {
+            const before = truthFixture();
+            const actions: CorpusOracleAction[] = [
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.8 } },
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.6 } },
+            ];
+            const commits = commitPrefixes(before, actions);
+            const committed = commits.at(-1);
+            if (committed === undefined) {
+                throw new Error('Missing commit');
+            }
+            const undos = undoPrefixes(before, committed, actions);
+            expect(transitionDifferences(commits, commits)).toBe(0);
+            expect(transitionDifferences(undos, undos)).toBe(0);
+            expect(projectDifferences(undos.at(-1), before)).toBe(0);
+            const altered = truthFixture();
+            altered.root.tracks.tracks[0]!.pan = 0.27;
+            expect(transitionDifferences([altered], commits)).toBeGreaterThan(0);
+        });
+
+        it('undoes gain and mute in reverse prefixes while preserving a later independent fader edit', () => {
+            const before = truthFixture();
+            const original = before.root.tracks.tracks[0];
+            if (original === undefined) {
+                throw new Error('Missing original track');
+            }
+            before.root.tracks.tracks.push({ ...original, id: 'track-kick', gain: 0.7 });
+            const actions: CorpusOracleAction[] = [
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.8 } },
+                { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: true } },
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.6 } },
+            ];
+            const committed = projectAfterOracleActions(before, actions);
+            const beforeUndo = projectAfterOracleActions(committed, [
+                { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: 0.3 } },
+            ]);
+            const afterGainUndo = projectAfterOracleActions(beforeUndo, [
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.8 } },
+            ]);
+            const afterMuteUndo = projectAfterOracleActions(afterGainUndo, [
+                { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: false } },
+            ]);
+            const expected = projectAfterOracleActions(before, [
+                { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: 0.3 } },
+            ]);
+            const undos = undoPrefixes(before, beforeUndo, actions);
+            expect(undos).toEqual([beforeUndo, afterGainUndo, afterMuteUndo, expected]);
+            expect(projectAfterOracleUndo(before, beforeUndo, actions)).toEqual(expected);
+            expect(transitionDifferences(undos, undos)).toBe(0);
+            expect(transitionDifferences([afterMuteUndo, afterGainUndo], undos)).toBeGreaterThan(0);
+            expect(projectDifferences(expected, afterGainUndo)).toBeGreaterThan(0);
+            const wrongField = projectAfterOracleActions(afterGainUndo, [
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 1 } },
+            ]);
+            expect(transitionDifferences([wrongField], undos)).toBeGreaterThan(0);
+        });
+
+        it.each([
+            { type: 'muteTrack', original: { gain: 1 }, payload: { muted: true } },
+            { type: 'muteTrack', original: { gain: 1, muted: 1 }, payload: { muted: true } },
+            { type: 'setTrackGain', original: { muted: false }, payload: { gain: 0.8 } },
+            { type: 'setTrackGain', original: { gain: NaN, muted: false }, payload: { gain: 0.8 } },
+            { type: 'setTrackGain', original: { gain: Infinity, muted: false }, payload: { gain: 0.8 } },
+        ])('refuses Undo with missing or invalid original field: %j', ({ type, original, payload }) => {
+            const before: ProjectTruth = {
+                root: { tracks: { tracks: [{ id: 'track-lead-vocal', ...original }] } },
+            };
+            expect(() =>
+                projectAfterOracleUndo(before, truthFixture(), [
+                    { type, payload: { trackId: 'track-lead-vocal', ...payload } },
+                ])
+            ).toThrow(TypeError);
+        });
+
         it('preserves typed project values in the captured safety snapshot', () => {
             openChatProject();
             try {
@@ -1760,11 +2017,12 @@ describe('agent acceptance corpora', () => {
         async function runWithBarrel(
             testCase: CorpusCase,
             alongside?: () => Promise<void>,
-            alongsidePrior?: () => Promise<void>
+            alongsidePrior?: () => Promise<void>,
+            beforeFollowUp?: () => Promise<void>
         ): Promise<CaseRun & { observedBarrelWrites: number }> {
             const barrel = spyOnBarrelWrites();
             try {
-                const result = await runRefinementCase(testCase, barrel.log, alongside, alongsidePrior);
+                const result = await runRefinementCase(testCase, barrel.log, alongside, alongsidePrior, beforeFollowUp);
                 return { ...result, observedBarrelWrites: barrel.log.count() };
             } finally {
                 barrel.restore();
@@ -1802,6 +2060,67 @@ describe('agent acceptance corpora', () => {
                 });
                 expect(run.unintendedMutations).toBe(0);
             });
+        });
+
+        async function persistKickPanAndRestore(): Promise<void> {
+            const state = trackStore.value;
+            if (state === null) {
+                throw new Error('Missing project');
+            }
+            const kick = state.tracks.find((track) => track.id === 'track-kick');
+            if (kick === undefined) {
+                throw new Error('Missing kick');
+            }
+            const before = captureSettledRevision();
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => (track.id === kick.id ? { ...track, pan: 0.27 } : track)),
+            });
+            const changed = captureSettledRevision();
+            const updated = trackStore.value;
+            if (updated === null) {
+                throw new Error('Missing project');
+            }
+            trackStore.set({
+                ...updated,
+                tracks: updated.tracks.map((track) => (track.id === kick.id ? { ...track, pan: kick.pan } : track)),
+            });
+            const restored = captureSettledRevision();
+            expect(changed).not.toBe(before);
+            expect(restored).not.toBe(changed);
+        }
+
+        it.each(['prior', 'follow-up', 'undo'] as const)(
+            'counts persisted restored writes beside %s',
+            async (phase) => {
+                const testCase = phase === 'follow-up' ? relativeCase : undoCase;
+                const run = await runWithBarrel(
+                    testCase,
+                    phase === 'prior' ? undefined : persistKickPanAndRestore,
+                    phase === 'prior' ? persistKickPanAndRestore : undefined
+                );
+                expect(run.result.exactMatch).toBe(true);
+                expect(run.observedBarrelWrites).toBe(0);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            }
+        );
+
+        it('counts persisted restored writes beside single-turn planning', async () => {
+            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const run = await runCorpusCase(testCase, barrel.log, persistKickPanAndRestore);
+                expect(run.result.exactMatch).toBe(true);
+                expect(barrel.log.count()).toBe(0);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
         });
 
         it('scores the unaltered relative follow-up clean', async () => {
@@ -1952,6 +2271,65 @@ describe('agent acceptance corpora', () => {
 
             expect(groupsLanded, 'the repeated batch landed no undo entry').toBe(1);
             expect(run.result.exactMatch).toBe(false);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts committed prior writes even when they restore the original value', async () => {
+            const run = await runWithBarrel(undoCase, undefined, async () => {
+                const original = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
+                if (original === undefined) {
+                    throw new Error('Missing kick gain');
+                }
+                await commandUseCases.executeAppAction(gainMove('track-kick', -1), { skipUndo: true });
+                const expectedGain = trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.gain;
+                if (expectedGain === undefined) {
+                    throw new Error('Missing kick gain');
+                }
+                await commandUseCases.executeAppAction(
+                    { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: original, expectedGain } },
+                    { skipUndo: true }
+                );
+            });
+            expect(run.observedBarrelWrites).toBe(2);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('preserves an unrelated edit made before undo', async () => {
+            const run = await runWithBarrel(
+                undoCase,
+                async () => {
+                    expect(trackStore.value?.tracks.find((track) => track.id === 'track-kick')?.pan).toBe(0.27);
+                },
+                undefined,
+                async () => {
+                    const state = trackStore.value;
+                    if (state === null) {
+                        throw new Error('Missing project');
+                    }
+                    trackStore.set({
+                        ...state,
+                        tracks: state.tracks.map((track) =>
+                            track.id === 'track-kick' ? { ...track, pan: 0.27 } : track
+                        ),
+                    });
+                }
+            );
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.unintendedMutations).toBe(0);
+        });
+
+        it('counts a bypass write beside undo', async () => {
+            const run = await runWithBarrel(undoCase, async () => {
+                const state = trackStore.value;
+                if (state === null) {
+                    throw new Error('Missing project');
+                }
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => (track.id === 'track-kick' ? { ...track, pan: 0.27 } : track)),
+                });
+            });
+            expect(run.result.exactMatch).toBe(true);
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
 

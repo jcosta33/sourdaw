@@ -99,6 +99,7 @@ import type { Readable, Writable } from 'node:stream';
 
 const stackSummarySources = [
     'scripts/stackedLanes.ts',
+    'scripts/laneStackForkMarkers.ts',
     'scripts/reviewDiffSummary.ts',
     'scripts/wasm-artifacts.ts',
     'scripts/wasmToolchainPins.ts',
