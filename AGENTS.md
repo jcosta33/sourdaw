@@ -167,25 +167,6 @@ ignored with one log line. Re-publishing a head whose record already binds its
 publication replays that record unchanged, and records persisted under earlier contracts keep
 replaying and verifying.
 
-`pnpm review:semantic scan --pr <pr>` may be run before dispatch to surface risks the enumeration
-should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <path>` after independent
-findings are collected and before `review.json` is written. Both are advisory and optional: their
-output is input to the orchestrator's own judgement, an unavailable provider or missing credential is
-a disclosed limitation rather than a stop, and neither may count as a completed reviewer draw, waive a
-deterministic check, or publish anything. `review:publish` imposes no duty on their output. Their
-sidecars live outside the review bundle, in gitignored `.agents/semantic-review/`, so a blind reviewer
-is never handed a proposed verdict. They never substitute for the reproduction and baseline-probe
-duties above, and no semantic result may approve, request changes, resolve a thread, or merge
-([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
-
-The same assessment also runs by itself as the non-required `Semantic review` check on every non-draft
-same-repository pull request that targets `main`, so an orchestrator reviewing a lane it did not author
-still gets it. Read it the same way: green means the assessment was delivered, never that the change is
-clean, and a red check means no assessment was delivered at all — a coverage gap, not a finding to
-weigh and not a blocker. A stacked lane whose base is another lane branch is not assessed: it would
-run that branch's revision of the command rather than the default branch's, which the command's own
-trusted-execution assertion refuses.
-
 A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five, in
 `scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
 refuses every fresh reviewer publication on it, approve or request changes, and no caller document
@@ -504,12 +485,6 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
   does not cancel an admitted run still working on the old head, and any later label event on the pull request
   cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
-- `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
-  `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
-  reviewed head as Git objects and never checks out or executes it, and it mints the non-required
-  `Semantic review` check. Its whole trust boundary is pinned by
-  `scripts/semanticReviewWorkflowContract.ts`
-  ([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
   native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review on
   each push and in the admitted run. Nightly and `release:proof:assemble` also run release inventory;
