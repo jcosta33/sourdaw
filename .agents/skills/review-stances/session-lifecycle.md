@@ -9,6 +9,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### A cold MIDI strip must initialize from the node-backed projection
+
+PR #2035 introduced runtime topology construction for every project device; PR #2083 later
+excluded Yeast but left scheduler synth and drum devices in the Web Audio chain projection.
+A MIDI track can therefore carry valid project instruments with no Web Audio node beside a
+node-backed effect. The missed lifecycle input was an effect edit before the strip exists;
+historical private reviewer prompts and tiers are unknown.
+
+Exercise a cold strip and an already initialized strip with a MIDI synth or drum and an effect.
+Apply the real add, Undo and Redo route: project and native snapshots must retain the complete
+instrument and effect identities, while Web Audio initializes or reconciles only node-backed
+members. Keep unknown device types visible for ordinary construction refusal, and refuse a
+mismatched existing strip rather than treating it as initialized. An instrument-only edit must
+also preserve full native truth. Remove the projection or cold-strip admission and require its
+corresponding case to fail.
+
 ## Standing probes
 
 - PR #5091's head `71221839` fenced grant settlement but retained an unfenced reusable
