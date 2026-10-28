@@ -196,6 +196,20 @@ schedulers and both stem branches. Replacing the Transport inverse or losing the
 must fail the terminal-output cases. Require the inverse only for moving consumers so lane-only
 native recorders remain valid, and preserve native refusal of enabled modulation and layers.
 
+### An early chunk refusal does not fence later queued chunks (introduced by PR #5239)
+
+PR #5239 (`fdf901916672cb9d66c9382560d29058dcba1381`) returned every held transfer credit on
+`sampleBankError`. Its public reviews covered concurrent budgets, cancellation and terminal errors,
+but missed a first-chunk refusal with three later chunks still queued and receiving no ACK. The
+historical private stance prompts and tiers are unestablished. A credit belongs to its posted
+message until a matching ACK, an ordered reply proven to follow it, or processor end; an early
+refusal does not prove the later messages have passed.
+
+Process the first refusal, the three stale chunks and `releaseRetiredBank` in actual port order.
+Require a second port to post no chunks before the retired-bank reply, then finish an eight-chunk
+healthy successor with no more than four chunks outstanding across both ports. Keep this distinct
+from release-entry budgeting and a granted waiter's unused credit.
+
 ### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
 
 The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.

@@ -429,6 +429,21 @@ history port failed, and the caller returned success without its warning. Inject
 the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
 that identifies the committed result. Do not describe that finding as the #474 main escape.
 
+### A refusal reply was mistaken for an ordered chunk fence (introduced by PR #5239)
+
+PR #5239 (`fdf901916672cb9d66c9382560d29058dcba1381`) released queued credits on the first
+`sampleBankError`. The public review's budget and terminal-error probes missed a refusal before
+three later queued chunks that the processor reads without acknowledging. Historical private
+stance prompts and tiers are unestablished.
+
+The fake port must read the first refusal, later stale chunks and retired-bank release in posted
+order; manually emitting the release before the stale chunks or acknowledging rejected chunks
+cannot prove the fence. Restore credit release on `sampleBankError` in a committed private probe:
+the maintained ordered-port case must fail when a second port uploads before the release fence,
+and its healthy eight-chunk successor must otherwise respect the four-credit limit. Pair the
+shared-owner progress oracle with a real processor zone table larger than that credit window,
+and require a delivered owner zone ACK to keep all staged followers pending beyond ten seconds.
+
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
 Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
