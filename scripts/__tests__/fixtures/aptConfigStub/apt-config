@@ -4,6 +4,11 @@
 # APT_CONFIG names unless FAKE_APT_IGNORES_APT_CONFIG=true stands in for a
 # later apt.conf.d entry that overrides it.
 set -euo pipefail
+if [ "${1:-}" = dump ]; then
+  [ "$#" -eq 4 ] && [ "$2" = Acquire::Retries ] && [ "$3" = Acquire::http::Timeout ] && [ "$4" = Acquire::https::Timeout ] || exit 64
+  # The private fixture configures no acquisition overrides.
+  exit 0
+fi
 [ "${1:-}" = shell ] || { printf 'apt-config stub answers only shell\n' >&2; exit 64; }
 shift
 list=$FAKE_APT_SOURCE_LIST
@@ -16,6 +21,7 @@ while [ "$#" -ge 2 ]; do
   case "$2" in
     Dir::Etc::sourcelist/f) printf "%s='%s'\n" "$1" "$list" ;;
     Dir::Etc::sourceparts/d) printf "%s='%s/'\n" "$1" "${parts%/}" ;;
+    Dir::State::status/f) printf "%s='%s'\n" "$1" "${FAKE_APT_STATUS:?private status path required}" ;;
     *) printf 'apt-config stub has no value for %s\n' "$2" >&2; exit 64 ;;
   esac
   shift 2

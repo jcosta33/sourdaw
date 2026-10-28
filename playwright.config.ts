@@ -81,7 +81,7 @@ function builtShardWebServers(): WebServer[] {
     const servers: WebServer[] = [
         {
             // The build is part of server startup, so the wait covers it.
-            command: `pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port ${port} --strictPort`,
+            command: `pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port ${port} --strictPort`,
             url: e2eOrigin(port),
             timeout: 600_000,
             reuseExistingServer: false,
