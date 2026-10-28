@@ -21,11 +21,12 @@ export function getPlanningProviderToolSchemas(profile?: PlanningProfile): reado
     if (profile === 'readonly-answer') {
         return getPlanningProviderSchemaContract()
             .schemas.filter((schema) => READONLY_ANSWER_TOOL_NAMES.has(schema.function.name))
-            .map((schema) =>
-                schema.function.name === 'analysis.measure'
-                    ? projectReadonlyAnswerMeasurementToolSchema(schema)
-                    : schema
-            );
+            .map((schema) => {
+                if (schema.function.name === 'analysis.measure') {
+                    return projectReadonlyAnswerMeasurementToolSchema(schema);
+                }
+                return schema;
+            });
     }
     const workflowToolSchemas = getExecutableAppActionToolSchemas().filter((tool) =>
         WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)
