@@ -296,8 +296,13 @@ describe('device edits on an imported track before first Play', () => {
             type: 'addDevice',
             payload: { trackId: track.id, deviceType: 'builtin-eq', deviceId: 'grouped-eq' },
         });
+        // A non-default value makes omitted replay fail independently of stale snapshot replay.
+        await executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'grouped-eq', paramId: 'eq-mid-freq', value: 700 },
+        });
         const original = structuredClone(importedTrack().devices.find((device) => device.id === 'grouped-eq'));
-        expect(original?.parameterValues['eq-mid-freq']).toBe(1000);
+        expect(original?.parameterValues['eq-mid-freq']).toBe(700);
         clearUndoHistory();
         await executeAppAction(
             { type: 'setDeviceParameter', payload: { deviceId: 'grouped-eq', paramId: 'eq-mid-freq', value: 2400 } },
@@ -321,12 +326,12 @@ describe('device edits on an imported track before first Play', () => {
                 trackId === track.id && deviceId === 'grouped-eq' && parameterId === 'eq-mid-freq'
         );
         expect(frequencyWrites.length).toBeGreaterThan(0);
-        expect(frequencyWrites.at(-1)?.[3]).toBe(1000);
-        expect(frequencyWrites.every(([, , , value]) => value === 1000)).toBe(true);
+        expect(frequencyWrites.at(-1)?.[3]).toBe(700);
+        expect(frequencyWrites.every(([, , , value]) => value === 700)).toBe(true);
         const restoredNode = audioEngine
             .getTrackStrip(track.id)
             ?.deviceNodes.find((device) => device.deviceId === 'grouped-eq');
-        expect(restoredNode?.nodes[1]).toHaveProperty('frequency.value', 1000);
+        expect(restoredNode?.nodes[1]).toHaveProperty('frequency.value', 700);
 
         await redo();
         expect(importedTrack().devices.some((device) => device.id === 'grouped-eq')).toBe(false);

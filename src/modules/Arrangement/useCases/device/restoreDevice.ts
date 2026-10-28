@@ -1,7 +1,3 @@
-import { reportLatency, updateDeviceBypass, updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
-import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
-
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { resolveEligibleDeviceWriteTarget } from '../../stores/resolveEligibleDeviceWriteTarget';
@@ -75,15 +71,15 @@ export function restoreDevice(
         ...(deviceSnapshot.deviceState !== undefined ? { deviceState: deviceSnapshot.deviceState } : {}),
     };
     const beforeTrack = structuredClone(track);
-    const restoredDevices = [...beforeTrack.devices];
-    restoredDevices.splice(deviceIndex, 0, device);
-    const afterTrack = { ...beforeTrack, devices: restoredDevices };
+    let afterTrack = beforeTrack;
     const wasLive = shouldCreateLiveTrackStrip(track);
     const activatesFolderStrip = !wasLive && track.kind === 'folder' && device.type === 'toaster';
     updateTrack(trackId, (current) => {
         const devices = [...current.devices];
         devices.splice(deviceIndex, 0, device);
-        return { ...current, devices };
+        const updatedTrack = { ...current, devices };
+        afterTrack = structuredClone(updatedTrack);
+        return updatedTrack;
     });
 
     let postCommitFailure: Error | undefined;
@@ -139,25 +135,12 @@ export function restoreDevice(
                 }
                 // Other inverses in this transaction may have changed the restored
                 // controls or plugin state after the removal snapshot was inserted.
-                if (
-                    committedDevice.type === 'external-plugin' &&
-                    committedDevice.externalInstanceId &&
-                    committedDevice.externalPluginId
-                ) {
-                    void activateExternalPlugin({
-                        pluginId: committedDevice.externalPluginId,
-                        instanceId: committedDevice.externalInstanceId,
-                        stateChunk: committedDevice.externalStateChunk,
-                        onLatencyMs: (latency) => reportLatency(committedDevice.id, latency),
-                    });
-                }
-                for (const [parameterId, value] of orderDeviceParametersForReplay(
-                    committedDevice.type,
-                    committedDevice.parameterValues
-                )) {
-                    updateDeviceParam(trackId, committedDevice.id, parameterId, value);
-                }
-                updateDeviceBypass(trackId, committedDevice.id, committedDevice.bypassed);
+                projectTrackToLiveStrip({
+                    mode: 'device-controls',
+                    trackId,
+                    deviceId: committedDevice.id,
+                    activateDormantExternalPlugins: true,
+                });
             } else {
                 projectExactTrack(trackId);
             }

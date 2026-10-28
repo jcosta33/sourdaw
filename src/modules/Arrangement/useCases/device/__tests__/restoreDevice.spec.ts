@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { trackStore } from '../../../stores/trackStore';
 import { restoreDevice } from '../restoreDevice';
 
 type TrackUpdater = (track: { devices: unknown[] }) => { devices: unknown[] };
@@ -8,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
     updateTrack: vi.fn<(trackId: string, updater: TrackUpdater) => void>(),
-    projectTrackToLiveStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
     applyDeviceChainRuntimeDelta: vi.fn(),
     updateDeviceBypass: vi.fn(),
     updateDeviceParam: vi.fn(),
@@ -16,20 +17,23 @@ const mocks = vi.hoisted(() => ({
     reportLatency: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
     updateDeviceBypass: mocks.updateDeviceBypass,
     updateDeviceParam: mocks.updateDeviceParam,
     reportLatency: mocks.reportLatency,
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ activateExternalPlugin: mocks.activateExternalPlugin }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
+    activateExternalPlugin: mocks.activateExternalPlugin,
+}));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../stores/resolveEligibleDeviceWriteTarget', () => ({
     resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
 }));
 vi.mock('../../../repositories/track/updateTrack', () => ({ updateTrack: mocks.updateTrack }));
-vi.mock('../../projectTrackToLiveStrip', () => ({ projectTrackToLiveStrip: mocks.projectTrackToLiveStrip }));
-
 vi.mock('../applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
 }));
@@ -37,13 +41,13 @@ vi.mock('../applyDeviceChainRuntimeDelta', () => ({
 describe('restoreDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.spyOn(trackStore, 'value', 'get').mockImplementation(() => mocks.getTrackState());
         mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({
             status: 'eligible',
             trackId: 'track-1',
             deviceId: 'restored',
         });
         mocks.applyDeviceChainRuntimeDelta.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
-        mocks.projectTrackToLiveStrip.mockReturnValue({ acceptance: 'accepted', application: 'applied' });
         mocks.updateTrack.mockImplementation((trackId, updater) => {
             const state = mocks.getTrackState();
             mocks.getTrackState.mockReturnValue({
@@ -53,6 +57,10 @@ describe('restoreDevice', () => {
                 ),
             });
         });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     it('restores the exact snapshot at its original chain index and applies its live delta and controls', () => {
@@ -84,10 +92,15 @@ describe('restoreDevice', () => {
         expect(outcome).toBe('written');
         expect(updated.devices).toEqual([track.devices[0], snapshot, track.devices[1]]);
         expect(mocks.applyDeviceChainRuntimeDelta).toHaveBeenCalledWith(
-            expect.objectContaining({ operation: 'add-device' })
+            expect.objectContaining({
+                operation: 'add-device',
+                before: track,
+                after: { ...track, devices: updated.devices },
+            })
         );
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith(track.id, snapshot.id, 'frequency', 2400);
         expect(mocks.updateDeviceBypass).toHaveBeenCalledWith(track.id, snapshot.id, true);
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
     });
 
     it('rejects a stale inverse when the device identity already exists', () => {
@@ -128,7 +141,7 @@ describe('restoreDevice', () => {
         );
 
         expect(outcome).not.toBe('conflict');
-        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
         if (outcome === 'conflict') {
             throw new Error('Expected deferred restore result');
         }
@@ -182,6 +195,7 @@ describe('restoreDevice', () => {
         });
         mocks.activateExternalPlugin.mock.calls[0]?.[0].onLatencyMs(4);
         expect(mocks.reportLatency).toHaveBeenCalledWith(snapshot.id, 4);
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
     });
 
     it.each([
