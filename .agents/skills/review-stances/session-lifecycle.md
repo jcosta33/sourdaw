@@ -167,9 +167,11 @@ discarded.
 
 ### A refused monitoring Off must retain the admitted capture
 
-The setter's eager Off release first appears in `0249a95cc5292e687a27f084bac510d31eb7f3d8`
-and the toggle's in `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; GitHub reports no associated
-PR for either. PR #4255 narrowed the setter's global stop to a per-track stop but retained its
+The setter's eager Off release first appears in `0249a95cc5292e687a27f084bac510d31eb7f3d8`.
+The toggle already released eagerly in `8b0050b90f2b8e18956c16edd20c9afea3ddbd2b`;
+`e415a55cc406ba264dffbc229f4ac86f3e5caaab` later moved it from Track to Arrangement. GitHub
+reports no associated PR for the setter commit or the earlier toggle commit. PR #4255 narrowed
+the setter's global stop to a per-track stop but retained its
 pre-commit release. Review of #5091 exposed the rollback gap; it did not introduce it. Historical
 private review prompts and tiers are unknown.
 
