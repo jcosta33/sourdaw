@@ -41,9 +41,9 @@ describe('openViaBrowser', () => {
     });
 
     it('configures multiple selection and the accept filter from the requested extensions', async () => {
-        let capturedInput: HTMLInputElement | undefined;
+        const capturedInputs: HTMLInputElement[] = [];
         vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
-            capturedInput = this;
+            capturedInputs.push(this);
             this.dispatchEvent(new Event('cancel'));
         });
 
@@ -51,8 +51,8 @@ describe('openViaBrowser', () => {
             openViaBrowser({ multiple: true, filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }] })
         ).resolves.toBeNull();
 
-        expect(capturedInput?.multiple).toBe(true);
-        expect(capturedInput?.accept).toBe('.wav,.mp3');
+        expect(capturedInputs[0]?.multiple).toBe(true);
+        expect(capturedInputs[0]?.accept).toBe('.wav,.mp3');
     });
 
     it('resolves null via the focus fallback when neither change nor cancel ever fires', async () => {

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { agentAssetFileBoundary } from '../agentAssetFileBoundary';
+import { agentAssetFileBoundary } from '../../../useCases/agentAssetFileBoundary';
 
-import type { AgentAssetSagaReceipt, AgentWorkOwner } from '../../repositories/agentAssetSaga/agentAssetSagaWire';
+import type { AgentAssetSagaReceipt, AgentWorkOwner } from '../../agentAssetSaga/agentAssetSagaWire';
 
 const desktop = vi.hoisted(() => ({
     isDesktopRuntime: vi.fn(),

@@ -41,13 +41,13 @@ function requireFile(files: File[] | null, index = 0): File {
 }
 
 function deferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((accept, decline) => {
-        resolve = accept;
-        reject = decline;
+    let resolveDeferred!: (value: T) => void;
+    let rejectDeferred!: (error: unknown) => void;
+    const promise = new Promise<T>((resolve, reject) => {
+        resolveDeferred = resolve;
+        rejectDeferred = reject;
     });
-    return { promise, resolve, reject };
+    return { promise, resolve: resolveDeferred, reject: rejectDeferred };
 }
 
 describe('file selection provenance', () => {
