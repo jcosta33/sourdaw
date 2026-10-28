@@ -352,7 +352,11 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             }),
             terminal: category !== 'cancellation',
         });
-        await settleAutoCreatedRun('failed');
+        if (category === 'cancellation') {
+            await cancelAutoCreatedRun();
+        } else {
+            await settleAutoCreatedRun('failed');
+        }
         input.signal?.removeEventListener('abort', onAbort);
         throw error;
     }
