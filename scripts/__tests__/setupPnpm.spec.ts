@@ -30,16 +30,19 @@ function fixture() {
         writeFileSync(env[name], '');
     }
     const target = join(dest, 'runtime/target/node_modules/pnpm/bin/pnpm.mjs');
-    const implementation: NonNullable<SetupPnpmOptions['run']> = (_file, args) => {
+    const implementation: NonNullable<SetupPnpmOptions['run']> = (_file, args, { env }) => {
         if (args.includes('self-update')) {
-            mkdirSync(dirname(target), { recursive: true });
-            mkdirSync(join(dest, 'runtime/bin'), { recursive: true });
-            writeFileSync(target, 'console.log("11.6.0");\n');
+            const home = env.PNPM_HOME;
+            if (!home) throw new Error('Fixture requires an isolated pnpm home');
+            const installedTarget = join(home, 'target/node_modules/pnpm/bin/pnpm.mjs');
+            mkdirSync(dirname(installedTarget), { recursive: true });
+            mkdirSync(join(home, 'bin'), { recursive: true });
+            writeFileSync(installedTarget, 'console.log("11.6.0");\n');
             writeFileSync(
-                join(dirname(target), '../package.json'),
+                join(dirname(installedTarget), '../package.json'),
                 JSON.stringify({ name: 'pnpm', version: '11.6.0' })
             );
-            writeFileSync(join(dest, 'runtime/bin/pnpm'), `#!/bin/sh\n# cmd-shim-target=${target}\n`);
+            writeFileSync(join(home, 'bin/pnpm'), `#!/bin/sh\n# cmd-shim-target=${installedTarget}\n`);
         }
         return { status: 0, stdout: args.includes('--version') ? '11.6.0\n' : '' };
     };
@@ -58,6 +61,18 @@ function fixture() {
 }
 
 describe('verified JavaScript pnpm setup', () => {
+    it('keeps the default job directory stable for cache paths and refuses reuse of populated storage', () => {
+        const input = fixture();
+        input.options.dest = undefined;
+        input.options.env.RUNNER_TEMP = dirname(input.workspace);
+        const result = setupPnpm(input.options);
+        expect(result.dest).toBe(join(dirname(input.workspace), 'sourdaw-pnpm'));
+        const exported = input.exports();
+        expect(() => setupPnpm(input.options)).toThrow('empty owned directory');
+        expect(input.run).toHaveBeenCalledTimes(3);
+        expect(input.exports()).toEqual(exported);
+    });
+
     it('installs an isolated pinned bootstrap, verifies the target, then exports only the target bin', () => {
         const input = fixture();
         input.options.env.NODE_OPTIONS = '--require=/untrusted/preload.cjs';
