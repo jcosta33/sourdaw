@@ -1,0 +1,16 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 59,61-64,66-69
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9,11-14,16-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f884531ce99ad656ae08c4ccf096980905a21785",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
