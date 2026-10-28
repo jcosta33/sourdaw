@@ -15,7 +15,7 @@ function hasExactSpanKeys(span: object): boolean {
 }
 
 function isAdjacentSameSelection(
-    span: CompSelectionSpanSnapshot,
+    span: { startBeat: number; takeId: string; audioSource: unknown },
     previousEnd: number,
     previousTakeId: string | undefined,
     previousAudioSource: CompSelectionSpanSnapshot['audioSource']
@@ -55,7 +55,16 @@ function isValidSelectionSpan(input: {
         span.endBeat <= endBeat &&
         span.startBeat < span.endBeat &&
         span.startBeat >= previousEnd &&
-        !isAdjacentSameSelection(span, previousEnd, previousTakeId, previousAudioSource)
+        !isAdjacentSameSelection(
+            {
+                startBeat: span.startBeat,
+                takeId: span.takeId,
+                audioSource: 'audioSource' in span ? span.audioSource : undefined,
+            },
+            previousEnd,
+            previousTakeId,
+            previousAudioSource
+        )
     );
 }
 
@@ -76,11 +85,12 @@ function hasValidSnapshot(spans: readonly unknown[], startBeat: number, endBeat:
 }
 
 function validPromotions(
-    patch: { startBeat: number; endBeat: number; audioSourcePromotions?: unknown },
+    patch: object,
     expectedSpans: readonly unknown[],
-    replacementSpans: readonly unknown[]
+    replacementSpans: readonly unknown[],
+    interval: { startBeat: number; endBeat: number }
 ): boolean {
-    const { startBeat, endBeat } = patch;
+    const { startBeat, endBeat } = interval;
     if ('audioSourcePromotions' in patch) {
         const takeIds = new Set(
             [...expectedSpans, ...replacementSpans].flatMap((span) => {
@@ -101,8 +111,8 @@ function validPromotions(
         });
         if (
             !isValidCompAudioSourcePromotions(patch.audioSourcePromotions, {
-                startBeat: patch.startBeat,
-                endBeat: patch.endBeat,
+                startBeat,
+                endBeat,
                 takeIds,
                 baseGapExposed,
             })
@@ -177,7 +187,7 @@ function isCompleteCompRegionIntervalPatch(value: unknown): value is CompRegionI
     if (!hasValidSnapshot(replacementSpans, patch.startBeat, patch.endBeat)) {
         return false;
     }
-    if (!validPromotions(patch, expectedSpans, replacementSpans)) {
+    if (!validPromotions(patch, expectedSpans, replacementSpans, { startBeat, endBeat })) {
         return false;
     }
     if (!validFieldPresence(patch)) {

@@ -32,11 +32,11 @@ function rawMatches(root: Root, expected: AudioClipSlipSnapshot): boolean {
     return lanes !== null && audioClipSlipState.lanesMatch(lanes, expected);
 }
 
-function incarnations(root: Root, expected: AudioClipSlipSnapshot): readonly (string | undefined)[] | null {
+function incarnations(root: Root, expected: AudioClipSlipSnapshot): readonly string[] | null {
     if (!isRecord(root.takeLanes) || !Array.isArray(root.takeLanes.lanes)) {
         return expected.lanes.length === 0 ? [] : null;
     }
-    const objects: (string | undefined)[] = [];
+    const objects: (string | null | undefined)[] = [];
     for (const captured of expected.lanes) {
         const matches = root.takeLanes.lanes.filter(
             (row) => isRecord(row) && row.id === captured.id && row.trackId === captured.trackId
@@ -65,7 +65,7 @@ function incarnations(root: Root, expected: AudioClipSlipSnapshot): readonly (st
             }
         }
     }
-    return objects.every((id) => id !== undefined) ? objects : null;
+    return objects.every((id): id is string => typeof id === 'string') ? objects : null;
 }
 
 function matches(expected: AudioClipSlipSnapshot, clock: TempoSourceClock): boolean {

@@ -48,6 +48,11 @@ import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers
 import { handleRestoreAudioClipSlip } from '../handleRestoreAudioClipSlip';
 import { handleSlipClipContent } from '../handleSlipClipContent';
 
+vi.mock('@automerge/automerge', async (importOriginal) => {
+    const actual = await importOriginal<typeof Automerge>();
+    return { ...actual, getObjectId: vi.fn(actual.getObjectId) };
+});
+
 const sessionKey = 'sourdaw-undo-session';
 type Root = { tracks: { tracks: Track[] }; takeLanes: { lanes: TakeLane[] } };
 let stopBridge: () => void = () => undefined;
@@ -278,6 +283,39 @@ describe('audio slip exact source session replay', () => {
             ).toBe(false);
         }
     });
+
+    it.each(['lane', 'take', 'comp region'])(
+        'refuses commit validation when the %s has no Automerge incarnation',
+        async (kind) => {
+            const before = state();
+            const clock = audioClipStartTrimState.captureClock();
+            const after = prepareAudioClipSlip(before, 0.7, audioClipStartTrimState.timeline(clock))!;
+            const proof = audioClipSlipOwner.captureCommitValidation(before, after, clock);
+            expect(proof).not.toBeNull();
+            proof!.release();
+            const actual = await vi.importActual<typeof Automerge>('@automerge/automerge');
+            let missingOwnerObserved = false;
+            vi.mocked(Automerge.getObjectId).mockImplementation((value) => {
+                if (
+                    isRecord(value) &&
+                    ((kind === 'lane' && value.id === 'lane') ||
+                        (kind === 'take' && value.id === 'manual') ||
+                        (kind === 'comp region' && value.takeId === 'manual'))
+                ) {
+                    missingOwnerObserved = true;
+                    return null;
+                }
+                return actual.getObjectId(value);
+            });
+            try {
+                expect(audioClipSlipOwner.captureCommitValidation(before, after, clock)).toBeNull();
+                expect(missingOwnerObserved).toBe(true);
+                expect(state()).toEqual(before);
+            } finally {
+                vi.mocked(Automerge.getObjectId).mockImplementation(actual.getObjectId);
+            }
+        }
+    );
 
     it('refuses a changed media owner or clock and a same-value raw incarnation replacement', () => {
         const before = state();
