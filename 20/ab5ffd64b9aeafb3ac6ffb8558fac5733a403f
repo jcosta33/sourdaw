@@ -1,0 +1,39 @@
+.agents/skills/delivery-orchestration/historical-stack-admission.md
+  s_b3201877f50e8a::t_7348bd58bb68eb 10-17,41-48
+scripts/syncParentLane.ts
+  s_b3201877f50e8a::t_2542e45580380c 296
+  s_b3201877f50e8a::t_aec5c5fdba5854 282-286,298
+  s_b3201877f50e8a::t_ee7d016fe0ddcd 154-165,179,278,287,297,307-309,322
+  s_b3201877f50e8a::t_4493422164a10a 56,182,224,253-254
+  s_b3201877f50e8a::t_dc8df4a9c018a6 299-306,330
+  s_b3201877f50e8a::t_74b2a51772758c 279-281,288-295
+scripts/__tests__/historicalStackAdmission.spec.ts
+  s_b3201877f50e8a::t_2fa567809dba12 1326,1415
+  s_b3201877f50e8a::t_287588cf880a5e 1135,1141,1153,1155-1156,1158,1190,1192,1226
+  s_b3201877f50e8a::t_6aa25103bb2187 1295-1297,1456-1458,1474-1475
+  s_b3201877f50e8a::t_13fdc17be043b6 202,235-246,264-266,1012-1020,1022-1049,1051,1058-1065,1082-1134,1136-1140,1142-1152,1154,1157,1159-1189,1191,1193-1225,1269-1286,1288-1290,1330-1343,1345-1347,1459-1473
+  s_b3201877f50e8a::t_8c0a31769065c3 813-818,824-829,979-1011,1021,1050,1052-1057,1066-1080,1476
+  s_b3201877f50e8a::t_02bae4f0a4a324 2,201,203-234,247-263,267-277
+  s_b3201877f50e8a::t_8ab08f91415368 278-279
+  s_b3201877f50e8a::t_95e9713833279e 1081
+  s_b3201877f50e8a::t_7aee0b6d7e1097 1477
+scripts/stackedLanes.ts
+  s_b3201877f50e8a::t_4493422164a10a 374
+  s_b3201877f50e8a::t_2542e45580380c 590-591
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20ab5ffd64b9aeafb3ac6ffb8558fac5733a403f",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

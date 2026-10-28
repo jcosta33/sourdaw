@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/__tests__/formatReceiptContext.spec.ts
+  s_26f70b851e8f7a::t_842b5239b74ace 1-135
+src/modules/AiRuntime/useCases/__tests__/recipePreset24Command.integration.spec.ts
+  s_3168504f6ce387::t_d4d8236d5627f1 2,32,39,41,47,58,82-104,123-124,158,167,173,214-243,280,314,322,355-357,389-391,399-403,443-445,483-485,488-489,531-554,556-807
+src/modules/AiRuntime/useCases/formatReceiptContext.ts
+  s_3168504f6ce387::t_7caeab9a3bfb29 1-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "37fa257fd3177a48e0c51746f33c363635df6afb",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
