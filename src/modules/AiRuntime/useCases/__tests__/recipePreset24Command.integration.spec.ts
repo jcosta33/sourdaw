@@ -30,6 +30,7 @@ import {
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type IntentResult } from '../../models/IntentResult';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -743,7 +744,7 @@ it('retains hosted history and delivers complete local text on hosted fallback',
     expect(planned.actions).toHaveLength(24);
     const input = planning.mock.calls.at(-1);
     expect(input?.[9]?.localReceiptContextComplete).toBe(true);
-    const history = input?.[9]?.history ?? [];
+    const history: HostedTurnHistory = input?.[9]?.history ?? [];
     expect(history.flatMap((entry) => entry.receipts.map((receipt) => receipt.callId))).toEqual([
         'interpretation-1',
         'discover-1',
