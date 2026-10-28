@@ -3646,7 +3646,9 @@ export function shellPort(
                     ref,
                 ]);
                 const matches = lines.split('\n').filter((line) => line.startsWith(`${ref} `));
-                if (matches.length === 0) return undefined;
+                if (matches.length === 0) {
+                    return undefined;
+                }
                 const match = matches[0]?.trim().match(/^\S+ ([a-f0-9]{40}|[a-f0-9]{64})$/);
                 if (matches.length !== 1 || match === null || match === undefined) {
                     fail(`cannot inspect direct Git ref ${ref}`);

@@ -12474,16 +12474,22 @@ describe('delivery shell boundary', () => {
             const runs: string[][] = [];
             const port = shellPort('jcosta33/sourdaw', {
                 capture: (_command, args) => {
-                    if (args[0] === 'cat-file') return 'commit';
+                    if (args[0] === 'cat-file') {
+                        return 'commit';
+                    }
                     if (args[2] === 'refs/notes/ai') {
-                        if (failure === 'inspect') throw new Error('inspection failed');
+                        if (failure === 'inspect') {
+                            throw new Error('inspection failed');
+                        }
                         return `refs/notes/ai ${notes} `;
                     }
                     return failure === 'collision' ? `${recovery} ${'b'.repeat(40)} ` : '';
                 },
                 run: (_command, args) => {
                     runs.push(args);
-                    if (args[0] === 'update-ref' && failure === 'pin') throw new Error('pin failed');
+                    if (args[0] === 'update-ref' && failure === 'pin') {
+                        throw new Error('pin failed');
+                    }
                 },
             });
             expect(() => port.fetch()).toThrow();
@@ -12495,7 +12501,7 @@ describe('delivery shell boundary', () => {
         const notes = 'a'.repeat(40);
         const runs: string[][] = [];
         const port = shellPort('jcosta33/sourdaw', {
-            capture: (_command, args) => (args[0] === 'cat-file' ? 'commit' : `${args[2]} ${notes} `),
+            capture: (_command, args) => (args[0] === 'cat-file' ? 'commit' : `${args[2] ?? ''} ${notes} `),
             run: (_command, args) => runs.push(args),
         });
         port.fetch();
