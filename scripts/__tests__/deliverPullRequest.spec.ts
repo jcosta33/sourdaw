@@ -436,6 +436,9 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
         capture: (command, args) => {
             captures.push({ command, args });
             const joined = args.join(' ');
+            if (args[0] === 'for-each-ref') {
+                return '';
+            }
             if (command === 'git' && joined === 'rev-parse HEAD') {
                 return 'head';
             }
@@ -10458,6 +10461,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -10524,6 +10530,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     captures.push(joined);
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
@@ -10603,6 +10612,9 @@ describe('delivery shell boundary', () => {
             const port = shellPort('jcosta33/sourdaw', {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(shellSnapshot));
                     }
@@ -10661,6 +10673,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     captures.push(joined);
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
@@ -10718,6 +10733,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view 42')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
                     }
@@ -11175,6 +11193,9 @@ describe('delivery shell boundary', () => {
                 {
                     capture: (_command, args) => {
                         const joined = args.join(' ');
+                        if (args[0] === 'for-each-ref') {
+                            return '';
+                        }
                         captures.push(joined);
                         if (joined.includes('pr view 42')) {
                             return JSON.stringify(shellPullRequest(pullRequest({ body: closes })));
@@ -11732,6 +11753,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -11787,6 +11811,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -12404,6 +12431,109 @@ describe('delivery shell boundary', () => {
         expect(captures).not.toContainEqual(
             expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
         );
+    });
+
+    it.each([false, true])(
+        'preserves the observed notes preimage before a forced refresh (authenticated: %s)',
+        (authenticated) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-notes-refresh-'));
+            const local = join(root, 'local');
+            const remote = join(root, 'remote.git');
+            const git = (cwd: string, args: string[]) =>
+                execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+            try {
+                mkdirSync(local);
+                git(root, ['init', '--bare', '--quiet', remote]);
+                git(local, ['init', '--quiet']);
+                git(local, ['config', 'user.name', 'Fixture']);
+                git(local, ['config', 'user.email', 'fixture@example.test']);
+                git(local, ['remote', 'add', 'origin', remote]);
+                writeFileSync(join(local, 'file'), 'fixture');
+                git(local, ['add', 'file']);
+                git(local, ['commit', '--quiet', '-m', 'fixture']);
+                const target = git(local, ['rev-parse', 'HEAD']);
+                git(local, ['notes', '--ref=ai', 'add', '-m', 'local-only', target]);
+                const preimage = git(local, ['rev-parse', 'refs/notes/ai']);
+                const localBlob = git(local, ['rev-parse', `refs/notes/ai:${target}`]);
+                git(local, ['update-ref', '-d', 'refs/notes/ai']);
+                git(local, ['notes', '--ref=ai', 'add', '-m', 'remote-only', target]);
+                const remoteNotes = git(local, ['rev-parse', 'refs/notes/ai']);
+                expect(git(local, ['rev-parse', `refs/notes/ai:${target}`])).not.toBe(localBlob);
+                expect(() => git(local, ['merge-base', '--is-ancestor', preimage, remoteNotes])).toThrow();
+                expect(() => git(local, ['merge-base', '--is-ancestor', remoteNotes, preimage])).toThrow();
+                git(local, ['push', '--quiet', 'origin', 'refs/notes/ai:refs/notes/ai']);
+                git(local, ['update-ref', 'refs/notes/ai', preimage]);
+                const port = shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: (command, args) =>
+                            execFileSync(command, args, {
+                                cwd: local,
+                                encoding: 'utf8',
+                                stdio: ['ignore', 'pipe', 'pipe'],
+                            }).trim(),
+                        run: (command, args) => {
+                            const actual =
+                                authenticated && args.includes(GITHUB_HTTPS_REMOTE)
+                                    ? args.map((arg) => (arg === GITHUB_HTTPS_REMOTE ? remote : arg))
+                                    : args;
+                            execFileSync(command, actual, { cwd: local, stdio: 'pipe' });
+                        },
+                    },
+                    authenticated ? { gitToken: 'ghs_minted', helperDir: root } : {}
+                );
+                port.fetch();
+                const recovery = `refs/agents/preserved-ai-notes/${preimage}`;
+                expect(git(local, ['rev-parse', recovery])).toBe(preimage);
+                expect(git(local, ['rev-parse', `${recovery}:${target}`])).toBe(localBlob);
+                expect(git(local, ['rev-parse', 'refs/notes/ai'])).toBe(remoteNotes);
+            } finally {
+                removeTemporaryGitRepository(root);
+            }
+        },
+        30_000
+    );
+
+    it('refuses a conflicting recovery ref or inspection and pin failures before fetch', () => {
+        const notes = 'a'.repeat(40);
+        const recovery = `refs/agents/preserved-ai-notes/${notes}`;
+        for (const failure of ['collision', 'inspect', 'pin']) {
+            const runs: string[][] = [];
+            const port = shellPort('jcosta33/sourdaw', {
+                capture: (_command, args) => {
+                    if (args[0] === 'cat-file') {
+                        return 'commit';
+                    }
+                    if (args[2] === 'refs/notes/ai') {
+                        if (failure === 'inspect') {
+                            throw new Error('inspection failed');
+                        }
+                        return `refs/notes/ai ${notes} `;
+                    }
+                    return failure === 'collision' ? `${recovery} ${'b'.repeat(40)} ` : '';
+                },
+                run: (_command, args) => {
+                    runs.push(args);
+                    if (args[0] === 'update-ref' && failure === 'pin') {
+                        throw new Error('pin failed');
+                    }
+                },
+            });
+            expect(() => port.fetch()).toThrow();
+            expect(runs.some((args) => args.includes('fetch'))).toBe(false);
+        }
+    });
+
+    it('replays an identical recovery ref without rewriting it', () => {
+        const notes = 'a'.repeat(40);
+        const runs: string[][] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => (args[0] === 'cat-file' ? 'commit' : `${args[2] ?? ''} ${notes} `),
+            run: (_command, args) => runs.push(args),
+        });
+        port.fetch();
+        expect(runs).toHaveLength(1);
+        expect(runs[0]?.[0]).toBe('fetch');
     });
 
     it('authenticates fetch by pruning all origin heads over HTTPS', () => {
