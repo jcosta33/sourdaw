@@ -132,8 +132,9 @@ all the closed child's markers as durable evidence.
 
 When the parent was superseded by a different merged PR, name it explicitly with
 `--parent-replacement <pr>` after `--superseded-parent`. All four PR identities
-must differ. Both replacements and the old parent must target `main`; the old
-parent's canonical receipt and total live finding lineage must name its own
+must differ. Both replacements must target `main`; the old parent must target `main`
+or supply the completed nested-binding proof described below. The old parent's
+canonical receipt and total live finding lineage must name its own
 replacement, while the child keeps its independent lineage to the child
 replacement. The parent's replacement merge commit must be an ancestor of the
 child replacement's source head. The read-only comparison binds the repository,
