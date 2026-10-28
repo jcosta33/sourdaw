@@ -257,17 +257,18 @@ describe('ensureTrackStrips', () => {
 
         function expectReconstruction(): void {
             expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
-            expect(mocks.projectTrackToLiveStrip.mock.calls).toEqual(
-                [
-                    ...initializationTrackIds.map((trackId) => [
-                        { trackId, deferSidechainWiring: true, deferSends: true, activateDormantExternalPlugins: true },
-                    ]),
-                    ...[...children, toasterFolder, effectsBus, masterTrack].map((track) => [{ mode: 'sends', trackId: track.id }]),
-                ]
-            );
+            expect(mocks.projectTrackToLiveStrip.mock.calls).toEqual([
+                ...initializationTrackIds.map((trackId) => [
+                    { trackId, deferSidechainWiring: true, deferSends: true, activateDormantExternalPlugins: true },
+                ]),
+                ...[...children, toasterFolder, effectsBus, masterTrack].map((track) => [
+                    { mode: 'sends', trackId: track.id },
+                ]),
+            ]);
             expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
 
-            const lastInitialization = mocks.projectTrackToLiveStrip.mock.invocationCallOrder[initializationTrackIds.length - 1];
+            const lastInitialization =
+                mocks.projectTrackToLiveStrip.mock.invocationCallOrder[initializationTrackIds.length - 1];
             const firstSend = mocks.projectTrackToLiveStrip.mock.invocationCallOrder[initializationTrackIds.length];
             expect(lastInitialization).toBeLessThan(Math.min(...mocks.ensureBusStrip.mock.invocationCallOrder));
             expect(Math.max(...mocks.ensureBusStrip.mock.invocationCallOrder)).toBeLessThan(firstSend ?? 0);
@@ -419,39 +420,65 @@ describe('ensureTrackStrips', () => {
         });
     });
 
-    it.each([undefined, { acceptance: 'rejected', application: 'not-applied', reason: 'stale' },
-        { acceptance: 'accepted', application: 'needs-reconcile', reason: 'repair required' }])(
-        'stops facade and routing publication on an ordinary initialization failure', (outcome) => {
-            mocks.trackStoreValue.value = { tracks: [createTrack({ id: 'bus', name: 'Bus', kind: 'bus' })], selectedTrackId: null };
-            mocks.projectTrackToLiveStrip.mockReturnValue(outcome);
-            expect(ensureTrackStrips().status).toBe('failed');
-            expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledOnce();
-            expect(mocks.ensureBusStrip).not.toHaveBeenCalled();
-            expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
-        }
-    );
+    it.each([
+        undefined,
+        { acceptance: 'rejected', application: 'not-applied', reason: 'stale' },
+        { acceptance: 'accepted', application: 'needs-reconcile', reason: 'repair required' },
+    ])('stops facade and routing publication on an ordinary initialization failure', (outcome) => {
+        mocks.trackStoreValue.value = {
+            tracks: [createTrack({ id: 'bus', name: 'Bus', kind: 'bus' })],
+            selectedTrackId: null,
+        };
+        mocks.projectTrackToLiveStrip.mockReturnValue(outcome);
+        expect(ensureTrackStrips().status).toBe('failed');
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledOnce();
+        expect(mocks.ensureBusStrip).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+    });
 
     it('collects the original activation promise once without replaying controls in the send phase', () => {
         const activation = Promise.resolve({ status: 'active' as const });
-        mocks.trackStoreValue.value = { tracks: [createTrack({ id: 'audio', name: 'Audio', kind: 'audio' })], selectedTrackId: null };
-        mocks.projectTrackToLiveStrip.mockImplementation((input: { mode?: string; onExternalPluginActivation?: (promise: typeof activation) => void }) => {
-            if (input.mode === 'sends') return { status: 'projected' };
-            input.onExternalPluginActivation?.(activation);
-            return { acceptance: 'accepted', application: 'applied', correlation: { appRevision: 1, projectRevision: 'project-1' }, runtimeRevision: 1 };
+        mocks.trackStoreValue.value = {
+            tracks: [createTrack({ id: 'audio', name: 'Audio', kind: 'audio' })],
+            selectedTrackId: null,
+        };
+        mocks.projectTrackToLiveStrip.mockImplementation(
+            (input: { mode?: string; onExternalPluginActivation?: (promise: typeof activation) => void }) => {
+                if (input.mode === 'sends') return { status: 'projected' };
+                input.onExternalPluginActivation?.(activation);
+                return {
+                    acceptance: 'accepted',
+                    application: 'applied',
+                    correlation: { appRevision: 1, projectRevision: 'project-1' },
+                    runtimeRevision: 1,
+                };
+            }
+        );
+        expect(ensureTrackStrips({ collectExternalPluginActivations: true })).toEqual({
+            status: 'ready',
+            externalPluginActivations: [activation],
         });
-        expect(ensureTrackStrips({ collectExternalPluginActivations: true })).toEqual({ status: 'ready', externalPluginActivations: [activation] });
         expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(2);
         expect(mocks.projectTrackToLiveStrip).toHaveBeenLastCalledWith({ mode: 'sends', trackId: 'audio' });
         expect(mocks.wireSidechainRoutes).toHaveBeenCalledOnce();
     });
 
     it('reports send owner admission failure before final sidechain wiring', () => {
-        mocks.trackStoreValue.value = { tracks: [createTrack({ id: 'audio', name: 'Audio', kind: 'audio' })], selectedTrackId: null };
-        mocks.projectTrackToLiveStrip.mockImplementation((input: { mode?: string }) => input.mode === 'sends'
-            ? { status: 'rejected', reason: 'routing owner changed' }
-            : { acceptance: 'accepted', application: 'applied', correlation: { appRevision: 1, projectRevision: 'project-1' }, runtimeRevision: 1 });
+        mocks.trackStoreValue.value = {
+            tracks: [createTrack({ id: 'audio', name: 'Audio', kind: 'audio' })],
+            selectedTrackId: null,
+        };
+        mocks.projectTrackToLiveStrip.mockImplementation((input: { mode?: string }) =>
+            input.mode === 'sends'
+                ? { status: 'rejected', reason: 'routing owner changed' }
+                : {
+                      acceptance: 'accepted',
+                      application: 'applied',
+                      correlation: { appRevision: 1, projectRevision: 'project-1' },
+                      runtimeRevision: 1,
+                  }
+        );
         expect(ensureTrackStrips()).toEqual({ status: 'failed', reason: 'routing owner changed' });
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
     });
-
 });

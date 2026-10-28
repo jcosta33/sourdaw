@@ -1,10 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort, flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { createTrack, projectTrackToLiveStrip, restoreTrackSnapshot, runtimeGraphTopology } from '#/modules/Arrangement/useCases';
-import { audioEngine, configureRuntimeGraphProjectRevisionValidator, configureRuntimeGraphTopologyValidator } from '#/modules/AudioEngine/useCases';
-import { captureProjectRevision, createCrdtDoc, getCrdtDoc, mutateCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    createTrack,
+    projectTrackToLiveStrip,
+    restoreTrackSnapshot,
+    runtimeGraphTopology,
+} from '#/modules/Arrangement/useCases';
+import {
+    audioEngine,
+    configureRuntimeGraphProjectRevisionValidator,
+    configureRuntimeGraphTopologyValidator,
+} from '#/modules/AudioEngine/useCases';
+import {
+    captureProjectRevision,
+    createCrdtDoc,
+    getCrdtDoc,
+    mutateCrdtDoc,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
@@ -28,7 +46,15 @@ describe('project strip initialization before bus facade and send publication', 
         first.outputId = later.id;
         for (const bus of [first, later]) {
             bus.gain = 0.4;
-            bus.devices = [{ id: `${bus.id}-eq`, type: 'builtin-eq', name: 'EQ', bypassed: false, parameterValues: { 'eq-low-gain': 2 } }];
+            bus.devices = [
+                {
+                    id: `${bus.id}-eq`,
+                    type: 'builtin-eq',
+                    name: 'EQ',
+                    bypassed: false,
+                    parameterValues: { 'eq-low-gain': 2 },
+                },
+            ];
         }
         source.sends = [{ busId: first.id, level: 0.3, preFader: true }];
         first.sends = [{ busId: later.id, level: 0.4, preFader: false }];
@@ -48,7 +74,9 @@ describe('project strip initialization before bus facade and send publication', 
         expect(bus).toBeDefined();
         if (!source || !bus) throw new Error('Required real send endpoints were not published');
         const tap = preFader ? source.preFaderSendGate : source.carrierGate;
-        const sendGains = [...(edges.get(tap) ?? [])].filter((node) => typeof node === 'object' && node !== null && edges.get(node)?.has(bus.gainNode));
+        const sendGains = [...(edges.get(tap) ?? [])].filter(
+            (node) => typeof node === 'object' && node !== null && edges.get(node)?.has(bus.gainNode)
+        );
         expect(sendGains).toHaveLength(1);
     }
 
@@ -56,12 +84,15 @@ describe('project strip initialization before bus facade and send publication', 
         configureAutomergeStoragePort(null);
         audioEngine.resetGraph();
         const WorkletNode = globalThis.AudioWorkletNode;
-        vi.stubGlobal('AudioWorkletNode', class extends WorkletNode {
-            constructor(...args: ConstructorParameters<typeof WorkletNode>) {
-                super(...args);
-                this.port.close = vi.fn();
+        vi.stubGlobal(
+            'AudioWorkletNode',
+            class extends WorkletNode {
+                constructor(...args: ConstructorParameters<typeof WorkletNode>) {
+                    super(...args);
+                    this.port.close = vi.fn();
+                }
             }
-        });
+        );
         platform = createMockAudioContext();
         edges = new Map();
         privateConstruction = [];
@@ -70,34 +101,60 @@ describe('project strip initialization before bus facade and send publication', 
         expectedConstructionOrder = ['later-bus', 'first-bus'];
         // Keep current edges, rather than a connect-call history that would also
         // count disconnected speculative or rebuilt routes as live connections.
-        for (const factoryName of ['createGain', 'createStereoPanner', 'createAnalyser', 'createBiquadFilter', 'createDelay'] as const) {
+        for (const factoryName of [
+            'createGain',
+            'createStereoPanner',
+            'createAnalyser',
+            'createBiquadFilter',
+            'createDelay',
+        ] as const) {
             const factory = platform[factoryName].getMockImplementation();
             if (!factory) throw new Error(`Missing platform primitive ${factoryName}`);
-            Object.defineProperty(audioEngine.context, factoryName, { configurable: true, value: () => {
-                if (factoryName === 'createBiquadFilter') {
-                    const busId = expectedConstructionOrder[Math.floor(filterCount / 3)];
-                    if (!busId) throw new Error('Unexpected EQ construction');
-                    privateConstruction.push({ busId, published: audioEngine.getTrackStrip(busId) !== undefined });
-                    filterCount++;
-                }
-                const node = factory();
-                const destinations = new Set<unknown>();
-                edges.set(node, destinations);
-                Object.defineProperty(node, 'connect', { value: (target: unknown) => { destinations.add(target); return target; } });
-                Object.defineProperty(node, 'disconnect', { value: (target?: unknown) => { if (target === undefined) destinations.clear(); else destinations.delete(target); } });
-                const parameters = [...('gain' in node ? [node.gain] : []), ...('pan' in node ? [node.pan] : [])];
-                for (const parameter of parameters) {
-                    for (const method of ['setTargetAtTime', 'setValueAtTime', 'linearRampToValueAtTime']) {
-                        Object.defineProperty(parameter, method, { value: (value: number) => { parameter.value = value; } });
+            Object.defineProperty(audioEngine.context, factoryName, {
+                configurable: true,
+                value: () => {
+                    if (factoryName === 'createBiquadFilter') {
+                        const busId = expectedConstructionOrder[Math.floor(filterCount / 3)];
+                        if (!busId) throw new Error('Unexpected EQ construction');
+                        privateConstruction.push({ busId, published: audioEngine.getTrackStrip(busId) !== undefined });
+                        filterCount++;
                     }
-                }
-                return node;
-            } });
+                    const node = factory();
+                    const destinations = new Set<unknown>();
+                    edges.set(node, destinations);
+                    Object.defineProperty(node, 'connect', {
+                        value: (target: unknown) => {
+                            destinations.add(target);
+                            return target;
+                        },
+                    });
+                    Object.defineProperty(node, 'disconnect', {
+                        value: (target?: unknown) => {
+                            if (target === undefined) destinations.clear();
+                            else destinations.delete(target);
+                        },
+                    });
+                    const parameters = [...('gain' in node ? [node.gain] : []), ...('pan' in node ? [node.pan] : [])];
+                    for (const parameter of parameters) {
+                        for (const method of ['setTargetAtTime', 'setValueAtTime', 'linearRampToValueAtTime']) {
+                            Object.defineProperty(parameter, method, {
+                                value: (value: number) => {
+                                    parameter.value = value;
+                                },
+                            });
+                        }
+                    }
+                    return node;
+                },
+            });
         }
         Object.defineProperty(audioEngine.context, 'currentTime', { configurable: true, value: 0 });
         const ensureBus = audioEngine.ensureBusStrip.bind(audioEngine);
         vi.spyOn(audioEngine, 'ensureBusStrip').mockImplementation((busId) => {
-            facades.push({ busId, devices: audioEngine.getTrackStrip(busId)?.deviceNodes.map((device) => device.deviceId) ?? [] });
+            facades.push({
+                busId,
+                devices: audioEngine.getTrackStrip(busId)?.deviceNodes.map((device) => device.deviceId) ?? [],
+            });
             return ensureBus(busId);
         });
         createCrdtDoc('root');
@@ -105,7 +162,8 @@ describe('project strip initialization before bus facade and send publication', 
             getDoc: (id) => getCrdtDoc(id),
             getSemanticMessage: () => undefined,
             hasDoc: (id) => getCrdtDoc(id) !== undefined,
-            mutateDoc: ({ docId, changeFn, message, snapshotTransaction, changedKeys }) => mutateCrdtDoc({ id: docId, changeFn, message, snapshotTransaction, localSlots: changedKeys }),
+            mutateDoc: ({ docId, changeFn, message, snapshotTransaction, changedKeys }) =>
+                mutateCrdtDoc({ id: docId, changeFn, message, snapshotTransaction, localSlots: changedKeys }),
         });
         configureRuntimeGraphProjectRevisionValidator((revision) => revision === captureProjectRevision());
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
@@ -133,13 +191,26 @@ describe('project strip initialization before bus facade and send publication', 
     it('constructs complete private bus chains before facades and cyclic sends, then rebuilds without duplication', () => {
         installTracks(tracksWithSends());
         const result = ensureTrackStrips();
-        expect(privateConstruction, `Facades observed before real EQ construction: ${JSON.stringify(facades)}`).toHaveLength(6);
+        expect(
+            privateConstruction,
+            `Facades observed before real EQ construction: ${JSON.stringify(facades)}`
+        ).toHaveLength(6);
         expect(result.status).toBe('ready');
-        expect(privateConstruction).toEqual(['later-bus', 'first-bus'].flatMap((busId) => Array.from({ length: 3 }, () => ({ busId, published: false }))));
+        expect(privateConstruction).toEqual(
+            ['later-bus', 'first-bus'].flatMap((busId) =>
+                Array.from({ length: 3 }, () => ({ busId, published: false }))
+            )
+        );
         expect(facades).toEqual(['first-bus', 'later-bus'].map((busId) => ({ busId, devices: [`${busId}-eq`] })));
         for (const busId of ['first-bus', 'later-bus']) {
-            expect(audioEngine.getTrackStrip(busId)?.deviceNodes.map(({ deviceId, parameterIds }) => ({ deviceId, parameterIds }))).toEqual([{ deviceId: `${busId}-eq`, parameterIds: ['eq-low-gain'] }]);
-            expect(audioEngine.getDeviceReadinessDiagnostics().devices.find((device) => device.deviceId === `${busId}-eq`)).toMatchObject({ deviceId: `${busId}-eq`, status: 'ready', failureStage: null });
+            expect(
+                audioEngine
+                    .getTrackStrip(busId)
+                    ?.deviceNodes.map(({ deviceId, parameterIds }) => ({ deviceId, parameterIds }))
+            ).toEqual([{ deviceId: `${busId}-eq`, parameterIds: ['eq-low-gain'] }]);
+            expect(
+                audioEngine.getDeviceReadinessDiagnostics().devices.find((device) => device.deviceId === `${busId}-eq`)
+            ).toMatchObject({ deviceId: `${busId}-eq`, status: 'ready', failureStage: null });
         }
         const first = audioEngine.getTrackStrip('first-bus');
         const later = audioEngine.getTrackStrip('later-bus');
@@ -172,8 +243,16 @@ describe('project strip initialization before bus facade and send publication', 
 
     it('does not publish a bus or wire sends when its real EQ constructor throws', () => {
         installTracks(tracksWithSends());
-        Object.defineProperty(audioEngine.context, 'createBiquadFilter', { value: () => { throw new Error('physical biquad construction failed'); }, configurable: true });
-        expect(ensureTrackStrips()).toMatchObject({ status: 'failed', reason: expect.stringContaining('physical biquad construction failed') });
+        Object.defineProperty(audioEngine.context, 'createBiquadFilter', {
+            value: () => {
+                throw new Error('physical biquad construction failed');
+            },
+            configurable: true,
+        });
+        expect(ensureTrackStrips()).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('physical biquad construction failed'),
+        });
         expect(audioEngine.getTrackStrip('later-bus')).toBeUndefined();
         expect(audioEngine.getTrackStrip('first-bus')).toBeUndefined();
         expect(facades).toEqual([]);
@@ -185,37 +264,71 @@ describe('project strip initialization before bus facade and send publication', 
         });
     });
 
-    it.each(['empty', 'wrong nonempty'] as const)('retains rejection of an existing %s bus instead of adopting it', (existing) => {
-        const tracks = tracksWithSends();
-        const bus = tracks[2]!;
-        installTracks([{ ...bus, devices: existing === 'empty' ? [] : [{ ...bus.devices[0]!, id: 'different-eq' }], sends: [] }]);
-        expect(projectTrackToLiveStrip({ trackId: bus.id })).toMatchObject({ acceptance: 'accepted', application: 'applied' });
-        const before = audioEngine.getTrackStrip(bus.id);
-        installTracks(tracks);
-        facades.length = 0;
-        expect(ensureTrackStrips()).toMatchObject({ status: 'failed', reason: expect.stringContaining('Live source strip does not match') });
-        expect(audioEngine.getTrackStrip(bus.id)).toBe(before);
-        expect(facades).toEqual([]);
-    });
+    it.each(['empty', 'wrong nonempty'] as const)(
+        'retains rejection of an existing %s bus instead of adopting it',
+        (existing) => {
+            const tracks = tracksWithSends();
+            const bus = tracks[2]!;
+            installTracks([
+                {
+                    ...bus,
+                    devices: existing === 'empty' ? [] : [{ ...bus.devices[0]!, id: 'different-eq' }],
+                    sends: [],
+                },
+            ]);
+            expect(projectTrackToLiveStrip({ trackId: bus.id })).toMatchObject({
+                acceptance: 'accepted',
+                application: 'applied',
+            });
+            const before = audioEngine.getTrackStrip(bus.id);
+            installTracks(tracks);
+            facades.length = 0;
+            expect(ensureTrackStrips()).toMatchObject({
+                status: 'failed',
+                reason: expect.stringContaining('Live source strip does not match'),
+            });
+            expect(audioEngine.getTrackStrip(bus.id)).toBe(before);
+            expect(facades).toEqual([]);
+        }
+    );
 
-    it.each(['runtime', 'project', 'topology'] as const)('preserves stale %s snapshot rejection without constructors or publication', (stale) => {
-        const bus = tracksWithSends()[2]!;
-        installTracks([bus]);
-        const snapshot = { schemaVersion: 1, command: 'initialize-track-strip', correlation: { appRevision: audioEngine.getRuntimeGraphRevision(), projectRevision: captureProjectRevision() }, nodes: [runtimeGraphTopology.createNode(bus)], output: { kind: 'output', sourceId: bus.id, targetId: 'master' }, parameters: [] };
-        if (stale === 'runtime') audioEngine.ensureTrackStrip('unrelated');
-        if (stale === 'project') createCrdtDoc('revision-change');
-        if (stale === 'topology') installTracks([{ ...bus, devices: [] }]);
-        expect(audioEngine.initializeTrackStripFromSnapshot(snapshot)).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
-        expect(audioEngine.getTrackStrip(bus.id)).toBeUndefined();
-        expect(privateConstruction).toEqual([]);
-        expect(facades).toEqual([]);
-    });
+    it.each(['runtime', 'project', 'topology'] as const)(
+        'preserves stale %s snapshot rejection without constructors or publication',
+        (stale) => {
+            const bus = tracksWithSends()[2]!;
+            installTracks([bus]);
+            const snapshot = {
+                schemaVersion: 1,
+                command: 'initialize-track-strip',
+                correlation: {
+                    appRevision: audioEngine.getRuntimeGraphRevision(),
+                    projectRevision: captureProjectRevision(),
+                },
+                nodes: [runtimeGraphTopology.createNode(bus)],
+                output: { kind: 'output', sourceId: bus.id, targetId: 'master' },
+                parameters: [],
+            };
+            if (stale === 'runtime') audioEngine.ensureTrackStrip('unrelated');
+            if (stale === 'project') createCrdtDoc('revision-change');
+            if (stale === 'topology') installTracks([{ ...bus, devices: [] }]);
+            expect(audioEngine.initializeTrackStripFromSnapshot(snapshot)).toMatchObject({
+                acceptance: 'rejected',
+                application: 'not-applied',
+            });
+            expect(audioEngine.getTrackStrip(bus.id)).toBeUndefined();
+            expect(privateConstruction).toEqual([]);
+            expect(facades).toEqual([]);
+        }
+    );
 
     it('rejects ambiguous bus ownership before creating any facade', () => {
         const tracks = tracksWithSends();
         installTracks([...tracks, { ...tracks[1]! }]);
         expect(trackStore.value?.tracks.filter((track) => track.id === 'first-bus')).toHaveLength(2);
-        expect(ensureTrackStrips()).toMatchObject({ status: 'failed', reason: 'The project has an ambiguous bus owner' });
+        expect(ensureTrackStrips()).toMatchObject({
+            status: 'failed',
+            reason: 'The project has an ambiguous bus owner',
+        });
         expect(facades).toEqual([]);
         expect(privateConstruction).toEqual([]);
     });
@@ -251,16 +364,35 @@ describe('project strip initialization before bus facade and send publication', 
         bus.sends = [];
         expectedConstructionOrder = [bus.id, bus.id];
         installTracks([bus]);
-        expect(projectTrackToLiveStrip({ trackId: bus.id })).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        expect(projectTrackToLiveStrip({ trackId: bus.id })).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
         const original = audioEngine.getTrackStrip(bus.id);
-        const snapshot = { schemaVersion: 1, command: 'initialize-track-strip', correlation: { appRevision: audioEngine.getRuntimeGraphRevision(), projectRevision: captureProjectRevision() }, nodes: [runtimeGraphTopology.createNode(bus)], output: { kind: 'output', sourceId: bus.id, targetId: 'master' }, parameters: [] };
+        const snapshot = {
+            schemaVersion: 1,
+            command: 'initialize-track-strip',
+            correlation: {
+                appRevision: audioEngine.getRuntimeGraphRevision(),
+                projectRevision: captureProjectRevision(),
+            },
+            nodes: [runtimeGraphTopology.createNode(bus)],
+            output: { kind: 'output', sourceId: bus.id, targetId: 'master' },
+            parameters: [],
+        };
         audioEngine.removeTrackStrip(bus.id);
-        expect(projectTrackToLiveStrip({ trackId: bus.id })).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        expect(projectTrackToLiveStrip({ trackId: bus.id })).toMatchObject({
+            acceptance: 'accepted',
+            application: 'applied',
+        });
         const replacement = audioEngine.getTrackStrip(bus.id);
         expect(replacement).not.toBe(original);
-        expect(audioEngine.initializeTrackStripFromSnapshot(snapshot)).toMatchObject({ acceptance: 'rejected', application: 'not-applied', reason: expect.stringContaining('stale') });
+        expect(audioEngine.initializeTrackStripFromSnapshot(snapshot)).toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: expect.stringContaining('stale'),
+        });
         expect(audioEngine.getTrackStrip(bus.id)).toBe(replacement);
         expect(privateConstruction).toHaveLength(6);
     });
-
 });
