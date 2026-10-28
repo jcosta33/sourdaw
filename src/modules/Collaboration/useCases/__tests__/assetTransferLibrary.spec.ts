@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { testOverrides } from '#/infra/di/internal/containerState';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { hydrateTracksForProject } from '#/modules/Arrangement/useCases';
 import { cacheAudioBuffer, exportCachedAudioBuffers, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import {
     readNativeLibrarySampleFile,
@@ -18,6 +19,8 @@ import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { AssetTransfer } from '../assetTransfer';
 import { AutomergeSync } from '../automergeSync';
 import { sessionRuntimePrimitives as runtime } from '../collaboration/sessionManagement';
+
+import type { Clip } from '#/modules/Arrangement/stores';
 
 const installed = vi.hoisted(() => {
     const tracks: Array<{ id: string; clips: Array<{ id: string; assetHash: string; audioBufferId: string }> }> = [];
@@ -222,6 +225,10 @@ function rowsForHash(records: unknown[], hash: string): unknown[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasAvailabilityCallback(value: unknown): value is { onAssetAvailable: (hash: string) => void } {
+    return isRecord(value) && typeof value.onAssetAvailable === 'function';
 }
 
 function isUint8Array(value: unknown): value is Uint8Array {
@@ -758,6 +765,171 @@ describe('local library fulfillment through the real asset request boundary', ()
         expect(requests).not.toHaveBeenCalled();
         expect(transfer.hasAsset(hash)).toBe(false);
     });
+
+    it('reuses resident library audio when a separately imported clip becomes active after delivery', async () => {
+        const bytes = new Uint8Array([41, 43, 47, 53]);
+        const hash = await chunkDigest(bytes);
+        await seedBinding(hash);
+        const read = armNativeLibrary(bytes);
+        vi.spyOn(AutomergeSync.prototype, 'start').mockImplementation(() => undefined);
+        const peer = await runtime.initialize(OWNER);
+        const requests = vi.spyOn(peer, 'broadcastCrdtSync');
+        const transfer = runtime.state.assetTransfer;
+        if (!transfer) {
+            throw new TypeError('Expected the real installed asset transfer');
+        }
+        const firstBufferId = `resident-first-${crypto.randomUUID()}`;
+        const laterBufferId = `resident-later-${crypto.randomUUID()}`;
+        const firstClip = { id: 'first-clip', audioBufferId: firstBufferId, assetHash: hash };
+        installed.tracks.push({ id: 'first-track', clips: [firstClip] });
+        const firstPCM = decodedBuffer();
+        const laterPCM = decodedBuffer();
+        installed.decode.mockResolvedValueOnce(firstPCM).mockResolvedValue(laterPCM);
+
+        transfer.requestAsset(hash);
+        await vi.waitFor(() => expect(getCachedAudioBuffer({ bufferId: firstBufferId })).toBe(firstPCM));
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(installed.decode).toHaveBeenCalledTimes(1);
+        const callbacks: unknown = Reflect.get(transfer, 'callbacks');
+        if (!hasAvailabilityCallback(callbacks)) {
+            throw new TypeError('Expected the actual installed availability callback');
+        }
+        const available = vi.spyOn(callbacks, 'onAssetAvailable');
+        const laterClip = {
+            id: 'later-clip',
+            trackId: 'later-track',
+            name: 'Later clip',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio',
+            audioBufferId: laterBufferId,
+            assetHash: hash,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#ff0000',
+            locked: false,
+            muted: false,
+        } satisfies Clip;
+        installed.tracks.splice(0, installed.tracks.length, { id: 'later-track', clips: [laterClip] });
+        hydrateTracksForProject({
+            tracks: [{ id: 'later-track', name: 'Later track', kind: 'audio', clips: [laterClip] }],
+        });
+
+        await vi.waitFor(() => expect(getCachedAudioBuffer({ bufferId: laterBufferId })).toBe(laterPCM));
+        hydrateTracksForProject({
+            tracks: [{ id: 'later-track', name: 'Later track', kind: 'audio', clips: [laterClip] }],
+        });
+        expect(getCachedAudioBuffer({ bufferId: firstBufferId })).toBe(firstPCM);
+        expect(installed.decode).toHaveBeenCalledTimes(2);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(available).not.toHaveBeenCalled();
+        expect(requests).not.toHaveBeenCalled();
+        expect(new Uint8Array(installed.decode.mock.calls[1]![0])).toEqual(bytes);
+    });
+
+    it.each(['complete', 'held'])(
+        'admits a reactivated queued alias while the first read is held and keeps its %s ownership',
+        async (secondDecode) => {
+            const bytes = new Uint8Array([83, 89, 97, 101]);
+            const hash = await chunkDigest(bytes);
+            await seedBinding(hash);
+            const originalRead = armNativeLibrary(bytes);
+            vi.spyOn(AutomergeSync.prototype, 'start').mockImplementation(() => undefined);
+            const peer = await runtime.initialize(OWNER);
+            const requests = vi.spyOn(peer, 'broadcastCrdtSync');
+            const transfer = runtime.state.assetTransfer;
+            if (!transfer) {
+                throw new TypeError('Expected the real installed asset transfer');
+            }
+            transfer.requestAsset(hash);
+            await vi.waitFor(() => expect(transfer.getAsset(hash)).toBeDefined());
+            const blob = transfer.getAsset(hash);
+            if (!blob) {
+                throw new TypeError('Expected verified resident raw audio');
+            }
+            const firstBufferId = `queued-first-${crypto.randomUUID()}`;
+            const secondBufferId = `queued-second-${crypto.randomUUID()}`;
+            const makeClip = (id: string, audioBufferId: string) =>
+                ({
+                    id,
+                    trackId: 'queued-track',
+                    name: id,
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'audio' as const,
+                    audioBufferId,
+                    assetHash: hash,
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#ff0000',
+                    locked: false,
+                    muted: false,
+                }) satisfies Clip;
+            const first = makeClip('queued-first', firstBufferId);
+            const second = makeClip('queued-second', secondBufferId);
+            const publish = (clips: ReturnType<typeof makeClip>[]) => {
+                installed.tracks.splice(0, installed.tracks.length, { id: 'queued-track', clips });
+                hydrateTracksForProject({
+                    tracks: [{ id: 'queued-track', name: 'Queued track', kind: 'audio', clips }],
+                });
+            };
+            const firstEntered = Promise.withResolvers<void>();
+            const releaseFirst = Promise.withResolvers<void>();
+            const releaseSecond = Promise.withResolvers<AudioBuffer>();
+            const residentRead = blob.arrayBuffer.bind(blob);
+            const reads = vi.spyOn(blob, 'arrayBuffer').mockImplementationOnce(async () => {
+                firstEntered.resolve();
+                await releaseFirst.promise;
+                return residentRead();
+            });
+            const firstPCM = decodedBuffer();
+            const secondPCM = decodedBuffer();
+            if (secondDecode === 'held') {
+                installed.decode.mockReturnValueOnce(releaseSecond.promise).mockResolvedValue(firstPCM);
+            } else {
+                installed.decode.mockResolvedValueOnce(secondPCM).mockResolvedValue(firstPCM);
+            }
+
+            try {
+                publish([first, second]);
+                await firstEntered.promise;
+                expect(reads).toHaveBeenCalledOnce();
+                expect(installed.decode).not.toHaveBeenCalled();
+                publish([first]);
+                publish([first, second]);
+
+                if (secondDecode === 'held') {
+                    await vi.waitFor(() => expect(installed.decode).toHaveBeenCalledOnce());
+                    expect(getCachedAudioBuffer({ bufferId: secondBufferId })).toBeNull();
+                } else {
+                    await vi.waitFor(() => expect(getCachedAudioBuffer({ bufferId: secondBufferId })).toBe(secondPCM));
+                }
+                expect(getCachedAudioBuffer({ bufferId: firstBufferId })).toBeNull();
+                expect(reads).toHaveBeenCalledTimes(2);
+                expect(originalRead).toHaveBeenCalledOnce();
+                expect(requests).not.toHaveBeenCalled();
+
+                releaseFirst.resolve();
+                await vi.waitFor(() => expect(getCachedAudioBuffer({ bufferId: firstBufferId })).toBe(firstPCM));
+                publish([first, second]);
+                publish([first]);
+                publish([first, second]);
+                expect(reads).toHaveBeenCalledTimes(2);
+                expect(installed.decode).toHaveBeenCalledTimes(2);
+                releaseSecond.resolve(secondPCM);
+                await vi.waitFor(() => expect(getCachedAudioBuffer({ bufferId: secondBufferId })).toBe(secondPCM));
+                expect(reads).toHaveBeenCalledTimes(2);
+                expect(installed.decode).toHaveBeenCalledTimes(2);
+                expect(originalRead).toHaveBeenCalledOnce();
+                expect(requests).not.toHaveBeenCalled();
+            } finally {
+                releaseFirst.resolve();
+                releaseSecond.resolve(secondPCM);
+            }
+        }
+    );
 
     it.each([
         { phase: 'read', change: 'hash' },
