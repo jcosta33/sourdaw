@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
+
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type AnswerRespondArguments } from '../../models/AnswerRespond';
 import { type ToolCallResult } from '../../models/ToolCallResult';
@@ -9,8 +10,9 @@ import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
 import { getProjectContext } from '../getProjectContext';
-import { createPlanningProject } from './planningProjectFixture';
 import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
+
+import { createPlanningProject } from './planningProjectFixture';
 
 vi.mock('#/modules/AudioRendering/useCases', async (original) => ({
     ...(await original<typeof import('#/modules/AudioRendering/useCases')>()),
@@ -76,6 +78,7 @@ function setup(kind = 'measured-audio') {
             admit: () => ({ status: 'admitted', settle: () => {} }),
         })
     );
+    const requestTurns: Array<Parameters<Parameters<typeof runApplicationOwnedToolLoop>[0]['requestTurn']>[0]> = [];
     function run(
         turns: ToolCallResult[][],
         rewrite?: (result: AnalysisMeasureRead) => AnalysisMeasureRead,
@@ -83,7 +86,10 @@ function setup(kind = 'measured-audio') {
     ) {
         const requestTurn = vi.fn();
         for (const calls of turns) {
-            requestTurn.mockResolvedValueOnce(resultTurn(calls));
+            requestTurn.mockImplementationOnce(async (input) => {
+                requestTurns.push(input);
+                return resultTurn(calls);
+            });
         }
         return runApplicationOwnedToolLoop({
             loopId: 'measured-answer',
@@ -103,7 +109,7 @@ function setup(kind = 'measured-audio') {
             },
         });
     }
-    return { intake, measure, run, execute, context, catalog };
+    return { intake, measure, run, execute, context, catalog, requestTurns };
 }
 
 beforeEach(() => {
@@ -160,6 +166,29 @@ describe('AC002 measured answers use actual successful audio reductions', () => 
         expect(renderAgentMeasurementScope).toHaveBeenCalledTimes(1);
         expect(result.retainedCompilations).toEqual([]);
         expect(result.proposal).toBeNull();
+    });
+    it('consumes the strict entry fallback as an ordinary turn without another allowance or early answer', async () => {
+        const { intake, measure, run, requestTurns } = setup();
+        const result = await run([
+            [{ id: 'entry', name: 'answer.respond', arguments: {} }],
+            [intake],
+            [measure],
+            [terminal([{ kind: 'metric', reference }])],
+        ]);
+        expect(result).toMatchObject({
+            status: 'complete',
+            turns: 4,
+            answer: { text: expect.stringContaining('integrated loudness is -19.99 LUFS') },
+        });
+        expect(requestTurns.map((turn) => turn.remaining.turns)).toEqual([4, 3, 3, 2]);
+        expect(requestTurns[1]?.answerIntakeOnly).toBe(true);
+        expect(requestTurns[2]?.answerOnly).toBe(true);
+        expect(result.receipts.map((receipt) => receipt.callId)).toEqual(['entry', 'intake', 'measure']);
+        expect(result.status === 'complete' ? result.answer?.evidence.map((entry) => entry.callId) : null).toEqual([
+            'intake',
+            'measure',
+        ]);
+        expect(renderAgentMeasurementScope).toHaveBeenCalledTimes(1);
     });
     it('renders a structural answer without an offline render, with intake evidence', async () => {
         const { intake, run } = setup('project-facts');

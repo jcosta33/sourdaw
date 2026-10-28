@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { createAnswerInterpretationToolSchema } from '../../models/AnswerInterpretation';
-import { createPlanningProject } from './planningProjectFixture';
-import { getProjectContext } from '../getProjectContext';
-import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
-import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
+import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
+import { getProjectContext } from '../getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
+
+import { createPlanningProject } from './planningProjectFixture';
 
 function catalog() {
     const context = getProjectContext();

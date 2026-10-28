@@ -15,8 +15,9 @@ import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import * as parserModule from '../parsePromptToActions';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
-import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
 import { planPromptActions } from '../planPromptActions';
+
+import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
 
 vi.mock('../llmOrchestration/inference', async (original) => ({
     ...(await original<typeof import('../llmOrchestration/inference')>()),

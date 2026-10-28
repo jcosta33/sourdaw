@@ -11,14 +11,15 @@ import {
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
+import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
 import { orchestratePromptChatRequest } from '../agentRequestOrchestration/orchestratePromptChatRequest';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
-import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
-import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
-import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
+
+import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
 
 /**
  * AC-001 (#4381): a question ends the run in an `answer` outcome. The planner reaches it only
@@ -194,7 +195,7 @@ describe('answer.respond ends a run as an answer outcome', () => {
             evidence: receipts.map(({ callId, toolName, summary }) => ({ callId, toolName, summary })),
         });
         expect(result.planningOutcome?.kind === 'answer' && result.planningOutcome.evidence[0]?.toolName).toBe(
-            'selectAnswerInterpretation'
+            'selectCreativeInterpretation'
         );
     });
 
@@ -220,7 +221,7 @@ describe('answer.respond ends a run as an answer outcome', () => {
             { role: 'assistant', content: expect.stringContaining(ANSWER_TEXT), error: undefined },
         ]);
         expect(messages[1]?.answerEvidence).toEqual([
-            expect.objectContaining({ callId: 'intake', toolName: 'selectAnswerInterpretation' }),
+            expect.objectContaining({ callId: 'intake', toolName: 'selectCreativeInterpretation' }),
             { callId: 'query', toolName: 'project.query', summary: recipeReceipt?.summary },
         ]);
         expect(messages[1]?.pendingActionConfirmationId).toBeUndefined();

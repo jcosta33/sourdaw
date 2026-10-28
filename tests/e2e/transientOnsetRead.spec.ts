@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { createLoopbackAnswerIntake } from '../../scripts/loopbackOpenAiProvider';
+
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
@@ -150,29 +152,47 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
     const provider = await startScriptedToolProvider((request, turn) => {
         expect(turn).toBeLessThan(5);
         if (turn === 0) {
-            const schema = request.tools.find((tool) => tool.function.name === 'selectAnswerInterpretation');
+            const schema = request.tools.find((tool) => tool.function.name === 'selectCreativeInterpretation');
+            expect(schema).toBeDefined();
             const catalog = schema?.function.parameters.properties.catalogId as { const: string };
-            expect(catalog.const).toMatch(/^answer-/);
-            const candidates = JSON.parse(schema?.function.description?.split('Candidates: ')[1] ?? 'null') as {
-                scopes: Array<[string, string, string[], string[]]>;
+            expect(catalog.const).toMatch(/^creative-/);
+            const view = JSON.parse(
+                schema?.function.description?.slice(schema.function.description.indexOf('View: {') + 6) ?? 'null'
+            ) as {
+                scopes: Array<[string, string[]]>;
             };
-            const scopeId = candidates.scopes.find((row) => row[2].includes(imported.clips[0].id))?.[0];
+            const properties = schema?.function.parameters.properties.answer as {
+                anyOf: Array<{ properties?: { scopeCandidateIds: { items: { enum: string[] } } } }>;
+            };
+            const ids = properties.anyOf.find((branch) => branch.properties !== undefined)!.properties!
+                .scopeCandidateIds.items.enum;
+            const dataText = request.messages
+                .map((message) => message.content)
+                .find((content) => content?.includes('untrusted_project_data:\n'))!;
+            const data = JSON.parse(dataText.split('untrusted_project_data:\n')[1]!.split('\n')[0]!).data as {
+                selectableTargets: Array<{ clips: Array<{ id: string }> }>;
+            };
+            const trackIndex = data.selectableTargets.findIndex((track) =>
+                track.clips.some((clip) => clip.id === imported.clips[0].id)
+            );
+            expect(trackIndex).toBeGreaterThanOrEqual(0);
+            const clipIndex = data.selectableTargets[trackIndex]!.clips.findIndex(
+                (clip) => clip.id === imported.clips[0].id
+            );
+            const reference = `c${String(trackIndex)}.${String(clipIndex)}`;
+            const index = view.scopes.findIndex((row) => row[0] === 'clips' && row[1].includes(reference));
+            const scopeId = ids[index];
+            expect(view.scopes[index]?.[1]).toEqual([reference]);
             if (scopeId === undefined) {
                 throw new Error('Imported source clip was not advertised.');
             }
             return [
-                {
-                    id: 'intake',
-                    name: 'selectAnswerInterpretation',
-                    arguments: {
-                        catalogId: catalog.const,
-                        kind: 'source-onsets',
-                        topicIds: [],
-                        scopeCandidateIds: [scopeId],
-                        rangeCandidateId: null,
-                        uncertainty: 'none',
-                    },
-                },
+                createLoopbackAnswerIntake(request, {
+                    kind: 'source-onsets',
+                    topicIds: [],
+                    scopeCandidateIds: [scopeId],
+                    rangeCandidateId: null,
+                }),
             ];
         }
         if (turn === 1) {

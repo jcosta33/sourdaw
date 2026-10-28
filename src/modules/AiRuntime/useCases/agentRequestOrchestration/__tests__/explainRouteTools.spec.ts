@@ -26,11 +26,6 @@ import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores
 import * as projectReads from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
-import {
-    advertisedAnswerCatalogId,
-    advertisedAnswerCandidateId,
-    structuralAnswerArguments,
-} from '../../__tests__/answerWireFixture';
 import { AiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
 import { type ToolCallResult } from '../../../models/ToolCallResult';
@@ -52,6 +47,11 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from '../../__tests__/aiWorkflowCommandPreflightFixture';
+import {
+    advertisedAnswerIntake,
+    advertisedAnswerCandidateId,
+    structuralAnswerArguments,
+} from '../../__tests__/answerWireFixture';
 import * as preparation from '../../agentReference/prepareStemImport';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
 import { agentRunWorkLease } from '../../agentRunWorkLease';
@@ -83,7 +83,7 @@ const section: ToolCallResult = { id: 'section', name: 'project.query', argument
 const measure: ToolCallResult = {
     id: 'measure',
     name: 'analysis.measure',
-    arguments: { scope: { kind: 'tracks', ids: [vocalId] }, range: { sectionId } },
+    arguments: { scope: { kind: 'tracks', ids: [vocalId] }, range: { startBeat: 0, endBeat: 4 } },
 };
 const recipe: ToolCallResult = {
     id: 'recipe',
@@ -108,25 +108,25 @@ function response(calls: ToolCallResult[]) {
     return { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(calls) } }] };
 }
 type IntakeSelection = { objectIds?: readonly string[]; candidateId?: string; sectionId?: string; topics?: string[] };
+function selectedAnswerScopes(params: unknown, measured: boolean, selection: IntakeSelection): string[] {
+    if (!measured) {
+        return [];
+    }
+    if (selection.candidateId !== undefined) {
+        return [selection.candidateId];
+    }
+    return (selection.objectIds ?? [vocalId]).map((id) => advertisedAnswerCandidateId(params, id));
+}
 function intakeCall(params: unknown, measured: boolean, selection: IntakeSelection = {}): ToolCallResult {
-    return {
-        id: 'intake',
-        name: 'selectAnswerInterpretation',
-        arguments: {
-            catalogId: advertisedAnswerCatalogId(params),
-            kind: measured ? 'measured-audio' : 'project-facts',
-            topicIds: measured ? (selection.topics ?? ['level']) : [],
-            scopeCandidateIds: measured
-                ? selection.candidateId === undefined
-                    ? (selection.objectIds ?? [vocalId]).map((id) => advertisedAnswerCandidateId(params, id))
-                    : [selection.candidateId]
-                : [],
-            rangeCandidateId: measured
-                ? advertisedAnswerCandidateId(params, selection.sectionId ?? sectionId, 'ranges')
-                : null,
-            uncertainty: 'none',
-        },
-    };
+    return advertisedAnswerIntake(params, {
+        kind: measured ? 'measured-audio' : 'project-facts',
+        topicIds: measured ? (selection.topics ?? ['level']) : [],
+        scopeCandidateIds: selectedAnswerScopes(params, measured, selection),
+        rangeCandidateId: measured
+            ? advertisedAnswerCandidateId(params, selection.sectionId ?? sectionId, 'ranges')
+            : null,
+        uncertainty: 'none',
+    });
 }
 function queueIntake(measured: boolean, selection?: IntakeSelection) {
     provider.mockImplementationOnce(async (params) => response([intakeCall(params, measured, selection)]));
@@ -639,7 +639,11 @@ describe('Explain reaches the shared answer kernel', () => {
                     role: 'assistant',
                     content: expect.stringContaining(answerText),
                     answerEvidence: [
-                        expect.objectContaining({ callId: 'intake', toolName: 'selectAnswerInterpretation' }),
+                        expect.objectContaining({
+                            callId: 'intake',
+                            toolName:
+                                mode === 'explain' ? 'selectAnswerInterpretation' : 'selectCreativeInterpretation',
+                        }),
                         expect.objectContaining({ callId: 'query', toolName: 'project.query' }),
                         expect.objectContaining({ callId: 'section', toolName: 'project.query' }),
                         expect.objectContaining({ callId: 'measure', toolName: 'analysis.measure' }),
@@ -686,7 +690,25 @@ describe('Explain reaches the shared answer kernel', () => {
                 }
                 const text = localReceiptText(provider.mock.calls[3]![0]);
                 expect(text.length).toBeLessThanOrEqual(8192);
-                expect(JSON.parse(text.split('\n').slice(3).join('\n'))).toEqual({ receipts });
+                const expectedView = structuredClone(receipts);
+                for (const receipt of expectedView) {
+                    const data = asRecord(receipt.data);
+                    if (typeof data.range === 'object' && data.range !== null) {
+                        delete asRecord(data.range).sectionId;
+                    }
+                    if (receipt.callId === 'section') {
+                        for (const item of data.items as Record<string, unknown>[]) {
+                            delete item.id;
+                        }
+                    }
+                }
+                expect(JSON.parse(text.split('\n').slice(3).join('\n'))).toEqual({ receipts: expectedView });
+                expect(text).not.toContain('"sectionId"');
+                expect(text).not.toContain('"id":"verse"');
+                // Original admitted producer receipts retain the exact private section identity.
+                expect(
+                    asRecord(asRecord(receipts.find((receipt) => receipt.callId === 'measure')!.data).range).sectionId
+                ).toBe(sectionId);
                 const rawBytes = receipts.map(
                     (receipt) => new TextEncoder().encode(JSON.stringify(receipt)).byteLength
                 );
@@ -701,6 +723,95 @@ describe('Explain reaches the shared answer kernel', () => {
             }
         }
     );
+
+    it.each([
+        { backend: 'webllm', mode: 'plan' },
+        { backend: 'cloud', mode: 'plan' },
+        { backend: 'webllm', mode: 'explain' },
+        { backend: 'cloud', mode: 'explain' },
+    ] as const)(
+        'keeps named-section identity private through actual $backend/$mode answer requests',
+        async ({ backend, mode }) => {
+            const privateId = 'private-section-identity-4381';
+            markerStore.set({
+                markers: [],
+                sections: [{ id: privateId, name: 'Verse', startBeat: 0, endBeat: 4, color: '#123456' }],
+            });
+            flushAutomergeStorageWrites();
+            if (backend === 'cloud') {
+                await selectHostedFixture();
+            }
+            script(
+                [
+                    [section],
+                    [measure],
+                    [
+                        {
+                            ...answer,
+                            arguments: {
+                                intakeCallId: 'intake',
+                                statements: [
+                                    {
+                                        kind: 'metric',
+                                        reference: { callId: 'measure', targetId: vocalId, metricId: 'rms' },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                ],
+                { sectionId: 'Verse' }
+            );
+            const verifyProject = observeProject();
+            try {
+                await sendChatMessage('What is Vocal loudness over Verse?', { mode });
+            } finally {
+                verifyProject();
+            }
+            expect(chatStore.value?.messages.at(-1)?.content).toContain(answerText);
+            const calls = backend === 'cloud' ? boundary.cloud.mock.calls : provider.mock.calls;
+            expect(calls).toHaveLength(4);
+            expect(JSON.stringify(calls)).not.toContain(privateId);
+            const receipts = agentRunStore.value?.runs[0]?.plan?.applicationToolReceipts ?? [];
+            expect(
+                asRecord(asRecord(receipts.find((receipt) => receipt.callId === 'measure')!.data).range).sectionId
+            ).toBe(privateId);
+            expect(asRecord(receipts.find((receipt) => receipt.callId === 'section')!.data).items).toEqual([
+                expect.objectContaining({ id: privateId, name: 'Verse' }),
+            ]);
+            expect(boundary.render).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('denies incomplete production authority before any joint view or provider dispatch', async () => {
+        const sentinel = 'WITHHELD_CANDIDATE_NAME_4381';
+        const state = trackStore.value!;
+        trackStore.set({ ...state, tracks: state.tracks.map((track) => ({ ...track, name: sentinel })) });
+        const project = projectStore.value!;
+        projectStore.set({
+            ...project,
+            productionBrief: {
+                ...project.productionBrief,
+                locks: Array.from({ length: 65 }, (_, index) => ({
+                    id: `private-lock-${String(index)}`,
+                    scope: { kind: 'project' as const },
+                    statement: sentinel,
+                    createdAt: index,
+                })),
+            },
+        });
+        flushAutomergeStorageWrites();
+        const verifyProject = observeProject();
+        try {
+            await sendChatMessage('Describe the project.', { mode: 'plan' });
+        } finally {
+            verifyProject();
+        }
+        expect(provider).not.toHaveBeenCalled();
+        expect(boundary.cloud).not.toHaveBeenCalled();
+        expect(JSON.stringify(chatStore.value?.messages)).not.toContain(sentinel);
+        expect(agentRunStore.value?.runs[0]?.plan?.applicationToolReceipts ?? []).toEqual([]);
+    });
 
     it.each([
         { mode: 'plan', group: false },
@@ -725,7 +836,10 @@ describe('Explain reaches the shared answer kernel', () => {
                     [
                         {
                             ...measure,
-                            arguments: { scope: { kind: 'tracks', ids: selected }, range: { sectionId: 'chorus' } },
+                            arguments: {
+                                scope: { kind: 'tracks', ids: selected },
+                                range: { startBeat: 8, endBeat: 16 },
+                            },
                         },
                     ],
                     [
@@ -800,7 +914,10 @@ describe('Explain reaches the shared answer kernel', () => {
                     [
                         {
                             ...measure,
-                            arguments: { scope: { kind: 'tracks', ids: [vocalId] }, range: { sectionId: 'chorus' } },
+                            arguments: {
+                                scope: { kind: 'tracks', ids: [vocalId] },
+                                range: { startBeat: 8, endBeat: 16 },
+                            },
                         },
                     ],
                     [
@@ -846,7 +963,7 @@ describe('Explain reaches the shared answer kernel', () => {
                 topics: ['tone'],
                 scopeCandidateIds: ['role:lead vocal'],
                 scopes: [{ objectIds: [vocalId] }],
-                range: { sectionId: 'chorus' },
+                range: { startBeat: 8, endBeat: 16 },
             });
             const source = run?.plan?.applicationToolReceipts?.find((entry) => entry.callId === 'measure')?.data as {
                 targets: Array<{ measurements: { spectralCentroid: { status: string; value: number; unit: string } } }>;
@@ -898,21 +1015,24 @@ describe('Explain reaches the shared answer kernel', () => {
                         {
                             ...measure,
                             id: 'measure-track',
-                            arguments: { scope: { kind: 'tracks', ids: [vocalId] }, range: { sectionId: 'chorus' } },
+                            arguments: {
+                                scope: { kind: 'tracks', ids: [vocalId] },
+                                range: { startBeat: 8, endBeat: 16 },
+                            },
                         },
                     ],
                     [
                         {
                             ...measure,
                             id: 'measure-bus',
-                            arguments: { scope: { kind: 'buses', ids: [busId] }, range: { sectionId: 'chorus' } },
+                            arguments: { scope: { kind: 'buses', ids: [busId] }, range: { startBeat: 8, endBeat: 16 } },
                         },
                     ],
                     [
                         {
                             ...measure,
                             id: 'measure-master',
-                            arguments: { scope: { kind: 'master' }, range: { sectionId: 'chorus' } },
+                            arguments: { scope: { kind: 'master' }, range: { startBeat: 8, endBeat: 16 } },
                         },
                     ],
                     [

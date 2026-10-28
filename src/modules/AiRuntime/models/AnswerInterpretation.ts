@@ -55,7 +55,7 @@ export function createAnswerInterpretationToolSchema(catalog: AnswerInterpretati
         function: {
             name: ANSWER_INTERPRETATION_TOOL_NAME,
             description:
-                'Interpret an information request, alone and once; this freezes read-only scope. Select measured-audio for acoustic questions, project-facts for metadata, catalog-knowledge for recipes, source-onsets for available source-buffer reads. Uncertainty clarifies. Candidate rows: scopes [id,kind,objectIds,labels], ranges [id,label,startBeat,endBeat,sectionId]. Candidates: ' +
+                'Interpret an information request, alone and once; this freezes read-only scope. Select measured-audio for acoustic questions, project-facts for metadata, catalog-knowledge for recipes, source-onsets for available source-buffer reads. Uncertainty clarifies. Candidate rows: scopes [id,kind,objectIds,labels], ranges [id,label,startBeat,endBeat]. Candidates: ' +
                 JSON.stringify({
                     scopes: catalog.scopes.map((scope) => [
                         scope.candidateId,
@@ -68,7 +68,6 @@ export function createAnswerInterpretationToolSchema(catalog: AnswerInterpretati
                         range.label,
                         range.startBeat,
                         range.endBeat,
-                        range.sectionId,
                     ]),
                 }),
             parameters: {

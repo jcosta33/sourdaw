@@ -20,66 +20,86 @@ describe('loopback OpenAI provider', () => {
         }
     });
 
-    it('returns explicitly scripted non-streaming tool calls in order', async () => {
-        const provider = await startLoopbackOpenAiProvider({
-            toolCalls: createLoopbackAnswerToolCalls(),
-        });
-        try {
-            for (const [id, name, args] of [
-                [
-                    'loopback-intake',
-                    'selectAnswerInterpretation',
-                    {
-                        catalogId: 'dynamic-answer-catalog',
-                        kind: 'project-facts',
-                        topicIds: [],
-                        scopeCandidateIds: [],
-                        rangeCandidateId: null,
-                        uncertainty: 'none',
-                    },
-                ],
-                ['loopback-query', 'project_query', { type: 'project-summary' }],
-                [
-                    'loopback-answer',
-                    'answer_respond',
-                    {
-                        intakeCallId: 'loopback-intake',
-                        statements: [
-                            { kind: 'project-fact', fact: 'summary' },
-                            { kind: 'query-page', callId: 'loopback-query' },
+    it.each(['selectAnswerInterpretation', 'selectCreativeInterpretation'] as const)(
+        'returns explicitly scripted non-streaming tool calls in order through %s',
+        async (intakeName) => {
+            const provider = await startLoopbackOpenAiProvider({
+                toolCalls: createLoopbackAnswerToolCalls(),
+            });
+            try {
+                for (const [id, name, args] of [
+                    [
+                        'loopback-intake',
+                        intakeName,
+                        intakeName === 'selectCreativeInterpretation'
+                            ? {
+                                  catalogId: 'dynamic-answer-catalog',
+                                  modeId: 'read-only',
+                                  targetCandidateIds: [],
+                                  editDimensionCandidateIds: [],
+                                  constraintCandidateIds: [],
+                                  creationSlotIds: [],
+                                  uncertainty: 'none',
+                                  answer: {
+                                      kind: 'project-facts',
+                                      topicIds: [],
+                                      scopeCandidateIds: [],
+                                      rangeCandidateId: null,
+                                      uncertainty: 'none',
+                                  },
+                              }
+                            : {
+                                  catalogId: 'dynamic-answer-catalog',
+                                  kind: 'project-facts',
+                                  topicIds: [],
+                                  scopeCandidateIds: [],
+                                  rangeCandidateId: null,
+                                  uncertainty: 'none',
+                              },
+                    ],
+                    ['loopback-query', 'project_query', { type: 'project-summary' }],
+                    [
+                        'loopback-answer',
+                        'answer_respond',
+                        {
+                            intakeCallId: 'loopback-intake',
+                            statements: [
+                                { kind: 'project-fact', fact: 'summary' },
+                                { kind: 'query-page', callId: 'loopback-query' },
+                            ],
+                        },
+                    ],
+                ] as const) {
+                    const response = await post(provider.baseUrl, {
+                        stream: false,
+                        tools: [
+                            {
+                                type: 'function',
+                                function: {
+                                    name: intakeName,
+                                    parameters: { properties: { catalogId: { const: 'dynamic-answer-catalog' } } },
+                                },
+                            },
                         ],
-                    },
-                ],
-            ] as const) {
-                const response = await post(provider.baseUrl, {
-                    stream: false,
-                    tools: [
-                        {
-                            type: 'function',
-                            function: {
-                                name: 'selectAnswerInterpretation',
-                                parameters: { properties: { catalogId: { const: 'dynamic-answer-catalog' } } },
+                    });
+                    expect(response.headers.get('content-type')).toBe('application/json');
+                    expect(await response.json()).toMatchObject({
+                        choices: [
+                            {
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    tool_calls: [
+                                        { id, type: 'function', function: { name, arguments: JSON.stringify(args) } },
+                                    ],
+                                },
                             },
-                        },
-                    ],
-                });
-                expect(response.headers.get('content-type')).toBe('application/json');
-                expect(await response.json()).toMatchObject({
-                    choices: [
-                        {
-                            finish_reason: 'tool_calls',
-                            message: {
-                                tool_calls: [
-                                    { id, type: 'function', function: { name, arguments: JSON.stringify(args) } },
-                                ],
-                            },
-                        },
-                    ],
-                });
+                        ],
+                    });
+                }
+                expect((await post(provider.baseUrl, { stream: false })).status).toBe(500);
+            } finally {
+                await provider.close();
             }
-            expect((await post(provider.baseUrl, { stream: false })).status).toBe(500);
-        } finally {
-            await provider.close();
         }
-    });
+    );
 });

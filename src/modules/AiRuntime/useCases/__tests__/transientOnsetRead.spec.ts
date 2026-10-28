@@ -18,17 +18,17 @@ import { digest } from '#/utils/canonicalDigest';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
 import { encodeWireToolName } from '../../repositories/cloudLlm/cloudInference/encodeWireToolName';
+import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
 import { getAgentToolCatalogSchemas } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../getProjectContext';
-import { advertisedAnswerCatalogId, advertisedAnswerCandidateId } from './answerWireFixture';
-import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
-import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 
+import { advertisedAnswerIntake, advertisedAnswerCandidateId } from './answerWireFixture';
 import { decodeReceiptContext, isRecord, readReceiptSummary } from './receiptContextFixture';
 
 const READ = 'analysis.detectTransients';
@@ -388,18 +388,14 @@ function answer(evidenceCallIds: string[] = []) {
     ];
 }
 function run(admit: MeasurementAdmitter = () => ({ status: 'admitted', settle: () => {} }), signal?: AbortSignal) {
-    const intake = (params: unknown) => ({
-        id: 'intake',
-        name: 'selectAnswerInterpretation',
-        arguments: {
-            catalogId: advertisedAnswerCatalogId(params),
+    const intake = (params: unknown) =>
+        advertisedAnswerIntake(params, {
             kind: 'source-onsets',
             topicIds: [],
             scopeCandidateIds: [advertisedAnswerCandidateId(params, requestedClipId)],
             rangeCandidateId: null,
             uncertainty: 'none',
-        },
-    });
+        });
     if (provider.backend === 'webllm') {
         provider.completion.mockImplementationOnce(async (...params: unknown[]) => JSON.stringify([intake(params)]));
     } else {

@@ -1,14 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
-import { createAnswerInterpretationToolSchema } from '../../models/AnswerInterpretation';
-import { getProjectContext } from '../../useCases/getProjectContext';
-import { prepareAnswerInterpretationCatalog } from '../../useCases/prepareAnswerInterpretationCatalog';
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
+import { createAnswerInterpretationToolSchema } from '../../models/AnswerInterpretation';
 import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { buildAgentContext } from '../../useCases/buildAgentContext';
+import { createPlanningInterpretationToolSchema } from '../../useCases/createPlanningInterpretationToolSchema';
 import { getPlanningProviderToolSchemas } from '../../useCases/getPlanningProviderToolSchemas';
+import { getProjectContext } from '../../useCases/getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../../useCases/prepareAnswerInterpretationCatalog';
+import { prepareCreativeInterpretationCatalog } from '../../useCases/prepareCreativeInterpretationCatalog';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { compactWebLlmToolSchema } from '../compactWebLlmToolSchema';
+
+function jointInterpretationSchema(): ToolSchema {
+    const context = getProjectContext();
+    const prompt = 'Describe the project';
+    const projectRevision = 'revision';
+    return createPlanningInterpretationToolSchema({
+        creative: prepareCreativeInterpretationCatalog({ prompt, context, projectRevision }),
+        answer: prepareAnswerInterpretationCatalog({ prompt, context, projectRevision }),
+        binding: buildAgentContext({ fixedPolicy: 'policy', prompt, context, projectRevision }).planningBinding,
+    });
+}
 
 type SchemaPath = readonly (string | number)[];
 
@@ -200,6 +214,7 @@ describe('compactWebLlmToolSchema', () => {
     it('keeps the whole description of every planning tool', () => {
         for (const tool of [
             ...getPlanningProviderToolSchemas(),
+            jointInterpretationSchema(),
             createAnswerInterpretationToolSchema(
                 prepareAnswerInterpretationCatalog({
                     prompt: 'Describe the project',
@@ -289,6 +304,7 @@ describe('compactWebLlmToolSchema', () => {
         let checked = 0;
         for (const tool of [
             ...getPlanningProviderToolSchemas(),
+            jointInterpretationSchema(),
             createAnswerInterpretationToolSchema(
                 prepareAnswerInterpretationCatalog({
                     prompt: 'Describe the project',

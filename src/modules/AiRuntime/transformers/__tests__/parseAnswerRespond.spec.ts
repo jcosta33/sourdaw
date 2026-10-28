@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { ANSWER_RESPOND_MAX_STATEMENTS } from '../../models/AnswerRespond';
-import { getPlanningProviderToolSchemas } from '../../useCases/getPlanningProviderToolSchemas';
+import {
+    projectPlanningProviderToolSchemas,
+    getPlanningProviderToolSchemas,
+} from '../../useCases/getPlanningProviderToolSchemas';
+import { getPlanningProviderSchemaContract } from '../../useCases/planningProviderSchema';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { parseAnswerRespond } from '../parseAnswerRespond';
 
@@ -10,6 +14,27 @@ const schema = getPlanningProviderToolSchemas().find((tool) => tool.function.nam
     .parameters;
 const document = { intakeCallId: 'intake', statements: [{ kind: 'metric', reference }] };
 describe('parseAnswerRespond', () => {
+    it('publishes the canonical forms but advertises only the actual consuming phase', () => {
+        const contract = getPlanningProviderSchemaContract();
+        const schemas = getPlanningProviderToolSchemas();
+        const entry = projectPlanningProviderToolSchemas(schemas, 'planning').find(
+            (tool) => tool.function.name === 'answer.respond'
+        )!;
+        const complete = projectPlanningProviderToolSchemas(schemas, 'answer').find(
+            (tool) => tool.function.name === 'answer.respond'
+        )!;
+        expect(matchesJsonSchema({}, schema)).toBe(true);
+        expect(matchesJsonSchema(document, schema)).toBe(true);
+        expect(matchesJsonSchema({}, entry.function.parameters)).toBe(true);
+        expect(matchesJsonSchema(document, entry.function.parameters)).toBe(false);
+        expect(matchesJsonSchema({}, complete.function.parameters)).toBe(false);
+        expect(matchesJsonSchema(document, complete.function.parameters)).toBe(true);
+        expect(parseAnswerRespond({}).status).toBe('rejected');
+        expect(entry.function.parameters).not.toEqual(complete.function.parameters);
+        expect(getPlanningProviderSchemaContract().identity).toBe(contract.identity);
+        expect(complete.function.description).not.toContain('{}');
+    });
+
     it('accepts the closed document through parser and actual published schema', () => {
         expect(parseAnswerRespond(document)).toEqual({ status: 'accepted', answer: document });
         expect(matchesJsonSchema(document, schema)).toBe(true);

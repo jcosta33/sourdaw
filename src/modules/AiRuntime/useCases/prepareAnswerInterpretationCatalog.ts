@@ -111,7 +111,7 @@ export function prepareAnswerInterpretationCatalog(input: {
     return {
         schemaVersion: 1,
         catalogId: `answer-${crypto.randomUUID()}`,
-        requestDigest: digest(input.prompt),
+        requestDigest: digest(input.prompt.trim()),
         revision: input.projectRevision,
         selection: getCreativeSelectionSnapshot(context),
         scopes: prepareScopes(context),

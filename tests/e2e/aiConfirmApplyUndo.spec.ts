@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-import { createLoopbackAnswerToolCalls } from '../../scripts/loopbackOpenAiProvider';
+import { createLoopbackAnswerIntake, createLoopbackAnswerToolCalls } from '../../scripts/loopbackOpenAiProvider';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
@@ -151,24 +151,20 @@ test.describe('AI chat over an admitted loopback provider', () => {
                 Record<string, { status: string; value: number; unit: string; confidence: string }> | undefined;
             const measuredProvider = await startScriptedToolProvider((request, turn) => {
                 if (turn === 0) {
-                    const schema = request.tools.find((tool) => tool.function.name === 'selectAnswerInterpretation');
-                    const catalog = schema?.function.parameters.properties.catalogId as { const: string };
-                    const ranges = schema?.function.parameters.properties.rangeCandidateId as { enum: unknown[] };
-                    expect(ranges.enum).toContain('arrangement');
-                    return [
-                        {
-                            id: 'intake',
-                            name: 'selectAnswerInterpretation',
-                            arguments: {
-                                catalogId: catalog.const,
-                                kind: 'measured-audio',
-                                topicIds: ['level'],
-                                scopeCandidateIds: ['master'],
-                                rangeCandidateId: 'arrangement',
-                                uncertainty: 'none',
-                            },
-                        },
-                    ];
+                    const call = createLoopbackAnswerIntake(request, {
+                        kind: 'measured-audio',
+                        topicIds: ['level'],
+                        scopeCandidateIds: ['master'],
+                        rangeCandidateId: 'arrangement',
+                    });
+                    expect(
+                        request.tools.some(
+                            (tool) =>
+                                tool.function.name ===
+                                (mode === 'explain' ? 'selectAnswerInterpretation' : 'selectCreativeInterpretation')
+                        )
+                    ).toBe(true);
+                    return [call];
                 }
                 if (turn === 1) {
                     return [{ id: 'query', name: 'project_query', arguments: { type: 'project-summary' } }];
@@ -291,7 +287,7 @@ test.describe('AI chat over an admitted loopback provider', () => {
             await conversation.getByRole('button', { name: /Evidence/ }).click();
             await expect(conversation.getByRole('list', { name: 'Evidence' })).toContainText('analysis.measure');
             await expect(conversation.getByRole('list', { name: 'Evidence' })).toContainText(
-                'selectAnswerInterpretation'
+                mode === 'explain' ? 'selectAnswerInterpretation' : 'selectCreativeInterpretation'
             );
             await expect(page.getByRole('button', { name: 'Confirm' })).toHaveCount(0);
             expect(await projectTruth(page)).toEqual(before);

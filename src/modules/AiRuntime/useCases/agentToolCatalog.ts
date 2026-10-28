@@ -28,7 +28,6 @@ import {
     TRANSFORM_COMPILE_TOOL_NAME,
 } from '../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
-import { createAnswerRespondParameters } from '../models/AnswerRespond';
 import {
     COMMAND_BATCH_DECLINE_KINDS,
     COMMAND_BATCH_DECLINE_MAX_QUESTION_LENGTH,
@@ -46,6 +45,8 @@ import {
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
+
+import { createCanonicalAnswerRespondParameters } from './projectAnswerRespondToolSchema';
 
 export {
     AGENT_CAPABILITIES_TOOL_NAME,
@@ -474,8 +475,8 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             function: {
                 name: ANSWER_RESPOND_TOOL_NAME,
                 description:
-                    'Answer from frozen interpretation and successful reads, alone. Select closed statements referencing receipt callId; the application owns prose, figures, comparisons and ties. Measured audio requires analysis.measure after intake, matching subject, scope, range and metrics. Recipes are attributed knowledge, not project measurements.',
-                parameters: createAnswerRespondParameters(getAgentMeasurementMetricIds()),
+                    'Alone, {} enters read-only answering without output or bonus; after frozen intake, {intakeCallId,statements} completes from successful reads. Select closed statements referencing receipt callId; the application owns prose, figures, comparisons and ties. Measured audio requires analysis.measure after intake, matching subject, scope, range and metrics. Recipes are attributed knowledge, not project measurements.',
+                parameters: createCanonicalAnswerRespondParameters(),
             },
         },
         tool(COMMAND_HISTORY_TOOL_NAME, 'Read bounded, revision-bearing command history.', {

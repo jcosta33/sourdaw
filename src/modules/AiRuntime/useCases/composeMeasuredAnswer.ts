@@ -167,15 +167,18 @@ function resolveMetricReference(
     if (target === undefined || entry?.status !== 'measured' || entry.unit !== METRIC_UNITS[reference.metricId]) {
         return null;
     }
-    const value =
-        reference.band === undefined
-            ? entry.value
-            : typeof entry.value === 'object' &&
-                !Array.isArray(entry.value) &&
-                entry.value !== null &&
-                Object.hasOwn(entry.value, reference.band)
-              ? (entry.value as Readonly<Record<string, number>>)[reference.band]
-              : undefined;
+    let value: unknown = entry.value;
+    if (reference.band !== undefined) {
+        value = undefined;
+        if (
+            typeof entry.value === 'object' &&
+            !Array.isArray(entry.value) &&
+            entry.value !== null &&
+            Object.hasOwn(entry.value, reference.band)
+        ) {
+            value = (entry.value as Readonly<Record<string, number>>)[reference.band];
+        }
+    }
     if (
         typeof value !== 'number' ||
         !Number.isFinite(value) ||
@@ -200,7 +203,10 @@ function metricLabel(ref: AnswerMetricReference): string {
     return METRIC_LABELS[ref.metricId] + (ref.band === undefined ? '' : ` in band ${quoteSourceData(ref.band)}`);
 }
 function displayUnit(unit: string): string {
-    return unit === 'hertz' ? 'Hz' : unit === 'per-second' ? 'per second' : unit;
+    if (unit === 'hertz') {
+        return 'Hz';
+    }
+    return unit === 'per-second' ? 'per second' : unit;
 }
 function describeMetric(value: Metric, authority: AnswerRequestAuthority): string {
     return `${formatSubjectLabel(authority, value.reference.targetId)} ${metricLabel(value.reference)} is ${formatAnswerNumber(value.value)} ${displayUnit(value.unit)} (${value.confidence})`;

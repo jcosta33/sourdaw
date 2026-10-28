@@ -25,8 +25,8 @@ import {
     type AgentCatalogCategory,
 } from '../models/AgentToolCatalogNames';
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
-import { ANSWER_INTERPRETATION_TOOL_NAME, type AnswerRequestAuthority } from '../models/AnswerInterpretation';
 import { type AnswerOnsets } from '../models/AnswerEvidence';
+import { ANSWER_INTERPRETATION_TOOL_NAME, type AnswerRequestAuthority } from '../models/AnswerInterpretation';
 import { type PlanningAnswer } from '../models/AnswerRespond';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -76,19 +76,20 @@ import {
     type RECIPE_EXPANSION_TOOL_NAME,
     type TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
-import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
-import { discoverMixRecipes } from './discoverMixRecipes';
 import {
     composeMeasuredAnswer,
     type AdmittedAnswerRead,
     type AdmittedAnswerIntake,
     type AnswerReadSource,
 } from './composeMeasuredAnswer';
+import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
+import { discoverMixRecipes } from './discoverMixRecipes';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { formatReceiptContext } from './formatReceiptContext';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
+import { projectAnswerProviderReceipt } from './projectAnswerProviderReceipt';
 
 const DEFAULT_LIMITS = {
     maxTurns: 4,
@@ -193,6 +194,7 @@ type RunApplicationOwnedToolLoopInput = {
         /** `receiptContext`'s header and what the run still allows, without the receipt JSON. */
         budgetNote: string;
         answerOnly?: true;
+        answerIntakeOnly?: true;
         remaining: {
             turns: number;
             calls: number;
@@ -220,6 +222,7 @@ type RunApplicationOwnedToolLoopInput = {
      * planner its next turn, so the refusal spends the turns the run already has and no more.
      */
     answerInterpretation?: {
+        jointToolName?: string;
         admit: (
             call: ToolCallResult
         ) =>
@@ -2076,6 +2079,7 @@ export async function runApplicationOwnedToolLoop(
     const history: HostedTurnRecord[] = [];
     let transientOnsetsDiscovered = false;
     let answerIntake: AdmittedAnswerIntake | null = null;
+    let answerEntry = false;
     const answerReads = new Map<string, AdmittedAnswerRead>();
     let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
 
@@ -2097,7 +2101,8 @@ export async function runApplicationOwnedToolLoop(
         turnReceipts: readonly ApplicationToolReceipt[],
         turn: number,
         outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
-        identifiedCalls: readonly IdentifiedToolCall[]
+        identifiedCalls: readonly IdentifiedToolCall[],
+        selectedAnswerAuthority?: AnswerRequestAuthority
     ): { reason: string; receipts: ApplicationToolReceipt[] } | null => {
         const overBudget = 'Application tool receipts exceeded the bounded context budget.';
         const turnBytes = byteLength(serializeReceiptContext(turnReceipts, turn));
@@ -2109,6 +2114,13 @@ export async function runApplicationOwnedToolLoop(
         receiptContext = serializeReceiptContext(receipts, turn);
         if (byteLength(receiptContext) > limits.maxTotalReceiptBytes) {
             return { reason: overBudget, receipts };
+        }
+        const providerAnswerAuthority = selectedAnswerAuthority ?? answerIntake?.authority;
+        if (providerAnswerAuthority !== undefined) {
+            receiptContext = serializeReceiptContext(
+                receipts.map((receipt) => projectAnswerProviderReceipt(receipt, providerAnswerAuthority)),
+                turn
+            );
         }
         if (input.textReceiptCharacterBudget !== undefined) {
             receiptContext = formatReceiptContext(receiptContext, turn, input.textReceiptCharacterBudget);
@@ -2165,11 +2177,22 @@ export async function runApplicationOwnedToolLoop(
                 receiptBytes: limits.maxTotalReceiptBytes - totalReceiptBytes,
             };
             const lastRecordedTurn = history.at(-1)?.turn;
+            const answerAuthorityForTurn = answerIntake?.authority;
             outcome = await input.requestTurn({
                 turn,
                 receiptContext,
                 ...(answerIntake === null ? {} : { answerOnly: true as const }),
-                history: [...history],
+                ...(answerEntry && answerIntake === null ? { answerIntakeOnly: true as const } : {}),
+                history: history.map((record) =>
+                    answerAuthorityForTurn === undefined
+                        ? record
+                        : {
+                              ...record,
+                              receipts: record.receipts.map((receipt) =>
+                                  projectAnswerProviderReceipt(receipt, answerAuthorityForTurn)
+                              ),
+                          }
+                ),
                 ...(transientOnsetsDiscovered ? { transientOnsetsDiscovered: true as const } : {}),
                 budgetNote:
                     lastRecordedTurn === undefined ? '' : serializeRemainingBudgetNote(lastRecordedTurn, remaining),
@@ -2218,7 +2241,65 @@ export async function runApplicationOwnedToolLoop(
             identifiedCalls.push({ call, callId });
         }
 
-        const answerSelections = identifiedCalls.filter(({ call }) => call.name === ANSWER_INTERPRETATION_TOOL_NAME);
+        const entryCalls = identifiedCalls.filter(
+            ({ call }) => call.name === ANSWER_RESPOND_TOOL_NAME && Object.keys(call.arguments).length === 0
+        );
+        if (entryCalls.length > 0) {
+            if (identifiedCalls.length !== 1 || answerEntry || answerIntake !== null || interpretation !== 'none') {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider repeated or mixed the answer entry phase.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            const selected = entryCalls[0]!;
+            const receipt: ApplicationToolReceipt = {
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: selected.callId,
+                toolName: selected.call.name,
+                turn,
+                status: 'success',
+                revision: null,
+                data: { phase: 'answer-intake' },
+                summary: 'Read-only answering entered; interpretation is still required.',
+                warnings: [],
+                error: null,
+            };
+            const overBudget = admitTurnReceipts([receipt], turn, outcome, identifiedCalls);
+            if (overBudget !== null) {
+                return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            }
+            answerEntry = true;
+            continue;
+        }
+        if (
+            answerEntry &&
+            answerIntake === null &&
+            identifiedCalls.some(
+                ({ call }) =>
+                    ![
+                        ANSWER_INTERPRETATION_TOOL_NAME,
+                        PROJECT_QUERY_TOOL_NAME,
+                        COMMAND_BATCH_DECLINE_TOOL_NAME,
+                    ].includes(call.name)
+            )
+        ) {
+            return {
+                status: 'rejected',
+                reason: 'Answer entry cannot authorize reads or effects before intake.',
+                receipts,
+                turns: turn,
+            };
+        }
+        const answerSelections = identifiedCalls.filter(
+            ({ call }) =>
+                call.name === ANSWER_INTERPRETATION_TOOL_NAME ||
+                (input.answerInterpretation?.jointToolName === call.name &&
+                    call.arguments.answer !== undefined &&
+                    call.arguments.answer !== null)
+        );
         if (answerSelections.length > 0) {
             if (
                 input.answerInterpretation === undefined ||
@@ -2281,7 +2362,7 @@ export async function runApplicationOwnedToolLoop(
                 },
                 limits.maxReceiptBytesPerCall
             );
-            const overBudget = admitTurnReceipts([receipt], turn, outcome, identifiedCalls);
+            const overBudget = admitTurnReceipts([receipt], turn, outcome, identifiedCalls, authority);
             if (overBudget !== null) {
                 return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
             }
@@ -2536,7 +2617,29 @@ export async function runApplicationOwnedToolLoop(
 
         const executedReads = await Promise.all(
             executeTurnReads({
-                calls: safeReadCalls,
+                calls: safeReadCalls.map((identified) => {
+                    const range = identified.call.arguments.range;
+                    const frozen = answerIntake?.authority.range;
+                    if (
+                        identified.call.name !== input.measurement?.toolName ||
+                        frozen?.sectionId === null ||
+                        frozen === undefined ||
+                        frozen === null ||
+                        !isRecord(range) ||
+                        range.startBeat !== frozen.startBeat ||
+                        range.endBeat !== frozen.endBeat ||
+                        Object.keys(range).some((key) => key !== 'startBeat' && key !== 'endBeat')
+                    ) {
+                        return identified;
+                    }
+                    return {
+                        ...identified,
+                        call: {
+                            ...identified.call,
+                            arguments: { ...identified.call.arguments, range: { sectionId: frozen.sectionId } },
+                        },
+                    };
+                }),
                 turn,
                 loopId: input.loopId,
                 measurement: input.measurement,

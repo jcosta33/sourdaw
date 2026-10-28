@@ -7,6 +7,7 @@ import { WORKFLOW_ACTION_TOOL_NAMES } from '../models/WorkflowCapability';
 import { readAgentReference } from '../stores/agentReferenceStore';
 
 import { getPlanningProviderSchemaContract } from './planningProviderSchema';
+import { projectAnswerRespondToolSchema } from './projectAnswerRespondToolSchema';
 
 function readonlyMeasurementView(schema: ToolSchema): ToolSchema {
     const { scope, range, metrics } = schema.function.parameters.properties;
@@ -48,4 +49,60 @@ export function getPlanningProviderToolSchemas(profile?: PlanningProfile): reado
         (schema) => referenceLoaded || schema.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
     );
     return [...offeredSchemas, ...workflowToolSchemas];
+}
+
+export type PlanningAnswerPhase = 'planning' | 'intake' | 'answer';
+
+/** Active permission and terminal grammar, consumed by every actual request. */
+export function projectPlanningProviderToolSchemas(
+    schemas: readonly ToolSchema[],
+    phase: PlanningAnswerPhase,
+    profile?: PlanningProfile
+): ToolSchema[] {
+    const names = new Set([
+        ...READONLY_ANSWER_TOOL_NAMES,
+        ...(profile === 'readonly-answer' ? [] : ['agent.catalog.discover', 'analysis.detectTransients']),
+    ]);
+    return schemas
+        .filter(
+            (schema) =>
+                phase === 'planning' ||
+                (phase === 'intake'
+                    ? ['selectAnswerInterpretation', 'project.query', 'command.batch.decline'].includes(
+                          schema.function.name
+                      )
+                    : names.has(schema.function.name))
+        )
+        .map((schema) => {
+            if (schema.function.name === 'answer.respond') {
+                return projectAnswerRespondToolSchema(schema, phase === 'answer');
+            }
+            if (phase !== 'planning' && schema.function.name === 'analysis.measure') {
+                const view = readonlyMeasurementView(schema);
+                return {
+                    ...view,
+                    function: {
+                        ...view.function,
+                        description:
+                            'Measure the frozen subject using its published startBeat/endBeat. The app retains named-section identity privately. No preview or preparation.',
+                        parameters: {
+                            ...view.function.parameters,
+                            properties: {
+                                ...view.function.parameters.properties,
+                                range: {
+                                    type: 'object',
+                                    additionalProperties: false,
+                                    properties: {
+                                        startBeat: { type: 'number', minimum: 0 },
+                                        endBeat: { type: 'number', minimum: 0 },
+                                    },
+                                    required: ['startBeat', 'endBeat'],
+                                },
+                            },
+                        },
+                    },
+                };
+            }
+            return schema;
+        });
 }

@@ -1,20 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    ANSWER_INTERPRETATION_TOOL_NAME,
-    createAnswerInterpretationToolSchema,
-} from '../../../models/AnswerInterpretation';
-import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
-import { getProjectContext } from '../../getProjectContext';
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../../models/AgentResourceLimits';
-import {
-    CREATIVE_INTERPRETATION_TOOL_NAME,
-    createCreativeInterpretationToolSchema,
-    type CreativeInterpretationCatalog,
-} from '../../../models/CreativeInterpretation';
+import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../../models/CreativeInterpretation';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type HostedTurnHistory } from '../../../models/HostedTurnHistory';
 import { LOCAL_PLANNING_TEMPLATE_OVERHEAD_TOKENS } from '../../../models/LocalPlanningBudget';
@@ -42,11 +32,16 @@ import {
     RECIPE_EXPANSION_TOOL_NAME,
 } from '../../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { buildAgentContext } from '../../buildAgentContext';
 import { configureAgentResourceLimits } from '../../configureAgentResourceLimits';
+import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
+import { getProjectContext } from '../../getProjectContext';
 import { getProviderRouteView } from '../../getProviderRouteView';
 import { parseAnalysisMeasureArguments } from '../../parseAnalysisMeasureArguments';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
+import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
+import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
 
@@ -163,19 +158,16 @@ const compatibleRuntime: OpenAiCompatibleCloudRuntime = {
 };
 
 /** A published catalog in the shape production hands the schema builder. */
-const creativeCatalog: CreativeInterpretationCatalog = {
-    schemaVersion: 1,
-    catalogId: 'creative-catalog-1',
-    revision: 'revision-1',
-    requestDigest: 'digest-1',
-    selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
-    unresolvedExplicitReferences: [],
-    modes: ['edit'],
-    targets: [],
-    dimensions: [],
-    constraints: [],
-    creationSlots: [],
-};
+function jointInterpretationSchema(): ToolSchema {
+    const context = getProjectContext();
+    const prompt = 'Describe';
+    const projectRevision = 'revision';
+    return createPlanningInterpretationToolSchema({
+        creative: prepareCreativeInterpretationCatalog({ prompt, context, projectRevision }),
+        answer: prepareAnswerInterpretationCatalog({ prompt, context, projectRevision }),
+        binding: buildAgentContext({ fixedPolicy: 'system', prompt, context, projectRevision }).planningBinding,
+    });
+}
 
 function toolSchema(name: string, description?: string): ToolSchema {
     return {
@@ -1707,9 +1699,8 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        // The budget now exceeds the five mandatory tools plus the 30 tools the prompt selector
-        // hands over (#4371 raised it from 31 to 36), so the selector's cap binds here.
-        expect(advertisedTools).toHaveLength(5 + 30);
+        // Spare ceiling capacity does not create more optional slots.
+        expect(advertisedTools).toHaveLength(5 + 1);
         expect(advertisedTools.length).toBeLessThanOrEqual(WEBLLM_TOOL_BUDGET);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toEqual(
             expect.arrayContaining([
@@ -1738,14 +1729,7 @@ describe('generateToolPlanningOutcome', () => {
             toolSchema('agent.command-index.search'),
             toolSchema('agent.catalog.discover'),
             ...competingTools,
-            createCreativeInterpretationToolSchema(creativeCatalog),
-            createAnswerInterpretationToolSchema(
-                prepareAnswerInterpretationCatalog({
-                    prompt: 'Describe',
-                    context: getProjectContext(),
-                    projectRevision: 'revision',
-                })
-            ),
+            jointInterpretationSchema(),
         ];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
@@ -1753,7 +1737,7 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
-        expect(advertisedTools).toHaveLength(WEBLLM_TOOL_BUDGET);
+        expect(advertisedTools).toHaveLength(8);
         expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toContain(
             CREATIVE_INTERPRETATION_TOOL_NAME
         );
@@ -1779,17 +1763,7 @@ describe('generateToolPlanningOutcome', () => {
         );
 
         // Production appends the creative interpretation schema to that list on every run.
-        const productionSchemas = [
-            ...schemas,
-            createCreativeInterpretationToolSchema(creativeCatalog),
-            createAnswerInterpretationToolSchema(
-                prepareAnswerInterpretationCatalog({
-                    prompt: 'Describe',
-                    context: getProjectContext(),
-                    projectRevision: 'revision',
-                })
-            ),
-        ];
+        const productionSchemas = [...schemas, jointInterpretationSchema()];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', productionSchemas)).resolves.toMatchObject(
             {
@@ -1808,7 +1782,7 @@ describe('generateToolPlanningOutcome', () => {
         // The mandatory set (workflow selector, the application tools including the five planning
         // tools #4371 made mandatory, every workflow action tool) leaves one free slot under the
         // WebLLM budget, and it goes to the first non-mandatory catalog tool.
-        expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
+        expect(advertisedNames).toHaveLength(37);
         expect(new Set(advertisedNames)).toEqual(
             new Set([
                 'selectWorkflowCapability',
@@ -1847,7 +1821,6 @@ describe('generateToolPlanningOutcome', () => {
                 'automateSendRanges',
                 'renderProjectSections',
                 CREATIVE_INTERPRETATION_TOOL_NAME,
-                ANSWER_INTERPRETATION_TOOL_NAME,
                 'project.discover',
             ])
         );
@@ -1890,17 +1863,7 @@ describe('generateToolPlanningOutcome', () => {
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
             const schemas = getPlanningProviderToolSchemas();
-            const productionSchemas = [
-                ...schemas,
-                createCreativeInterpretationToolSchema(creativeCatalog),
-                createAnswerInterpretationToolSchema(
-                    prepareAnswerInterpretationCatalog({
-                        prompt: 'Describe',
-                        context: getProjectContext(),
-                        projectRevision: 'revision',
-                    })
-                ),
-            ];
+            const productionSchemas = [...schemas, jointInterpretationSchema()];
 
             await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
                 status: 'complete',
@@ -1911,7 +1874,7 @@ describe('generateToolPlanningOutcome', () => {
 
             // These tools are mandatory (#4371), so they ride every prompt, and the budget still leaves
             // the one prompt-selected slot, which keeps project.discover for these prompts.
-            expect(advertisedNames).toHaveLength(WEBLLM_TOOL_BUDGET);
+            expect(advertisedNames).toHaveLength(37);
             expect(advertisedNames).toContain(PROJECT_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_DISCOVERY_TOOL_NAME);
             expect(advertisedNames).toContain(RECIPE_EXPANSION_TOOL_NAME);
@@ -1938,17 +1901,7 @@ describe('generateToolPlanningOutcome', () => {
         });
         try {
             const prompt = 'compare my mix to the reference track I loaded';
-            const productionSchemas = [
-                ...getPlanningProviderToolSchemas(),
-                createCreativeInterpretationToolSchema(creativeCatalog),
-                createAnswerInterpretationToolSchema(
-                    prepareAnswerInterpretationCatalog({
-                        prompt: 'Describe',
-                        context: getProjectContext(),
-                        projectRevision: 'revision',
-                    })
-                ),
-            ];
+            const productionSchemas = [...getPlanningProviderToolSchemas(), jointInterpretationSchema()];
 
             mocks.backendChain.value = ['webllm'];
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
@@ -1985,17 +1938,7 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const schemas = getPlanningProviderToolSchemas();
-        const productionSchemas = [
-            ...schemas,
-            createCreativeInterpretationToolSchema(creativeCatalog),
-            createAnswerInterpretationToolSchema(
-                prepareAnswerInterpretationCatalog({
-                    prompt: 'Describe',
-                    context: getProjectContext(),
-                    projectRevision: 'revision',
-                })
-            ),
-        ];
+        const productionSchemas = [...schemas, jointInterpretationSchema()];
 
         await expect(
             generateToolPlanningOutcome(
