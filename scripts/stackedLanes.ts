@@ -22,12 +22,15 @@ export type LaneStack = {
     parentPullRequest?: number;
 };
 
-export type HistoricalAdmissionReceipt = {
-    version: 1;
+type HistoricalAdmissionIdentity = {
     childPullRequest: number;
     expectedChildHead: string;
     descriptor: LaneStack;
 };
+
+export type HistoricalClosedParent = { replacementPullRequest: number; parentOriginMain: boolean };
+export type HistoricalAdmissionReceipt = HistoricalAdmissionIdentity &
+    ({ version: 1 } | { version: 2; closedParent: HistoricalClosedParent & { proof: string } });
 
 export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmissionReceipt {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -35,8 +38,11 @@ export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmis
     }
     const row = value as Record<string, unknown>;
     if (
-        Object.keys(row).sort().join(',') !== 'childPullRequest,descriptor,expectedChildHead,version' ||
-        row.version !== 1 ||
+        Object.keys(row).sort().join(',') !==
+            (row.version === 2
+                ? 'childPullRequest,closedParent,descriptor,expectedChildHead,version'
+                : 'childPullRequest,descriptor,expectedChildHead,version') ||
+        (row.version !== 1 && row.version !== 2) ||
         typeof row.childPullRequest !== 'number' ||
         !Number.isSafeInteger(row.childPullRequest) ||
         row.childPullRequest <= 0 ||
@@ -49,12 +55,41 @@ export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmis
     if (descriptor.parentPullRequest === undefined || descriptor.parentPullRequest === row.childPullRequest) {
         fail('historical admission receipt requires a distinct pinned parent');
     }
-    return {
-        version: 1,
+    const identity = {
         childPullRequest: row.childPullRequest,
         expectedChildHead: row.expectedChildHead,
         descriptor,
     };
+    if (row.version === 2) {
+        const closed = row.closedParent;
+        if (closed === null || typeof closed !== 'object' || Array.isArray(closed)) {
+            fail('invalid historical closed parent receipt');
+        }
+        const proof = closed as Record<string, unknown>;
+        if (
+            Object.keys(proof).sort().join(',') !== 'parentOriginMain,proof,replacementPullRequest' ||
+            typeof proof.replacementPullRequest !== 'number' ||
+            !Number.isSafeInteger(proof.replacementPullRequest) ||
+            proof.replacementPullRequest <= 0 ||
+            [descriptor.parentPullRequest, row.childPullRequest].includes(proof.replacementPullRequest) ||
+            typeof proof.parentOriginMain !== 'boolean' ||
+            typeof proof.proof !== 'string' ||
+            proof.proof === '' ||
+            Buffer.byteLength(proof.proof, 'utf8') > 32768
+        ) {
+            fail('invalid historical closed parent receipt');
+        }
+        return {
+            version: 2,
+            ...identity,
+            closedParent: {
+                replacementPullRequest: proof.replacementPullRequest,
+                parentOriginMain: proof.parentOriginMain,
+                proof: proof.proof,
+            },
+        };
+    }
+    return { version: 1, ...identity };
 }
 
 export function readHistoricalAdmissionReceipt(
@@ -357,6 +392,10 @@ export type HistoricalPullRequest = {
     authorId: string;
     state: string;
     events: string[];
+    closedAt?: string | null;
+    merged?: boolean;
+    baseRefOid?: string;
+    closures?: Array<{ id: string; createdAt: string; authorId: string }>;
 };
 
 export type HistoricalStackObservation = {
@@ -364,6 +403,7 @@ export type HistoricalStackObservation = {
     parent: HistoricalPullRequest;
     childPullRequests: number[];
     parentPullRequests: number[];
+    closedParentCompletion?: string;
 };
 
 export type HistoricalAdmissionInput = {
@@ -372,6 +412,7 @@ export type HistoricalAdmissionInput = {
     expectedHead: string;
     branch: string;
     legacyFork?: string;
+    closedParent?: HistoricalClosedParent;
 };
 
 export type HistoricalAdmissionPort = {
@@ -448,7 +489,7 @@ function assertNativeRefContinuation(
     }
 }
 
-function nativeRefHistory(raw: string, port: HistoricalAdmissionPort): NativeRefEntry[] {
+function nativeRefHistory(raw: string, port: HistoricalAdmissionPort, originMain = false): NativeRefEntry[] {
     if (raw.length > 1024 * 1024 || !raw.endsWith('\n')) {
         fail('incomplete native branch history');
     }
@@ -458,7 +499,10 @@ function nativeRefHistory(raw: string, port: HistoricalAdmissionPort): NativeRef
         const { old, head, time, message } = parseNativeRefEntry(line);
         const previous = entries.at(-1);
         if (index === 0) {
-            if (old !== '0'.repeat(40) || message !== `branch: Created from ${head}`) {
+            const nativeCreation =
+                message === `branch: Created from ${head}` ||
+                (originMain && message === 'branch: Created from origin/main');
+            if (old !== '0'.repeat(40) || !nativeCreation) {
                 fail('native branch creation record missing');
             }
         } else {
@@ -494,7 +538,10 @@ function assertOriginalHistoricalParent(
     }
 }
 
-function assertHistoricalActorsAndLifecycle(observation: HistoricalStackObservation): void {
+function assertHistoricalActorsAndLifecycle(
+    input: HistoricalAdmissionInput,
+    observation: HistoricalStackObservation
+): void {
     const { child, parent } = observation;
     for (const pr of [child, parent]) {
         if (
@@ -503,13 +550,42 @@ function assertHistoricalActorsAndLifecycle(observation: HistoricalStackObservat
             pr.repositoryId !== child.repositoryId ||
             pr.headRepositoryId !== child.repositoryId ||
             pr.authorId !== AUTHOR_BOT_NODE_ID ||
-            pr.state !== PR_STATE.OPEN ||
+            pr.state !== (pr === parent && input.closedParent !== undefined ? PR_STATE.CLOSED : PR_STATE.OPEN) ||
             !fullSha.test(pr.headSha)
         ) {
             fail('historical admission requires same-repository open author pull requests');
         }
     }
-    if (child.events.length > 0 || parent.events.some((event) => event !== 'BaseRefChangedEvent')) {
+    if (input.closedParent !== undefined) {
+        const closure = parent.closures?.[0];
+        if (
+            parent.baseBranch !== 'main' ||
+            parent.merged !== false ||
+            child.merged !== false ||
+            child.closedAt !== null ||
+            typeof parent.closedAt !== 'string' ||
+            !Number.isFinite(Date.parse(parent.closedAt)) ||
+            parent.closures?.length !== 1 ||
+            closure === undefined ||
+            closure.authorId !== AUTHOR_BOT_NODE_ID ||
+            closure.createdAt !== parent.closedAt ||
+            Date.parse(parent.closedAt) <= Date.parse(child.createdAt) ||
+            parent.events.filter((event) => event === 'ClosedEvent').length !== 1 ||
+            observation.closedParentCompletion === undefined ||
+            [child.number, parent.number].includes(input.closedParent.replacementPullRequest) ||
+            !Number.isSafeInteger(input.closedParent.replacementPullRequest) ||
+            input.closedParent.replacementPullRequest <= 0 ||
+            typeof input.closedParent.parentOriginMain !== 'boolean'
+        ) {
+            fail('historical closed parent requires an exact native main supersession');
+        }
+    }
+    if (
+        child.events.length > 0 ||
+        parent.events.some(
+            (event) => event !== 'BaseRefChangedEvent' && !(input.closedParent !== undefined && event === 'ClosedEvent')
+        )
+    ) {
         fail('historical ref has retargeting, reuse or lifecycle ambiguity');
     }
 }
@@ -524,7 +600,7 @@ function historicalCreationAnchor(
 ): NativeRefEntry {
     const { child, parent } = observation;
     const children = nativeRefHistory(childLog, port);
-    const parents = nativeRefHistory(parentLog, port);
+    const parents = nativeRefHistory(parentLog, port, input.closedParent?.parentOriginMain === true);
     const birth = children[0];
     if (
         birth === undefined ||
@@ -554,6 +630,15 @@ function historicalCreationAnchor(
     ) {
         fail('native original parent did not hold the creation anchor');
     }
+    if (
+        input.closedParent !== undefined &&
+        (child.baseRefOid === undefined ||
+            !fullSha.test(child.baseRefOid) ||
+            !port.isAncestor(child.baseRefOid, child.headSha) ||
+            !port.isAncestor(child.baseRefOid, parent.headSha))
+    ) {
+        fail('historical cached child base is not retained in both histories');
+    }
     return birth;
 }
 
@@ -566,7 +651,7 @@ export function historicalDescriptor(
     port: HistoricalAdmissionPort
 ): LaneStack {
     assertOriginalHistoricalParent(input, observation);
-    assertHistoricalActorsAndLifecycle(observation);
+    assertHistoricalActorsAndLifecycle(input, observation);
     const birth = historicalCreationAnchor(input, observation, childLog, parentLog, parentLocalHead, port);
     const { child, parent } = observation;
     return parseLaneStack({

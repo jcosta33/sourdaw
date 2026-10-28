@@ -1,12 +1,24 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { closeSync, linkSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import {
+    accessSync,
+    constants,
+    closeSync,
+    linkSync,
+    mkdirSync,
+    openSync,
+    readFileSync,
+    readSync,
+    realpathSync,
+    writeFileSync,
+} from 'node:fs';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
     assertTrustedExecutingBlob,
     authenticateRole,
+    AUTHOR_BOT_NODE_ID,
     GITHUB_HTTPS_REMOTE,
     gitAuthenticatedArgs,
     githubAuthorizationGitEnv,
@@ -53,7 +65,7 @@ export type {
 
 // @see ../.agents/skills/delivery-orchestration/historical-stack-admission.md
 export const SYNC_PARENT_USAGE =
-    'usage: pnpm lane:sync-parent --lane <absolute-child-lane> [--admit-historical --child-pr <number> --parent-pr <number> --expected-head <sha> [--legacy-fork <sha>]]';
+    'usage: pnpm lane:sync-parent --lane <absolute-child-lane> [--admit-historical --child-pr <number> --parent-pr <number> --expected-head <sha> [--legacy-fork <sha> | --superseded-parent-replacement <number> [--parent-origin-main]]]';
 
 const fullSha = /^[0-9a-f]{40}$/;
 
@@ -72,7 +84,7 @@ function textField(row: Record<string, unknown>, key: string): string {
     return value;
 }
 
-function parseHistoricalPullRequest(value: unknown): HistoricalPullRequest {
+function parseHistoricalPullRequest(value: unknown, closedMode = false): HistoricalPullRequest {
     const row = object(value);
     const repo = object(row.repository);
     const headRepo = object(row.headRepository);
@@ -96,7 +108,7 @@ function parseHistoricalPullRequest(value: unknown): HistoricalPullRequest {
     ) {
         fail('historical ref identity changed');
     }
-    return {
+    const pr: HistoricalPullRequest = {
         number: row.number,
         id: textField(row, 'id'),
         branch,
@@ -111,20 +123,40 @@ function parseHistoricalPullRequest(value: unknown): HistoricalPullRequest {
         state: textField(row, 'state'),
         events: timeline.nodes.map((event) => textField(object(event), '__typename')),
     };
+    if (closedMode) {
+        if (typeof row.merged !== 'boolean' || (row.closedAt !== null && typeof row.closedAt !== 'string')) {
+            fail('incomplete historical closure identity');
+        }
+        pr.merged = row.merged;
+        pr.closedAt = row.closedAt;
+        pr.baseRefOid = textField(row, 'baseRefOid');
+        pr.closures = timeline.nodes
+            .filter((event) => object(event).__typename === 'ClosedEvent')
+            .map((event) => {
+                const closed = object(event);
+                return {
+                    id: textField(closed, 'id'),
+                    createdAt: textField(closed, 'createdAt'),
+                    authorId: textField(object(closed.actor), 'id'),
+                };
+            });
+    }
+    return pr;
 }
 
 export function parseHistoricalStackObservation(
     raw: string,
     children: StackParent[],
-    parents: StackParent[]
+    parents: StackParent[],
+    closedMode = false
 ): HistoricalStackObservation {
     const response = object(JSON.parse(raw));
     if (response.errors !== undefined) {
         fail('historical stack query returned errors');
     }
     const repository = object(object(response.data).repository);
-    const child = parseHistoricalPullRequest(repository.child);
-    const parent = parseHistoricalPullRequest(repository.parent);
+    const child = parseHistoricalPullRequest(repository.child, closedMode);
+    const parent = parseHistoricalPullRequest(repository.parent, closedMode);
     assertHistoricalPullRequestCandidates(child, children);
     assertHistoricalPullRequestCandidates(parent, parents);
     if (
@@ -141,8 +173,11 @@ export function parseHistoricalStackObservation(
     };
 }
 
-function historicalStackQuery(child: number, parent: number): string[] {
-    const fields = `id number createdAt state author { ... on Bot { id } ... on User { id } } repository { id nameWithOwner } headRepository { id nameWithOwner } headRefName headRefOid headRef { name target { oid } } baseRefName baseRef { name target { oid } } timelineItems(first:100,itemTypes:[BASE_REF_CHANGED_EVENT,HEAD_REF_FORCE_PUSHED_EVENT,HEAD_REF_DELETED_EVENT,HEAD_REF_RESTORED_EVENT,CLOSED_EVENT,REOPENED_EVENT]) { pageInfo { hasNextPage } nodes { __typename } }`;
+function historicalStackQuery(child: number, parent: number, closedMode = false): string[] {
+    const closure = closedMode
+        ? '... on ClosedEvent { id createdAt actor { ... on Bot { id } ... on User { id } } }'
+        : '';
+    const fields = `id number createdAt state ${closedMode ? 'merged closedAt baseRefOid' : ''} author { ... on Bot { id } ... on User { id } } repository { id nameWithOwner } headRepository { id nameWithOwner } headRefName headRefOid headRef { name target { oid } } baseRefName baseRef { name target { oid } } timelineItems(first:100,itemTypes:[BASE_REF_CHANGED_EVENT,HEAD_REF_FORCE_PUSHED_EVENT,HEAD_REF_DELETED_EVENT,HEAD_REF_RESTORED_EVENT,CLOSED_EVENT,REOPENED_EVENT]) { pageInfo { hasNextPage } nodes { __typename ${closure} } }`;
     return [
         'api',
         'graphql',
@@ -174,6 +209,19 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
     let descriptor = historicalDescriptor(input, observation, childLog, parentLog, parentHead, port);
     const currentParentHead = descriptor.parentHead;
     const prior = port.readReceipt();
+    if (input.closedParent !== undefined) {
+        if (
+            observation.closedParentCompletion === undefined ||
+            (prior !== undefined &&
+                (prior.version !== 2 ||
+                    JSON.stringify(prior.closedParent) !==
+                        JSON.stringify({ ...input.closedParent, proof: observation.closedParentCompletion })))
+        ) {
+            fail('historical closed parent admission proof or flags changed');
+        }
+    } else if (prior?.version === 2) {
+        fail('historical closed parent admission requires the exact original flags');
+    }
     const stored = port.readDescriptor();
     const initialMarkers = port.markers();
     assertLegacyFork(input, descriptor, initialMarkers);
@@ -206,12 +254,25 @@ export function admitHistoricalStack(input: HistoricalAdmissionInput, port: Hist
         }
         assertStackAcyclic(descriptor, port.readStack);
     };
-    const receipt: HistoricalAdmissionReceipt = {
-        version: 1,
+    const identity = {
         childPullRequest: input.childPullRequest,
         expectedChildHead: input.expectedHead,
         descriptor,
     };
+    const receipt: HistoricalAdmissionReceipt =
+        input.closedParent === undefined
+            ? { version: 1, ...identity }
+            : {
+                  version: 2,
+                  ...identity,
+                  closedParent: {
+                      ...input.closedParent,
+                      proof: observation.closedParentCompletion ?? fail('native parent completion is missing'),
+                  },
+              };
+    if (Buffer.byteLength(`${JSON.stringify(receipt, null, 2)}\n`, 'utf8') > 65536) {
+        fail('historical admission receipt exceeds bound');
+    }
     revalidate();
     if (prior === undefined) {
         port.saveReceipt(receipt);
@@ -279,8 +340,13 @@ function parseHistoricalAdmissionArgs(args: string[]): Omit<HistoricalAdmissionI
     const child = args[4];
     const parent = args[6];
     const head = args[8];
-    const legacyFork = args[10];
-    if (args.length === 11 && (args[9] !== '--legacy-fork' || legacyFork === undefined || !fullSha.test(legacyFork))) {
+    const closedMode = args[9] === '--superseded-parent-replacement';
+    const legacyFork = closedMode ? undefined : args[10];
+    if (
+        args.length > 9 &&
+        !closedMode &&
+        (args.length !== 11 || args[9] !== '--legacy-fork' || legacyFork === undefined || !fullSha.test(legacyFork))
+    ) {
         fail(SYNC_PARENT_USAGE);
     }
     if (
@@ -304,6 +370,20 @@ function parseHistoricalAdmissionArgs(args: string[]): Omit<HistoricalAdmissionI
     if (legacyFork !== undefined) {
         admission.legacyFork = legacyFork;
     }
+    if (closedMode) {
+        const replacement = args[10];
+        if (
+            (args.length !== 11 && args.length !== 12) ||
+            (args.length === 12 && args[11] !== '--parent-origin-main') ||
+            !/^[1-9][0-9]*$/.test(replacement ?? '') ||
+            !Number.isSafeInteger(Number(replacement)) ||
+            replacement === child ||
+            replacement === parent
+        ) {
+            fail(SYNC_PARENT_USAGE);
+        }
+        admission.closedParent = { replacementPullRequest: Number(replacement), parentOriginMain: args.length === 12 };
+    }
     return admission;
 }
 
@@ -319,7 +399,7 @@ export function parseSyncParentArgs(args: string[]): {
         return { lane };
     }
     if (
-        (args.length !== 9 && args.length !== 11) ||
+        (args.length !== 9 && args.length !== 11 && args.length !== 12) ||
         args[2] !== '--admit-historical' ||
         args[3] !== '--child-pr' ||
         args[5] !== '--parent-pr' ||
@@ -328,6 +408,137 @@ export function parseSyncParentArgs(args: string[]): {
         fail(SYNC_PARENT_USAGE);
     }
     return { lane, admission: parseHistoricalAdmissionArgs(args) };
+}
+
+/** Decode only the native wire envelope. Marker authority is decided in pr:supersede, never here. */
+export function checkedNativeParentCompletion(
+    raw: string,
+    parent: HistoricalPullRequest,
+    replacement: number,
+    sourceCommit: string
+): string {
+    if (!raw.endsWith('\n') || Buffer.byteLength(raw, 'utf8') > 32769) {
+        fail('invalid native parent completion output bound');
+    }
+    const proof = raw.slice(0, -1);
+    const row = object(JSON.parse(proof));
+    if (
+        JSON.stringify(row) !== proof ||
+        Object.keys(row).sort().join(',') !== 'findingIds,lineage,parent,receipt,replacement,sourceCommit,version' ||
+        row.version !== 1 ||
+        row.sourceCommit !== sourceCommit
+    ) {
+        fail('native parent completion wire or source changed');
+    }
+    const expectedCoreKeys =
+        'base,baseRefOid,closedAt,head,headRefName,headRepository,mergeCommit,merged,number,repository,state';
+    const original = object(row.parent);
+    const successor = object(row.replacement);
+    for (const core of [original, successor]) {
+        if (
+            Object.keys(core).sort().join(',') !== expectedCoreKeys ||
+            core.repository !== REQUIRED_REPOSITORY ||
+            typeof core.head !== 'string' ||
+            !fullSha.test(core.head) ||
+            typeof core.headRefName !== 'string' ||
+            core.headRefName === '' ||
+            typeof core.closedAt !== 'string' ||
+            !Number.isFinite(Date.parse(core.closedAt))
+        ) {
+            fail('invalid native parent completion identity');
+        }
+    }
+    if (
+        original.number !== parent.number ||
+        original.head !== parent.headSha ||
+        original.headRefName !== parent.branch ||
+        original.base !== 'main' ||
+        original.state !== PR_STATE.CLOSED ||
+        original.merged !== false ||
+        original.mergeCommit !== null ||
+        original.closedAt !== parent.closedAt ||
+        original.headRepository !== parent.headRepository ||
+        original.baseRefOid !== parent.baseRefOid ||
+        successor.number !== replacement ||
+        successor.state !== PR_STATE.MERGED ||
+        successor.merged !== true ||
+        successor.base !== 'main' ||
+        typeof successor.mergeCommit !== 'string' ||
+        !fullSha.test(successor.mergeCommit)
+    ) {
+        fail('native parent completion does not match historical identities');
+    }
+    for (const value of [row.receipt, row.lineage]) {
+        const marker = object(value);
+        if (
+            Object.keys(marker).sort().join(',') !== 'authorNodeId,authorType,body,fullDatabaseId,id' ||
+            ['id', 'body', 'fullDatabaseId', 'authorNodeId', 'authorType'].some(
+                (key) => typeof marker[key] !== 'string' || marker[key] === ''
+            ) ||
+            marker.authorNodeId !== AUTHOR_BOT_NODE_ID ||
+            marker.authorType !== 'Bot'
+        ) {
+            fail('invalid native parent completion marker envelope');
+        }
+    }
+    if (
+        !Array.isArray(row.findingIds) ||
+        row.findingIds.some((id) => typeof id !== 'string' || !/^[1-9][0-9]*$/.test(id)) ||
+        new Set(row.findingIds).size !== row.findingIds.length
+    ) {
+        fail('invalid native parent completion root envelope');
+    }
+    return proof;
+}
+
+export function nativeParentInspectionInvocation(
+    input: { primaryRoot: string; gitPath: string; ghPath: string; localEnv: NodeJS.ProcessEnv },
+    admission: NonNullable<HistoricalAdmissionInput['closedParent']>,
+    parent: HistoricalPullRequest,
+    platform: NodeJS.Platform = process.platform,
+    systemPs: () => void = () => {
+        accessSync('/bin/ps', constants.X_OK);
+    }
+): { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv } {
+    if (platform !== 'darwin') {
+        fail('closed parent native inspection is supported only on Darwin');
+    }
+    systemPs();
+    if (
+        ![input.primaryRoot, input.gitPath, input.ghPath].every(isAbsolute) ||
+        !Number.isSafeInteger(parent.number) ||
+        parent.number <= 0 ||
+        !fullSha.test(parent.headSha) ||
+        !Number.isSafeInteger(admission.replacementPullRequest) ||
+        admission.replacementPullRequest <= 0
+    ) {
+        fail('invalid native parent inspection selection');
+    }
+    const env = githubAuthorizationGitEnv(input.localEnv);
+    for (const key of Object.keys(env)) {
+        if (key.toUpperCase().startsWith('SOURDAW_TRUSTED_')) {
+            delete env[key];
+        }
+    }
+    env.PATH = [...new Set([dirname(input.gitPath), dirname(input.ghPath), dirname(process.execPath), '/bin'])].join(
+        delimiter
+    );
+    return {
+        command: process.execPath,
+        cwd: input.primaryRoot,
+        env,
+        args: [
+            join(input.primaryRoot, 'scripts/trustedGithubWriteBootstrap.ts'),
+            'pr:supersede',
+            '--inspect-parent-completion',
+            '--parent-pr',
+            String(parent.number),
+            '--expected-head',
+            parent.headSha,
+            '--replacement',
+            String(admission.replacementPullRequest),
+        ],
+    };
 }
 
 export function historicalAdmissionShellPort(
@@ -377,12 +588,14 @@ export function historicalAdmissionShellPort(
         clean: base.clean,
         isAncestor: base.isAncestor,
         observe: () => {
-            const raw = capture(ghPath, historicalStackQuery(admission.childPullRequest, admission.parentPullRequest), {
+            const closedMode = admission.closedParent !== undefined;
+            const query = historicalStackQuery(admission.childPullRequest, admission.parentPullRequest, closedMode);
+            const raw = capture(ghPath, query, {
                 cwd: primaryRoot,
                 env: session.env,
             });
             const repository = object(object(object(JSON.parse(raw)).data).repository);
-            const parent = parseHistoricalPullRequest(repository.parent);
+            const parent = parseHistoricalPullRequest(repository.parent, closedMode);
             parentBranch = parent.branch;
             const children = parseStackParents(
                 capture(ghPath, stackParentQuery(branch), { cwd: primaryRoot, env: session.env })
@@ -390,7 +603,33 @@ export function historicalAdmissionShellPort(
             const parents = parseStackParents(
                 capture(ghPath, stackParentQuery(parent.branch), { cwd: primaryRoot, env: session.env })
             );
-            const observation = parseHistoricalStackObservation(raw, children, parents);
+            const observation = parseHistoricalStackObservation(raw, children, parents, closedMode);
+            if (admission.closedParent !== undefined) {
+                const invocation = nativeParentInspectionInvocation(input, admission.closedParent, parent);
+                const completion = capture(invocation.command, invocation.args, {
+                    cwd: invocation.cwd,
+                    env: invocation.env,
+                    trim: false,
+                });
+                observation.closedParentCompletion = checkedNativeParentCompletion(
+                    completion,
+                    parent,
+                    admission.closedParent.replacementPullRequest,
+                    input.originCommit ?? fail('native admission source pin is missing')
+                );
+                // A child mutation while the independent parent process reads must not inherit its earlier snapshot.
+                const final = object(JSON.parse(capture(ghPath, query, { cwd: primaryRoot, env: session.env })));
+                if (final.errors !== undefined) {
+                    fail('historical final child query returned errors');
+                }
+                const terminal = parseHistoricalStackObservation(JSON.stringify(final), children, parents, true);
+                if (
+                    JSON.stringify(terminal.child) !== JSON.stringify(observation.child) ||
+                    JSON.stringify(terminal.parent) !== JSON.stringify(observation.parent)
+                ) {
+                    fail('historical child changed during native parent inspection');
+                }
+            }
             if (!queriedHeads.has(parent.headSha)) {
                 base.fetchParent(parent.branch, parent.headSha);
                 queriedHeads.add(parent.headSha);
@@ -499,6 +738,7 @@ export function syncParentShellPort(input: {
     localEnv: NodeJS.ProcessEnv;
     capture?: typeof spawnCapture;
     run?: typeof spawnRun;
+    originCommit?: string;
 }): SyncParentPort {
     const { lane, primaryRoot, gitPath, ghPath, session, localEnv } = input;
     const capture = input.capture ?? spawnCapture;
@@ -597,6 +837,7 @@ export async function runSyncParentCli(args: string[]): Promise<number> {
             ghPath: runtime.ghPath,
             session: auth.session,
             localEnv: env,
+            originCommit: runtime.originCommit,
         };
         if (parsed.admission !== undefined) {
             admitHistoricalStack(
@@ -604,7 +845,9 @@ export async function runSyncParentCli(args: string[]): Promise<number> {
                 historicalAdmissionShellPort(shell, parsed.admission)
             );
             console.log(
-                `admitted historical parent for ${lane.branch}; synchronize through lane:sync-parent --lane ${lane.path}`
+                parsed.admission.closedParent === undefined
+                    ? `admitted historical parent for ${lane.branch}; synchronize through lane:sync-parent --lane ${lane.path}`
+                    : `admitted historical superseded parent for ${lane.branch}; original parent retained`
             );
             return 0;
         }
