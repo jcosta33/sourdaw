@@ -1,0 +1,62 @@
+src/modules/Grinder/presentations/views/__tests__/GrinderDisclosure.integration.spec.tsx
+  s_59e31a5c6f3e31::t_5e8e0acb81547f 87-92,97,100,105-107
+  s_59e31a5c6f3e31::t_e7dac32ab172fa 1-82,165
+  s_59e31a5c6f3e31::t_a2637a936a6dce 83-86,93-96,98-99,101-104,108-142
+  s_59e31a5c6f3e31::t_600147760ba9dc 143-160,162-164
+  s_59e31a5c6f3e31::t_6c7375a4ab339d 166-183
+  s_59e31a5c6f3e31::t_f05b7757990d8e 161
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_59e31a5c6f3e31::t_7a207424c38eb6 5,20-25,27,29-31,71,1111-1119,1121,1123-1141,2028-2029,2133-2134,2138-2145
+  s_59e31a5c6f3e31::t_600147760ba9dc 18,83-96,2162
+  s_59e31a5c6f3e31::t_7dd0c8c0df16ba 19
+  s_59e31a5c6f3e31::t_018c198a7f6d18 97-98,2146,2149-2150,2161,2163-2165,2167,2173
+  s_59e31a5c6f3e31::t_8cfa81c555e8c9 28,1122,1295-1351,1432,1978
+tests/e2e/grinderPresetSearchTestId.spec.ts
+  s_59e31a5c6f3e31::t_17ee7220cf31fe 9,75-77,80-83,89,97-108,121-124
+  s_59e31a5c6f3e31::t_3844f3e3af02c9 74,78-79,84-88,90,94-96,109-114,116-117,119-120,125-126,128
+  s_59e31a5c6f3e31::t_7dd0c8c0df16ba 91-93,115,118,127
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_59e31a5c6f3e31::t_a2637a936a6dce 20-27
+src/modules/Grinder/models/GrinderDisclosure.ts
+  s_59e31a5c6f3e31::t_7a207424c38eb6 1-12,14-21,26-37,39
+  s_59e31a5c6f3e31::t_d5ac98a53cc26b 13,22-25,38
+src/modules/Grinder/models/__tests__/GrinderDisclosure.spec.ts
+  s_59e31a5c6f3e31::t_a2637a936a6dce 1-39
+  s_59e31a5c6f3e31::t_e740297de5d4d2 40-44
+src/modules/Grinder/useCases/__tests__/setGrinderPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_d5bb16599a6528 1-13,15-25,26,28-67,91-126,151-171,173-262,322-423,440
+  s_59e31a5c6f3e31::t_9196c3e2cf749c 27
+  s_59e31a5c6f3e31::t_6456b6f55469ac 14,68-90,172,263-321,424-428,433-437
+  s_59e31a5c6f3e31::t_32354be9c21b13 127-150,429-432
+  s_29d8df116c5b92::t_a93082b12ef5ce 438-439
+src/modules/Grinder/useCases/setGrinderPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_8de55e0b2e25ba 2-9,27-32,35-36,38-60,62-63,67-78
+  s_59e31a5c6f3e31::t_218dc9c793ce94 1,10-26,33-34,37,61,64-66
+tests/e2e/devicePanels.spec.ts
+  s_59e31a5c6f3e31::t_ca52aadf7d37a1 46,48,77-80
+  s_59e31a5c6f3e31::t_d4e355e40b06d9 44-45,47,49-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8fe9c106b2863207defa7350ae6a628bc6b571d5",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
