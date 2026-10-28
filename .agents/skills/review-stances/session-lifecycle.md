@@ -369,6 +369,12 @@ closure, legacy null witness and a landed sibling with a refused sibling; captur
 before clearing refs, retain it across every queued wait, and distinguish refused resume from
 success that settled just before replacement.
 
+### 2026-10-27 — a retired audio terminal cannot borrow a successor opening (issue #5517)
+
+The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0cbea8d62b`) added same-ID failure cleanup and PR #4564 (`40c5218228c5`) added asynchronous commit cleanup. PR #5373 explicitly deferred these scheduler windows. Historical review dispatch and tier are unknown. Capture the public root identity at each punch opening, before callback registration, and retain that opening through success, failure, commit wait and catch. Guard before caching media, reading a same-ID live clip or discarding it.
+
+Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
+
 ### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
 
 PR #5453 added `material.prepare` to every native backend apply. The live session computes its
@@ -405,8 +411,22 @@ PR #305 (`b077ef6d34c7fc72bf3907a55bcaa7d7102a1584`) moved seek finalization beh
 
 Probe: through the real seek/transport coordinator, hold a controlled promise returned at the `stopActiveRecording` boundary after a playing, recording seek is admitted. While it is held, exercise Stop→Play and Stop→Record, then resolve and reject the promise. Require the successor worker identity, generation, epoch, transport state, and position to remain intact; on rejection, require the original error to remain reported. Remove the generation-ownership guard and require both successor cases to fail. This controlled scheduler probe tests deferred ownership; it does not establish real capture, PCM flushing, browser behavior, or hardware audibility.
 
-### 2026-10-27 — a retired audio terminal cannot borrow a successor opening (issue #5517)
+### 2026-10-27 — dense loop-off inherited a linear window that replenished after its frames (introduced by PR #3912)
 
-The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0cbea8d62b`) added same-ID failure cleanup and PR #4564 (`40c5218228c5`) added asynchronous commit cleanup. PR #5373 explicitly deferred these scheduler windows. Historical review dispatch and tier are unknown. Capture the public root identity at each punch opening, before callback registration, and retain that opening through success, failure, commit wait and catch. Guard before caching media, reading a same-ID live clip or discarding it.
+PR #3912 (`cb8a0c81fc`) admitted a capacity-sized linear prefix but kept its spent entries until
+more than three seconds into playback. A 1200-pair, three-second phrase filled the 2048-entry
+store; the remaining 352 events arrived only after their frames. Loop-window work in #5346
+exposed the same path by disabling looping near the start. The original public review checked
+prefix limits, refusal bookkeeping and trail counts without rendering the unadmitted suffix.
+Private historical dispatches are unavailable, so the exact reviewer prompt is unverified.
 
-Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
+Blind spot: capacity-safe admission does not establish timely delivery. A lifecycle stance must
+walk dense loop-on to loop-off at the start and near-start, then seek and edit-rearm in the
+resulting linear mode. Drive the real writer against a persistent store and render through the
+entire phrase; require every expected event identity before its frame, bounded residency and no
+callback overflow. Carry a distant real off and a same-key reattack through those transitions,
+without replaying the old onset. Restore the linear prefix/three-second-clear path and require
+the suffix assertions to fail. Model host queue admission separately from callback application:
+a later note-store refusal leaves preceding clears applied and cannot be retried from an
+already-applied host response. Native output peaks supplement this probe; they cannot count all
+attacks/releases or establish zero callback refusals when the wire omits those counters.
