@@ -1,0 +1,89 @@
+src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts
+  s_59e31a5c6f3e31::t_ab904755dc98bc 10
+  s_59e31a5c6f3e31::t_27d6c650c68812 4
+  s_59e31a5c6f3e31::t_4ae36b8fc9666d 11
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  s_59e31a5c6f3e31::t_dcd488f9060afe 95,281-282,295
+  s_59e31a5c6f3e31::t_85d802ddfaea47 65-91
+  s_59e31a5c6f3e31::t_79fdd659caaedf 242,244
+  s_59e31a5c6f3e31::t_3024a07312dcdd 297
+src/modules/CrdtDocument/useCases/restoreActiveBranchSlot.ts
+  s_59e31a5c6f3e31::t_8bc0c424dc48dd 1-23
+src/modules/Project/useCases/projectPersistence/fileIO/readProjectOriginalMediaArchive.ts
+  s_59e31a5c6f3e31::t_98572f5bf48ad3 1-59
+src/modules/Project/repositories/project/projectDirectory.ts
+  s_59e31a5c6f3e31::t_79fdd659caaedf 340
+  s_59e31a5c6f3e31::t_f37160169cd42f 95,98-99,102,104-106,110-111,113-120,123-134,136-153,155-157,161,171,173-174,177-178,182-208
+  s_59e31a5c6f3e31::t_30227b005558f0 301-338,342
+  s_59e31a5c6f3e31::t_b52e06a1408263 209-211
+  s_59e31a5c6f3e31::t_4f359f605b6eb7 339
+  s_59e31a5c6f3e31::t_8a26c08f4f956d 341
+  s_59e31a5c6f3e31::t_dd1a60a0efaf70 343-345
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_59e31a5c6f3e31::t_af3b00b3fb8f56 304,306
+src/modules/Project/useCases/projectPersistence/fileIO/projectOriginalMediaArchive.ts
+  s_59e31a5c6f3e31::t_98572f5bf48ad3 1,5
+  s_59e31a5c6f3e31::t_3fe9ec14333f06 6
+src/modules/Project/repositories/project/__tests__/projectDirectory.spec.ts
+  s_59e31a5c6f3e31::t_dcd488f9060afe 56-58
+  s_59e31a5c6f3e31::t_79fdd659caaedf 3,69,102,114,132,148,152
+src/modules/Collaboration/useCases/index.ts
+  s_59e31a5c6f3e31::t_09b715794bca80 9-11
+src/modules/CrdtDocument/useCases/prepareExternalProjectDocument.ts
+  s_59e31a5c6f3e31::t_8bc0c424dc48dd 3-4,10
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectFreezeOnlyBufferIds.ts
+  s_59e31a5c6f3e31::t_d5b94295aea4f2 1-28
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  s_59e31a5c6f3e31::t_3024a07312dcdd 6-7,15
+  s_59e31a5c6f3e31::t_d216656b8099d2 17-30,75,77
+  s_59e31a5c6f3e31::t_3f9b73e0ebc86d 16
+src/modules/Project/repositories/project/projectDirectoryBinding.ts
+  s_59e31a5c6f3e31::t_e3f6559d46b242 40,72,108,133,137,169,176,190-199
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_59e31a5c6f3e31::t_9dd6b48301dda2 267,269-272
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_59e31a5c6f3e31::t_2a628eed59d452 48-82,92-94
+  s_59e31a5c6f3e31::t_27d6c650c68812 4,14-15
+src/modules/Collaboration/useCases/activateProjectOriginalMedia.ts
+  s_59e31a5c6f3e31::t_09b715794bca80 1-29
+src/modules/Collaboration/useCases/captureProjectOriginalMedia.ts
+  s_59e31a5c6f3e31::t_09b715794bca80 1-54
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/collectProjectOriginalHashes.spec.ts
+  s_59e31a5c6f3e31::t_e62f36ccc8b37d 3-5
+src/modules/Project/useCases/projectPersistence/openProjectDirectoryFromPicker.ts
+  s_59e31a5c6f3e31::t_ab904755dc98bc 15-16
+  s_59e31a5c6f3e31::t_27d6c650c68812 5,10
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_59e31a5c6f3e31::t_0452e5276241d4 72-104,106-118,120-126,268,270-275
+  s_59e31a5c6f3e31::t_579f7cc81eef0f 165,188
+  s_59e31a5c6f3e31::t_79fdd659caaedf 10
+  s_59e31a5c6f3e31::t_27d6c650c68812 11,27-33
+  s_59e31a5c6f3e31::t_3a2ba0bbb13354 46-71,105,119,177
+  s_59e31a5c6f3e31::t_e62f36ccc8b37d 15,19-20
+  s_59e31a5c6f3e31::t_f11d84fdecfca0 34
+src/modules/Project/useCases/projectPersistence/projectDirectoryRead.ts
+  s_59e31a5c6f3e31::t_79fdd659caaedf 5
+  s_59e31a5c6f3e31::t_e62f36ccc8b37d 8-9
+  s_59e31a5c6f3e31::t_27d6c650c68812 6
+  s_59e31a5c6f3e31::t_4e403cf0812255 7
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectAllBufferIds.ts
+  s_59e31a5c6f3e31::t_d5b94295aea4f2 1-28
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectOriginalHashes.ts
+  s_59e31a5c6f3e31::t_3ec03e36b46033 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce8ae72f339ac035a428ca2e4b530e8f5631e883",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
