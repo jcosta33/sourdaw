@@ -51,7 +51,6 @@ type ParameterGesture = {
     defaultValue: number;
     authority: ReturnType<typeof captureProjectTransitionAuthority>;
     runtimeAuthority: ReturnType<typeof captureDeviceParameterRuntimeWriteAuthority>;
-    startedInTouchAutomation: boolean;
     recordingAuthority: ReturnType<typeof captureTouchAutomationRecordingAuthority>;
     previewValue?: number;
     invalidated: boolean;
@@ -106,10 +105,7 @@ function restoreGesturePreview(gesture: ParameterGesture): void {
 }
 
 function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
-    const currentMode = trackStore.value?.tracks.find((track) => track.id === gesture.trackId)?.automationMode;
-    if (currentMode === 'touch' || gesture.startedInTouchAutomation) {
-        gesture.recordingAuthority.release();
-    }
+    gesture.recordingAuthority.release();
 }
 
 type DeviceAutomationState = {
@@ -380,7 +376,6 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             defaultValue: param.defaultValue ?? param.value,
             authority: captureProjectTransitionAuthority(),
             runtimeAuthority: captureDeviceParameterRuntimeWriteAuthority(trackId, device.id, param.id),
-            startedInTouchAutomation: liveOwner?.automationMode === 'touch',
             recordingAuthority: captureTouchAutomationRecordingAuthority(trackId, targetId),
             invalidated: false,
             settling: false,

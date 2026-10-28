@@ -1058,6 +1058,117 @@ describe('Inspector continuous parameter gestures through real history', () => {
         }
     );
 
+    it.each(['release', 'unmount'] as const)(
+        'releases Touch admitted after a Read start before physical %s',
+        async (ending) => {
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            const view = render(<Control />);
+            beginKnob();
+            await act(async () => {
+                await executeUserAppAction({
+                    type: 'setAutomationMode',
+                    payload: { trackId: 'track-1', mode: 'touch' },
+                });
+            });
+            expect(trackStore.value?.tracks[0]?.automationMode).toBe('touch');
+            moveKnob(85);
+            expect(recording).toHaveBeenCalledWith(
+                'track-1',
+                'synth-1:detune',
+                25,
+                expect.any(Number),
+                expect.any(Symbol)
+            );
+            expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+            await act(async () => {
+                await executeUserAppAction({
+                    type: 'setAutomationMode',
+                    payload: { trackId: 'track-1', mode: 'read' },
+                });
+            });
+            expect(trackStore.value?.tracks[0]?.automationMode).toBe('read');
+            const samples = recording.mock.calls.length;
+            const modeHistory = depth();
+            if (ending === 'release') {
+                endKnob();
+                await expectCommitted('detune', 25, modeHistory + 1);
+                await act(async () => {
+                    await undo();
+                });
+                expect(rawValues()?.detune).toBe(5);
+                await act(async () => {
+                    await redo();
+                });
+                expect(rawValues()?.detune).toBe(25);
+            } else {
+                view.unmount();
+                expect(rawValues()?.detune).toBe(5);
+                expect(writes().at(-1)).toBe(5);
+                expect(depth()).toBe(modeHistory);
+            }
+            await act(async () => {
+                await executeUserAppAction({
+                    type: 'setAutomationMode',
+                    payload: { trackId: 'track-1', mode: 'touch' },
+                });
+            });
+            expect(trackStore.value?.tracks[0]?.automationMode).toBe('touch');
+            expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
+            expect(recording).toHaveBeenCalledTimes(samples);
+        }
+    );
+
+    it.each([
+        ['latch', 'release'],
+        ['latch', 'unmount'],
+        ['write', 'release'],
+        ['write', 'unmount'],
+    ] as const)('retains %s admitted after Touch until Stop after physical %s', async (mode, ending) => {
+        const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...testTrack([structuredClone(synth)]), automationMode: 'touch' }],
+        });
+        transportStore.set({ ...defaultTransportState, isPlaying: true });
+        const view = render(<Control />);
+        beginKnob();
+        moveKnob(85);
+        await act(async () => {
+            await executeUserAppAction({
+                type: 'setAutomationMode',
+                payload: { trackId: 'track-1', mode },
+            });
+        });
+        expect(trackStore.value?.tracks[0]?.automationMode).toBe(mode);
+        moveKnob(70);
+        expect(recording.mock.calls.at(-1)).toEqual([
+            'track-1',
+            'synth-1:detune',
+            45,
+            expect.any(Number),
+            expect.any(Symbol),
+        ]);
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        const samples = recording.mock.calls.length;
+        const modeHistory = depth();
+        if (ending === 'release') {
+            endKnob();
+            await expectCommitted('detune', 45, modeHistory + 1);
+        } else {
+            view.unmount();
+            expect(rawValues()?.detune).toBe(5);
+            expect(writes().at(-1)).toBe(5);
+            expect(depth()).toBe(modeHistory);
+        }
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(true);
+        expect(recording).toHaveBeenCalledTimes(samples + (ending === 'release' ? 1 : 0));
+        act(() => {
+            stopAutomationRecording();
+        });
+        expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(false);
+    });
+
     it('preserves a newer same-key MIDI Touch writer when the old knob is cancelled', () => {
         trackStore.set({
             ...trackStore.value!,

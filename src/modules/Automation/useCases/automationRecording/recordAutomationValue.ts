@@ -107,6 +107,7 @@ export function recordAutomationValue(
     // Every admitted producer supersedes the previous release authority, including
     // ownerless MIDI writes. A nonrecording runtime write never reaches this door.
     session.recordingOwner = recordingOwner;
+    session.recordingMode = track.automationMode;
 
     if (track.automationMode === 'touch' || track.automationMode === 'latch') {
         touchActive.add(key);

@@ -80,6 +80,7 @@ describe('releaseTouchAutomation', () => {
                     startBeat: 0,
                     lastValue: 0.5,
                     recordingOwner,
+                    recordingMode: 'touch',
                 });
                 touchActive.add('t1::gain');
             }
@@ -97,6 +98,25 @@ describe('releaseTouchAutomation', () => {
             expect(activeRecording.get('t1::gain')?.lastValue).toBe(expectedLastValue);
         }
     );
+
+    it.each(['touch', 'latch', 'write'] as const)('gesture release obeys its latest admitted %s mode', (mode) => {
+        const authority = captureTouchAutomationRecordingAuthority('t1', 'gain');
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: 0.5,
+            recordingOwner: authority.owner,
+            recordingMode: mode,
+        });
+        touchActive.add('t1::gain');
+
+        authority.release();
+
+        expect(flushPendingPoints).toHaveBeenCalledTimes(mode === 'touch' ? 1 : 0);
+        expect(touchActive.has('t1::gain')).toBe(mode !== 'touch');
+        expect(activeRecording.get('t1::gain')?.lastValue).toBe(mode === 'touch' ? null : 0.5);
+    });
 
     it('leaves an absent session untouched (no throw) on release', () => {
         expect(() => releaseTouchAutomation('ghost', 'gain')).not.toThrow();
