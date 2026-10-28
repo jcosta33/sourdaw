@@ -424,3 +424,22 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### Package-manager trust reaches the final caller
+
+PR #4222 (`120c9e2b418`) introduced the setup action whose bootstrap could block the selected
+JavaScript pnpm on unused native-engine signature metadata (#5806). PR #5464 (`eded998aebf`)
+introduced the Corepack-producer and later Node/cache-consumer arrangement in push checks.
+When that selected Node directory contains a Corepack shim, its later PATH prepend can override
+an already verified target. These revisions identify the escaped contracts; historical private
+reviewer prompts and tiers remain unknown, and public approval prose does not prove which
+unrecorded probes ran.
+
+The needed stance follows the executing tool through acquisition, activation and its final
+consumer. Distinguish a reviewed bootstrap byte pin from runtime signature verification. Bind the
+selected engine's name, version and installed integrity to a trusted signature before activation;
+verify any platform package it actually executes. Then prepend the later runtime's directory and
+prove the cache caller still resolves the authenticated target. Before disabling Corepack aliases,
+validate the whole affected set of leaf symlinks and real targets against that selected Node's
+official distribution. Refuse unrecognized launchers without deleting recognized peers, and
+preserve Node, npm, npx, Yarn and unrelated files.
