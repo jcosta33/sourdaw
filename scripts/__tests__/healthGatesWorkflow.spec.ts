@@ -3563,6 +3563,37 @@ describe('health gates workflow contract', () => {
         expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
     });
 
+    it('admits the observed fetch plus full checkout while reserving lint and cleanup phases', () => {
+        const lint = jobAt(validationWorkflow, 'lint');
+        const checkout = stepNamed(lint, 'Checkout');
+        const checkoutMinutes = checkout['timeout-minutes'];
+        if (typeof checkoutMinutes !== 'number') {
+            throw new TypeError('checkout must declare its phase budget');
+        }
+        // Run40743393214 fetched for 298.736s before its five-minute step expired in checkout.
+        // Its parallel full checkout took 7.049s after fetching; neither phase may be omitted.
+        const observedFetchMs = 298_736;
+        const completedPeerCheckoutMs = 7_049;
+        expect(checkoutMinutes * 60_000).toBeGreaterThanOrEqual(observedFetchMs + completedPeerCheckoutMs);
+        expect(checkout.with).toBeUndefined();
+
+        let reservedStepMinutes = 0;
+        for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
+            const minutes = stepNamed(lint, name)['timeout-minutes'];
+            if (typeof minutes !== 'number') {
+                throw new TypeError(`lint phase ${name} must declare its budget`);
+            }
+            reservedStepMinutes += minutes;
+        }
+        const jobMinutes = lint['timeout-minutes'];
+        if (typeof jobMinutes !== 'number') {
+            throw new TypeError('lint must declare its outer budget');
+        }
+        expect(jobMinutes - reservedStepMinutes).toBeGreaterThanOrEqual(5);
+        expect(stepNamed(lint, 'Lint')['timeout-minutes']).toBe(20);
+        expect(stepNamed(lint, 'Lint').run).toBe('pnpm lint:full');
+    });
+
     it('reserves bounded setup, full lint, and cleanup time in the lint job', () => {
         expect(() => assertLintTimeBudgets(validationWorkflow)).not.toThrow();
         const oldJob = structuredClone(validationWorkflow);
