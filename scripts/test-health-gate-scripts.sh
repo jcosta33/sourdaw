@@ -285,6 +285,7 @@ function runResolveScope(event, scopes) {
             EVENT: event,
             BROWSER: scopes.browser ?? 'false',
             PROFILE: scopes.profile ?? 'broad',
+            MODE: 'full',
             RUST: scopes.rust,
             SERVER: scopes.server,
             E2E: scopes.e2e,
@@ -550,6 +551,7 @@ expect(workflow.jobs?.validation?.uses === './.github/workflows/validation.yml',
 expect(workflow.jobs?.validation?.needs === 'scope', 'validation must wait for selected scope');
 expect(workflow.jobs?.validation?.with?.browser === "${{ needs.scope.outputs.browser == 'true' }}", 'validation smoke must use selected browser scope');
 expect(workflow.jobs?.validation?.with?.profile === '${{ needs.scope.outputs.profile }}', 'validation must use selected profile');
+expect(workflow.jobs?.validation?.with?.mode === 'full', 'required validation must select full mode');
 expect(workflow.jobs?.affected?.uses === './.github/workflows/heavy-gates.yml', 'the PR workflow must call selected browser checks');
 expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation']),
     'selected browser checks must wait for scope and successful validation');
@@ -657,19 +659,19 @@ expect(staticJob?.if === undefined, 'static must stay unconditional so wasm fres
 // proves nothing, and narrowing or dropping one retires the proof while every
 // other pin stays green.
 expect(
-    validationWorkflow.jobs?.build?.if === "needs.decide.outputs.web == 'true'",
+    validationWorkflow.jobs?.build?.if === "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
     'the production build must answer to the web scope alone'
 );
 expect(
-    validationWorkflow.jobs?.rust?.if === "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+    validationWorkflow.jobs?.rust?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
     'the Rust workspace leg must answer to the Rust and server scopes'
 );
 expect(
-    validationWorkflow.jobs?.['native-macos']?.if === "needs.decide.outputs.rust == 'true'",
+    validationWorkflow.jobs?.['native-macos']?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
     'the native macOS leg must answer to the Rust scope alone'
 );
 expect(
-    validationWorkflow.jobs?.['native-windows']?.if === "needs.decide.outputs.rust == 'true'",
+    validationWorkflow.jobs?.['native-windows']?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
     'the native Windows leg must answer to the Rust scope alone'
 );
 const deviceWriteBoundaryCensusRun =

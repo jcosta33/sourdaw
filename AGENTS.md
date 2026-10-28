@@ -481,13 +481,13 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   `ci:approved` label for that App's undismissed APPROVE of the event's exact head; any other label event fails
   `Gate` with the reason rather than skipping it, so heavy CI runs once per approved head instead of on every push.
 - `.github/workflows/pr-checks.yml` runs the scope plan and validation on every push, mints no `Gate`, and is
-  never required: it is the cheap pre-review signal, and a new head has no `Gate` until it is approved again.
+  never required: it is a preliminary pre-review signal that skips broad unit, build, Rust and native jobs, and a new head has no `Gate` until it is approved again.
   Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
   does not cancel an admitted run still working on the old head, and any later label event on the pull request
   cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
   native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review on
-  each push and in the admitted run. Nightly and `release:proof:assemble` also run release inventory;
+  in the admitted full run; preliminary push validation omits the broad unit, build, Rust and native jobs. Nightly and `release:proof:assemble` also run release inventory;
   the release owner still assembles proof before `release:cut` as described in `docs/release.md`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run

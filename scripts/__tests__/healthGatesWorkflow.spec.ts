@@ -99,7 +99,8 @@ const NATIVE_PARITY_JOB_NAME = 'Native parity (macOS)';
 const NATIVE_PARITY_RUNNER = 'macos-latest';
 // Parity breaks from either side of the seam: the Rust renderer the addon
 // exposes, or the TypeScript that produces the graph it renders.
-const NATIVE_PARITY_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'";
+const NATIVE_PARITY_CONDITION =
+    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')";
 const NATIVE_PARITY_BUILD_STEP = 'Build the native addon';
 const NATIVE_PARITY_ADDON_STEP = 'Require the built addon the parity specs probe for';
 const NATIVE_PARITY_RUN_STEP = 'Run the addon parity specs';
@@ -320,7 +321,11 @@ const RELEASE_SIDE_EFFECTS = [
 ] as const;
 // Unit and selected E2E both reach the required Gate through reusable callers.
 const SUITE_JOB_WIRING = {
-    unit: { workflow: 'validation', needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
+    unit: {
+        workflow: 'validation',
+        needs: 'decide',
+        if: "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+    },
     e2e: {
         workflow: 'heavy',
         needs: undefined,
@@ -331,10 +336,11 @@ const SUITE_JOB_WIRING = {
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
 // other pin stays green.
-const BUILD_CONDITION = "needs.decide.outputs.web == 'true'";
-const RUST_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
-const NATIVE_MACOS_CONDITION = "needs.decide.outputs.rust == 'true'";
-const NATIVE_WINDOWS_CONDITION = "needs.decide.outputs.rust == 'true'";
+const BUILD_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')";
+const RUST_CONDITION =
+    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')";
+const NATIVE_MACOS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
+const NATIVE_WINDOWS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
 // The nightly split its combined Rust job along the deploy seam (#3516): the
 // crate leg keeps the `rust` scope alone because the crates it tests ship in
 // the web bundle, and the collaboration-server leg answers to the `server`
@@ -566,6 +572,7 @@ function runScopeScript(
                 EVENT: eventName,
                 BROWSER: 'false',
                 PROFILE: 'broad',
+                MODE: 'full',
                 RUST: 'false',
                 SERVER: 'false',
                 E2E: 'false',
@@ -602,11 +609,11 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
     const tooling = outputs.tooling === 'true';
     const selected: Record<string, boolean> = {
         [CODE_CONDITION]: code,
-        "needs.decide.outputs.web == 'true'": web,
+        [BUILD_CONDITION]: web,
         "needs.decide.outputs.tooling == 'true'": tooling,
         [SMOKE_CONDITION]: e2e,
-        "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'": rust || server,
-        "needs.decide.outputs.rust == 'true'": rust,
+        [RUST_CONDITION]: rust || server,
+        [NATIVE_MACOS_CONDITION]: rust,
         [NATIVE_PARITY_CONDITION]: rust || web,
         [PULL_REQUEST_PAYLOAD_CONDITION]: true,
     };
@@ -629,8 +636,8 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
 
 function assertScopeContract(candidate: UnknownRecord): string {
     const callerInputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'inputs');
-    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'profile'])) {
-        throw new Error('shared validation must expose only browser and affected profile inputs');
+    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'mode', 'profile'])) {
+        throw new Error('shared validation must expose browser, mode and affected profile inputs');
     }
     const decide = jobAt(candidate, 'decide');
     if (decide.if !== undefined) {
@@ -658,6 +665,9 @@ function assertScopeContract(candidate: UnknownRecord): string {
     const scope = stepNamed(decide, 'Resolve scope');
     if (scope.id !== 'scope') {
         throw new Error('Resolve scope must retain the scope step id');
+    }
+    if (recordAt(scope, 'env').MODE !== '${{ inputs.mode }}') {
+        throw new Error('scope must validate the requested mode');
     }
     if (recordAt(scope, 'env').BROWSER !== '${{ inputs.browser }}') {
         throw new Error('shared validation must receive the selected browser decision');
@@ -1741,7 +1751,8 @@ function assertJobGraph(set: WorkflowSet): void {
     }
     if (
         recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}" ||
-        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}'
+        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}' ||
+        recordAt(jobAt(health, 'validation'), 'with').mode !== 'full'
     ) {
         throw new Error('required browser smoke must consume the affected scope');
     }
@@ -1755,6 +1766,17 @@ function assertJobGraph(set: WorkflowSet): void {
         })
     ) {
         throw new Error('shared validation must require the affected browser decision');
+    }
+    if (
+        JSON.stringify(browserInput.mode) !==
+        JSON.stringify({
+            description: 'Full required validation or preliminary push validation.',
+            required: false,
+            default: 'full',
+            type: 'string',
+        })
+    ) {
+        throw new Error('shared validation must default to full');
     }
     const affected = jobAt(health, 'affected');
     if (
@@ -1792,7 +1814,8 @@ function assertJobGraph(set: WorkflowSet): void {
     if (
         pushValidation.uses !== VALIDATION_CALL ||
         pushValidation.needs !== 'scope' ||
-        JSON.stringify(pushValidation.with) !== JSON.stringify(recordAt(jobAt(set.health, 'validation'), 'with'))
+        JSON.stringify(pushValidation.with) !==
+            JSON.stringify({ ...recordAt(jobAt(set.health, 'validation'), 'with'), mode: 'preliminary' })
     ) {
         throw new Error('push validation must consume the affected scope exactly as the required lane does');
     }
@@ -4547,6 +4570,7 @@ describe('health gates workflow contract', () => {
         const step = stepNamed(gate, 'Require selected validation jobs to succeed');
         expect(step.if).toBe(GATE_CONDITION);
         expect(recordAt(step, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
+        expect(recordAt(step, 'env').MODE).toBe('${{ inputs.mode }}');
         const script = stringAt(step, 'run');
         const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
             PROFILE: 'tooling',
@@ -4562,7 +4586,8 @@ describe('health gates workflow contract', () => {
             ])
         );
         results.decide = { result: 'success', outputs: scope };
-        const run = (value: unknown) => runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true' });
+        const run = (value: unknown) =>
+            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: 'full' });
         expect(run(results)).toBe(0);
         for (const outcome of ['failure', 'cancelled', 'skipped'] as const) {
             expect(run({ ...results, 'tooling-unit': { result: outcome } })).not.toBe(0);
@@ -4571,6 +4596,48 @@ describe('health gates workflow contract', () => {
         delete missing['tooling-unit'];
         expect(run(missing)).not.toBe(0);
         expect(run({ ...results, unit: { result: 'success' } })).not.toBe(0);
+        const broadScope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            RUST: 'true',
+            SERVER: 'true',
+            WEB: 'true',
+            BROWSER: 'true',
+        });
+        const broadSelected = new Set(selectedPrValidationJobs(broadScope));
+        const full: Record<string, { result: string; outputs?: UnknownRecord }> = Object.fromEntries(
+            VALIDATION_JOBS.filter((job) => job !== 'validation-gate').map((job) => [
+                job,
+                { result: broadSelected.has(job) ? 'success' : 'skipped' },
+            ])
+        );
+        full.decide = { result: 'success', outputs: broadScope };
+        expect(run(full)).toBe(0);
+        const broadJobs = ['unit', 'build', 'rust', 'native-macos', 'native-windows', 'native-parity'];
+        for (const job of broadJobs) {
+            for (const outcome of ['failure', 'cancelled', 'skipped']) {
+                expect(run({ ...full, [job]: { result: outcome } })).not.toBe(0);
+            }
+            const missingJob = { ...full };
+            delete missingJob[job];
+            expect(run(missingJob)).not.toBe(0);
+        }
+        const preliminary = { ...full, ...Object.fromEntries(broadJobs.map((job) => [job, { result: 'skipped' }])) };
+        const runMode = (value: unknown, mode: string) =>
+            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: mode });
+        expect(runMode(preliminary, 'preliminary')).toBe(0);
+        expect(runMode({ ...preliminary, lint: { result: 'failure' } }, 'preliminary')).not.toBe(0);
+        expect(runMode({ ...preliminary, unit: { result: 'success' } }, 'preliminary')).not.toBe(0);
+        for (const mode of ['', 'invalid']) {
+            expect(runMode(full, mode)).not.toBe(0);
+            expect(() =>
+                runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', { MODE: mode })
+            ).toThrow();
+        }
+        const wrongRequiredMode = cloneWorkflows('preliminary required validation');
+        recordAt(jobAt(wrongRequiredMode.health, 'validation'), 'with').mode = 'preliminary';
+        expect(() => assertJobGraph(wrongRequiredMode)).toThrow();
+        const missingRequiredMode = cloneWorkflows('missing required validation mode');
+        delete recordAt(jobAt(missingRequiredMode.health, 'validation'), 'with').mode;
+        expect(() => assertJobGraph(missingRequiredMode)).toThrow();
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {
