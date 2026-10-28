@@ -297,6 +297,318 @@ describe('live store edits on the existing writer pass', () => {
         return batches;
     }
 
+    it.each(['lane', 'vca', 'solo'] as const)(
+        'sends a busy %s edit from the same pass after its predecessor settles',
+        async (route) => {
+            const lane = hostedLane(FIRST_PLUGIN.id);
+            const bystander: StoredAutomationLane = {
+                ...hostedLane(FIRST_PLUGIN.id),
+                id: 'unrelated-pan',
+                trackId: 'other',
+                parameterId: 'pan',
+                points: [
+                    { beat: 0, value: 10, curve: 'step', tension: 0 },
+                    { beat: 0.16, value: 20, curve: 'step', tension: 0 },
+                ],
+            };
+            const first = { ...trackHolding([FIRST_PLUGIN]), gain: 1.5, vcaGroupId: 'group' };
+            const other = { ...trackHolding([]), id: 'other', soloSafe: true };
+            const soloSource = { ...trackHolding([]), id: 'solo-source', soloSafe: true };
+            vcaGroupStore.set({
+                groups: [{ id: 'group', name: 'Group', gain: 1, muted: false, trackIds: [STRIP_ID] }],
+            });
+            let holdNext = false;
+            let settle!: (result: AudioGraphApplyResult) => void;
+            let observed!: () => void;
+            const sent = new Promise<void>((resolve) => {
+                observed = resolve;
+            });
+            const batches = await playingWith(
+                [lane, bystander],
+                async () => {
+                    if (holdNext) {
+                        holdNext = false;
+                        observed();
+                        return new Promise((resolve) => {
+                            settle = resolve;
+                        });
+                    }
+                    return applied;
+                },
+                [first, other, soloSource]
+            );
+            const pass = nativeLiveAutomationWriter.pass!;
+            const epoch = nativeLiveAutomationWriter.epoch;
+            const unrelated = pass.targets.find((slot) => slot.target.trackId === other.id)!;
+            const cursor = unrelated.cursor;
+            const futureStamps = unrelated.queued.filter((stamp) => stamp.startFrame > 0.03 * SAMPLE_RATE);
+            expect(futureStamps.length).toBeGreaterThan(0);
+            const change = (stage: 'first' | 'busy') => {
+                if (route === 'lane') {
+                    const value = stage === 'first' ? 0.4 : 0.7;
+                    automationStore.set({
+                        lanes: [
+                            {
+                                ...lane,
+                                points: lane.points.map((point, index) => (index === 0 ? { ...point, value } : point)),
+                            },
+                            bystander,
+                        ],
+                    });
+                } else if (route === 'vca') {
+                    const gain = stage === 'first' ? 0.5 : 0.8;
+                    vcaGroupStore.set({
+                        groups: [{ id: 'group', name: 'Group', gain, muted: false, trackIds: [STRIP_ID] }],
+                    });
+                } else {
+                    trackStore.set({
+                        tracks: [first, other, { ...soloSource, soloed: stage === 'first' }],
+                        selectedTrackId: null,
+                        ghostClips: [],
+                    });
+                }
+            };
+            change('first');
+            holdNext = true;
+            const before = batches.length;
+            const predecessor = pump();
+            await sent;
+            expect(batches).toHaveLength(before + 1);
+            const acceptedBeforeBusy = pass.inputs.acceptedRevision;
+            change('busy');
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds: 0.03,
+                loopWraps: 0,
+                batchesApplied: 0,
+                writerEpoch: epoch,
+            });
+            expect(batches).toHaveLength(before + 1);
+            expect(pass.inputs.acceptedRevision).toBe(acceptedBeforeBusy);
+            settle(applied);
+            await predecessor;
+            await nativeLiveGraphSession.pending;
+            expect(batches).toHaveLength(before + 2);
+            const commands = batches.at(-1)!.commands;
+            if (route === 'lane') {
+                expect(commands).toContainEqual({
+                    kind: 'write-device-parameter',
+                    target: {
+                        kind: 'device-parameter',
+                        trackId: STRIP_ID,
+                        deviceId: FIRST_PLUGIN.id,
+                        parameterId: '7',
+                    },
+                    write: { shape: 'hold', time: 0.03 },
+                });
+                expect(commands).toContainEqual({
+                    kind: 'write-device-parameter',
+                    target: {
+                        kind: 'device-parameter',
+                        trackId: STRIP_ID,
+                        deviceId: FIRST_PLUGIN.id,
+                        parameterId: '7',
+                    },
+                    write: { shape: 'step', time: 0.03, value: 0.7 },
+                });
+            } else if (route === 'vca') {
+                expect(commands[0]).toEqual({
+                    kind: 'set-strip-vca-multiplier',
+                    trackId: STRIP_ID,
+                    multiplier: 0.8,
+                });
+                expect(commands).toContainEqual({
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: STRIP_ID },
+                    write: { shape: 'step', time: 0.03, value: 1.5 },
+                });
+            } else {
+                expect(commands).toContainEqual({
+                    kind: 'write-parameter',
+                    target: { kind: 'track-solo-gate', trackId: STRIP_ID },
+                    write: { shape: 'step', time: 0.03, value: 1 },
+                });
+            }
+            expect(nativeLiveAutomationWriter.pass).toBe(pass);
+            expect(pass.inputs.acceptedRevision).toBe(pass.inputs.revision);
+            expect(pass.targets).toContain(unrelated);
+            expect(unrelated.cursor).toBe(cursor);
+            for (const stamp of futureStamps) {
+                expect(unrelated.queued).toContain(stamp);
+            }
+        }
+    );
+
+    it.each(['applied', 'not-applied', 'thrown'] as const)(
+        'coalesces the latest busy request after an %s predecessor',
+        async (outcome) => {
+            const lane = hostedLane(FIRST_PLUGIN.id);
+            let holdNext = false;
+            let settle!: (result: AudioGraphApplyResult) => void;
+            let reject!: (error: Error) => void;
+            let observed!: () => void;
+            const sent = new Promise<void>((resolve) => {
+                observed = resolve;
+            });
+            let activeApplies = 0;
+            let maxActiveApplies = 0;
+            const batches = await playingWith([lane], async () => {
+                activeApplies += 1;
+                maxActiveApplies = Math.max(maxActiveApplies, activeApplies);
+                if (holdNext) {
+                    holdNext = false;
+                    observed();
+                    return new Promise((resolve, rejectPromise) => {
+                        settle = (result) => {
+                            activeApplies -= 1;
+                            resolve(result);
+                        };
+                        reject = (error) => {
+                            activeApplies -= 1;
+                            rejectPromise(error);
+                        };
+                    });
+                }
+                activeApplies -= 1;
+                return applied;
+            });
+            const pass = nativeLiveAutomationWriter.pass!;
+            const epoch = nativeLiveAutomationWriter.epoch;
+            pass.provenAfterBatch = 11;
+            const change = (value: number) => {
+                automationStore.set({
+                    lanes: [
+                        {
+                            ...lane,
+                            points: lane.points.map((point, index) => (index === 0 ? { ...point, value } : point)),
+                        },
+                    ],
+                });
+            };
+            change(0.4);
+            holdNext = true;
+            const before = batches.length;
+            const predecessor = pumpNativeLiveAutomationWriter({
+                positionSeconds: 0.02,
+                loopWraps: 0,
+                batchesApplied: 11,
+                writerEpoch: epoch,
+            });
+            await sent;
+            change(0.6);
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds: 0.025,
+                loopWraps: 1,
+                batchesApplied: 11,
+                writerEpoch: epoch,
+            });
+            change(0.7);
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds: 0.03,
+                loopWraps: 2,
+                batchesApplied: 11,
+                writerEpoch: epoch,
+            });
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds: 0.04,
+                loopWraps: 3,
+                batchesApplied: 10,
+                writerEpoch: epoch,
+            });
+            expect(batches).toHaveLength(before + 1);
+            expect(maxActiveApplies).toBe(1);
+            expect(pass.pendingBusy?.input.positionSeconds).toBe(0.03);
+            expect(pass.pendingBusy?.input.loopWraps).toBe(2);
+            expect(pass.pendingBusy?.input.batchesApplied).toBe(11);
+            if (outcome === 'thrown') {
+                reject(new Error('held backend fault'));
+            } else if (outcome === 'not-applied') {
+                settle({ acceptance: 'rejected', application: 'not-applied', reason: 'test refusal' });
+            } else {
+                settle(applied);
+            }
+            await predecessor;
+            await nativeLiveGraphSession.pending;
+            expect(batches).toHaveLength(before + 2);
+            expect(maxActiveApplies).toBe(1);
+            expect(pass.pendingBusy).toBeNull();
+            expect(pass.lastLoopWraps).toBe(2);
+            expect(batches.at(-1)!.commands).toContainEqual({
+                kind: 'write-device-parameter',
+                target: {
+                    kind: 'device-parameter',
+                    trackId: STRIP_ID,
+                    deviceId: FIRST_PLUGIN.id,
+                    parameterId: '7',
+                },
+                write: { shape: 'hold', time: 0.03 },
+            });
+            expect(batches.at(-1)!.commands).toContainEqual({
+                kind: 'write-device-parameter',
+                target: {
+                    kind: 'device-parameter',
+                    trackId: STRIP_ID,
+                    deviceId: FIRST_PLUGIN.id,
+                    parameterId: '7',
+                },
+                write: { shape: 'step', time: 0.03, value: 0.7 },
+            });
+            expect(pass.inputs.acceptedRevision).toBe(pass.inputs.revision);
+        }
+    );
+
+    it.each(['disarm', 'replace-backend'] as const)(
+        'discards a busy request after %s changes its authority',
+        async (transition) => {
+            const lane = hostedLane(FIRST_PLUGIN.id);
+            let holdNext = false;
+            let settle!: (result: AudioGraphApplyResult) => void;
+            let observed!: () => void;
+            const sent = new Promise<void>((resolve) => {
+                observed = resolve;
+            });
+            const batches = await playingWith([lane], async () => {
+                if (holdNext) {
+                    holdNext = false;
+                    observed();
+                    return new Promise((resolve) => {
+                        settle = resolve;
+                    });
+                }
+                return applied;
+            });
+            const pass = nativeLiveAutomationWriter.pass!;
+            const epoch = nativeLiveAutomationWriter.epoch;
+            automationStore.set({
+                lanes: [{ ...lane, points: lane.points.map((point) => ({ ...point, value: 0.4 })) }],
+            });
+            holdNext = true;
+            const before = batches.length;
+            const predecessor = pump();
+            await sent;
+            automationStore.set({ lanes: [] });
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds: 0.03,
+                loopWraps: 0,
+                batchesApplied: 0,
+                writerEpoch: epoch,
+            });
+            expect(pass.pendingBusy).not.toBeNull();
+            if (transition === 'disarm') {
+                disarmNativeLiveAutomationWriter();
+            } else {
+                nativeLiveGraphSession.backend = { ...nativeLiveGraphSession.backend!, backendId: 'replacement' };
+            }
+            settle(applied);
+            await predecessor;
+            await nativeLiveGraphSession.pending;
+            expect(batches).toHaveLength(before + 1);
+            expect(pass.pendingBusy).toBeNull();
+            expect(nativeLiveAutomationWriter.pass).toBe(transition === 'disarm' ? null : pass);
+            expect(nativeLiveAutomationWriter.inFlightEpoch).toBeNull();
+            expect(pass.inputs.acceptedRevision).not.toBe(pass.inputs.revision);
+        }
+    );
+
     it('cancels only edited/removed A and preserves B on the same effect and the unrelated strip cursor/stamps', async () => {
         offlineDeviceParameterLawState.acceptsExternalPluginParameter = (_instance, id) => id === '7' || id === '4';
         const a = {
@@ -825,7 +1137,7 @@ describe('live store edits on the existing writer pass', () => {
         const sent = new Promise<void>((resolve) => {
             observed = resolve;
         });
-        await playingWith([lane], async () => {
+        const batches = await playingWith([lane], async () => {
             if (pending) {
                 observed();
                 return new Promise((resolve) => {
@@ -842,6 +1154,14 @@ describe('live store edits on the existing writer pass', () => {
         automationStore.set({ lanes: [{ ...lane, points: lane.points.map((point) => ({ ...point, value: 0.3 })) }] });
         const flight = pump();
         await sent;
+        automationStore.set({ lanes: [{ ...lane, points: lane.points.map((point) => ({ ...point, value: 0.35 })) }] });
+        await pumpNativeLiveAutomationWriter({
+            positionSeconds: 0.03,
+            loopWraps: 0,
+            batchesApplied: 0,
+            writerEpoch: nativeLiveAutomationWriter.epoch,
+        });
+        expect(outgoing.pendingBusy).not.toBeNull();
         disarmNativeLiveAutomationWriter();
         const retiredRevision = outgoing.inputs.revision;
         automationStore.set({ lanes: [{ ...lane, points: lane.points.map((point) => ({ ...point, value: 0.4 })) }] });
@@ -860,8 +1180,20 @@ describe('live store edits on the existing writer pass', () => {
         await flight;
         await vi.waitFor(() => expect(nativeLiveAutomationWriter.inFlightEpoch).toBeNull());
         expect(nativeLiveAutomationWriter.pass).toBe(successor);
+        expect(outgoing.pendingBusy).toBeNull();
         expect(outgoing.inputs.acceptedRevision).toBe(acceptedRevision);
         expect(oldSlot.cursor).toBe(cursor);
+        expect(
+            batches
+                .slice(1)
+                .flatMap((batch) => batch.commands)
+                .some(
+                    (command) =>
+                        command.kind === 'write-device-parameter' &&
+                        command.write.shape === 'step' &&
+                        command.write.value === 0.35
+                )
+        ).toBe(false);
         expect(successor.targets[0]!.writes.some((write) => write.shape === 'step' && write.value === 0.4)).toBe(true);
         expect(successor.targets[0]!.cursor).toBeGreaterThan(0);
     });
