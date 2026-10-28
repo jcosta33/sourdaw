@@ -1,0 +1,18 @@
+.agents/skills/review-stances/git-notes-preimage.md
+  h_beb54bf43b47b7 1-12
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 439-441,10464-10466,10533-10535,10615-10617,10676-10678,10736-10738,11196-11198,11756-11758,11814-11816,12436-12503,12504-12506,12507,12508-12510,12511-12516,12517-12519,12520-12530,12531,12532-12538
+scripts/deliverPullRequest.ts
+  h_beb54bf43b47b7 3642-3648,3649-3651,3652-3671
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3a95761dd6252b32b9718d1ce96c7d052e792f0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
