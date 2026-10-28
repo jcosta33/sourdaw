@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { KeyboardMusic, RefreshCw } from 'lucide-react';
 
@@ -23,16 +23,21 @@ const defaultWebMidiState = {
 export const MidiDevicePicker = (): ReactElement => {
     const state = useStore(webMidiStore, defaultWebMidiState);
     const [initialised, setInitialised] = useState(false);
+    const attemptedInitialisation = useRef(false);
 
     useEffect(() => {
-        if (!state.isSupported) {
+        if (!state.isSupported || attemptedInitialisation.current) {
+            return;
+        }
+        attemptedInitialisation.current = true;
+        if (state.enumerationError != null) {
             return;
         }
         void initWebMidi().then(() => {
             setInitialised(true);
             return null;
         });
-    }, [state.isSupported]);
+    }, [state.isSupported, state.enumerationError]);
 
     if (!state.isSupported) {
         return (

@@ -110,7 +110,7 @@ describe('Web MIDI capability snapshot at repository startup', () => {
         expect(await initWebMidi({ onMidiMessage: vi.fn() })).toBe(false);
         expect(requestMIDIAccess).toHaveBeenCalledOnce();
         expect(webMidiStore.value).toEqual(
-            expect.objectContaining({ isSupported: false, enumerationError: 'Permission denied' })
+            expect.objectContaining({ isSupported: true, enumerationError: 'Permission denied' })
         );
     });
 

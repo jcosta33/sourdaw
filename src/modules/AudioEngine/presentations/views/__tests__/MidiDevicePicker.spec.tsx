@@ -116,11 +116,7 @@ describe('MidiDevicePicker', () => {
         expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
         expect(screen.queryByText('MIDI not supported in this browser')).not.toBeInTheDocument();
 
-        await waitFor(() => {
-            expect(mockInitWebMidi).toHaveBeenCalled();
-        });
-
-        mockInitWebMidi.mockClear();
+        expect(mockInitWebMidi).not.toHaveBeenCalled();
         fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
         expect(mockInitWebMidi).toHaveBeenCalledTimes(1);
     });

@@ -424,3 +424,9 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### MIDI API present but permission refused
+
+The earliest observed unsupported-state guard and failure transition are in `8b0050b90f`; the picker that hides refresh when unsupported appears in `4f410257b2`. No associated introducing PR or historical reviewer stance was established. Capability to request access and permission to enumerate are distinct: treating a denial as absent capability removes the recovery route.
+
+Probe a real browser-capability snapshot with the API present and its first request denied. Require a truthful error, supported state, accessible Refresh and footer error; remount without another request, then grant access and activate Refresh. Require exactly one new request, actual enumerated and selected input, and cleared error in both views. Pair this with an absent-API browser that makes no request and remains unsupported, plus native fallback and stale-generation controls. These checks do not establish physical-controller acceptance.
