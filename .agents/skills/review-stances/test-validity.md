@@ -6,6 +6,27 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — action-call spies missed extra project writes (refinement accounting introduced by PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write accounting
+that inferred safety from barrel calls, revisions and Undo groups. Real chat commits bypassed those
+barrel spies, so a matching commit plus an unrecorded change to another track, the target gain or
+the target pan could still score zero unintended mutations (#5649). An extra barrel call could also
+borrow the commit's identical action signature. The original single-turn spy counter came from
+PR #4348 (`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`), before this refinement slice.
+Historical private review prompts and tiers are not established.
+
+Compare materialized project truth before and after every turn with an independent field/value
+oracle, preserving CRDT scalar types. Inject each extra write through the actual project store,
+outside the barrel and history, beside a valid commit; each must increase the unintended-mutation
+score. Include a duplicate barrel action, an unrelated entity, a wrong value on an authorized field,
+and typed values whose distinctions JSON serialization would erase. Removing the project-state
+comparison must fail the named acceptance cases while an ordinary intended commit still passes.
+Also count prior barrel writes that restore their original value, and inject an outside-barrel write
+beside Undo; removing only the Undo comparison must fail that case. Observe settled CRDT
+transitions as well as final truth: an unauthorized persisted write followed by restoration must
+fail beside planning, prior and follow-up commits, and Undo.
+
 ### 2026-10-27 — response fixtures hid an invalid Actor identity selection (introduced by PR #5705)
 
 PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) added historical-stack admission's
