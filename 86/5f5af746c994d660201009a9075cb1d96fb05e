@@ -1,0 +1,22 @@
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  h_beb54bf43b47b7 153,884,887-888,890,902,904
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  h_beb54bf43b47b7 1,6,29-31,110-133
+src/modules/Toaster/useCases/__tests__/exportPatternToTimeline.integration.spec.ts
+  h_beb54bf43b47b7 153-175
+src/modules/Toaster/useCases/__tests__/exportPatternToTimeline.spec.ts
+  h_beb54bf43b47b7 177-198
+src/modules/Toaster/useCases/exportPatternToTimeline.ts
+  h_beb54bf43b47b7 14-32,264,267-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "865f5af746c994d660201009a9075cb1d96fb05e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
