@@ -36,6 +36,19 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 
 ## Lessons from escapes
 
+### 2026-10-28 — entry recovery must not navigate an already running document (#5595)
+
+Commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf` left startup without independent
+entry-failure handling; no introducing PR or private review history is established. A repair that
+retries every import failure would cross a different safety boundary: parallel bootstrap can
+still be pending while a project or recording is live. Establish entry-body start before any
+composition or application effects, prove its static dependency closure is pure, then deliver a
+late entry-targeted error with a live project and recording. Require unchanged document lifetime,
+runtime and visible project. A capability marker's absence is insufficient admission. Fail an
+actual child entry separately and preserve the host's time origin; share one per-tab retry budget
+across host and child, never replenishing it on successful startup. Storage failure requires
+manual recovery. Removing the phase fence or shared budget must fail the corresponding probe.
+
 ### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
 
 Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:

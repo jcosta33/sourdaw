@@ -1,5 +1,19 @@
 # Lesson library: project integrity
 
+## 2026-10-28 — a recovered entry does not itself prove project and Undo preservation (#5595)
+
+The empty-root external entry dates to commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`;
+no associated introducing PR or private review history is established. The historical gap is a
+missing unavailable-entry probe, not proof that a reload is safe after application startup.
+If recovery navigates, exercise a real same-tab saved project with future-side Undo through the
+actual failed entry and successful successor. Require the same project identity, exact content,
+history witnesses, settled session mirror and successful subsequent Undo/Redo; a fresh blank
+project or mere mirror existence cannot carry that claim. Keep unrelated storage and project
+writes out of the retry controller. Unavailable or corrupt retry-budget storage must fail closed
+to manual recovery, with one budget shared across host and child and no reset on entry success.
+Independently deliver a late entry-targeted error to a dirty running project and require no
+navigation, replacement or history consumption.
+
 ## 2026-10-27 — single-entry priors could not distinguish partial or wrong-group Undo (PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) used single-entry prior groups and

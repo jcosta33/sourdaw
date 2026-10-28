@@ -1366,6 +1366,41 @@
             ]
         },
         {
+            "id": "entry-startup-recovery",
+            "kind": "project-source",
+            "retention": "keep-with-obligations",
+            "owner": "OS-10",
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "public/entryLoadRecovery.js"
+            ],
+            "sources": [
+                "public/entryLoadRecovery.js"
+            ],
+            "revisions": [
+                "not-applicable:direct-project-source"
+            ],
+            "digests": [
+                "sha256:49cfd1ddc956b6b08931d1ebaf2e9b41d15eacf3eadc0f1d4e9ec6fdc0ff83dc:public/entryLoadRecovery.js"
+            ],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "browser and desktop entry startup recovery"
+            ],
+            "evidence": [
+                "Directly authored classic browser source; no generator, vendored source, or third-party code."
+            ],
+            "obligations": [
+                "Ship the project LICENSE and NOTICE with every distribution."
+            ]
+        },
+        {
             "id": "audio-worklet-sources",
             "kind": "project-source",
             "retention": "keep-with-obligations",
