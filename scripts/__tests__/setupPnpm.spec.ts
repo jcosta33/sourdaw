@@ -347,6 +347,29 @@ function nodeFixture() {
 }
 
 describe('selected Node package-manager precedence', () => {
+    it('restricts CLI preparation to CI and uses only the selected temporary Node', () => {
+        const input = nodeFixture();
+        input.link('pnpm');
+        input.link('pnpx');
+        const preload = join(input.root, 'selected-node.mjs');
+        writeFileSync(preload, `Object.defineProperty(process,'execPath',{value:${JSON.stringify(input.node)}});\n`);
+        const invoke = (ci: string) =>
+            spawnSync(
+                process.execPath,
+                ['--import', preload, join(repository, 'scripts/setupPnpm.ts'), '--prepare-node'],
+                { env: { ...process.env, GITHUB_ACTIONS: ci }, encoding: 'utf8' }
+            );
+        const outside = invoke('false');
+        expect(outside.status).not.toBe(0);
+        expect(outside.stderr).toContain('restricted to the CI action');
+        expect(existsSync(join(input.bin, 'pnpm'))).toBe(true);
+        const inside = invoke('true');
+        expect(inside.status, inside.stderr).toBe(0);
+        expect(existsSync(join(input.bin, 'pnpm'))).toBe(false);
+        expect(existsSync(join(input.bin, 'pnpx'))).toBe(false);
+        expect(readFileSync(join(input.bin, 'npm'), 'utf8')).toBe('preserve npm');
+    });
+
     it('does nothing when the selected Node has no package-manager aliases', () => {
         const input = nodeFixture();
         expect(preparePnpmNode(input.node)).toEqual([]);
