@@ -1,0 +1,18 @@
+src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx
+  h_beb54bf43b47b7 66-70
+src/modules/AudioEngine/presentations/views/__tests__/MidiDevicePicker.spec.tsx
+  h_beb54bf43b47b7 184-185
+src/modules/WorkspaceShell/presentations/views/__tests__/midiPermissionRecovery.integration.spec.tsx
+  h_beb54bf43b47b7 76-79,92-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5eb3291be031e304fca9c05e18a68981a21cd8c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
