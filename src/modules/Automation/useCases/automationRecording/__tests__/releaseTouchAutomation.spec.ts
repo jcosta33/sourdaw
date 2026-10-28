@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { captureTouchAutomationRecordingAuthority } from '../captureTouchAutomationRecordingAuthority';
 import { releaseTouchAutomation } from '../releaseTouchAutomation';
 
 const { activeRecording, touchActive, flushPendingPoints } = vi.hoisted(() => {
@@ -61,6 +62,41 @@ describe('releaseTouchAutomation', () => {
 
         expect(activeRecording.get('t1::gain')?.lastValue).toBeNull();
     });
+
+    it.each(['owned', 'successor', 'ownerless', 'absent'] as const)(
+        'releases only its latest recorded producer when the session is %s',
+        (producer) => {
+            const authority = captureTouchAutomationRecordingAuthority('t1', 'gain');
+            let recordingOwner: symbol | undefined;
+            if (producer === 'owned') {
+                recordingOwner = authority.owner;
+            } else if (producer === 'successor') {
+                recordingOwner = Symbol('new gesture');
+            }
+            if (producer !== 'absent') {
+                activeRecording.set('t1::gain', {
+                    parameterId: 'gain',
+                    trackId: 't1',
+                    startBeat: 0,
+                    lastValue: 0.5,
+                    recordingOwner,
+                });
+                touchActive.add('t1::gain');
+            }
+
+            authority.release();
+
+            expect(flushPendingPoints).toHaveBeenCalledTimes(producer === 'owned' ? 1 : 0);
+            expect(touchActive.has('t1::gain')).toBe(producer === 'successor' || producer === 'ownerless');
+            let expectedLastValue: number | null | undefined = 0.5;
+            if (producer === 'owned') {
+                expectedLastValue = null;
+            } else if (producer === 'absent') {
+                expectedLastValue = undefined;
+            }
+            expect(activeRecording.get('t1::gain')?.lastValue).toBe(expectedLastValue);
+        }
+    );
 
     it('leaves an absent session untouched (no throw) on release', () => {
         expect(() => releaseTouchAutomation('ghost', 'gain')).not.toThrow();
