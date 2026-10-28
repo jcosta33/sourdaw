@@ -1,0 +1,18 @@
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  h_beb54bf43b47b7 1-2
+src/modules/Arrangement/useCases/comping/prepareMidiTakeSourceCapture.ts
+  h_beb54bf43b47b7 1
+src/modules/Arrangement/useCases/comping/relocateMidiTakeSource.ts
+  h_beb54bf43b47b7 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9494e27f56946ba3796e34147392192c2313d85",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
