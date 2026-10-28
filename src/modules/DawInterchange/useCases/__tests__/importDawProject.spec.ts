@@ -75,12 +75,15 @@ function setupHappyPath() {
     mocks.applyImportedProjectData.mockResolvedValue(true);
 }
 
-async function setupRealImport(): Promise<void> {
-    const { parseDawProject } = await vi.importActual<typeof import('../parseDawProject')>('../parseDawProject');
-    const { mapToProjectData } = await vi.importActual<typeof import('../mapToProjectData')>('../mapToProjectData');
+const [{ parseDawProject: realParser }, { mapToProjectData: realMapper }] = await Promise.all([
+    vi.importActual<typeof import('../parseDawProject')>('../parseDawProject'),
+    vi.importActual<typeof import('../mapToProjectData')>('../mapToProjectData'),
+]);
+
+function setupRealImport(): void {
     mocks.runProjectLoadTransaction.mockReturnValue(mockTransaction);
-    mocks.parseDawProject.mockImplementation(parseDawProject);
-    mocks.mapToProjectData.mockImplementation(mapToProjectData);
+    mocks.parseDawProject.mockImplementation(realParser);
+    mocks.mapToProjectData.mockImplementation(realMapper);
     mocks.decodeDawProjectAssets.mockResolvedValue({ audioBuffers: {}, bufferIdsByPath: new Map(), failedPaths: [] });
     mocks.applyImportedProjectData.mockResolvedValue(true);
 }
@@ -255,14 +258,14 @@ describe('importDawProject', () => {
 
     it('returns every named unsupported device and automation warning from real DAWproject bytes', async () => {
         vi.clearAllMocks();
-        await setupRealImport();
+        setupRealImport();
 
         const projectXml = `<?xml version="1.0"?><Project version="1.0">
             <Application name="Fixture DAW" version="1"/>
             <Structure>
                 <Track id="lead" name="Lead" contentType="notes">
                     <Channel id="lead-channel"><Devices>
-                        <Vst3Plugin id="verb" deviceName="Nebula Verb" deviceID="example.verb" deviceRole="audioFX"/>
+                        <Vst3Plugin id="verb" deviceName="Nebula Verb" deviceID="example.verb" deviceRole="audioFX"><Parameters><RealParameter unit="linear" value="0.2"/></Parameters></Vst3Plugin>
                         <Vst3Plugin id="delay" deviceName="Orbit Delay" deviceID="example.delay" deviceRole="audioFX"/>
                     </Devices></Channel>
                 </Track>
@@ -293,6 +296,7 @@ describe('importDawProject', () => {
                     sourceType: 'Vst3Plugin',
                     context: 'Lead',
                     handling: 'substituted',
+                    details: ['settings'],
                 },
                 {
                     kind: 'unsupported-device',
@@ -318,7 +322,12 @@ describe('importDawProject', () => {
             ])
         );
         expect(mocks.notifyUser.mock.calls.map(([message, level]) => [message, level])).toEqual([
-            [expect.stringContaining('warning 1/3: Vst3Plugin "Nebula Verb" on "Lead"'), 'warning'],
+            [
+                expect.stringContaining(
+                    'warning 1/3: Vst3Plugin "Nebula Verb" on "Lead" was replaced with a gain device; settings not imported'
+                ),
+                'warning',
+            ],
             [expect.stringContaining('warning 2/3: Vst3Plugin "Orbit Delay" on "Lead"'), 'warning'],
             [expect.stringContaining('warning 3/3: Points "Cutoff automation" on "Lead"'), 'warning'],
             [expect.stringContaining('Warnings fixture'), 'success'],
@@ -327,7 +336,7 @@ describe('importDawProject', () => {
 
     it('reports a direct schema-valid video once from real DAWproject bytes', async () => {
         vi.clearAllMocks();
-        await setupRealImport();
+        setupRealImport();
         const projectXml = `<Project version="1.0"><Application name="Fixture" version="1.0"/>
             <Structure><Track id="t0" name="Picture" contentType="audio"/></Structure>
             <Arrangement><Lanes timeUnit="beats"><Video track="t0" duration="8" channels="2" sampleRate="48000">
@@ -361,7 +370,7 @@ describe('importDawProject', () => {
 
     it('returns source-ordered direct leaf omissions from real bytes and notifies after a successful apply', async () => {
         vi.clearAllMocks();
-        await setupRealImport();
+        setupRealImport();
         const projectXml = `<Project version="1.0"><Application name="Fixture" version="1.0"/>
             <Transport><Tempo value="120"/></Transport>
             <Structure><Track id="keys" name="Keys" contentType="notes"/>
@@ -418,7 +427,7 @@ describe('importDawProject', () => {
 
     it('imports decimal one-pass Notes leaves from real bytes and warns only for the real repeat', async () => {
         vi.clearAllMocks();
-        await setupRealImport();
+        setupRealImport();
         const projectXml = `<Project version="1.0"><Application name="Fixture" version="1.0"/>
             <Transport><Tempo value="120"/></Transport>
             <Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
@@ -464,7 +473,7 @@ describe('importDawProject', () => {
 
     it('reports local-tempo loop and warp omissions from real bytes after applying supported siblings', async () => {
         vi.clearAllMocks();
-        await setupRealImport();
+        setupRealImport();
         mocks.decodeDawProjectAssets.mockResolvedValue({
             audioBuffers: {},
             bufferIdsByPath: new Map([
@@ -515,7 +524,7 @@ describe('importDawProject', () => {
 
     it('imports cropped identity warp windows from real bytes and names only the played transforms', async () => {
         vi.clearAllMocks();
-        await setupRealImport();
+        setupRealImport();
         mocks.decodeDawProjectAssets.mockResolvedValue({
             audioBuffers: {},
             bufferIdsByPath: new Map([
@@ -588,10 +597,10 @@ describe('importDawProject', () => {
 
     it('keeps a supported DAWproject import free of warning notices', async () => {
         vi.clearAllMocks();
-        await setupRealImport();
+        setupRealImport();
         const projectXml = `<?xml version="1.0"?><Project version="1.0">
             <Structure><Track id="lead" name="Lead" contentType="notes">
-                <Channel><Devices><Device deviceRole="builtin-synth"/></Devices></Channel>
+                <Channel><Devices><Device deviceRole="builtin-synth"><Parameters/><Enabled value="true"/></Device></Devices></Channel>
             </Track></Structure>
             <Arrangement><Lanes><Clips track="lead"><Clip name="Phrase" time="0" duration="2">
                 <Notes><Note key="60" time="0" duration="1"/></Notes>
@@ -610,6 +619,221 @@ describe('importDawProject', () => {
             expect.stringContaining('Imported supported.dawproject'),
             'success'
         );
+    });
+
+    it('reports named omitted elements and partial retained content from real project bytes', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        mocks.decodeDawProjectAssets.mockResolvedValue({
+            audioBuffers: {},
+            bufferIdsByPath: new Map([['take.wav', 'take-buffer']]),
+            failedPaths: [],
+        });
+        const projectXml = `<Project version="1.0"><Application name="Fixture" version="1"/>
+            <Transport><Tempo value="120"/></Transport><Structure>
+                <Track id="audio" name="Audio" contentType="audio"><Channel id="channel">
+                    <Sends><Send id="send" name="Verb send" destination="return"><Volume value="0.5"/></Send></Sends>
+                </Channel></Track><Channel id="return" name="Reverb return" role="effect"/>
+            </Structure><Arrangement><Lanes><Points target="tempo"><RealPoint time="4" value="60"/></Points>
+                <Clips track="audio"><Clip id="take" name="Take" time="8" duration="4" contentTimeUnit="seconds" playStart="2" fadeInTime="1">
+                    <Audio file="take.wav"/></Clip></Clips>
+            </Lanes></Arrangement><Scenes><Scene id="scene" name="Chorus"><ClipSlot><Clip id="phrase" name="Scene phrase" time="0" duration="2"><Notes><Note time="0" duration="1" key="60" channel="0"/></Notes></Clip></ClipSlot></Scene></Scenes></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+
+        const result = await importDawProject({ buffer: new Uint8Array(zipped).buffer, fileName: 'losses.dawproject' });
+
+        expect(result.ok).toBe(true);
+        expect(
+            result.warnings.map(({ sourceType, sourceId, name, context, handling, details }) => ({
+                sourceType,
+                sourceId,
+                name,
+                context,
+                handling,
+                details,
+            }))
+        ).toEqual([
+            {
+                sourceType: 'Send',
+                sourceId: 'send',
+                name: 'Verb send',
+                context: 'Audio',
+                handling: 'dropped',
+                details: undefined,
+            },
+            {
+                sourceType: 'Channel',
+                sourceId: 'return',
+                name: 'Reverb return',
+                context: 'Structure',
+                handling: 'dropped',
+                details: undefined,
+            },
+            {
+                sourceType: 'Clip',
+                sourceId: 'take',
+                name: 'Take',
+                context: 'Audio',
+                handling: 'partial',
+                details: ['fade', 'source offset'],
+            },
+            {
+                sourceType: 'Scene',
+                sourceId: 'scene',
+                name: 'Chorus',
+                context: 'Scenes',
+                handling: 'dropped',
+                details: undefined,
+            },
+            {
+                sourceType: 'Clip',
+                sourceId: 'phrase',
+                name: 'Scene phrase',
+                context: 'Chorus',
+                handling: 'dropped',
+                details: undefined,
+            },
+        ]);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(
+            applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Audio')?.clips
+        ).toMatchObject([{ name: 'Take', sampleStartBeat: 4 }]);
+        expect(mocks.notifyUser.mock.calls).toEqual([
+            [expect.stringContaining('Send "Verb send" on "Audio" was not imported'), 'warning'],
+            [expect.stringContaining('Channel "Reverb return" on "Structure" was not imported'), 'warning'],
+            [expect.stringContaining('Clip "Take" on "Audio" was partially imported: fade, source offset'), 'warning'],
+            [expect.stringContaining('Scene "Chorus" on "Scenes" was not imported'), 'warning'],
+            [expect.stringContaining('Clip "Scene phrase" on "Chorus" was not imported'), 'warning'],
+            [expect.stringContaining('Imported losses.dawproject'), 'success'],
+        ]);
+    });
+
+    it('keeps playable notes while reporting channel and unconsumed timeline losses from real bytes', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        const projectXml = `<Project version="1.0"><Application name="Fixture" version="1"/><Structure>
+            <Track id="keys" name="Keys" contentType="notes"><Channel id="keys-channel" name="Mixer" role="vca" solo="true" destination="other"/></Track>
+            </Structure><Arrangement><Lanes track="keys"><Notes id="direct" name="Direct"><Note key="60"/></Notes>
+                <ClipSlot><Clip id="slot" name="Slot" time="0" duration="1"><Notes><Note key="62"/></Notes></Clip></ClipSlot>
+                <Clips><Clip id="reference" name="Reference" time="0" duration="1" reference="source"/>
+                    <Clip name="Playable" time="1" duration="2"><Notes><Note key="64" time="0" duration="1" channel="2" rel="0.3"/></Notes></Clip>
+                </Clips></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'timelines.dawproject',
+        });
+        expect(result.ok).toBe(true);
+        expect(result.warnings).toMatchObject([
+            {
+                sourceType: 'Channel',
+                sourceId: 'keys-channel',
+                name: 'Mixer',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['channel role', 'destination', 'solo', 'channel name'],
+            },
+            { sourceType: 'Notes', sourceId: 'direct', name: 'Direct', context: 'Keys', handling: 'dropped' },
+            { sourceType: 'Clip', sourceId: 'slot', name: 'Slot', context: 'Keys', handling: 'dropped' },
+            {
+                sourceType: 'Clip',
+                sourceId: 'reference',
+                name: 'Reference',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['referenced content'],
+            },
+            {
+                sourceType: 'Note',
+                name: 'key 64',
+                context: 'Keys / Playable',
+                handling: 'partial',
+                details: ['MIDI channel', 'release velocity'],
+            },
+        ]);
+        expect(result.warnings).toHaveLength(5);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(
+            applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')?.clips
+        ).toMatchObject([{ name: 'Reference' }, { name: 'Playable' }]);
+        expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+            expect.stringContaining(
+                'Channel "Mixer" on "Keys" was partially imported: channel role, destination, solo, channel name'
+            ),
+            expect.stringContaining('Notes "Direct" on "Keys" was not imported'),
+            expect.stringContaining('Clip "Slot" on "Keys" was not imported'),
+            expect.stringContaining('Clip "Reference" on "Keys" was partially imported: referenced content'),
+            expect.stringContaining(
+                'Note "key 64" on "Keys / Playable" was partially imported: MIDI channel, release velocity'
+            ),
+            expect.stringContaining('Imported timelines.dawproject'),
+        ]);
+    });
+
+    it('reports a named clip nested in dropped direct Notes from real bytes', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        const projectXml = `<Project version="1.0"><Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes track="keys"><Notes id="outer" name="Direct phrase"><Note key="60" time="0" duration="1"><Clips><Clip id="child" name="Nested phrase" time="0" duration="1"><Notes><Note key="64"/></Notes></Clip></Clips></Note></Notes>
+            <Clips><Clip name="Playable" time="4" duration="1"><Notes><Note key="67"/></Notes></Clip></Clips></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+        const result = await importDawProject({ buffer: new Uint8Array(zipped).buffer, fileName: 'nested.dawproject' });
+        expect(result.warnings).toMatchObject([
+            { sourceType: 'Notes', sourceId: 'outer', name: 'Direct phrase', context: 'Keys', handling: 'dropped' },
+            {
+                sourceType: 'Clip',
+                sourceId: 'child',
+                name: 'Nested phrase',
+                context: 'Direct phrase',
+                handling: 'dropped',
+            },
+        ]);
+        expect(result.warnings).toHaveLength(2);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(
+            applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')?.clips
+        ).toMatchObject([{ name: 'Playable' }]);
+        expect(mocks.notifyUser.mock.calls).toEqual([
+            [expect.stringContaining('Notes "Direct phrase" on "Keys" was not imported'), 'warning'],
+            [expect.stringContaining('Clip "Nested phrase" on "Direct phrase" was not imported'), 'warning'],
+            [expect.stringContaining('Imported nested.dawproject'), 'success'],
+        ]);
+    });
+
+    it('combines missing media and a lost fade into one warning for the retained clip', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        mocks.decodeDawProjectAssets.mockResolvedValue({
+            audioBuffers: {},
+            bufferIdsByPath: new Map(),
+            failedPaths: ['missing.wav'],
+        });
+        const projectXml = `<Project version="1.0"><Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement><Lanes><Clips track="audio"><Clip id="take" name="Take" time="0" duration="4" fadeInTime="1"><Audio file="missing.wav"/></Clip></Clips></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'missing.dawproject',
+        });
+        expect(result.warnings).toMatchObject([
+            {
+                sourceId: 'take',
+                name: 'Take',
+                context: 'Audio',
+                handling: 'partial',
+                details: ['fade', 'audio could not be loaded'],
+            },
+        ]);
+        expect(result.warnings).toHaveLength(1);
+        expect(mocks.notifyUser.mock.calls).toEqual([
+            [
+                expect.stringContaining(
+                    'Clip "Take" on "Audio" was partially imported: fade, audio could not be loaded'
+                ),
+                'warning',
+            ],
+            [expect.stringContaining('Imported missing.dawproject'), 'success'],
+        ]);
     });
 
     it('does not report warnings before a refused project apply', async () => {

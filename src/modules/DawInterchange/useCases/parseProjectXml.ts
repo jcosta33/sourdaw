@@ -1,4 +1,6 @@
-import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
+import { DEFAULT_TEMPO_BPM, MAX_TEMPO, MIN_TEMPO } from '#/modules/Transport/stores';
+import { resolveTempoAtBeat, secondsBetweenBeats } from '#/modules/Transport/useCases';
+import { clampFaderGain } from '#/utils/audioLevelLaw';
 
 import {
     type DawProjectDeviceSource,
@@ -59,6 +61,9 @@ type ParseContext = {
     trackNames: Map<string, string>;
     elementOrder: Map<Element, number>;
     warnings: DawProjectImportWarning[];
+    channels: { node: XmlQuery; owner: string; kind: DawProjectParsedTrack['kind'] }[];
+    rejectedContents: { node: XmlQuery; owner: string }[];
+    secondsPositions: { node: XmlQuery; name: string; owner: string; seconds: number; beat: number; detail: string }[];
 };
 
 export type ParsedProjectXml = {
@@ -77,17 +82,124 @@ function warn(
     kind: DawProjectImportWarning['kind'],
     name: string,
     owner: string,
-    handling: DawProjectImportWarning['handling'] = 'dropped'
+    handling: DawProjectImportWarning['handling'] = 'dropped',
+    details?: string[]
 ): void {
-    context.warnings.push({
+    const sourceOrder = context.elementOrder.get(node.element) ?? -1;
+    const existing = context.warnings.find((warning) => warning.sourceOrder === sourceOrder);
+    if (existing) {
+        if (handling === 'dropped' && existing.handling !== 'dropped') {
+            existing.kind = kind;
+            existing.handling = 'dropped';
+            delete existing.details;
+        }
+        if (handling === 'partial' && existing.handling !== 'dropped') {
+            existing.details = [...new Set([...(existing.details ?? []), ...(details ?? [])])];
+        }
+        return;
+    }
+    const warning: DawProjectImportWarning = {
         kind,
         name,
         sourceType: node.element.tagName,
         sourceId: node.attr('id') ?? undefined,
         context: owner,
         handling,
-        sourceOrder: context.elementOrder.get(node.element) ?? -1,
-    });
+        sourceOrder,
+    };
+    if (details) {
+        warning.details = details;
+    }
+    context.warnings.push(warning);
+}
+
+function warnNamedDescendants(
+    context: ParseContext,
+    node: XmlQuery,
+    owner: string,
+    retainedClips = new Set<number>(),
+    contentCovered = [CLIP, NOTE, POINTS, 'TempoAutomation', 'TimeSignatureAutomation', 'Warps'].includes(
+        node.element.tagName
+    )
+): void {
+    for (const child of node.children()) {
+        const order = context.elementOrder.get(child.element) ?? -1;
+        const tag = child.element.tagName;
+        if (tag === CLIP && retainedClips.has(order)) {
+            continue;
+        }
+        const rawName = child.attr('name') ?? child.attr('deviceName');
+        const name = rawName?.trim() ? rawName : null;
+        const clip = tag === CLIP;
+        const semanticContent = [NOTES, AUDIO, 'Video', POINTS, 'Warps', MARKER].includes(tag);
+        const device = node.element.tagName === DEVICES;
+        const independent =
+            clip ||
+            device ||
+            tag === 'Send' ||
+            (tag === 'ClipSlot' &&
+                ((child.attrBool('hasStop', false) && child.child(CLIP) === null) ||
+                    Boolean(child.attr('color')) ||
+                    Boolean(child.attr('comment'))));
+        const report = name !== null || independent || (semanticContent && !contentCovered);
+        let childOwner = owner;
+        if (report) {
+            const label = name ?? tag;
+            if (!context.warnings.some((warning) => warning.sourceOrder === order)) {
+                warn(context, child, 'unsupported-element', label, owner);
+            }
+            childOwner = label;
+        }
+        warnNamedDescendants(context, child, childOwner, retainedClips, contentCovered || clip || semanticContent);
+    }
+}
+
+function warnTimelineMetadata(context: ParseContext, node: XmlQuery, owner: string, defaultName?: string): void {
+    const details: string[] = [];
+    const name = node.attr('name');
+    if (name?.trim() && name !== node.element.tagName && name !== owner && name !== defaultName) {
+        details.push('timeline name');
+    }
+    if (node.attr('color')) {
+        details.push('timeline color');
+    }
+    if (node.attr('comment')) {
+        details.push('timeline comment');
+    }
+    if (details.length > 0) {
+        warn(context, node, 'unsupported-element', name ?? node.element.tagName, owner, 'partial', details);
+    }
+}
+
+function warnParameterMetadata(context: ParseContext, node: XmlQuery | null, owner: string, units: string[]): void {
+    if (!node) {
+        return;
+    }
+    const details: string[] = [];
+    const name = node.attr('name');
+    if (name && name !== node.element.tagName) {
+        details.push('parameter name');
+    }
+    if (node.attr('color')) {
+        details.push('parameter color');
+    }
+    if (node.attr('comment')) {
+        details.push('parameter comment');
+    }
+    const unit = node.attr('unit');
+    if (unit && !units.includes(unit)) {
+        details.push('parameter unit');
+    }
+    const value = node.attrNumber('value', 0);
+    if (node.element.tagName === VOLUME && clampFaderGain(value) !== value) {
+        details.push('volume range');
+    }
+    if (node.element.tagName === PAN && (value < 0 || value > 1)) {
+        details.push('pan range');
+    }
+    if (details.length > 0) {
+        warn(context, node, 'unsupported-element', name ?? node.element.tagName, owner, 'partial', details);
+    }
 }
 
 const DEFAULT_COLOR_PALETTE = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
@@ -184,6 +296,13 @@ function readClipTiming(
     return { startBeat, endBeat, contentUnit, playStartBeat, visibleDurationBeat, visibleEndBeat, tempo: contentTempo };
 }
 
+function consumerTempo(tempo: number): number {
+    if (Number.isFinite(tempo) && tempo >= MIN_TEMPO && tempo <= MAX_TEMPO) {
+        return tempo;
+    }
+    return DEFAULT_TEMPO_BPM;
+}
+
 function parseTransport(transport: XmlQuery | null): {
     tempo: number;
     numerator: number;
@@ -230,9 +349,28 @@ function classifyTrackKind(track: XmlQuery, context: ParseContext, trackName: st
     return 'audio';
 }
 
+function hasDeviceSettings(device: XmlQuery): boolean {
+    for (const child of device.children()) {
+        if (child.element.tagName === 'Enabled') {
+            if (!child.attrBool('value', true)) {
+                return true;
+            }
+        } else if (child.element.tagName === 'Parameters') {
+            if (child.children().length > 0) {
+                return true;
+            }
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
 function parseChannelInfo(
     channel: XmlQuery | null,
-    context: ParseContext
+    context: ParseContext,
+    trackName: string,
+    kind: DawProjectParsedTrack['kind']
 ): {
     volume: number;
     pan: number;
@@ -243,6 +381,10 @@ function parseChannelInfo(
 } {
     if (!channel) {
         return { volume: 0.8, pan: 0, mute: false, solo: false, deviceTypes: [], deviceSources: [] };
+    }
+    context.channels.push({ node: channel, owner: trackName, kind });
+    for (const send of channel.child('Sends')?.children('Send') ?? []) {
+        warn(context, send, 'unsupported-element', send.attr('name') ?? 'Send', trackName);
     }
     const volumeNode = channel.child(VOLUME);
     const panNode = channel.child(PAN);
@@ -265,7 +407,7 @@ function parseChannelInfo(
                 sourceType: device.element.tagName,
                 sourceId: device.attr('id') ?? device.attr('deviceID') ?? undefined,
                 sourceOrder: context.elementOrder.get(device.element) ?? -1,
-                hasSettings: device.children().length > 0,
+                hasSettings: hasDeviceSettings(device),
             });
         }
     }
@@ -314,6 +456,33 @@ function parseNotesNode(
         if (!isValidMidiKey(key) || !timing) {
             warn(context, note, 'invalid-note', note.attr('name') ?? `key ${note.attr('key') ?? 'missing'}`, clipName);
             continue;
+        }
+        const details: string[] = [];
+        if (note.attrNumber('channel', 0) !== 0) {
+            details.push('MIDI channel');
+        }
+        if (note.attr('rel') !== null) {
+            details.push('release velocity');
+        }
+        if (note.attr('name') !== null) {
+            details.push('note name');
+        }
+        if (note.children().length > 0) {
+            details.push('note expression');
+        }
+        if (details.length) {
+            warn(
+                context,
+                note,
+                'unsupported-element',
+                note.attr('name') ?? `key ${String(key)}`,
+                clipName,
+                'partial',
+                details
+            );
+        }
+        if (note.children().length > 0) {
+            warnNamedDescendants(context, note, note.attr('name') ?? `key ${String(key)}`);
         }
         const velRaw = note.attrNumber('vel', 0.787);
         result.push({
@@ -477,7 +646,8 @@ function parseClip(
     context: ParseContext,
     index: number,
     trackName: string,
-    muted: boolean
+    muted: boolean,
+    sourceOffsetInexact: boolean
 ): DawProjectParsedClip | null {
     const { startBeat, endBeat, contentUnit, playStartBeat, tempo } = timing;
     const name = clip.attr('name') ?? `Clip ${String(index + 1)}`;
@@ -493,17 +663,75 @@ function parseClip(
         warn(context, clip, 'unsupported-clip', name, trackName);
         return null;
     }
+    const partialDetails: string[] = [];
+    if (clip.attr('reference') !== null) {
+        partialDetails.push('referenced content');
+    }
+    if (clip.attrNumber('fadeInTime', 0) !== 0 || clip.attrNumber('fadeOutTime', 0) !== 0) {
+        partialDetails.push('fade');
+    }
+    if (sourceOffsetInexact) {
+        partialDetails.push('source offset');
+    }
+    if (clip.attr('color')) {
+        partialDetails.push('clip color');
+    }
+    if (clip.attr('comment')) {
+        partialDetails.push('clip comment');
+    }
+    const audioNode = clip.child(AUDIO) ?? clip.child('Warps')?.child(AUDIO);
+    if (audioNode?.child(FILE)?.attrBool('external', false)) {
+        partialDetails.push('external audio reference');
+    }
     // `playStart` is where the clip starts reading its media, in content time.
     // Kept whenever it differs from the default 0 — negative is the slip of a
     // clip left of its media start.
     const playStart = playStartBeat !== 0 ? { playStartBeat } : {};
 
     const notesContent = clipNotesContent(clip);
+    const materialContent =
+        Boolean(resolveAudioAssetPath(clip)) ||
+        clip.attr('reference') !== null ||
+        (notesContent !== null && notesContent.notes.children(NOTE).length > 0);
+    if (
+        clip.attr('duration') === null &&
+        clip.attr('playStop') === null &&
+        clip.element.getElementsByTagName(CLIP).length === 0 &&
+        materialContent &&
+        endBeat < startBeat + 0.25
+    ) {
+        partialDetails.push('clip extent defaulted');
+    }
     if (!notesContent && clipNotesContents(clip).length > 1) {
         warn(context, clip, 'unsupported-clip', name, trackName);
         return null;
     }
     if (notesContent) {
+        const notesName = notesContent.notes.attr('name');
+        const notesDetails: string[] = [];
+        if (notesName && notesName !== name) {
+            notesDetails.push('timeline name');
+        }
+        if (notesContent.notes.attr('color')) {
+            notesDetails.push('timeline color');
+        }
+        if (notesContent.notes.attr('comment')) {
+            notesDetails.push('timeline comment');
+        }
+        if (notesDetails.length > 0) {
+            warn(
+                context,
+                notesContent.notes,
+                'unsupported-element',
+                notesName ?? 'Notes',
+                `${trackName} / ${name}`,
+                'partial',
+                notesDetails
+            );
+        }
+        if (partialDetails.length) {
+            warn(context, clip, 'unsupported-element', name, trackName, 'partial', partialDetails);
+        }
         return {
             id,
             ...source,
@@ -529,6 +757,27 @@ function parseClip(
 
     const assetPath = resolveAudioAssetPath(clip);
     if (assetPath) {
+        if (audioNode) {
+            warnTimelineMetadata(context, audioNode, `${trackName} / ${name}`, name);
+            if (audioNode.attr('algorithm')?.trim()) {
+                warn(
+                    context,
+                    audioNode,
+                    'unsupported-element',
+                    audioNode.attr('name') ?? 'Audio',
+                    `${trackName} / ${name}`,
+                    'partial',
+                    ['warp algorithm setting']
+                );
+            }
+        }
+        const warps = clip.child('Warps');
+        if (warps) {
+            warnTimelineMetadata(context, warps, `${trackName} / ${name}`, name);
+        }
+        if (partialDetails.length) {
+            warn(context, clip, 'unsupported-element', name, trackName, 'partial', partialDetails);
+        }
         return {
             id,
             ...source,
@@ -553,6 +802,9 @@ function parseClip(
     }
 
     if (ownerKind === 'midi') {
+        if (partialDetails.length) {
+            warn(context, clip, 'unsupported-element', name, trackName, 'partial', partialDetails);
+        }
         return {
             id,
             ...source,
@@ -595,7 +847,32 @@ function parseTrack(
     }
 
     const kind = classifyTrackKind(track, context, trackName);
-    const channelInfo = parseChannelInfo(channel, context);
+    const trackDetails: string[] = [];
+    if (track.attr('comment')) {
+        trackDetails.push('track comment');
+    }
+    if (track.attr('loaded') !== null && !track.attrBool('loaded', true)) {
+        trackDetails.push('inactive track state');
+    }
+    const rawColor = track.attr('color');
+    if (rawColor && !rawColor.startsWith('#')) {
+        trackDetails.push('track color');
+    }
+    const contentTypes = (track.attr('contentType') ?? '')
+        .trim()
+        .toLowerCase()
+        .split(/[\s,]+/)
+        .filter(Boolean);
+    if (
+        (contentTypes.includes('audio') && (contentTypes.includes('notes') || contentTypes.includes('midi'))) ||
+        contentTypes.some((type) => type === 'video' || type === 'automation' || type === 'markers')
+    ) {
+        trackDetails.push('track content type');
+    }
+    if (trackDetails.length > 0) {
+        warn(context, track, 'unsupported-element', trackName, trackName, 'partial', trackDetails);
+    }
+    const channelInfo = parseChannelInfo(channel, context, trackName, kind);
     const colorAttr = track.attr('color');
     const color = colorAttr && colorAttr.startsWith('#') ? colorAttr : pickFallbackColor(index);
 
@@ -619,6 +896,11 @@ function parseTrack(
 
 function parseStructure(structure: XmlQuery, context: ParseContext): DawProjectParsedTrack[] {
     const flat: DawProjectParsedTrack[] = [];
+    for (const channel of structure.children(CHANNEL)) {
+        const name = channel.attr('name') ?? 'Channel';
+        warn(context, channel, 'unsupported-element', name, 'Structure');
+        warnNamedDescendants(context, channel, name);
+    }
 
     type QueueEntry = { node: XmlQuery; parentId: string | null };
     const queue: QueueEntry[] = structure.children(TRACK).map((node) => ({ node, parentId: null }));
@@ -664,6 +946,15 @@ function parseTsAutomation(point: XmlQuery, unit: 'beats' | 'seconds', tempo: nu
     };
 }
 
+function timeSignatureChangeHydrates(change: DawProjectTimeSignatureChange): boolean {
+    const parts = [change.numerator, change.denominator];
+    return (
+        Number.isFinite(change.beat) &&
+        change.beat >= 0 &&
+        parts.every((part) => Number.isInteger(part) && part >= 1 && part <= 32)
+    );
+}
+
 function parseMasterTrackAutomation(
     arrangement: XmlQuery,
     context: ParseContext
@@ -681,13 +972,9 @@ function parseMasterTrackAutomation(
             (direct.element.tagName === 'TempoAutomation' || direct.element.tagName === 'TimeSignatureAutomation') &&
             direct.children().length > 0
         ) {
-            warn(
-                context,
-                direct,
-                'unsupported-automation',
-                direct.attr('name') ?? direct.element.tagName,
-                'Arrangement'
-            );
+            const name = direct.attr('name') ?? direct.element.tagName;
+            warn(context, direct, 'unsupported-automation', name, 'Arrangement');
+            warnNamedDescendants(context, direct, name);
         }
     }
 
@@ -698,7 +985,12 @@ function parseMasterTrackAutomation(
 
     const containerUnit = readTimeUnit(lanesRoot, context.defaultTimeUnit);
 
-    function walkAutomation(node: XmlQuery, unit: 'beats' | 'seconds', inheritedOwner: string | null): void {
+    function walkAutomation(
+        node: XmlQuery,
+        unit: 'beats' | 'seconds',
+        inheritedOwner: string | null,
+        contentScope = false
+    ): void {
         for (const child of node.children()) {
             const childUnit = readTimeUnit(child, unit);
             const ownerRef = child.attr('track') ?? child.attr('channel') ?? inheritedOwner;
@@ -708,6 +1000,23 @@ function parseMasterTrackAutomation(
             // shared tag map.
             if (child.element.tagName === POINTS || child.element.tagName === 'Automation') {
                 if (target === 'tempo') {
+                    warnTimelineMetadata(context, child, 'Arrangement', 'Tempo');
+                    if (
+                        contentScope &&
+                        child
+                            .children(REAL_POINT)
+                            .some((point) => parseTempoAutomation(point, childUnit, context.tempo) !== null)
+                    ) {
+                        warn(
+                            context,
+                            child,
+                            'unsupported-automation',
+                            child.attr('name') ?? 'Tempo automation',
+                            'Arrangement',
+                            'partial',
+                            ['automation scope']
+                        );
+                    }
                     for (const point of child.children(REAL_POINT)) {
                         const change = parseTempoAutomation(point, childUnit, context.tempo);
                         if (!change) {
@@ -722,6 +1031,14 @@ function parseMasterTrackAutomation(
                         }
                         if (childUnit === 'seconds') {
                             tempoPointsUseBeats = false;
+                            context.secondsPositions.push({
+                                node: point,
+                                name: child.attr('name') ?? 'Tempo automation',
+                                owner: 'Arrangement',
+                                seconds: point.attrNumber('time', 0),
+                                beat: change.beat,
+                                detail: 'tempo position',
+                            });
                         }
                         tempoChanges.push(change);
                     }
@@ -742,8 +1059,61 @@ function parseMasterTrackAutomation(
                         );
                     }
                 } else if (target === 'timeSignature') {
+                    warnTimelineMetadata(context, child, 'Arrangement', 'Time Signature');
+                    if (
+                        contentScope &&
+                        child
+                            .children(TIME_SIGNATURE_POINT)
+                            .some((point) =>
+                                timeSignatureChangeHydrates(parseTsAutomation(point, childUnit, context.tempo))
+                            )
+                    ) {
+                        warn(
+                            context,
+                            child,
+                            'unsupported-automation',
+                            child.attr('name') ?? 'Time signature automation',
+                            'Arrangement',
+                            'partial',
+                            ['automation scope']
+                        );
+                    }
                     for (const point of child.children(TIME_SIGNATURE_POINT)) {
-                        timeSignatureChanges.push(parseTsAutomation(point, childUnit, context.tempo));
+                        const change = parseTsAutomation(point, childUnit, context.tempo);
+                        timeSignatureChanges.push(change);
+                        if (!timeSignatureChangeHydrates(change)) {
+                            warn(
+                                context,
+                                point,
+                                'unsupported-automation',
+                                child.attr('name') ?? 'Time signature automation',
+                                'Arrangement'
+                            );
+                        }
+                        const malformed = ['time', 'numerator', 'denominator'].some(
+                            (attribute) => readTimingScalar(point, attribute, 0) === null
+                        );
+                        if (malformed) {
+                            warn(
+                                context,
+                                point,
+                                'unsupported-automation',
+                                child.attr('name') ?? 'Time signature automation',
+                                'Arrangement',
+                                'partial',
+                                ['time signature value']
+                            );
+                        }
+                        if (childUnit === 'seconds') {
+                            context.secondsPositions.push({
+                                node: point,
+                                name: child.attr('name') ?? 'Time signature automation',
+                                owner: 'Arrangement',
+                                seconds: point.attrNumber('time', 0),
+                                beat: change.beat,
+                                detail: 'time signature position',
+                            });
+                        }
                     }
                     for (const point of child
                         .children()
@@ -779,7 +1149,12 @@ function parseMasterTrackAutomation(
                     }
                 }
             }
-            walkAutomation(child, childUnit, ownerRef);
+            walkAutomation(
+                child,
+                childUnit,
+                ownerRef,
+                contentScope || child.element.tagName === CLIP || child.element.tagName === NOTE
+            );
         }
     }
 
@@ -796,6 +1171,10 @@ function parseArrangementClips(
 ): void {
     const trackById = new Map(tracks.map((track) => [track.id, track] as const));
     const sortedTempoChanges = [...tempoChanges].sort((a, b) => a.beat - b.beat);
+    const tempoLawChanges = tempoChanges.map((change, index) => ({
+        ...change,
+        id: `tempo-${String(index)}-${String(change.beat)}`,
+    }));
     type Scope = {
         ownerRef: string | null;
         unit: TimelineUnit;
@@ -1058,11 +1437,22 @@ function parseArrangementClips(
         return;
     }
 
-    function walkClips(node: XmlQuery, scope: Scope, clipMediaHandled = false, ancestorMuted = false): void {
+    warnTimelineMetadata(context, lanesRoot, 'Arrangement');
+
+    function walkClips(
+        node: XmlQuery,
+        scope: Scope,
+        clipMediaHandled = false,
+        ancestorMuted = false,
+        insideClip = false
+    ): void {
         let clipIndex = 0;
         for (const laneOrClips of node.children()) {
             const reference = ownerRef(laneOrClips, scope.ownerRef);
             const laneScope = timelineScope(laneOrClips, scope);
+            if (laneOrClips.element.tagName === LANES || laneOrClips.element.tagName === CLIPS) {
+                warnTimelineMetadata(context, laneOrClips, ownerName(reference, 'Arrangement'));
+            }
             const enabled = laneOrClips.attr('enable')?.trim();
             const muted =
                 ancestorMuted || (laneOrClips.element.tagName === CLIP && (enabled === 'false' || enabled === '0'));
@@ -1074,6 +1464,55 @@ function parseArrangementClips(
                         laneOrClips.element.tagName;
                     warn(context, laneOrClips, 'unsupported-clip', name, ownerName(reference, 'Arrangement'));
                 }
+                continue;
+            }
+            if (laneOrClips.element.tagName === MARKERS || laneOrClips.element.tagName === 'markers') {
+                for (const marker of laneOrClips.children(MARKER)) {
+                    warn(
+                        context,
+                        marker,
+                        'unsupported-element',
+                        marker.attr('name') ?? 'Marker',
+                        ownerName(reference, 'Arrangement')
+                    );
+                }
+                continue;
+            }
+            if (laneOrClips.element.tagName === NOTES && !insideClip) {
+                warn(
+                    context,
+                    laneOrClips,
+                    'unsupported-element',
+                    laneOrClips.attr('name') ?? 'Notes',
+                    ownerName(reference, 'Arrangement')
+                );
+                warnNamedDescendants(context, laneOrClips, laneOrClips.attr('name') ?? 'Notes');
+                continue;
+            }
+            if (
+                laneOrClips.element.tagName === 'ClipSlot' &&
+                ((laneOrClips.attrBool('hasStop', false) && laneOrClips.child(CLIP) === null) ||
+                    Boolean(laneOrClips.attr('name')?.trim()) ||
+                    Boolean(laneOrClips.attr('color')?.trim()) ||
+                    Boolean(laneOrClips.attr('comment')?.trim()))
+            ) {
+                warn(
+                    context,
+                    laneOrClips,
+                    'unsupported-element',
+                    laneOrClips.attr('name') ?? 'ClipSlot stop',
+                    ownerName(reference, 'Arrangement')
+                );
+            }
+            if (laneOrClips.element.tagName === CLIP && node.element.tagName === 'ClipSlot') {
+                warn(
+                    context,
+                    laneOrClips,
+                    'unsupported-clip',
+                    laneOrClips.attr('name') ?? 'Clip',
+                    ownerName(reference, 'Arrangement')
+                );
+                warnNamedDescendants(context, laneOrClips, laneOrClips.attr('name') ?? 'Clip');
                 continue;
             }
             if (laneOrClips.element.tagName === CLIP && node.element.tagName === CLIPS) {
@@ -1088,6 +1527,7 @@ function parseArrangementClips(
                         laneOrClips.attr('name') ?? `Clip ${String(index + 1)}`,
                         ownerName(contentOwner.reference, 'Unassigned lane')
                     );
+                    warnNamedDescendants(context, laneOrClips, laneOrClips.attr('name') ?? 'Clip');
                     continue;
                 }
                 const targetTrackId = resolveTrackId(contentOwner.reference);
@@ -1101,10 +1541,21 @@ function parseArrangementClips(
                         context,
                         index,
                         target.name,
-                        muted
+                        muted,
+                        timing.contentUnit === 'seconds' &&
+                            timing.playStartBeat !== 0 &&
+                            Boolean(resolveAudioAssetPath(laneOrClips)) &&
+                            timing.tempo !==
+                                resolveTempoAtBeat({
+                                    changes: tempoLawChanges,
+                                    beat: timing.startBeat,
+                                    defaultTempo: consumerTempo(context.tempo),
+                                })
                     );
                     if (clip) {
                         target.clips.push(clip);
+                    } else {
+                        context.rejectedContents.push({ node: laneOrClips, owner: laneOrClips.attr('name') ?? 'Clip' });
                     }
                 } else {
                     warn(
@@ -1126,14 +1577,16 @@ function parseArrangementClips(
                         tempo: timing.tempo,
                     },
                     true,
-                    muted
+                    muted,
+                    true
                 );
                 continue;
             }
             if (
                 laneOrClips.element.tagName === 'Warps' &&
                 ((laneOrClips.children('Warp').length > 0 && hasNestedClips(laneOrClips)) ||
-                    (node.element.tagName !== CLIP && laneOrClips.child(NOTES) !== null))
+                    (node.element.tagName !== CLIP && laneOrClips.child(NOTES) !== null) ||
+                    (!insideClip && laneOrClips.child(AUDIO) !== null))
             ) {
                 warn(
                     context,
@@ -1142,12 +1595,13 @@ function parseArrangementClips(
                     laneOrClips.attr('name') ?? 'Warps',
                     ownerName(reference, 'Unassigned lane')
                 );
+                warnNamedDescendants(context, laneOrClips, laneOrClips.attr('name') ?? 'Warps');
                 continue;
             }
             const childMediaHandled =
                 laneOrClips.element.tagName === CLIP ||
                 (node.element.tagName === CLIP && laneOrClips.element.tagName === 'Warps');
-            walkClips(laneOrClips, { ...laneScope, ownerRef: reference }, childMediaHandled, muted);
+            walkClips(laneOrClips, { ...laneScope, ownerRef: reference }, childMediaHandled, muted, insideClip);
         }
     }
 
@@ -1161,15 +1615,45 @@ function parseArrangementClips(
     });
 }
 
-function parseMarkers(arrangement: XmlQuery, unit: 'beats' | 'seconds', tempo: number): DawProjectMarker[] {
+function parseMarkers(
+    arrangement: XmlQuery,
+    unit: 'beats' | 'seconds',
+    tempo: number,
+    context: ParseContext
+): DawProjectMarker[] {
     const markers: DawProjectMarker[] = [];
     const markersNode = arrangement.child(MARKERS);
     if (!markersNode) {
         return markers;
     }
+    warnTimelineMetadata(context, markersNode, 'Arrangement');
     for (const marker of markersNode.children(MARKER)) {
         const beat = toBeats(marker.attrNumber('time', 0), unit, tempo);
-        markers.push({ beat, name: marker.attr('name') ?? 'Marker' });
+        const name = marker.attr('name') ?? 'Marker';
+        markers.push({ beat, name });
+        const details: string[] = [];
+        if (marker.attr('color')) {
+            details.push('marker color');
+        }
+        if (marker.attr('comment')) {
+            details.push('marker comment');
+        }
+        if (details.length > 0) {
+            warn(context, marker, 'unsupported-element', name, 'Arrangement', 'partial', details);
+        }
+        const sourceUnit = readTimeUnit(markersNode, unit);
+        if (sourceUnit === 'seconds') {
+            context.secondsPositions.push({
+                node: marker,
+                name,
+                owner: 'Arrangement',
+                seconds: marker.attrNumber('time', 0),
+                beat,
+                detail: 'marker position',
+            });
+        } else if (sourceUnit !== unit && marker.attrNumber('time', 0) !== beat) {
+            warn(context, marker, 'unsupported-element', name, 'Arrangement', 'partial', ['marker position']);
+        }
     }
     return markers;
 }
@@ -1191,10 +1675,107 @@ export function parseProjectXml(xml: string): ParsedProjectXml {
         trackNames: new Map(),
         elementOrder: new Map(Array.from(rootElement.getElementsByTagName('*')).map((node, index) => [node, index])),
         warnings: [],
+        channels: [],
+        rejectedContents: [],
+        secondsPositions: [],
     };
 
+    const transportNode = root.child(TRANSPORT);
+    warnParameterMetadata(context, transportNode?.child(TEMPO) ?? null, 'Transport', ['bpm']);
+    warnParameterMetadata(context, transportNode?.child(TIME_SIGNATURE) ?? null, 'Transport', []);
+    const tempoNode = transportNode?.child(TEMPO);
+    const tempoValue = tempoNode?.attr('value');
+    if (
+        tempoNode &&
+        tempoValue !== null &&
+        tempoValue !== undefined &&
+        (!tempoValue.trim() ||
+            !Number.isFinite(Number(tempoValue)) ||
+            Number(tempoValue) < MIN_TEMPO ||
+            Number(tempoValue) > MAX_TEMPO)
+    ) {
+        warn(context, tempoNode, 'unsupported-element', tempoNode.attr('name') ?? 'Tempo', 'Transport', 'partial', [
+            'tempo',
+        ]);
+    }
+    const signatureNode = transportNode?.child(TIME_SIGNATURE);
+    if (signatureNode) {
+        const numerator = signatureNode.attr('numerator');
+        const denominator = signatureNode.attr('denominator');
+        const badNumerator =
+            numerator !== null &&
+            (!numerator.trim() ||
+                !Number.isInteger(Number(numerator)) ||
+                Number(numerator) < 1 ||
+                Number(numerator) > 32);
+        const badDenominator =
+            denominator !== null && (!denominator.trim() || ![2, 4, 8, 16].includes(Number(denominator)));
+        if (badNumerator || badDenominator) {
+            warn(
+                context,
+                signatureNode,
+                'unsupported-element',
+                signatureNode.attr('name') ?? 'TimeSignature',
+                'Transport',
+                'partial',
+                ['time signature']
+            );
+        }
+    }
     const structureNode = root.child(STRUCTURE);
     const tracks = structureNode ? parseStructure(structureNode, context) : [];
+
+    const masterId = tracks.find((track) => track.kind === 'master')?.id;
+    for (const channel of context.channels) {
+        const details: string[] = [];
+        const role = channel.node.attr('role');
+        const roleMatches =
+            role === 'regular' ||
+            (role === 'master' && channel.kind === 'master') ||
+            ((role === 'effect' || role === 'submix') && channel.kind === 'bus');
+        if (role && !roleMatches) {
+            details.push('channel role');
+        }
+        const destination = channel.node.attr('destination');
+        const destinationId =
+            destination === null
+                ? undefined
+                : (context.channelToTrackId.get(destination) ?? context.trackIdMap.get(destination));
+        if (destination !== null && (!masterId || destinationId !== masterId)) {
+            details.push('destination');
+        }
+        if (channel.node.attrBool('solo', false)) {
+            details.push('solo');
+        }
+        const channelName = channel.node.attr('name');
+        if (channelName && channelName !== channel.owner) {
+            details.push('channel name');
+        }
+        if (channel.node.attr('color')) {
+            details.push('channel color');
+        }
+        if (channel.node.attr('comment')) {
+            details.push('channel comment');
+        }
+        if (channel.node.attrNumber('audioChannels', 2) !== 2) {
+            details.push('channel count');
+        }
+        if (details.length > 0) {
+            warn(
+                context,
+                channel.node,
+                'unsupported-element',
+                channel.node.attr('name') ?? 'Channel',
+                channel.owner,
+                'partial',
+                details
+            );
+        }
+        warnParameterMetadata(context, channel.node.child(MUTE), channel.owner, []);
+        warnParameterMetadata(context, channel.node.child(SOLO), channel.owner, []);
+        warnParameterMetadata(context, channel.node.child(PAN), channel.owner, ['linear', 'normalized']);
+        warnParameterMetadata(context, channel.node.child(VOLUME), channel.owner, ['linear']);
+    }
 
     const arrangementNode = root.child(ARRANGEMENT);
     let tempoChanges: DawProjectTempoChange[] = [];
@@ -1203,13 +1784,43 @@ export function parseProjectXml(xml: string): ParsedProjectXml {
 
     if (arrangementNode) {
         context.defaultTimeUnit = readTimeUnit(arrangementNode, 'beats');
+        warnTimelineMetadata(context, arrangementNode, 'Project');
         const automation = parseMasterTrackAutomation(arrangementNode, context);
         tempoChanges = automation.tempoChanges;
         timeSignatureChanges = automation.timeSignatureChanges;
         parseArrangementClips(arrangementNode, tracks, context, tempoChanges, automation.tempoPointsUseBeats);
-        markers = parseMarkers(arrangementNode, context.defaultTimeUnit, context.tempo);
+        markers = parseMarkers(arrangementNode, context.defaultTimeUnit, context.tempo, context);
     }
 
+    const retainedClips = new Set(
+        tracks.flatMap((track) =>
+            track.clips.flatMap((clip) => (clip.sourceOrder === undefined ? [] : [clip.sourceOrder]))
+        )
+    );
+    for (const rejected of context.rejectedContents) {
+        warnNamedDescendants(context, rejected.node, rejected.owner, retainedClips);
+    }
+    const tempoLawChanges = tempoChanges.map((change, index) => ({
+        ...change,
+        id: `tempo-${String(index)}-${String(change.beat)}`,
+    }));
+    for (const position of context.secondsPositions) {
+        const actual = secondsBetweenBeats(tempoLawChanges, 0, position.beat, consumerTempo(context.tempo));
+        if (Math.abs(actual - position.seconds) > 1e-9) {
+            warn(context, position.node, 'unsupported-element', position.name, position.owner, 'partial', [
+                position.detail,
+            ]);
+        }
+    }
+    const scenes = root.child('Scenes');
+    if (scenes) {
+        for (const scene of scenes.children('Scene')) {
+            const sceneName = scene.attr('name') ?? 'Scene';
+            warn(context, scene, 'unsupported-element', sceneName, 'Scenes');
+            warnNamedDescendants(context, scene, sceneName);
+        }
+    }
+    context.warnings.sort((a, b) => a.sourceOrder - b.sourceOrder);
     return {
         tracks,
         tempoChanges,
