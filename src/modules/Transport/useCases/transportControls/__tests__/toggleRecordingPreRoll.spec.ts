@@ -24,7 +24,9 @@ type TestRecordingClip = {
     audioOffsetBeats?: number;
 };
 
-type TestRecordingResult = { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed'; reason: string };
+type TestRecordingResult =
+    | { kind: 'completed'; buffer: { duration: number }; sampleZeroContextFrame: number; sampleRate: number }
+    | { kind: 'failed'; reason: string };
 
 type StartAudioRecording = (trackId: string, callback: (result: TestRecordingResult) => void) => Promise<boolean>;
 
@@ -49,12 +51,18 @@ const mocks = vi.hoisted(() => ({
     stopRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     startNativeLiveGraphSession: vi.fn<() => Promise<unknown>>(),
     startAudioRecording: vi.fn<StartAudioRecording>(),
+    sampleZeroContextFrame: 0,
     startPlayheadScheduler: vi.fn<typeof startPlayheadScheduler>(),
     scheduleClick: vi.fn<(...args: unknown[]) => void>(),
     startSource: vi.fn<StartSource>(),
     resolveClipsWithComping: vi.fn<(trackId: string, clips: unknown[]) => unknown[]>(() => []),
 }));
 
+vi.mock('#/modules/MIDI/useCases', () => ({
+    isOverdubLanding: () => false,
+    countSettledOverdubPasses: () => 0,
+    waitForOverdubLanding: () => Promise.resolve(),
+}));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: mocks.startPlayheadScheduler,
@@ -62,6 +70,9 @@ vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
 vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
 vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     resolveClipsWithComping: mocks.resolveClipsWithComping,
     takeOwnsRecordingRoot: vi.fn(() => true),
     getTrackStoreState: mocks.getTrackStoreState,
@@ -92,12 +103,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../scheduling/scheduleFrozenTrack', () => ({ scheduleFrozenTrack: () => false }));
-vi.mock('#/modules/MIDI/useCases', () => ({
-    isOverdubLanding: () => false,
-    countSettledOverdubPasses: () => 0,
-    waitForOverdubLanding: () => Promise.resolve(),
-}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,
@@ -146,6 +154,7 @@ const BASE_LATENCY_SEC = 0.02;
 const BEATS_PER_SECOND_AT_120 = 2;
 const LATENCY_BEATS = BASE_LATENCY_SEC * BEATS_PER_SECOND_AT_120;
 const BASE_TEMPO_BPM = 120;
+const RECORDING_SAMPLE_RATE = 48_000;
 
 function instantTempoChanges(points: readonly (readonly [beat: number, tempo: number])[]): TempoChange[] {
     return points.map(([beat, tempo]) => ({ id: `tempo-${beat}`, beat, tempo, curve: 'instant' }));
@@ -191,7 +200,12 @@ async function recordTakeFromStoppedTransport(options: {
     if (!finishCapture) {
         throw new Error('Expected the recording callback to be registered');
     }
-    finishCapture({ kind: 'completed', buffer: { duration: options.takeSeconds } });
+    finishCapture({
+        kind: 'completed',
+        buffer: { duration: options.takeSeconds },
+        sampleZeroContextFrame: mocks.sampleZeroContextFrame,
+        sampleRate: RECORDING_SAMPLE_RATE,
+    });
     await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
 
     const committed = mocks.commitRecording.mock.calls[0]?.[0];
@@ -206,7 +220,10 @@ describe('toggleRecording — take aligned to the timeline under pre-roll', () =
         vi.clearAllMocks();
         mocks.resolveClipsWithComping.mockReturnValue([]);
         mocks.resumeEngine.mockResolvedValue(undefined);
-        mocks.startAudioRecording.mockResolvedValue(true);
+        mocks.startAudioRecording.mockImplementation(async () => {
+            mocks.sampleZeroContextFrame = Math.round(audioClock.currentTime * RECORDING_SAMPLE_RATE);
+            return true;
+        });
         vi.mocked(prepareInitialBrowserPlayback).mockImplementation((generation) => ({
             generation,
             epoch: schedulerSession.discontinuityEpoch,
@@ -273,7 +290,7 @@ describe('toggleRecording — take aligned to the timeline under pre-roll', () =
         });
 
         // The take opens on the boundary beat the count-in counted to, not on a default.
-        expect(mocks.startRecording).toHaveBeenCalledExactlyOnceWith(RECORD_POINT_BEAT);
+        expect(mocks.startRecording).toHaveBeenCalledExactlyOnceWith(RECORD_POINT_BEAT, expect.any(Function));
 
         const mediaOriginBeat = committed.startBeat - (committed.audioOffsetBeats ?? 0);
         expect(mediaOriginBeat).toBeCloseTo(RECORD_POINT_BEAT - 8 - LATENCY_BEATS, 9);

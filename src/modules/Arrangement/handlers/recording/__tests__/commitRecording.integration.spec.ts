@@ -1,3 +1,4 @@
+import { clone as cloneAutomergeDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -13,10 +14,15 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    DOC_PREFIX_ROOT,
+    captureProjectRootIdentity,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
+    transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -28,6 +34,7 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { commitRecording } from '../../../useCases/recording/commitRecording';
+import { recordingPassTiming } from '../../../useCases/recording/recordingPassTiming';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -124,6 +131,107 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(entry.action.type).toBe('commitRecording');
         expect(entry.inverseAction?.type).toBe('discardRecording');
         expect(entry.redoAction?.type).toBe('restoreRecording');
+    });
+
+    it('refuses a moved root before captured-pass placement changes projected or durable takes', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Pass 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        flushAutomergeStorageWrites();
+        const before = JSON.stringify({
+            document: getCrdtDoc('root'),
+            tracks: trackStore.value,
+            lanes: takeLaneStore.value,
+            history: undoHistoryStore.value,
+        });
+
+        await expect(
+            commitRecording(
+                { ...provisional, audioBufferId: 'rec-buffer-1', endBeat: 8 },
+                {
+                    provisionalStartBeat: 4,
+                    mediaOriginSeconds: 2,
+                    sourceContextOriginSeconds: 2,
+                    sourceDurationSeconds: 2,
+                },
+                { shouldExecute: () => false }
+            )
+        ).rejects.toThrow('recording commit refused: the project root moved');
+
+        expect(
+            JSON.stringify({
+                document: getCrdtDoc('root'),
+                tracks: trackStore.value,
+                lanes: takeLaneStore.value,
+                history: undoHistoryStore.value,
+            })
+        ).toBe(before);
+    });
+
+    it('refuses a captured commit after its real snapshot wait when the root moves', async () => {
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Pass 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        flushAutomergeStorageWrites();
+        const capturedRoot = captureProjectRootIdentity();
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const transaction = transactSnapshot(async () => {
+            started.resolve();
+            await release.promise;
+        });
+        await started.promise;
+
+        const committing = commitRecording(
+            { ...provisional, audioBufferId: 'rec-buffer-1', endBeat: 8 },
+            { provisionalStartBeat: 4, mediaOriginSeconds: 2, sourceContextOriginSeconds: 2, sourceDurationSeconds: 2 },
+            { shouldExecute: () => captureProjectRootIdentity() === capturedRoot }
+        );
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            release.resolve();
+            await transaction;
+            throw new Error('expected the recording root');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        const successor = JSON.stringify({
+            document: getCrdtDoc(DOC_PREFIX_ROOT),
+            tracks: trackStore.value,
+            lanes: takeLaneStore.value,
+            history: undoHistoryStore.value,
+        });
+
+        const refusal = expect(committing).rejects.toThrow('recording commit refused: the project root moved');
+        release.resolve();
+        await transaction;
+        await refusal;
+        expect(
+            JSON.stringify({
+                document: getCrdtDoc(DOC_PREFIX_ROOT),
+                tracks: trackStore.value,
+                lanes: takeLaneStore.value,
+                history: undoHistoryStore.value,
+            })
+        ).toBe(successor);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
     });
 
     it('removes the clip, its placement, and its take membership on one undo, and restores the same identities on redo', async () => {
@@ -576,7 +684,7 @@ describe('recording gesture commit (issue #4439)', () => {
         // starts a quarter second into the clip's media and into the recording.
         await commitRecording(
             { ...provisional, audioBufferId: 'rec-buffer-1', startBeat: 3.5, endBeat: 6 },
-            { provisionalStartBeat: 4, mediaOriginSeconds: 1.75 }
+            { provisionalStartBeat: 4, mediaOriginSeconds: 1.75, sourceContextOriginSeconds: 1.75 }
         );
         flushAutomergeStorageWrites();
         const placed = [
@@ -594,5 +702,122 @@ describe('recording gesture commit (issue #4439)', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(recordedPlacements()).toEqual(placed);
+    });
+
+    it('retires a staged audio pass witness after a capture-free Command commit', async () => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional audio clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Pass 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        const staged = takeLaneStore.value?.lanes.flatMap((lane) => lane.takes).find((take) => take.name === 'Pass 2');
+        if (!staged) {
+            throw new Error('expected a staged audio pass');
+        }
+        expect(recordingPassTiming.depthSeconds(staged, 0, 0)).toBeCloseTo(2, 10);
+
+        flushAutomergeStorageWrites();
+        await commitRecording({ ...provisional, audioBufferId: 'rec-buffer-1', endBeat: 8 });
+        flushAutomergeStorageWrites();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(
+            getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root')?.tracks.tracks[0]?.clips
+        ).toMatchObject([{ id: provisional.id, audioBufferId: 'rec-buffer-1' }]);
+
+        expect(() => recordingPassTiming.depthSeconds(staged, 0, 0)).toThrow(
+            'Recording pass has no captured source timing'
+        );
+    });
+
+    it('retires only the committed capture and preserves a concurrent recording witness', async () => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const [provisional] = startRecording(4);
+        expect(provisional).toBeDefined();
+        const concurrentId = 'concurrent-audio-capture';
+        recordingPassTiming.begin(concurrentId, 6);
+        const concurrent = createTake(concurrentId, 'Concurrent pass', 6, 10, 0);
+        recordingPassTiming.stage(concurrent);
+        const before = recordingPassTiming.depthSeconds(concurrent, 0, 0);
+        flushAutomergeStorageWrites();
+        await commitRecording({ ...provisional!, audioBufferId: 'rec-buffer-1', endBeat: 8 });
+        expect(recordingPassTiming.depthSeconds(concurrent, 0, 0)).toBe(before);
+        recordingPassTiming.retire(concurrentId);
+    });
+
+    it('retires a staged audio pass witness after a capture-supplied Command commit', async () => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional audio clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'Pass 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        const staged = takeLaneStore.value?.lanes.flatMap((lane) => lane.takes).find((take) => take.name === 'Pass 2');
+        if (!staged) {
+            throw new Error('expected a staged audio pass');
+        }
+        expect(recordingPassTiming.depthSeconds(staged, 50, 2)).toBeCloseTo(0, 10);
+
+        flushAutomergeStorageWrites();
+        await commitRecording(
+            { ...provisional, audioBufferId: 'rec-buffer-2', endBeat: 8 },
+            { provisionalStartBeat: 4, mediaOriginSeconds: 2, sourceContextOriginSeconds: 50 }
+        );
+        flushAutomergeStorageWrites();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(() => recordingPassTiming.depthSeconds(staged, 50, 2)).toThrow(
+            'Recording pass has no captured source timing'
+        );
+    });
+
+    it('keeps capture-free MIDI Command commits witness-free', async () => {
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, clips: [] })],
+            selectedTrackId: TRACK_ID,
+            ghostClips: [],
+        });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional MIDI clip');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: provisional.id,
+            name: 'MIDI pass 2',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+        });
+        const staged = takeLaneStore.value?.lanes
+            .flatMap((lane) => lane.takes)
+            .find((take) => take.name === 'MIDI pass 2');
+        if (!staged) {
+            throw new Error('expected a staged MIDI pass');
+        }
+        expect(() => recordingPassTiming.depthSeconds(staged, 0, 0)).toThrow(
+            'Recording pass has no captured source timing'
+        );
+
+        flushAutomergeStorageWrites();
+        await commitRecording({ ...provisional, endBeat: 8 });
+        flushAutomergeStorageWrites();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(() => recordingPassTiming.depthSeconds(staged, 0, 0)).toThrow(
+            'Recording pass has no captured source timing'
+        );
     });
 });

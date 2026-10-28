@@ -18,6 +18,12 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: vi.fn(() => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    })),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     suspendAutoInputMonitoring: vi.fn(() => vi.fn()),
@@ -162,6 +168,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         addTake: vi.fn(),
         addTakeLane: vi.fn(),
         commitRecording: vi.fn(),
+        admitRecordingCaptureClock: vi.fn(),
+        observeRecordingPassEntry: vi.fn(),
+        prepareRecoveredRecording: vi.fn(),
         discardRecording: vi.fn(),
         stageRecordingTake: vi.fn(),
         applySoloLogic: vi.fn(),

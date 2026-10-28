@@ -14,7 +14,13 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import {
+    playheadClockRef,
+    playheadPositionRef,
+    setGestureClockSource,
+    tempoMapStore,
+    transportStore,
+} from '#/modules/Transport/stores';
 import {
     countSettledTakes,
     isTransportIdle,
@@ -30,12 +36,15 @@ import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
 const TRACK_ID = 'track-recording';
 
-type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } }) => void;
+type RecordingStart = typeof import('#/modules/AudioEngine/useCases').startAudioRecording;
+type RecordingTerminal = Parameters<RecordingStart>[1];
+type CaptureClockReceiver = NonNullable<Parameters<RecordingStart>[3]>;
+type RecordingCaptureReader = Parameters<CaptureClockReceiver>[0];
 type ResetAttempt = (name: string, onAuthorityReplaced: () => void, isIdle: () => boolean) => Promise<unknown>;
 
 const mocks = vi.hoisted(() => {
-    const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
-    let capturedAudioTerminal: RecordingTerminal | null = null;
+    const audioClock = { currentTime: 0, sampleRate: 48000, baseLatency: 0, outputLatency: 0 };
+    let capture: { terminal: RecordingTerminal; sampleZeroContextFrame: number } | null = null;
     return {
         audioClock,
         events: [] as string[],
@@ -51,19 +60,55 @@ const mocks = vi.hoisted(() => {
         unloadPlugin: vi.fn<() => Promise<void>>(() => Promise.resolve()),
         saveProject: vi.fn<() => Promise<boolean>>(),
         resetCrdtProject: vi.fn<ResetAttempt>(),
-        startAudioRecording: vi.fn<(trackId: string, terminal: RecordingTerminal) => Promise<boolean>>(
-            (_trackId, terminal) => {
-                capturedAudioTerminal = terminal;
-                return Promise.resolve(true);
-            }
-        ),
+        hasAudioCapture: () => capture !== null,
+        startAudioRecording: vi.fn<RecordingStart>((_trackId, terminal, _inputId, onCaptureClock) => {
+            const sampleZeroContextFrame = Math.round(audioClock.currentTime * audioClock.sampleRate);
+            capture = { terminal, sampleZeroContextFrame };
+            const read: RecordingCaptureReader = () => {
+                if (capture?.terminal === terminal) {
+                    return { status: 'captured', contextSeconds: sampleZeroContextFrame / audioClock.sampleRate };
+                } else {
+                    return { status: 'unavailable' };
+                }
+            };
+            onCaptureClock?.(read);
+            return Promise.resolve(true);
+        }),
         // The real flush settles the capture and invokes its terminal; this mock
         // does the same, so the tracked commit is registered where it is in
         // production.
         stopAudioRecording: vi.fn<() => Promise<void>>(() => {
-            const terminal = capturedAudioTerminal;
-            capturedAudioTerminal = null;
-            terminal?.({ kind: 'completed', buffer: { duration: 2 } });
+            const recording = capture;
+            capture = null;
+            if (!recording) {
+                return Promise.resolve();
+            }
+            const sampleRate = audioClock.sampleRate;
+            const length = Math.round(audioClock.currentTime * sampleRate) - recording.sampleZeroContextFrame;
+            if (length <= 0) {
+                recording.terminal({ kind: 'failed', reason: 'empty-wav' });
+                return Promise.resolve();
+            }
+            const samples = new Float32Array(length);
+            const buffer = {
+                duration: length / sampleRate,
+                length,
+                numberOfChannels: 1,
+                sampleRate,
+                getChannelData: () => samples,
+                copyFromChannel: (destination: Float32Array, _channel: number, start = 0) => {
+                    destination.set(samples.subarray(start, start + destination.length));
+                },
+                copyToChannel: (source: Float32Array, _channel: number, start = 0) => {
+                    samples.set(source, start);
+                },
+            } satisfies AudioBuffer;
+            recording.terminal({
+                kind: 'completed',
+                buffer,
+                sampleZeroContextFrame: recording.sampleZeroContextFrame,
+                sampleRate,
+            });
             return Promise.resolve();
         }),
     };
@@ -103,6 +148,7 @@ vi.mock('../../fileIO/applyImportedProjectData', () => ({ applyImportedProjectDa
 /** Holds the next `commitRecording` after its transaction has landed. */
 const commitGate = vi.hoisted(() => ({
     pending: null as Promise<void> | null,
+    entered: false,
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
@@ -112,6 +158,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
         executeAppAction: async (...args: Parameters<typeof actual.executeAppAction>) => {
             await actual.executeAppAction(...args);
             if (args[0].type === 'commitRecording' && commitGate.pending) {
+                commitGate.entered = true;
                 await commitGate.pending;
             }
         },
@@ -120,6 +167,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
 
 function gateNextCommit(): () => void {
     let release!: () => void;
+    commitGate.entered = false;
     commitGate.pending = new Promise<void>((resolve) => {
         release = () => {
             commitGate.pending = null;
@@ -210,10 +258,16 @@ function openMidiTake(): void {
  */
 async function openAudioTake(): Promise<void> {
     seedTrack('audio');
-    transportStore.set({ ...transportStore.value!, isPlaying: true });
+    tempoMapStore.set({ changes: [] });
+    transportStore.set({ ...transportStore.value!, tempo: 120, isPlaying: true });
+    playheadClockRef.beat = 4;
+    playheadClockRef.audioTimeSeconds = 0;
+    playheadPositionRef.current = 4;
     toggleRecording();
     await vi.waitFor(() => {
         expect(clipIds()).toHaveLength(1);
+        expect(transportStore.value?.isRecording).toBe(true);
+        expect(mocks.hasAudioCapture()).toBe(true);
     });
     flushAutomergeStorageWrites();
 }
@@ -301,6 +355,13 @@ describe('replacing a project while a take is recording or closing (issue #5500)
         mocks.resetCrdtProject.mockReset();
         replaceOnlyWhenIdle();
         mocks.audioClock.currentTime = 0;
+        playheadClockRef.beat = 0;
+        playheadClockRef.audioTimeSeconds = 0;
+        playheadPositionRef.current = 0;
+        setGestureClockSource({
+            getAudioTimeSeconds: () => mocks.audioClock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
         // Each case opens with a project that owes nothing for the takes before it.
         unsavedClosedTakes.acknowledgeAll();
     });
@@ -455,21 +516,39 @@ describe('replacing a project while a take is recording or closing (issue #5500)
 
     it('does not switch authority while a take the user stopped is still committing, then saves it', async () => {
         await openAudioTake();
+        // Two seconds of 120 BPM playback carry the captured take from beat 4 to 8.
+        mocks.audioClock.currentTime = 2;
+        playheadClockRef.beat = 8;
+        playheadClockRef.audioTimeSeconds = 2;
+        playheadPositionRef.current = 8;
         const release = gateNextCommit();
-        // The user's own Pause: the transport turns idle at once, the commit does not.
-        togglePlayback();
-        expect(transportStore.value?.isPlaying).toBe(false);
-        expect(transportStore.value?.isRecording).toBe(false);
+        let replacing: ReturnType<typeof replace> | undefined;
+        try {
+            // Pause publishes stopped flags synchronously while the real action's completion remains held.
+            togglePlayback();
+            expect(transportStore.value?.isPlaying).toBe(false);
+            expect(transportStore.value?.isRecording).toBe(false);
+            await vi.waitFor(() => expect(commitGate.entered).toBe(true));
+            expect(committedEntryCount()).toBe(1);
+            expect(isTransportIdle()).toBe(false);
+            expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
+                buffer: expect.objectContaining({ duration: 2, length: 96000, sampleRate: 48000 }),
+                bufferId: expect.any(String),
+            });
 
-        const replacing = replace();
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        expect(mocks.events).not.toContain('switch');
+            replacing = replace();
+            await vi.waitFor(() => expect(mocks.events).toContain('refused'));
+            expect(mocks.events).not.toContain('switch');
 
-        release();
-        await expect(replacing).resolves.toMatchObject({ status: 'replaced' });
+            release();
+            await expect(replacing).resolves.toMatchObject({ status: 'replaced' });
 
-        expect(committedEntryCount()).toBe(1);
-        expect(mocks.events).toEqual(['refused', 'save:1', 'switch']);
+            expect(committedEntryCount()).toBe(1);
+            expect(mocks.events).toEqual(['refused', 'save:1', 'switch']);
+        } finally {
+            release();
+            await replacing?.catch(() => undefined);
+        }
     });
 
     // No audio capture is open here, so the commit this stop started is the only
