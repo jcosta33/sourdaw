@@ -16,6 +16,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { defaultLevainState, levainStore, updateMicPosition } from '../../stores/levainStore';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { createLevainBridge } from '../levainParamBridge/helpers';
 import { levainBridge } from '../levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../levainParamBridge/registerLevainDevice';
@@ -24,6 +25,7 @@ import { prepareOfflineLevain } from '../prepareOfflineLevain';
 
 const mocks = vi.hoisted(() => ({
     autoLoadLevainSamples: vi.fn(() => Promise.resolve(null)),
+    coordinateRequests: [] as Promise<void>[],
 }));
 
 vi.mock('../autoLoadSamples', () => ({
@@ -39,6 +41,17 @@ vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
 vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
     setLevainParamWithAudio: vi.fn(),
 }));
+
+vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../coordinateLevainDeviceState')>();
+    return {
+        coordinateLevainDeviceState: (...args: Parameters<typeof original.coordinateLevainDeviceState>) => {
+            const request = original.coordinateLevainDeviceState(...args);
+            mocks.coordinateRequests.push(request);
+            return request;
+        },
+    };
+});
 
 const DEVICE_ID = 'levain-1';
 
@@ -98,6 +111,8 @@ describe('Levain instrument persistence round trip', () => {
     let stopPersistence: () => void;
 
     beforeEach(() => {
+        // This isolated roundtrip fixture has no committed document; its visible rows are pending.
+        configureLevainDeviceStateProjectAccess({ hasDevice: () => false, subscribe: () => () => undefined });
         mocks.autoLoadLevainSamples.mockClear();
         mocks.autoLoadLevainSamples.mockImplementation(() => Promise.resolve(null));
         clearHandlerRegistry();
@@ -107,19 +122,21 @@ describe('Levain instrument persistence round trip', () => {
         stopPersistence = initLevainDeviceStatePersistence();
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         stopPersistence();
+        await Promise.all(mocks.coordinateRequests);
+        configureLevainDeviceStateProjectAccess(null);
+        mocks.coordinateRequests.length = 0;
         vi.unstubAllGlobals();
     });
 
     it('carries the instrument the user picked through a reload, into playback and the export', async () => {
         levainStore.set({ [DEVICE_ID]: { ...defaultLevainState } });
-        await Promise.resolve();
+        await Promise.all(mocks.coordinateRequests);
 
         // The panel's instrument picker calls exactly this.
         loadInstrument(DEVICE_ID, 'cello');
-        await Promise.resolve();
-        await Promise.resolve();
+        await Promise.all(mocks.coordinateRequests);
 
         const loadedState = levainStore.value?.[DEVICE_ID];
         if (!loadedState) {
@@ -131,8 +148,7 @@ describe('Levain instrument persistence round trip', () => {
                 patch: { ...loadedState.patch, currentArticulation: 'tremolo' },
             },
         });
-        await Promise.resolve();
-        await Promise.resolve();
+        await Promise.all(mocks.coordinateRequests);
 
         // Reload: project the document, then rebuild the session from it alone.
         const projected = sanitizeTrackSnapshot(trackStore.value);
@@ -337,8 +353,7 @@ describe('Levain instrument persistence round trip', () => {
         // Registration is not an edit. Committing on first sight would write a chunk
         // for every Levain ever loaded and mark a freshly opened project dirty.
         levainStore.set({ [DEVICE_ID]: { ...defaultLevainState } });
-        await Promise.resolve();
-        await Promise.resolve();
+        await Promise.all(mocks.coordinateRequests);
 
         expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toBeUndefined();
     });

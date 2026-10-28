@@ -23,6 +23,7 @@ export function hydrateLevainStateFromDevice(device: LevainDeviceInput): LevainS
     return {
         ...defaultLevainState,
         patch,
+        uiLevel: identity?.disclosureTier === 'expert' ? 6 : 1,
         currentArticulationDisplay: entry ? entry.name : currentArticulation,
     };
 }

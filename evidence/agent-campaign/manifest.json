@@ -879,7 +879,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
-                    "digest": "25c5c28e656b6b5977da7f81df23fc72bea8b279cd0bb423e44a5fb83d67a747"
+                    "digest": "423ac1a776322891c3c782f2d120bf9cf8819937e8f4931d5df098d8103b13af"
                 }
             ]
         },
