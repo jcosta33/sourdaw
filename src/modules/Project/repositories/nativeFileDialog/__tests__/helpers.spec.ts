@@ -2,19 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { openViaBrowser } from '../helpers';
 
-function createFileList(files: File[]): FileList {
-    const fileList: Record<number, File> & { length: number; item: (index: number) => File | null } = {
-        length: files.length,
-        item: (index: number) => files[index] ?? null,
-    };
-    for (const [index, file] of files.entries()) {
-        fileList[index] = file;
-    }
-    return fileList as unknown as FileList;
-}
-
 function dispatchFileSelection(input: HTMLInputElement, files: File[]): void {
-    Object.defineProperty(input, 'files', { value: createFileList(files), configurable: true });
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
     input.dispatchEvent(new Event('change'));
 }
 
@@ -24,12 +13,15 @@ describe('openViaBrowser', () => {
         vi.useRealTimers();
     });
 
-    it('resolves with the selected file names on a change event', async () => {
+    it('retains the selected File objects on a change event', async () => {
+        const file = new File(['content'], 'kick.wav');
         vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
-            dispatchFileSelection(this, [new File(['content'], 'kick.wav')]);
+            dispatchFileSelection(this, [file]);
         });
 
-        await expect(openViaBrowser({})).resolves.toEqual(['kick.wav']);
+        const selected = await openViaBrowser({});
+        expect(selected).toHaveLength(1);
+        expect(selected?.[0]).toBe(file);
     });
 
     it('resolves null when the change event carries no files', async () => {
@@ -48,20 +40,16 @@ describe('openViaBrowser', () => {
         await expect(openViaBrowser({})).resolves.toBeNull();
     });
 
-    it('configures multiple selection and the accept filter from the requested extensions', () => {
-        const realCreateElement = document.createElement.bind(document);
+    it('configures multiple selection and the accept filter from the requested extensions', async () => {
         let capturedInput: HTMLInputElement | undefined;
-        // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload this mock does not satisfy
-        vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
-            const element = realCreateElement(tagName);
-            if (element instanceof HTMLInputElement) {
-                capturedInput = element;
-            }
-            return element;
+        vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+            capturedInput = this;
+            this.dispatchEvent(new Event('cancel'));
         });
-        vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
 
-        void openViaBrowser({ multiple: true, filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }] });
+        await expect(
+            openViaBrowser({ multiple: true, filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }] })
+        ).resolves.toBeNull();
 
         expect(capturedInput?.multiple).toBe(true);
         expect(capturedInput?.accept).toBe('.wav,.mp3');
