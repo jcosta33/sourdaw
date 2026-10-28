@@ -14,6 +14,7 @@ import { executeTransformCompile } from '../executeTransformCompile';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { parseRecipeExpansionInput } from '../parseRecipeExpansionInput';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
 
@@ -981,7 +982,7 @@ describe('recipe.expand', () => {
             {
                 recipeId: 'vocal-warm',
                 targetId: 'lead-vocal-1',
-                values: Array.from({ length: 17 }, (_unused, index) => ({ step: 0, paramId: `p-${index}`, value: 1 })),
+                values: Array.from({ length: 25 }, (_unused, index) => ({ step: 0, paramId: `p-${index}`, value: 1 })),
             },
         ],
         [
@@ -1007,7 +1008,7 @@ describe('recipe.expand', () => {
                 {
                     kind: 'insert' as const,
                     deviceType: 'builtin-eq',
-                    parameters: Array.from({ length: 17 }, (_unused, index) => ({
+                    parameters: Array.from({ length: 24 }, (_unused, index) => ({
                         paramId: `eq-low-gain-${index}`,
                         minimum: 1,
                         maximum: 2,
@@ -1024,8 +1025,8 @@ describe('recipe.expand', () => {
         });
 
         expect(receipt.status).toBe('failure');
-        expect(receipt.error?.safeMessage).toContain('18 commands');
-        expect(receipt.error?.safeMessage).toContain('16');
+        expect(receipt.error?.safeMessage).toContain('25 commands');
+        expect(receipt.error?.safeMessage).toContain('24');
     });
 
     // Red when a midpoint snapped outside its window is emitted instead of refused.
@@ -1320,6 +1321,21 @@ describe('recipe.expand adoption by command.batch.propose', () => {
         if (result.status === 'rejected') {
             expect(result.reason).toBe('Provider command proposal exceeds the command budget.');
         }
+    });
+});
+
+describe('recipe expansion argument boundaries', () => {
+    it('accepts 24 supplied values through step 23 but refuses 25 values or step 24', () => {
+        const values = Array.from({ length: 24 }, (_, step) => ({ step, paramId: `p-${step}`, value: 1 }));
+        const input = { recipeId: 'recipe', targetId: 'track', values };
+        expect(parseRecipeExpansionInput(input, []).status).toBe('valid');
+        expect(
+            parseRecipeExpansionInput({ ...input, values: [...values, { step: 0, paramId: 'extra', value: 1 }] }, [])
+                .status
+        ).toBe('invalid');
+        expect(parseRecipeExpansionInput({ ...input, values: [{ step: 24, paramId: 'p', value: 1 }] }, []).status).toBe(
+            'invalid'
+        );
     });
 });
 
