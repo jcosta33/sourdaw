@@ -196,6 +196,9 @@ describe('tempo source preparation while a recording owns unpublished PCM', () =
                     ...handlers.setTempo,
                     execute: (action, context) => {
                         const result = handlers.setTempo.execute(action, context);
+                        if (result instanceof Promise) {
+                            throw new Error('Expected synchronous tempo execution');
+                        }
                         expect(result).toMatchObject({ status: 'written' });
                         if (change === 'retired') {
                             recordingPassTiming.retire(recordingId);

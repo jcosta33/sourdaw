@@ -8,7 +8,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
-import { createTakeLane, type TakeLane } from '../../../models/TakeLane';
+import { createTakeLane, type Take, type TakeLane } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
@@ -39,7 +39,7 @@ function seedTrack(clips: readonly Clip[], kind: 'audio' | 'midi' = 'audio'): vo
 }
 
 function seedLane(
-    takes: readonly { id: string; clipId: string; startBeat: number; endBeat: number }[],
+    takes: readonly (Pick<Take, 'id' | 'clipId' | 'startBeat' | 'endBeat'> & Partial<Take>)[],
     activeCompRegions: readonly { startBeat: number; endBeat: number; takeId: string }[]
 ): TakeLane {
     const lane: TakeLane = {

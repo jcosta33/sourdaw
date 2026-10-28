@@ -913,7 +913,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 reason: 'Internal replay is not an executable command',
                 time: [],
             });
-            expect(parseVersionedCommandEnvelope(envelope).status).toBe('invalid');
+            expect(parseVersionedCommandEnvelope(JSON.stringify(envelope)).status).toBe('invalid');
         });
 
         it('refuses every present-undefined modern source facet before writes', async () => {

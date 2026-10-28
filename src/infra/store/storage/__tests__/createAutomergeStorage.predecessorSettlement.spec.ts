@@ -65,6 +65,7 @@ function replayOperations(authority: State, operations: readonly Operation[]): S
 function createJournalStorage() {
     return createAutomergeStorage<State, readonly Operation[]>('root', 'state', {
         writeMetadata: {
+            captureMode: 'values',
             capture: ({ beforeValue, nextValue }) => captureOperations(beforeValue, nextValue),
             reduce: ({ current, captured }) => (current ? [...current, ...captured] : [...captured]),
         },
@@ -87,6 +88,7 @@ function createJournalStorage() {
 function createReplacementStorage() {
     return createAutomergeStorage<State, { readonly value: State | null }>('root', 'state', {
         writeMetadata: {
+            captureMode: 'values',
             capture: ({ nextValue }) => ({ value: structuredClone(nextValue) }),
             reduce: ({ captured }) => captured,
         },
@@ -137,7 +139,11 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
             }) => pendingValue && { ...pendingValue, selected: String(document?.contextVersion) }
         );
         const storage = createAutomergeStorage<State, State>('root', 'state', {
-            writeMetadata: { capture: ({ nextValue }) => nextValue, reduce: ({ captured }) => captured },
+            writeMetadata: {
+                captureMode: 'values',
+                capture: ({ nextValue }) => nextValue,
+                reduce: ({ captured }) => captured,
+            },
             rebasePendingOnDocumentChange: true,
             rebasePending,
         });
@@ -179,7 +185,11 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
             }) => pendingValue && { ...pendingValue, selected: String(document?.contextVersion) }
         );
         const storage = createAutomergeStorage<State, State>('root', 'state', {
-            writeMetadata: { capture: ({ nextValue }) => nextValue, reduce: ({ captured }) => captured },
+            writeMetadata: {
+                captureMode: 'values',
+                capture: ({ nextValue }) => nextValue,
+                reduce: ({ captured }) => captured,
+            },
             rebasePending,
         });
         expect(storage.hydrate?.()).toBe(true);
@@ -215,7 +225,11 @@ describe('createAutomergeStorage metadata predecessor settlement', () => {
             }) => pendingValue && { ...pendingValue, selected: String(document?.contextVersion) }
         );
         const storage = createAutomergeStorage<State, State>('root', 'state', {
-            writeMetadata: { capture: ({ nextValue }) => nextValue, reduce: ({ captured }) => captured },
+            writeMetadata: {
+                captureMode: 'values',
+                capture: ({ nextValue }) => nextValue,
+                reduce: ({ captured }) => captured,
+            },
             rebasePending,
             mutateCrdtWithMetadata: ({ value, authorityValue, metadata, reconcile }) => {
                 if (metadata?.items.includes('refused')) {

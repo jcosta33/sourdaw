@@ -134,9 +134,12 @@ function setCompedClip(input: { clipId: string; startBeat: number; endBeat: numb
 }
 
 function physicalSourceBeforeDelete(clipId: string, startBeat: number, endBeat: number): AudioSourceSnapshot {
-    const fragment = resolveCompingProgramme('track-1', liveTrackClips(), takeLaneStore.value, liveTempoTimeline).find(
-        (clip) => clip.id === clipId && clip.startBeat >= startBeat && clip.endBeat <= endBeat
-    );
+    const fragment = resolveCompingProgramme(
+        'track-1',
+        [...liveTrackClips()],
+        takeLaneStore.value,
+        liveTempoTimeline
+    ).find((clip) => clip.id === clipId && clip.startBeat >= startBeat && clip.endBeat <= endBeat);
     if (!fragment) {
         throw new Error(`Expected the physical source of ${clipId} before Delete Time`);
     }

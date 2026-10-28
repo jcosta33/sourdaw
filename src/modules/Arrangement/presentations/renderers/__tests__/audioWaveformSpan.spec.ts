@@ -19,7 +19,7 @@ const secondsPerBeatAt120Bpm = 60 / 120;
 const sampleRate48k = 48_000;
 
 function capturedTimeline(changes: Parameters<typeof secondsBetweenBeats>[0]) {
-    const captured = structuredClone(changes);
+    const captured = structuredClone([...changes]);
     const project = createSamplePositionProjector({ transport: { tempo: 120 }, tempoMap: { changes: captured } });
     return {
         secondsAtBeat: (beat: number) => secondsBetweenBeats(captured, 0, beat, 120),
