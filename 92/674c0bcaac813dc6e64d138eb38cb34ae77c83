@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackVcaSection.command.integration.spec.tsx
+  s_59e31a5c6f3e31::t_8219fd0c9af5cb 147-151,206-219,284-289,294-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "92674c0bcaac813dc6e64d138eb38cb34ae77c83",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
