@@ -1,0 +1,23 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx
+  s_59e31a5c6f3e31::t_a2dce8b42ea6a0 12,41-44,64-67,69-72
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackVcaSection.command.integration.spec.tsx
+  s_59e31a5c6f3e31::t_039ca754a7b5e1 1-384
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackVcaSection.spec.tsx
+  s_59e31a5c6f3e31::t_f93b2c093623a8 10-13,98,136,140-143,146,151-154,157,163-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73676488c41265e52ff17189c887ef2b65bdee92",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
