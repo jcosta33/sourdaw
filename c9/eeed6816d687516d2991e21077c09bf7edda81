@@ -1,0 +1,53 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.predecessorSettlement.spec.ts
+  s_29d8df116c5b92::t_ed59c320afc4eb 68,91,142-146,188-192,228-232
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_3168504f6ce387::t_54441c98053410 1178,1299,1949,2112,2153
+src/modules/Arrangement/handlers/clip/__tests__/audioClipSlipSession.spec.ts
+  s_3168504f6ce387::t_8865c21763933c 271-274
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_3168504f6ce387::t_7f3a864f7a1cd8 916
+src/modules/Arrangement/presentations/renderers/__tests__/audioWaveformSpan.spec.ts
+  s_3168504f6ce387::t_4d954b7757bb6c 22
+src/modules/Arrangement/useCases/__tests__/prepareTempoAudioSources.recording.spec.ts
+  s_3168504f6ce387::t_9f5f7378300881 199-201
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  s_3168504f6ce387::t_d6bcefd1db7d6a 11,42
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTakeReKey.spec.ts
+  s_59e31a5c6f3e31::t_a1fb186ad2e31f 137-142
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.transact.spec.ts
+  s_3168504f6ce387::t_210a21ff1d6133 287
+src/utils/__tests__/tempoAudioSourcePromotion.spec.ts
+  s_3168504f6ce387::t_89eb1f8ee592aa 219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c9eeed6816d687516d2991e21077c09bf7edda81",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
