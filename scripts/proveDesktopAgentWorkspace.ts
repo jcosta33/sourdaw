@@ -219,7 +219,7 @@ async function main(): Promise<number> {
 
     const provider = await startLoopbackOpenAiProvider({
         reply: REPLY,
-        toolCalls: createLoopbackAnswerToolCalls(REPLY),
+        toolCalls: createLoopbackAnswerToolCalls(),
     });
     process.stdout.write(`provider          ${provider.baseUrl} (model ${provider.model})\n`);
 

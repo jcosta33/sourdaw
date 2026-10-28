@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
+
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
@@ -13,12 +15,15 @@ import { orchestratePromptChatRequest } from '../agentRequestOrchestration/orche
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
+import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 /**
  * AC-001 (#4381): a question ends the run in an `answer` outcome. The planner reaches it only
  * through the terminal `answer.respond` call, which the application-owned loop admits alone in its
- * turn, with real text, and with its evidence resolved against the run's own receipts.
+ * turn, with app-composed facts, and with its evidence resolved against the run's own receipts.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -27,8 +32,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-    captureProjectRevision: vi.fn(() => 'revision-1'),
-    settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-1'),
+    captureProjectRevision: vi.fn(() => JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] })),
+    settlePendingProjectWritesAndCaptureRevision: vi.fn(() =>
+        JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] })
+    ),
 }));
 
 vi.mock('../getProjectContext', async (importOriginal) => ({
@@ -53,8 +60,9 @@ vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     generateToolPlanningOutcome: vi.fn(),
 }));
 
-const PROMPT = "What's the loudness of the master?";
-const ANSWER_TEXT = 'The master integrates at -14.2 LUFS with a true peak of -1.1 dBTP.';
+const PROMPT = 'Describe the project structure.';
+const ANSWER_TEXT =
+    'The project has 0 audio/MIDI track(s), 0 bus(es), and 0 folder(s). Master output is separate. Tempo is 120 BPM in 4/4.';
 const RUN_ID = 'agent-run-00000000-0000-0000-0000-000000000001';
 const TERMINAL_TOOL_NAMES = new Set(['command.batch.propose', 'command.batch.decline', 'answer.respond']);
 
@@ -82,11 +90,25 @@ const context: ProjectContext = {
 
 const readTurn = {
     status: 'complete' as const,
-    toolCalls: [
-        { id: 'caps-1', name: 'agent.capabilities', arguments: {} },
-        { id: 'recipes-1', name: 'recipe.discover', arguments: { descriptors: ['warm'] } },
-    ],
+    toolCalls: [{ id: 'query', name: 'project.query', arguments: { type: 'project-summary' } }],
 };
+function scriptStructuralAnswer() {
+    vi.mocked(generateToolPlanningOutcome)
+        .mockImplementationOnce(async (_system, _message, tools) => ({
+            status: 'complete',
+            toolCalls: [answerIntakeFromTools(tools)],
+        }))
+        .mockResolvedValueOnce(readTurn)
+        .mockResolvedValueOnce(
+            answerTurn({
+                intakeCallId: 'intake',
+                statements: [
+                    { kind: 'project-fact', fact: 'summary' },
+                    { kind: 'query-page', callId: 'query' },
+                ],
+            })
+        );
+}
 
 function answerTurn(argumentsValue: Record<string, unknown>) {
     return {
@@ -96,7 +118,20 @@ function answerTurn(argumentsValue: Record<string, unknown>) {
 }
 
 function runScriptedLoop(turns: readonly unknown[]) {
-    const requestTurn = vi.fn();
+    const catalog = prepareAnswerInterpretationCatalog({ prompt: PROMPT, context, projectRevision: 'revision-1' });
+    const intake = {
+        id: 'intake',
+        name: 'selectAnswerInterpretation',
+        arguments: {
+            catalogId: catalog.catalogId,
+            kind: 'project-facts',
+            topicIds: [],
+            scopeCandidateIds: [],
+            rangeCandidateId: null,
+            uncertainty: 'none',
+        },
+    };
+    const requestTurn = vi.fn().mockResolvedValueOnce({ status: 'complete', toolCalls: [intake] });
     for (const turn of turns) {
         requestTurn.mockResolvedValueOnce(turn);
     }
@@ -104,6 +139,9 @@ function runScriptedLoop(turns: readonly unknown[]) {
         loopId: 'loop-answer',
         terminalToolNames: TERMINAL_TOOL_NAMES,
         requestTurn,
+        answerInterpretation: {
+            admit: (call) => admitAnswerInterpretation({ catalog, call, projectRevision: 'revision-1' }),
+        },
     });
 }
 
@@ -112,6 +150,12 @@ describe('answer.respond ends a run as an answer outcome', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa',
+            initialized: true,
+            loading: false,
+        });
         uuidCounter = 0;
         vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
             uuidCounter += 1;
@@ -132,34 +176,30 @@ describe('answer.respond ends a run as an answer outcome', () => {
     });
 
     it('plans an answer carrying its text and the evidence resolved from this run, with no actions', async () => {
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce(readTurn)
-            .mockResolvedValueOnce(answerTurn({ text: ANSWER_TEXT, evidenceCallIds: ['caps-1', 'recipes-1'] }));
+        scriptStructuralAnswer();
 
         const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: 'revision-1' });
 
         const receipts = result.applicationToolReceipts ?? [];
         expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual([
-            { callId: 'caps-1', status: 'success' },
-            { callId: 'recipes-1', status: 'success' },
+            { callId: 'intake', status: 'success' },
+            { callId: 'query', status: 'success' },
         ]);
         expect(result.actions).toEqual([]);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.requiresConfirmation).toBe(false);
         expect(result.planningOutcome).toEqual({
             kind: 'answer',
-            text: ANSWER_TEXT,
+            text: expect.stringContaining(ANSWER_TEXT),
             evidence: receipts.map(({ callId, toolName, summary }) => ({ callId, toolName, summary })),
         });
         expect(result.planningOutcome?.kind === 'answer' && result.planningOutcome.evidence[0]?.toolName).toBe(
-            'agent.capabilities'
+            'selectAnswerInterpretation'
         );
     });
 
     it('answers in the chat with no pending confirmation and completes the run', async () => {
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce(readTurn)
-            .mockResolvedValueOnce(answerTurn({ text: ANSWER_TEXT, evidenceCallIds: ['recipes-1'] }));
+        scriptStructuralAnswer();
 
         await orchestratePromptChatRequest({
             userText: PROMPT,
@@ -172,15 +212,16 @@ describe('answer.respond ends a run as an answer outcome', () => {
         const run = agentRunLifecycle.get(RUN_ID);
         expect(run?.phase).toBe('completed');
         expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
-        const recipeReceipt = run?.plan?.applicationToolReceipts?.find((receipt) => receipt.callId === 'recipes-1');
+        const recipeReceipt = run?.plan?.applicationToolReceipts?.find((receipt) => receipt.callId === 'query');
         expect(recipeReceipt?.status).toBe('success');
         const messages = chatStore.value?.messages ?? [];
         expect(messages.map(({ role, content, error }) => ({ role, content, error }))).toEqual([
             { role: 'user', content: PROMPT, error: undefined },
-            { role: 'assistant', content: ANSWER_TEXT, error: undefined },
+            { role: 'assistant', content: expect.stringContaining(ANSWER_TEXT), error: undefined },
         ]);
         expect(messages[1]?.answerEvidence).toEqual([
-            { callId: 'recipes-1', toolName: 'recipe.discover', summary: recipeReceipt?.summary },
+            expect.objectContaining({ callId: 'intake', toolName: 'selectAnswerInterpretation' }),
+            { callId: 'query', toolName: 'project.query', summary: recipeReceipt?.summary },
         ]);
         expect(messages[1]?.pendingActionConfirmationId).toBeUndefined();
     });
@@ -190,19 +231,22 @@ describe('answer.respond ends a run as an answer outcome', () => {
 
         expect(result).toMatchObject({
             status: 'rejected',
-            reason: 'Provider answer field text must be non-empty text of at most 4096 characters.',
+            reason: 'Provider answer must be a bounded closed factual document.',
         });
     });
 
     it('refuses an answer that cites a call id this run never made', async () => {
         const result = await runScriptedLoop([
             readTurn,
-            answerTurn({ text: ANSWER_TEXT, evidenceCallIds: ['caps-1', 'measure-from-another-run'] }),
+            answerTurn({
+                intakeCallId: 'intake',
+                statements: [{ kind: 'query-page', callId: 'measure-from-another-run' }],
+            }),
         ]);
 
         expect(result).toMatchObject({
             status: 'rejected',
-            reason: 'Provider answer cited a call id that names no successful call of this run.',
+            reason: 'Answer references evidence outside its frozen interpretation or successful bounded reads.',
         });
     });
 
@@ -212,25 +256,34 @@ describe('answer.respond ends a run as an answer outcome', () => {
                 status: 'complete',
                 toolCalls: [{ id: 'bad-recipes', name: 'recipe.discover', arguments: { descriptors: [] } }],
             },
-            answerTurn({ text: ANSWER_TEXT, evidenceCallIds: ['bad-recipes'] }),
+            answerTurn({ intakeCallId: 'intake', statements: [{ kind: 'query-page', callId: 'bad-recipes' }] }),
         ]);
 
         expect(result).toMatchObject({
             status: 'rejected',
-            reason: 'Provider answer cited a call id that names no successful call of this run.',
-            receipts: [{ callId: 'bad-recipes', status: 'failure' }],
+            reason: 'Answer references evidence outside its frozen interpretation or successful bounded reads.',
+            receipts: [
+                expect.objectContaining({ callId: 'intake' }),
+                expect.objectContaining({ callId: 'bad-recipes', status: 'failure' }),
+            ],
         });
     });
 
     it('lists each cited receipt once, in the order first cited, however often the provider repeats it', async () => {
         const result = await runScriptedLoop([
             readTurn,
-            answerTurn({ text: ANSWER_TEXT, evidenceCallIds: ['recipes-1', 'caps-1', 'recipes-1', 'caps-1'] }),
+            answerTurn({
+                intakeCallId: 'intake',
+                statements: [
+                    { kind: 'query-page', callId: 'query' },
+                    { kind: 'query-page', callId: 'query' },
+                ],
+            }),
         ]);
 
         expect(result.status).toBe('complete');
         const evidence = result.status === 'complete' ? result.answer?.evidence : undefined;
-        expect(evidence?.map((entry) => entry.callId)).toEqual(['recipes-1', 'caps-1']);
+        expect(evidence?.map((entry) => entry.callId)).toEqual(['intake', 'query']);
     });
 
     it('refuses a turn that answers and proposes a batch at once, so an answer never runs a batch', async () => {
@@ -238,7 +291,7 @@ describe('answer.respond ends a run as an answer outcome', () => {
             {
                 status: 'complete',
                 toolCalls: [
-                    { id: 'answer-1', name: 'answer.respond', arguments: { text: ANSWER_TEXT, evidenceCallIds: [] } },
+                    { id: 'answer-1', name: 'answer.respond', arguments: structuralAnswerArguments },
                     {
                         id: 'propose-1',
                         name: 'command.batch.propose',
@@ -250,17 +303,17 @@ describe('answer.respond ends a run as an answer outcome', () => {
 
         expect(result).toMatchObject({
             status: 'rejected',
-            reason: 'Provider combined an answer with another terminal call.',
+            reason: 'Answer interpretation cannot authorize a mutation, preview or preparation.',
         });
     });
 
     it('lets an answer that cites nothing end the run, as a descriptive answer from context alone', async () => {
-        const result = await runScriptedLoop([answerTurn({ text: ANSWER_TEXT, evidenceCallIds: [] })]);
+        const result = await runScriptedLoop([answerTurn(structuralAnswerArguments)]);
 
         expect(result).toMatchObject({
             status: 'complete',
             decline: null,
-            answer: { text: ANSWER_TEXT, evidence: [] },
+            answer: { text: ANSWER_TEXT, evidence: [expect.objectContaining({ callId: 'intake' })] },
         });
     });
 });

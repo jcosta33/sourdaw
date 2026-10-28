@@ -25,6 +25,8 @@ import {
     type AgentCatalogCategory,
 } from '../models/AgentToolCatalogNames';
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
+import { ANSWER_INTERPRETATION_TOOL_NAME, type AnswerRequestAuthority } from '../models/AnswerInterpretation';
+import { type AnswerOnsets } from '../models/AnswerEvidence';
 import { type PlanningAnswer } from '../models/AnswerRespond';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -76,6 +78,12 @@ import {
 } from './agentToolCatalog';
 import { DEFERRED_AGENT_CAPABILITIES } from './deferredAgentCapabilities';
 import { discoverMixRecipes } from './discoverMixRecipes';
+import {
+    composeMeasuredAnswer,
+    type AdmittedAnswerRead,
+    type AdmittedAnswerIntake,
+    type AnswerReadSource,
+} from './composeMeasuredAnswer';
 import { type executeRecipeExpansion } from './executeRecipeExpansion';
 import { type executeTransformCompile } from './executeTransformCompile';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
@@ -183,6 +191,7 @@ type RunApplicationOwnedToolLoopInput = {
         transientOnsetsDiscovered?: true;
         /** `receiptContext`'s header and what the run still allows, without the receipt JSON. */
         budgetNote: string;
+        answerOnly?: true;
         remaining: {
             turns: number;
             calls: number;
@@ -209,6 +218,13 @@ type RunApplicationOwnedToolLoopInput = {
      * outcome: the loop answers it with a retryable receipt carrying the reason and gives the
      * planner its next turn, so the refusal spends the turns the run already has and no more.
      */
+    answerInterpretation?: {
+        admit: (
+            call: ToolCallResult
+        ) =>
+            | { status: 'admitted'; authority: AnswerRequestAuthority }
+            | { status: 'clarify' | 'rejected'; reason: string };
+    };
     declineAdmission?: (decline: CommandBatchDecline) => DeclineAdmission;
     /**
      * The measurement read. It renders the project offline, so the caller binds it to the run's
@@ -226,6 +242,7 @@ type RunApplicationOwnedToolLoopInput = {
     };
     /** Local source analysis; unlike measurement it never renders or retains commands. */
     transientOnsetRead?: {
+        readAnswerSource?: (callId: string) => AnswerOnsets | undefined;
         execute: (input: { call: ToolCallResult; callId: string; turn: number }) => Promise<ApplicationToolReceipt>;
     };
     transform?: {
@@ -347,10 +364,15 @@ function executeSemanticProjectQuery(
     input: QueryInput,
     toolName: string,
     callId: string,
-    turn: number
+    turn: number,
+    answerSources?: Map<string, AnswerReadSource>
 ): ApplicationToolReceipt {
     try {
         const receipt = querySemanticProject(input);
+        answerSources?.set(callId, {
+            kind: 'query-page',
+            value: { queryType: receipt.queryType, itemCount: receipt.items.length, total: receipt.page.total },
+        });
         return {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
@@ -375,7 +397,12 @@ function executeSemanticProjectQuery(
     }
 }
 
-function executeProjectQuery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+function executeProjectQuery(
+    call: ToolCallResult,
+    callId: string,
+    turn: number,
+    answerSources?: Map<string, AnswerReadSource>
+): ApplicationToolReceipt {
     const parsed = parseProjectQueryArguments(call.arguments);
     if (parsed.status === 'invalid') {
         return failureReceipt({
@@ -386,7 +413,7 @@ function executeProjectQuery(call: ToolCallResult, callId: string, turn: number)
             retryable: true,
         });
     }
-    return executeSemanticProjectQuery(parsed.input, PROJECT_QUERY_TOOL_NAME, callId, turn);
+    return executeSemanticProjectQuery(parsed.input, PROJECT_QUERY_TOOL_NAME, callId, turn, answerSources);
 }
 
 /**
@@ -1207,7 +1234,12 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
     }
 }
 
-function executeRecipeDiscovery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+function executeRecipeDiscovery(
+    call: ToolCallResult,
+    callId: string,
+    turn: number,
+    answerSources?: Map<string, AnswerReadSource>
+): ApplicationToolReceipt {
     const parsed = parseRecipeDiscoveryInput(call.arguments, getMixRecipeCatalog().roles);
     if (parsed.status === 'invalid') {
         return failureReceipt({
@@ -1231,6 +1263,7 @@ function executeRecipeDiscovery(call: ToolCallResult, callId: string, turn: numb
                 retryable: true,
             });
         }
+        answerSources?.set(callId, { kind: 'recipe', value: result.data });
         return {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
@@ -1256,10 +1289,15 @@ function executeRecipeDiscovery(call: ToolCallResult, callId: string, turn: numb
     }
 }
 
-function executeSafeRead(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
+function executeSafeRead(
+    call: ToolCallResult,
+    callId: string,
+    turn: number,
+    answerSources?: Map<string, AnswerReadSource>
+): ApplicationToolReceipt {
     switch (call.name) {
         case PROJECT_QUERY_TOOL_NAME:
-            return executeProjectQuery(call, callId, turn);
+            return executeProjectQuery(call, callId, turn, answerSources);
         case PROJECT_DISCOVERY_TOOL_NAME:
             return executeProjectDiscovery(call, callId, turn);
         case PROJECT_RESOLVE_TOOL_NAME:
@@ -1274,7 +1312,7 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
         case COMMAND_HISTORY_TOOL_NAME:
             return executeCommandHistory(call, callId, turn);
         case RECIPE_DISCOVERY_TOOL_NAME:
-            return executeRecipeDiscovery(call, callId, turn);
+            return executeRecipeDiscovery(call, callId, turn, answerSources);
         default:
             return failureReceipt({
                 callId,
@@ -1293,7 +1331,13 @@ async function executeMeasurement(
     context: MeasurementCallContext
 ): Promise<ExecutedRead> {
     try {
-        return await measurement.execute(call, context);
+        const result = await measurement.execute(call, context);
+        return {
+            ...result,
+            ...(result.answerMeasurement === undefined
+                ? {}
+                : { answerSource: { kind: 'measurement' as const, value: result.answerMeasurement } }),
+        };
     } catch {
         return {
             commands: null,
@@ -1314,6 +1358,7 @@ async function executeMeasurement(
  * the project offline, so a later one in the same turn is refused without rendering.
  */
 type ExecutedRead = {
+    answerSource?: AnswerReadSource;
     receipt: ApplicationToolReceipt;
     commands: readonly RetainedCommand[] | null;
     /** Set only by a recipe expansion; it is what makes the entry the loop retains a recipe, not a transform. */
@@ -1346,11 +1391,20 @@ function executeTurnReads(input: {
 }): Promise<ExecutedRead>[] {
     const { measurement, turn } = input;
     const measurementToolNames = getMeasurementToolNames(measurement);
+    const producedSources = new Map<string, AnswerReadSource>();
     const firstMeasurementIndex = input.calls.findIndex(({ call }) => measurementToolNames.includes(call.name));
     return input.calls.map(async ({ call, callId }, index) => {
         if (input.transientOnsetRead !== undefined && call.name === ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME) {
             try {
-                return { commands: null, receipt: await input.transientOnsetRead.execute({ call, callId, turn }) };
+                const receipt = await input.transientOnsetRead.execute({ call, callId, turn });
+                const source = input.transientOnsetRead.readAnswerSource?.(callId);
+                return {
+                    commands: null,
+                    receipt,
+                    ...(source === undefined
+                        ? {}
+                        : { answerSource: { kind: 'source-onsets' as const, value: source } }),
+                };
             } catch {
                 return {
                     commands: null,
@@ -1400,7 +1454,8 @@ function executeTurnReads(input: {
             }
         }
         if (measurement === undefined || !measurementToolNames.includes(call.name)) {
-            return { receipt: executeSafeRead(call, callId, turn), commands: null };
+            const receipt = executeSafeRead(call, callId, turn, producedSources);
+            return { receipt, commands: null, answerSource: producedSources.get(callId) };
         }
         if (index !== firstMeasurementIndex) {
             return {
@@ -1631,7 +1686,9 @@ function validateDeclineIsAlone(calls: readonly { call: ToolCallResult }[]): Val
  */
 function validateAnswerIsAlone(
     calls: readonly { call: ToolCallResult }[],
-    receipts: readonly ApplicationToolReceipt[]
+    receipts: readonly ApplicationToolReceipt[],
+    intake: AdmittedAnswerIntake | null,
+    answerReads: ReadonlyMap<string, AdmittedAnswerRead>
 ): ValidatedAnswer {
     const answerCalls = calls.filter(({ call }) => call.name === ANSWER_RESPOND_TOOL_NAME);
     if (answerCalls.length === 0) {
@@ -1644,18 +1701,7 @@ function validateAnswerIsAlone(
     if (parsed.status === 'rejected') {
         return parsed;
     }
-    const evidence: PlanningAnswer['evidence'] = [];
-    for (const callId of parsed.answer.evidenceCallIds) {
-        const receipt = receipts.find((entry) => entry.callId === callId && entry.status === 'success');
-        if (receipt === undefined) {
-            return {
-                status: 'rejected',
-                reason: 'Provider answer cited a call id that names no successful call of this run.',
-            };
-        }
-        evidence.push({ callId, toolName: receipt.toolName, summary: receipt.summary });
-    }
-    return { status: 'accepted', answer: { text: parsed.answer.text, evidence } };
+    return composeMeasuredAnswer({ document: parsed.answer, intake, reads: answerReads, receipts });
 }
 
 type TerminalCallRejection = { status: 'rejected'; reason: string };
@@ -1685,13 +1731,15 @@ function validateCatalogTerminalCalls(
     disclosedCommandSchemas: ReadonlyMap<string, string>,
     retainedCompilations: ReadonlyMap<string, RetainedCompilation>,
     compilationRevisions: Readonly<Record<RetainedCompilation['kind'], string | undefined>>,
-    receipts: readonly ApplicationToolReceipt[]
+    receipts: readonly ApplicationToolReceipt[],
+    answerIntake: AdmittedAnswerIntake | null,
+    answerReads: ReadonlyMap<string, AdmittedAnswerRead>
 ): ValidatedTerminalCalls {
     const declineValidation = validateDeclineIsAlone(calls);
     if (declineValidation.status === 'rejected') {
         return declineValidation;
     }
-    const answerValidation = validateAnswerIsAlone(calls, receipts);
+    const answerValidation = validateAnswerIsAlone(calls, receipts, answerIntake, answerReads);
     if (answerValidation.status === 'rejected') {
         return answerValidation;
     }
@@ -2026,6 +2074,8 @@ export async function runApplicationOwnedToolLoop(
     let receiptContext: string | null = null;
     const history: HostedTurnRecord[] = [];
     let transientOnsetsDiscovered = false;
+    let answerIntake: AdmittedAnswerIntake | null = null;
+    const answerReads = new Map<string, AdmittedAnswerRead>();
     let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
 
     /**
@@ -2034,7 +2084,9 @@ export async function runApplicationOwnedToolLoop(
      * tool uncalled gets exactly the turns every other run gets.
      */
     const maxTurns = (): number =>
-        interpretation === 'admitted' ? limits.maxTurns + CREATIVE_TURN_ALLOWANCE : limits.maxTurns;
+        interpretation === 'admitted' || answerIntake !== null
+            ? limits.maxTurns + CREATIVE_TURN_ALLOWANCE
+            : limits.maxTurns;
 
     /**
      * Admits one turn's receipts against the context budget. Every receipt the loop produces spends
@@ -2093,7 +2145,13 @@ export async function runApplicationOwnedToolLoop(
         // Forcing the terminal tool set only on the final allowed turn keeps every earlier
         // turn free to read, discover, or interpret before the loop must land on an action.
         const directive: HostedToolChoiceDirective = isFinalTurn
-            ? { mode: 'required', toolNames: [...input.terminalToolNames] }
+            ? {
+                  mode: 'required',
+                  toolNames:
+                      answerIntake === null
+                          ? [...input.terminalToolNames]
+                          : [ANSWER_RESPOND_TOOL_NAME, COMMAND_BATCH_DECLINE_TOOL_NAME],
+              }
             : AUTO_TOOL_CHOICE;
         let outcome: ApplicationToolPlanningOutcome;
         try {
@@ -2106,6 +2164,7 @@ export async function runApplicationOwnedToolLoop(
             outcome = await input.requestTurn({
                 turn,
                 receiptContext,
+                ...(answerIntake === null ? {} : { answerOnly: true as const }),
                 history: [...history],
                 ...(transientOnsetsDiscovered ? { transientOnsetsDiscovered: true as const } : {}),
                 budgetNote:
@@ -2153,6 +2212,111 @@ export async function runApplicationOwnedToolLoop(
             }
             seenCallIds.add(callId);
             identifiedCalls.push({ call, callId });
+        }
+
+        const answerSelections = identifiedCalls.filter(({ call }) => call.name === ANSWER_INTERPRETATION_TOOL_NAME);
+        if (answerSelections.length > 0) {
+            if (
+                input.answerInterpretation === undefined ||
+                identifiedCalls.length !== 1 ||
+                answerIntake !== null ||
+                interpretation !== 'none'
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider mixed, repeated or contradicted the answer interpretation.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            const selected = answerSelections[0]!;
+            const admitted = input.answerInterpretation.admit(selected.call);
+            if (admitted.status === 'rejected') {
+                return { status: 'rejected', reason: admitted.reason, receipts, turns: turn };
+            }
+            if (admitted.status === 'clarify') {
+                return {
+                    status: 'complete',
+                    toolCalls: [],
+                    decline: { kind: 'clarify', reason: admitted.reason, questions: [admitted.reason] },
+                    answer: null,
+                    searchedIntents: [...searchedIntents],
+                    proposal: null,
+                    receipts,
+                    turns: turn,
+                    interpretation: 'clarified',
+                    retainedCompilations: [],
+                };
+            }
+            const authority = structuredClone(admitted.authority);
+            const receipt = boundReceipt(
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId: selected.callId,
+                    toolName: selected.call.name,
+                    turn,
+                    status: 'success',
+                    revision: authority.revision,
+                    data: {
+                        schemaVersion: authority.schemaVersion,
+                        catalogId: authority.catalogId,
+                        requestDigest: authority.requestDigest,
+                        revision: authority.revision,
+                        selection: authority.selection,
+                        kind: authority.kind,
+                        topics: authority.topics,
+                        scopes: authority.scopes,
+                        scopeCandidateIds: authority.scopeCandidateIds,
+                        range: authority.range,
+                        requiredMetrics: authority.requiredMetrics,
+                    },
+                    summary: `Interpreted ${authority.kind}: ${authority.scopes.flatMap((scope) => scope.labels).join(', ') || 'project context'}${authority.range === null ? '' : ' over ' + authority.range.label}.`,
+                    warnings: [],
+                    error: null,
+                },
+                limits.maxReceiptBytesPerCall
+            );
+            const overBudget = admitTurnReceipts([receipt], turn, outcome, identifiedCalls);
+            if (overBudget !== null) {
+                return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            }
+            if (receipt.status !== 'success') {
+                return {
+                    status: 'rejected',
+                    reason: 'Answer interpretation exceeded the bounded receipt budget.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            answerIntake = { callId: selected.callId, turn, authority };
+            continue;
+        }
+        if (
+            answerIntake !== null &&
+            identifiedCalls.some(
+                ({ call }) =>
+                    ![
+                        PROJECT_QUERY_TOOL_NAME,
+                        RECIPE_DISCOVERY_TOOL_NAME,
+                        AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                        AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                        ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+                        input.measurement?.toolName,
+                        ANSWER_RESPOND_TOOL_NAME,
+                        COMMAND_BATCH_DECLINE_TOOL_NAME,
+                    ].includes(call.name) ||
+                    (call.name === input.measurement?.toolName &&
+                        call.arguments.subject !== undefined &&
+                        call.arguments.subject !== 'project')
+            )
+        ) {
+            return {
+                status: 'rejected',
+                reason: 'Answer interpretation cannot authorize a mutation, preview or preparation.',
+                receipts,
+                turns: turn,
+            };
         }
 
         const interpretationCalls = identifiedCalls.filter(
@@ -2274,7 +2438,9 @@ export async function runApplicationOwnedToolLoop(
                 recipe: input.recipe?.revision,
                 preview: input.measurement?.revision,
             },
-            receipts
+            receipts,
+            answerIntake,
+            answerReads
         );
         if (terminalValidation.status === 'rejected') {
             return {
@@ -2285,7 +2451,7 @@ export async function runApplicationOwnedToolLoop(
             };
         }
         const declineRefusal =
-            terminalValidation.decline === null || input.declineAdmission === undefined
+            terminalValidation.decline === null || input.declineAdmission === undefined || answerIntake !== null
                 ? null
                 : input.declineAdmission(terminalValidation.decline);
         if (declineRefusal?.status === 'refused') {
@@ -2335,7 +2501,17 @@ export async function runApplicationOwnedToolLoop(
             return {
                 status: 'complete',
                 toolCalls: terminalCalls.map(({ call }) => normalizeTerminalProposalCall(call)),
-                decline: terminalValidation.decline,
+                decline:
+                    answerIntake !== null && terminalValidation.decline !== null
+                        ? {
+                              ...terminalValidation.decline,
+                              reason: 'This question cannot be answered from the available evidence.',
+                              questions:
+                                  terminalValidation.decline.kind === 'clarify'
+                                      ? ['Please clarify the question, target or range to analyze.']
+                                      : [],
+                          }
+                        : terminalValidation.decline,
                 answer: terminalValidation.answer,
                 searchedIntents: [...searchedIntents],
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
@@ -2393,6 +2569,13 @@ export async function runApplicationOwnedToolLoop(
         transientOnsetsDiscovered ||= hasAdmittedTransientDiscovery(safeReadCalls, turnReceipts);
         for (const [index, executed] of executedReads.entries()) {
             const admitted = turnReceipts[index];
+            if (
+                admitted?.status === 'success' &&
+                admitted.callId === executed.receipt.callId &&
+                executed.answerSource !== undefined
+            ) {
+                answerReads.set(admitted.callId, { receipt: admitted, source: structuredClone(executed.answerSource) });
+            }
             if (
                 executed.commands === null ||
                 executed.commands === undefined ||

@@ -10,6 +10,7 @@ import { createModelProviderFailureError, isModelProviderFailureError } from '..
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type AgentDataCategory } from '../../models/AgentDataPolicy';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
+import { ANSWER_INTERPRETATION_TOOL_NAME } from '../../models/AnswerInterpretation';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
@@ -76,18 +77,19 @@ import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
 // What WebLLM advertises on every request: the nine mandatory planning tools, the command-index
-// search, catalog discovery and the creative interpretation tool.
+// search, catalog discovery and both request-specific interpretation tools.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ...MANDATORY_PLANNING_TOOL_NAMES,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     CREATIVE_INTERPRETATION_TOOL_NAME,
+    ANSWER_INTERPRETATION_TOOL_NAME,
 ]);
 
-// The mandatory planning contract (workflow selector, twelve application tools, the 23 workflow
-// action tools: 36) plus one prompt-selected slot; the budget bounds browser prompt size, not a
+// The mandatory planning contract (workflow selector, thirteen application tools, the 23 workflow
+// action tools: 37) plus one prompt-selected slot; the budget bounds browser prompt size, not a
 // provider limit. Raise it with the mandatory set, never below it plus one free slot.
-export const WEBLLM_TOOL_BUDGET = 37;
+export const WEBLLM_TOOL_BUDGET = 38;
 
 /**
  * What one hosted turn replays: the run's first user message, the turns behind it, and the note

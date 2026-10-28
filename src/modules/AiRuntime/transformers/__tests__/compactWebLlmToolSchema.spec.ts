@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { createAnswerInterpretationToolSchema } from '../../models/AnswerInterpretation';
+import { getProjectContext } from '../../useCases/getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../../useCases/prepareAnswerInterpretationCatalog';
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -195,7 +198,16 @@ describe('compactWebLlmToolSchema', () => {
     // Red when any tool description is dropped or shortened: a description holds rules the schema
     // cannot state, such as "return this call alone" and "pass the returned callId in compiledCallIds".
     it('keeps the whole description of every planning tool', () => {
-        for (const tool of getPlanningProviderToolSchemas()) {
+        for (const tool of [
+            ...getPlanningProviderToolSchemas(),
+            createAnswerInterpretationToolSchema(
+                prepareAnswerInterpretationCatalog({
+                    prompt: 'Describe the project',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                })
+            ),
+        ]) {
             expect(
                 compactWebLlmToolSchema(tool).function.description,
                 `${tool.function.name} keeps its description`
@@ -275,7 +287,16 @@ describe('compactWebLlmToolSchema', () => {
     it('keeps every description, validity keyword, required list, enum, const and combinator of every planning tool', () => {
         const dropped: string[] = [];
         let checked = 0;
-        for (const tool of getPlanningProviderToolSchemas()) {
+        for (const tool of [
+            ...getPlanningProviderToolSchemas(),
+            createAnswerInterpretationToolSchema(
+                prepareAnswerInterpretationCatalog({
+                    prompt: 'Describe the project',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                })
+            ),
+        ]) {
             const compacted = compactWebLlmToolSchema(tool).function.parameters;
             for (const fact of collectFacts(tool.function.parameters, [])) {
                 checked += 1;

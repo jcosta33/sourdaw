@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    ANSWER_INTERPRETATION_TOOL_NAME,
+    createAnswerInterpretationToolSchema,
+} from '../../../models/AnswerInterpretation';
+import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
+import { getProjectContext } from '../../getProjectContext';
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
@@ -1733,6 +1739,13 @@ describe('generateToolPlanningOutcome', () => {
             toolSchema('agent.catalog.discover'),
             ...competingTools,
             createCreativeInterpretationToolSchema(creativeCatalog),
+            createAnswerInterpretationToolSchema(
+                prepareAnswerInterpretationCatalog({
+                    prompt: 'Describe',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                })
+            ),
         ];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
@@ -1766,7 +1779,17 @@ describe('generateToolPlanningOutcome', () => {
         );
 
         // Production appends the creative interpretation schema to that list on every run.
-        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+        const productionSchemas = [
+            ...schemas,
+            createCreativeInterpretationToolSchema(creativeCatalog),
+            createAnswerInterpretationToolSchema(
+                prepareAnswerInterpretationCatalog({
+                    prompt: 'Describe',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                })
+            ),
+        ];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', productionSchemas)).resolves.toMatchObject(
             {
@@ -1824,6 +1847,7 @@ describe('generateToolPlanningOutcome', () => {
                 'automateSendRanges',
                 'renderProjectSections',
                 CREATIVE_INTERPRETATION_TOOL_NAME,
+                ANSWER_INTERPRETATION_TOOL_NAME,
                 'project.discover',
             ])
         );
@@ -1866,7 +1890,17 @@ describe('generateToolPlanningOutcome', () => {
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
             const schemas = getPlanningProviderToolSchemas();
-            const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+            const productionSchemas = [
+                ...schemas,
+                createCreativeInterpretationToolSchema(creativeCatalog),
+                createAnswerInterpretationToolSchema(
+                    prepareAnswerInterpretationCatalog({
+                        prompt: 'Describe',
+                        context: getProjectContext(),
+                        projectRevision: 'revision',
+                    })
+                ),
+            ];
 
             await expect(generateToolPlanningOutcome('system', prompt, productionSchemas)).resolves.toMatchObject({
                 status: 'complete',
@@ -1907,6 +1941,13 @@ describe('generateToolPlanningOutcome', () => {
             const productionSchemas = [
                 ...getPlanningProviderToolSchemas(),
                 createCreativeInterpretationToolSchema(creativeCatalog),
+                createAnswerInterpretationToolSchema(
+                    prepareAnswerInterpretationCatalog({
+                        prompt: 'Describe',
+                        context: getProjectContext(),
+                        projectRevision: 'revision',
+                    })
+                ),
             ];
 
             mocks.backendChain.value = ['webllm'];
@@ -1944,7 +1985,17 @@ describe('generateToolPlanningOutcome', () => {
         });
 
         const schemas = getPlanningProviderToolSchemas();
-        const productionSchemas = [...schemas, createCreativeInterpretationToolSchema(creativeCatalog)];
+        const productionSchemas = [
+            ...schemas,
+            createCreativeInterpretationToolSchema(creativeCatalog),
+            createAnswerInterpretationToolSchema(
+                prepareAnswerInterpretationCatalog({
+                    prompt: 'Describe',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                })
+            ),
+        ];
 
         await expect(
             generateToolPlanningOutcome(

@@ -1,53 +1,54 @@
 import { describe, expect, it } from 'vitest';
 
-import { ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS, ANSWER_RESPOND_MAX_TEXT_LENGTH } from '../../models/AnswerRespond';
+import { ANSWER_RESPOND_MAX_STATEMENTS } from '../../models/AnswerRespond';
+import { getPlanningProviderToolSchemas } from '../../useCases/getPlanningProviderToolSchemas';
+import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { parseAnswerRespond } from '../parseAnswerRespond';
 
+const reference = { callId: 'measure', targetId: 'master', metricId: 'integratedLoudness' };
+const schema = getPlanningProviderToolSchemas().find((tool) => tool.function.name === 'answer.respond')!.function
+    .parameters;
+const document = { intakeCallId: 'intake', statements: [{ kind: 'metric', reference }] };
 describe('parseAnswerRespond', () => {
-    it('accepts text and call ids, keeping each id once in first-cited order', () => {
-        expect(parseAnswerRespond({ text: 'Loud.', evidenceCallIds: ['b', 'a', 'b'] })).toEqual({
-            status: 'accepted',
-            answer: { text: 'Loud.', evidenceCallIds: ['b', 'a'] },
-        });
+    it('accepts the closed document through parser and actual published schema', () => {
+        expect(parseAnswerRespond(document)).toEqual({ status: 'accepted', answer: document });
+        expect(matchesJsonSchema(document, schema)).toBe(true);
     });
-
-    it('accepts text of exactly the maximum length', () => {
-        const text = 'x'.repeat(ANSWER_RESPOND_MAX_TEXT_LENGTH);
-
-        expect(parseAnswerRespond({ text, evidenceCallIds: [] })).toEqual({
-            status: 'accepted',
-            answer: { text, evidenceCallIds: [] },
-        });
+    it('accepts all finite statement forms', () => {
+        const statements = [
+            { kind: 'difference', left: reference, right: { ...reference, targetId: 'vocal' } },
+            { kind: 'ranking', references: [reference], operation: 'maximum' },
+            { kind: 'project-fact', fact: 'summary' },
+            { kind: 'query-page', callId: 'query' },
+            { kind: 'recipe', callId: 'recipe', recipeId: 'warm' },
+            { kind: 'source-onsets', callId: 'onset' },
+            { kind: 'limitation', code: 'timing-unavailable' },
+        ];
+        expect(parseAnswerRespond({ intakeCallId: 'intake', statements }).status).toBe('accepted');
+        expect(matchesJsonSchema({ intakeCallId: 'intake', statements }, schema)).toBe(true);
     });
-
-    it('accepts exactly the maximum number of distinct call ids', () => {
-        const evidenceCallIds = Array.from(
-            { length: ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS },
-            (_, index) => `call-${String(index)}`
-        );
-
-        expect(parseAnswerRespond({ text: 'Loud.', evidenceCallIds })).toEqual({
-            status: 'accepted',
-            answer: { text: 'Loud.', evidenceCallIds },
-        });
-    });
-
     it.each([
-        ['an argument outside the contract', { text: 'Loud.', evidenceCallIds: [], commands: [] }],
-        ['missing text', { evidenceCallIds: [] }],
-        ['blank text', { text: '   ', evidenceCallIds: [] }],
-        ['text over the bound', { text: 'x'.repeat(ANSWER_RESPOND_MAX_TEXT_LENGTH + 1), evidenceCallIds: [] }],
-        ['missing call ids', { text: 'Loud.' }],
-        ['an empty call id', { text: 'Loud.', evidenceCallIds: [''] }],
-        ['a non-string call id', { text: 'Loud.', evidenceCallIds: [7] }],
-        [
-            'more call ids than the bound',
-            {
-                text: 'Loud.',
-                evidenceCallIds: Array.from({ length: ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS + 1 }, () => 'call-1'),
-            },
-        ],
-    ])('refuses %s', (_label, argumentsValue) => {
-        expect(parseAnswerRespond(argumentsValue)).toMatchObject({ status: 'rejected' });
+        { text: 'The master is minus fourteen LUFS.', evidenceCallIds: [] },
+        { ...document, text: 'Better by three decibels' },
+        { ...document, statements: [] },
+        { ...document, intakeCallId: '' },
+        {
+            ...document,
+            statements: Array.from({ length: ANSWER_RESPOND_MAX_STATEMENTS + 1 }, () => document.statements[0]),
+        },
+        { ...document, statements: [{ kind: 'metric', reference: { ...reference, value: -14, unit: 'LUFS' } }] },
+        {
+            ...document,
+            statements: [{ kind: 'metric', reference: { ...reference, pointer: '/targets/0/measurements' } }],
+        },
+        {
+            ...document,
+            statements: [{ kind: 'ranking', references: [reference], operation: 'louder', winner: 'master' }],
+        },
+        { ...document, statements: [{ kind: 'prose', text: 'ten LUFS' }] },
+        { ...document, statements: [{ kind: 'project-fact', fact: 'loudness' }] },
+    ])('refuses raw prose, arbitrary values and malformed document: %j', (value) => {
+        expect(parseAnswerRespond(value).status).toBe('rejected');
+        expect(matchesJsonSchema(value, schema)).toBe(false);
     });
 });

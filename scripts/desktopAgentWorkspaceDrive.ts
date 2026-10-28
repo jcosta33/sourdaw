@@ -43,7 +43,7 @@ const WORKSPACE_CONFIRM_NAME = 'Confirm agent actions';
 const PROMPT = 'create 3 audio tracks';
 
 /** Explain mode has no local fast path for this, so the answer can only come back over the admitted endpoint. */
-const EXPLAIN_PROMPT = 'What does this project sound like?';
+const EXPLAIN_PROMPT = 'Describe the project structure and tempo setting.';
 
 /**
  * Which half of the run a step belongs to. `launch` steps happen before
@@ -163,14 +163,36 @@ async function completeChatAnswer(page: Page, provider: LoopbackOpenAiProvider):
     await composer.press('Enter');
     await page
         .getByRole('log', { name: 'Chat conversation' })
-        .filter({ hasText: provider.reply })
+        .filter({ hasText: 'The project has' })
         .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
 
-    const [firstBody, secondBody] = provider.completionRequests;
-    if (provider.completionRequests.length !== 2 || firstBody === undefined || secondBody === undefined) {
-        throw new Error(`expected two tool-planning requests, saw ${String(provider.completionRequests.length)}`);
+    const [firstBody, intakeBody, secondBody] = provider.completionRequests;
+    if (
+        provider.completionRequests.length !== 3 ||
+        firstBody === undefined ||
+        intakeBody === undefined ||
+        secondBody === undefined
+    ) {
+        throw new Error(`expected three tool-planning requests, saw ${String(provider.completionRequests.length)}`);
     }
     const first = JSON.parse(firstBody) as { model: string; tools: Array<{ function: { name: string } }> };
+    const intake = JSON.parse(intakeBody) as {
+        messages: Array<{ role: string; tool_call_id?: string; content: string }>;
+    };
+    const intakeReceipt = intake.messages.find(
+        (message) => message.role === 'tool' && message.tool_call_id === 'loopback-intake'
+    );
+    if (intakeReceipt === undefined) {
+        throw new Error('missing dynamic intake receipt');
+    }
+    const admitted = JSON.parse(intakeReceipt.content) as { callId: string; toolName: string; status: string };
+    if (
+        admitted.callId !== 'loopback-intake' ||
+        admitted.toolName !== 'selectAnswerInterpretation' ||
+        admitted.status !== 'success'
+    ) {
+        throw new Error('missing successful correlated dynamic intake receipt');
+    }
     const second = JSON.parse(secondBody) as {
         model: string;
         tools: Array<{ function: { name: string } }>;
@@ -182,7 +204,7 @@ async function completeChatAnswer(page: Page, provider: LoopbackOpenAiProvider):
     if (
         first.model !== provider.model ||
         second.model !== provider.model ||
-        !first.tools.some((tool) => tool.function.name === 'project_query') ||
+        !first.tools.some((tool) => tool.function.name === 'selectAnswerInterpretation') ||
         !second.tools.some((tool) => tool.function.name === 'answer_respond') ||
         receipt === undefined
     ) {
@@ -198,7 +220,7 @@ async function completeChatAnswer(page: Page, provider: LoopbackOpenAiProvider):
         .getByRole('list', { name: 'Evidence' })
         .getByText('project.query')
         .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
-    return 'two tool-planning requests; completed answer cites the successful project query';
+    return 'three tool-planning requests; closed answer cites successful dynamic intake and project query';
 }
 
 /** Sends the multi-action prompt in apply mode; returns the pre-prompt track count. */

@@ -7,6 +7,7 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
+import { ANSWER_INTERPRETATION_TOOL_NAME, createAnswerInterpretationToolSchema } from '../models/AnswerInterpretation';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
@@ -50,6 +51,8 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
 import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 
+import { admitAnswerInterpretation } from './admitAnswerInterpretation';
+import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
 import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
@@ -70,6 +73,10 @@ import { readExplicitProtections } from './agentReference/readExplicitProtection
 import { readStoredCardRemoval } from './agentReference/readStoredCardRemoval';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+    PROJECT_QUERY_TOOL_NAME,
+    RECIPE_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
@@ -634,7 +641,13 @@ const planPromptIntent = inject({ logger })(
                           context,
                           projectRevision: projectRevision ?? '',
                       });
+                const answerCatalog = prepareAnswerInterpretationCatalog({
+                    prompt,
+                    context,
+                    projectRevision: projectRevision ?? '',
+                });
                 const providerToolSchemas = [
+                    createAnswerInterpretationToolSchema(answerCatalog),
                     ...(readonly ? getPlanningProviderToolSchemas(profile) : getPlanningProviderToolSchemas()),
                     ...(creativeCatalog === undefined ? [] : [createCreativeInterpretationToolSchema(creativeCatalog)]),
                 ];
@@ -864,6 +877,14 @@ const planPromptIntent = inject({ logger })(
                                       };
                                   },
                               },
+                    answerInterpretation: {
+                        admit: (call) =>
+                            admitAnswerInterpretation({
+                                catalog: answerCatalog,
+                                call,
+                                projectRevision: projectRevision ?? '',
+                            }),
+                    },
                     measurement: createMeasurement(),
                     requestTurn: async ({
                         receiptContext,
@@ -871,6 +892,7 @@ const planPromptIntent = inject({ logger })(
                         history,
                         budgetNote,
                         transientOnsetsDiscovered,
+                        answerOnly,
                     }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
@@ -880,7 +902,20 @@ const planPromptIntent = inject({ logger })(
                         const turn = await generateToolPlanningOutcome(
                             getPlanningSystemPrompt(),
                             planningContext.message,
-                            providerToolSchemas,
+                            answerOnly
+                                ? providerToolSchemas.filter((schema) =>
+                                      [
+                                          PROJECT_QUERY_TOOL_NAME,
+                                          RECIPE_DISCOVERY_TOOL_NAME,
+                                          AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                                          AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                                          ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+                                          ANALYSIS_MEASURE_TOOL_NAME,
+                                          ANSWER_RESPOND_TOOL_NAME,
+                                          COMMAND_BATCH_DECLINE_TOOL_NAME,
+                                      ].includes(schema.function.name)
+                                  )
+                                : providerToolSchemas,
                             signal,
                             prompt,
                             onProviderResult,

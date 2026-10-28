@@ -24,6 +24,9 @@ import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../getProjectContext';
+import { advertisedAnswerCatalogId, advertisedAnswerCandidateId } from './answerWireFixture';
+import { admitAnswerInterpretation } from '../admitAnswerInterpretation';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 const READ = 'analysis.detectTransients';
@@ -164,12 +167,48 @@ describe('planner transient read contract', () => {
             warnings: [],
             error: null,
         }));
+        const catalog = prepareAnswerInterpretationCatalog({
+            prompt: 'source onsets',
+            context: getProjectContext(),
+            projectRevision: 'revision',
+        });
+        catalog.scopes.push({ candidateId: 'clip:clip-1', kind: 'clips', objectIds: ['clip-1'], labels: ['Clip'] });
         const result = await runApplicationOwnedToolLoop({
+            answerInterpretation: {
+                admit: (call) => admitAnswerInterpretation({ catalog, call, projectRevision: 'revision' }),
+            },
             loopId: 'onset-read',
             terminalToolNames: new Set(['answer.respond']),
-            transientOnsetRead: { execute },
+            transientOnsetRead: {
+                execute,
+                readAnswerSource: () => ({
+                    clipId: 'clip-1',
+                    sourceRevisionDigest: digest('revision'),
+                    timeAxis: 'source-buffer',
+                    totalHitCount: 1,
+                    coverage: { offset: 0, endOffset: 1 },
+                    hits: [{ sourceSeconds: 512 / 48_000, confidence: 0.75 }],
+                }),
+            },
             requestTurn: vi
                 .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'intake',
+                            name: 'selectAnswerInterpretation',
+                            arguments: {
+                                catalogId: catalog.catalogId,
+                                kind: 'source-onsets',
+                                topicIds: [],
+                                scopeCandidateIds: ['clip:clip-1'],
+                                rangeCandidateId: null,
+                                uncertainty: 'none',
+                            },
+                        },
+                    ],
+                })
                 .mockResolvedValueOnce({
                     status: 'complete',
                     toolCalls: [{ id: 'onsets-1', name: READ, arguments: { clipId: 'clip-1' } }],
@@ -180,19 +219,27 @@ describe('planner transient read contract', () => {
                         {
                             id: 'answer-1',
                             name: 'answer.respond',
-                            arguments: { text: 'Source onsets are available.', evidenceCallIds: ['onsets-1'] },
+                            arguments: {
+                                intakeCallId: 'intake',
+                                statements: [{ kind: 'source-onsets', callId: 'onsets-1' }],
+                            },
                         },
                     ],
                 }),
         });
         expect(execute).toHaveBeenCalledExactlyOnceWith(
-            expect.objectContaining({ callId: 'onsets-1', turn: 1, call: expect.objectContaining({ name: READ }) })
+            expect.objectContaining({ callId: 'onsets-1', turn: 2, call: expect.objectContaining({ name: READ }) })
         );
         expect(result).toMatchObject({
             status: 'complete',
-            answer: { evidence: [expect.objectContaining({ callId: 'onsets-1' })] },
+            answer: {
+                evidence: [
+                    expect.objectContaining({ callId: 'intake' }),
+                    expect.objectContaining({ callId: 'onsets-1' }),
+                ],
+            },
         });
-        expect(result.receipts[0]).toMatchObject({ status: 'success', data: { kind: 'transient-onset-read' } });
+        expect(result.receipts[1]).toMatchObject({ status: 'success', data: { kind: 'transient-onset-read' } });
     });
 });
 
@@ -320,11 +367,66 @@ function answer(evidenceCallIds: string[] = []) {
         {
             id: 'answer',
             name: 'answer.respond',
-            arguments: { text: 'Source onset evidence is available.', evidenceCallIds },
+            arguments: {
+                intakeCallId: 'intake',
+                statements:
+                    evidenceCallIds.length === 0
+                        ? [{ kind: 'limitation', code: 'bounded-evidence' }]
+                        : evidenceCallIds.map((callId) => ({ kind: 'source-onsets', callId })),
+            },
         },
     ];
 }
 function run(admit: MeasurementAdmitter = () => ({ status: 'admitted', settle: () => {} }), signal?: AbortSignal) {
+    const intake = (params: unknown) => ({
+        id: 'intake',
+        name: 'selectAnswerInterpretation',
+        arguments: {
+            catalogId: advertisedAnswerCatalogId(params),
+            kind: 'source-onsets',
+            topicIds: [],
+            scopeCandidateIds: [advertisedAnswerCandidateId(params, requestedClipId)],
+            rangeCandidateId: null,
+            uncertainty: 'none',
+        },
+    });
+    if (provider.backend === 'webllm') {
+        provider.completion.mockImplementationOnce(async (...params: unknown[]) => JSON.stringify([intake(params)]));
+    } else {
+        provider.request.mockImplementationOnce(
+            async (request: { body: string; onBodyChunk: (chunk: Uint8Array) => void }) => {
+                const body = JSON.parse(request.body);
+                bodies.push(body);
+                const call = intake(body);
+                request.onBodyChunk(
+                    new TextEncoder().encode(
+                        JSON.stringify({
+                            choices: [
+                                {
+                                    finish_reason: 'tool_calls',
+                                    message: {
+                                        role: 'assistant',
+                                        content: null,
+                                        tool_calls: [
+                                            {
+                                                id: call.id,
+                                                type: 'function',
+                                                function: {
+                                                    name: encodeWireToolName(call.name),
+                                                    arguments: JSON.stringify(call.arguments),
+                                                },
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                        })
+                    )
+                );
+                return { status: 200, contentType: 'application/json' };
+            }
+        );
+    }
     return parsePromptToActions({
         prompt: 'Show the source onset times of the selected clip without changing anything.',
         context: getProjectContext(),
@@ -398,7 +500,7 @@ beforeEach(() => {
         if (bodies.length === 1) {
             expect(getSettledProjectId()).toBe('aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa');
         }
-        const calls = respond(bodies.length - 1);
+        const calls = respond(bodies.length - 2);
         request.onBodyChunk(
             new TextEncoder().encode(
                 JSON.stringify({
@@ -465,13 +567,14 @@ describe('actual hosted planner, source owner and disposable read session', () =
         expect(result.planningOutcome).toMatchObject({
             kind: 'answer',
             evidence: [
+                expect.objectContaining({ callId: 'intake' }),
                 expect.objectContaining({ callId: 'onsets-1' }),
                 expect.objectContaining({ callId: 'onsets-2' }),
             ],
         });
         expect(result.actions).toEqual([]);
         expect(result.requiresConfirmation).toBe(false);
-        const first = result.applicationToolReceipts?.[0];
+        const first = result.applicationToolReceipts?.[1];
         expect(first).toMatchObject({
             status: 'success',
             data: { timeAxis: 'source-buffer', frameCount: 96_000, hits: expect.any(Array), totalHitCount: 65 },
@@ -510,7 +613,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
     it('refuses run budget before any source cache access', async () => {
         respond = (turn) => (turn === 0 ? [onsetCall()] : answer());
         const result = await run(() => ({ status: 'refused', category: 'localAnalysis' }));
-        expect(result.applicationToolReceipts?.[0]).toMatchObject({
+        expect(result.applicationToolReceipts?.[1]).toMatchObject({
             status: 'failure',
             error: { code: 'measurement-budget-exhausted' },
         });
@@ -538,7 +641,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
             }
             respond = (turn) => (turn === 0 ? [onsetCall()] : answer());
             const result = await run();
-            expect(result.applicationToolReceipts?.[0]).toMatchObject({
+            expect(result.applicationToolReceipts?.[1]).toMatchObject({
                 status: 'failure',
                 error: { code: kind === 'midi' ? 'clip-not-audio' : kind },
             });
@@ -574,12 +677,12 @@ describe('actual hosted planner, source owner and disposable read session', () =
             };
             const result = await run();
             if (change === 'checkpoint-only') {
-                expect(result.applicationToolReceipts?.[1]).toMatchObject({
+                expect(result.applicationToolReceipts?.[2]).toMatchObject({
                     status: 'success',
                     data: { complete: true },
                 });
             } else {
-                expect(result.applicationToolReceipts?.[1]).toMatchObject({
+                expect(result.applicationToolReceipts?.[2]).toMatchObject({
                     status: 'failure',
                     error: { code: 'stale-source' },
                 });
@@ -605,7 +708,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
     it('uses the actual local parser and provider loop to discover, read and cite two complete numeric pages', async () => {
         provider.backend = 'webllm';
         provider.completion.mockImplementation(async (system: string, message: string) => {
-            const turn = provider.completion.mock.calls.length;
+            const turn = provider.completion.mock.calls.length - 1;
             if (turn === 1) {
                 expect(system).toContain(
                     'For drum timing or clip onsets, request analysis.detectTransients in category analysis.'
@@ -633,13 +736,13 @@ describe('actual hosted planner, source owner and disposable read session', () =
             const prior = JSON.parse(relevant.receipts[0]!.summary.value.split('\n').at(-1)!) as {
                 receipts: ApplicationToolReceipt[];
             };
-            const first = prior.receipts[1]!.data as { hits: unknown[]; nextCursor: string };
+            const first = prior.receipts[2]!.data as { hits: unknown[]; nextCursor: string };
             expect(first.hits).toHaveLength(64);
             expect(first.hits[63]).toEqual({ sourceSeconds: (64 * 512) / 48_000, confidence: 0.75 });
             if (turn === 3) {
                 return JSON.stringify([onsetCall('onsets-2', first.nextCursor)]);
             }
-            expect(prior.receipts[2]).toMatchObject({
+            expect(prior.receipts[3]).toMatchObject({
                 status: 'success',
                 data: { complete: true, hits: [{ sourceSeconds: (65 * 512) / 48_000, confidence: 0.75 }] },
             });
@@ -650,20 +753,21 @@ describe('actual hosted planner, source owner and disposable read session', () =
         expect(result.planningOutcome).toMatchObject({
             kind: 'answer',
             evidence: [
+                expect.objectContaining({ callId: 'intake' }),
                 expect.objectContaining({ callId: 'onsets-1' }),
                 expect.objectContaining({ callId: 'onsets-2' }),
             ],
         });
-        expect(result.applicationToolReceipts).toHaveLength(3);
-        expect(result.applicationToolReceipts?.[0]).toMatchObject({
+        expect(result.applicationToolReceipts).toHaveLength(4);
+        expect(result.applicationToolReceipts?.[1]).toMatchObject({
             status: 'success',
             toolName: 'agent.catalog.discover',
         });
-        expect(result.applicationToolReceipts?.[1]).toMatchObject({
+        expect(result.applicationToolReceipts?.[2]).toMatchObject({
             status: 'success',
             data: { kind: 'transient-onset-read', hits: expect.any(Array) },
         });
-        expect(provider.completion).toHaveBeenCalledTimes(4);
+        expect(provider.completion).toHaveBeenCalledTimes(5);
         const localContext = JSON.stringify(provider.completion.mock.calls);
         expect(localContext.includes(RAW_BUFFER_ID)).toBe(false);
         expect(localContext.includes(digest(RAW_BUFFER_ID))).toBe(false);
@@ -698,7 +802,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
         respond = (turn) => (turn === 0 ? [onsetCall()] : answer());
         const settle = vi.fn();
         const result = await run(() => ({ status: 'admitted', settle }));
-        expect(result.applicationToolReceipts?.[0]).toMatchObject({
+        expect(result.applicationToolReceipts?.[1]).toMatchObject({
             status: 'failure',
             error: { code: 'analysis-failed' },
         });
@@ -754,7 +858,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
                     fallbackEvidenceTruncated = evidence.receipts[0]?.summary.truncated;
                     return JSON.stringify(answer(['r'.repeat(256), 's'.repeat(256)]));
                 }
-                const turn = provider.completion.mock.calls.length;
+                const turn = provider.completion.mock.calls.length - 1;
                 if (turn === 1) {
                     return JSON.stringify([
                         {
@@ -774,7 +878,7 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 const prior = JSON.parse(relevant.receipts[0]!.summary.value.split('\n').at(-1)!) as {
                     receipts: ApplicationToolReceipt[];
                 };
-                const first = prior.receipts[1]!.data as {
+                const first = prior.receipts[2]!.data as {
                     hits: { sourceSeconds: number; confidence: number }[];
                     nextCursor: string;
                 };
@@ -834,19 +938,24 @@ describe('actual hosted planner, source owner and disposable read session', () =
                 expect(result.planningOutcome).toMatchObject({
                     kind: 'answer',
                     evidence: [
+                        expect.objectContaining({ callId: 'intake' }),
                         expect.objectContaining({ callId: 'r'.repeat(256) }),
                         expect.objectContaining({ callId: 's'.repeat(256) }),
                     ],
                 });
-                expect(provider.request).toHaveBeenCalledTimes(4);
+                expect(provider.request).toHaveBeenCalledTimes(5);
                 expect(provider.completion).not.toHaveBeenCalled();
             }
-            expect(result.applicationToolReceipts).toHaveLength(3);
-            const first = result.applicationToolReceipts?.[1]?.data as { hits: unknown[] };
-            const second = result.applicationToolReceipts?.[2]?.data as { hits: unknown[]; complete: boolean };
+            // Intake itself spends the unchanged carrier budget: the maximal first page now
+            // exhausts local text before a second read. Native history still carries both pages.
+            expect(result.applicationToolReceipts).toHaveLength(backend === 'webllm' ? 3 : 4);
+            const first = result.applicationToolReceipts?.[2]?.data as { hits: unknown[] };
             expect(first.hits).toHaveLength(64);
-            expect(second.hits).toHaveLength(total - 64);
-            expect(second.complete).toBe(true);
+            if (backend === 'cloud') {
+                const second = result.applicationToolReceipts?.[3]?.data as { hits: unknown[]; complete: boolean };
+                expect(second.hits).toHaveLength(total - 64);
+                expect(second.complete).toBe(true);
+            }
             expect(result.actions).toEqual([]);
             expect(result.requiresConfirmation).toBe(false);
             expect(captureProjectRevision()).toBe(before.revision);

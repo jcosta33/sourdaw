@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 
 import {
+    ANSWER_INTERPRETATION_TOOL_NAME,
+    createAnswerInterpretationToolSchema,
+} from '../../../models/AnswerInterpretation';
+
+import {
     CREATIVE_INTERPRETATION_TOOL_NAME,
     createCreativeInterpretationToolSchema,
     type CreativeInterpretationCatalog,
@@ -54,6 +59,7 @@ import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { buildAgentContext } from '../../buildAgentContext';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 
@@ -114,8 +120,21 @@ const creativeCatalog: CreativeInterpretationCatalog = {
 };
 
 /** The list production sends to every backend: the planning schemas plus the creative interpretation tool. */
-function productionToolSchemas(catalog: CreativeInterpretationCatalog = creativeCatalog): ToolSchema[] {
-    return [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)];
+function productionToolSchemas(
+    catalog: CreativeInterpretationCatalog = creativeCatalog,
+    context: ProjectContext = getProjectContext()
+): ToolSchema[] {
+    return [
+        ...getPlanningProviderToolSchemas(),
+        createCreativeInterpretationToolSchema(catalog),
+        createAnswerInterpretationToolSchema(
+            prepareAnswerInterpretationCatalog({
+                prompt: 'Describe project',
+                context,
+                projectRevision: catalog.revision,
+            })
+        ),
+    ];
 }
 
 function namesOf(tools: readonly ToolSchema[]): string[] {
@@ -340,6 +359,7 @@ describe('mandatory planning tools', () => {
                 AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
                 AGENT_CATALOG_DISCOVERY_TOOL_NAME,
                 CREATIVE_INTERPRETATION_TOOL_NAME,
+                ANSWER_INTERPRETATION_TOOL_NAME,
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
@@ -415,7 +435,7 @@ describe('mandatory planning tools', () => {
                     context,
                     projectRevision: 'revision-1',
                 });
-                const tools = productionToolSchemas(catalog);
+                const tools = productionToolSchemas(catalog, context);
                 const systemPrompt = buildPlanningSystemPrompt();
                 const built = buildAgentContext({
                     fixedPolicy: systemPrompt,
@@ -481,7 +501,7 @@ describe('mandatory planning tools', () => {
 
                 const { built, outcome, sent } = await sendLocalRequest(project(), receipts?.());
 
-                expect(outcome).toMatchObject({ status: 'complete' });
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
                 const [systemText, userText, options] = sent ?? [];
                 if (typeof systemText !== 'string' || typeof userText !== 'string') {
                     throw new TypeError('Expected the local request to reach the engine.');
@@ -506,7 +526,7 @@ describe('mandatory planning tools', () => {
 
                 const { built, outcome, sent } = await sendLocalRequest(fiveTrackProject(), receiptEvidence(), thread);
 
-                expect(outcome).toMatchObject({ status: 'complete' });
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
                 const [systemText, userText] = sent ?? [];
                 if (typeof systemText !== 'string' || typeof userText !== 'string') {
                     throw new TypeError('Expected the local request to reach the engine.');
@@ -629,7 +649,7 @@ describe('mandatory planning tools', () => {
                     createFullThreadContext(),
                     true
                 );
-                expect(outcome).toMatchObject({ status: 'complete' });
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
                 const [systemText, userText] = sent ?? [];
                 if (typeof systemText !== 'string' || typeof userText !== 'string') {
                     throw new TypeError('The discovered receipt request must reach the local engine.');

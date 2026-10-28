@@ -1,43 +1,44 @@
+import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
+
 import {
-    ANSWER_RESPOND_MAX_CALL_ID_LENGTH,
-    ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS,
-    ANSWER_RESPOND_MAX_TEXT_LENGTH,
+    createAnswerRespondParameters,
+    type AnswerMetricReference,
     type AnswerRespondArguments,
+    type AnswerStatement,
 } from '../models/AnswerRespond';
+import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 
-type ParsedAnswerRespond =
-    { status: 'accepted'; answer: AnswerRespondArguments } | { status: 'rejected'; reason: string };
-
-function isCallId(value: unknown): value is string {
-    return typeof value === 'string' && value.length > 0 && value.length <= ANSWER_RESPOND_MAX_CALL_ID_LENGTH;
+function isAnswerDocument(args: Readonly<Record<string, unknown>>): args is AnswerRespondArguments {
+    return matchesJsonSchema(args, createAnswerRespondParameters(getAgentMeasurementMetricIds()));
 }
 
-/**
- * The single reader of an answer call's arguments. Text that is empty once trimmed is refused, so no
- * surface ever shows an answer with nothing in it; repeated call ids collapse to one, so the evidence
- * a run cites never lists the same receipt twice.
- */
-export function parseAnswerRespond(args: Readonly<Record<string, unknown>>): ParsedAnswerRespond {
-    if (Object.keys(args).some((key) => key !== 'text' && key !== 'evidenceCallIds')) {
-        return { status: 'rejected', reason: 'Provider answer carries an argument outside the catalog contract.' };
+function hasCompatibleBand(reference: AnswerMetricReference): boolean {
+    return reference.band === undefined || reference.metricId === 'frequencyBandEnergy';
+}
+
+function hasCompatibleReferences(statement: AnswerStatement): boolean {
+    switch (statement.kind) {
+        case 'metric':
+            return hasCompatibleBand(statement.reference);
+        case 'difference':
+            return hasCompatibleBand(statement.left) && hasCompatibleBand(statement.right);
+        case 'ranking':
+            return statement.references.every(hasCompatibleBand);
+        default:
+            return true;
     }
-    const text = args.text;
-    if (typeof text !== 'string' || text.trim().length === 0 || text.length > ANSWER_RESPOND_MAX_TEXT_LENGTH) {
-        return {
-            status: 'rejected',
-            reason: `Provider answer field text must be non-empty text of at most ${String(ANSWER_RESPOND_MAX_TEXT_LENGTH)} characters.`,
-        };
-    }
-    const evidenceCallIds = args.evidenceCallIds;
+}
+
+/** No provider-authored prose, value, unit, winner or arbitrary receipt pointer is admitted. */
+export function parseAnswerRespond(
+    args: Readonly<Record<string, unknown>>
+): { status: 'accepted'; answer: AnswerRespondArguments } | { status: 'rejected'; reason: string } {
     if (
-        !Array.isArray(evidenceCallIds) ||
-        evidenceCallIds.length > ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS ||
-        !evidenceCallIds.every(isCallId)
+        !isAnswerDocument(args) ||
+        args.intakeCallId.trim().length === 0 ||
+        !args.statements.every(hasCompatibleReferences)
     ) {
-        return {
-            status: 'rejected',
-            reason: `Provider answer field evidenceCallIds must hold at most ${String(ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS)} call ids.`,
-        };
+        return { status: 'rejected', reason: 'Provider answer must be a bounded closed factual document.' };
     }
-    return { status: 'accepted', answer: { text, evidenceCallIds: [...new Set(evidenceCallIds)] } };
+    return { status: 'accepted', answer: structuredClone(args) };
 }
