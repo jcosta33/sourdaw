@@ -906,4 +906,42 @@ describe('importDawProject', () => {
             expect.stringContaining('Imported rejected.dawproject'),
         ]);
     });
+    it('warns for blank mixer values from real ZIP bytes without changing mapped values', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        const projectXml =
+            '<Project version="1.0"><Structure><Track id="keys" name="Keys" contentType="notes"><Channel><Volume id="empty" value=""/><Pan id="space" value="   "/></Channel></Track></Structure><Arrangement><Lanes><Clips track="keys"><Clip name="Playable" time="0" duration="1"><Notes><Note key="64" time="0" duration="1"/></Notes></Clip></Clips></Lanes></Arrangement></Project>';
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+        const result = await importDawProject({ buffer: new Uint8Array(zipped).buffer, fileName: 'blank.dawproject' });
+        expect(result.warnings).toMatchObject([
+            {
+                sourceType: 'Volume',
+                sourceId: 'empty',
+                name: 'Volume',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'space',
+                name: 'Pan',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+        ]);
+        expect(result.warnings).toHaveLength(2);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')).toMatchObject({
+            gain: 0,
+            pan: -1,
+            clips: [{ name: 'Playable' }],
+        });
+        expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+            expect.stringContaining('Volume "Volume" on "Keys" was partially imported: invalid parameter value'),
+            expect.stringContaining('Pan "Pan" on "Keys" was partially imported: invalid parameter value'),
+            expect.stringContaining('Imported blank.dawproject'),
+        ]);
+    });
 });

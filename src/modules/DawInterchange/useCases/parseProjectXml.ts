@@ -193,10 +193,11 @@ function warnParameterMetadata(context: ParseContext, node: XmlQuery | null, own
         details.push('parameter unit');
     }
     const value = node.attrNumber('value', 0);
+    const rawValue = node.attr('value');
     if (
         (node.element.tagName === VOLUME || node.element.tagName === PAN) &&
-        node.attr('value') !== null &&
-        !Number.isFinite(node.attrNumber('value', Number.NaN))
+        rawValue !== null &&
+        (rawValue.trim() === '' || !Number.isFinite(node.attrNumber('value', Number.NaN)))
     ) {
         details.push('invalid parameter value');
     }

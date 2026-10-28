@@ -3244,4 +3244,36 @@ describe('rejected owners and invalid mixer values', () => {
         expect(parsed.tracks[1]).toMatchObject({ name: 'Controls', volume: 0, pan: 0 });
         expect(parsed.tracks[2]).toMatchObject({ name: 'Defaults', volume: 0.8, pan: 0 });
     });
+    it('warns for blank mixer values while retaining their existing numeric coercion', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track name="Blank" contentType="notes"><Channel><Volume id="empty" value=""/><Pan id="space" value="   "/></Channel></Track><Track name="Valid" contentType="notes"><Channel><Volume value="0"/><Pan value="0"/></Channel></Track><Track name="Defaults" contentType="notes"><Channel><Volume value="0.8"/><Pan value="0.5"/></Channel></Track><Track name="Absent" contentType="notes"><Channel><Volume/><Pan/></Channel></Track></Structure>'
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Volume',
+                sourceId: 'empty',
+                name: 'Volume',
+                context: 'Blank',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'space',
+                name: 'Pan',
+                context: 'Blank',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.tracks.map(({ volume, pan }) => ({ volume, pan }))).toEqual([
+            { volume: 0, pan: -1 },
+            { volume: 0, pan: -1 },
+            { volume: 0.8, pan: 0 },
+            { volume: 0.8, pan: 0 },
+        ]);
+    });
 });
