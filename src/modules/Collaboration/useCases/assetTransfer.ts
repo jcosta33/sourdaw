@@ -421,13 +421,22 @@ export class AssetTransfer {
     }
 
     /** Make every verified source independently reopenable before exposing it to a clip or peer. */
-    private async retainOriginal(blob: Blob, name: string, hash: string): Promise<void> {
+    private async retainOriginal(
+        blob: Blob,
+        name: string,
+        hash: string,
+        expectedOwnerId = this.ownerId
+    ): Promise<void> {
         if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
             return;
         }
         const lifetime = this.transferLifetime;
-        const isCurrent = () => !this.disposed && this.transferLifetime === lifetime;
+        const isCurrent = () =>
+            !this.disposed && this.transferLifetime === lifetime && this.ownerId === expectedOwnerId;
         await this.runOwnerOperation(async (assets) => {
+            if (!isCurrent()) {
+                throw new Error('Project original ownership changed');
+            }
             const alreadyOwned = await assets.reopenDurableAsset(hash);
             if (!isCurrent()) {
                 throw new Error('Project original ownership changed');
@@ -1105,10 +1114,15 @@ export class AssetTransfer {
         if (!blob) {
             return false;
         }
+        const ownerId = this.ownerId;
+        const lifetime = this.transferLifetime;
         if ((await hashBlob(blob)) !== hash) {
             throw new Error(`Resident project original has changed: ${hash}`);
         }
-        await this.retainOriginal(blob, hash, hash);
+        if (this.disposed || this.ownerId !== ownerId || this.transferLifetime !== lifetime) {
+            throw new Error('Project original ownership changed');
+        }
+        await this.retainOriginal(blob, hash, hash, ownerId);
         return true;
     }
 

@@ -227,6 +227,8 @@ describe('project directory save and cold Recent open', () => {
         const original = makeWave(new Float32Array([0, 0.5, -0.5, 0]));
         await arrangement.importAudioFile(original, { shouldContinue: () => true });
         const clip = arrangementStores.trackStore.value?.tracks.flatMap((track) => track.clips)[0];
+        await arrangement.importAudioFile(original, { shouldContinue: () => true });
+        const secondClip = arrangementStores.trackStore.value?.tracks.flatMap((track) => track.clips)[1];
         expect(clip?.assetHash).toMatch(/^sha256:/);
         if (!clip?.assetHash) {
             throw new Error('Expected an imported original hash');
@@ -236,7 +238,7 @@ describe('project directory save and cold Recent open', () => {
         expect(residentTransfer?.getAsset(clip.assetHash)).toBeInstanceOf(Blob);
         expect(await project.saveProject()).toBe(true);
         const projectId = projectStores.projectStore.value?.projectId;
-        if (!projectId || !folder.root || !clip?.assetHash || !clip.audioBufferId) {
+        if (!projectId || !folder.root || !clip?.assetHash || !clip.audioBufferId || !secondClip?.audioBufferId) {
             throw new Error('Expected a saved media-bearing project');
         }
         const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
@@ -244,6 +246,8 @@ describe('project directory save and cold Recent open', () => {
         const committed = await projectDirectory.read(directory, projectId);
         expect(committed.media.has(clip.assetHash)).toBe(true);
         expect(committed.pcm.has(clip.audioBufferId)).toBe(true);
+        expect(committed.pcm.has(secondClip.audioBufferId)).toBe(true);
+        expect(secondClip.audioBufferId).not.toBe(clip.audioBufferId);
         expect(committed.document.byteLength).toBeGreaterThan(0);
         expect(Array.from(committed.document)).toEqual(
             Array.from(new Uint8Array(await crdt.exportSdawFile().arrayBuffer()))
@@ -263,6 +267,47 @@ describe('project directory save and cold Recent open', () => {
             throw new Error('Expected saved Automerge authority');
         }
         const savedChanges = automerge.getAllChanges(savedRoot).map((bytes) => Array.from(bytes));
+
+        const { decodeSdawFile } = await import('#/modules/CrdtDocument/useCases/sdawFileFormat/decodeSdawFile');
+        const { encodeSdawFile } = await import('#/modules/CrdtDocument/useCases/sdawFileFormat/encodeSdawFile');
+        const originalMedia = new Map<string, Blob>(
+            Array.from(committed.media, ([hash, bytes]): [string, Blob] => [hash, new Blob([bytes])])
+        );
+        const pcm = new Map<string, AudioBuffer>();
+        for (const bufferId of committed.pcm.keys()) {
+            const savedPcm = audio.getCachedAudioBuffer({ bufferId });
+            if (!savedPcm) {
+                throw new Error('Expected the saved PCM buffer');
+            }
+            pcm.set(bufferId, savedPcm);
+        }
+        type MediaClip = { id: string; audioBufferId?: string; assetHash?: string };
+        type MediaTrack = {
+            id: string;
+            clips: MediaClip[];
+            alternatives: Array<{ clips: MediaClip[] }>;
+            freezeState: { frozenBufferId?: string };
+        };
+        type MediaRoot = {
+            tracks: { tracks: MediaTrack[] };
+            arrangements: { arrangements: Array<{ tracks: { tracks: MediaTrack[] } }> };
+        };
+        const savedTrack = (automerge.toJS(savedRoot) as MediaRoot).tracks.tracks[0]!;
+        const writeAlteredDocument = async (changeRoot: (root: MediaRoot) => void): Promise<void> => {
+            const bundle = decodeSdawFile(committed.document);
+            const alteredRoot = automerge.change(automerge.clone(savedRoot as MediaRoot), changeRoot);
+            bundle.set(crdt.DOC_PREFIX_ROOT, automerge.save(alteredRoot));
+            await projectDirectory.write({
+                directory,
+                projectId,
+                document: encodeSdawFile(bundle),
+                snapshot: committed.snapshot,
+                media: originalMedia,
+                unavailableOriginals: committed.manifest.unavailableOriginals,
+                pcm,
+                isCurrent: () => true,
+            });
+        };
 
         const archiveCapture: { value: Blob | null } = { value: null };
         Object.defineProperty(window, 'showSaveFilePicker', {
@@ -307,11 +352,78 @@ describe('project directory save and cold Recent open', () => {
             updatedAt: createdAt + 1,
             dirty: false,
         });
+        await arrangement.importAudioFile(makeWave(new Float32Array([0.25, -0.25, 0, 0])), {
+            shouldContinue: () => true,
+        });
+        crdt.recordActionHistoryEntry({
+            id: 'outgoing-undo',
+            label: 'Outgoing edit',
+            actionKind: 'test-edit',
+            source: 'manual',
+            timestamp: Date.now(),
+            reverted: false,
+        });
+        projectStores.projectStore.set({ ...projectStores.projectStore.value!, dirty: false });
         const blankProjectId = projectStores.projectStore.value?.projectId;
+        const blankRootIdentity = crdt.captureProjectRootIdentity();
+        const { actionHistoryStore } = await import('#/modules/CrdtDocument/stores');
+        const blankUndo = structuredClone(actionHistoryStore.value);
+        const blankTracks = structuredClone(arrangementStores.trackStore.value?.tracks);
+        const blankClip = blankTracks?.flatMap((track) => track.clips)[0];
+        if (!blankClip?.audioBufferId) {
+            throw new Error('Expected the outgoing audio clip');
+        }
+        const outgoingBufferId = blankClip.audioBufferId;
+        const blankAudio = audio.getCachedAudioBuffer({ bufferId: outgoingBufferId });
+        expect(blankAudio).toBeTruthy();
+        expect(blankUndo?.entries.length).toBeGreaterThan(0);
+        const expectMismatchRejected = async (changeRoot: (root: MediaRoot) => void): Promise<void> => {
+            await writeAlteredDocument(changeRoot);
+            expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('failed');
+            expect(projectStores.projectStore.value?.projectId).toBe(blankProjectId);
+            expect(arrangementStores.trackStore.value?.tracks).toEqual(blankTracks);
+            expect(crdt.captureProjectRootIdentity()).toBe(blankRootIdentity);
+            expect(actionHistoryStore.value).toEqual(blankUndo);
+            expect(audio.getCachedAudioBuffer({ bufferId: outgoingBufferId })).toBe(blankAudio);
+        };
+        await expectMismatchRejected((root) => {
+            root.tracks.tracks[0]!.clips[0]!.audioBufferId = 'unmanifested-audio-buffer';
+        });
+        await expectMismatchRejected((root) => {
+            root.tracks.tracks[0]!.clips[0]!.audioBufferId = secondClip.audioBufferId;
+        });
+        await expectMismatchRejected((root) => {
+            root.tracks.tracks[0]!.clips[0]!.assetHash = `sha256:${'0'.repeat(64)}`;
+        });
+        await expectMismatchRejected((root) => {
+            root.tracks.tracks[0]!.alternatives[0]!.clips.push({
+                ...structuredClone(clip),
+                id: 'unmanifested-alternative',
+            });
+        });
+        await expectMismatchRejected((root) => {
+            root.tracks.tracks[0]!.freezeState.frozenBufferId = secondClip.audioBufferId;
+        });
+        await expectMismatchRejected((root) => {
+            root.arrangements.arrangements[0]!.tracks.tracks.push({
+                ...savedTrack,
+                id: 'unmanifested-dormant-track',
+            });
+        });
+        await projectDirectory.write({
+            directory,
+            projectId,
+            document: committed.document,
+            snapshot: committed.snapshot,
+            media: originalMedia,
+            unavailableOriginals: committed.manifest.unavailableOriginals,
+            pcm,
+            isCurrent: () => true,
+        });
         mediaDirectory.files.set(mediaName, new Uint8Array([1, 2, 3]));
         expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('failed');
         expect(projectStores.projectStore.value?.projectId).toBe(blankProjectId);
-        expect(arrangementStores.trackStore.value?.tracks).toEqual([]);
+        expect(arrangementStores.trackStore.value?.tracks).toEqual(blankTracks);
         mediaDirectory.files.set(mediaName, originalBytes);
         expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('committed');
         const reopenedRoot = crdt.getCrdtDoc(crdt.DOC_PREFIX_ROOT);

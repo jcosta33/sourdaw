@@ -3,9 +3,11 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
+import { branchStore, createDefaultBranchStoreState } from '../../stores/branchStore';
 import { captureProjectRootIdentity } from '../captureProjectRootIdentity';
 import { prepareExternalProjectDocument } from '../prepareExternalProjectDocument';
 import { encodeSdawFile } from '../sdawFileFormat/encodeSdawFile';
+import { whenBranchStateSettled } from '../whenBranchStateSettled';
 
 class UnavailableWorker {
     constructor() {
@@ -21,6 +23,7 @@ describe('external project document preflight and commit', () => {
         vi.stubGlobal('IDBKeyRange', IDBKeyRange);
         vi.stubGlobal('Worker', UnavailableWorker);
         automergeRepository.reset();
+        branchStore.set(createDefaultBranchStoreState());
         automergeRepository.createProject('outgoing');
         automergeRepository.changeDoc('root', (root: Record<string, unknown>) => {
             root.projectMeta = { projectId: '00000000-0000-4000-8000-000000000002' };
@@ -30,6 +33,7 @@ describe('external project document preflight and commit', () => {
 
     afterEach(() => {
         automergeRepository.reset();
+        branchStore.set(createDefaultBranchStoreState());
         vi.unstubAllGlobals();
     });
 
@@ -73,5 +77,66 @@ describe('external project document preflight and commit', () => {
         expect(getAllChanges(reopened)).toHaveLength(sourceChanges);
         expect(reopened.take).toBe(2);
         expect(reopened.outgoing).toBe(true);
+    });
+
+    it('exposes the root track references from the validated bytes before commit', async () => {
+        automergeRepository.changeDoc('root', (root: Record<string, unknown>) => {
+            root.projectMeta = { projectId };
+            root.tracks = { tracks: [{ id: 'track', clips: [{ id: 'clip', audioBufferId: 'missing-pcm' }] }] };
+        });
+        const before = captureProjectRootIdentity();
+        const prepared = await prepareExternalProjectDocument(encodeSdawFile(automergeRepository.saveAll()), projectId);
+        expect(prepared.rootMediaSlots.tracks).toMatchObject({
+            tracks: [{ clips: [{ audioBufferId: 'missing-pcm' }] }],
+        });
+        expect(captureProjectRootIdentity()).toBe(before);
+    });
+
+    it('keeps the incoming saved root active even when the outgoing branch names a colliding slot', async () => {
+        const { change, clone } = await import('@automerge/automerge');
+        await whenBranchStateSettled();
+        automergeRepository.changeDoc('root', (root: Record<string, unknown>) => {
+            root.projectMeta = { projectId };
+            root.tracks = { tracks: [{ id: 'main-track', clips: [] }] };
+        });
+        const main = automergeRepository.getDoc<Record<string, unknown>>('root');
+        if (!main) {
+            throw new Error('Expected root document');
+        }
+        const branch = change(clone(main), (draft) => {
+            draft.tracks = { tracks: [{ id: 'branch-track', clips: [{ audioBufferId: 'branch-pcm' }] }] };
+        });
+        automergeRepository.insertDoc('branch_other', branch);
+        const bytes = encodeSdawFile(automergeRepository.saveAll());
+        const incomingHeads = getHeads(main);
+        automergeRepository.changeDoc('root', (root: Record<string, unknown>) => {
+            root.projectMeta = { projectId: '00000000-0000-4000-8000-000000000002' };
+            root.outgoing = true;
+        });
+        branchStore.set({
+            activeBranchId: 'other',
+            branches: [
+                ...createDefaultBranchStoreState().branches,
+                {
+                    branchId: 'other',
+                    name: 'Other',
+                    rootDocId: 'branch_other',
+                    sourceBranchId: null,
+                    createdAt: 1,
+                    createdFromHeads: [],
+                    note: '',
+                },
+            ],
+        });
+
+        const prepared = await prepareExternalProjectDocument(bytes, projectId);
+        expect(prepared.rootMediaSlots.tracks).toMatchObject({
+            tracks: [{ clips: [] }],
+        });
+        expect(await prepared.commit(() => true)).toBe(true);
+        expect(automergeRepository.getDoc<Record<string, unknown>>('root')?.tracks).toMatchObject({
+            tracks: [{ clips: [] }],
+        });
+        expect(getHeads(automergeRepository.getDoc<Record<string, unknown>>('root')!)).toEqual(incomingHeads);
     });
 });

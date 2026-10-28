@@ -42,6 +42,14 @@ export async function exportProjectFile(): Promise<void> {
         if (outcome !== 'written') {
             return;
         }
+        if (archiveData.originalMedia.unavailable.length > 0) {
+            const count = archiveData.originalMedia.unavailable.length;
+            notifyUser(
+                `Project exported with ${count} unavailable original audio file${count === 1 ? '' : 's'} — ${missingBufferCount === 0 ? 'playable audio is included, but ' : ''}the original source files cannot be recovered from this export.`,
+                'warning'
+            );
+            return;
+        }
     } catch (error) {
         logger.error(new Error('Project export failed', { cause: error }));
         notifyUser('Failed to export project', 'error');

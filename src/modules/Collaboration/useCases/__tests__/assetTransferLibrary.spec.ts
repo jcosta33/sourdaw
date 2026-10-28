@@ -333,6 +333,58 @@ function decodedBuffer(): AudioBuffer {
 }
 
 describe('local library fulfillment through the real asset request boundary', () => {
+    it('does not retain an old owner resident blob after a handoff during hashing, then permits a new owner retry', async () => {
+        const nativeClone = structuredClone;
+        vi.stubGlobal('structuredClone', (value: unknown) => {
+            const cloned: unknown = nativeClone(value);
+            if (
+                typeof value === 'object' &&
+                value !== null &&
+                'blob' in value &&
+                value.blob instanceof Blob &&
+                typeof cloned === 'object' &&
+                cloned !== null
+            ) {
+                Reflect.set(cloned, 'blob', value.blob.slice(0, value.blob.size, value.blob.type));
+            }
+            return cloned;
+        });
+        const blob = new Blob(['resident source']);
+        const current = endpoint();
+        const hash = await current.transfer.addLocalAsset(blob, 'source.wav');
+        const readEntered = Promise.withResolvers<void>();
+        const finishRead = Promise.withResolvers<ArrayBuffer>();
+        const nativeRead = Blob.prototype.arrayBuffer.bind(blob);
+        const delayedRead = vi
+            .fn()
+            .mockImplementationOnce(() => {
+                readEntered.resolve();
+                return finishRead.promise;
+            })
+            .mockImplementation(() => nativeRead());
+        Object.defineProperty(blob, 'arrayBuffer', { configurable: true, value: delayedRead });
+        vi.stubGlobal('showDirectoryPicker', vi.fn());
+
+        const staleRetain = current.transfer.retainLocalOriginal(hash);
+        await readEntered.promise;
+        const nextOwner = 'cccccccc-cccc-8ccc-8ccc-cccccccccccc';
+        const handoff = await current.transfer.prepareDurableOwnerRebind(nextOwner);
+        expect(handoff.status).toBe('prepared');
+        if (handoff.status !== 'prepared') {
+            throw new Error('Expected owner handoff preparation');
+        }
+        expect(await handoff.commit()).toMatchObject({ status: 'committed' });
+        finishRead.resolve(await nativeRead());
+
+        await expect(staleRetain).rejects.toThrow('ownership changed');
+        expect(await current.transfer.reopenDurableAsset(hash)).toMatchObject({
+            status: 'failed',
+            reason: 'missing-asset',
+        });
+        await expect(current.transfer.retainLocalOriginal(hash)).resolves.toBe(true);
+        expect(await current.transfer.reopenDurableAsset(hash)).toMatchObject({ status: 'opened' });
+    });
+
     it('serves a mapped original from project ownership after the library grant is gone', async () => {
         const bytes = new Uint8Array([82, 73, 70, 70, 9, 3, 7, 1, 4]);
         const original = endpoint();

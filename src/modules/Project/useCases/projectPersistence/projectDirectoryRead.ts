@@ -14,6 +14,101 @@ import { isHydratableProjectData } from './helpers/isHydratableProjectData';
 
 const { openProjectDirectory } = projectDirectoryBinding;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectTrackMediaBindings(
+    bindings: Map<string, string>,
+    tracks: unknown,
+    scope: string,
+    bufferField: 'audioBufferId' | 'bufferId'
+): void {
+    if (!Array.isArray(tracks)) {
+        return;
+    }
+    for (const [trackIndex, track] of tracks.entries()) {
+        if (!isRecord(track)) {
+            continue;
+        }
+        const trackId = typeof track.id === 'string' ? track.id : trackIndex;
+        const freeze = isRecord(track.freezeState) ? track.freezeState : null;
+        const frozenId = freeze?.frozenBufferId ?? track.frozenBufferId;
+        if (typeof frozenId === 'string') {
+            bindings.set(JSON.stringify([scope, trackIndex, trackId, 'freeze']), frozenId);
+        }
+        const addClips = (clips: unknown, alternativeId: string, alternativeIndex: number): void => {
+            if (!Array.isArray(clips)) {
+                return;
+            }
+            for (const [clipIndex, clip] of clips.entries()) {
+                if (!isRecord(clip)) {
+                    continue;
+                }
+                const bufferId = clip[bufferField];
+                const hash = clip.assetHash;
+                if (typeof bufferId !== 'string' && typeof hash !== 'string') {
+                    continue;
+                }
+                const clipId = typeof clip.id === 'string' ? clip.id : clipIndex;
+                bindings.set(
+                    JSON.stringify([scope, trackIndex, trackId, alternativeIndex, alternativeId, clipIndex, clipId]),
+                    JSON.stringify([
+                        typeof bufferId === 'string' ? bufferId : null,
+                        typeof hash === 'string' ? hash : null,
+                    ])
+                );
+            }
+        };
+        addClips(track.clips, 'active', -1);
+        if (Array.isArray(track.alternatives)) {
+            for (const [alternativeIndex, alternative] of track.alternatives.entries()) {
+                if (isRecord(alternative)) {
+                    const alternativeId = typeof alternative.id === 'string' ? alternative.id : alternativeIndex;
+                    addClips(alternative.clips, String(alternativeId), alternativeIndex);
+                }
+            }
+        }
+    }
+}
+
+function collectDirectoryMediaBindings(
+    tracks: unknown,
+    arrangements: unknown,
+    bufferField: 'audioBufferId' | 'bufferId'
+): Map<string, string> {
+    const bindings = new Map<string, string>();
+    collectTrackMediaBindings(bindings, tracks, 'active', bufferField);
+    if (Array.isArray(arrangements)) {
+        for (const [index, arrangement] of arrangements.entries()) {
+            if (!isRecord(arrangement)) {
+                continue;
+            }
+            const id = typeof arrangement.id === 'string' ? arrangement.id : index;
+            const trackState = isRecord(arrangement.tracks) ? arrangement.tracks : null;
+            collectTrackMediaBindings(
+                bindings,
+                trackState?.tracks,
+                JSON.stringify(['arrangement', index, id]),
+                bufferField
+            );
+        }
+    }
+    return bindings;
+}
+
+function sameMediaBindings(left: ReadonlyMap<string, string>, right: ReadonlyMap<string, string>): boolean {
+    if (left.size !== right.size) {
+        return false;
+    }
+    for (const [key, value] of left) {
+        if (right.get(key) !== value) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export type PreparedProjectDirectoryRead = {
     projectId: string;
     projectName: string;
@@ -85,6 +180,18 @@ export async function prepareProjectDirectoryRead(
     const preparedDocument = await prepareExternalProjectDocument(content.document, binding.projectId);
     if (!shouldContinue()) {
         throw new Error('Project directory document validation was superseded');
+    }
+    const documentArrangements = isRecord(preparedDocument.rootMediaSlots.arrangements)
+        ? preparedDocument.rootMediaSlots.arrangements.arrangements
+        : null;
+    const documentTracks = isRecord(preparedDocument.rootMediaSlots.tracks)
+        ? preparedDocument.rootMediaSlots.tracks.tracks
+        : null;
+    const documentBindings = collectDirectoryMediaBindings(documentTracks, documentArrangements, 'audioBufferId');
+    const snapshotBindings = collectDirectoryMediaBindings(data.arrangement.tracks, data.arrangements, 'bufferId');
+    // A matching set of files cannot prove that each clip or freeze owns the same media.
+    if (!sameMediaBindings(documentBindings, snapshotBindings)) {
+        throw new Error('Project directory media references differ between its document and snapshot');
     }
     return {
         projectId: binding.projectId,
