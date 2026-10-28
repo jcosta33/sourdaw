@@ -1,0 +1,43 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_29d8df116c5b92::t_5350004c309652 221-231
+  s_29d8df116c5b92::t_ffb1ff11fc5e0d 220,232-242
+src/modules/MIDI/useCases/webMidiInput/__tests__/stopHeldMidiNote.integration.spec.ts
+  s_29d8df116c5b92::t_caa16f62aaa3cd 39-44,48,252-255,298-377,379
+  s_29d8df116c5b92::t_37f61d982cfc4e 7,51,122-126,292
+  s_29d8df116c5b92::t_50cced72a81593 232,293-297
+  s_29d8df116c5b92::t_78fcfc9d8861fd 378
+src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts
+  s_29d8df116c5b92::t_5350004c309652 109-110
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_29d8df116c5b92::t_d61bd44c00bc25 3,6-7,168,4139-4168,4182-4207
+  s_29d8df116c5b92::t_caa16f62aaa3cd 169-173,4169-4181
+  s_29d8df116c5b92::t_9ba78761a9eef0 4208
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.tsx
+  s_29d8df116c5b92::t_60adb3f8e6df19 46-50,324-372
+  s_29d8df116c5b92::t_04b03c72fe07b4 373-382
+src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts
+  s_29d8df116c5b92::t_5350004c309652 185-186
+src/app/__tests__/bootstrap.spec.ts
+  s_29d8df116c5b92::t_5350004c309652 372,1013
+src/modules/MIDI/useCases/midiClipData/__tests__/projectFrozenMidiTakeWindow.spec.ts
+  s_29d8df116c5b92::t_2790ac22d4c1cf 49-75,77
+  s_29d8df116c5b92::t_fc73aae3947d2d 76,78-79
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_29d8df116c5b92::t_57404aba498024 843-846,869
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d33abbf64aee374249804bb60dc98f8abac6668",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
