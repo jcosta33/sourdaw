@@ -17,14 +17,11 @@ async function readEntryUrl(page: Page): Promise<string> {
     const response = await page.request.get('/');
     expect(response.ok()).toBe(true);
     const html = await response.text();
-    const scripts = [...html.matchAll(/<script\b[^>]*>/g)]
-        .map(([tag]) => ({
-            type: /\btype=["']([^"']+)["']/.exec(tag)?.[1],
-            src: /\bsrc=["']([^"']+)["']/.exec(tag)?.[1],
-        }))
-        .filter((script) => script.type === 'module' && script.src !== undefined);
-    const entry = scripts.at(-1)?.src;
-    if (entry === undefined) {
+    const entry = await page.evaluate((sourceHtml) => {
+        const parsed = new DOMParser().parseFromString(sourceHtml, 'text/html');
+        return [...parsed.querySelectorAll('script[type="module" i][src]')].at(-1)?.getAttribute('src') ?? null;
+    }, html);
+    if (entry === null) {
         throw new Error('Served HTML has no external module entry');
     }
     return new URL(entry, response.url()).href;
