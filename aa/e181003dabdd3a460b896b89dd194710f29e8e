@@ -1,0 +1,68 @@
+scripts/__tests__/loopbackOpenAiProvider.spec.ts
+  h_beb54bf43b47b7 30-49,51
+scripts/loopbackOpenAiProvider.ts
+  h_beb54bf43b47b7 72-85
+src/modules/AiRuntime/models/AnswerEvidence.ts
+  h_beb54bf43b47b7 2,6,12
+src/modules/AiRuntime/models/AnswerInterpretation.ts
+  h_beb54bf43b47b7 34,45,54-55,68-69
+src/modules/AiRuntime/models/AnswerRespond.ts
+  h_beb54bf43b47b7 15-23,26,34-37,41-43,73-74
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  h_beb54bf43b47b7 178-191,215-239
+src/modules/AiRuntime/transformers/__tests__/parseAnswerRespond.spec.ts
+  h_beb54bf43b47b7 3-4,34,40-59,61-64,77-79,103
+src/modules/AiRuntime/transformers/parseAnswerRespond.ts
+  h_beb54bf43b47b7 9-13,16,20,34-37,39
+src/modules/AiRuntime/useCases/__tests__/answerWireFixture.ts
+  h_beb54bf43b47b7 68-81,147-157,166-171,174,211-214,239
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  h_beb54bf43b47b7 849-853
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentWorkflowFixture.ts
+  h_beb54bf43b47b7 351,367,391-393,401
+src/modules/AiRuntime/useCases/__tests__/measuredAnswers.spec.ts
+  h_beb54bf43b47b7 8-12,137,228-233,358-368
+src/modules/AiRuntime/useCases/__tests__/planningInterpretation.spec.ts
+  h_beb54bf43b47b7 56-60,287-289,306-309,345-350
+src/modules/AiRuntime/useCases/__tests__/transientOnsetRead.spec.ts
+  h_beb54bf43b47b7 23,377-382,389
+src/modules/AiRuntime/useCases/admitAnswerInterpretation.ts
+  h_beb54bf43b47b7 13-14,30-39,83-84
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/explainRouteTools.spec.ts
+  h_beb54bf43b47b7 29-37,121-124,129,835-840,867,891-895
+src/modules/AiRuntime/useCases/answerContractTypes.ts
+  h_beb54bf43b47b7 1-22
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 6,29,79,1705,2320-2323,2360
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  h_beb54bf43b47b7 5-8,10-12,16,79,235-241,251-252,255-260,263-273,326-329,397-400,402-405,408-414,470-480
+src/modules/AiRuntime/useCases/createPlanningInterpretationToolSchema.ts
+  h_beb54bf43b47b7 141-157,215
+src/modules/AiRuntime/useCases/executeAnalysisMeasure.ts
+  h_beb54bf43b47b7 9
+src/modules/AiRuntime/useCases/getPlanningProviderToolSchemas.ts
+  h_beb54bf43b47b7 62-66,68-78
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  h_beb54bf43b47b7 5-6,370,459-464
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  h_beb54bf43b47b7 90
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 997,999-1000
+src/modules/AiRuntime/useCases/prepareAnswerInterpretationCatalog.ts
+  h_beb54bf43b47b7 79
+src/modules/AiRuntime/useCases/projectAnswerProviderReceipt.ts
+  h_beb54bf43b47b7 3-4
+src/modules/AiRuntime/useCases/projectAnswerRespondToolSchema.ts
+  h_beb54bf43b47b7 18-20,22,27,31-33,36-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aae181003dabdd3a460b896b89dd194710f29e8e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
