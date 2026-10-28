@@ -1,4 +1,5 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { type projectChannelBend } from '#/modules/MIDI/useCases';
 
 import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
 import { resolvePlayedMidiClips } from './resolvePlayedMidiClips';
@@ -9,6 +10,8 @@ type ResolveChannelBendClipsInput = {
     ccByClipId: NonNullable<MidiStoreState>['ccByClipId'];
     pitchBendByClipId: NonNullable<MidiStoreState>['pitchBendByClipId'];
 };
+
+type ChannelBendClip = Parameters<typeof projectChannelBend>[0]['clips'][number];
 
 /**
  * The clips of a track whose stored channel pitch bend plays, wherever they sit against a
@@ -25,7 +28,7 @@ export function resolveChannelBendClips({
     ccByClipId,
     pitchBendByClipId,
 }: ResolveChannelBendClipsInput) {
-    return resolvePlayedMidiClips(trackId, clips).flatMap((clip) => {
+    return resolvePlayedMidiClips(trackId, clips).flatMap<ChannelBendClip>((clip) => {
         if (clip.midiTakeSource !== undefined) {
             return resolveFrozenMidiControllerPasses(clip).filter((pass) => pass.pitchBends.length > 0);
         }

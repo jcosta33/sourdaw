@@ -46,6 +46,57 @@ function source(): FrozenMidiTakeSource {
 }
 
 describe('frozen MIDI take window', () => {
+    it('locates the last own bend before a crop without changing original scalar or curve rows', () => {
+        const original = source();
+        const notes = [
+            {
+                id: 'scalar',
+                pitch: 60,
+                startBeat: 5,
+                duration: 3,
+                velocity: 100,
+                pitchBend: 1000,
+                expression: { pitchBend: [{ offsetBeats: 0.25, value: 2000 }] },
+            },
+            {
+                id: 'later-point',
+                pitch: 62,
+                startBeat: 5,
+                duration: 3,
+                velocity: 100,
+                pitchBend: 1000,
+                expression: { pitchBend: [{ offsetBeats: 0.75, value: 3000 }] },
+            },
+        ];
+        const frozen = {
+            ...original,
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            rows: { ...original.rows, notes: { present: true as const, value: notes } },
+        };
+        const before = structuredClone(frozen);
+
+        const window = projectFrozenMidiTakeWindow({
+            source: frozen,
+            absoluteOccurrenceIndex: 0,
+            fromBeat: 2,
+            toBeat: 4,
+        });
+
+        expect(
+            window?.notes.map(({ id, startBeat, pitchBend, recordedOwnBendBeat }) => ({
+                id,
+                startBeat,
+                pitchBend,
+                recordedOwnBendBeat,
+            }))
+        ).toEqual([
+            { id: 'scalar', startBeat: 2, pitchBend: 2000, recordedOwnBendBeat: 1.25 },
+            { id: 'later-point', startBeat: 2, pitchBend: 3000, recordedOwnBendBeat: 1.75 },
+        ]);
+        expect(frozen).toEqual(before);
+    });
+
     it('retains a carried bend’s original source beat through full, partial and repeated windows', () => {
         const original = source();
         const controls = [

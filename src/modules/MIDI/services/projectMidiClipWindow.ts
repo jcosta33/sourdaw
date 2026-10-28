@@ -9,6 +9,8 @@ import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
 /** Source location belongs to a window projection, never to a stored bend row. */
 export type MidiPitchBendWindowRow = MidiPitchBend & { readonly sourceRecordedBeat?: number };
 export type SourceLocatedMidiPitchBend = MidiPitchBendWindowRow & { readonly sourceRecordedBeat: number };
+/** The note's last own bend before a window cut, on the destination timeline. This is projection data only. */
+export type MidiNoteWindowRow = MidiNote & { readonly recordedOwnBendBeat?: number };
 
 type MidiClipWindow = {
     /** Added to every projected beat; places the window's content on the destination timeline. */
@@ -30,6 +32,8 @@ type ProjectMidiClipWindowInput<TPitchBend extends MidiPitchBend> = {
     /** Rebased, and carried to the window start, with every other field of the row kept as it is. */
     pitchBends: readonly TPitchBend[];
     window: MidiClipWindow;
+    /** Preserve a frozen note's own bend chronology when its head is cropped and its curve is sliced. */
+    locatesOwnBend?: boolean;
     /**
      * Whether the RPN/NRPN and Data Entry rows before the window start are carried into it like any other
      * lane, by their last value; true when absent. A caller that places the window's content beside other
@@ -41,7 +45,19 @@ type ProjectMidiClipWindowInput<TPitchBend extends MidiPitchBend> = {
 
 type ControllerRow = { beat: number };
 
-function projectVisibleNote(note: MidiNote, window: MidiClipWindow): MidiNote | null {
+function lastOwnBendBeatAt(note: MidiNote, sourceBeat: number): number | undefined {
+    let bendBeat = note.pitchBend === undefined ? undefined : note.startBeat;
+    for (const point of note.expression?.pitchBend ?? []) {
+        const pointBeat = note.startBeat + point.offsetBeats;
+        if (pointBeat > sourceBeat) {
+            break;
+        }
+        bendBeat = pointBeat;
+    }
+    return bendBeat;
+}
+
+function projectVisibleNote(note: MidiNote, window: MidiClipWindow, locatesOwnBend: boolean): MidiNoteWindowRow | null {
     if (!Number.isFinite(note.startBeat) || !Number.isFinite(note.duration) || note.duration < 0) {
         return null;
     }
@@ -57,13 +73,16 @@ function projectVisibleNote(note: MidiNote, window: MidiClipWindow): MidiNote | 
     if (clippedEndBeat <= clippedStartBeat) {
         return null;
     }
-    return {
+    const projected = {
         ...sliceMidiNoteExtent(note, {
             fromOffset: clippedStartBeat - note.startBeat,
             duration: clippedEndBeat - clippedStartBeat,
         }),
         startBeat: clippedStartBeat + window.beatOffset,
     };
+    const bendBeat =
+        locatesOwnBend && clippedStartBeat > note.startBeat ? lastOwnBendBeatAt(note, clippedStartBeat) : undefined;
+    return bendBeat === undefined ? projected : { ...projected, recordedOwnBendBeat: bendBeat + window.beatOffset };
 }
 
 /**
@@ -164,9 +183,10 @@ export function projectMidiClipWindow<TPitchBend extends MidiPitchBend>({
     controlChanges,
     pitchBends,
     window,
+    locatesOwnBend = false,
     carriesRegisteredParameterLanes = true,
 }: ProjectMidiClipWindowInput<TPitchBend>): {
-    notes: MidiNote[];
+    notes: MidiNoteWindowRow[];
     controlChanges: MidiCC[];
     closingControlChanges: MidiCC[];
     pitchBends: TPitchBend[];
@@ -179,7 +199,7 @@ export function projectMidiClipWindow<TPitchBend extends MidiPitchBend>({
         (row) => carriesRegisteredParameterLanes || !isRegisteredParameterController(row.controller)
     );
     return {
-        notes: notes.flatMap((note) => projectVisibleNote(note, window) ?? []),
+        notes: notes.flatMap((note) => projectVisibleNote(note, window, locatesOwnBend) ?? []),
         controlChanges: controllers.rows,
         closingControlChanges: controllers.closing.filter(playsOnClosingLine),
         pitchBends: projectVisibleControllerRows(pitchBends, (row) => `${row.channel}`, window, undefined).rows,

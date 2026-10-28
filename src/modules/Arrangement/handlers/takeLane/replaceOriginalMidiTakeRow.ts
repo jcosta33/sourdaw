@@ -45,6 +45,9 @@ function reverse(payload: OriginalMidiTakeRowReplacementPayload): OriginalMidiTa
 
 function applies(action: RowAction, context?: HandlerValidationContext): boolean {
     const state = takeLaneStore.value;
+    if (!state) {
+        return false;
+    }
     let projected = state;
     if (context) {
         projected = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context);

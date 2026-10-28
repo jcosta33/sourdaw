@@ -38,6 +38,7 @@ export function resolveFrozenMidiControllerPasses(clip: PlayedClip) {
             controlChanges: [...value.controlChanges, ...value.closingControlChanges],
             pitchBends: value.pitchBends,
             sourceControlChanges: source.rows.controlChanges.value,
+            sourceBeatOffset: passHead - source.sourceEntryBeat,
         });
     }
     return passes;

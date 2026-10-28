@@ -1010,7 +1010,8 @@ export async function scheduleMidiNotes(
                     ? frozenSource.phaseHeadBeat + iter * loopLen
                     : clip.startBeat + iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                let iterNotes: readonly (LiveYeastNote & Pick<ScheduledMidiNote, 'expression'>)[];
+                let iterNotes: readonly (LiveYeastNote &
+                    Pick<ScheduledMidiNote, 'expression'> & { recordedOwnBendBeat?: number })[];
                 if (yeastDevice) {
                     iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
                 } else if (frozenSource) {
@@ -1340,6 +1341,7 @@ export async function scheduleMidiNotes(
                                           channelBend: trackBend,
                                           startBeat: noteStartBeat,
                                           beatsIntoNote: projectedNote.beatsIntoNote,
+                                          recordedOwnBendBeat: note.recordedOwnBendBeat,
                                           releaseFrame: endSampleFrame,
                                           frameAtBeat: (beat) =>
                                               placeSamplesOnClock({

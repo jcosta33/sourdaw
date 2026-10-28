@@ -1,5 +1,9 @@
-import { type MidiCC, type MidiNote } from '../models/MidiNote';
-import { projectMidiClipWindow, type SourceLocatedMidiPitchBend } from '../services/projectMidiClipWindow';
+import { type MidiCC } from '../models/MidiNote';
+import {
+    projectMidiClipWindow,
+    type MidiNoteWindowRow,
+    type SourceLocatedMidiPitchBend,
+} from '../services/projectMidiClipWindow';
 import {
     isRegisteredParameterController,
     reconcileRegisteredParameterMessages,
@@ -23,7 +27,7 @@ type ProjectFrozenMidiTakeWindowInput = {
 export type FrozenMidiTakeWindow = {
     readonly sourceClipId: string;
     readonly absoluteOccurrenceIndex: number;
-    readonly notes: readonly MidiNote[];
+    readonly notes: readonly MidiNoteWindowRow[];
     readonly controlChanges: readonly MidiCC[];
     readonly closingControlChanges: readonly MidiCC[];
     readonly pitchBends: readonly SourceLocatedMidiPitchBend[];
@@ -110,6 +114,7 @@ export function projectFrozenMidiTakeWindow({
         controlChanges: source.rows.controlChanges.value,
         pitchBends: source.rows.pitchBends.value.map((bend) => ({ ...bend, sourceRecordedBeat: bend.beat })),
         window,
+        locatesOwnBend: true,
         carriesRegisteredParameterLanes: false,
     });
     return {

@@ -513,6 +513,7 @@ export async function scheduleTrackClips({
         startBeat: number;
         /** How far into the note `startBeat` is when a clip cut took its head off; the curves count from the note's start. */
         beatsIntoNote?: number;
+        recordedOwnBendBeat?: number;
         expression?: NonNullable<Parameters<typeof projectNoteExpressionCurves>[0]['note']['expression']>;
         clipGain: number;
     };
@@ -659,31 +660,34 @@ export async function scheduleTrackClips({
         if (hasYeast || !instrumentEntry?.strategy.noteExpression || !projectChannelBend) {
             return [];
         }
-        const clips = clipsToProcess.flatMap(({ clip }) => {
-            if (clip.type !== 'midi' || clip.muted) {
-                return [];
+        const clips = clipsToProcess.flatMap<Parameters<OfflineChannelBendProjector>[0]['clips'][number]>(
+            ({ clip }) => {
+                if (clip.type !== 'midi' || clip.muted) {
+                    return [];
+                }
+                if (clip.midiTakeSource) {
+                    const source = clip.midiTakeSource;
+                    return selectedMidiWindows(clip).flatMap(({ passHead, passEnd, value }) =>
+                        value.pitchBends.length === 0
+                            ? []
+                            : [
+                                  {
+                                      clip: { startBeat: passHead, endBeat: passEnd, midiOffsetBeats: passHead },
+                                      controlChanges: value.controlChanges,
+                                      pitchBends: value.pitchBends,
+                                      sourceControlChanges: source.rows.controlChanges.value,
+                                      sourceBeatOffset: passHead - source.sourceEntryBeat,
+                                  },
+                              ]
+                    );
+                }
+                const pitchBends = midi.pitchBendByClipId[clip.id];
+                if (!pitchBends?.length) {
+                    return [];
+                }
+                return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
             }
-            if (clip.midiTakeSource) {
-                const source = clip.midiTakeSource;
-                return selectedMidiWindows(clip).flatMap(({ passHead, passEnd, value }) =>
-                    value.pitchBends.length === 0
-                        ? []
-                        : [
-                              {
-                                  clip: { startBeat: passHead, endBeat: passEnd, midiOffsetBeats: passHead },
-                                  controlChanges: value.controlChanges,
-                                  pitchBends: value.pitchBends,
-                                  sourceControlChanges: source.rows.controlChanges.value,
-                              },
-                          ]
-                );
-            }
-            const pitchBends = midi.pitchBendByClipId[clip.id];
-            if (!pitchBends?.length) {
-                return [];
-            }
-            return [{ clip, controlChanges: midi.ccByClipId[clip.id] ?? [], pitchBends }];
-        });
+        );
         // Frames order the moves, so a move before the region keeps the frame the timeline gives it, below
         // zero, rather than the clamp every note shares: the bend in force at the region start is then the last
         // one on the timeline, not the last one of the last clip in the track's clip list.
@@ -745,6 +749,7 @@ export async function scheduleTrackClips({
                           channelBend,
                           startBeat: note.startBeat,
                           beatsIntoNote: note.beatsIntoNote,
+                          recordedOwnBendBeat: note.recordedOwnBendBeat,
                           releaseFrame: frameAtSeconds(endTime),
                           frameAtBeat: (beat) => frameAtSeconds(secondsAtBeat(beat, toasterPadIndex)),
                           channelBendFrameAtBeat: frameOnTimelineAtBeat,
@@ -1170,6 +1175,10 @@ export async function scheduleTrackClips({
                         pitchBendRangeSemitones: note.pitchBendRangeSemitones,
                         startBeat: note.startBeat,
                         beatsIntoNote: note.beatsIntoNote,
+                        recordedOwnBendBeat:
+                            'recordedOwnBendBeat' in note && typeof note.recordedOwnBendBeat === 'number'
+                                ? note.recordedOwnBendBeat
+                                : undefined,
                         expression: note.expression,
                         clipGain: clip.gain,
                     };
