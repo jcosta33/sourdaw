@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_26f70b851e8f7a::t_25b2392b2f48cc 12-14
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts
+  s_26f70b851e8f7a::t_c383f82e631747 1-377
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  s_26f70b851e8f7a::t_08b434c1c23f5b 3-4,25,29-30,41,45-49,85-90,99,101-103,196-197,206-207,210-211,224,229,239,243,247,251-279
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  s_26f70b851e8f7a::t_e181431b019cbf 1-9,23,33-35,37-39,60-75,93,104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a16b4d9721ed5d29169bd9f766d7220a7a1bfa9",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
