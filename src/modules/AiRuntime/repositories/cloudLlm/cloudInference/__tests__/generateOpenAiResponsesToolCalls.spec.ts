@@ -104,6 +104,54 @@ describe('generateOpenAiResponsesToolCalls', () => {
         vi.clearAllMocks();
     });
 
+    it('projects the production recipe preview reference as optional nullable in Responses strict tools', async () => {
+        const tool = getPlanningProviderToolSchemas().find((entry) => entry.function.name === 'analysis.measure');
+        if (tool === undefined) {
+            throw new Error('Missing analysis.measure');
+        }
+        respondWith({
+            id: 'resp_recipe',
+            status: 'completed',
+            output: [
+                functionCall(
+                    'measure-1',
+                    'analysis_measure',
+                    JSON.stringify({
+                        subject: 'preview',
+                        recipeCallId: 'expand-1',
+                        proposal: null,
+                        metrics: null,
+                        scope: { kind: 'master', ids: null },
+                        range: { startBeat: 0, endBeat: 8, sectionId: null },
+                    })
+                ),
+            ],
+        });
+        const result = await generateOpenAiResponsesToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'preview expansion',
+            toolSchemas: [tool],
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+        });
+        const body = readSentBody();
+        expect(body).toMatchObject({
+            tools: [
+                {
+                    strict: true,
+                    parameters: {
+                        required: expect.arrayContaining(['recipeCallId', 'proposal']),
+                        properties: { recipeCallId: { type: ['string', 'null'] } },
+                    },
+                },
+            ],
+        });
+        expect(result.calls).toMatchObject([
+            { name: 'analysis.measure', arguments: { recipeCallId: 'expand-1', proposal: null } },
+        ]);
+    });
+
     it('sends the responses tool-planning shape with wire-encoded tool names', async () => {
         respondWith({ id: 'resp_1', status: 'completed', output: [] });
 
