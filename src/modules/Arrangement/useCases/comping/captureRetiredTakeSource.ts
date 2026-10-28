@@ -10,6 +10,7 @@ import {
     type CommandSourceProof,
     type HandlerCommitValidation,
     type RetiredTakeLaneSnapshot,
+    type TakeSnapshot,
 } from '#/utils/handlerContract';
 import { matchesJsonFingerprint } from '#/utils/jsonSemanticEquality';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
@@ -24,15 +25,16 @@ function sourceOwners(clipIds: readonly string[], captures: readonly RetiredTake
     // saved JSON does. Store sanitization could discard meaningful invalid data.
     const owners = captures.map((capture) => {
         const takes = capture.lane.takes.map((take) => {
-            const savedTake = { ...take };
-            if (savedTake.sourceOffsetBeats === undefined) {
-                delete savedTake.sourceOffsetBeats;
+            const { sourceOffsetBeats, passAnchorSeconds, passDepthSeconds, ...requiredFields } = take;
+            const savedTake: TakeSnapshot = requiredFields;
+            if (sourceOffsetBeats !== undefined) {
+                savedTake.sourceOffsetBeats = sourceOffsetBeats;
             }
-            if (savedTake.passAnchorSeconds === undefined) {
-                delete savedTake.passAnchorSeconds;
+            if (passAnchorSeconds !== undefined) {
+                savedTake.passAnchorSeconds = passAnchorSeconds;
             }
-            if (savedTake.passDepthSeconds === undefined) {
-                delete savedTake.passDepthSeconds;
+            if (passDepthSeconds !== undefined) {
+                savedTake.passDepthSeconds = passDepthSeconds;
             }
             return savedTake;
         });
