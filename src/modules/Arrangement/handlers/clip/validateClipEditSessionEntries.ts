@@ -273,7 +273,7 @@ export function isRestoreClipSessionPayload(value: unknown): value is ValidatedR
     );
 }
 
-function removalSourceMatches(inverse: RestoreClipPayload, clipId: string, undoEntryId: string): boolean {
+function removalSourceMatches(inverse: RestoreClipPayload, clipId: string, undoEntryId: string | undefined): boolean {
     return retiredTakeSourceMatches(
         'removeClip',
         inverse.ripplePlan?.removedClips.map((clip) => clip.id) ?? [clipId],
