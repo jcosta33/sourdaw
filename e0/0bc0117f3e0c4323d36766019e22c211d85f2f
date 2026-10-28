@@ -1,0 +1,18 @@
+src/modules/AiRuntime/transformers/__tests__/parseAnswerRespond.spec.ts
+  h_beb54bf43b47b7 8
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  h_beb54bf43b47b7 61
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e00bc0117f3e0c4323d36766019e22c211d85f2f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
