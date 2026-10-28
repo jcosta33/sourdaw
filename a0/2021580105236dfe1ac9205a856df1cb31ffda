@@ -1,0 +1,47 @@
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_b3201877f50e8a::t_27befa57e518d8 192-219,225-241,290,326
+  s_b3201877f50e8a::t_94c7852a88443a 220-224,242-289,291-325
+  s_b3201877f50e8a::t_352998a41cf7dc 327-330
+src/modules/Arrangement/useCases/device/__tests__/coldImportedDeviceEdits.integration.spec.ts
+  s_b3201877f50e8a::t_106a285791edb2 300-303,305,329-330,334
+  s_b3201877f50e8a::t_3354ec7e65d22f 299
+src/modules/Arrangement/useCases/device/restoreDevice.ts
+  s_b3201877f50e8a::t_06f280844f476b 74,80-82
+  s_b3201877f50e8a::t_2199b67c7fc871 138-143
+src/modules/Arrangement/useCases/device/__tests__/restoreDevice.spec.ts
+  s_b3201877f50e8a::t_e68ce5582a9120 1,12,22,44,62-63,103,144,198
+  s_b3201877f50e8a::t_7ab5689a0ada60 3
+  s_b3201877f50e8a::t_06f280844f476b 20-21
+  s_b3201877f50e8a::t_841d48caf1f21e 27-30
+  s_b3201877f50e8a::t_a7069dbefd1b93 95-99
+  s_3168504f6ce387::t_4d2b6b0a1b6014 64-65
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_b3201877f50e8a::t_2199b67c7fc871 23,30-37,47,98-105,115-123,125-126,129
+  s_b3201877f50e8a::t_39c3d5f90d88fb 20,38-46,48-77,128,155-160
+  s_b3201877f50e8a::t_106a285791edb2 124,127
+  s_b3201877f50e8a::t_3bdfb5e5c9f2f5 130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a02021580105236dfe1ac9205a856df1cb31ffda",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
