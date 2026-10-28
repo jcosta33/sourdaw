@@ -1,0 +1,25 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/explainRouteTools.spec.ts
+  s_3168504f6ce387::t_91c705491feba5 13,24,32,35,38,50-57,160,166,170,176,181
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_3168504f6ce387::t_1112a7c56a896f 10,23,928,932
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3168504f6ce387::t_717ba110f2407e 22,51,726-783,867
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_3168504f6ce387::t_722962dc4158d4 5,10,193,207,289,331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8300f9e6ae7eca5dbf35d1ab6fb5f9cd001a909",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
