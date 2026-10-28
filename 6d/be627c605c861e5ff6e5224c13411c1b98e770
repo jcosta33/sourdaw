@@ -1,0 +1,20 @@
+src/components/daw/visualizers/ADSREnvelope.tsx
+  s_26f70b851e8f7a::t_2f7613fbe53038 29-30,35,285-297,302,368-370
+  s_26f70b851e8f7a::t_ae7f7c8e157eff 363-367
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6dbe627c605c861e5ff6e5224c13411c1b98e770",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
