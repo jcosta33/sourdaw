@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:c61d4c53d386fa8f02775658afea3781f7af5f4f2029a68875b4567f94d2e128:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:958223eb35593c2f28140e2738d27628274a99f79f8930581548f9c0978d1498:release/dependency-license-proofs.json"
+                "sha256:e5a7c5a0137267352328395ef11886d91ce77451ea8a8332d4004d3c4bdc898e:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:ff466c6d7175276a2464cca86b055073254e6554c088bd26129fae8b4cda609d:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
