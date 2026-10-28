@@ -1,0 +1,40 @@
+src/modules/AudioEngine/services/__tests__/levainProcessor.spec.ts
+  s_59e31a5c6f3e31::t_8ff1929cc2d8a9 160,181,194-196,199-208,878,880-883,888,890-891,896-898,901-902
+  s_59e31a5c6f3e31::t_6729d662080ca5 378,384-386,388-396,879,884-887,889,892-895,899-900
+  s_59e31a5c6f3e31::t_75c31a2a86de33 903-905
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_59e31a5c6f3e31::t_6fc2e371259cd5 5,20-23,71
+  h_beb54bf43b47b7 72-74
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_59e31a5c6f3e31::t_6fc2e371259cd5 31-34
+  h_beb54bf43b47b7 35-39,82,129-134
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_59e31a5c6f3e31::t_09d0726c92542c 321-328,347-349
+  s_59e31a5c6f3e31::t_9823f0ea8ee96c 539
+  h_beb54bf43b47b7 71-74
+.agents/skills/review-stances/session-lifecycle.md
+  s_59e31a5c6f3e31::t_a428b1b1650901 237-252
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_a428b1b1650901 491-507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6886697150a27ea0fdcc8995e8943618fee4880f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
