@@ -6,7 +6,7 @@ export function registerLevainDevice(
     deviceId: string,
     device: LevainDevice,
     port?: MessagePort,
-    onProgress?: (epoch: number, progress: number) => void
+    onProgress?: (epoch: number, progress: number | { type: 'activity' }) => void
 ): Promise<LevainSampleLoadOutcome> {
     return levainBridge().registerLevainDevice(deviceId, device, port, onProgress);
 }
