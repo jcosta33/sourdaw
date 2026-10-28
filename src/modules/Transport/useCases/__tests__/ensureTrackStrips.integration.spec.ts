@@ -179,7 +179,12 @@ describe('project strip initialization before bus facade and send publication', 
         expect(audioEngine.getTrackStrip('later-bus')).toBeUndefined();
         expect(audioEngine.getTrackStrip('first-bus')).toBeUndefined();
         expect(facades).toEqual([]);
-        expect(audioEngine.getDeviceReadinessDiagnostics().devices.find((device) => device.deviceId === 'later-bus-eq')).toMatchObject({ status: 'failed', failureStage: 'node' });
+        // Failed private construction disposes its token (TrackNode.dispose),
+        // so the terminal record is absent while the failure count survives.
+        expect(audioEngine.getDeviceReadinessDiagnostics()).toMatchObject({
+            counts: { requested: 1, failed: 1, playableReady: 0 },
+            devices: [],
+        });
     });
 
     it.each(['empty', 'wrong nonempty'] as const)('retains rejection of an existing %s bus instead of adopting it', (existing) => {
