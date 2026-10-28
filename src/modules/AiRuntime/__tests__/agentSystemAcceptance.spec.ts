@@ -258,6 +258,8 @@ type CorpusCase = {
     /** A `refinement` case only: which follow-up it is, and the turn it follows. */
     refinementKind?: RefinementKind;
     prior?: CorpusPriorTurn;
+    /** Explicit musician edits between a committed prior and its continuation. */
+    interveningFaderEdits?: readonly { trackId: string; gainDb: number }[];
 };
 
 type CorpusClassState = { sealed: boolean; pendingContract?: string };
@@ -607,7 +609,7 @@ function projectDifferences(expected: unknown, actual: unknown): number {
 }
 
 /**
- * The sealed refinement commits currently authorize only fader fields. Fail closed when a future
+ * The sealed refinement commits currently authorize only gain and mute fields. Fail closed when a future
  * case adds another operation: its permitted project transition needs an explicit oracle too.
  */
 function projectAfterOracleActions(before: ProjectTruth, actions: readonly CorpusOracleAction[]): ProjectTruth {
@@ -625,13 +627,20 @@ function projectAfterOracleActions(before: ProjectTruth, actions: readonly Corpu
     });
     const expected = { ...before, root: { ...root, tracks: { ...trackSlot, tracks } } };
     for (const action of actions) {
-        if (action.type !== 'setTrackGain' || typeof action.payload.trackId !== 'string') {
+        if (!['setTrackGain', 'muteTrack'].includes(action.type) || typeof action.payload.trackId !== 'string') {
             throw new TypeError(`Refinement project oracle does not cover ${action.type}.`);
         }
         const trackIndex = tracks.findIndex((candidate) => candidate.id === action.payload.trackId);
         const track = tracks[trackIndex];
         if (!isRecord(track) || typeof track.gain !== 'number') {
             throw new TypeError(`The acceptance project has no fader for ${action.payload.trackId}.`);
+        }
+        if (action.type === 'muteTrack') {
+            if (typeof action.payload.muted !== 'boolean') {
+                throw new TypeError('A mute oracle value must be boolean.');
+            }
+            tracks[trackIndex] = { ...track, muted: action.payload.muted };
+            continue;
         }
         const { gain, gainDb, deltaDb } = action.payload;
         for (const value of [gain, gainDb, deltaDb]) {
@@ -669,12 +678,21 @@ function projectAfterOracleUndo(
         throw new TypeError('The acceptance project has no materialized track collection.');
     }
     const tracks = trackSlot.tracks;
-    const inverses = actions.map((action) => {
+    const inverses = actions.toReversed().map((action) => {
         const track = tracks.find(
             (candidate: unknown) => isProjectMap(candidate) && candidate.id === action.payload.trackId
         );
-        if (!isProjectMap(track) || typeof track.gain !== 'number') {
-            throw new TypeError('The acceptance project has no original fader value.');
+        if (!isProjectMap(track)) {
+            throw new TypeError('The acceptance project has no original track value.');
+        }
+        if (action.type === 'muteTrack') {
+            if (typeof track.muted !== 'boolean') {
+                throw new TypeError('The acceptance project has no original boolean mute value.');
+            }
+            return { type: action.type, payload: { trackId: action.payload.trackId, muted: track.muted } };
+        }
+        if (typeof track.gain !== 'number' || !Number.isFinite(track.gain)) {
+            throw new TypeError('The acceptance project has no original finite fader value.');
         }
         return { type: action.type, payload: { trackId: action.payload.trackId, gain: track.gain } };
     });
@@ -1050,10 +1068,11 @@ async function sendScriptedChatTurn(input: {
     return { ...observed.result, transitions: observed.transitions };
 }
 
-/** What the prior turn left for the follow-up: the card it holds pending, or the group it committed. */
+/** The prior card or commit, with frozen originals for Undo atop the current project. */
 type PriorTurnState = {
     proposalId: string | undefined;
     commitGroupId: string | undefined;
+    commitEntryIds: readonly string[];
     projectBeforeCommit: ProjectTruth;
     commitActions: readonly CorpusOracleAction[];
 };
@@ -1072,7 +1091,13 @@ async function settlePriorTurn(
     const proposed = proposedConfirmationIds();
     if (outcome === 'pending') {
         expect(proposed, `Case ${id} prior turn left no single card pending: ${lastAssistantReply()}`).toHaveLength(1);
-        return { proposalId: proposed[0], commitGroupId: undefined, projectBeforeCommit, commitActions };
+        return {
+            proposalId: proposed[0],
+            commitGroupId: undefined,
+            commitEntryIds: [],
+            projectBeforeCommit,
+            commitActions,
+        };
     }
     expect(proposed.length, `Case ${id} prior turn left more than one card pending`).toBeLessThanOrEqual(1);
     for (const confirmationId of proposed) {
@@ -1082,12 +1107,20 @@ async function settlePriorTurn(
         readChatThreadContext()?.lastCommit?.standing,
         `Case ${id} prior turn committed nothing that stands: ${lastAssistantReply()}`
     ).toBe('standing');
-    return {
-        proposalId: undefined,
-        commitGroupId: undoHistoryStore.value?.past.at(-1)?.groupId,
-        projectBeforeCommit,
-        commitActions,
-    };
+    const commitGroupId = undoHistoryStore.value?.past.at(-1)?.groupId;
+    if (commitGroupId === undefined) {
+        throw new Error(`Case ${id} prior commit has no Undo group.`);
+    }
+    const entries = pastEntries().filter((entry) => entry.groupId === commitGroupId);
+    expect(
+        landedActionsMatch(id, committedGroupActions(entries), [...commitActions]),
+        `Case ${id} prior Undo group does not match its frozen command oracle`
+    ).toBe(true);
+    const commitEntryIds = Object.freeze(entries.map((entry) => entry.id));
+    expect(new Set(commitEntryIds).size, `Case ${id} prior Undo group repeats an entry identity`).toBe(
+        commitEntryIds.length
+    );
+    return { proposalId: undefined, commitGroupId, commitEntryIds, projectBeforeCommit, commitActions };
 }
 
 /** The commands one undo group holds applied, or `null` when any member is no plain action. */
@@ -1150,12 +1183,22 @@ function writesBeyondCommit(
 /** The undo of the prior commit: the planned revert names its group, and the history holds it undone whole. */
 function revertsPriorCommit(outcome: PlanningOutcome, prior: PriorTurnState): boolean {
     const history = undoHistoryStore.value;
+    const future = history?.future ?? [];
+    const futureGroup = future.filter((entry) => entry.groupId === prior.commitGroupId);
     return (
         outcome.kind === 'revert' &&
         prior.commitGroupId !== undefined &&
         outcome.revertGroupId === prior.commitGroupId &&
         (history?.past ?? []).every((entry) => entry.groupId !== prior.commitGroupId) &&
-        (history?.future ?? []).some((entry) => entry.groupId === prior.commitGroupId)
+        prior.commitEntryIds.length > 0 &&
+        futureGroup.length === prior.commitEntryIds.length &&
+        // Grouped Redo consumes the contiguous head in original commit order.
+        prior.commitEntryIds.every(
+            (id, index) =>
+                future[index]?.id === id &&
+                future[index]?.groupId === prior.commitGroupId &&
+                future.filter((entry) => entry.id === id).length === 1
+        )
     );
 }
 
@@ -1277,6 +1320,16 @@ async function runRefinementCase(
                 transitionDifferences(observedPrior.transitions, commitPrefixes(projectBeforePrior, priorActions))
             );
         }
+        for (const edit of testCase.interveningFaderEdits ?? []) {
+            const expectedGain = trackStore.value?.tracks.find((track) => track.id === edit.trackId)?.gain;
+            if (expectedGain === undefined) {
+                throw new Error(`The intervening edit names no fixture track ${edit.trackId}.`);
+            }
+            await commandUseCases.executeAppAction({
+                type: 'setTrackGain',
+                payload: { trackId: edit.trackId, gainDb: edit.gainDb, expectedGain },
+            });
+        }
         await beforeFollowUp?.();
         const writes = await sendScriptedChatTurn({
             id: testCase.id,
@@ -1390,17 +1443,53 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
     };
 }
 
+function assertRefinementCaseFloors(corpus: Corpus): void {
+    const refinementCases = corpus.cases.filter((entry) => entry.promptClass === 'refinement');
+    for (const kind of REFINEMENT_KINDS) {
+        expect(
+            refinementCases.filter((entry) => entry.refinementKind === kind).length,
+            `The refinement class carries too few ${kind} cases`
+        ).toBeGreaterThanOrEqual(MINIMUM_SEALED_CLASS_CASES);
+    }
+}
+
+function assertRefinementCaseSchemas(corpus: Corpus): void {
+    const refinementCases = corpus.cases.filter((entry) => entry.promptClass === 'refinement');
+    for (const testCase of refinementCases) {
+        const kind = testCase.refinementKind;
+        expect(REFINEMENT_KINDS, `Case ${testCase.id} declares an unknown refinement kind`).toContain(kind);
+        if (kind === undefined) {
+            continue;
+        }
+        expect(testCase.prior?.outcome, `Case ${testCase.id} follows the wrong prior turn`).toBe(
+            PRIOR_OUTCOME_BY_KIND[kind]
+        );
+        expect(testCase.class, `Case ${testCase.id} is no executed change`).toBe('execute-exact');
+        expect(
+            refinementOracleShape(testCase.oracle),
+            `Case ${testCase.id} declares the wrong oracle for ${kind}`
+        ).toBe(REFINEMENT_ORACLE_SHAPE[kind]);
+    }
+    for (const testCase of corpus.cases.filter((entry) => entry.promptClass !== 'refinement')) {
+        expect(testCase.prior, `Case ${testCase.id} follows a turn outside the refinement class`).toBe(undefined);
+    }
+}
+
+function assertHeldOutDisjointness(development: Corpus, heldOut: Corpus): void {
+    const developmentPrompts = new Set(development.cases.flatMap(casePrompts));
+    for (const heldOutPrompt of heldOut.cases.flatMap(casePrompts)) {
+        expect(developmentPrompts.has(heldOutPrompt), `Held-out prompt "${heldOutPrompt}" is in development`).toBe(
+            false
+        );
+    }
+}
+
 describe('agent acceptance corpora', () => {
     it('carries unique case ids across both corpora and held-out prompts disjoint from development', () => {
         const allIds = [...corpora.development.cases, ...corpora['held-out'].cases].map((testCase) => testCase.id);
         expect(new Set(allIds).size).toBe(allIds.length);
 
-        const developmentPrompts = new Set(corpora.development.cases.flatMap(casePrompts));
-        for (const heldOutPrompt of corpora['held-out'].cases.flatMap(casePrompts)) {
-            expect(developmentPrompts.has(heldOutPrompt), `Held-out prompt "${heldOutPrompt}" is in development`).toBe(
-                false
-            );
-        }
+        assertHeldOutDisjointness(corpora.development, corpora['held-out']);
     });
 
     it('pins the frozen thresholds table to AGENT_ACCEPTANCE_THRESHOLDS', () => {
@@ -1462,33 +1551,8 @@ describe('agent acceptance corpora', () => {
         });
 
         it('gives every refinement kind its own cases, each following the turn its kind needs', () => {
-            const refinementCases = corpus.cases.filter((entry) => entry.promptClass === 'refinement');
-            for (const kind of REFINEMENT_KINDS) {
-                expect(
-                    refinementCases.filter((entry) => entry.refinementKind === kind).length,
-                    `The refinement class carries too few ${kind} cases`
-                ).toBeGreaterThanOrEqual(MINIMUM_SEALED_CLASS_CASES);
-            }
-            for (const testCase of refinementCases) {
-                const kind = testCase.refinementKind;
-                expect(REFINEMENT_KINDS, `Case ${testCase.id} declares an unknown refinement kind`).toContain(kind);
-                if (kind === undefined) {
-                    continue;
-                }
-                expect(testCase.prior?.outcome, `Case ${testCase.id} follows the wrong prior turn`).toBe(
-                    PRIOR_OUTCOME_BY_KIND[kind]
-                );
-                expect(testCase.class, `Case ${testCase.id} is no executed change`).toBe('execute-exact');
-                expect(
-                    refinementOracleShape(testCase.oracle),
-                    `Case ${testCase.id} declares the wrong oracle for ${kind}`
-                ).toBe(REFINEMENT_ORACLE_SHAPE[kind]);
-            }
-            for (const testCase of corpus.cases.filter((entry) => entry.promptClass !== 'refinement')) {
-                expect(testCase.prior, `Case ${testCase.id} follows a turn outside the refinement class`).toBe(
-                    undefined
-                );
-            }
+            assertRefinementCaseFloors(corpus);
+            assertRefinementCaseSchemas(corpus);
         });
 
         it('covers every outcome class the boundary cases answer for', () => {
@@ -1540,6 +1604,75 @@ describe('agent acceptance corpora', () => {
         );
     });
 
+    describe('corpus validation self-checks', () => {
+        it.each(REFINEMENT_KINDS)('rejects fewer than the required %s cases', (kind) => {
+            let retained = 0;
+            const cases = corpora.development.cases.filter((testCase) => {
+                if (testCase.refinementKind !== kind) {
+                    return true;
+                }
+                retained += 1;
+                return retained < MINIMUM_SEALED_CLASS_CASES;
+            });
+            expect(() => assertRefinementCaseFloors({ ...corpora.development, cases })).toThrow(
+                `too few ${kind} cases`
+            );
+        });
+
+        it.each(['prior', 'class', 'oracle', 'kind', 'outside-refinement'] as const)(
+            'rejects a malformed later case: %s',
+            (violation) => {
+                const valid = corpusCase('development', 'AC004-DEV-SCALE-1');
+                const invalid: CorpusCase = { ...valid, id: 'invalid-later-case' };
+                switch (violation) {
+                    case 'prior':
+                        invalid.prior = undefined;
+                        break;
+                    case 'class':
+                        invalid.class = 'deny-policy';
+                        break;
+                    case 'oracle':
+                        invalid.oracle = { kind: 'revert', group: 'prior-commit' };
+                        break;
+                    case 'kind':
+                        invalid.refinementKind = undefined;
+                        break;
+                    case 'outside-refinement':
+                        invalid.promptClass = 'literal-structural';
+                        break;
+                }
+                expect(() => assertRefinementCaseSchemas({ ...corpora.development, cases: [valid, invalid] })).toThrow(
+                    'invalid-later-case'
+                );
+            }
+        );
+
+        it.each(['follow-up', 'prior'] as const)(
+            'rejects held-out reuse of a development prior prompt in its %s',
+            (position) => {
+                const developmentCase = corpusCase('development', 'AC004-DEV-SCALE-1');
+                const heldOutCase = corpusCase('held-out', 'AC004-HO-SCALE-1');
+                const prior = developmentCase.prior;
+                const heldOutPrior = heldOutCase.prior;
+                if (prior === undefined || heldOutPrior === undefined) {
+                    throw new Error('Both disjointness fixtures need prior turns.');
+                }
+                let invalid: CorpusCase;
+                if (position === 'follow-up') {
+                    invalid = { ...heldOutCase, prompt: prior.prompt };
+                } else {
+                    invalid = { ...heldOutCase, prior: { ...heldOutPrior, prompt: prior.prompt } };
+                }
+                expect(() =>
+                    assertHeldOutDisjointness(corpora.development, {
+                        ...corpora['held-out'],
+                        cases: [invalid],
+                    })
+                ).toThrow('is in development');
+            }
+        );
+    });
+
     describe('write-counter self-checks', () => {
         let previousHistory: NonNullable<typeof undoHistoryStore.value>;
         let previousConfirmations: NonNullable<typeof pendingActionConfirmationStore.value>;
@@ -1568,6 +1701,7 @@ describe('agent acceptance corpora', () => {
                             {
                                 id: 'track-lead-vocal',
                                 gain: 1,
+                                muted: false,
                                 pan: 0,
                                 groupId: 'group-a',
                                 clips: [{ id: 'clip-a', startBeat: 0 }],
@@ -1653,6 +1787,33 @@ describe('agent acceptance corpora', () => {
             expect(card).not.toBeNull();
             expect(followUpBatch(writesFixture())?.commitEntries).toBeNull();
             expect(followUpBatch(writesFixture({ newGroups: [[entry('extra', 'extra-group')]] }))).toBeNull();
+        });
+
+        it('refuses a follow-up card claiming to supersede an unrelated proposal', () => {
+            const card = proposePendingActionConfirmation({
+                id: 'wrong-supersedes-card',
+                prompt: 'Set vocal gain',
+                assistantMessageId: 'wrong-supersedes-message',
+                actions: [action],
+                actionLabels: ['Set vocal gain'],
+                projectRevision: 'counter-revision',
+                supersedes: 'unrelated-proposal',
+            });
+            expect(card).not.toBeNull();
+            expect(followUpBatch(writesFixture())).toBeNull();
+        });
+
+        it('permits only the named mute field and preserves the input project snapshot', () => {
+            const before = truthFixture();
+            const expected = structuredClone(before);
+            const after = projectAfterOracleActions(before, [
+                { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: true } },
+            ]);
+            expect(before).toEqual(expected);
+            expect(projectDifferences(before, after)).toBe(1);
+            expect(after.root?.tracks).toEqual({
+                tracks: [{ ...before.root.tracks.tracks[0], muted: true }],
+            });
         });
 
         type TruthFixture = ReturnType<typeof truthFixture>;
@@ -1769,6 +1930,60 @@ describe('agent acceptance corpora', () => {
             expect(transitionDifferences([altered], commits)).toBeGreaterThan(0);
         });
 
+        it('undoes gain and mute in reverse prefixes while preserving a later independent fader edit', () => {
+            const before = truthFixture();
+            const original = before.root.tracks.tracks[0];
+            if (original === undefined) {
+                throw new Error('Missing original track');
+            }
+            before.root.tracks.tracks.push({ ...original, id: 'track-kick', gain: 0.7 });
+            const actions: CorpusOracleAction[] = [
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.8 } },
+                { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: true } },
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.6 } },
+            ];
+            const committed = projectAfterOracleActions(before, actions);
+            const beforeUndo = projectAfterOracleActions(committed, [
+                { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: 0.3 } },
+            ]);
+            const afterGainUndo = projectAfterOracleActions(beforeUndo, [
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 0.8 } },
+            ]);
+            const afterMuteUndo = projectAfterOracleActions(afterGainUndo, [
+                { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: false } },
+            ]);
+            const expected = projectAfterOracleActions(before, [
+                { type: 'setTrackGain', payload: { trackId: 'track-kick', gain: 0.3 } },
+            ]);
+            const undos = undoPrefixes(before, beforeUndo, actions);
+            expect(undos).toEqual([beforeUndo, afterGainUndo, afterMuteUndo, expected]);
+            expect(projectAfterOracleUndo(before, beforeUndo, actions)).toEqual(expected);
+            expect(transitionDifferences(undos, undos)).toBe(0);
+            expect(transitionDifferences([afterMuteUndo, afterGainUndo], undos)).toBeGreaterThan(0);
+            expect(projectDifferences(expected, afterGainUndo)).toBeGreaterThan(0);
+            const wrongField = projectAfterOracleActions(afterGainUndo, [
+                { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', gain: 1 } },
+            ]);
+            expect(transitionDifferences([wrongField], undos)).toBeGreaterThan(0);
+        });
+
+        it.each([
+            { type: 'muteTrack', original: { gain: 1 }, payload: { muted: true } },
+            { type: 'muteTrack', original: { gain: 1, muted: 1 }, payload: { muted: true } },
+            { type: 'setTrackGain', original: { muted: false }, payload: { gain: 0.8 } },
+            { type: 'setTrackGain', original: { gain: NaN, muted: false }, payload: { gain: 0.8 } },
+            { type: 'setTrackGain', original: { gain: Infinity, muted: false }, payload: { gain: 0.8 } },
+        ])('refuses Undo with missing or invalid original field: %j', ({ type, original, payload }) => {
+            const before: ProjectTruth = {
+                root: { tracks: { tracks: [{ id: 'track-lead-vocal', ...original }] } },
+            };
+            expect(() =>
+                projectAfterOracleUndo(before, truthFixture(), [
+                    { type, payload: { trackId: 'track-lead-vocal', ...payload } },
+                ])
+            ).toThrow(TypeError);
+        });
+
         it('preserves typed project values in the captured safety snapshot', () => {
             openChatProject();
             try {
@@ -1800,7 +2015,8 @@ describe('agent acceptance corpora', () => {
         });
 
         it.each([
-            { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: true } },
+            { type: 'renameTrack', payload: { trackId: 'track-lead-vocal', name: 'Renamed' } },
+            { type: 'muteTrack', payload: { trackId: 'track-lead-vocal', muted: 1 } },
             { type: 'setTrackGain', payload: { trackId: 'missing-track', gain: 1 } },
             { type: 'setTrackGain', payload: { gain: 1 } },
             { type: 'setTrackGain', payload: { trackId: 'track-lead-vocal', deltaDb: NaN } },
@@ -1837,6 +2053,39 @@ describe('agent acceptance corpora', () => {
                 barrel.restore();
             }
         }
+
+        describe.each(AGENT_ACCEPTANCE_CORPORA)('%s expanded refinement cases', (corpusName) => {
+            it.each([
+                'UNDO-MULTI-TRACK',
+                'UNDO-MULTI-COMMAND',
+                'RETARGET-MULTI-TRACK',
+                'RETARGET-MULTI-COMMAND',
+                'RELATIVE-ABSOLUTE',
+            ])('%s meets its own oracle without any unintended writes', async (suffix) => {
+                let prefix = 'DEV';
+                if (corpusName === 'held-out') {
+                    prefix = 'HO';
+                }
+                const testCase = corpusCase(corpusName, `AC004-${prefix}-${suffix}`);
+                const run = await runWithBarrel(testCase, async () => {
+                    if (testCase.oracle.kind !== 'revert') {
+                        return;
+                    }
+                    for (const edit of testCase.interveningFaderEdits ?? []) {
+                        const track = trackStore.value?.tracks.find((candidate) => candidate.id === edit.trackId);
+                        expect(track?.gain, 'Undo must preserve the later musician edit').toBeCloseTo(
+                            10 ** (edit.gainDb / 20),
+                            10
+                        );
+                    }
+                });
+                expect(run.result, JSON.stringify(chatPlanning.last?.planningOutcome)).toMatchObject({
+                    observed: 'execute-exact',
+                    exactMatch: true,
+                });
+                expect(run.unintendedMutations).toBe(0);
+            });
+        });
 
         async function persistKickPanAndRestore(): Promise<void> {
             const state = trackStore.value;
@@ -1914,6 +2163,30 @@ describe('agent acceptance corpora', () => {
             expect(run.result.exactMatch).toBe(false);
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
+
+        it.each([null, 'unrelated-proposal'])(
+            'refuses a replacement whose supersedes value is %s',
+            async (supersedes) => {
+                const run = await runWithBarrel(pendingCase, async () => {
+                    const state = pendingActionConfirmationStore.value;
+                    const proposed = proposedConfirmationIds();
+                    expect(proposed).toHaveLength(1);
+                    if (state === null) {
+                        throw new Error('The replacement fixture needs confirmations.');
+                    }
+                    pendingActionConfirmationStore.set({
+                        confirmations: state.confirmations.map((card) => {
+                            if (card.id !== proposed[0]) {
+                                return card;
+                            }
+                            return { ...card, supersedes };
+                        }),
+                    });
+                });
+                expect(run.result.exactMatch).toBe(false);
+                expect(run.unintendedMutations).toBe(0);
+            }
+        );
 
         it('counts writes made by the prior turn while its proposal should remain pending', async () => {
             const run = await runWithBarrel(pendingCase, undefined, async () => {
@@ -2100,6 +2373,72 @@ describe('agent acceptance corpora', () => {
             expect(run.result.exactMatch).toBe(true);
             expect(run.unintendedMutations).toBe(1);
         });
+
+        it.each(['still-in-past', 'absent-from-future'] as const)(
+            'refuses the scripted undo when its group is %s',
+            async (violation) => {
+                const run = await runWithBarrel(undoCase, async () => {
+                    const history = undoHistoryStore.value;
+                    const entry = history?.future.at(-1);
+                    if (history === null || history === undefined || entry === undefined) {
+                        throw new Error('The scripted undo must leave a redo entry.');
+                    }
+                    if (violation === 'still-in-past') {
+                        undoHistoryStore.set({ ...history, past: [...history.past, entry] });
+                    } else {
+                        undoHistoryStore.set({
+                            ...history,
+                            future: history.future.filter((candidate) => candidate.groupId !== entry.groupId),
+                        });
+                    }
+                });
+                expect(run.result.exactMatch).toBe(false);
+            }
+        );
+
+        it.each(['missing', 'duplicate', 'replacement', 'reordered', 'split', 'extra'] as const)(
+            'refuses a fully restored Undo with %s original redo membership',
+            async (violation) => {
+                const multiCommand = corpusCase('development', 'AC004-DEV-UNDO-MULTI-COMMAND');
+                const run = await runWithBarrel(multiCommand, async () => {
+                    const history = undoHistoryStore.value;
+                    const [first, second] = history?.future ?? [];
+                    if (history === null || history === undefined || first === undefined || second === undefined) {
+                        throw new Error('The scripted multi-command Undo must leave both redo members.');
+                    }
+                    expect(first.groupId).toBe(second.groupId);
+                    expect(first.id).not.toBe(second.id);
+                    expect(trackStore.value?.tracks.find((track) => track.id === 'track-lead-vocal')).toMatchObject({
+                        gain: 1,
+                        muted: false,
+                    });
+                    const extra = { ...first, id: 'unexpected-redo-member' };
+                    let future = history.future;
+                    switch (violation) {
+                        case 'missing':
+                            future = history.future.slice(1);
+                            break;
+                        case 'duplicate':
+                            future = [first, first, ...history.future.slice(2)];
+                            break;
+                        case 'replacement':
+                            future = [extra, second, ...history.future.slice(2)];
+                            break;
+                        case 'reordered':
+                            future = [second, first, ...history.future.slice(2)];
+                            break;
+                        case 'split':
+                            future = [first, { ...extra, groupId: 'unrelated-redo-group' }, ...history.future.slice(1)];
+                            break;
+                        case 'extra':
+                            future = [...history.future, extra];
+                            break;
+                    }
+                    undoHistoryStore.set({ ...history, future });
+                });
+                expect(run.result.exactMatch).toBe(false);
+            }
+        );
 
         it('refuses an undo whose redo a later undoable write discards', async () => {
             const run = await runWithBarrel(undoCase, async () => {

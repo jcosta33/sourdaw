@@ -1,5 +1,20 @@
 # Lesson library: project integrity
 
+## 2026-10-27 — single-entry priors could not distinguish partial or wrong-group Undo (PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) used single-entry prior groups and
+relative committed values for its sealed refinement examples. They could not expose replaying
+only part of a group, choosing the latest musician group instead of the named AI group, or taking
+an absolute continuation from the live fader (#5648). These are gaps in acceptance evidence;
+no historical private reviewer prompt or tier is established.
+
+Exercise a group spanning multiple tracks and a group containing gain plus mute. Add an unrelated
+musician edit in a later group. Revert the named AI group and require every AI-owned change to revert, both Undo
+history witnesses to agree, and the unrelated edit to survive. Exercise multi-command retargeting
+and an absolute continuation after the live fader has moved, with frozen expectations derived from
+the committed value. Undoing one inverse, selecting the newest group or substituting the live value
+must each fail the acceptance assertions without relying on a manifest mismatch.
+
 ## 2026-10-27 — a matching commit did not prove that only its fields changed (PR #5646 refinement escape)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) introduced refinement bookkeeping
@@ -219,6 +234,25 @@ selection and comp change, then change canonical clip geometry and require zero-
 Prepare semantic restoration at durable replay time while retaining exact-reference guards inside one synchronous
 publication and compensation. For disappearing fragments, also start with no captured takes, add peer facets afterward,
 and prove only those fragment-owned facets retire; induce a later publication failure and require their exact recovery.
+
+## Coordinate captures remain history data across both replay directions
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+A capture that works before saving proves nothing about the admitted session pair.
+Hydrate actual production history from both past and future, preserve peer row membership
+and properties, and require exact raw coordinates through repeated replay. Refuse malformed
+or incoherent pairs before binding metadata or writing product state. Inject a pre-commit
+storage failure after handler execution and compare document, projections, both captures,
+history, tree and mirror; a successful product rollback cannot excuse changed replay data.
+
+Saved macro playback is a fresh command route, not an Undo capability. The
+[restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+from PR #5495 and PR #5578 requires removing documented inverse-only scalar hints
+as well as row captures from the cloned request. Preserve stored macro bytes,
+current peer rows and properties, and exact history from each new execution.
+Compare full clip state and rows against independent public commands after a loop
+or anchor change; restore only scalar forwarding as the discriminating mutation.
 
 ### 2026-09-30 — MIDI transform inverses lacked replay authority (escaped at 64b9d77c01a)
 
