@@ -268,10 +268,8 @@ describe('project directory save and cold Recent open', () => {
         }
         const savedChanges = automerge.getAllChanges(savedRoot).map((bytes) => Array.from(bytes));
 
-        const { decodeSdawFile } = await import('#/modules/CrdtDocument/useCases/sdawFileFormat/decodeSdawFile');
-        const { encodeSdawFile } = await import('#/modules/CrdtDocument/useCases/sdawFileFormat/encodeSdawFile');
         const originalMedia = new Map<string, Blob>(
-            Array.from(committed.media, ([hash, bytes]): [string, Blob] => [hash, new Blob([bytes])])
+            Array.from(committed.media, ([hash, bytes]): [string, Blob] => [hash, new Blob([Uint8Array.from(bytes)])])
         );
         const pcm = new Map<string, AudioBuffer>();
         for (const bufferId of committed.pcm.keys()) {
@@ -293,14 +291,47 @@ describe('project directory save and cold Recent open', () => {
             arrangements: { arrangements: Array<{ tracks: { tracks: MediaTrack[] } }> };
         };
         const savedTrack = (automerge.toJS(savedRoot) as MediaRoot).tracks.tracks[0]!;
-        const writeAlteredDocument = async (changeRoot: (root: MediaRoot) => void): Promise<void> => {
-            const bundle = decodeSdawFile(committed.document);
-            const alteredRoot = automerge.change(automerge.clone(savedRoot as MediaRoot), changeRoot);
-            bundle.set(crdt.DOC_PREFIX_ROOT, automerge.save(alteredRoot));
+        const changes: Array<(root: MediaRoot) => void> = [
+            (root) => {
+                root.tracks.tracks[0]!.clips[0]!.audioBufferId = 'unmanifested-audio-buffer';
+            },
+            (root) => {
+                root.tracks.tracks[0]!.clips[0]!.audioBufferId = secondClip.audioBufferId;
+            },
+            (root) => {
+                root.tracks.tracks[0]!.clips[0]!.assetHash = `sha256:${'0'.repeat(64)}`;
+            },
+            (root) => {
+                root.tracks.tracks[0]!.alternatives[0]!.clips.push({
+                    ...structuredClone(clip),
+                    id: 'unmanifested-alternative',
+                });
+            },
+            (root) => {
+                root.tracks.tracks[0]!.freezeState.frozenBufferId = secondClip.audioBufferId;
+            },
+            (root) => {
+                root.arrangements.arrangements[0]!.tracks.tracks.push({
+                    ...savedTrack,
+                    id: 'unmanifested-dormant-track',
+                });
+            },
+        ];
+        const alteredDocuments: Uint8Array[] = [];
+        try {
+            for (const changeRoot of changes) {
+                const alteredRoot = automerge.change(automerge.clone(savedRoot as MediaRoot), changeRoot);
+                crdt.replaceCrdtDoc({ id: crdt.DOC_PREFIX_ROOT, doc: alteredRoot });
+                alteredDocuments.push(new Uint8Array(await crdt.exportSdawFile().arrayBuffer()));
+            }
+        } finally {
+            crdt.replaceCrdtDoc({ id: crdt.DOC_PREFIX_ROOT, doc: savedRoot });
+        }
+        const writeAlteredDocument = async (document: Uint8Array): Promise<void> => {
             await projectDirectory.write({
                 directory,
                 projectId,
-                document: encodeSdawFile(bundle),
+                document,
                 snapshot: committed.snapshot,
                 media: originalMedia,
                 unavailableOriginals: committed.manifest.unavailableOriginals,
@@ -377,8 +408,8 @@ describe('project directory save and cold Recent open', () => {
         const blankAudio = audio.getCachedAudioBuffer({ bufferId: outgoingBufferId });
         expect(blankAudio).toBeTruthy();
         expect(blankUndo?.entries.length).toBeGreaterThan(0);
-        const expectMismatchRejected = async (changeRoot: (root: MediaRoot) => void): Promise<void> => {
-            await writeAlteredDocument(changeRoot);
+        const expectMismatchRejected = async (document: Uint8Array): Promise<void> => {
+            await writeAlteredDocument(document);
             expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('failed');
             expect(projectStores.projectStore.value?.projectId).toBe(blankProjectId);
             expect(arrangementStores.trackStore.value?.tracks).toEqual(blankTracks);
@@ -386,30 +417,9 @@ describe('project directory save and cold Recent open', () => {
             expect(actionHistoryStore.value).toEqual(blankUndo);
             expect(audio.getCachedAudioBuffer({ bufferId: outgoingBufferId })).toBe(blankAudio);
         };
-        await expectMismatchRejected((root) => {
-            root.tracks.tracks[0]!.clips[0]!.audioBufferId = 'unmanifested-audio-buffer';
-        });
-        await expectMismatchRejected((root) => {
-            root.tracks.tracks[0]!.clips[0]!.audioBufferId = secondClip.audioBufferId;
-        });
-        await expectMismatchRejected((root) => {
-            root.tracks.tracks[0]!.clips[0]!.assetHash = `sha256:${'0'.repeat(64)}`;
-        });
-        await expectMismatchRejected((root) => {
-            root.tracks.tracks[0]!.alternatives[0]!.clips.push({
-                ...structuredClone(clip),
-                id: 'unmanifested-alternative',
-            });
-        });
-        await expectMismatchRejected((root) => {
-            root.tracks.tracks[0]!.freezeState.frozenBufferId = secondClip.audioBufferId;
-        });
-        await expectMismatchRejected((root) => {
-            root.arrangements.arrangements[0]!.tracks.tracks.push({
-                ...savedTrack,
-                id: 'unmanifested-dormant-track',
-            });
-        });
+        for (const document of alteredDocuments) {
+            await expectMismatchRejected(document);
+        }
         await projectDirectory.write({
             directory,
             projectId,

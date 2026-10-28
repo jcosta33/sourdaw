@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { createTrack } from '#/modules/Arrangement/models/Track';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { captureProjectOriginalMedia } from '#/modules/Collaboration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -99,7 +98,40 @@ vi.mock('../../saveProject/captureExternalPluginStates', () => ({
 }));
 
 function seedMissingOriginalExport(): void {
-    const track = createTrack({ id: 'track', name: 'Audio', kind: 'audio' });
+    const track: Track = {
+        id: 'track',
+        name: 'Audio',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#fff',
+        clips: [],
+        devices: [],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt',
+        alternatives: [{ id: 'alt', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+    };
     track.clips.push({
         id: 'clip',
         trackId: track.id,
