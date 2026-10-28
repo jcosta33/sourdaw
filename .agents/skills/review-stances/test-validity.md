@@ -488,6 +488,23 @@ seconds from beat four to six are `4.8 * ln(175/150)`. Assert terminal values an
 times/frames, not just captured callback identity or lane presence. Reverting inverse forwarding,
 subregion anchoring or the consumer's inverse must independently turn the relevant case red.
 
+### 2026-10-28 — live bank errors did not test buffered replay or repeated disposal (#5227)
+
+Commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57` introduced the buffered loop with no
+associated PR returned; PR #946 later handled bank-local errors on the live port but left that
+buffered route behind the outer init catch. PR #5204 documented the broader contract. Private
+review prompts and tiers are unknown. A live-error pass cannot prove that queued release and
+ready replies survive a buffered bank-local error, that a terminal replay stops its tail, or
+that a second dispose still answers after the first.
+
+Use the real message handler with distinct bank tokens: queue a bank-local refusal followed by
+its release and require decision, bank error, matching release and healthy ready in order. Pair
+the terminal buffered case with a later request that receives the original error. Inject one
+failed `initSync`, send a second init, and require the original error with no second construction
+or ready. Count two `disposed` replies from one processor and a terminal drain reply; a mere
+`toHaveBeenCalledWith` assertion misses the lost second answer. Removing the refusal guard and
+removing the already-disposed post must each fail its unchanged focused case in a committed probe.
+
 ### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
 
 The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.
