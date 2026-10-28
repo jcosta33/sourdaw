@@ -125,8 +125,6 @@ vi.mock('#/modules/Command/useCases', () => ({
 vi.mock('#/modules/MIDI/useCases', async () => ({
     captureEventPositionAt: (await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases'))
         .captureEventPositionAt,
-    isFrozenMidiTakeSource: (await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases'))
-        .isFrozenMidiTakeSource,
     replaceFrozenMidiTakeRow: (
         await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases')
     ).replaceFrozenMidiTakeRow,

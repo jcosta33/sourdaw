@@ -1,4 +1,5 @@
-import { getMidiStoreState, isFrozenMidiTakeSource, snapshotMidiClipData } from '#/modules/MIDI/useCases';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
+import { getMidiStoreState, snapshotMidiClipData } from '#/modules/MIDI/useCases';
 import {
     captureAudioSourceSnapshot,
     type AudioSourceSnapshot,

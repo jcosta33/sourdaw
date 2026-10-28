@@ -1,4 +1,4 @@
-import { isFrozenMidiTakeSource } from '#/modules/MIDI/useCases';
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { type MidiTakeSource, type Take } from '../../models/TakeLane';
