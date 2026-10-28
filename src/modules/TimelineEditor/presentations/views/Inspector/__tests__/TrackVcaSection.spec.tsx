@@ -7,21 +7,10 @@ import { TrackVcaSection } from '../TrackVcaSection';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
-// Mock external dependencies
-const mockAssignToVca = vi.fn<(...args: unknown[]) => void>();
-const mockRemoveFromVca = vi.fn<(...args: unknown[]) => void>();
-const mockGetVcaGroups = vi.fn<() => Array<{ id: string; name: string; trackIds: string[] }>>(() => []);
-const mockCreateVcaGroup = vi.fn<(...args: unknown[]) => void>();
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        assignToVca: (...args: unknown[]) => mockAssignToVca(...args),
-        removeFromVca: (...args: unknown[]) => mockRemoveFromVca(...args),
-        getVcaGroups: () => mockGetVcaGroups(),
-        createVcaGroup: (...args: unknown[]) => mockCreateVcaGroup(...args),
-    };
-});
+const mockExecuteUserAppAction = vi.fn<(...args: unknown[]) => Promise<void>>();
+vi.mock('#/modules/Command/useCases', () => ({
+    executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
+}));
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({
     DawCompactSelect: ({
@@ -106,12 +95,11 @@ describe('TrackVcaSection', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockGetVcaGroups.mockReturnValue([]);
+        mockExecuteUserAppAction.mockResolvedValue(undefined);
         vcaGroupStore.set({ groups: [] });
     });
 
     const setVcaGroups = (groups: Array<{ id: string; name: string; trackIds: string[] }>): void => {
-        mockGetVcaGroups.mockReturnValue(groups);
         vcaGroupStore.set({ groups: groups.map((group) => ({ ...group, gain: 1, muted: false })) });
     };
 
@@ -145,28 +133,37 @@ describe('TrackVcaSection', () => {
         expect(screen.getByText('VCA 2')).toBeInTheDocument();
     });
 
-    it('should call createVcaGroup when create button is clicked', () => {
+    it('dispatches createVcaGroup with the next generated name', () => {
         setVcaGroups([]);
         render(<TrackVcaSection track={mockTrack} />);
         fireEvent.click(screen.getByLabelText('Create VCA group'));
-        expect(mockCreateVcaGroup).toHaveBeenCalledWith('VCA 1', ['track-1']);
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
+            type: 'createVcaGroup',
+            payload: { name: 'VCA 1', trackIds: ['track-1'] },
+        });
     });
 
-    it('should call assignToVca when VCA group is selected', () => {
+    it('dispatches assignToVca when a group is selected', () => {
         setVcaGroups([{ id: 'vca-1', name: 'VCA 1', trackIds: [] }]);
         render(<TrackVcaSection track={mockTrack} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: 'vca-1' } });
-        expect(mockAssignToVca).toHaveBeenCalledWith('track-1', 'vca-1');
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
+            type: 'assignToVca',
+            payload: { trackId: 'track-1', vcaGroupId: 'vca-1' },
+        });
     });
 
-    it('should call removeFromVca when "None" is selected', () => {
+    it('dispatches removeFromVca when "None" is selected', () => {
         const trackWithVca = { ...mockTrack, vcaGroupId: 'vca-1' };
         setVcaGroups([{ id: 'vca-1', name: 'VCA 1', trackIds: ['track-1'] }]);
         render(<TrackVcaSection track={trackWithVca} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: '' } });
-        expect(mockRemoveFromVca).toHaveBeenCalledWith('track-1');
+        expect(mockExecuteUserAppAction).toHaveBeenCalledWith({
+            type: 'removeFromVca',
+            payload: { trackId: 'track-1' },
+        });
     });
 
     it('should render surface card', () => {
