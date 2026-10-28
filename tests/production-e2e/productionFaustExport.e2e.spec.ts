@@ -9,6 +9,7 @@ import { stringify as superjsonStringify } from 'superjson';
 import { analyzePcmWav } from '../e2e/analyzePcmWav';
 
 import { installFaustProbe } from './productionFaustProbe';
+import { admitProductionTransportInput } from './productionTransportInput';
 
 // This is a production-preview case. It deliberately uses the shipping iframe,
 // native worklet loading, real transport controls and the real download path.
@@ -35,6 +36,7 @@ async function buildIdentity(origin: string): Promise<Record<string, unknown>> {
         expect([checkout, ...parents]).toContain(head);
     }
     return {
+        // This revision consumes the build; a reused producer is bound separately by the runner.
         checkout,
         parents,
         prHead: head ?? null,
@@ -204,6 +206,7 @@ test('production Faust plays and exports after slow native loading, refuses a na
     const identity = await buildIdentity(origin);
     const observations: Record<string, unknown> = { identity };
     let frame: Frame | undefined;
+    let transportInput: Awaited<ReturnType<typeof admitProductionTransportInput>> | undefined;
     const downloads: string[] = [];
     page.on('download', (download) => downloads.push(download.suggestedFilename()));
     try {
@@ -246,6 +249,7 @@ test('production Faust plays and exports after slow native loading, refuses a na
         const rangeDialog = await openBakery(app);
         await rangeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
         await expect(rangeDialog).toHaveCount(0);
+        transportInput = await admitProductionTransportInput(page, app);
         await app.getByRole('button', { name: 'Play', exact: true }).click();
         await expect
             .poll(
@@ -259,7 +263,7 @@ test('production Faust plays and exports after slow native loading, refuses a na
                 { timeout: 30_000 }
             )
             .toBeGreaterThan(0.0001);
-        await app.getByRole('button', { name: 'Stop', exact: true }).click();
+        await transportInput.stop();
         await frame.evaluate(() => window.productionFaustProbe.setMode('hold-offline'));
         let dialog = await openBakery(app);
         const activePromise = captureWav(page, dialog, testInfo, 'active-tape-delay');
@@ -356,6 +360,8 @@ test('production Faust plays and exports after slow native loading, refuses a na
         });
         expect(downloads).toHaveLength(beforeFailure + 1);
     } finally {
+        observations.transportInput = transportInput?.snapshot();
+        transportInput?.dispose();
         if (frame) {
             observations.finalProbe = await frame
                 .evaluate(() => window.productionFaustProbe.snapshot())

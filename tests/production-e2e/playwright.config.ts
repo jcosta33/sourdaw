@@ -25,7 +25,9 @@ export default defineConfig({
     use: {
         baseURL: e2eOrigin(port),
         viewport: { width: 1440, height: 900 },
-        trace: 'retain-on-failure',
+        // DOM/screenshot collection evaluates the renderer before input. The runner retains
+        // native protocol separately with DEBUG=pw:protocol and a private DEBUG_FILE.
+        trace: { mode: 'on', snapshots: false, screenshots: false, sources: true },
     },
     projects: [{ name: 'chromium', use: devices['Desktop Chrome'] }],
     webServer: {
