@@ -1465,3 +1465,23 @@ or add inspection diagnostics to the warning-success allowlist.
 PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
+## Escape: sanitizer tests did not prove project-file admission (PR #4987)
+
+PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
+and valid saved-lane compatibility, but the file admission predicate ignored the
+new fields. PR #4222 (`120c9e2b418e`) had already left the same gap for
+malformed `sourceOffsetBeats`. A selected take carrying only `passAnchorSeconds` beside offset zero
+passed admission and disappeared with its comp region during real hydration.
+The missed input was malformed placement entering the full import route; private
+review prompts are unavailable, so do not infer a named historical stance or tier.
+
+Use a current-version file with a canonical project ID and a valid referenced
+track and clip, and first prove the valid control is admitted. Reject malformed
+placement in both top-level and saved-arrangement take lanes before replacement
+of an existing project. Assert raw authority, tracks, arrangement and selected
+material remain unchanged. Separately admit a JSON roundtrip of legacy takes and
+complete placed passes, including negative finite anchors, and assert exact
+selected-take and comp-region retention after real owner hydration. Removing only
+placement admission must redden the rejection case; testing a store sanitizer
+alone cannot observe the file admission gap.

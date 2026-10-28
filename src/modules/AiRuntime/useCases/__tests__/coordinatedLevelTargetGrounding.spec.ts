@@ -1819,8 +1819,34 @@ describe('complete protection owners at every grounding boundary', () => {
         expect(groundGainList(prompt, [drums], projectContext, true).status).toBe('rejected');
     });
 
+    it.each(['Overall Level', 'Overall level'])(
+        'grounds only the numeric Drums change beside unbound %s on every route',
+        (quality) => {
+            const prompt = `turn the Drums down 3 dB; keep the ${quality} the same`;
+            for (const result of [
+                bridge([gainCall(drums.id, { deltaDb: -3 })], prompt),
+                bridgeCompiledGainList(prompt, [drums]),
+            ]) {
+                expect(result.rejections).toEqual([]);
+                expect(result.actions).toEqual([gainAction(drums.id, { deltaDb: -3 })]);
+            }
+            for (const compiled of [false, true]) {
+                const result = groundGainList(prompt, [drums], projectContext, compiled);
+                expect(result).toMatchObject({
+                    status: 'grounded',
+                    actions: [groundedGainAction(drums, { deltaDb: -3 })],
+                });
+                if (!compiled && result.status === 'grounded') {
+                    expect(result.groundingBasis?.rootText).toBe(prompt);
+                    expect(result.groundingBasis?.sources).toEqual([
+                        { text: prompt, calls: [gainCall(drums.id, { deltaDb: -3 })] },
+                    ]);
+                }
+            }
+        }
+    );
+
     it.each([
-        ['turn the Drums down 3 dB; keep the Overall Level the same', drums, projectContext],
         ['turn Keys down 3 dB and keep Strings punchy', keys, projectWithStringsGroup],
         ['turn the Drums down 3 dB; leave the fader of "Bass DI" alone', drums, projectContext],
     ])('admits %s on direct and atomic routes', (prompt, track, context) => {
@@ -1832,6 +1858,141 @@ describe('complete protection owners at every grounding boundary', () => {
             expect(bridgeCompiledGainList(prompt, [track], context).rejections).toEqual([]);
             expect(groundGainList(prompt, [track], context, true).status).toBe('grounded');
         }
+    });
+
+    it.each(['Overall', 'Overall Level'])('keeps the actual %s track or its level protected on every route', (name) => {
+        const overall = createTrack({ id: 'track-overall', name });
+        const context = { ...projectContext, tracks: [...projectContext.tracks, overall] };
+        const prompt = `turn the ${name} down 3 dB; keep the Overall Level the same`;
+        for (const result of [
+            bridge([gainCall(overall.id, { deltaDb: -3 })], prompt, context),
+            bridgeCompiledGainList(prompt, [overall], context),
+        ]) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).not.toEqual([]);
+        }
+        for (const compiled of [false, true]) {
+            expect(groundGainList(prompt, [overall], context, compiled).status).toBe('rejected');
+        }
+        const allowed = 'turn the Drums down 3 dB; keep the Overall Level the same';
+        expect(bridgeCompiledGainList(allowed, [drums], context)).toMatchObject({
+            actions: [gainAction(drums.id, { deltaDb: -3 })],
+            rejections: [],
+        });
+        expect(groundGainList(allowed, [drums], context, true).status).toBe('grounded');
+    });
+
+    it('carries both same-name track and clip protections through compiled grounding', () => {
+        const clip = {
+            id: 'clip-overall-level',
+            name: 'Overall Level',
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 8,
+            noteCount: 0,
+            locked: false,
+        };
+        const overall = createTrack({ id: 'track-overall-level', name: 'Overall Level' });
+        const context = {
+            ...projectContext,
+            tracks: [createTrack({ id: drums.id, name: drums.name, clips: [clip] }), overall],
+        };
+        const prompt = 'turn the Drums down 3 dB; keep the Overall Level the same';
+        expect(bridgeCompiledGainList(prompt, [drums], context)).toMatchObject({
+            actions: [gainAction(drums.id, { deltaDb: -3 })],
+            rejections: [],
+        });
+        const result = groundGainList(prompt, [drums], context, true);
+        expect(result).toMatchObject({
+            status: 'grounded',
+            actions: [groundedGainAction(drums, { deltaDb: -3 })],
+            protectionFacts: {
+                protectedUnchanged: expect.arrayContaining([
+                    { id: overall.id, name: overall.name },
+                    { id: clip.id, name: clip.name },
+                ]),
+            },
+        });
+        for (const protection of [
+            'keep the "Overall Level" track the same',
+            'keep the fader of "Overall Level" the same',
+        ]) {
+            const qualifiedPrompt = `turn the Drums down 3 dB; ${protection}`;
+            expect(groundGainList(qualifiedPrompt, [drums], context, true)).toMatchObject({
+                status: 'rejected',
+                rejectionReason:
+                    'Provider action rejected: <batch>: Transform compilation includes a protected or unresolved target',
+            });
+            const qualified = groundGainList(qualifiedPrompt, [drums], context);
+            expect(qualified.status).toBe('grounded');
+            if (qualified.status !== 'grounded') {
+                throw new Error('Expected the qualified restriction to leave the Drums gain eligible.');
+            }
+            expect(qualified.protectionFacts.protectedUnchanged).not.toContainEqual({ id: clip.id, name: clip.name });
+            if (protection.includes('fader')) {
+                expect(qualified.protectionFacts.protectedControls).toContainEqual({
+                    trackId: overall.id,
+                    operations: ['setTrackGain'],
+                });
+            } else {
+                expect(qualified.protectionFacts.protectedUnchanged).toContainEqual({
+                    id: overall.id,
+                    name: overall.name,
+                });
+            }
+        }
+    });
+
+    it.each(['Overall', 'Overall Level'])(
+        'carries the actual %s clip protection beside the numeric Drums change',
+        (name) => {
+            const clip = {
+                id: 'clip-overall',
+                name,
+                type: 'audio' as const,
+                startBeat: 0,
+                endBeat: 8,
+                noteCount: 0,
+                locked: false,
+            };
+            const context = {
+                ...projectContext,
+                tracks: [createTrack({ id: drums.id, name: drums.name, clips: [clip] })],
+            };
+            const prompt = 'turn the Drums down 3 dB; keep the Overall Level the same';
+            expect(getApplicationProtectedObjects({ actions: [], context, prompt })).toContainEqual({
+                id: clip.id,
+                name,
+            });
+            expect(bridgeCompiledGainList(prompt, [drums], context)).toMatchObject({
+                actions: [gainAction(drums.id, { deltaDb: -3 })],
+                rejections: [],
+            });
+            for (const compiled of [false, true]) {
+                const result = groundGainList(prompt, [drums], context, compiled);
+                expect(result).toMatchObject({
+                    status: 'grounded',
+                    actions: [groundedGainAction(drums, { deltaDb: -3 })],
+                });
+                if (result.status !== 'grounded') {
+                    throw new Error('Expected only the unprotected track fader to ground.');
+                }
+                expect(result.protectionFacts.protectedUnchanged).toContainEqual({ id: clip.id, name });
+            }
+        }
+    );
+
+    it.each([
+        'keep the Missing clip unchanged',
+        'keep the Missing clip the same',
+        'keep the Missing track the same',
+        'leave the fader of "Missing" alone',
+        "leave the selected track's fader alone",
+        'keep the Overall Level and the Missing clip the same',
+    ])('retains the refusal for %s beside unbound overall level on compiled bridge and batch routes', (protection) => {
+        const prompt = `turn the Drums down 3 dB; keep the Overall Level the same; ${protection}`;
+        expect(bridgeCompiledGainList(prompt, [drums]).actions).toEqual([]);
+        expect(groundGainList(prompt, [drums], projectContext, true).status).toBe('rejected');
     });
 
     it.each([
