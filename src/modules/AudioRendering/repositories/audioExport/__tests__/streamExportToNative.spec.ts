@@ -71,7 +71,9 @@ describe('native export transaction adapter', () => {
         });
         let cancelled = false;
         const checkCancelled = () => {
-            if (cancelled) throw new Error('Export cancelled');
+            if (cancelled) {
+                throw new Error('Export cancelled');
+            }
         };
         const batch = await streamExportToNative({ directoryPath: '/picked', checkCancelled });
         const beginning = batch.beginFile('mix.wav');
@@ -103,7 +105,9 @@ describe('native export transaction adapter', () => {
         });
         let cancelled = false;
         const checkCancelled = () => {
-            if (cancelled) throw new Error('Export cancelled');
+            if (cancelled) {
+                throw new Error('Export cancelled');
+            }
         };
         const batch = await streamExportToNative({ selectedFilePath: '/picked/mix.wav', checkCancelled });
         const beginning = batch.beginFile('mix.wav');
@@ -155,7 +159,9 @@ describe('native export transaction adapter', () => {
         });
         let cancelled = false;
         const checkCancelled = () => {
-            if (cancelled) throw new Error('Export cancelled');
+            if (cancelled) {
+                throw new Error('Export cancelled');
+            }
         };
         const batch = await streamExportToNative({ directoryPath: '/picked', checkCancelled });
         const first = await batch.beginFile('first.wav');
