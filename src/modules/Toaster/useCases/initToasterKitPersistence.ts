@@ -1,6 +1,6 @@
 import { toasterStore } from '../stores/toasterStore';
 
-import { commitToasterKit } from './commitToasterKit';
+import { commitToasterKit, wasToasterKitExplicitlyCommitted } from './commitToasterKit';
 
 /**
  * Mirror every Toaster kit edit into project truth.
@@ -37,7 +37,7 @@ export function initToasterKitPersistence(): () => void {
             const previous = committedKits.get(deviceId);
             committedKits.set(deviceId, state.kit);
 
-            if (previous === undefined || previous === state.kit) {
+            if (previous === undefined || previous === state.kit || wasToasterKitExplicitlyCommitted(state.kit)) {
                 continue;
             }
             commitToasterKit(deviceId);

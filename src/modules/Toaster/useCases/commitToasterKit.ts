@@ -3,6 +3,15 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { toToasterKitState } from '../models/ToasterKitState';
 import { toasterStore } from '../stores/toasterStore';
 
+const explicitlyCommittedKits = new WeakSet<object>();
+export function markToasterKitCommitted(kit: object): void {
+    explicitlyCommittedKits.add(kit);
+}
+
+export function wasToasterKitExplicitlyCommitted(kit: object): boolean {
+    return explicitlyCommittedKits.has(kit);
+}
+
 /**
  * Mirror a device's live kit into project truth.
  *

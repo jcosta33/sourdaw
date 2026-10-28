@@ -1,14 +1,16 @@
-import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+import { getSettledProjectIdentity } from '#/modules/Project/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { toasterStore } from '../stores/toasterStore';
 
+import { getEffectiveToasterPattern } from './getEffectiveToasterPattern';
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 import { projectToasterStepEvents } from './projectToasterStepEvents';
 
-type ExportPatternToTimelineResult =
-    { ok: true } | Extract<ReturnType<typeof projectToasterPatternGroove>, { ok: false }>;
+type ExportPatternToTimelineResult = { ok: true } | { ok: false; message: string };
 
 /**
  * Export the active pattern to the timeline as MIDI clips, one per pad lane.
@@ -32,31 +34,35 @@ type ExportPatternToTimelineResult =
  * also takes no probability argument, so a faithful export would have to widen
  * that surface; out of scope here.)
  */
-export function exportPatternToTimeline(deviceId: string): ExportPatternToTimelineResult {
+export async function exportPatternToTimeline(deviceId: string): Promise<ExportPatternToTimelineResult> {
     const state = toasterStore.value?.[deviceId];
     if (!state) {
-        return { ok: true };
+        return { ok: false, message: 'The Toaster is not ready.' };
     }
 
-    const pattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
-    if (!pattern) {
-        return { ok: true };
+    const kit = state.kit;
+    const effective = getEffectiveToasterPattern(kit);
+    const projectId = getSettledProjectIdentity()?.projectId;
+    const projectIdentity = captureProjectIdentity();
+    if (!effective || !projectId) {
+        return { ok: false, message: 'The pattern or project is not ready.' };
     }
+    const { sourcePattern, pattern } = effective;
 
     const grooveCapability = projectToasterPatternGroove({
         deviceId,
-        patternId: pattern.id,
+        patternId: sourcePattern.id,
         stepsPerBar: pattern.stepsPerBar,
         events: [],
     });
     if (!grooveCapability.ok) {
-        return grooveCapability;
+        return { ok: false, message: `The groove cannot be baked: ${grooveCapability.status.status}.` };
     }
 
     const tracks = getAllTracks();
     const parentTrack = tracks.find((t) => t.devices.some((d) => d.id === deviceId));
     if (!parentTrack) {
-        return { ok: true };
+        return { ok: false, message: 'The Toaster track is no longer present.' };
     }
 
     // Child tracks in the parent's creation order. createDrumTrackStack pushes
@@ -77,6 +83,11 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
     const stepDurationBeats = 4 / stepsPerBar;
     const insertAt = playheadPositionRef.current; // beats — place pattern at playhead
     const swing = state.kit.swing;
+    if (!Number.isFinite(insertAt) || insertAt < 0) {
+        return { ok: false, message: 'The playhead position is invalid.' };
+    }
+    type BakeAction = Parameters<typeof executeAppActionBatch>[0][number];
+    const actions: BakeAction[] = [];
 
     for (const track of pattern.tracks) {
         const childTrack = childTracksByPad.get(track.padIndex);
@@ -106,7 +117,7 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
             }
             const projection = projectToasterStepEvents({
                 deviceId,
-                patternId: pattern.id,
+                patternId: sourcePattern.id,
                 stepsPerBar,
                 loopLengthBeats: clipLength,
                 padIndex: track.padIndex,
@@ -115,7 +126,7 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
                 swing,
             });
             if (!projection.ok) {
-                return projection;
+                return { ok: false, message: `The groove cannot be baked: ${projection.status.status}.` };
             }
             for (const hit of projection.hits) {
                 projectedHits.push({
@@ -130,24 +141,69 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
         for (const hit of projectedHits) {
             exportedLength = Math.max(exportedLength, hit.startBeat + hit.durationBeats);
         }
-        const clip = addClip({
-            trackId: childTrack.id,
-            startBeat: insertAt,
-            endBeat: insertAt + exportedLength,
-            name: childTrack.name,
-            type: 'midi',
-        });
-        if (!clip) {
-            continue;
-        }
-        const clipId = clip.id;
+        const clipId = `clip-${crypto.randomUUID()}`;
         const midiNote = 36 + track.padIndex;
 
-        // Add MIDI notes using the same projection as the live sequencer so
-        // timing, dynamics, swing, and retriggers stay in sync.
-        for (const hit of projectedHits) {
-            addMidiNote(clipId, midiNote, hit.startBeat, hit.durationBeats, hit.velocity);
-        }
+        actions.push(
+            {
+                type: 'addClip',
+                payload: {
+                    id: clipId,
+                    trackId: childTrack.id,
+                    startBeat: insertAt,
+                    endBeat: insertAt + exportedLength,
+                    name: childTrack.name,
+                    type: 'midi',
+                },
+            },
+            {
+                type: 'addNotes',
+                payload: {
+                    clipId,
+                    notes: projectedHits.map((hit) => ({
+                        pitch: midiNote,
+                        startBeat: hit.startBeat,
+                        duration: hit.durationBeats,
+                        velocity: hit.velocity,
+                    })),
+                },
+            }
+        );
     }
-    return { ok: true };
+    if (actions.length === 0) {
+        return { ok: false, message: 'This pattern has no active steps on available pad tracks.' };
+    }
+    const stillCurrent = (): boolean => {
+        if (
+            getSettledProjectIdentity()?.projectId !== projectId ||
+            captureProjectIdentity() !== projectIdentity ||
+            toasterStore.value?.[deviceId]?.kit !== kit
+        ) {
+            return false;
+        }
+        const currentTracks = getAllTracks();
+        const currentParent = currentTracks.find((track) => track.id === parentTrack.id);
+        if (!currentParent?.devices.some((device) => device.id === deviceId)) {
+            return false;
+        }
+        const currentChildren = currentTracks.filter((track) => track.parentId === parentTrack.id);
+        return [...childTracksByPad].every(([ordinal, child]) => currentChildren[ordinal]?.id === child.id);
+    };
+    let result: Awaited<ReturnType<typeof executeAppActionBatch>>;
+    try {
+        result = await executeAppActionBatch(actions, {
+            groupId: `toaster-pattern-bake-${crypto.randomUUID()}`,
+            groupLabel: `Bake Toaster pattern: ${sourcePattern.name}`,
+            source: 'manual',
+            requireCompensation: true,
+            preExecutionValidation: () => (stillCurrent() ? null : 'Toaster pattern or project changed before bake'),
+            shouldExecute: stillCurrent,
+        });
+    } catch {
+        return { ok: false, message: 'Could not bake the pattern.' };
+    }
+    if (result.status === 'committed' || result.status === 'committed-with-warning') {
+        return { ok: true };
+    }
+    return { ok: false, message: 'reason' in result ? result.reason : 'The pattern bake did not commit.' };
 }

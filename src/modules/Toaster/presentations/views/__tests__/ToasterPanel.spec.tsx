@@ -367,8 +367,17 @@ describe('ToasterPanel', () => {
         const { container } = render(<ToasterPanel deviceId="toaster-test" />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Toaster view' }), { target: { value: 'full' } });
         const sectionCards = container.querySelectorAll('section.toaster-window.shrink-0');
-        expect(sectionCards.length).toBe(7);
-        for (const title of ['Kit shelf', 'Pad bay', 'Transport', 'Pad mixer', 'Fill tools', 'Groove', 'Macros']) {
+        expect(sectionCards.length).toBe(8);
+        for (const title of [
+            'Kit shelf',
+            'Pad bay',
+            'Pattern morph',
+            'Transport',
+            'Pad mixer',
+            'Fill tools',
+            'Groove',
+            'Macros',
+        ]) {
             const heading = screen.getByText(title);
             const section = heading.closest('section');
             expect(section).not.toBeNull();

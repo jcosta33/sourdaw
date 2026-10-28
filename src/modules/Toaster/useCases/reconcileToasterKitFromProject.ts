@@ -4,6 +4,7 @@ import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 import { fromToasterKitState } from '../models/ToasterKitState';
 import { toasterStore } from '../stores/toasterStore';
 
+import { markToasterKitCommitted } from './commitToasterKit';
 import { loadToasterKitPreset } from './loadToasterKit';
 
 /**
@@ -18,10 +19,9 @@ import { loadToasterKitPreset } from './loadToasterKit';
  * document anyway.
  *
  * The comparison is the GB hydrate's diff gate: the decoded kit is compared
- * with the session kit and equal chunks cost nothing. That gate is also the
- * loop stop — the persistence subscriber mirrors a reconciled kit back into the
- * document (an identical chunk), that write re-fires the sweep, and the
- * comparison reads equal and leaves everything untouched.
+ * with the session kit and equal chunks cost nothing. A reconciled kit is
+ * marked as committed before loading so the persistence subscriber does not
+ * echo the peer's write back into the document.
  */
 export function reconcileToasterKitFromProject(deviceId: string): void {
     const tracks = trackStore.value?.tracks;
@@ -48,5 +48,8 @@ export function reconcileToasterKitFromProject(deviceId: string): void {
         return;
     }
 
+    // This kit was read from document truth. Applying it to the session must
+    // not mirror the same payload back as a new local edit.
+    markToasterKitCommitted(kit);
     loadToasterKitPreset(deviceId, kit);
 }

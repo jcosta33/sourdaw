@@ -1,345 +1,228 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { Container } from '#/infra/di/Container';
-import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
+import { type Track, sanitizeTrackSnapshot } from '#/modules/Arrangement/stores';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
-import { addMidiNote, assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
+import { assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
 
-import { exportPatternToTimeline } from '../exportPatternToTimeline';
+const mocks = vi.hoisted(() => ({
+    tracks: [] as Track[],
+    batch: vi.fn(),
+}));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    getAllTracks: vi.fn(),
-    addClip: vi.fn(),
+    getAllTracks: () => mocks.tracks,
 }));
-
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
-    addMidiNote: vi.fn(),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppActionBatch: mocks.batch,
 }));
-
+vi.mock('#/modules/Project/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/stores')>()),
+    getSettledProjectIdentity: () => ({ projectId: 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa' }),
+}));
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     playheadPositionRef: { current: 0 },
 }));
 
-type StoreShape = Record<string, unknown> | null;
-const { mockStore } = vi.hoisted(() => ({ mockStore: { value: null as StoreShape } }));
+import { createDefaultKit, type ToasterKit } from '../../models/ToasterKit';
+import { defaultToasterState, toasterStore } from '../../stores/toasterStore';
+import { exportPatternToTimeline } from '../exportPatternToTimeline';
 
-vi.mock('../../stores/toasterStore', () => ({
-    toasterStore: {
-        get value() {
-            return mockStore.value;
-        },
-        set: vi.fn(),
-    },
-}));
+const DEVICE_ID = 'toaster-bake';
 
-const DEVICE_ID = 'tstr-1';
+function tracksWithChildren(count: number): Track[] {
+    return sanitizeTrackSnapshot({
+        selectedTrackId: null,
+        tracks: [
+            {
+                id: 'parent',
+                name: 'Drums',
+                kind: 'midi',
+                devices: [
+                    {
+                        id: DEVICE_ID,
+                        name: 'Toaster',
+                        type: 'toaster',
+                        bypassed: false,
+                        parameterValues: {},
+                    },
+                ],
+            },
+            ...Array.from({ length: count }, (_, index) => ({
+                id: `child-${index}`,
+                name: `Pad ${index}`,
+                kind: 'midi',
+                parentId: 'parent',
+            })),
+        ],
+    }).tracks;
+}
 
-function makeStep(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
-    return {
-        active: false,
-        velocity: 0.8,
-        probability: 1,
-        microTiming: 0,
-        retriggerCount: 0,
-        condition: 'always',
-        paramLocks: {},
-        ...overrides,
-    };
+function seedKit(): ToasterKit {
+    const kit = createDefaultKit();
+    const a = kit.patterns[0]!;
+    a.tracks[0]!.steps[0]!.active = true;
+    a.tracks[0]!.steps[0]!.velocity = 1;
+    const b = structuredClone(a);
+    b.id = 'B1';
+    b.name = 'Pattern B1';
+    b.tracks[0]!.steps[0]!.active = false;
+    b.tracks[0]!.steps[1]!.active = true;
+    kit.patterns.push(b);
+    kit.morph = { enabled: true, targetPatternId: 'B1', position: 0 };
+    toasterStore.set({ [DEVICE_ID]: { ...defaultToasterState, kit } });
+    return kit;
+}
+
+function bakedActions() {
+    const call = mocks.batch.mock.calls[0];
+    if (!call) {
+        throw new Error('The batch was not called');
+    }
+    return call[0] as Parameters<(typeof import('#/modules/Command/useCases'))['executeAppActionBatch']>[0];
 }
 
 describe('exportPatternToTimeline', () => {
     beforeEach(() => {
-        Container.clear();
-        vi.mocked(getAllTracks).mockReset();
-        vi.mocked(addClip).mockReset();
-        vi.mocked(addMidiNote).mockReset();
-        mockStore.value = null;
+        mocks.batch.mockReset();
+        mocks.batch.mockResolvedValue({ status: 'committed', actions: [] });
+        mocks.tracks = tracksWithChildren(3);
+        toasterStore.set({});
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
-    it('does not add clips when there are no tracks', () => {
-        mockStore.value = null;
-        vi.mocked(getAllTracks).mockReturnValue([]);
+    it('prepares one atomic grouped command for the effective A, midpoint, and B notes', async () => {
+        const kit = seedKit();
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({ ok: true });
+        let notes = bakedActions().filter((action) => action.type === 'addNotes');
+        expect(notes).toHaveLength(1);
+        expect(notes[0]?.payload.notes.map((note) => note.startBeat)).toEqual([0]);
+        expect(mocks.batch.mock.calls[0]?.[1]).toMatchObject({ requireCompensation: true });
 
-        exportPatternToTimeline(DEVICE_ID);
+        mocks.batch.mockClear();
+        kit.morph = { enabled: true, targetPatternId: 'B1', position: 0.5 };
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({ ok: true });
+        notes = bakedActions().filter((action) => action.type === 'addNotes');
+        expect(notes[0]?.payload.notes.map((note) => note.startBeat)).toEqual([0, 0.25]);
 
-        expect(addClip).not.toHaveBeenCalled();
-        expect(addMidiNote).not.toHaveBeenCalled();
+        mocks.batch.mockClear();
+        kit.morph.position = 1;
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({ ok: true });
+        notes = bakedActions().filter((action) => action.type === 'addNotes');
+        expect(notes[0]?.payload.notes.map((note) => note.startBeat)).toEqual([0.25]);
     });
 
-    it('maps each pad to the child track at its pad ordinal, not a raw filtered index', () => {
-        // Two pads have steps: pad 0 and pad 2. The exporter must route them to
-        // the 1st and 3rd children, never collapse onto adjacent children.
-        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
-        const children = Array.from({ length: 4 }, (_, i) => ({
-            id: `child-${i}`,
-            name: `Pad ${i}`,
-            parentId: 'parent',
-            devices: [],
-        }));
-        vi.mocked(getAllTracks).mockReturnValue([parent, ...children] as never);
-        vi.mocked(addClip).mockImplementation(({ trackId }) => ({ id: `clip-for-${trackId}` }) as never);
-
-        mockStore.value = {
-            [DEVICE_ID]: {
-                kit: {
-                    swing: 0,
-                    activePatternId: 'A1',
-                    patterns: [
-                        {
-                            id: 'A1',
-                            stepsPerBar: 16,
-                            bars: 1,
-                            tracks: [
-                                { padIndex: 0, steps: [makeStep({ active: true })] },
-                                { padIndex: 2, steps: [makeStep({ active: true })] },
-                            ],
-                        },
-                    ],
-                },
-            },
-        };
-
-        exportPatternToTimeline(DEVICE_ID);
-
-        const clipTrackIds = vi.mocked(addClip).mock.calls.map(([input]) => input.trackId);
-        expect(clipTrackIds).toEqual(['child-0', 'child-2']);
-
-        // Pad 0 → note 36 on child-0; pad 2 → note 38 on child-2.
-        expect(addMidiNote).toHaveBeenCalledWith(
-            'clip-for-child-0',
-            36,
-            expect.any(Number),
-            expect.any(Number),
-            expect.any(Number)
-        );
-        expect(addMidiNote).toHaveBeenCalledWith(
-            'clip-for-child-2',
-            38,
-            expect.any(Number),
-            expect.any(Number),
-            expect.any(Number)
-        );
-    });
-
-    it('derives clip length from the track step grid, not a hard-coded 4 beats/bar', () => {
-        // Polymetric: pattern is 16 steps/bar over 2 bars, but this pad runs a
-        // 12-step loop (stepsOverride). The old code wrote bars*4 = 8 beats; the
-        // grid-derived length is 12 * (4/16) = 3 beats. This case discriminates
-        // the meter bug.
-        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
-        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
-        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
-        const captured: Array<{ startBeat: number; endBeat: number }> = [];
-        vi.mocked(addClip).mockImplementation((input) => {
-            captured.push({ startBeat: input.startBeat, endBeat: input.endBeat });
-            return { id: 'clip' } as never;
-        });
-
-        mockStore.value = {
-            [DEVICE_ID]: {
-                kit: {
-                    swing: 0,
-                    activePatternId: 'A1',
-                    patterns: [
-                        {
-                            id: 'A1',
-                            stepsPerBar: 16,
-                            bars: 2,
-                            tracks: [
-                                {
-                                    padIndex: 0,
-                                    stepsOverride: 12,
-                                    steps: [
-                                        makeStep({ active: true }),
-                                        ...Array.from({ length: 31 }, () => makeStep()),
-                                    ],
-                                },
-                            ],
-                        },
-                    ],
-                },
-            },
-        };
-
-        exportPatternToTimeline(DEVICE_ID);
-
-        expect(captured).toEqual([{ startBeat: 0, endBeat: 3 }]);
-    });
-
-    it('bakes micro-timing and swing into note start beats', () => {
-        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
-        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
-        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
-        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
-
-        // 4 steps/bar → stepDuration 1 beat. Step 1 (odd) gets swing push of
-        // 0.5 * 1 * 0.5 = 0.25 plus micro 0.1 → start 1 + 0.1 + 0.25 = 1.35.
-        mockStore.value = {
-            [DEVICE_ID]: {
-                kit: {
-                    swing: 0.5,
-                    activePatternId: 'A1',
-                    patterns: [
-                        {
-                            id: 'A1',
-                            stepsPerBar: 4,
-                            bars: 1,
-                            tracks: [
-                                {
-                                    padIndex: 0,
-                                    steps: [
-                                        makeStep({ active: true }), // step 0, even → no swing
-                                        makeStep({ active: true, microTiming: 0.1 }), // step 1, odd
-                                        makeStep(),
-                                        makeStep(),
-                                    ],
-                                },
-                            ],
-                        },
-                    ],
-                },
-            },
-        };
-
-        exportPatternToTimeline(DEVICE_ID);
-
-        const starts = vi.mocked(addMidiNote).mock.calls.map(([, , startBeat]) => startBeat);
-        expect(starts[0]).toBeCloseTo(0, 10);
-        expect(starts[1]).toBeCloseTo(1.35, 10);
-    });
-
-    it('uses the same MIDI-owned groove projection for exported timing and dynamics', () => {
-        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
-        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
-        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
-        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
-        mockStore.value = {
-            [DEVICE_ID]: {
-                kit: {
-                    swing: 0,
-                    activePatternId: 'A1',
-                    patterns: [
-                        {
-                            id: 'A1',
-                            stepsPerBar: 16,
-                            bars: 1,
-                            tracks: [{ padIndex: 0, steps: [makeStep({ active: true, velocity: 1 })] }],
-                        },
-                    ],
-                },
-            },
-        };
+    it('uses the real A identity for B output groove and routes sparse pads to their own children', async () => {
+        const kit = seedKit();
+        kit.morph = { enabled: true, targetPatternId: 'B1', position: 1 };
+        kit.patterns[1]!.tracks[2]!.steps[0]!.active = true;
         createGrooveTemplate({
-            id: 'export-pocket',
-            name: 'Export pocket',
+            id: 'bake-pocket',
+            name: 'Bake pocket',
             subdivision: '1/16',
-            slots: [{ index: 0, timingOffset: 0.2, dynamicsOffset: -0.1 }],
+            slots: [
+                { index: 0, timingOffset: 0.2, dynamicsOffset: -0.1 },
+                { index: 1, timingOffset: 0.2, dynamicsOffset: -0.1 },
+            ],
             provenance: { type: 'user', sourceId: 'test' },
         });
         assignGrooveTemplate({
             consumerType: 'toaster-pattern',
-            consumerId: 'groove-consumer:tstr-1:A1',
-            templateId: 'export-pocket',
+            consumerId: `groove-consumer:${DEVICE_ID}:A1`,
+            templateId: 'bake-pocket',
             amount: 1,
         });
 
-        exportPatternToTimeline(DEVICE_ID);
-
-        expect(addMidiNote).toHaveBeenCalledWith('clip', 36, 0.05, 0.225, 114);
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({ ok: true });
+        const actions = bakedActions();
+        expect(actions.filter((action) => action.type === 'addClip').map((action) => action.payload.trackId)).toEqual([
+            'child-0',
+            'child-2',
+        ]);
+        const notes = actions.filter((action) => action.type === 'addNotes');
+        expect(notes[0]?.payload.notes[0]).toMatchObject({ pitch: 36, startBeat: 0.3 });
+        expect(notes[1]?.payload.notes[0]).toMatchObject({ pitch: 38, startBeat: 0.05 });
     });
 
-    it('emits retrigger notes with the player decay-velocity model', () => {
-        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
-        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
-        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
-        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+    it('never invokes the batch when the pattern is absent or a groove is unresolvable', async () => {
+        expect((await exportPatternToTimeline(DEVICE_ID)).ok).toBe(false);
+        expect(mocks.batch).not.toHaveBeenCalled();
 
-        // 4 steps/bar → stepDuration 1 beat. retriggerCount 2 → base note plus
-        // 2 ratchets at 1/3 and 2/3 of the step, decaying velocity.
-        mockStore.value = {
-            [DEVICE_ID]: {
-                kit: {
-                    swing: 0,
-                    activePatternId: 'A1',
-                    patterns: [
-                        {
-                            id: 'A1',
-                            stepsPerBar: 4,
-                            bars: 1,
-                            tracks: [
-                                {
-                                    padIndex: 0,
-                                    steps: [
-                                        makeStep({ active: true, velocity: 1, retriggerCount: 2 }),
-                                        makeStep(),
-                                        makeStep(),
-                                        makeStep(),
-                                    ],
-                                },
-                            ],
-                        },
-                    ],
-                },
-            },
-        };
-
-        exportPatternToTimeline(DEVICE_ID);
-
-        const calls = vi.mocked(addMidiNote).mock.calls;
-        expect(calls).toHaveLength(3); // base + 2 ratchets
-
-        const [, , baseStart, , baseVel] = calls[0]!;
-        expect(baseStart).toBeCloseTo(0, 10);
-        expect(baseVel).toBe(127);
-
-        const [, , r1Start, , r1Vel] = calls[1]!;
-        expect(r1Start).toBeCloseTo(1 / 3, 10);
-        expect(r1Vel).toBe(Math.round(127 * (1 - 0.12)));
-
-        const [, , r2Start, , r2Vel] = calls[2]!;
-        expect(r2Start).toBeCloseTo(2 / 3, 10);
-        expect(r2Vel).toBe(Math.round(127 * (1 - 0.24)));
+        const kit = seedKit();
+        kit.patterns[0]!.tracks[2]!.steps[0]!.active = true;
+        createGrooveTemplate({
+            id: 'vanished-template',
+            name: 'Vanished',
+            subdivision: '1/16',
+            slots: [{ index: 0, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'test' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: `groove-consumer:${DEVICE_ID}:A1`,
+            templateId: 'vanished-template',
+            amount: 1,
+        });
+        const groove = grooveTemplateStore.value!;
+        grooveTemplateStore.set({
+            ...groove,
+            templates: groove.templates.filter((template) => template.id !== 'vanished-template'),
+        });
+        expect((await exportPatternToTimeline(DEVICE_ID)).ok).toBe(false);
+        expect(mocks.batch).not.toHaveBeenCalled();
     });
 
-    it('keeps a positively shifted final step in the following loop during one-shot export', () => {
-        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
-        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
-        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
-        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
-        mockStore.value = {
-            [DEVICE_ID]: {
-                kit: {
-                    swing: 1,
-                    activePatternId: 'A1',
-                    patterns: [
-                        {
-                            id: 'A1',
-                            stepsPerBar: 4,
-                            bars: 1,
-                            tracks: [
-                                {
-                                    padIndex: 0,
-                                    steps: [
-                                        makeStep(),
-                                        makeStep(),
-                                        makeStep(),
-                                        makeStep({ active: true, microTiming: 0.5 }),
-                                    ],
-                                },
-                            ],
-                        },
-                    ],
-                },
-            },
+    it('reports batch refusal instead of claiming a bake succeeded', async () => {
+        seedKit();
+        mocks.batch.mockResolvedValue({ status: 'rejected', reason: 'Locked project', actions: [] });
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({ ok: false, message: 'Locked project' });
+    });
+
+    it('retains polymetric clip length and bakes swing, microtiming, and retrigger notes in the batch', async () => {
+        const kit = seedKit();
+        kit.morph = { enabled: false, targetPatternId: 'B1', position: 0 };
+        kit.swing = 0.5;
+        const a = kit.patterns[0]!;
+        a.stepsPerBar = 4;
+        a.bars = 2;
+        const track = a.tracks[0]!;
+        track.stepsOverride = 12;
+        track.steps[0]!.active = false;
+        track.steps[1] = {
+            ...track.steps[1]!,
+            active: true,
+            velocity: 1,
+            microTiming: 0.1,
+            retriggerCount: 2,
         };
 
-        exportPatternToTimeline(DEVICE_ID);
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({ ok: true });
+        const actions = bakedActions();
+        const clip = actions.find((action) => action.type === 'addClip');
+        const notes = actions.find((action) => action.type === 'addNotes');
+        expect(clip?.payload.endBeat).toBe(12);
+        expect(notes?.payload.notes).toHaveLength(3);
+        expect(notes?.payload.notes[0]?.startBeat).toBeCloseTo(1.35, 10);
+        expect(notes?.payload.notes[0]?.velocity).toBe(127);
+        expect(notes?.payload.notes[1]?.velocity).toBe(Math.round(127 * (1 - 0.12)));
+        expect(notes?.payload.notes[2]?.velocity).toBe(Math.round(127 * (1 - 0.24)));
+    });
 
-        expect(addMidiNote).toHaveBeenCalledWith('clip', 36, 4, expect.any(Number), expect.any(Number));
-        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 0, endBeat: 4.9 }));
+    it('extends a one-shot clip for its positively shifted final step', async () => {
+        const kit = seedKit();
+        kit.morph = { enabled: false, targetPatternId: 'B1', position: 0 };
+        kit.swing = 1;
+        const a = kit.patterns[0]!;
+        a.stepsPerBar = 4;
+        const track = a.tracks[0]!;
+        track.steps[0]!.active = false;
+        track.steps[3] = { ...track.steps[3]!, active: true, microTiming: 0.5 };
+
+        expect(await exportPatternToTimeline(DEVICE_ID)).toEqual({ ok: true });
+        const actions = bakedActions();
+        expect(actions.find((action) => action.type === 'addNotes')?.payload.notes[0]?.startBeat).toBe(4);
+        expect(actions.find((action) => action.type === 'addClip')?.payload.endBeat).toBe(4.9);
     });
 });
