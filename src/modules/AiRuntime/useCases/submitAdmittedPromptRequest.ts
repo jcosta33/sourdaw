@@ -1,10 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
-
-import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
