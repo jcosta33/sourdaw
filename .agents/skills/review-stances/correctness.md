@@ -29,6 +29,18 @@ never combine them into wider permission. Inspect the recorded basis and actual 
 Any compatibility mask must prove full consumption of the original clause; a known control beside
 an unknown clip or unread suffix must not discharge the residual restriction.
 
+### Direct-level intent escaped the enumerated command list (#4366)
+
+PR #1046 introduced the linear-only VCA gain action without a public review; #4435 covered an
+explicit list of level command families, leaving VCA and metronome outside that inventory. The
+historical reviewer model and prompt are unknown. The missing posture was a catalog-wide direct-level
+inventory, including its owning bounds.
+
+Enumerate every planner-emittable direct-level command and trace its advertised schema, prompt
+binding, strategy, handler, stored value, undo and full/delta provider context. Test absolute and
+relative decibels, the owning ceiling, silence and legacy linear values at actual execution. A
+passing sample of the original enumerated families cannot prove the remaining catalog.
+
 ## Standing probes
 
 - Read the full unit the diff touches at head — the function, its callers, its callee contracts —

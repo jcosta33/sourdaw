@@ -405,6 +405,8 @@ export function resolveSendLevelFields(
  * slider already allows.
  */
 export const VCA_MAX_GAIN = 2;
+export const VCA_LEVEL_LAW: LevelLaw = { floorDb: SEND_MIN_DB, ceilingDb: gainToDb(VCA_MAX_GAIN), unity: 1 };
+export const METRONOME_LEVEL_LAW: LevelLaw = { floorDb: SEND_MIN_DB, ceilingDb: 0, unity: 1 };
 
 /**
  * Maps a 0–100 send-control position onto the stored linear send level.
