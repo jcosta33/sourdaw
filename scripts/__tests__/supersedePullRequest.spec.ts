@@ -152,7 +152,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
     });
     const replacementIdentity = (row: SupersededPullRequest) => {
         if (typeof row.mergeCommit !== 'string') {
-            throw new Error('fixture replacement has no merge');
+            throw new TypeError('fixture replacement has no merge');
         }
         return { ...identity(row), mergeCommit: row.mergeCommit };
     };
@@ -177,10 +177,17 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
         events.push(value);
         onEvent(value);
     };
+    const commentAt = (number: number, index: number): IssueComment => {
+        const comment = row(number).comments[index];
+        if (comment === undefined) {
+            throw new Error(`missing fixture comment ${index} on PR ${number}`);
+        }
+        return comment;
+    };
     const numberField = (args: string[], name: string) =>
-        Number(args.find((arg) => arg.startsWith(name + '='))?.slice(name.length + 1));
+        Number(args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1));
     const stringField = (args: string[], name: string) => {
-        const field = args.find((arg) => arg.startsWith(name + '='))?.slice(name.length + 1);
+        const field = args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
         if (field === undefined) {
             throw new Error(`missing fixture field ${name}`);
         }
@@ -194,8 +201,12 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
         const endpoint = args[1] ?? '';
         const comparison = endpoint.match(/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})$/);
         if (comparison !== null) {
-            const [, ancestor, descendant] = comparison;
-            const key = ancestor + ':' + descendant;
+            const ancestor = comparison[1];
+            const descendant = comparison[2];
+            if (ancestor === undefined || descendant === undefined) {
+                throw new TypeError('fixture comparison requires both commit identities');
+            }
+            const key = `${ancestor}:${descendant}`;
             let contained = comparisonCache.get(key);
             if (contained === undefined) {
                 contained = dag.ancestor(ancestor, descendant);
@@ -222,7 +233,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
                 merge_base_commit: { sha: mergeBase },
                 commits: identical ? [] : [{ sha: descendant }],
             });
-            event('ancestor:' + key);
+            event(`ancestor:${key}`);
             return output;
         }
         const query = stringField(args, 'query');
@@ -247,7 +258,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
                 };
             }
             const pullRequest = {
-                id: 'PR_' + value.number,
+                id: `PR_${value.number}`,
                 number: value.number,
                 state: value.state,
                 headRefOid: value.head,
@@ -261,7 +272,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
                 baseRef: nativeRef,
             };
             const output = JSON.stringify({ data: { repository: { nameWithOwner: value.repository, pullRequest } } });
-            event('core:' + value.number);
+            event(`core:${value.number}`);
             return output;
         }
         if (query.includes('reviewThreads(first:100')) {
@@ -281,7 +292,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
                     },
                 },
             });
-            event('threads:' + number);
+            event(`threads:${number}`);
             return output;
         }
         if (query.includes('node(id:$subjectId)')) {
@@ -305,14 +316,14 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
                     },
                 },
             });
-            event('comments:' + number);
+            event(`comments:${number}`);
             return output;
         }
         const clientMutationId = stringField(args, 'clientMutationId');
         if (query.includes('addComment(input:')) {
             const number = Number(stringField(args, 'subjectId').slice(3));
             nextComment += 1;
-            const comment = markerComment('IC_created_' + nextComment, String(nextComment), stringField(args, 'body'));
+            const comment = markerComment(`IC_created_${nextComment}`, String(nextComment), stringField(args, 'body'));
             row(number).comments.push(comment);
             const output = JSON.stringify({
                 data: {
@@ -327,7 +338,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
                     },
                 },
             });
-            event('comment:' + number);
+            event(`comment:${number}`);
             return output;
         }
         if (query.includes('closePullRequest(input:')) {
@@ -335,7 +346,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
             const value = row(Number(id.slice(3)));
             value.state = 'CLOSED';
             value.closedAt = '2026-10-28T00:00:00Z';
-            event('close:' + value.number);
+            event(`close:${value.number}`);
             return JSON.stringify({
                 data: {
                     closePullRequest: {
@@ -350,7 +361,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
             for (const value of records.values()) {
                 value.comments = value.comments.filter((comment) => comment.id !== id);
             }
-            event('delete:' + id);
+            event(`delete:${id}`);
             return JSON.stringify({ data: { deleteIssueComment: { clientMutationId } } });
         }
         throw new Error('unexpected nested native query');
@@ -372,6 +383,7 @@ function nestedNativeFixture(root: string, missingInnerDependency = false) {
     return {
         port,
         row,
+        commentAt,
         findings,
         events,
         initialBinding,
@@ -428,7 +440,7 @@ describe('nested canonical native supersession', () => {
             child: {
                 ...previous.child,
                 number: 6000 + index,
-                branch: 'fix/bounded-' + index,
+                branch: `fix/bounded-${index}`,
                 base: previous.child.branch,
             },
             parent: {
@@ -439,24 +451,23 @@ describe('nested canonical native supersession', () => {
             },
             parentReplacement: previous.replacement,
             provenance: { kind: 'final-parent-head' as const, forkHead: previous.child.head, admittedParentHead: null },
-            parentCompletion: { id: 'IC_bounded_' + index, fullDatabaseId: String(6000 + index), binding: previous },
+            parentCompletion: { id: `IC_bounded_${index}`, fullDatabaseId: String(6000 + index), binding: previous },
         });
         for (let index = 1; index < 32; index += 1) {
             record = wrap(record, index);
         }
-        expect(parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(record))).toEqual(
+        expect(parseSupersessionParentBinding(`sourdaw-supersession-parent-v2 ${canonicalJson(record)}`)).toEqual(
             record
         );
         expect(() =>
-            parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(wrap(record, 32)))
+            parseSupersessionParentBinding(`sourdaw-supersession-parent-v2 ${canonicalJson(wrap(record, 32))}`)
         ).toThrow(/maximum depth/i);
         expect(() =>
             parseSupersessionParentBinding(
-                'sourdaw-supersession-parent-v2 ' +
-                    canonicalJson({
-                        ...record,
-                        parentReplacement: { ...record.parentReplacement, head: movedHead },
-                    })
+                `sourdaw-supersession-parent-v2 ${canonicalJson({
+                    ...record,
+                    parentReplacement: { ...record.parentReplacement, head: movedHead },
+                })}`
             )
         ).toThrow(/contradictory/i);
     });
@@ -468,7 +479,7 @@ describe('nested canonical native supersession', () => {
             const parent = fixture.row(4001);
             parent.base = child.headRefName;
             parent.baseRef = { name: child.headRefName, repository: child.repository, target: child.head };
-            parent.comments[2].body = bindingBody({
+            fixture.commentAt(4001, 2).body = bindingBody({
                 ...fixture.initialBinding,
                 child: { ...fixture.initialBinding.child, base: child.headRefName },
                 parent: { number: child.number, head: child.head, branch: child.headRefName, base: 'main' },
@@ -483,7 +494,7 @@ describe('nested canonical native supersession', () => {
         await withLockRoot(async (root) => {
             const fixture = nestedNativeFixture(root);
             expect(await fixture.serialized()).toBe('pull-request-superseded:4002:5001');
-            const marker = fixture.row(4002).comments[2];
+            const marker = fixture.commentAt(4002, 2);
             const binding = parseSupersessionParentBinding(marker.body);
             expect(binding.format).toBe('supersession-parent-v2');
             expect(binding).toMatchObject({
@@ -500,23 +511,21 @@ describe('nested canonical native supersession', () => {
             fixture.row(4001).baseRef = null;
             expect(await fixture.serialized()).toBe('pull-request-superseded:4002:5001');
             expect(fixture.writes()).toEqual(writes);
-            expect(fixture.row(4002).comments[2].body).toBe(marker.body);
+            expect(fixture.commentAt(4002, 2).body).toBe(marker.body);
             fixture.advance();
             expect(await fixture.serialized()).toBe('pull-request-superseded:4003:5002');
-            expect(parseSupersessionParentBinding(fixture.row(4003).comments[2].body)).toMatchObject({
+            expect(parseSupersessionParentBinding(fixture.commentAt(4003, 2).body)).toMatchObject({
                 format: 'supersession-parent-v2',
                 parentReplacement: { number: 5001 },
                 parentCompletion: { binding: { format: 'supersession-parent-v2', replacement: { number: 5001 } } },
             });
-            expect(fixture.events).toContain(
-                'ancestor:' + fixture.row(5001).mergeCommit + ':' + fixture.row(5002).head
-            );
+            expect(fixture.events).toContain(`ancestor:${fixture.row(5001).mergeCommit}:${fixture.row(5002).head}`);
             const lastDependent = fixture.events.findLastIndex(
                 (value) => value.startsWith('threads:') || value.startsWith('comments:')
             );
             const finalCores = fixture.events.slice(lastDependent + 1);
             for (const number of [4000, 4001, 4002, 5000, 5001, 5002, 4003]) {
-                expect(finalCores).toContain('core:' + number);
+                expect(finalCores).toContain(`core:${number}`);
             }
             const writesAfter = [...fixture.writes()];
             fixture.row(4003).baseRef = null;
@@ -551,7 +560,7 @@ describe('nested canonical native supersession', () => {
         await withLockRoot(async (root) => {
             const fixture = nestedNativeFixture(root);
             const parent = fixture.row(4001);
-            const marker = parent.comments[2];
+            const marker = fixture.commentAt(4001, 2);
             if (failure === 'missing') {
                 parent.comments.pop();
             }
@@ -651,7 +660,7 @@ describe('nested canonical native supersession', () => {
                         return;
                     }
                     moved = true;
-                    const marker = fixture.row(4001).comments[2];
+                    const marker = fixture.commentAt(4001, 2);
                     if (field === 'id') {
                         marker.id = 'IC_replaced_binding';
                     }
@@ -704,7 +713,7 @@ describe('nested canonical native supersession', () => {
             const fixture = nestedNativeFixture(root);
             fixture.run();
             const writes = [...fixture.writes()];
-            fixture.row(4001).comments[2].id = 'IC_substituted';
+            fixture.commentAt(4001, 2).id = 'IC_substituted';
             expect(() => fixture.run()).toThrow();
             expect(fixture.writes()).toEqual(writes);
         });
@@ -714,7 +723,7 @@ describe('nested canonical native supersession', () => {
         await withLockRoot(async (root) => {
             const fixture = nestedNativeFixture(root);
             fixture.run();
-            const body = fixture.row(4002).comments[2].body;
+            const body = fixture.commentAt(4002, 2).body;
             const binding = parseSupersessionParentBinding(body);
             expect(() => parseSupersessionParentBinding(body.replace(' {', '  {'))).toThrow();
             expect(() =>
@@ -722,28 +731,28 @@ describe('nested canonical native supersession', () => {
             ).toThrow();
             expect(() =>
                 parseSupersessionParentBinding(
-                    'sourdaw-supersession-parent-v2 ' + canonicalJson({ ...binding, extra: 1 })
+                    `sourdaw-supersession-parent-v2 ${canonicalJson({ ...binding, extra: 1 })}`
                 )
             ).toThrow(/unexpected keys/i);
             expect(() => parseSupersessionParentBinding(body + ' '.repeat(60_000))).toThrow(/byte size/i);
             expect(() =>
-                parseSupersessionParentBinding('sourdaw-supersession-parent-v1 ' + canonicalJson(binding))
+                parseSupersessionParentBinding(`sourdaw-supersession-parent-v1 ${canonicalJson(binding)}`)
             ).toThrow(/canonical/i);
             const collision = {
                 ...binding,
                 replacement: { ...binding.replacement, number: 5000 },
             };
             expect(() =>
-                parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(collision))
+                parseSupersessionParentBinding(`sourdaw-supersession-parent-v2 ${canonicalJson(collision)}`)
             ).toThrow(/contradictory repeated/i);
             const reusedOriginal = {
                 ...binding,
                 replacement: { ...binding.replacement, number: 4000 },
             };
             expect(() =>
-                parseSupersessionParentBinding('sourdaw-supersession-parent-v2 ' + canonicalJson(reusedOriginal))
+                parseSupersessionParentBinding(`sourdaw-supersession-parent-v2 ${canonicalJson(reusedOriginal)}`)
             ).toThrow(/reuses an original/i);
-            expect(bindingBody(fixture.initialBinding)).toBe(fixture.row(4001).comments[2].body);
+            expect(bindingBody(fixture.initialBinding)).toBe(fixture.commentAt(4001, 2).body);
         });
     });
 });
@@ -4042,6 +4051,9 @@ describe('pull-request supersession', () => {
                     }
                     if (scenario === 'different parent') {
                         const record = parseSupersessionParentBinding(comment.body);
+                        if (record.format !== 'supersession-parent-v1') {
+                            throw new Error('expected the original v1 replay fixture');
+                        }
                         return [
                             {
                                 ...comment,

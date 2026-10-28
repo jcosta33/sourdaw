@@ -336,7 +336,7 @@ function historicalParentProvenance(
     child: SupersededPullRequest,
     parent: SupersededPullRequest,
     port: SupersedePullRequestPort,
-    replay?: SupersessionParentBinding
+    replay?: CompletedParentBinding
 ): StackedParentProof['provenance'] {
     assertFullCommit(parent.head, 'old parent head');
     assertFullCommit(child.head, 'old child head');
@@ -877,8 +877,10 @@ function inspectStackedParentProof(
         child: oldDependencyIdentity(child),
         provenance,
         historicalBase: replayBinding === undefined ? (child.baseRefOid ?? null) : replayBinding.child.cachedBase,
-        ...(completion === undefined ? {} : { completion }),
     };
+    if (completion !== undefined) {
+        proof.completion = completion;
+    }
     if (replayBinding !== undefined && canonicalJson(parentBindingRecord(proof)) !== canonicalJson(replayBinding)) {
         fail(`PR #${child.number} completed parent binding does not match current identities`);
     }
