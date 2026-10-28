@@ -140,8 +140,11 @@ describe('project strip initialization before bus facade and send publication', 
                     });
                     Object.defineProperty(node, 'disconnect', {
                         value: (target?: unknown) => {
-                            if (target === undefined) destinations.clear();
-                            else destinations.delete(target);
+                            if (target === undefined) {
+                                destinations.clear();
+                            } else {
+                                destinations.delete(target);
+                            }
                         },
                     });
                     const parameters: { value: number }[] = [];

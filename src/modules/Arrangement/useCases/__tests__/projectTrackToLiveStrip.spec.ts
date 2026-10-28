@@ -698,7 +698,7 @@ describe('projectTrackToLiveStrip', () => {
             Object.defineProperty(track, 'kind', { value: 'vca' });
         }
         track.sends = [{ busId: 'bus', level: 0.5, preFader: false }];
-        const tracks = [];
+        const tracks: Array<typeof track> = [];
         if (state !== 'missing') {
             tracks.push(track);
         }
@@ -729,10 +729,11 @@ describe('projectTrackToLiveStrip', () => {
             Object.defineProperty(target, 'kind', { value: 'vca' });
         }
             source.sends = [{ busId: target.id, level: 0.5, preFader: true }];
-            trackStore.set({
-                tracks: state === 'duplicate' ? [source, target, { ...target }] : [source, target],
-                selectedTrackId: null,
-            });
+            const tracks = [source, target];
+            if (state === 'duplicate') {
+                tracks.push({ ...target, name: 'Duplicate target owner' });
+            }
+            trackStore.set({ tracks, selectedTrackId: null });
             expect(projectTrackToLiveStrip({ mode: 'sends', trackId: source.id })).toEqual({ status: 'projected' });
             expect(mocks.setSend).not.toHaveBeenCalled();
         }
