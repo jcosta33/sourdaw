@@ -94,7 +94,9 @@ function warn(
             delete existing.details;
         }
         if (handling === 'partial' && existing.handling !== 'dropped') {
-            existing.details = [...new Set([...(existing.details ?? []), ...(details ?? [])])];
+            const existingDetails = existing.details ?? [];
+            const newDetails = details ?? [];
+            existing.details = [...new Set([...existingDetails, ...newDetails])];
         }
         return;
     }
@@ -470,7 +472,7 @@ function parseNotesNode(
         if (note.children().length > 0) {
             details.push('note expression');
         }
-        if (details.length) {
+        if (details.length > 0) {
             warn(
                 context,
                 note,
@@ -729,7 +731,7 @@ function parseClip(
                 notesDetails
             );
         }
-        if (partialDetails.length) {
+        if (partialDetails.length > 0) {
             warn(context, clip, 'unsupported-element', name, trackName, 'partial', partialDetails);
         }
         return {
@@ -775,7 +777,7 @@ function parseClip(
         if (warps) {
             warnTimelineMetadata(context, warps, `${trackName} / ${name}`, name);
         }
-        if (partialDetails.length) {
+        if (partialDetails.length > 0) {
             warn(context, clip, 'unsupported-element', name, trackName, 'partial', partialDetails);
         }
         return {
@@ -802,7 +804,7 @@ function parseClip(
     }
 
     if (ownerKind === 'midi') {
-        if (partialDetails.length) {
+        if (partialDetails.length > 0) {
             warn(context, clip, 'unsupported-element', name, trackName, 'partial', partialDetails);
         }
         return {

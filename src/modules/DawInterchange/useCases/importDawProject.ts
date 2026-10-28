@@ -54,7 +54,8 @@ function combineMissingAudioWithPartialWarnings(warnings: DawProjectImportWarnin
         if (!partial) {
             continue;
         }
-        partial.details = [...(partial.details ?? []), 'audio could not be loaded'];
+        const partialDetails = partial.details ?? [];
+        partial.details = [...partialDetails, 'audio could not be loaded'];
         warnings.splice(index, 1);
     }
 }
