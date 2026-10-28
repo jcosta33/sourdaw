@@ -77,6 +77,25 @@ describe('restoreTakesForClip', () => {
         expect(takeLaneStore.set).not.toHaveBeenCalled();
     });
 
+    it.each([
+        { name: 'omitted', retiredTakeIds: undefined },
+        { name: 'empty', retiredTakeIds: [] },
+        { name: 'unmatched', retiredTakeIds: ['not-captured'] },
+    ])('admits legacy inert missing-host captures with $name retired ids', ({ retiredTakeIds }) => {
+        const take = createTake('c1', 'Legacy take', 0, 4);
+        const lane = { ...laneWithTakes('missing-recording-host', [take]), id: 'legacy-lane' };
+        const capture = [{ laneIndex: 0, lane, retiredTakeIds }];
+        mocks.takeLaneStoreValue.value = { lanes: [] };
+
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(true);
+        restoreTakesForClip(capture);
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+
+        mocks.takeLaneStoreValue.value = { lanes: [{ ...lane, trackId: 't2', takes: [] }] };
+        expect(retiredTakeLaneOwnersMatchStore(capture)).toBe(false);
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
+
     it('admits an absent captured lane or a new lane for its track, but refuses a foreign reuse of its id', () => {
         const capture = [
             { laneIndex: 0, lane: { id: 'captured-lane', trackId: 't1', takes: [], activeCompRegions: [] } },

@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
+import { trackStore } from '../../../stores/trackStore';
 import { projectedTakeLaneOwners } from '../projectedTakeLaneOwners';
 import { reKeyedTakeLaneOwnersMatchStore } from '../reKeyedTakeLaneOwnersMatchStore';
 import { retiredTakeLaneOwnersMatchStore } from '../retiredTakeLaneOwnersMatchStore';
@@ -108,7 +110,17 @@ describe('projectedTakeLaneOwners split Undo prefix', () => {
         expect(mocks.state.value).toEqual(live);
     });
 
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    });
+
     it('refuses a later captured global take id collision with the owner restored by the prefix', () => {
+        // Keep the host valid so this probe fails only on the take identity.
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'foreign-track' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
         const foreignTake = { ...originalTake, clipId: 'foreign-clip' };
         expect(
             retiredTakeLaneOwnersMatchStore(

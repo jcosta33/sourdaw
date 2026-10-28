@@ -40,8 +40,16 @@ export function retiredTakeSourceMatches(
     reference: unknown,
     undoEntryId: string | undefined
 ): boolean {
+    // Empty producer placeholders and legacy omissions carry no issued proof.
+    // Once issued, evidence authenticates the exact capture, even an empty one.
+    const proofless =
+        reference === undefined ||
+        (isRecord(reference) &&
+            Object.keys(reference).length === 2 &&
+            reference.changeHash === '' &&
+            reference.memberId === '');
     return (
-        captures.length === 0 ||
+        (captures.length === 0 && proofless) ||
         (typeof undoEntryId === 'string' &&
             commandSourcePublicationMatches(kind, sourceOwners(clipIds, captures, undoEntryId), reference))
     );

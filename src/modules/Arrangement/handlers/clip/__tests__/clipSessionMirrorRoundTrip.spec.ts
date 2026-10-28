@@ -525,7 +525,10 @@ async function persistRemovalWithDistinctOwners(grouped = false) {
     return { saved, plan, original };
 }
 
-async function persistRemovalAcrossRecordingTracks() {
+async function persistRemovalAcrossRecordingTracks(
+    grouped = false,
+    groupId = grouped ? 'recording-host-group' : undefined
+) {
     workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
     const otherTrack = createTrack({ id: 'other-track', name: 'Other track', kind: 'midi' });
     trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, otherTrack] });
@@ -557,9 +560,12 @@ async function persistRemovalAcrossRecordingTracks() {
     projectCrdtToStores();
     expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes).toEqual([primaryLane, otherLane]);
 
-    await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+    await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual', groupId });
+    if (grouped) {
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-b' } }, { source: 'manual', groupId });
+    }
     await vi.waitFor(() =>
-        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(grouped ? 2 : 1)
     );
     expect(persistedInverse().payload.retiredTakeLanes).toEqual([
         { laneIndex: 0, lane: primaryLane, retiredTakeIds: [primaryTake.id] },
@@ -568,6 +574,40 @@ async function persistRemovalAcrossRecordingTracks() {
     expect(takeLaneStore.value?.lanes).toEqual([]);
     expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes).toEqual([]);
     return { primaryLane, otherLane };
+}
+
+async function persistSplitRetirement(): Promise<void> {
+    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    flushAutomergeStorageWrites();
+    stopProjectionBridge = setupProjectionBridge();
+    projectCrdtToStores();
+    await executeAppAction(
+        { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' } },
+        { source: 'manual' }
+    );
+    await vi.waitFor(() =>
+        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+    );
+    const take = createTake('clip-right', 'Late right pass', 2, 4);
+    const lane = {
+        ...createTakeLane(TRACK_ID),
+        takes: [take],
+        activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: take.id }],
+    };
+    takeLaneStore.set({ lanes: [lane] });
+    flushAutomergeStorageWrites();
+    expect((await undo({ stepOverConflicts: false })).headConsumed).toBe(true);
+    await vi.waitFor(() =>
+        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+    );
+    const entry = undoHistoryStore.value?.future.find(
+        (candidate) => candidate.kind === 'action' && candidate.action.type === 'splitClip'
+    );
+    if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'restoreClipSplitState') {
+        throw new Error('Expected real split Undo retirement');
+    }
+    expect(entry.inverseAction.payload.retiredTakeLanes).toEqual([{ lane, laneIndex: 0, retiredTakeIds: [take.id] }]);
+    expect(takeLaneStore.value?.lanes).toEqual([]);
 }
 
 async function persistRippleRemoval(grouped: boolean, automated = true, fractional = false): Promise<void> {
@@ -6018,6 +6058,77 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(takeLaneStore.value?.lanes[0]?.takes.filter((take) => take.selected)).toEqual([later]);
     });
 
+    it.each(['remove', 'split-undo'] as const)(
+        'take preservation: rejects a cleared real %s capture with its issued source proof intact',
+        async (operation) => {
+            if (operation === 'remove') {
+                await persistRemovalAcrossRecordingTracks();
+            } else {
+                await persistSplitRetirement();
+            }
+            const side = operation === 'remove' ? 'past' : 'future';
+            const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            const entries = saved[side];
+            if (!Array.isArray(entries) || !isRecord(entries[0])) {
+                throw new Error('Expected real saved retirement entry');
+            }
+            for (const key of operation === 'remove' ? ['inverseAction'] : ['inverseAction', 'redoAction']) {
+                const action = entries[0][key];
+                if (
+                    !isRecord(action) ||
+                    !isRecord(action.payload) ||
+                    !isRecord(action.payload.retiredTakeSourceProof)
+                ) {
+                    throw new Error('Expected issued source proof');
+                }
+                expect(action.payload.retiredTakeLanes).toHaveLength(operation === 'remove' ? 2 : 1);
+                expect(action.payload.retiredTakeSourceProof.changeHash).toMatch(/^[a-f0-9]{64}$/);
+                action.payload.retiredTakeLanes = [];
+            }
+            const raw = structuredClone(getCrdtDoc('root'));
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+            reloadSavedProject();
+            expect(getCrdtDoc('root')).toEqual(raw);
+            expect(undoHistoryStore.value?.[side]).toEqual([]);
+            await expectReplayRefused(operation === 'remove' ? 'undo' : 'redo');
+        }
+    );
+
+    it.each([false, true])(
+        'take preservation: missing recording host refuses saved remove Undo before writes grouped=%s',
+        async (grouped) => {
+            await persistRemovalAcrossRecordingTracks(grouped);
+            reloadSavedProject();
+            syncPeerProject((project) => {
+                project.tracks.tracks.splice(
+                    project.tracks.tracks.findIndex((track) => track.id === 'other-track'),
+                    1
+                );
+            });
+            await flushPersistence();
+            expect(undoHistoryStore.value?.past).toHaveLength(grouped ? 2 : 1);
+            await expectReplayRefused('undo');
+            expect(undoHistoryStore.value?.past).toHaveLength(grouped ? 2 : 1);
+            expect(trackStore.value?.tracks.some((track) => track.id === 'other-track')).toBe(false);
+            expect(takeLaneStore.value?.lanes).toEqual([]);
+        }
+    );
+
+    it('take preservation: admits a recording host restored by the earlier grouped Undo member', async () => {
+        const groupId = 'restored-recording-host-group';
+        const { primaryLane, otherLane } = await persistRemovalAcrossRecordingTracks(false, groupId);
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        await executeAppAction(
+            { type: 'removeTrack', payload: { trackId: 'other-track' } },
+            { source: 'manual', groupId }
+        );
+        expect(undoHistoryStore.value?.past).toHaveLength(2);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(takeLaneStore.value?.lanes).toEqual([primaryLane, otherLane]);
+        expect(getCrdtDoc<PeerProject>('root')?.takeLanes.lanes).toEqual([primaryLane, otherLane]);
+    });
+
     it('saved retirement owner coherence restores distinct recording tracks after binary reload', async () => {
         const { primaryLane, otherLane } = await persistRemovalAcrossRecordingTracks();
         reloadSavedProject();
@@ -7649,7 +7760,8 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 });
             });
             await flushPersistence();
-            const rootBeforeRedo = Automerge.clone(getCrdtDoc('root')!);
+            const beforeRedoHeads = Automerge.getHeads(getCrdtDoc('root')!);
+            let replacedHistoricalView: ReturnType<typeof getCrdtDoc>;
             const peerOwners = ownerProjections();
             const heldEntry = undoHistoryStore.value?.future.find(
                 (entry) =>
@@ -7694,8 +7806,13 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 macroWrite.mockImplementationOnce(() => {
                     if (foreign && !replaced) {
                         replaced = true;
-                        replaceCrdtDocInLineage({ id: 'root', doc: rootBeforeRedo });
-                        expect(getCrdtDoc('root')).toBe(rootBeforeRedo);
+                        const current = getCrdtDoc('root')!;
+                        const replacement = Automerge.view(current, beforeRedoHeads);
+                        expect(Automerge.hasHeads(replacement, Automerge.getHeads(current))).toBe(true);
+                        expect(Automerge.getHeads(replacement)).toEqual(beforeRedoHeads);
+                        replacedHistoricalView = replacement;
+                        replaceCrdtDocInLineage({ id: 'root', doc: replacement });
+                        expect(getCrdtDoc('root')).toBe(replacement);
                     }
                     throw new Error('Controlled committed macro warning');
                 });
@@ -7744,7 +7861,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 if (foreign) {
                     expect(replaced).toBe(true);
                     if (warning) {
-                        expect(getCrdtDoc('root')).toBe(rootBeforeRedo);
+                        expect(getCrdtDoc('root')).toBe(replacedHistoricalView);
                     }
                     const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
                     expect(persisted.future).toEqual([]);
@@ -7754,6 +7871,14 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                                 entry.kind === 'action' ? entry.inverseAction : null
                             )
                         ).toEqual(inverseValues);
+                    }
+                    if (warning) {
+                        // save(view) includes shared backend futures. Fork the
+                        // installed frontier before exercising its binary reload.
+                        const savedFrontier = Automerge.clone(getCrdtDoc('root')!);
+                        expect(savedFrontier).toEqual(replacedHistoricalView);
+                        expect(Automerge.getHeads(savedFrontier)).toEqual(beforeRedoHeads);
+                        replaceCrdtDocInLineage({ id: 'root', doc: savedFrontier });
                     }
                     reloadSavedProject();
                     if (warning) {

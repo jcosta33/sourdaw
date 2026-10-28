@@ -1,4 +1,4 @@
-import { hasHeads } from '@automerge/automerge';
+import { getChangesMetaSince, getHeads, hasHeads } from '@automerge/automerge';
 
 import { getClipAutomationMoveState } from '#/modules/Automation/useCases';
 import { commitRedoInverseCapture } from '#/modules/Command/useCases';
@@ -179,7 +179,13 @@ function captureRemovalPublication(owner: object): () => (() => boolean) | null 
             captureProjectIdentity() === identity &&
             publications.every(({ docId, heads }) => {
                 const document = getCrdtDoc(docId);
-                return document !== undefined && hasHeads(document, [...heads]);
+                if (!document || !hasHeads(document, [...heads])) {
+                    return false;
+                }
+                // A historical view shares backend futures and siblings. Only
+                // heads in the installed frontier's causal closure attest this write.
+                const outside = getChangesMetaSince(document, getHeads(document));
+                return heads.every((head) => !outside.some((change) => change.hash === head));
             });
     };
 }

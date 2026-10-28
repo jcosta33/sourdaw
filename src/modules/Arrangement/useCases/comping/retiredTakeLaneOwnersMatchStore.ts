@@ -1,5 +1,7 @@
 import { type AppAction, type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
+import { getTrackStoreState } from '../getTrackStoreState';
+
 import { projectedTakeLaneOwners } from './projectedTakeLaneOwners';
 
 /**
@@ -15,19 +17,35 @@ export function retiredTakeLaneOwnersMatchStore(
     priorActions: readonly AppAction[] = []
 ): boolean {
     const lanes = projectedTakeLaneOwners(priorActions);
+    const hostIds = new Set(getTrackStoreState()?.tracks.map((track) => track.id) ?? []);
+    for (const action of priorActions) {
+        if (action.type === 'removeTrack') {
+            hostIds.delete(action.payload.trackId);
+        } else if (action.type === 'restoreTrack') {
+            hostIds.add(action.payload.trackId);
+        } else if (action.type === 'removeAllTracks') {
+            hostIds.clear();
+        } else if (action.type === 'restoreTracks') {
+            for (const restore of action.payload.restores) {
+                hostIds.add(restore.trackId);
+            }
+        }
+    }
     return retiredLanes.every(({ lane, retiredTakeIds }) => {
         const target = lanes.find((live) => live.id === lane.id || live.trackId === lane.trackId);
+        const retiredTakes = lane.takes.filter((take) => retiredTakeIds?.includes(take.id));
         return (
+            // The writer skips a missing recording host. Refuse the whole
+            // restore instead of consuming history with only some takes back.
+            (retiredTakes.length === 0 || hostIds.has(lane.trackId)) &&
             lanes.every((live) => live.id !== lane.id || live.trackId === lane.trackId) &&
-            lane.takes
-                .filter((take) => retiredTakeIds?.includes(take.id))
-                .every((captured) =>
-                    lanes.every((live) =>
-                        live.takes.every(
-                            (take) => take.id !== captured.id || (live === target && take.clipId === captured.clipId)
-                        )
+            retiredTakes.every((captured) =>
+                lanes.every((live) =>
+                    live.takes.every(
+                        (take) => take.id !== captured.id || (live === target && take.clipId === captured.clipId)
                     )
                 )
+            )
         );
     });
 }
