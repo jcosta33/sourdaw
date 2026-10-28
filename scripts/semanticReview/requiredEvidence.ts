@@ -17,12 +17,15 @@ import { type EvidenceReference, type EvidenceSide } from './contracts.ts';
 import { type SemanticChangedFile } from './evidence.ts';
 import { isCollectedSpec, type SemanticRule } from './rules.ts';
 
+import type { TestCaseContextProof } from './testCaseContext.ts';
+
 /** The regions a token resolves against, split so an own-side drop never unsupplies a context region. */
 type EvidenceResolution = {
     readonly own: readonly EvidenceReference[];
     readonly context: readonly EvidenceReference[];
     readonly ownDroppedSides: ReadonlySet<EvidenceSide>;
     readonly contextDroppedSides: ReadonlySet<EvidenceSide>;
+    readonly testCaseContext?: TestCaseContextProof;
 };
 
 /**
@@ -59,6 +62,20 @@ function implementationPresent(regions: readonly EvidenceReference[], dropped: R
 const REQUIRED_EVIDENCE_RESOLVERS: Readonly<Record<string, (resolution: EvidenceResolution) => boolean>> = {
     'before test source': ({ own, ownDroppedSides }) => sidePresent(own, 'before', ownDroppedSides),
     'after test source': ({ own, ownDroppedSides }) => sidePresent(own, 'after', ownDroppedSides),
+    'complete test case context': ({ own, ownDroppedSides, testCaseContext }) => {
+        if (
+            testCaseContext?.complete !== true ||
+            testCaseContext.afterEvidenceIds.length === 0 ||
+            ownDroppedSides.has('after') ||
+            (testCaseContext.beforeEvidenceIds.length > 0 && ownDroppedSides.has('before'))
+        ) {
+            return false;
+        }
+        const carried = new Set(own.map((reference) => reference.evidenceId));
+        return [...testCaseContext.beforeEvidenceIds, ...testCaseContext.afterEvidenceIds].every((id) =>
+            carried.has(id)
+        );
+    },
     'before source': ({ own, ownDroppedSides }) => sidePresent(own, 'before', ownDroppedSides),
     'after source': ({ own, ownDroppedSides }) => sidePresent(own, 'after', ownDroppedSides),
     'after implementation source': ({ own, context, ownDroppedSides, contextDroppedSides }) =>
@@ -90,7 +107,8 @@ function requiredEvidencePresent(
     own: readonly EvidenceReference[],
     context: readonly EvidenceReference[],
     ownDroppedSides: ReadonlySet<EvidenceSide>,
-    contextDroppedSides: ReadonlySet<EvidenceSide>
+    contextDroppedSides: ReadonlySet<EvidenceSide>,
+    testCaseContext?: TestCaseContextProof
 ): boolean {
     const resolver = REQUIRED_EVIDENCE_RESOLVERS[token];
     if (resolver === undefined) {
@@ -98,7 +116,7 @@ function requiredEvidencePresent(
         // carried. The coverage guard above fails when a rule declares a token that reaches this.
         return false;
     }
-    return resolver({ own, context, ownDroppedSides, contextDroppedSides });
+    return resolver({ own, context, ownDroppedSides, contextDroppedSides, testCaseContext });
 }
 
 /**
@@ -115,7 +133,8 @@ export function missingRequiredEvidence(
     context: readonly EvidenceReference[],
     kind: SemanticChangedFile['kind'] = 'modified',
     ownDroppedSides: ReadonlySet<EvidenceSide> = new Set<EvidenceSide>(),
-    contextDroppedSides: ReadonlySet<EvidenceSide> = new Set<EvidenceSide>()
+    contextDroppedSides: ReadonlySet<EvidenceSide> = new Set<EvidenceSide>(),
+    testCaseContext?: TestCaseContextProof
 ): string[] {
     return rule.requiredEvidence.filter((token) => {
         const lower = token.toLowerCase();
@@ -125,6 +144,6 @@ export function missingRequiredEvidence(
         if (kind === 'deleted' && lower.includes('after')) {
             return false;
         }
-        return !requiredEvidencePresent(token, own, context, ownDroppedSides, contextDroppedSides);
+        return !requiredEvidencePresent(token, own, context, ownDroppedSides, contextDroppedSides, testCaseContext);
     });
 }

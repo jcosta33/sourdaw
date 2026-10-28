@@ -29,9 +29,10 @@ import {
 } from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
+import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
-import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import {
     offlinePpqEndpointProjectorState,
@@ -40,6 +41,7 @@ import {
 import { noteLiveMidiControl } from '../../../services/liveMidiControlLatch';
 import { updateDeviceParam } from '../../deviceControls/updateDeviceParam';
 import { masterGainState } from '../../engineAccess/masterGainState';
+import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from '../disarmNativeLiveMidiWriter';
 import { isDeviceCarriedByNativeSession } from '../isDeviceCarriedByNativeSession';
 import { isDeviceHeldByNativeSession } from '../isDeviceHeldByNativeSession';
@@ -115,6 +117,7 @@ const mocks = vi.hoisted(() => ({
      * file's job; what is, is what the session does with a drop.
      */
     programmeOverride: null as unknown,
+    midiNoteSeconds: [0],
     warn: vi.fn<(message: string) => void>(),
     /** Every bridge call this session made, in order. */
     wireCalls: [] as string[],
@@ -196,7 +199,7 @@ vi.mock('../readLiveMidiProgramme', () => ({
      * proven where they live (`projectLiveMidiProgramme.spec.ts`), and standing
      * a tempo projector and a note store up here would prove them twice. What
      * this file owns is which attach state and which carried set the session
-     * hands the writer, so the double answers one note per strip whose chain
+     * hands the writer, so the double answers notes per strip whose chain
      * names an attached instance or a built-in that sounds notes — fermenter
      * stands in for that, exactly as `nativeMidiNoteSink` picks the sink — and
      * only for a strip named in `carriedStripIds`, exactly as the carriage gate
@@ -223,7 +226,13 @@ vi.mock('../readLiveMidiProgramme', () => ({
             return [
                 {
                     target: { trackId: track.id, deviceId: sink.id },
-                    events: [{ time: 0, note: 60, velocity: 100, channel: 0, isNoteOn: true }],
+                    events: mocks.midiNoteSeconds.map((time) => ({
+                        time,
+                        note: 60,
+                        velocity: 100,
+                        channel: 0,
+                        isNoteOn: true,
+                    })),
                 },
             ];
         }),
@@ -384,7 +393,7 @@ const APPLIED = { acceptance: 'accepted', application: 'applied', runtimeRevisio
  * observe about them is their *order* — a batch applied before its material is
  * a batch the native side refuses whole.
  */
-const transport: NativeGraphTransport = {
+const transport: NativeGraphTransport = withNativeTimelineMaterialTransport({
     applyGraphCommands: (input) => {
         mocks.wireCalls.push('apply');
         return mocks.applyGraphCommands(input);
@@ -399,7 +408,7 @@ const transport: NativeGraphTransport = {
     releaseLevainBank: () => Promise.reject(new Error('the live session stages no levain bank here')),
     renderGraphOffline: () => Promise.reject(new Error('the live session must not render offline')),
     mapGraphBatch: () => Promise.reject(new Error('the live session must not map batches')),
-};
+});
 
 function createTrack(overrides?: Partial<Track>): Track {
     return {
@@ -634,7 +643,8 @@ function attachReportedInstancesInStore(): void {
     });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+    disarmNativeLiveAutomationWriter();
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
     mocks.applyGraphCommands.mockReset();
@@ -648,6 +658,7 @@ beforeEach(() => {
     mocks.stopLivenessWatch.mockClear();
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
+    mocks.midiNoteSeconds = [0];
     mocks.warn.mockClear();
     mocks.markExternalPluginEngineAttached.mockReset();
     mocks.openedBackends = [];
@@ -668,7 +679,8 @@ beforeEach(() => {
     retractEveryCrumbsEngineAttachment();
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
-    registeredNativeTimelineSampleIds.clear();
+    await nativeTimelineMaterialLeases.retire();
+    nativeTimelineMaterialLeases.ownSnapshot('sample-1', MATERIAL);
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;
@@ -717,6 +729,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    disarmNativeLiveAutomationWriter();
     trackStore.set(null);
     disarmNativeLiveMidiWriter();
     offlinePpqEndpointProjectorState.project = null;
@@ -2654,6 +2667,9 @@ describe('repositionNativeLiveGraphSession', () => {
     // strip's instrument has to be re-addressed from the position the engine
     // just moved to — not left silent until the next full session start.
     it('schedules the carried Fermenter strip again after a locate', async () => {
+        // Keep one attack behind the locate and one ahead: carriage must be
+        // retained without replaying the old attack after its frame passed.
+        mocks.midiNoteSeconds = [0, 13];
         offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
         offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
         trackStore.set({
@@ -2676,6 +2692,16 @@ describe('repositionNativeLiveGraphSession', () => {
         await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
 
         expect(scheduledMidiTargets()).toEqual([{ trackId: 'midi-1', deviceId: 'ferm-1' }]);
+        expect(
+            mocks.applyGraphCommands.mock.calls
+                .flatMap(([input]) => (input.batch as NativeGraphWireBatch).commands)
+                .flatMap((command) => {
+                    if (command.kind !== 'schedule-midi') {
+                        return [];
+                    }
+                    return command.notes.map((note) => note.time);
+                })
+        ).toEqual([13]);
     });
 });
 

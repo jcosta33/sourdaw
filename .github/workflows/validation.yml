@@ -305,6 +305,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Release inventory reads immutable Levain measurement provenance.
+          fetch-depth: 0
+          ref: ${{ github.sha }}
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
@@ -330,6 +334,9 @@ jobs:
       # filter would hide.
       - name: Artifact freshness
         run: pnpm wasm:verify
+
+      - name: Campaign fixture freshness
+        run: pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2
 
       - name: App types
         if: needs.decide.outputs.tooling != 'true'
@@ -357,10 +364,8 @@ jobs:
         if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:command-schema
 
-      # Release provenance (tracked sets, licenses, trademark, asset digests)
-      # is not checked here. `test:release-inventory` runs in nightly.yml and
-      # in `release:proof:assemble`, so an ordinary pull request never needs
-      # a restamp.
+      - name: Release inventory
+        run: pnpm test:release-inventory
 
       - name: Test collection scope
         if: needs.decide.outputs.tooling != 'true'
@@ -397,9 +402,10 @@ jobs:
     # contract checks answer to files a prose-classified path can still touch.
     if: needs.decide.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Checkout
+        timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
@@ -408,20 +414,24 @@ jobs:
       # undici and red the job before any check ran (#3851). Must precede
       # `Set up Node` so `cache: pnpm` resolves the store path.
       - name: Set up pnpm
+        timeout-minutes: 5
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
+        timeout-minutes: 5
         run: pnpm install --frozen-lockfile
 
       - name: Lint
+        timeout-minutes: 20
         # The longest single check in the fast lane, and the local default runs
         # it on one worker for the resource guard's sake rather than the work's.
         env:

@@ -903,6 +903,24 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     }
 }
 
+function assertLintTimeBudgets(candidate: UnknownRecord): void {
+    const lint = jobAt(candidate, 'lint');
+    const prep = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'];
+    for (const name of prep) {
+        if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
+            throw new Error(`lint step ${name} must have a five-minute timeout`);
+        }
+    }
+    if (stepNamed(lint, 'Lint')['timeout-minutes'] !== 20) {
+        throw new Error('lint execution must have a twenty-minute timeout');
+    }
+    const jobTimeout = lint['timeout-minutes'];
+    const stepTotal = prep.length * 5 + 20;
+    if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 45) {
+        throw new Error('lint job must include five minutes for cleanup after all step budgets');
+    }
+}
+
 function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     const smoke = jobAt(candidate, 'smoke');
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
@@ -1963,6 +1981,14 @@ function assertSummaryMembership(set: WorkflowSet): void {
 }
 
 function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
+    const staticCheckout = stepNamed(jobAt(candidate, 'static'), 'Checkout');
+    const staticOptions = recordAt(staticCheckout, 'with');
+    if (staticOptions['fetch-depth'] !== 0) {
+        throw new Error('static must retain complete history for release inventory provenance');
+    }
+    if (staticOptions.ref !== '${{ github.sha }}') {
+        throw new Error('static release inventory must inspect the current workflow revision');
+    }
     const unitCheckout = stepNamed(jobAt(candidate, 'unit'), 'Checkout');
     if (recordAt(unitCheckout, 'with')['fetch-depth'] !== 0) {
         throw new Error('unit must retain complete history for immutable measurement provenance');
@@ -1976,6 +2002,21 @@ function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
         ) {
             throw new Error(`${jobName} must not fetch complete history`);
         }
+    }
+}
+
+function assertReleaseInventoryCommand(job: UnknownRecord): void {
+    if (stepNamed(job, 'Release inventory').run !== 'pnpm test:release-inventory') {
+        throw new Error('release inventory must run its exact validation command');
+    }
+}
+
+function assertCampaignFixtureCommand(job: UnknownRecord): void {
+    if (
+        stepNamed(job, 'Campaign fixture freshness').run !==
+        "pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2"
+    ) {
+        throw new Error('campaign fixture freshness must run its exact validation case');
     }
 }
 
@@ -4641,36 +4682,109 @@ export -f sudo timeout sleep apt-get
         }
     });
 
-    it('keeps release provenance out of pull-request validation and in the nightly train', () => {
+    it('requires campaign fixture freshness for Rust-only changes', () => {
+        const staticJob = jobAt(validationWorkflow, 'static');
+        expect(() => assertCampaignFixtureCommand(staticJob)).not.toThrow();
+        const steps = jobSteps('validation.yml', 'static', staticJob);
+        expect(steps.findIndex((step) => step.name === 'Install dependencies')).toBeLessThan(
+            steps.findIndex((step) => step.name === 'Campaign fixture freshness')
+        );
+        const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            RUST: 'true',
+            BROWSER: 'false',
+        });
+        expect(scope.web).toBe('false');
+        expect(scope.e2e).toBe('false');
+        expect(selectedPrValidationJobs(scope)).toContain('static');
+        expect(arrayAt(jobAt(validationWorkflow, 'validation-gate'), 'needs')).toContain('static');
+
+        const missing = cloneWorkflows('missing campaign fixture freshness');
+        removeStepNamed(jobAt(missing.validation, 'static'), 'Campaign fixture freshness');
+        expect(() => assertStepInventory(missing)).toThrow('validation.yml job static steps drifted');
+        const conditional = cloneWorkflows('conditional campaign fixture freshness');
+        stepNamed(jobAt(conditional.validation, 'static'), 'Campaign fixture freshness').if = 'false';
+        expect(() => assertUnconditionalSteps(conditional)).toThrow();
+        const softened = cloneWorkflows('softened campaign fixture freshness');
+        stepNamed(jobAt(softened.validation, 'static'), 'Campaign fixture freshness')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softened)).toThrow();
+        const wrong = cloneWorkflows('wrong campaign fixture case');
+        stepNamed(jobAt(wrong.validation, 'static'), 'Campaign fixture freshness').run = 'pnpm test:run';
+        expect(() => assertCampaignFixtureCommand(jobAt(wrong.validation, 'static'))).toThrow();
+    });
+
+    it('runs release inventory on every pull request and nightly with full provenance history', () => {
         const validationStatic = jobSteps('validation.yml', 'static', jobAt(validationWorkflow, 'static'));
         const nightlyStatic = jobSteps('nightly.yml', 'static', jobAt(nightly, 'static'));
-        expect(validationStatic.map((step) => step.name)).not.toContain('Release inventory');
-        expect(nightlyStatic.map((step) => step.name)).toContain('Release inventory');
-        expect(stringAt(stepNamed(jobAt(nightly, 'static'), 'Release inventory'), 'run')).toBe(
-            'pnpm test:release-inventory'
-        );
-        expect(stepNamed(jobAt(nightly, 'static'), 'Release inventory').if).toBeUndefined();
-        for (const workflowText of [
-            readFileSync(join(repositoryRoot, '.github/workflows/validation.yml'), 'utf8'),
-            readFileSync(join(repositoryRoot, '.github/workflows/pr-checks.yml'), 'utf8'),
-            readFileSync(join(repositoryRoot, '.github/workflows/health-gates.yml'), 'utf8'),
-        ]) {
-            expect(workflowText).not.toMatch(/^\s+run: .*test:release-inventory/mu);
+        for (const [workflowName, staticJob] of [
+            ['validation.yml', jobAt(validationWorkflow, 'static')],
+            ['nightly.yml', jobAt(nightly, 'static')],
+        ] as const) {
+            expect(jobSteps(workflowName, 'static', staticJob).map((step) => step.name)).toContain('Release inventory');
+            const inventory = stepNamed(staticJob, 'Release inventory');
+            expect(() => assertReleaseInventoryCommand(staticJob)).not.toThrow();
+            expect(inventory.if).toBeUndefined();
+            expect(inventory['continue-on-error']).toBeUndefined();
         }
+        expect(validationStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(nightlyStatic.map((step) => step.name)).toContain('Release inventory');
+        expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
-        // Mutation: restoring the inventory step to pull-request validation (or
-        // dropping it from the nightly train) drifts from the pinned inventory.
-        const restored = cloneWorkflows('release inventory restored to validation');
-        const staticSteps = arrayAt(jobAt(restored.validation, 'static'), 'steps');
-        staticSteps.splice(staticSteps.length - 1, 0, {
-            name: 'Release inventory',
-            run: 'pnpm test:release-inventory',
-        });
-        expect(() => assertStepInventory(restored)).toThrow('validation.yml job static steps drifted');
+        const droppedPr = cloneWorkflows('release inventory dropped from validation');
+        removeStepNamed(jobAt(droppedPr.validation, 'static'), 'Release inventory');
+        expect(() => assertStepInventory(droppedPr)).toThrow('validation.yml job static steps drifted');
+
+        const conditionalPr = cloneWorkflows('release inventory conditional in validation');
+        stepNamed(jobAt(conditionalPr.validation, 'static'), 'Release inventory').if = false;
+        expect(() => assertUnconditionalSteps(conditionalPr)).toThrow();
+
+        const wrongCommand = cloneWorkflows('release inventory command changed');
+        stepNamed(jobAt(wrongCommand.validation, 'static'), 'Release inventory').run = 'pnpm test:collection-scope';
+        expect(() => assertReleaseInventoryCommand(jobAt(wrongCommand.validation, 'static'))).toThrow(
+            'release inventory must run its exact validation command'
+        );
+
+        const softenedPr = cloneWorkflows('release inventory softened in validation');
+        stepNamed(jobAt(softenedPr.validation, 'static'), 'Release inventory')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softenedPr)).toThrow();
+
+        const shallowPr = cloneWorkflows('release inventory shallow validation checkout');
+        recordAt(stepNamed(jobAt(shallowPr.validation, 'static'), 'Checkout'), 'with')['fetch-depth'] = 1;
+        expect(() => assertUnitProvenanceHistory(shallowPr.validation)).toThrow(
+            'static must retain complete history for release inventory provenance'
+        );
+
+        const baseRevision = cloneWorkflows('release inventory on pull request base');
+        recordAt(stepNamed(jobAt(baseRevision.validation, 'static'), 'Checkout'), 'with').ref =
+            '${{ github.event.pull_request.base.sha }}';
+        expect(() => assertUnitProvenanceHistory(baseRevision.validation)).toThrow(
+            'static release inventory must inspect the current workflow revision'
+        );
 
         const dropped = cloneWorkflows('release inventory dropped from nightly');
         removeStepNamed(jobAt(dropped.nightly, 'static'), 'Release inventory');
         expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
+    });
+
+    it('reserves bounded setup, full lint, and cleanup time in the lint job', () => {
+        expect(() => assertLintTimeBudgets(validationWorkflow)).not.toThrow();
+        const oldJob = structuredClone(validationWorkflow);
+        jobAt(oldJob, 'lint')['timeout-minutes'] = 20;
+        expect(() => assertLintTimeBudgets(oldJob)).toThrow('five minutes for cleanup');
+        for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
+            const missing = structuredClone(validationWorkflow);
+            delete stepNamed(jobAt(missing, 'lint'), name)['timeout-minutes'];
+            expect(() => assertLintTimeBudgets(missing), name).toThrow();
+        }
+        const overlong = structuredClone(validationWorkflow);
+        jobAt(overlong, 'lint')['timeout-minutes'] = 46;
+        expect(() => assertLintTimeBudgets(overlong)).toThrow('five minutes for cleanup');
+        const lint = jobAt(validationWorkflow, 'lint');
+        expect(lint.if).toBe("needs.decide.outputs.code == 'true'");
+        expect(stepNamed(lint, 'Lint').run).toBe('pnpm lint:full');
+        expect(recordAt(stepNamed(lint, 'Lint'), 'env')).toEqual({
+            SOURDAW_LINT_CONCURRENCY: 'auto',
+            SOURDAW_LINT_THREADS: '0',
+        });
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
@@ -5383,7 +5497,7 @@ export -f sudo timeout sleep apt-get
         expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });
 
-    it('fetches immutable measurement provenance history only in the unit matrix', () => {
+    it('fetches provenance history in static validation and the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
         const shallowUnit = asRecord(structuredClone(validationWorkflow), 'shallow unit validationWorkflow');

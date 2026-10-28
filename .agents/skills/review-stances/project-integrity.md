@@ -1,5 +1,57 @@
 # Lesson library: project integrity
 
+## 2026-10-27 — a matching commit did not prove that only its fields changed (PR #5646 refinement escape)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) introduced refinement bookkeeping
+whose barrel-call and history checks missed real project writes beside a valid chat commit (#5649).
+The original single-turn spy counter came from PR #4348
+(`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`). The missed observable was complete project truth,
+not whether the intended action also ran; exact historical reviewer prompts and tiers are unavailable.
+
+Take typed materialized snapshots around each turn. Derive allowed fields and values from the frozen
+oracle rather than the executed action log, and compare every other entity and field as well. Add a
+real outside-barrel write to another track and to an unauthorized field on the target; both must be
+counted even when the expected commit and Undo history look correct. Compare Undo with its pre-commit
+values only for oracle-authorized fields, atop pre-Undo truth, retaining unrelated later user edits.
+Count prior barrel writes even when their net field effect is zero. Observe persisted transitions
+against authorized prefixes so an unauthorized write followed by restoration cannot disappear.
+Keep a valid commit control and require removal
+of the state comparison to fail these cases; call counts, unchanged history and lossy JSON snapshots
+cannot establish preservation.
+
+## 2026-10-25 — restored heads can revive stale confirmation authority (caught in PR #5677 review)
+
+An approval may tolerate a mutation-epoch advance when the active project heads are unchanged,
+because a queued selection flush writes no new content. A real edit followed by a same-lineage
+replacement of earlier heads also leaves those heads unchanged, but discards the edited history.
+After a checkpoint, an ancestry scan of the installed document cannot recover that discarded edit.
+At every same-lineage replacement and same-membership snapshot restore, require the new _active_
+heads to retain every prior active head in their causal ancestry. Record a monotonic discard epoch
+when they do not, and reject approvals captured before it even if current heads match. A forward
+merge with concurrent heads and a checkpoint-only change must remain eligible; a foreign write
+after authorization capture must still revoke execution.
+
+## 2026-10-25 — queued selection writes revoked confirmed command authority (introduced by PR #2747)
+
+PR #2747 (`06fb56e389`) added a strict mutation-owner authorization check for confirmed AI
+batches. A track selection is transient project UI state, but its CRDT-backed store still queues
+an unscoped flush. That flush can advance the repository mutation epoch without changing document
+contents or heads. If it lands after the batch captures authorization, the unchanged proposal is
+invalidated as a foreign project write. The public approvals covered collaborator changes and
+CRDT ownership; the exact historical reviewer prompts are unavailable, so no named stance or tier
+can be assigned this missed timing input.
+
+Drive a real two-track selection through `trackStore.set` after proposal, observe its pending
+write, and release the actual flush at the confirmed batch's execution boundary. Require the
+approved command to execute once, with identical root contents and heads across that selection
+flush. Check the final risk-approval binding too: it must use the same unchanged-project proof,
+or the advanced epoch still rejects the old approved source revision. Preserve the original
+serialized batch and idempotency key through execution and replay. Pair this with a real
+conflicting edit before confirmation, which must invalidate or require new approval, and an
+independent writer after authorization capture, whose mutation must still revoke execution even
+when it changes no document value. Removing admission settlement or final binding alignment must
+fail the unchanged-selection case.
+
 ## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
 
 `waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.
@@ -272,3 +324,83 @@ constant and the stop to a no-op cannot see it. A guard on the revision or the p
 object needs a real root document, the real capture, and waits that span a frame; a close or
 discard that already drops every edit guards on project identity (`captureProjectIdentity`)
 instead. Mutation probe: restore the revision comparison; the frame-spanning cases must fail.
+
+## 2026-10-26 — Stop finalization must retain its recording root (issue #5517)
+
+Commit `0249a95cc5292` added Stop's clip and take-lane closure against the current stores without
+a captured root witness; its Git message identifies no pull request. PR #4564 (`40c5218228c5`)
+added MIDI `commitRecording` through `executeAppAction` and catch-time discard without carrying
+recording-root authority across the dispatch's existing snapshot-transaction wait. A root
+replacement could therefore redirect closure, a queued commit or failure cleanup into its
+successor. Historical reviewer prompts, models and tiers are unverified; the missing probe was
+root replacement at both Stop entry and queued dispatch resume.
+
+Stage a real take under A, replace the root with B reusing clip identities, then Stop: no B
+closure, history entry or discard is permitted, and the warning must explain refusal. Separately
+hold the real commit before its ownership check, replace the root, and resume; require refusal
+and zero new history/count. Remove dispatch-option forwarding to prove this case fails. Pair
+same-root real commit/Undo/Redo, null legacy witness, empty MIDI outcomes and genuine retirement
+controls. Land one sibling before replacing the root and refuse another afterward: retain the
+landed entry and exactly one settled gesture through Transport's public count consumed by
+Project's owed-save comparison. All-refused adds zero; downstream count filtering cannot prove
+that either Stop caller rejected registration.
+
+## Legacy inverse refusal must reach the history consumer
+
+The pre-#5578 trim handler records inverses without an offset capture. The current handler
+maps a domain `false` result to `no-write`, which Command treats as successful execution;
+relying on that writer refusal would still consume Undo. Refusal must reach the history
+consumer as a conflict. Historical review prompts and model tiers are unverified.
+
+Exercise genuine saved history through the real Undo consumer. Require the raw document,
+owning projections, past/future, tree cursor and settled session mirror to remain unchanged.
+Hold the actual snapshot transaction, remove an eligible legacy audio target through
+public CRDT mutation and projection, then release it: admission must observe that
+resumed state before any write or history consumption.
+Removing the post-wait admission must fail this case. A pre-wait check or a bare boolean
+refusal cannot carry the claim. For direct grouped replay, refuse an unproven prefix before
+any sibling writes; metadata-only and compatible-target controls remain separate.
+
+A legacy looped MIDI trim at an unchanged start can still have normalized an old
+whole-loop offset and translated notes, controllers and bends. Its current phase
+cannot establish its previous raw coordinates. Exercise a genuine saved sequence that
+slips with looping off, enables a loop, then trims at the unchanged start. Require visible refusal with
+the entry still pending, all raw rows and peer content unchanged. A normalized
+zero-distance legacy entry also lacks that authentication. Pair these refusals with
+current capture-bearing zero-distance Undo/Redo restoring exact raw owner coordinates,
+including captured zero; no historical graph reconstruction is required for admission.
+
+Current loop-disabled mode does not authenticate the mode when the historical trim
+ran. Disable looping through a peer edit on the genuine saved looping case and require
+refusal without consuming history or changing that peer state. Missing-capture MIDI
+inverses refuse regardless of current mode; genuine saved audio remains replayable.
+
+Broader MIDI refusal must not make earlier timing and prefix tests vacuous. Use an
+eligible audio target for the held-snapshot removal above and for a synthetic direct
+revert unit whose newest callback would remove that target. The early callback guard
+must refuse before invoking the callback, preserving raw project, full history and tree.
+Retain callback identity when snapshotting history rather than cloning its functions.
+
+## Escape: admitted take placement was discarded during project hydration (PR #4987)
+
+PR #4987 (`62a116ee0073`) added paired `passAnchorSeconds` and `passDepthSeconds`
+with a required `sourceOffsetBeats` to the take-store sanitizer, while project-file
+admission still checked only the take's older required shape. A current-version
+file containing a selected take with offset zero and only an anchor was admitted,
+then real hydration removed both that take and its comp region. The top-level and
+saved-arrangement take-lane routes both admitted the loss. The public approval
+attacked saved lanes and persistence, but no published evidence covers malformed
+placement at admission; the exact private stance prompts are unavailable. The
+missed failure mode is admission accepting metadata its owning hydrator discards.
+The older malformed-offset variant began with PR #4222 (`120c9e2b418e`), which
+added offset rejection to the store without extending project admission.
+
+Probe the serialized candidate before project replacement, then its real owner
+hydration. Reject anchor-only, depth-only, negative or nonfinite depth, malformed
+offset, and complete placement without an offset before any current project,
+raw document, or store replacement. Exercise both take-lane routes. Pair these
+with JSON-roundtripped legacy takes without placement and complete finite
+placement with a negative anchor: the selected takes and their comp regions
+must survive real hydration unchanged, including an active saved arrangement's
+top-level fallback. Reverting placement admission must fail the rejection cases;
+a sanitizer-only assertion cannot establish safe file admission.

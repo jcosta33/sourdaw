@@ -10,6 +10,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { defaultTransportState, type TransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
@@ -18,9 +19,11 @@ import { ensureTrackStrips } from '../../ensureTrackStrips';
 // `vi.fn` wrapper exists so one case can stand the claim's own wrap-count zero
 // down and isolate the epoch write's; `mockReset` hands the real one back.
 import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
+import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { startPlayback } from '../startPlayback';
+import { stopPlayback } from '../stopPlayback';
 
 const { timeSignatureMapStore } = vi.hoisted(
     (): { timeSignatureMapStore: { value: { changes: unknown[] } | null } } => ({
@@ -60,6 +63,9 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
+vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'playback-root' }));
+vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('../../playheadScheduler/claimSchedulerSession', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../playheadScheduler/claimSchedulerSession')>();
     return { claimSchedulerSession: vi.fn(actual.claimSchedulerSession) };
@@ -68,13 +74,21 @@ vi.mock('../../ensureTrackStrips', () => ({
     ensureTrackStrips: vi.fn(),
 }));
 
+function publishTransportPatch(patch: Parameters<typeof updateTransportState>[0]): void {
+    const current = getTransportState();
+    if (current) {
+        vi.mocked(getTransportState).mockReturnValue({ ...current, ...patch });
+    }
+}
+
 describe('startPlayback', () => {
     beforeEach(() => {
         playheadPositionRef.current = 0;
         playheadWrapCountRef.current = 0;
         timeSignatureMapStore.value = { changes: [] };
         vi.mocked(getTransportState).mockClear();
-        vi.mocked(updateTransportState).mockClear();
+        vi.mocked(updateTransportState).mockReset();
+        vi.mocked(updateTransportState).mockImplementation(publishTransportPatch);
         vi.mocked(resumeEngine).mockReset();
         // resumeEngine returns Promise<void>; default to a resolved promise so
         // the `.catch` chain in startPlayback has a thenable to attach to.
@@ -91,14 +105,32 @@ describe('startPlayback', () => {
         // nothing about the native engine take the unheld path they always had.
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
         vi.mocked(notifyUser).mockClear();
-        vi.mocked(startPlayheadScheduler).mockClear();
+        vi.mocked(startPlayheadScheduler).mockReset();
+        vi.mocked(startPlayheadScheduler).mockImplementation((prepared) =>
+            prepared ? Promise.resolve(true) : undefined
+        );
+        vi.mocked(prepareInitialBrowserPlayback).mockImplementation((generation) => ({
+            generation,
+            epoch: schedulerSession.discontinuityEpoch,
+            seam: null,
+            ownsSession: () => true,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+            prepareMidiWindows: async () => ({
+                isCurrent: () => true,
+                midiWindow: () => {
+                    throw new Error('Scheduler boundary is mocked in this spec');
+                },
+            }),
+        }));
         vi.mocked(ensureTrackStrips).mockClear();
+        vi.mocked(stopPlayback).mockClear();
         // Back to the real retirement: only the one isolation case overrides it.
         vi.mocked(claimSchedulerSession).mockReset();
     });
 
     it('should resume engine and mark playing when state exists', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -135,6 +167,39 @@ describe('startPlayback', () => {
         });
     });
 
+    it('reports a synchronous preparation failure to a gesture caller', async () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false });
+        vi.mocked(ensureTrackStrips).mockImplementationOnce(() => {
+            throw new Error('strip unavailable');
+        });
+
+        await expect(startPlayback()).resolves.toBeUndefined();
+
+        expect(updateTransportState).not.toHaveBeenCalled();
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Playback'), 'error');
+    });
+
+    it('awaits browser admission and passes the recording anchor callback to its owner', async () => {
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false });
+        const admission = Promise.withResolvers<boolean>();
+        vi.mocked(startPlayheadScheduler).mockReturnValue(admission.promise);
+        const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
+        let settled = false;
+        const playback = startPlayback(onRoll).then(() => {
+            settled = true;
+        });
+        const schedulerCall = vi.mocked(startPlayheadScheduler).mock.calls[0];
+        expect(schedulerCall?.[0]).toBeDefined();
+        expect(schedulerCall?.[1]).toBe(onRoll);
+        expect(settled).toBe(false);
+        expect(onRoll).not.toHaveBeenCalled();
+        schedulerCall?.[1]?.(10.1, 4);
+        admission.resolve(true);
+        await playback;
+        expect(settled).toBe(true);
+        expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.1, 4);
+    });
+
     it('rolls in over the bars the time-signature map defines, not the flat numerator', () => {
         // 4/4 until beat 6, 3/4 from there. The two bars before beat 12 are both
         // 3/4 (beats 9..12 and 6..9), so a 2-bar pre-roll opens at beat 6.
@@ -146,7 +211,7 @@ describe('startPlayback', () => {
                 { id: 'ts-b', beat: 6, numerator: 3, denominator: 4 },
             ],
         };
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -171,7 +236,7 @@ describe('startPlayback', () => {
         timeSignatureMapStore.value = {
             changes: [{ id: 'ts-a', beat: 5, numerator: 3, denominator: 4 }],
         };
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -191,7 +256,7 @@ describe('startPlayback', () => {
         // 6/8 bars are three quarter notes long, so two of them reach back six
         // beats from 12. Treating the numerator as quarter notes reached back
         // twelve and started the pre-roll at the timeline origin.
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -209,7 +274,7 @@ describe('startPlayback', () => {
     });
 
     it('clamps a pre-roll that reaches back past the timeline origin', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -279,7 +344,7 @@ describe('startPlayback', () => {
     });
 
     it('should not start when transport state is missing', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
@@ -290,7 +355,7 @@ describe('startPlayback', () => {
     });
 
     it('should be a no-op when already playing so a duplicate trigger does not re-snap the scheduler', () => {
-        const update = vi.fn<typeof updateTransportState>();
+        const update = vi.fn<typeof updateTransportState>(publishTransportPatch);
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
@@ -378,6 +443,25 @@ describe('startPlayback', () => {
             expect(rollingSinceAtRoll).toBeNull();
         });
 
+        it('hands recording the admitted native scheduler anchor after the hold ends', async () => {
+            const session = Promise.withResolvers<void>();
+            vi.mocked(startNativeLiveGraphSession).mockImplementation(async () => {
+                await session.promise;
+                return { outcome: 'declined', reason: 'controlled native admission' };
+            });
+            vi.mocked(startPlayheadScheduler).mockImplementation(() => {
+                playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+                playheadClockRef.beat = 4;
+            });
+            const onRoll = vi.fn<(contextSeconds: number, beat: number) => void>();
+            const playback = startPlayback(onRoll);
+            expect(onRoll).not.toHaveBeenCalled();
+            audioClock.currentTime = 10.08;
+            session.resolve();
+            await playback;
+            expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.08, 4);
+        });
+
         it('starts the scheduler once when the native session fails, so a dead addon cannot silence play', async () => {
             vi.mocked(startNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
 
@@ -385,6 +469,17 @@ describe('startPlayback', () => {
 
             await drainHold();
             expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
+
+        it('stops the admitted roll when native scheduler startup fails', async () => {
+            vi.mocked(startPlayheadScheduler).mockImplementationOnce(() => {
+                throw new Error('worker unavailable');
+            });
+
+            await expect(startPlayback()).resolves.toBeUndefined();
+
+            expect(stopPlayback).toHaveBeenCalledOnce();
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Playback'), 'error');
         });
 
         it('leaves the transport alone when the play it was holding for has already ended', async () => {
@@ -537,7 +632,7 @@ describe('startPlayback', () => {
             }
         });
 
-        it('starts the scheduler synchronously on a browser build, which is offered no session to wait for', () => {
+        it('hands browser admission to the scheduler without asking for a native session', () => {
             vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
 
             startPlayback();

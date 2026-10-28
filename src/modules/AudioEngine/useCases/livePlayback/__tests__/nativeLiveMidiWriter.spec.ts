@@ -47,7 +47,7 @@ const TARGET = { trackId: 'midi-1', deviceId: 'd1' } as const;
 
 const mocks = vi.hoisted(() => ({
     /** What every read of the programme answers, as the arm would receive it. */
-    events: [] as { time: number; note: number }[],
+    events: [] as { time: number; note: number; channel?: number; isNoteOn?: boolean; noteOnTime?: number }[],
     exclusions: [] as { stripId: string; reason: string }[],
     /** The targets the programme reports, reassignable per test to move a sink between arms. */
     targets: [] as { trackId: string; deviceId: string }[],
@@ -71,13 +71,16 @@ vi.mock('../readLiveMidiProgramme', () => ({
         targets: mocks.targets.map((target) => ({
             target,
             events: mocks.events
-                .filter((entry) => entry.time >= input.span.startSeconds && entry.time < input.span.endSeconds)
+                .filter((entry) => {
+                    const onset = entry.noteOnTime ?? entry.time;
+                    return onset >= input.span.startSeconds && onset < input.span.endSeconds;
+                })
                 .map((entry): AudioGraphMidiNoteEvent => ({
                     time: entry.time,
                     note: entry.note,
                     velocity: 100,
-                    channel: 0,
-                    isNoteOn: true,
+                    channel: entry.channel ?? 0,
+                    isNoteOn: entry.isNoteOn ?? true,
                 })),
         })),
         exclusions: mocks.exclusions,
@@ -96,7 +99,7 @@ const APPLIED: AudioGraphApplyResult = {
 const REFUSED: AudioGraphApplyResult = {
     acceptance: 'rejected',
     application: 'not-applied',
-    reason: 'midi-note-store-capacity — this plugin’s note store is full',
+    reason: 'graph-command-ring-full — the control-side batch was not queued',
 };
 
 const backend: AudioGraphBackend = {
@@ -111,6 +114,145 @@ function lane(count: number, startSeconds = 0, stepSeconds = 0.1): { time: numbe
         time: startSeconds + index * stepSeconds,
         note: 60 + (index % 12),
     }));
+}
+
+/** Each note has its own onset and release; identities also distinguish equal pitches. */
+function pairedLane(
+    count: number,
+    start: number,
+    duration: number
+): { time: number; note: number; isNoteOn: boolean; noteOnTime?: number }[] {
+    return Array.from({ length: count }, (_, index) => [
+        { time: start + ((index + 0.2) * duration) / count, note: 60 + (index % 12), isNoteOn: true },
+        { time: start + ((index + 0.6) * duration) / count, note: 60 + (index % 12), isNoteOn: false },
+    ]).flat();
+}
+
+/** Distinct valid MIDI keys share an attack frame and each reserve their real release. */
+function simultaneousPairedLane(count: number, onset: number, release: number): AudioGraphMidiNoteEvent[] {
+    return Array.from({ length: count }, (_unused, index) => {
+        const key = { note: index % 128, channel: Math.floor(index / 128), velocity: 100 };
+        return [
+            { ...key, time: onset, isNoteOn: true },
+            { ...key, time: release, isNoteOn: false },
+        ];
+    })
+        .flat()
+        .sort((left, right) => left.time - right.time);
+}
+
+function eventIdentities(events: readonly { time: number; note: number; isNoteOn?: boolean }[]): string[] {
+    return events.map((event) => `${Math.round(event.time * SAMPLE_RATE)}:${event.note}:${event.isNoteOn ?? true}`);
+}
+
+/** Persistent native semantics: a clear frees capacity, rendering never consumes an entry. */
+function persistentMidiSink(initialPosition = 0) {
+    let position = initialPosition;
+    let stored: AudioGraphMidiNoteEvent[] = [];
+    let maximumHeld = 0;
+    let maximumRequested = 0;
+    let refusals = 0;
+    const delivered: string[] = [];
+    const scheduledLate: string[] = [];
+    const sounding = new Set<number>();
+    const releases: number[] = [];
+    mocks.apply.mockImplementation(async (batch) => {
+        const region = nativeLiveGraphSession.loopRegion;
+        const requiredNext = stored.filter((event) => {
+            let distance = event.time - position;
+            if (distance < 0) {
+                distance = Infinity;
+                if (nativeLiveGraphSession.loopEnabled && region) {
+                    distance = region.endSeconds - position + event.time - region.startSeconds;
+                }
+            }
+            return distance >= 0 && distance < 0.25;
+        });
+        let next = [...stored];
+        let scheduled = false;
+        const stripped = new Set<number>();
+        for (const command of batch.commands) {
+            if (command.kind === 'clear-midi') {
+                expect(scheduled).toBe(false);
+                const from = Math.round(command.fromTime * SAMPLE_RATE);
+                const to = command.toTime === null ? Infinity : Math.round(command.toTime * SAMPLE_RATE);
+                next = next.filter((event) => {
+                    const frame = Math.round(event.time * SAMPLE_RATE);
+                    if (frame >= from && frame < to && !event.isNoteOn && sounding.has(event.note)) {
+                        stripped.add(event.note);
+                    }
+                    return frame < from || frame >= to;
+                });
+            }
+            if (command.kind === 'schedule-midi') {
+                scheduled = true;
+                const frames = command.notes.map((event) => Math.round(event.time * SAMPLE_RATE));
+                expect(frames).toEqual([...frames].sort((left, right) => left - right));
+                maximumRequested = Math.max(maximumRequested, command.notes.length);
+                if (next.length + command.notes.length > MIDI_NOTE_STORE_CAPACITY) {
+                    refusals += 1;
+                    // The callback refuses this note command after preceding
+                    // clears have applied; the host has already returned applied.
+                    continue;
+                }
+                const held = new Set(eventIdentities(next));
+                expect(eventIdentities(command.notes).filter((identity) => held.has(identity))).toEqual([]);
+                scheduledLate.push(...eventIdentities(command.notes.filter((event) => event.time < position)));
+                next.push(...command.notes);
+            }
+        }
+        const after = new Set(eventIdentities(next));
+        expect(eventIdentities(requiredNext).filter((identity) => !after.has(identity))).toEqual([]);
+        // Native merge keeps an already-stored event before an arriving event
+        // at the same frame; it does not reorder ties into note-off first.
+        stored = next.sort((left, right) => left.time - right.time);
+        // Native clear_midi_notes records only removed offs. Settlement reads
+        // the first future event of that key after the entire rewrite batch.
+        for (const note of stripped) {
+            const first = stored.find((event) => event.note === note && event.time >= position);
+            if (!first || first.isNoteOn) {
+                sounding.delete(note);
+                releases.push(note);
+            }
+        }
+        maximumHeld = Math.max(maximumHeld, stored.length);
+        return APPLIED;
+    });
+    return {
+        delivered,
+        scheduledLate,
+        held: () => stored.length,
+        maximumHeld: () => maximumHeld,
+        maximumRequested: () => maximumRequested,
+        refusals: () => refusals,
+        sounding: (note: number) => sounding.has(note),
+        releases,
+        render: (from: number, to: number) => {
+            const first = Math.round(from * SAMPLE_RATE);
+            const end = Math.round(to * SAMPLE_RATE);
+            position =
+                nativeLiveGraphSession.loopEnabled && to === nativeLiveGraphSession.loopRegion?.endSeconds
+                    ? nativeLiveGraphSession.loopRegion.startSeconds
+                    : to;
+            const due = stored.filter((event) => {
+                const frame = Math.round(event.time * SAMPLE_RATE);
+                return frame >= first && frame < end;
+            });
+            delivered.push(...eventIdentities(due));
+            for (const event of due) {
+                if (event.isNoteOn) {
+                    sounding.add(event.note);
+                } else {
+                    sounding.delete(event.note);
+                    releases.push(event.note);
+                }
+            }
+            if (nativeLiveGraphSession.loopEnabled && to === nativeLiveGraphSession.loopRegion?.endSeconds) {
+                releases.push(...sounding);
+                sounding.clear();
+            }
+        },
+    };
 }
 
 function batches(): AudioGraphCommandBatch[] {
@@ -245,20 +387,14 @@ describe('the live MIDI writer', () => {
         expect(scheduledIn(1).map((event) => event.time)).toEqual([30]);
     });
 
-    // The refusal is whole-batch, so a store shorter than the take stops at a
-    // bar the musician can hear ending and nothing else reports it.
-    it('admits only what the store holds and says once how much of the part fits', async () => {
-        // A span wholly inside the lookahead, so capacity rather than the
-        // horizon is what ends the run.
+    it('leaves capacity for the next dense linear window without reporting a truncated part', async () => {
         mocks.events = lane(MIDI_NOTE_STORE_CAPACITY + 10, 0, 0.000_5);
-
         await arm(0);
-
-        expect(scheduledIn(0)).toHaveLength(MIDI_NOTE_STORE_CAPACITY);
-        expect(mocks.warn).toHaveBeenCalledTimes(1);
-        expect(mocks.warn).toHaveBeenCalledWith(
-            `[AudioEngine] plugin "d1" on "midi-1" holds ${MIDI_NOTE_STORE_CAPACITY} of ${MIDI_NOTE_STORE_CAPACITY + 10} scheduled notes; the engine store is full`
-        );
+        expect(scheduledIn(0)).toHaveLength(MIDI_NOTE_STORE_CAPACITY / 2);
+        await pump(0.1);
+        expect(scheduledIn(1).length).toBeGreaterThan(0);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
     });
 
     // The cursor is a claim that the engine accepted those events, so the same
@@ -283,7 +419,7 @@ describe('the live MIDI writer', () => {
     // to go. The margin is the safety on that: the echoed position is a frame
     // or two behind the engine's own, and a clear that reached the true
     // playhead would delete a note about to be delivered.
-    it('gives the spent trail back once it has grown past a second of store', async () => {
+    it('gives spent frame groups back while preserving the two-second trail', async () => {
         mocks.events = lane(200);
 
         await arm(0);
@@ -295,8 +431,17 @@ describe('the live MIDI writer', () => {
         const heldBefore = nativeLiveMidiWriter.pass?.targets[0]?.held ?? 0;
         await pump(position);
 
+        const clearBefore = position - MIDI_TRAIL_SECONDS;
+        const clearedEvents = mocks.events.filter((event) => event.time < clearBefore);
+        const lastCleared = clearedEvents.at(-1);
+        expect(lastCleared).toBeDefined();
         expect(clearsIn(2)).toEqual([
-            { kind: 'clear-midi', target: TARGET, fromTime: 0, toTime: position - MIDI_TRAIL_SECONDS },
+            {
+                kind: 'clear-midi',
+                target: TARGET,
+                fromTime: 0,
+                toTime: (Math.round((lastCleared?.time ?? 0) * SAMPLE_RATE) + 1) / SAMPLE_RATE,
+            },
         ]);
         expect(nativeLiveMidiWriter.pass?.lastClearedBeforeSeconds).toBeCloseTo(position - MIDI_TRAIL_SECONDS, 10);
         const cleared = mocks.events.filter((entry) => entry.time < position - MIDI_TRAIL_SECONDS).length;
@@ -319,41 +464,641 @@ describe('the live MIDI writer', () => {
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('live MIDI batch refused'));
     });
 
-    // The engine replays a region from the entries it already holds, so the
-    // region goes out whole and a behind-clear would delete exactly what the
-    // next wrap is going to play.
-    it('sends a looping region whole at arm and pumps nothing inside it', async () => {
-        mocks.events = lane(200);
-        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 12, enabled: true };
+    it.each([0, 0.05, 0.25])('delivers every dense paired event after loop-off at %ss', async (exit) => {
+        mocks.events = pairedLane(1200, 0, 3);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 3, enabled: true };
         nativeLiveGraphSession.loopEnabled = true;
-
+        const sink = persistentMidiSink();
         await arm(0);
-
-        // The whole region, not a lookahead's worth of it: the wrap replays
-        // these entries with no help from this side.
-        expect(scheduledIn(0)).toHaveLength(mocks.events.filter((entry) => entry.time < 12).length);
-        expect(scheduledIn(0).length).toBeGreaterThan(MIDI_WINDOW_SECONDS * 10);
-
-        await pump(6, 0);
-        await pump(1, 1);
-        expect(batches()).toHaveLength(1);
+        sink.render(0, exit);
+        nativeLiveGraphSession.loopEnabled = false;
+        await arm(exit);
+        for (let tick = Math.round(exit * 20); tick < 61; tick += 1) {
+            sink.render(tick / 20, (tick + 1) / 20);
+            await pump((tick + 1) / 20);
+        }
+        expect(sink.delivered).toHaveLength(mocks.events.length);
+        expect(sink.delivered).toEqual(eventIdentities(mocks.events));
+        expect(sink.scheduledLate).toEqual([]);
+        expect(sink.refusals()).toBe(0);
+        expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
     });
 
-    // `frames_until_loop_end` wraps a playhead already below the region's end,
-    // so entering a region partway through still plays the region entire from
-    // the first wrap on. A pass that began at the playhead would leave the
-    // region's head empty for every wrap after that.
-    it('takes a looping pass from the region start when the playhead entered it partway through', async () => {
+    it('streams a dense linear part before frames through seek and edit rearm', async () => {
+        mocks.events = pairedLane(1200, 0, 3);
+        const sink = persistentMidiSink();
+        await arm(0);
+        for (let tick = 0; tick < 61; tick += 1) {
+            const position = tick / 20;
+            if (tick === 3) {
+                requestNativeLiveMidiWriterRearm();
+                await poll(position);
+            }
+            sink.render(position, (tick + 1) / 20);
+            await pump((tick + 1) / 20);
+        }
+        expect(sink.delivered.splice(0)).toEqual(eventIdentities(mocks.events));
+        // A locate starts a new pass; it may revisit old frames but may not
+        // replay any onset before its destination or miss a future pair.
+        sink.render(0.1, 0.1);
+        await repositionNativeLiveGraphSession({ positionSeconds: 0.1 });
+        await flush();
+        for (let tick = 2; tick < 61; tick += 1) {
+            sink.render(tick / 20, (tick + 1) / 20);
+            await pump((tick + 1) / 20);
+        }
+        expect(sink.delivered).toEqual(eventIdentities(mocks.events.filter((event) => event.time >= 0.1)));
+        expect(sink.scheduledLate).toEqual([]);
+        expect(sink.refusals()).toBe(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('keeps long real releases through dense loop-off and rearm without replaying their old ons', async () => {
         mocks.events = [
-            { time: 2, note: 60 },
-            { time: 9, note: 62 },
+            ...pairedLane(1200, 0, 3),
+            { time: 0.01, note: 36, isNoteOn: true },
+            { time: 8, note: 36, isNoteOn: false, noteOnTime: 0.01 },
+            { time: 8, note: 36, isNoteOn: true },
+            { time: 8.5, note: 36, isNoteOn: false, noteOnTime: 8 },
+        ].sort((left, right) => left.time - right.time || Number(left.isNoteOn) - Number(right.isNoteOn));
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 12, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 0.25);
+        expect(sink.sounding(36)).toBe(true);
+        nativeLiveGraphSession.loopEnabled = false;
+        await arm(0.25);
+        expect(sink.sounding(36)).toBe(true);
+        expect(
+            scheduledIn(batches().length - 1)
+                .filter((event) => event.note === 36)
+                .map((event) => [event.time, event.isNoteOn])
+        ).toEqual([[8, false]]);
+        for (let tick = 5; tick < 175; tick += 1) {
+            const position = tick / 20;
+            if (position === 2) {
+                requestNativeLiveMidiWriterRearm();
+                await poll(position);
+            }
+            await pump(position);
+            sink.render(position, (tick + 1) / 20);
+            if (position < 8.45) {
+                expect(sink.sounding(36)).toBe(true);
+            }
+        }
+        expect(sink.delivered).toEqual(eventIdentities(mocks.events));
+        expect(sink.releases.filter((note) => note === 36)).toEqual([36, 36]);
+        expect(sink.sounding(36)).toBe(false);
+        expect(sink.scheduledLate).toEqual([]);
+        expect(sink.refusals()).toBe(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('models a callback store refusal after its clear despite an applied host response', async () => {
+        mocks.events = [
+            { time: 0.1, note: 60, isNoteOn: true },
+            { time: 3, note: 60, isNoteOn: false },
+        ];
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 1);
+        expect(sink.sounding(60)).toBe(true);
+        const overflow = lane(MIDI_NOTE_STORE_CAPACITY + 1, 2).map((event): AudioGraphMidiNoteEvent => ({
+            ...event,
+            velocity: 100,
+            channel: 0,
+            isNoteOn: true,
+        }));
+        const response = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                { kind: 'clear-midi', target: TARGET, fromTime: 0, toTime: null },
+                { kind: 'schedule-midi', target: TARGET, probabilitySeed: 7, notes: overflow },
+            ],
+        });
+        expect(response.application).toBe('applied');
+        expect(sink.refusals()).toBe(1);
+        expect(sink.held()).toBe(0);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases).toEqual([60]);
+    });
+
+    it.each([3, 12])(
+        'delivers all 1200 paired notes for three passes of a %s-second loop within store capacity',
+        async (duration) => {
+            mocks.events = pairedLane(1200, 0, duration);
+            nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: duration, enabled: true };
+            nativeLiveGraphSession.loopEnabled = true;
+            const sink = persistentMidiSink();
+
+            await arm(0);
+            expect(sink.held()).toBeLessThan(MIDI_NOTE_STORE_CAPACITY);
+            for (let wrap = 0; wrap < 3; wrap += 1) {
+                for (let tick = 0; tick < 60; tick += 1) {
+                    const from = (duration * tick) / 60;
+                    // Delay one poll by ten ordinary ticks, still inside the
+                    // adaptive horizon. Rendering continues through that gap.
+                    if (duration === 3 && tick === 10) {
+                        tick += 9;
+                    }
+                    const to = (duration * (tick + 1)) / 60;
+                    sink.render(from, to);
+                    await pump(to === duration ? 0 : to, to === duration ? wrap + 1 : wrap);
+                }
+                expect(sink.delivered.splice(0)).toEqual(eventIdentities(mocks.events));
+            }
+            expect(sink.maximumRequested()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+            expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+            expect(sink.refusals()).toBe(0);
+            expect(mocks.warn).not.toHaveBeenCalled();
+        }
+    );
+
+    it('retains a prefetched head while clearing the tail and refilling across a nonzero loop seam', async () => {
+        mocks.events = pairedLane(1200, 2, 3);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 5, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink(4);
+        await arm(4);
+        for (let wrap = 0; wrap < 3; wrap += 1) {
+            const start = wrap === 0 ? 4 : 2;
+            for (let position = start; position < 5; position += 0.125) {
+                sink.render(position, position + 0.125);
+                await pump(position + 0.125 === 5 ? 2 : position + 0.125, position + 0.125 === 5 ? wrap + 1 : wrap);
+            }
+            expect(sink.delivered.splice(0)).toEqual(
+                eventIdentities(mocks.events.filter((event) => event.time >= start))
+            );
+        }
+        expect(sink.refusals()).toBe(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('delivers the tail before the prefetched head when rendering crosses the seam before the next pump', async () => {
+        mocks.events = pairedLane(1200, 2, 3);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 5, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink(4);
+        await arm(4);
+        const prefetchedHead = [...sink.scheduledLate];
+
+        sink.render(4, 5);
+        // The renderer can enter the next pass before its position is echoed.
+        // No post-wrap producer call may supply these head events in time.
+        sink.render(2, 2.125);
+        expect(sink.delivered).toEqual(
+            eventIdentities([
+                ...mocks.events.filter((event) => event.time >= 4),
+                ...mocks.events.filter((event) => event.time < 2.125),
+            ])
+        );
+        await pump(2.125, 1);
+        expect(sink.scheduledLate).toEqual(prefetchedHead);
+        expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(sink.refusals()).toBe(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('replays a short region without duplicating persistent entries on repeated or skipped-wrap readings', async () => {
+        mocks.events = pairedLane(20, 2, 1);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        await pump(2.25, 7);
+        const held = sink.held();
+        await pump(2.25, 7);
+        await pump(2.5, 9);
+        expect(sink.held()).toBe(held);
+        sink.render(2, 3);
+        expect(sink.delivered).toEqual(eventIdentities(mocks.events));
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('reserves a real off beyond the seam for deletion before the native wrap releases the key', async () => {
+        mocks.events = [
+            { time: 2.75, note: 60 },
+            { time: 3.25, note: 60, isNoteOn: false, noteOnTime: 2.75 },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink(2.5);
+        await arm(2.5);
+        sink.render(2.5, 2.9);
+        expect(sink.sounding(60)).toBe(true);
+        mocks.events = [];
+        requestNativeLiveMidiWriterRearm();
+        await poll(2.9);
+        expect(sink.sounding(60)).toBe(false);
+        sink.render(2.9, 3);
+        expect(sink.releases).toEqual([60]);
+    });
+
+    it('releases exactly once at each seam while reserving a real off beyond it', async () => {
+        mocks.events = [
+            { time: 2.75, note: 60 },
+            { time: 3.25, note: 60, isNoteOn: false, noteOnTime: 2.75 },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink(2);
+        await arm(2);
+        for (let wrap = 0; wrap < 3; wrap += 1) {
+            sink.render(2, 2.9);
+            expect(sink.sounding(60)).toBe(true);
+            sink.render(2.9, 3);
+            expect(sink.sounding(60)).toBe(false);
+            expect(sink.releases).toHaveLength(wrap + 1);
+            await pump(2, wrap + 1);
+        }
+        expect(sink.maximumHeld()).toBe(2);
+        expect(sink.refusals()).toBe(0);
+    });
+
+    it('keeps loop residency and the trail floor unchanged after a refused batch or a superseded answer', async () => {
+        mocks.events = pairedLane(1200, 2, 3);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 5, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        await arm(2);
+        await pump(3.5, 0);
+        const pass = nativeLiveMidiWriter.pass;
+        expect(pass).not.toBeNull();
+        const held = pass?.targets[0]?.heldEventIndices;
+        const floor = pass?.lastClearedBeforeSeconds;
+        const wraps = pass?.lastLoopWraps;
+        mocks.apply.mockResolvedValueOnce(REFUSED);
+        await pump(2, 1);
+        expect(pass?.targets[0]?.heldEventIndices).toBe(held);
+        expect(pass?.lastClearedBeforeSeconds).toBe(floor);
+        expect(pass?.lastLoopWraps).toBe(wraps);
+
+        let settle: ((value: AudioGraphApplyResult) => void) | undefined;
+        mocks.apply.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    settle = resolve;
+                })
+        );
+        const stale = pump(2, 1);
+        expect(settle).toBeDefined();
+        await arm(4);
+        const successor = nativeLiveMidiWriter.pass;
+        const successorHeld = successor?.targets[0]?.heldEventIndices;
+        settle?.(APPLIED);
+        await stale;
+        expect(pass?.targets[0]?.heldEventIndices).toBe(held);
+        expect(pass?.lastClearedBeforeSeconds).toBe(floor);
+        expect(successor?.targets[0]?.heldEventIndices).toBe(successorHeld);
+        expect(successor?.lastLoopWraps).toBeNull();
+    });
+
+    it('resets the trail floor when a wrap counter advances even when the sampled position advances too', async () => {
+        mocks.events = pairedLane(1200, 2, 3);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 2, endSeconds: 5, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        await arm(2);
+        await pump(3.5, 0);
+        expect(nativeLiveMidiWriter.pass?.lastClearedBeforeSeconds).toBeGreaterThan(2);
+        await pump(3.75, 2);
+        expect(nativeLiveMidiWriter.pass?.lastLoopWraps).toBe(2);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        await pump(2, 3);
+        expect(nativeLiveMidiWriter.pass?.lastClearedBeforeSeconds).toBe(2);
+    });
+
+    it('bounds stable-window source and index visits by store capacity instead of the immutable loop length', async () => {
+        const pairs = 100_000;
+        const duration = pairs / 27.8;
+        mocks.events = pairedLane(pairs, 0, duration);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: duration, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const position = duration / 2;
+        await arm(position);
+        await pump(position, 0);
+        const slot = nativeLiveMidiWriter.pass?.targets[0];
+        if (!slot) {
+            throw new Error('the real arm must produce a target before measuring its prepared window');
+        }
+        let visits = 0;
+        // Count actual indexed reads of the score, resident entries and any
+        // prepared frame index. Preparation has already completed through arm.
+        for (const [key, value] of Object.entries(slot)) {
+            if (Array.isArray(value)) {
+                Reflect.set(
+                    slot,
+                    key,
+                    new Proxy(value, {
+                        get(target, property, receiver) {
+                            if (typeof property === 'string' && /^\d+$/.test(property)) {
+                                visits += 1;
+                            }
+                            return Reflect.get(target, property, receiver);
+                        },
+                    })
+                );
+            }
+        }
+        const preparedIndex = slot.loopFrameGroups;
+        await pump(position + 1 / 60, 0);
+        expect(slot.loopFrameGroups).toBe(preparedIndex);
+        console.info(`Loop MIDI stable-window visits: ${visits} for ${slot.events.length} source entries`);
+        // At most two capacity-bounded source passes, three ahead/trail index
+        // passes and resident bookkeeping, plus logarithmic position lookups.
+        const bound = 8 * MIDI_NOTE_STORE_CAPACITY + 4 * Math.ceil(Math.log2(slot.events.length + 1));
+        expect(visits).toBeLessThanOrEqual(bound);
+        expect(slot.held).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it.each(['delete', 'reattack'] as const)(
+        'releases a sounding long note on %s when its old distant off was never resident',
+        async (edit) => {
+            mocks.events = [
+                { time: 1, note: 60, isNoteOn: true },
+                { time: 3, note: 64, isNoteOn: true },
+                { time: 3.5, note: 64, isNoteOn: false },
+                { time: 15, note: 60, isNoteOn: false },
+            ];
+            nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+            nativeLiveGraphSession.loopEnabled = true;
+            const sink = persistentMidiSink();
+            await arm(0);
+            sink.render(0, 2);
+            expect(sink.sounding(60)).toBe(true);
+            mocks.events = mocks.events.filter((event) => event.note !== 60);
+            if (edit === 'reattack') {
+                mocks.events.push({ time: 4, note: 60, isNoteOn: true }, { time: 4.5, note: 60, isNoteOn: false });
+            }
+            requestNativeLiveMidiWriterRearm();
+            await poll(2);
+            expect(sink.sounding(60)).toBe(false);
+            expect(sink.releases.filter((note) => note === 60)).toEqual([60]);
+            sink.render(2, 4.25);
+            expect(sink.sounding(60)).toBe(edit === 'reattack');
+            sink.render(4.25, 5);
+            expect(sink.sounding(60)).toBe(false);
+        }
+    );
+
+    it.each([15, 18])('preserves a still-live long note through a rewrite ending at %ss', async (end) => {
+        mocks.events = [
+            { time: 1, note: 60, isNoteOn: true },
+            { time: 3, note: 64, isNoteOn: true },
+            { time: 3.5, note: 64, isNoteOn: false },
+            { time: 15, note: 60, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 2);
+        mocks.events = mocks.events.map((event) => {
+            if (event.note === 60) {
+                return { ...event, time: event.isNoteOn ? 0.5 : end };
+            }
+            return event;
+        });
+        requestNativeLiveMidiWriterRearm();
+        await poll(2);
+        expect(sink.sounding(60)).toBe(true);
+        expect(sink.releases).not.toContain(60);
+        for (let position = 2; position < end; position += 0.25) {
+            if (position === 8) {
+                // The old on is now outside the spent trail. An unrelated
+                // rewrite must still find its real off and preserve the key.
+                requestNativeLiveMidiWriterRearm();
+                await poll(position);
+                expect(sink.releases).not.toContain(60);
+            }
+            await pump(position, 0);
+            sink.render(position, Math.min(position + 0.25, end));
+            expect(sink.sounding(60)).toBe(true);
+        }
+        sink.render(end, end + 0.25);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases.filter((note) => note === 60)).toEqual([60]);
+    });
+
+    it('keeps a reserved off before a later same-frame reattack without preloading that attack', async () => {
+        mocks.events = [
+            { time: 0.1, note: 60, isNoteOn: true },
+            { time: 8, note: 60, isNoteOn: false },
+            { time: 8, note: 60, isNoteOn: true },
+            { time: 8.5, note: 60, isNoteOn: false },
         ];
         nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 12, enabled: true };
         nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        expect(scheduledIn(0).map((event) => [event.time, event.isNoteOn])).toEqual([
+            [0.1, true],
+            [8, false],
+        ]);
+        for (let position = 0; position < 8.5; position += 0.25) {
+            await pump(position, 0);
+            sink.render(position, position + 0.25);
+            if (position >= 0.25) {
+                expect(sink.sounding(60)).toBe(true);
+            }
+        }
+        sink.render(8.5, 8.75);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.delivered).toEqual(eventIdentities(mocks.events));
+        expect(sink.releases).toEqual([60, 60]);
+        expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(sink.refusals()).toBe(0);
+    });
 
-        await arm(6);
+    it('delivers contiguous same-frame off/on pairs across wraps within capacity', async () => {
+        mocks.events = Array.from({ length: 1200 }, (_unused, index) => [
+            { time: 1 + index / 100, note: 60, isNoteOn: true },
+            { time: 1 + (index + 1) / 100, note: 60, isNoteOn: false },
+        ])
+            .flat()
+            .sort((left, right) => left.time - right.time || Number(left.isNoteOn) - Number(right.isNoteOn));
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 14, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        for (let wrap = 0; wrap < 3; wrap += 1) {
+            for (let position = 0; position < 14; position += 0.25) {
+                sink.render(position, position + 0.25);
+                await pump(position + 0.25 === 14 ? 0 : position + 0.25, position + 0.25 === 14 ? wrap + 1 : wrap);
+            }
+            expect(sink.delivered.splice(0)).toEqual(eventIdentities(mocks.events));
+            expect(sink.sounding(60)).toBe(false);
+        }
+        expect(sink.maximumHeld()).toBeLessThanOrEqual(MIDI_NOTE_STORE_CAPACITY);
+        expect(sink.refusals()).toBe(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
 
-        expect(scheduledIn(0).map((event) => event.time)).toEqual([2, 9]);
+    it('preserves a reserved off when wrap cleanup clears its frame neighbour', async () => {
+        mocks.events = [
+            { time: 0.1, note: 60, isNoteOn: true },
+            { time: 8, note: 60, isNoteOn: false },
+            { time: 8, note: 70, isNoteOn: true },
+            { time: 8.5, note: 70, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 12, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 4.25);
+        await pump(4.25, 0);
+        sink.render(4.25, 12);
+        await pump(0, 1);
+        sink.render(0, 0.5);
+        expect(sink.sounding(60)).toBe(true);
+        mocks.events = mocks.events.filter((event) => event.note !== 60);
+        requestNativeLiveMidiWriterRearm();
+        await poll(0.5);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases.filter((note) => note === 60)).toEqual([60, 60]);
+        expect(sink.refusals()).toBe(0);
+    });
+
+    it.each(['refused', 'thrown'])(
+        'retries a %s opening through the ordinary pump to release a deleted key',
+        async (failure) => {
+            mocks.events = [
+                { time: 1, note: 60, isNoteOn: true },
+                { time: 1.5, note: 62, isNoteOn: true },
+                { time: 2.125, note: 62, isNoteOn: false },
+                { time: 3, note: 64, isNoteOn: true },
+                { time: 3.5, note: 64, isNoteOn: false },
+                { time: 15, note: 60, isNoteOn: false },
+            ];
+            nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+            nativeLiveGraphSession.loopEnabled = true;
+            const sink = persistentMidiSink();
+            await arm(0);
+            sink.render(0, 2);
+            mocks.events = mocks.events.filter((event) => event.note !== 60);
+            if (failure === 'refused') {
+                mocks.apply.mockResolvedValueOnce(REFUSED);
+            } else {
+                mocks.apply.mockRejectedValueOnce(new Error('opening bridge fault'));
+            }
+            await arm(2);
+            expect(sink.sounding(60)).toBe(true);
+            expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(0);
+            expect(nativeLiveMidiWriter.pass?.targets[0]?.heldEventIndices).toEqual([]);
+            sink.render(2, 2.25);
+            await pump(2.25);
+            expect(sink.sounding(60)).toBe(false);
+            expect(sink.releases).toEqual([62, 60]);
+            sink.render(2.25, 4);
+            expect(sink.delivered).toEqual(eventIdentities([{ time: 1, note: 60, isNoteOn: true }, ...mocks.events]));
+            expect(sink.scheduledLate).toEqual([]);
+        }
+    );
+
+    it('releases a long key when its target is abandoned before its distant off', async () => {
+        mocks.events = [
+            { time: 1, note: 60, isNoteOn: true },
+            { time: 15, note: 60, isNoteOn: false },
+        ];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 20, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        const sink = persistentMidiSink();
+        await arm(0);
+        sink.render(0, 2);
+        mocks.targets = [];
+        nativeLiveGraphSession.nativeChainByStripId = new Map([['midi-1', ['d1']]]);
+        await arm(2);
+        expect(sink.sounding(60)).toBe(false);
+        expect(sink.releases).toEqual([60]);
+        expect(nativeLiveMidiWriter.owedClears.size).toBe(0);
+    });
+
+    it('replaces the prepared loop index when a note edit rearms the pass', async () => {
+        mocks.events = pairedLane(20, 0, 3);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        await arm(0);
+        const original = nativeLiveMidiWriter.pass?.targets[0]?.loopFrameGroups;
+        expect(original).toHaveLength(40);
+        mocks.events = pairedLane(32, 0, 3);
+        requestNativeLiveMidiWriterRearm();
+        await poll(0.25);
+        const replacement = nativeLiveMidiWriter.pass?.targets[0]?.loopFrameGroups;
+        expect(replacement).not.toBe(original);
+        expect(replacement).toHaveLength(64);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.events).toHaveLength(64);
+    });
+
+    it('keeps whole equal-frame groups at the adaptive cutoff', async () => {
+        mocks.events = [...lane(1000, 0, 0.0005), ...lane(600, 0.75, 0)];
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        await arm(0);
+        expect(scheduledIn(0).filter((event) => event.time === 0.75)).toHaveLength(600);
+        expect(scheduledIn(0)).toHaveLength(1600);
+        await pump(0.5);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('reports an unrepresentable same-frame group instead of silently keeping only a prefix', async () => {
+        mocks.events = lane(MIDI_NOTE_STORE_CAPACITY + 1, 0.5, 0);
+        nativeLiveGraphSession.loopRegion = { startSeconds: 0, endSeconds: 3, enabled: true };
+        nativeLiveGraphSession.loopEnabled = true;
+        await arm(0);
+        expect(scheduledIn(0)).toEqual([]);
+        expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('same frame'));
+    });
+
+    it('reports intrinsically oversized paired frame groups once per target without scheduling a prefix', async () => {
+        mocks.events = simultaneousPairedLane(1025, 0.5, 1.5);
+        mocks.targets = [TARGET, { trackId: 'midi-2', deviceId: 'd2' }];
+        await arm(0);
+        expect(scheduledIn(0)).toEqual([]);
+        expect(mocks.warn).toHaveBeenCalledTimes(2);
+        for (const [warning] of mocks.warn.mock.calls) {
+            expect(warning).toContain('2050 MIDI entries including reserved releases');
+        }
+        await pump(0);
+        await pump(0);
+        expect(batches().flatMap((_batch, index) => scheduledIn(index))).toEqual([]);
+        expect(mocks.warn).toHaveBeenCalledTimes(2);
+    });
+
+    it('admits the exact store boundary of simultaneous attacks and their real releases', async () => {
+        mocks.events = simultaneousPairedLane(1024, 0.5, 1.5);
+        await arm(0);
+        expect(scheduledIn(0)).toHaveLength(MIDI_NOTE_STORE_CAPACITY);
+        expect(scheduledIn(0).filter((event) => event.isNoteOn)).toHaveLength(1024);
+        expect(scheduledIn(0).filter((event) => !event.isNoteOn)).toHaveLength(1024);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(MIDI_NOTE_STORE_CAPACITY);
+        await pump(0);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('defers an independently representable paired group without warning until earlier residents can clear', async () => {
+        mocks.events = [
+            { time: 0.1, note: 127, channel: 15, isNoteOn: true },
+            { time: 0.2, note: 127, channel: 15, isNoteOn: false },
+            ...simultaneousPairedLane(1024, 0.5, 1.5),
+        ];
+        await arm(0);
+        expect(scheduledIn(0)).toHaveLength(2);
+        expect(mocks.warn).not.toHaveBeenCalled();
+        await pump(0.3);
+        expect(scheduledIn(1)).toHaveLength(MIDI_NOTE_STORE_CAPACITY);
+        expect(nativeLiveMidiWriter.pass?.targets[0]?.held).toBe(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
+    });
+
+    it('defers a representable paired group outside the horizon without a saturation warning', async () => {
+        mocks.events = simultaneousPairedLane(1024, 5, 6);
+        await arm(0);
+        expect(scheduledIn(0)).toEqual([]);
+        expect(mocks.warn).not.toHaveBeenCalled();
+        await pump(2);
+        expect(scheduledIn(1)).toHaveLength(MIDI_NOTE_STORE_CAPACITY);
+        expect(mocks.warn).not.toHaveBeenCalled();
     });
 
     // A locate moves the playhead out of the window this pass filled, and the

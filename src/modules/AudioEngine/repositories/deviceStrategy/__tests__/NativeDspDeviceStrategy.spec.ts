@@ -312,6 +312,50 @@ describe('createNativeDspStrategy factory dispatch', () => {
         expect(setParam).toHaveBeenCalledWith('mix', 0.7);
     });
 
+    it('does not replay saved Proof A/B but keeps runtime A/B control available', async () => {
+        const setParam = vi.fn();
+        const seededProof = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        vi.mocked(creators.createProofNode).mockResolvedValueOnce(seededProof);
+
+        const strategy = await createNativeDspStrategy(ctx, {
+            id: 'd-proof',
+            name: 'Proof',
+            type: 'proof',
+            bypassed: false,
+            parameterValues: { ab_bypass: 1, lim_ceiling: -6, input_gain: 3 },
+        });
+
+        expect(setParam).toHaveBeenCalledWith('lim_ceiling', -6);
+        expect(setParam).toHaveBeenCalledWith('input_gain', 3);
+        expect(setParam).not.toHaveBeenCalledWith('ab_bypass', 1);
+        expect(setParam.mock.calls).toEqual([
+            ['lim_ceiling', -6],
+            ['input_gain', 3],
+        ]);
+
+        strategy.setParam('ab_bypass', 1);
+        expect(setParam).toHaveBeenLastCalledWith('ab_bypass', 1);
+    });
+
+    it('preserves other devices saved parameter records including an A/B-named entry', async () => {
+        const setParam = vi.fn();
+        creators.createFermenterNode.mockResolvedValueOnce(make_dsp_node({ setParam }));
+
+        await createNativeDspStrategy(ctx, {
+            id: 'd-fermenter',
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: { ab_bypass: 1, gain: 0.3, activeLayer: 2 },
+        });
+
+        expect(setParam.mock.calls).toEqual([
+            ['activeLayer', 2],
+            ['ab_bypass', 1],
+            ['gain', 0.3],
+        ]);
+    });
+
     it('seeds a grinder record neuralEnabled before engineMode whatever order the record was drawn in', async () => {
         // Both names write NeuralCapture's single engine_mode; replaying the
         // record in draw order let the boolean simplification overwrite the

@@ -32,6 +32,16 @@ const descriptor: LaneStack = {
     forkHead: fork,
     parentHead: fork,
 };
+
+function configWithForkMarkers(branch: string, ...markers: string[]): (args: string[]) => string {
+    return () =>
+        [
+            `core.repositoryformatversion\n0`,
+            ...markers.map((marker) => `branch.${branch}.sourdaw-stack-fork\n${marker}`),
+        ]
+            .join('\0')
+            .concat('\0');
+}
 const parent: StackParent = {
     number: 12,
     branch: 'agent/parent',
@@ -118,14 +128,20 @@ describe('stack lineage admission', () => {
     it('preserves pinned identity, detects descriptor loss, and refuses reused branch lineage', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-stack-'));
         roots.push(root);
-        expect(readRegisteredLaneStack(root, descriptor.childBranch, '')).toBeUndefined();
-        expect(() => readRegisteredLaneStack(root, descriptor.childBranch, fork)).toThrow(/missing/);
+        expect(
+            readRegisteredLaneStack(root, descriptor.childBranch, configWithForkMarkers(descriptor.childBranch))
+        ).toBeUndefined();
+        expect(() =>
+            readRegisteredLaneStack(root, descriptor.childBranch, configWithForkMarkers(descriptor.childBranch, fork))
+        ).toThrow(/missing/);
         writeLaneStack(root, descriptor);
         writeLaneStack(root, { ...descriptor, parentPullRequest: 12 });
         expect(readLaneStack(root, descriptor.childBranch)?.parentPullRequest).toBe(12);
         expect(() => writeLaneStack(root, { ...descriptor, parentPullRequest: 13 })).toThrow(/replace/);
         expect(() => writeLaneStack(root, { ...descriptor, forkHead: child })).toThrow(/replace/);
-        expect(() => readRegisteredLaneStack(root, descriptor.childBranch, child)).toThrow(/marker/);
+        expect(() =>
+            readRegisteredLaneStack(root, descriptor.childBranch, configWithForkMarkers(descriptor.childBranch, child))
+        ).toThrow(/marker/);
     });
 
     it('requires exact author parent and refuses branch reuse or ambiguity', () => {

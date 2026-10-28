@@ -148,7 +148,9 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/deliveryRemoteInspection.ts',
     'scripts/evidenceSafety.ts',
     'scripts/findingLineage.ts',
+    'scripts/gitAncestry.ts',
     'scripts/githubAppIdentity.ts',
+    'scripts/laneStackForkMarkers.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
     'scripts/publishLane.ts',
@@ -156,6 +158,8 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/pullRequestMutationLock.ts',
     'scripts/pullRequestReviewState.ts',
     'scripts/reconcileTrackerIssue.ts',
+    'scripts/retirePullRequest.ts',
+    'scripts/retirementRecord.ts',
     'scripts/reconstructReviewRounds.ts',
     'scripts/recoverDeliveryLock.ts',
     'scripts/recoverPublishReviewLock.ts',
@@ -435,13 +439,6 @@ export function reviewStanceFloor(plan: Pick<ReviewRiskPlan, 'riskClasses'>): nu
     const fixed = plan.riskClasses.length === 1 && only !== undefined ? FIXED_STANCE_FLOORS[only] : undefined;
     return fixed ?? Math.min(DEFAULT_STANCE_FLOOR, earnedStances(plan.riskClasses).length);
 }
-
-/** Specialist classes whose review must include at least one strongest-tier draw. */
-export const STRONGEST_DRAW_CLASSES: ReadonlySet<ReviewRiskClass> = new Set([
-    'native-security',
-    'realtime-audio',
-    'undo',
-]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

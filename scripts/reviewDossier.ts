@@ -14,7 +14,12 @@
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { assertPublicationBindings, collectPublicationBindings } from './reviewDossierBindings.ts';
+import {
+    assertFindingSourceBindings,
+    assertPublicationBindings,
+    collectPublicationBindings,
+    readFindingSourceBindings,
+} from './reviewDossierBindings.ts';
 import {
     GENESIS_DIGEST,
     REVIEW_DOSSIER_FORMAT,
@@ -74,9 +79,21 @@ export type CompletedReviewStance = {
     exhaustion?: string;
 };
 
+/** Identity of one completed draw; independent duplicate detections may name several sources. */
+export type ReviewFindingSource = { stance: ReviewDossierStance; reviewerModel: string };
+
+export type AcceptedReviewFinding = {
+    findingId: string;
+    path: string;
+    line: number;
+    side: 'LEFT' | 'RIGHT';
+    /** Absent on historical records: attribution is unknown, never inferred from draw order. */
+    sources?: ReviewFindingSource[];
+};
+
 export type ReviewDossierEvent =
     | ({ kind: 'stance-completed' } & CompletedReviewStance)
-    | { kind: 'finding-accepted'; findingId: string; path: string; line: number; side: 'LEFT' | 'RIGHT' }
+    | ({ kind: 'finding-accepted' } & AcceptedReviewFinding)
     | { kind: 'finding-discarded'; findingId: string; stance: ReviewDossierStance; reason: string }
     // The post-publish bindings (#3375, spec #3367 AC-004): once the review POST lands, its public
     // ids append to the chain so the record binds not just the dispositions but the exact public
@@ -257,6 +274,11 @@ function readPublicationSafeString(label: string, value: unknown): string {
     return text;
 }
 
+/** Shared by review.json and dossier readers so every persisted source has the same safe shape. */
+export function readReviewFindingSources(value: unknown, label: string): ReviewFindingSource[] {
+    return readFindingSourceBindings(value, label, readPublicationSafeString);
+}
+
 function readPositiveInteger(label: string, value: unknown): number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         fail(`review dossier ${label} must be a positive safe integer, found ${describeValue(value)}`);
@@ -350,13 +372,17 @@ function readEvent(
         return completed;
     }
     if (kind === 'finding-accepted') {
-        return {
+        const finding: ReviewDossierEvent = {
             kind,
             findingId: readPublicationSafeString(`${label} findingId`, record.findingId),
             path: readPublicationSafeString(`${label} path`, record.path),
             line: readPositiveInteger(`${label} line`, record.line),
             side: readLiteral(`${label} side`, record.side, isSide, 'LEFT or RIGHT'),
         };
+        if ('sources' in record) {
+            finding.sources = readReviewFindingSources(record.sources, `${label} sources`);
+        }
+        return finding;
     }
     if (kind === 'review-published') {
         return { kind, reviewId: readPositiveInteger(`${label} reviewId`, record.reviewId) };
@@ -409,6 +435,9 @@ function readEventRecord(value: unknown, label: string, withChain: boolean): Rea
     let kindKeys: readonly string[] = EVENT_KIND_KEYS[kind];
     if (kind === 'stance-completed' && 'exhaustion' in value) {
         kindKeys = [...kindKeys, 'exhaustion'];
+    }
+    if (kind === 'finding-accepted' && 'sources' in value) {
+        kindKeys = [...kindKeys, 'sources'];
     }
     assertExactKeys(value, withChain ? [...kindKeys, 'sequence', 'previousDigest', 'digest'] : kindKeys, label);
     return {
@@ -486,6 +515,9 @@ function assertTotalMaps(payload: DossierPayload): void {
         }
         if (event.kind === 'finding-discarded' && !payload.requiredStances.includes(event.stance)) {
             fail(`review dossier discards a finding under a stance its required stances do not carry: ${event.stance}`);
+        }
+        if (event.kind === 'finding-accepted') {
+            assertFindingSourceBindings(event, payload.events);
         }
         const own = event.kind === 'finding-accepted' ? accepted : discarded;
         const other = event.kind === 'finding-accepted' ? discarded : accepted;
