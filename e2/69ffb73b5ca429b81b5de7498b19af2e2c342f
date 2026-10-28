@@ -1,0 +1,18 @@
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessRuntimeGraph.integration.spec.ts
+  h_beb54bf43b47b7 3-6,61-68,75-80,82,121-134,141-144,223-228,243-253,265-269,272-277,299-300,318-322,329-330,345-348,351-354,364-366,370-375,379-380,392-398,412-415,418-423
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  h_beb54bf43b47b7 5-10
+src/modules/AudioEngine/services/__tests__/matchesRuntimeDeviceChainTopology.spec.ts
+  h_beb54bf43b47b7 5-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e269ffb73b5ca429b81b5de7498b19af2e2c342f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
