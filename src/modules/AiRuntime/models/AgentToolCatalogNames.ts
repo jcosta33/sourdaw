@@ -19,6 +19,7 @@ export const RENDER_REQUEST_TOOL_NAME = 'render.request';
 export const ANALYSIS_REQUEST_TOOL_NAME = 'analysis.request';
 export const ANALYSIS_MEASURE_TOOL_NAME = 'analysis.measure';
 export const ANALYSIS_COMPARE_REFERENCE_TOOL_NAME = 'analysis.compareReference';
+export const ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME = 'analysis.detectTransients';
 export const RECIPE_DISCOVERY_TOOL_NAME = 'recipe.discover';
 export const RECIPE_EXPANSION_TOOL_NAME = 'recipe.expand';
 export const TRANSFORM_COMPILE_TOOL_NAME = 'transform.compile';

@@ -1,6 +1,7 @@
 import { type MidiCC } from '../../models/MidiNote';
 import {
     carriedBendReturnBeat,
+    carriedBendReturnIdKey,
     reconcileCarriedBendRanges,
     reconcileRegisteredParameterMessages,
     type CarriedBendRecording,
@@ -86,6 +87,6 @@ export function declareGluedRegisteredParameters({
     return [
         ...placeMessages(opening, glueBeat, (index) => createId(`rpn-${index}`)),
         ...placeMessages(carried.onHead, glueBeat, (index) => createId(`rpn-carried-${index}`)),
-        ...placeMessages(carried.afterHead, returnBeat, (index) => createId(`rpn-after-carried-${index}`)),
+        ...placeMessages(carried.afterHead, returnBeat, (index) => createId(carriedBendReturnIdKey(index))),
     ];
 }

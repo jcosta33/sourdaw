@@ -15,7 +15,7 @@ import type {
     AgentWorkOwner,
     AssetHandleMode,
 } from '../repositories/agentAssetSaga/agentAssetSagaWire';
-import type { OpenFileOptions } from '../repositories/nativeFileDialog/helpers';
+import type { OpenFileOptions, OpenFileSelection } from '../repositories/nativeFileDialog/helpers';
 
 type AgentAssetHandleGrant = { handleId: string; receipt: AgentAssetSagaReceipt };
 
@@ -27,6 +27,7 @@ type AgentAssetBoundaryRefusal = {
 type AgentAssetPickResult =
     | { status: 'granted'; handles: AgentAssetHandleGrant[]; failures: AgentAssetSagaReceipt[] }
     | { status: 'refused'; reason: 'registration-failed'; failures: AgentAssetSagaReceipt[] }
+    | { status: 'refused'; reason: 'native-file-grant-unavailable' }
     | AgentAssetBoundaryRefusal;
 
 type AgentAssetBoundaryResult = { status: 'receipt'; receipt: AgentAssetSagaReceipt } | AgentAssetBoundaryRefusal;
@@ -50,14 +51,14 @@ function isMalformedSagaId(sagaId: string): boolean {
  * Select paths for one `pickAndRegister` call. `'read'` opens the open dialog, which the desktop
  * shell grants `{ mode: 'read' }`; `'read-write'` opens the save dialog instead, because the open
  * channel can never grant write access. A save-dialog destination is wrapped into a one-element
- * array so both routes answer the same shape.
+ * array. A browser fallback carries Files rather than granted native paths.
  */
 async function selectPathsForMode(input: {
     mode: AssetHandleMode;
     multiple?: boolean;
     filters?: OpenFileOptions['filters'];
     suggestedName?: string;
-}): Promise<string[] | null> {
+}): Promise<OpenFileSelection | null> {
     if (input.mode === 'read-write') {
         const destination = await saveViaNative({ filters: input.filters, suggestedName: input.suggestedName });
         return destination === null ? null : [destination];
@@ -89,7 +90,13 @@ async function pickAndRegister(input: {
     }
 
     const selectedPaths = await selectPathsForMode(input);
-    if (!selectedPaths || selectedPaths.length === 0) {
+    if (!selectedPaths) {
+        return { status: 'refused', reason: 'no-selection' };
+    }
+    if (!Array.isArray(selectedPaths)) {
+        return { status: 'refused', reason: 'native-file-grant-unavailable' };
+    }
+    if (selectedPaths.length === 0) {
         return { status: 'refused', reason: 'no-selection' };
     }
 

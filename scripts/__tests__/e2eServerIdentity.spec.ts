@@ -171,15 +171,15 @@ describe('playwright config port derivation', () => {
         const config = await loadPlaywrightConfig();
         const webServer = requiredSingleWebServer(config);
         const command = webServer.command;
-        if (!command?.startsWith('pnpm dev ')) {
-            throw new Error('expected Vite dev server command');
+        if (!command?.startsWith('node scripts/e2eDevServer.ts ')) {
+            throw new Error('expected observed Vite dev server command');
         }
         if (webServer.url === undefined) {
             throw new Error('expected Vite readiness origin');
         }
         const resultOrder = getDefaultResultOrder();
         setDefaultResultOrder('ipv6first');
-        const child = spawn(process.execPath, ['node_modules/vite/bin/vite.js', ...command.slice(9).split(' ')], {
+        const child = spawn(process.execPath, command.slice(5).split(' '), {
             cwd: process.cwd(),
             env: { ...process.env, NODE_OPTIONS: '--dns-result-order=ipv6first' },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -238,7 +238,10 @@ describe('playwright config port derivation', () => {
         const webServer = requiredSingleWebServer(config);
         expect(requiredBaseURL(config)).toBe('http://127.0.0.1:6123');
         expect(webServer.url).toBe('http://127.0.0.1:6123');
-        expect(webServer.command).toBe('pnpm dev --mode e2e --host 127.0.0.1 --port 6123 --strictPort');
+        expect(webServer.command).toBe('node scripts/e2eDevServer.ts 6123');
+        expect(webServer.stdout).toBe('pipe');
+        expect(webServer.stderr).toBe('pipe');
+        expect(webServer.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 5_000 });
     });
 
     it('refuses to load the config when the env value is not a usable port', async () => {
@@ -259,9 +262,7 @@ describe('playwright config port derivation', () => {
         vi.stubEnv('E2E_SPECS', undefined);
         const config = await loadPlaywrightConfig();
         expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
-        expect(webServers(config).map((server) => server.command)).toEqual([
-            'pnpm dev --mode e2e --host 127.0.0.1 --port 5173 --strictPort',
-        ]);
+        expect(webServers(config).map((server) => server.command)).toEqual(['node scripts/e2eDevServer.ts 5173']);
     });
 
     it('keeps the dev server for a local run even when a spec selection is set', async () => {
@@ -269,9 +270,7 @@ describe('playwright config port derivation', () => {
         vi.stubEnv('E2E_SPECS', JSON.stringify(['tests/e2e/smoke.spec.ts']));
         const config = await loadPlaywrightConfig();
         expect(config.projects?.map((project) => project.name)).toEqual(['chromium']);
-        expect(webServers(config).map((server) => server.command)).toEqual([
-            'pnpm dev --mode e2e --host 127.0.0.1 --port 5173 --strictPort',
-        ]);
+        expect(webServers(config).map((server) => server.command)).toEqual(['node scripts/e2eDevServer.ts 5173']);
     });
 
     it('keeps the last port available to a local dev server', async () => {
@@ -281,7 +280,7 @@ describe('playwright config port derivation', () => {
         const webServer = requiredSingleWebServer(config);
         expect(requiredBaseURL(config)).toBe('http://127.0.0.1:65535');
         expect(webServer.url).toBe('http://127.0.0.1:65535');
-        expect(webServer.command).toBe('pnpm dev --mode e2e --host 127.0.0.1 --port 65535 --strictPort');
+        expect(webServer.command).toBe('node scripts/e2eDevServer.ts 65535');
     });
 
     it('serves a build with one worker to a CI shard that needs no dev server', async () => {
@@ -329,9 +328,12 @@ describe('playwright config port derivation', () => {
         expect(servers.map((server) => server.url)).toEqual(['http://127.0.0.1:6123', 'http://127.0.0.1:6124']);
         expect(servers.map((server) => server.command)).toEqual([
             'pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port 6123 --strictPort',
-            'pnpm dev --mode e2e --host 127.0.0.1 --port 6124 --strictPort',
+            'node scripts/e2eDevServer.ts 6124',
         ]);
         expect(servers.map((server) => server.reuseExistingServer)).toEqual([false, false]);
+        expect(servers[1]?.stdout).toBe('pipe');
+        expect(servers[1]?.stderr).toBe('pipe');
+        expect(servers[1]?.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 5_000 });
     });
 
     it('refuses the last port when a CI shard needs a dev companion', async () => {

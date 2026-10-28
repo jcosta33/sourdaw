@@ -1018,6 +1018,30 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter-prod', 'sourdaw', 'exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter-prod=sourdaw', 'exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
         { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 5.5 * 1024 ** 3 },
@@ -1122,6 +1146,17 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             expect(e2eResult.code).toBe(0);
             expect(e2eResult.maxRssBytes).toBe(5.5 * 1024 ** 3);
 
+            const execResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(execResult.code).toBe(0);
+            expect(execResult.maxRssBytes).toBe(4608 * 1024 ** 2);
+
             const otherResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
                 args: ['other'],
@@ -1144,6 +1179,58 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             });
             expect(explicitResult.code).toBe(0);
             expect(explicitResult.maxRssBytes).toBe(5 * 1024 ** 3);
+
+            const explicitExecResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                maxRssBytes: 2048 * 1024 ** 2,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(explicitExecResult.code).toBe(0);
+            expect(explicitExecResult.maxRssBytes).toBe(2048 * 1024 ** 2);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reserves the resolved exec budget during memory admission', async () => {
+        const root = fixtureRoot('exec-budget-reservation');
+        try {
+            writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+            const shimEnv = { ...process.env, PATH: `${root}${delimiter}${process.env.PATH ?? ''}` };
+            let memorySamples = 0;
+            let reservedRssBytes: number | undefined;
+
+            const result = await runGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                admissionRoot: root,
+                storageRoot: join(root, 'storage'),
+                memorySampler: () => {
+                    memorySamples += 1;
+                    if (memorySamples === 2) {
+                        const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+                        const reservation = readdirSync(reservationsRoot).find((name) => name.endsWith('.json'));
+                        if (reservation !== undefined) {
+                            const owner = JSON.parse(readFileSync(join(reservationsRoot, reservation), 'utf8')) as {
+                                reservedRssBytes?: number;
+                            };
+                            reservedRssBytes = owner.reservedRssBytes;
+                        }
+                    }
+                    return abundantMemoryBytes;
+                },
+            });
+
+            expect(result.code).toBe(0);
+            expect(result.maxRssBytes).toBe(4608 * 1024 ** 2);
+            expect(reservedRssBytes).toBe(4608 * 1024 ** 2);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1177,6 +1264,8 @@ describe('pnpmScriptName', () => {
             args: ['--config.foo=bar', '--dir', '/tmp', '--silent', 'run', 'typecheck:test'],
             expected: 'typecheck:test',
         },
+        { command: 'pnpm', args: ['--filter-prod', 'sourdaw', 'exec', 'eslint'], expected: 'exec' },
+        { command: 'pnpm', args: ['--filter-prod=sourdaw', 'exec', 'eslint'], expected: 'exec' },
         { command: 'pnpm', args: ['--silent'], expected: undefined },
         { command: 'pnpm', args: ['--filter', 'sourdaw'], expected: undefined },
         { command: 'pnpm', args: ['--'], expected: undefined },

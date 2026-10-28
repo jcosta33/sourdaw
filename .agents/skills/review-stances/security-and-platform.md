@@ -56,6 +56,37 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-28 — desktop fallback filenames lost the selected File authority (issue #5767)
+
+Commit `4f410257b212` introduced a native-dialog rejection fallback that returned browser
+`File.name` strings; the desktop consumer read those strings as native paths. GitHub reports no
+associated PR. PR #2's `4faaa241a461` retained that earlier fallback while removing a later
+native-read-error retry, and #2181 retained it through Electron cutover. Historical reviewer
+prompts and models are unknown. The missed boundary was selection provenance through the actual
+byte consumer: separate mocked fallback-name and native-path checks stayed self-consistent.
+
+Reject the native opening, drive the real browser input with real Files, and read the returned
+bytes with the platform FileReader. Require original File identity, contents, MIME type,
+lastModified, order and same-basename separation, with zero native path reads. Keep granted-native
+byte reads and cancellation controls, and require native byte-read failures to propagate without
+another picker. A handle-only consumer must refuse browser-only authority before registration,
+without exposing a path, File or raw error. Removing provenance dispatch or that refusal must
+redden the owning case. These renderer-boundary probes establish neither OS-dialog execution nor
+a security exposure.
+
+### 2026-10-27 — immutable identity proof could not cross the remote schema (introduced by PR #5705)
+
+PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) selected `author { id }` from
+GitHub's Actor interface, which does not expose `id`. Live GitHub rejected the query before
+historical admission could observe either author. Parser fixtures supplied IDs directly. The
+public approval describes lineage and native-reader probes; private prompts and tiers are unknown.
+The missed stance was remote identity availability across the actual query/parser boundary.
+
+Validate the native query against the remote schema, selecting immutable IDs only on supported
+concrete Node types. Pair real Bot/User responses with missing and unsupported author refusals;
+never substitute a mutable login or silently admit absent identity. Restoring direct Actor.id must
+fail the emitted-query regression and the read-only live query.
+
 ### MIDI Learn armed without an available input route (introduced in `4f410257b2`)
 
 The earliest observed MIDI Learn start route, `4f410257b2` (`src/modules/Track/useCases/midiLearnUseCases.ts`), set learning state and a target without checking platform input capability. Later moves retained the route; #401 and #1853 are retention evidence, not introducing changes. No associated introducing PR or historical reviewer stance is established, and exact historical prompts are unavailable. The missed risk was capability admission across real entries and direct start, not just UI messaging.

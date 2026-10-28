@@ -1,7 +1,11 @@
 import { toLevelDb } from '#/utils/audioLevelLaw';
 import { digest } from '#/utils/canonicalDigest';
 
-import { AGENT_CONTEXT_SCHEMA_VERSION, type AgentContextEvidence } from '../models/AgentContext';
+import {
+    AGENT_CONTEXT_SCHEMA_VERSION,
+    AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
+    type AgentContextEvidence,
+} from '../models/AgentContext';
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
@@ -18,15 +22,6 @@ const MAX_VALIDATION_FAILURES = 16;
 const MAX_SELECTED_CLIPS = 16;
 const MAX_IMPORTED_STRING_LENGTH = 512;
 const MAX_RECEIPTS = 16;
-/**
- * Receipt summaries carry application-owned tool evidence, not imported project or prompt text, so
- * they hold their own budget instead of the general imported-string bound. The budget is the total
- * across every retained receipt, which keeps the worst-case message contribution identical to the
- * previous MAX_RECEIPTS * MAX_IMPORTED_STRING_LENGTH aggregate while letting a single receipt spend
- * the whole allowance. This constant is the only owner of that budget: callers pass whole summaries
- * and read the reported `truncated` flag.
- */
-const MAX_RECEIPT_EVIDENCE_LENGTH = 8_192;
 const MAX_MEASUREMENTS = 16;
 /** The rejection fragment quotes provider output back to it; it stays small and trust-labeled. */
 const MAX_REJECTION_FRAGMENT_LENGTH = 512;
@@ -464,8 +459,8 @@ export function buildAgentContext(input: BuildAgentContextInput): {
     const retainedReceipts = (input.receipts ?? []).slice(-MAX_RECEIPTS);
     const receiptSummaryBudget =
         retainedReceipts.length === 0
-            ? MAX_RECEIPT_EVIDENCE_LENGTH
-            : Math.floor(MAX_RECEIPT_EVIDENCE_LENGTH / retainedReceipts.length);
+            ? AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS
+            : Math.floor(AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS / retainedReceipts.length);
     const receipts = retainedReceipts.map((receipt) => ({
         id: boundedString(receipt.id).value,
         summary: boundedTo(receipt.summary, receiptSummaryBudget),

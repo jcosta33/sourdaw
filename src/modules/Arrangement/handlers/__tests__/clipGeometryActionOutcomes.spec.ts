@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<GetTrackState>(),
     getTrackStoreState: vi.fn<GetTrackStoreState>(),
     shiftClipAutomation: vi.fn<(clipId: string, deltaBeats: number) => void>(),
+    prepareClipMidiRowCoordinateShift:
+        vi.fn<typeof import('#/modules/MIDI/useCases').prepareClipMidiRowCoordinateShift>(),
     shiftClipMidiNotes: vi.fn<(clipId: string, deltaBeats: number) => void>(),
     updateClip: vi.fn<UpdateClip>(),
 }));
@@ -39,6 +41,8 @@ vi.mock('#/modules/Automation/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     getNotesForClip: vi.fn(() => []),
+    isMidiRowCoordinateCapture: vi.fn<typeof import('#/modules/MIDI/useCases').isMidiRowCoordinateCapture>(),
+    prepareClipMidiRowCoordinateShift: mocks.prepareClipMidiRowCoordinateShift,
     setNotesForClip: vi.fn(),
     shiftClipMidiNotes: mocks.shiftClipMidiNotes,
 }));
@@ -314,6 +318,7 @@ describe('clip geometry action outcomes', () => {
             expect(execute()).toEqual({ status: 'no-write' });
             expect(mocks.updateClip).not.toHaveBeenCalled();
             expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+            expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
         }
     );
@@ -355,6 +360,7 @@ describe('clip geometry action outcomes', () => {
         expect(result).toEqual({ status: 'no-write' });
         expect(mocks.updateClip).not.toHaveBeenCalled();
         expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+        expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
     });
 
@@ -369,6 +375,7 @@ describe('clip geometry action outcomes', () => {
             expect(result).toEqual({ status: 'no-write' });
             expect(mocks.updateClip).not.toHaveBeenCalled();
             expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+            expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
         }
     );
@@ -455,6 +462,7 @@ describe('clip geometry action outcomes', () => {
 
         expect(result).toEqual({ status: 'no-write' });
         expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+        expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
     });
 
@@ -469,6 +477,7 @@ describe('clip geometry action outcomes', () => {
         // Notes are clip-relative and follow the rectangle; shifting them
         // double-moved every note (PR #621 review).
         expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+        expect(mocks.prepareClipMidiRowCoordinateShift).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('clip-1', 2);
     });
 

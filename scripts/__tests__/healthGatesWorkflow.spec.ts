@@ -860,6 +860,24 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     }
 }
 
+function assertLintTimeBudgets(candidate: UnknownRecord): void {
+    const lint = jobAt(candidate, 'lint');
+    const prep = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'];
+    for (const name of prep) {
+        if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
+            throw new Error(`lint step ${name} must have a five-minute timeout`);
+        }
+    }
+    if (stepNamed(lint, 'Lint')['timeout-minutes'] !== 20) {
+        throw new Error('lint execution must have a twenty-minute timeout');
+    }
+    const jobTimeout = lint['timeout-minutes'];
+    const stepTotal = prep.length * 5 + 20;
+    if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 45) {
+        throw new Error('lint job must include five minutes for cleanup after all step budgets');
+    }
+}
+
 function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     const smoke = jobAt(candidate, 'smoke');
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
@@ -4040,6 +4058,28 @@ describe('health gates workflow contract', () => {
         const dropped = cloneWorkflows('release inventory dropped from nightly');
         removeStepNamed(jobAt(dropped.nightly, 'static'), 'Release inventory');
         expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
+    });
+
+    it('reserves bounded setup, full lint, and cleanup time in the lint job', () => {
+        expect(() => assertLintTimeBudgets(validationWorkflow)).not.toThrow();
+        const oldJob = structuredClone(validationWorkflow);
+        jobAt(oldJob, 'lint')['timeout-minutes'] = 20;
+        expect(() => assertLintTimeBudgets(oldJob)).toThrow('five minutes for cleanup');
+        for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
+            const missing = structuredClone(validationWorkflow);
+            delete stepNamed(jobAt(missing, 'lint'), name)['timeout-minutes'];
+            expect(() => assertLintTimeBudgets(missing), name).toThrow();
+        }
+        const overlong = structuredClone(validationWorkflow);
+        jobAt(overlong, 'lint')['timeout-minutes'] = 46;
+        expect(() => assertLintTimeBudgets(overlong)).toThrow('five minutes for cleanup');
+        const lint = jobAt(validationWorkflow, 'lint');
+        expect(lint.if).toBe("needs.decide.outputs.code == 'true'");
+        expect(stepNamed(lint, 'Lint').run).toBe('pnpm lint:full');
+        expect(recordAt(stepNamed(lint, 'Lint'), 'env')).toEqual({
+            SOURDAW_LINT_CONCURRENCY: 'auto',
+            SOURDAW_LINT_THREADS: '0',
+        });
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {

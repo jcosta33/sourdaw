@@ -6,6 +6,73 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
+comparison, Undo-history, corpus-floor, later-case schema and prompt-separation checks could be
+removed without failing their acceptance cases (#5648). A changed fixture digest failed regardless
+of the guard's behavior, so it did not establish a semantic probe. Exact historical private review
+prompts and tiers are unavailable.
+
+Feed each actual validation helper a deliberately violating row while satisfying its other
+preconditions. Include a wrong or unexpected supersedes value, each missing Undo-history witness,
+a deficient refinement kind, a malformed later case and held-out reuse of a development prior
+prompt. Drop each guard separately and run the acceptance spec without the manifest spec; its
+named negative case must fail. Give the product examples distinct multi-entry groups and absolute
+as well as relative continuations, with an intervening musician edit, so a plausible wrong replay
+or baseline cannot keep the release score green. Preserve the existing outcomes and thresholds.
+
+### 2026-10-27 — action-call spies missed extra project writes (refinement accounting introduced by PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write accounting
+that inferred safety from barrel calls, revisions and Undo groups. Real chat commits bypassed those
+barrel spies, so a matching commit plus an unrecorded change to another track, the target gain or
+the target pan could still score zero unintended mutations (#5649). An extra barrel call could also
+borrow the commit's identical action signature. The original single-turn spy counter came from
+PR #4348 (`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`), before this refinement slice.
+Historical private review prompts and tiers are not established.
+
+Compare materialized project truth before and after every turn with an independent field/value
+oracle, preserving CRDT scalar types. Inject each extra write through the actual project store,
+outside the barrel and history, beside a valid commit; each must increase the unintended-mutation
+score. Include a duplicate barrel action, an unrelated entity, a wrong value on an authorized field,
+and typed values whose distinctions JSON serialization would erase. Removing the project-state
+comparison must fail the named acceptance cases while an ordinary intended commit still passes.
+Also count prior barrel writes that restore their original value, and inject an outside-barrel write
+beside Undo; removing only the Undo comparison must fail that case. Observe settled CRDT
+transitions as well as final truth: an unauthorized persisted write followed by restoration must
+fail beside planning, prior and follow-up commits, and Undo.
+
+### 2026-10-27 — response fixtures hid an invalid Actor identity selection (introduced by PR #5705)
+
+PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) added historical-stack admission's
+`author { id }` selection. GitHub rejects it because `Actor` has no `id` field, while the
+parser's handcrafted author-ID fixtures pass. The public approval names contradictory-lineage
+and native-reader probes; exact private prompts and tiers are unknown. The missed stance was
+whether the real remote query can produce the immutable identity its parser requires.
+
+Capture the native adapter's emitted query and validate its identity selections against the live
+schema. Narrow Actor selections to supported concrete Node types, pair real Bot and User ID
+responses with missing-author, missing-ID and GraphQL-error refusals, and restore direct Actor.id
+as the negative control. Parser fixtures alone cannot prove the remote query is executable.
+
+### 2026-10-27 — start-only preview checks missed resource and owner teardown (preserved by PR #187)
+
+PR #187 (`8c11c40674b32074a12a209b308d3361e93fe873`) extracted the cached-preview helper
+with cases for starting a source and a missing buffer. Those checks did not observe disconnect,
+repeated Stop, natural completion or engine reset/disposal. The stop-only source behavior already
+existed in commit `454de02a76069e5cec5fcee104eb9a64521e2f97`, for which GitHub reports no
+associated PR; exact historical private reviewer prompts and tiers are unknown.
+
+Capture a real playback handle and its ended callback. Deliver Stop twice and then the old callback;
+require one stop, disconnect, release and completion notification. Natural completion must release
+without stopping an already-ended source. Throw from stop and disconnect and still require owner
+release. Exercise actual engine reset/dispose and reentrant callbacks, not only an intent stub.
+Remove the abort subscription, disconnect, release or reset invalidation separately; each named
+spec must fail its corresponding probe while the ordinary-preview control survives. Keep the
+offline/live graph, drag-handoff PCM and Undo/Redo fixtures using the real intent registry and
+explicit playback cleanup when the engine contract changes.
+
 ### 2026-10-26 — Rust-only changes skipped fixture freshness (introduced by PR #5388)
 
 PR #5388 changed a declared campaign fixture while the web-gated unit matrix skipped its
@@ -971,6 +1038,12 @@ scope from its listener. Assert callback entry count is zero separately from cac
 Then enter a scope before commit or abort and attempt `set` and `clear` afterward; reverting only the write-context guard
 must fail that case while reverting only a scope-entry guard must fail its callback-entry assertion.
 
+### 2026-10-27 — a held wrapper did not exercise the recording action wait (issue #5517)
+
+PR #5373 (`eecc1c5a8457`) and PR #5658 (`71e358df7415`) retained useful callback/Stop guard tests, but holding a mocked commit wrapper before invoking the real commit does not exercise root replacement after the real action has already entered its snapshot wait. Both PRs explicitly scoped the remaining audio windows out. Exact historical reviewer prompts and tiers are unknown.
+
+Drive actual manual and scheduler-registered audio callbacks into real commitRecording and executeAppAction. A forwarding waiter spy may expose entry, but must return the actual unresolved wait. Hold a real active transaction that has not reserved root; prove one wait entry, no entry yet, in-flight lifecycle and unresolved wait before public replacement and release. Assert raw CRDT, projections, takes, durable action history, undo stacks/tree and the actual mirror against the successor snapshot. Internal recording commands can be omitted from that mirror, so do not invent session contracts or require mirror entry counts. A targeted post-wait guard mutation on a committed head must redden the unchanged owning spec; pair same-root successful completion and guarded stale callback/failure/catch cases. Queue proof establishes authority and history, not physical audio, full fork persistence or browser UI acceptance.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
@@ -1247,6 +1320,27 @@ Probe that would have caught it: attach to the browser before template loading, 
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
 
+## Exact inverses need actual Command, reciprocal capture and hydration proof
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+Integer row figures and a JSON-round-tripped pure planner omit the execution boundary,
+the discarded skipUndo description, actual history counterpart refresh and session admission.
+Use fractional note, controller and bend figures, real snapshot admission, peer edits before
+Undo and Redo, and saved history from both stacks. Mutating restoration, counterpart refresh,
+hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
+CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
+exact stored restoration.
+
+For the [macro restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+introduced by PR #5495 and PR #5578, a fixture's expected result must come from
+independent real public commands, not retained inverse fields or the normalization
+helper under test. Record public history reversion, serialize it, change loop
+basis or anchor, and run both routes from an exactly restored common prestate.
+Compare full rows and clip state, then check each saved Undo/Redo checkpoint.
+Include zero and null restoration hints; keeping only those scalar hints while
+stripping coordinate captures must fail the unchanged macro comparison.
+
 ### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
 
 PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and
@@ -1375,6 +1469,45 @@ whole requested set after strategy teardown. Preserve bypass, withheld and non-c
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
 
+## Historical replay fixtures must retain the real producer and reader
+
+PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
+that old saved inverses remain safe. Generate historical actions, document records and the
+witness-stamped session mirror with the untouched historical producer. Keep those bytes
+and hydrate them with the current production reader before invoking real Undo. A `.sdaw`
+file alone does not contain the session Undo mirror. Historical review prompts and model
+tiers are unverified; the missing proof joined historical production, current hydration and real Undo.
+
+Assert the actual pending entry, tree cursor and settled mirror alongside raw project
+contents. Reverting admission must consume the unsafe entry or alter its coordinates and
+fail the named case. Preserve independently produced compatible controls. Historical
+trim/slip handlers are singleton handlers, and hydration excludes internal restore
+prefixes; synthetic direct groups test defensive APIs, not supported saved grouped history.
+
+Derive hydrated entry counts from the saved mirror: the historical producer may run
+setup commands without retaining them in that mirror. Admit the genuine trim and its
+keyless inverse unconditionally before checking refusal. A zero-distance regression
+must include an unnormalized offset produced with looping off, then enable a loop and
+trim at the same start. Preserve its exact saved bytes and require the old reader's
+consumed history, absent warning and displaced raw rows to fail the new refusal oracle.
+The normalized zero-distance control is also a conservative refusal, not proof that
+the current phase identifies the old offset. Keep real current captures of zero and
+a whole-loop offset and compare raw owner coordinates through Undo and Redo.
+
+Current loop mode cannot stand in for historical mode. Load the authentic looping
+fixture, disable looping through a peer mutation and real projection, then require
+visible refusal with all peer state and pending history intact. The original loop-off
+MIDI fixture is also a conservative refusal; genuine audio remains the replay control.
+When broader refusal makes a former post-wait or prefix test reject from its starting
+state, replace that test with an eligible audio target. Hold the actual snapshot wait,
+remove the target through public CRDT mutation and projection, and capture the peer
+snapshot before releasing the transaction. Moving admission before the wait must
+consume history and fail the case. In a synthetic direct unit, a callback prefix that
+removes the audio target must remain uncalled: removing only its early guard must fail
+full state preservation even though later admission still throws the same error class.
+Snapshot all action payloads, history IDs and tree entries while retaining callback
+function identity; do not drop callback members or attempt to structured-clone them.
+
 ### 2026-10-26 — transient catalog fixtures omitted inspection diagnostics (#5347, caught further in #5730)
 
 PR #5274 (`40baa0716b`) introduced fail-closed file-inspection diagnostics; PR #5365 (`75b10ca71b`)
@@ -1390,3 +1523,23 @@ whole/scoped/parent inspection failures. Require retained storage and a stable, 
 on every inconclusive exit; only fresh complete proof may resolve it. Reverting either refresh route
 or restricting stable reason propagation to expiry must fail these cases. Do not pool partial catalogs
 or add inspection diagnostics to the warning-success allowlist.
+
+## Escape: sanitizer tests did not prove project-file admission (PR #4987)
+
+PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
+and valid saved-lane compatibility, but the file admission predicate ignored the
+new fields. PR #4222 (`120c9e2b418e`) had already left the same gap for
+malformed `sourceOffsetBeats`. A selected take carrying only `passAnchorSeconds` beside offset zero
+passed admission and disappeared with its comp region during real hydration.
+The missed input was malformed placement entering the full import route; private
+review prompts are unavailable, so do not infer a named historical stance or tier.
+
+Use a current-version file with a canonical project ID and a valid referenced
+track and clip, and first prove the valid control is admitted. Reject malformed
+placement in both top-level and saved-arrangement take lanes before replacement
+of an existing project. Assert raw authority, tracks, arrangement and selected
+material remain unchanged. Separately admit a JSON roundtrip of legacy takes and
+complete placed passes, including negative finite anchors, and assert exact
+selected-take and comp-region retention after real owner hydration. Removing only
+placement admission must redden the rejection case; testing a store sanitizer
+alone cannot observe the file admission gap.

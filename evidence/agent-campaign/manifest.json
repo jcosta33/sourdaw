@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "4a31749cab8892d56ef05a8e56db67323b0cc234cb42618b095f1e5beec3b243"
+                    "digest": "a5a29e18ccd0d606ab99b8088d59fbe644a1b8385470d4829681074a2736b317"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "cdd3e32a5fa2e9de3f4499ef6d3e8a345dc508b4b72de6c0cde8497adf899e26"
+                    "digest": "29ae8594c300ddea278d5c70216c3af40cf6ca3124aab024948fddb583c282ce"
                 }
             ]
         },
@@ -624,7 +624,7 @@
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",
-                    "digest": "cd5677a24eb57cd17a8fbcda7e479df15dbc3fabf516a820d5f77c46da1888d8"
+                    "digest": "b378dd27df075cd186132d2d558e8fbd583265d6bd4dd4e3b681c772145c8423"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/singleAudioContextInvariant.spec.ts",
@@ -797,7 +797,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "844c90e521c021d9fd02169790920214eb6de4cb3fbc3445e82053940323d265"
+                    "digest": "12fa8880f4cbdbc981f497ca3c07841532905e10a9bf0de8ce749d58e3eab06d"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -805,7 +805,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "f9a29010976310c020d544df04e8a40b406062c51c06039c2a5ebe818ae1f84d"
+                    "digest": "8bc6dee65265c2b2c16b0b0899ece604e1b1be33bed0376850a8ed1832adbaf9"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -813,7 +813,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "4bd0a42bbf7e221cc9dc0303cb5da902bbc0bbd5c92f5eed6a980f2efabf615b"
+                    "digest": "0fa11c9f9bb88299f9890e74e8e2c8d424d6348dad87805e5468c4c097e708d9"
                 }
             ]
         },
