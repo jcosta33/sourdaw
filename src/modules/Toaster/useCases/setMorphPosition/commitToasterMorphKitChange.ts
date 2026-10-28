@@ -4,7 +4,7 @@ import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { getSettledProjectIdentity } from '#/modules/Project/stores';
 
 import { type ToasterKit } from '../../models/ToasterKit';
-import { markToasterKitCommitted } from '../../models/toasterKitCommitMarkers';
+import { markToasterKitCommitted } from '../../models/ToasterKitCommitMarkers';
 import { toToasterKitState } from '../../models/ToasterKitState';
 import { captureToasterDeviceLifetime, toasterStore } from '../../stores/toasterStore';
 

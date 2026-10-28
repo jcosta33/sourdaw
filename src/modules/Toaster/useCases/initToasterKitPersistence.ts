@@ -1,4 +1,4 @@
-import { wasToasterKitExplicitlyCommitted } from '../models/toasterKitCommitMarkers';
+import { wasToasterKitExplicitlyCommitted } from '../models/ToasterKitCommitMarkers';
 import { toasterStore } from '../stores/toasterStore';
 
 import { commitToasterKit } from './commitToasterKit';
