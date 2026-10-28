@@ -25,7 +25,9 @@ function successfulEvents(): Parameters<typeof validateTransportStop>[0] {
         ['click', 'capture'],
         ['click', 'bubble'],
     ].entries()) {
-        if (phase === 'bubble' && event === 'click') events.push({ at: 20, kind: 'state', state: stopped() });
+        if (phase === 'bubble' && event === 'click') {
+            events.push({ at: 20, kind: 'state', state: stopped() });
+        }
         events.push({
             at: 10 + index * 2,
             kind: 'input',
@@ -80,7 +82,9 @@ describe('native input evidence rather than API invocation', () => {
         (field) => {
             const events = successfulEvents();
             const click = events.find((event) => event.event === 'click' && event.phase === 'capture');
-            if (!click) throw new Error('Missing controlled click');
+            if (!click) {
+                throw new Error('Missing controlled click');
+            }
             click[field] = false;
             expect(() => validateTransportStop(events, 10)).toThrow('untrusted, missing, moved, hidden, covered');
         }
@@ -100,13 +104,17 @@ describe('native input evidence rather than API invocation', () => {
         const events = successfulEvents();
         const second = events[2];
         const third = events[3];
-        if (!second || !third) throw new Error('Missing controlled inputs for reorder');
+        if (!second || !third) {
+            throw new Error('Missing controlled inputs for reorder');
+        }
         [events[2], events[3]] = [third, second];
         expect(() => validateTransportStop(events, 10)).toThrow('out of order');
         const duplicate = successfulEvents();
         const firstInput = duplicate[2];
-        if (!firstInput) throw new Error('Missing controlled input');
-        duplicate.push({ ...firstInput });
+        if (!firstInput) {
+            throw new Error('Missing controlled input');
+        }
+        duplicate.push(firstInput);
         expect(() => validateTransportStop(duplicate, 10)).toThrow('out of order');
     });
 

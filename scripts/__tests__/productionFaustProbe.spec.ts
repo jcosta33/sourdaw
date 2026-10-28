@@ -281,7 +281,7 @@ describe('passive Faust diagnostic connection calibration', () => {
 
     it('runs the same serialized installer and connection lifecycle in an independent realm without module closures', async () => {
         const fresh = createCalibrationPlatform();
-        const sandbox: Record<string, unknown> = { ...fresh.globals };
+        const sandbox: Record<string, unknown> = fresh.globals;
         sandbox.window = sandbox;
         const result: unknown = runInNewContext(
             `
