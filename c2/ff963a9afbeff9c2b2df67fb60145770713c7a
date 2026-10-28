@@ -1,0 +1,24 @@
+src/modules/Toaster/models/toasterKitCommitMarkers.ts
+  h_beb54bf43b47b7 1-8
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  h_beb54bf43b47b7 48-49
+src/modules/Toaster/useCases/exportPatternToTimeline.ts
+  h_beb54bf43b47b7 7,16,18-27,29-38,123-213
+src/modules/Toaster/useCases/initToasterKitPersistence.ts
+  h_beb54bf43b47b7 1,4
+src/modules/Toaster/useCases/reconcileToasterKitFromProject.ts
+  h_beb54bf43b47b7 4
+src/modules/Toaster/useCases/setMorphPosition/commitToasterMorphKitChange.ts
+  h_beb54bf43b47b7 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2ff963a9afbeff9c2b2df67fb60145770713c7a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
