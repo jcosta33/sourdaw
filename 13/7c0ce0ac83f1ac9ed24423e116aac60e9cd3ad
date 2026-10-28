@@ -1,0 +1,14 @@
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx
+  h_beb54bf43b47b7 187-203,205,207,209,211,214,218,221-222,225,229,232-233,236-237,242-243,260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "137c0ce0ac83f1ac9ed24423e116aac60e9cd3ad",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
