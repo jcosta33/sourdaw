@@ -541,17 +541,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: import, Parameters/ReturnType projections, and call
         // lower a validated transform into command descriptions; no device write.
         'src/modules/AiRuntime/useCases/executeTransformCompile.ts': 4,
-        // Count provenance: new file entry, measured 7 — `compileArbitraryCommandList`
-        // and `compilePlannedActionCommandBatch` (each an import, its module path in
-        // that import line, and one call) plus the exported declaration. A preview
-        // measurement compiles its proposal into an immutable Command batch only;
-        // the batch is previewed in an isolated workspace, never written to a device.
-        'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 7,
-        // Count provenance: new file entry, measured 5 — the
-        // `compilePreviewMeasurementProposal` import, its module path and its one
-        // call, plus the local `compileProposal` declaration and call. Command
-        // batch compilation for an isolated preview; no device hydration or write.
-        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 5,
+        // Count provenance: new file entry, measured 11 — `compileArbitraryCommandList`
+        // and `compilePlannedActionCommandBatch` (each an import, module-path literal,
+        // and call), the exported `compilePreviewMeasurementProposal` declaration,
+        // plus `compileSemanticList` and `compileRetainedPreview` (each a declaration
+        // and call). These pure helpers compile or admit data into a versioned Command
+        // envelope; they do not perform device IO or hydration.
+        'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 11,
+        // Count provenance: new file entry, measured 6 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal, call and type-level
+        // `Parameters<typeof compilePreviewMeasurementProposal>` reference, plus the
+        // local `compileProposal` declaration and call. The type reference adds no IO;
+        // measurement still uses the same grounding and versioned-envelope route, with
+        // no device hydration or write.
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 6,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,

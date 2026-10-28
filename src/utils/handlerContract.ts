@@ -11,6 +11,17 @@
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
 
+/** Identity-scoped row numbers captured by an executed slip or trim, without row snapshots. */
+type MidiRowCoordinateCapture = {
+    beatDelta: number;
+    coordinates: {
+        kind: 'note' | 'cc' | 'pitchBend';
+        id: string;
+        beforeBeat: number;
+        afterBeat: number;
+    }[];
+};
+
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
  * other snapshot here, so this neutral contract does not depend on a model owned by
@@ -1466,6 +1477,8 @@ export type AppAction =
                * and replay the re-wrapping law they always did.
                */
               midiOffsetBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
@@ -1487,6 +1500,8 @@ export type AppAction =
                * restoration (`rowLiftBeats: 0`).
                */
               rowLiftBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | {

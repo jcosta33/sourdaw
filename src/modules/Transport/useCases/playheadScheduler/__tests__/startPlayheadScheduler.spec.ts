@@ -64,6 +64,11 @@ const audioEngineMocks = {
     readNativeEnginePlayheadSeconds: vi.fn((): number | null => null),
 };
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'root-identity'
+    ),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'ineligible' })
@@ -1462,11 +1467,15 @@ describe('startPlayheadScheduler', () => {
             buffer: { duration: 1 },
             bufferId: expect.any(String),
         });
-        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith({
-            trackId: 'rec-1',
-            id: 'clip-rec-1',
-            audioBufferId: expect.any(String),
-        });
+        expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
+            {
+                trackId: 'rec-1',
+                id: 'clip-rec-1',
+                audioBufferId: expect.any(String),
+            },
+            undefined,
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
+        );
         // A delivered take is kept: no retirement and no failure notice.
         expect(arrangementMocks.discardRecording).not.toHaveBeenCalled();
         expect(notifyUserMock).not.toHaveBeenCalled();
@@ -1561,7 +1570,9 @@ describe('startPlayheadScheduler', () => {
         // Zero-length payloads here mean the entry captured the pre-finalization
         // anchor and can overwrite the span the finalizer owns.
         expect(arrangementMocks.commitRecording).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 })
+            expect.objectContaining({ id: 'clip-rec-1', endBeat: 8 }),
+            undefined,
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
         );
     });
 

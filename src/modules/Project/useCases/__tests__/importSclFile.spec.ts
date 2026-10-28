@@ -194,12 +194,18 @@ describe('importSclFile', () => {
             filters: [{ name: 'Scala', extensions: ['scl'] }],
         });
         expect(mocks.parseScl).toHaveBeenCalledWith(sclContent);
-        expect(mocks.projectStore.set).toHaveBeenCalledWith({
+        expect(mocks.projectStore.set).toHaveBeenCalledTimes(2);
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(1, {
             ...initialProject,
             tuning: {
                 name: 'Bright twelve',
                 frequencies,
             },
+        });
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(2, {
+            ...initialProject,
+            dirty: true,
+            tuning: { name: 'Bright twelve', frequencies },
         });
         // No instrument consumes the project tuning table, so there is nothing
         // to register with the engine — forwarding would be the dead call the

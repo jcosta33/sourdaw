@@ -288,10 +288,11 @@ function getProjectMeasurementProperties() {
 function getAnalysisMeasureSchema(): ToolSchema {
     return tool(
         ANALYSIS_MEASURE_TOOL_NAME,
-        `Measure objective figures of the rendered audio of one scope over a section or beat range: the master mix (kind "master" or "project", with mute and solo applied), or up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks or buses, each rendered in isolation with its inserts and send returns and without solo. The application renders at the current project revision and returns loudness, peak, dynamics, spectral, stereo and transient figures, never audio. Name the range by sectionId or by startBeat and endBeat. With subject "preview", also pass proposal, a semantic command list in the form command.batch.propose takes as list: the application compiles it, previews it without changing the project, and measures the same scope and range before and after it, returning both figures and their deltas. To propose exactly the measured change, pass this call's callId in command.batch.propose compiledCallIds.`,
+        `Measure loudness, peak, dynamics, spectral, stereo and transient figures at the current revision; never audio. Scope master/project applies mute/solo; up to ${String(ANALYSIS_MEASURE_MAX_TARGETS)} tracks/buses render isolated with inserts/send returns, without solo. Range: sectionId or startBeat/endBeat. Project takes neither proposal nor recipeCallId. Preview takes exactly one: recipeCallId from a successful earlier-turn recipe.expand receipt in this run, or proposal in command.batch.propose list form. Validate and preview exact commands without project changes; return baseline, preview and deltas over that scope/range. Adopt via this callId in command.batch.propose compiledCallIds.`,
         {
             subject: { type: 'string', enum: ['project', 'preview'] },
             proposal: SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA,
+            recipeCallId: { type: 'string', minLength: 1, maxLength: ANALYSIS_MEASURE_MAX_ID_LENGTH },
             ...getProjectMeasurementProperties(),
         },
         ['scope', 'range']

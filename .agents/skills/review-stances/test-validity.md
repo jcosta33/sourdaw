@@ -6,6 +6,43 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
+comparison, Undo-history, corpus-floor, later-case schema and prompt-separation checks could be
+removed without failing their acceptance cases (#5648). A changed fixture digest failed regardless
+of the guard's behavior, so it did not establish a semantic probe. Exact historical private review
+prompts and tiers are unavailable.
+
+Feed each actual validation helper a deliberately violating row while satisfying its other
+preconditions. Include a wrong or unexpected supersedes value, each missing Undo-history witness,
+a deficient refinement kind, a malformed later case and held-out reuse of a development prior
+prompt. Drop each guard separately and run the acceptance spec without the manifest spec; its
+named negative case must fail. Give the product examples distinct multi-entry groups and absolute
+as well as relative continuations, with an intervening musician edit, so a plausible wrong replay
+or baseline cannot keep the release score green. Preserve the existing outcomes and thresholds.
+
+### 2026-10-27 — action-call spies missed extra project writes (refinement accounting introduced by PR #5646)
+
+PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) added refinement write accounting
+that inferred safety from barrel calls, revisions and Undo groups. Real chat commits bypassed those
+barrel spies, so a matching commit plus an unrecorded change to another track, the target gain or
+the target pan could still score zero unintended mutations (#5649). An extra barrel call could also
+borrow the commit's identical action signature. The original single-turn spy counter came from
+PR #4348 (`a46f6f7c6f2179ba4d9527efb6bd615c8b08f228`), before this refinement slice.
+Historical private review prompts and tiers are not established.
+
+Compare materialized project truth before and after every turn with an independent field/value
+oracle, preserving CRDT scalar types. Inject each extra write through the actual project store,
+outside the barrel and history, beside a valid commit; each must increase the unintended-mutation
+score. Include a duplicate barrel action, an unrelated entity, a wrong value on an authorized field,
+and typed values whose distinctions JSON serialization would erase. Removing the project-state
+comparison must fail the named acceptance cases while an ordinary intended commit still passes.
+Also count prior barrel writes that restore their original value, and inject an outside-barrel write
+beside Undo; removing only the Undo comparison must fail that case. Observe settled CRDT
+transitions as well as final truth: an unauthorized persisted write followed by restoration must
+fail beside planning, prior and follow-up commits, and Undo.
+
 ### 2026-10-27 — response fixtures hid an invalid Actor identity selection (introduced by PR #5705)
 
 PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) added historical-stack admission's
@@ -1001,6 +1038,12 @@ scope from its listener. Assert callback entry count is zero separately from cac
 Then enter a scope before commit or abort and attempt `set` and `clear` afterward; reverting only the write-context guard
 must fail that case while reverting only a scope-entry guard must fail its callback-entry assertion.
 
+### 2026-10-27 — a held wrapper did not exercise the recording action wait (issue #5517)
+
+PR #5373 (`eecc1c5a8457`) and PR #5658 (`71e358df7415`) retained useful callback/Stop guard tests, but holding a mocked commit wrapper before invoking the real commit does not exercise root replacement after the real action has already entered its snapshot wait. Both PRs explicitly scoped the remaining audio windows out. Exact historical reviewer prompts and tiers are unknown.
+
+Drive actual manual and scheduler-registered audio callbacks into real commitRecording and executeAppAction. A forwarding waiter spy may expose entry, but must return the actual unresolved wait. Hold a real active transaction that has not reserved root; prove one wait entry, no entry yet, in-flight lifecycle and unresolved wait before public replacement and release. Assert raw CRDT, projections, takes, durable action history, undo stacks/tree and the actual mirror against the successor snapshot. Internal recording commands can be omitted from that mirror, so do not invent session contracts or require mirror entry counts. A targeted post-wait guard mutation on a committed head must redden the unchanged owning spec; pair same-root successful completion and guarded stale callback/failure/catch cases. Queue proof establishes authority and history, not physical audio, full fork persistence or browser UI acceptance.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
@@ -1276,6 +1319,27 @@ The EDM status-bar E2E cases asserted rate and latency text but did not observe 
 Probe that would have caught it: attach to the browser before template loading, capture the full console and exception stack, and require no compiler abort while the real Supersaw and reverb nodes load. Pair that check with the real compiler's factory inputs and an offline `keyOn` PCM assertion; status text alone proves neither clean compilation nor audible output.
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
+
+## Exact inverses need actual Command, reciprocal capture and hydration proof
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+Integer row figures and a JSON-round-tripped pure planner omit the execution boundary,
+the discarded skipUndo description, actual history counterpart refresh and session admission.
+Use fractional note, controller and bend figures, real snapshot admission, peer edits before
+Undo and Redo, and saved history from both stacks. Mutating restoration, counterpart refresh,
+hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
+CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
+exact stored restoration.
+
+For the [macro restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+introduced by PR #5495 and PR #5578, a fixture's expected result must come from
+independent real public commands, not retained inverse fields or the normalization
+helper under test. Record public history reversion, serialize it, change loop
+basis or anchor, and run both routes from an exactly restored common prestate.
+Compare full rows and clip state, then check each saved Undo/Redo checkpoint.
+Include zero and null restoration hints; keeping only those scalar hints while
+stripping coordinate captures must fail the unchanged macro comparison.
 
 ### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
 

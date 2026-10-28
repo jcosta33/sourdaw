@@ -774,7 +774,7 @@ const planPromptIntent = inject({ logger })(
                                   // spends the same one measurement per turn.
                                   companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
                                   revision: projectRevision,
-                                  execute: (call, { callId, turn, signal: loopSignal }) =>
+                                  execute: (call, { callId, turn, signal: loopSignal, retainedCompilations }) =>
                                       call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
                                           ? executeReferenceMeasurement({
                                                 call,
@@ -797,6 +797,7 @@ const planPromptIntent = inject({ logger })(
                                                 // proposal is: this run's read model, request and authority.
                                                 preview: {
                                                     context,
+                                                    retainedCompilations,
                                                     prompt,
                                                     runId: streamIdentity?.runId ?? 'preview-measurement',
                                                     readCreativeAuthority: () => creativeAuthority,
