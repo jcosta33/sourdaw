@@ -1,0 +1,22 @@
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 503-508
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1643-1648
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  h_beb54bf43b47b7 300-611,1140,1157-1164,1183,1186-1196
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  h_beb54bf43b47b7 46-50,161-170
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  h_beb54bf43b47b7 50,801-819,828,831-834,930
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "efa770b2d5650bf2d69424f1dd05823c4da470c6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
