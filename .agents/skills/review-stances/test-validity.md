@@ -1304,6 +1304,27 @@ Probe that would have caught it: attach to the browser before template loading, 
 
 When a repair adds a `compile`-named production route, run the device-write boundary closure census and account for each new match by its actual runtime or document effect. A narrow audio spec does not prove the production sink inventory still closes.
 
+## Exact inverses need actual Command, reciprocal capture and hydration proof
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+Integer row figures and a JSON-round-tripped pure planner omit the execution boundary,
+the discarded skipUndo description, actual history counterpart refresh and session admission.
+Use fractional note, controller and bend figures, real snapshot admission, peer edits before
+Undo and Redo, and saved history from both stacks. Mutating restoration, counterpart refresh,
+hydration binding or abort metadata restoration must fail the case that claims it. Keep raw
+CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
+exact stored restoration.
+
+For the [macro restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+introduced by PR #5495 and PR #5578, a fixture's expected result must come from
+independent real public commands, not retained inverse fields or the normalization
+helper under test. Record public history reversion, serialize it, change loop
+basis or anchor, and run both routes from an exactly restored common prestate.
+Compare full rows and clip state, then check each saved Undo/Redo checkpoint.
+Include zero and null restoration hints; keeping only those scalar hints while
+stripping coordinate captures must fail the unchanged macro comparison.
+
 ### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
 
 PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and

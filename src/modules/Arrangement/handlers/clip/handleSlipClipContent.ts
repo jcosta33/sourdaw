@@ -5,16 +5,40 @@ import { slipWrapRowLiftBeats } from '../../useCases/clipEditing/slipWrapRowLift
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
+
+const rowReplay = createMidiRowCoordinateReplay('slipClipContent');
+
 export const handleSlipClipContent = createHandler<'slipClipContent'>({
     execute: (action) => {
-        return toHandlerExecutionResult(
-            slipClipContent(
-                action.payload.clipId,
-                action.payload.clipType,
-                action.payload.offset,
-                action.payload.rowLiftBeats
-            )
+        if (!rowReplay.canExecute(action)) {
+            return { status: 'conflict' };
+        }
+        if (action.payload.clipType === 'audio') {
+            return toHandlerExecutionResult(
+                slipClipContent(action.payload.clipId, 'audio', action.payload.offset, action.payload.rowLiftBeats)
+            );
+        }
+        const coordinates: NonNullable<Parameters<typeof slipClipContent>[4]> = {
+            restore: action.payload.midiRowCoordinates,
+        };
+        const didWrite = slipClipContent(
+            action.payload.clipId,
+            action.payload.clipType,
+            action.payload.offset,
+            action.payload.rowLiftBeats,
+            coordinates
         );
+        if (!didWrite) {
+            if (coordinates.refused || action.payload.midiRowCoordinates !== undefined) {
+                return { status: 'conflict' };
+            }
+            return { status: 'no-write' };
+        }
+        if (coordinates.capture) {
+            rowReplay.recordApplied(action, coordinates.capture);
+        }
+        return { status: 'written' };
     },
     describe: (action) => {
         const label = 'Slip clip content';
@@ -56,16 +80,22 @@ export const handleSlipClipContent = createHandler<'slipClipContent'>({
                 });
                 inversePayload.rowLiftBeats = lift === 0 ? 0 : -lift;
             }
-            return {
-                label,
-                inverseAction: {
-                    type: 'slipClipContent',
-                    payload: inversePayload,
-                },
-            };
+            const inverseAction = { type: 'slipClipContent' as const, payload: inversePayload };
+            if (action.payload.clipType === 'midi') {
+                return {
+                    label,
+                    ...rowReplay.describe(action, inverseAction, {
+                        type: 'slipClipContent',
+                        payload: structuredClone(action.payload),
+                    }),
+                };
+            }
+            return { label, inverseAction };
         } catch {
             return { label, inverseAction: null };
         }
     },
+    prepareAbort: rowReplay.prepareAbort,
+    validateSessionEntry: rowReplay.validateSessionEntry,
     undoable: true,
 });

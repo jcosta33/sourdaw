@@ -220,6 +220,25 @@ Prepare semantic restoration at durable replay time while retaining exact-refere
 publication and compensation. For disappearing fragments, also start with no captured takes, add peer facets afterward,
 and prove only those fragment-owned facets retire; induce a later publication failure and require their exact recovery.
 
+## Coordinate captures remain history data across both replay directions
+
+The fractional inverse escape from PR #5495 and PR #5578 is detailed in
+[moving coordinate inverses](./moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures).
+A capture that works before saving proves nothing about the admitted session pair.
+Hydrate actual production history from both past and future, preserve peer row membership
+and properties, and require exact raw coordinates through repeated replay. Refuse malformed
+or incoherent pairs before binding metadata or writing product state. Inject a pre-commit
+storage failure after handler execution and compare document, projections, both captures,
+history, tree and mirror; a successful product rollback cannot excuse changed replay data.
+
+Saved macro playback is a fresh command route, not an Undo capability. The
+[restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+from PR #5495 and PR #5578 requires removing documented inverse-only scalar hints
+as well as row captures from the cloned request. Preserve stored macro bytes,
+current peer rows and properties, and exact history from each new execution.
+Compare full clip state and rows against independent public commands after a loop
+or anchor change; restore only scalar forwarding as the discriminating mutation.
+
 ### 2026-09-30 — MIDI transform inverses lacked replay authority (escaped at 64b9d77c01a)
 
 PR #939 (`90953dc23e0`) originated the shared transforms' exact-snapshot inverse and redo before a

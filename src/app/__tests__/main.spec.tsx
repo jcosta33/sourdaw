@@ -152,6 +152,9 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setMidiStoreState: vi.fn(),
     setNotesForClip: vi.fn(),
     shouldPlayMidiEvent: vi.fn(),
+    isMidiRowCoordinateCapture: vi.fn<typeof import('#/modules/MIDI/useCases').isMidiRowCoordinateCapture>(),
+    prepareClipMidiRowCoordinateShift:
+        vi.fn<typeof import('#/modules/MIDI/useCases').prepareClipMidiRowCoordinateShift>(),
     shiftClipMidiNotes: vi.fn(),
     splitMidiNotesAtBeat: vi.fn(),
     transposeForChordTrack: vi.fn(),
