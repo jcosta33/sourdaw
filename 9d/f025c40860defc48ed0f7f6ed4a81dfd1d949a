@@ -1,0 +1,75 @@
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessEffectCommands.integration.spec.ts
+  s_59e31a5c6f3e31::t_8d99cb5fe02cb9 1-146,151-201,203-209,211-247
+  s_59e31a5c6f3e31::t_71d4f2d7ef0b88 147
+  s_59e31a5c6f3e31::t_b59a2feabda9e3 148-150,202,210
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_59e31a5c6f3e31::t_2c315e658b8f5c 15,250,589-602,604-622
+  s_59e31a5c6f3e31::t_71d4f2d7ef0b88 603
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_59e31a5c6f3e31::t_4e92f208a592ec 621-638
+src/modules/Arrangement/useCases/__tests__/runtimeGraphTopology.spec.ts
+  s_59e31a5c6f3e31::t_6f01ba7bee5d49 95-130
+src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts
+  s_59e31a5c6f3e31::t_564fb64184f822 15,32
+src/modules/Arrangement/useCases/device/__tests__/applyDeviceChainRuntimeDelta.spec.ts
+  s_59e31a5c6f3e31::t_08124193e84869 38,574-588,590-605,607-615,617-627,629-632,634-635,642,644-652,654-670,672-690,692-719
+  s_59e31a5c6f3e31::t_71d4f2d7ef0b88 589,606,616,633,653,671,691
+  s_59e31a5c6f3e31::t_00693e51e50f0e 116,628,643
+  s_59e31a5c6f3e31::t_86afa8edadd2cd 137,139-140
+  s_59e31a5c6f3e31::t_5a96503c5a8760 10,20-21,44-45,72-78,84-115,117-136,138,141-163,307,376,391,411,445-465,502-505,560
+  s_59e31a5c6f3e31::t_dffdfb699c173f 636-641
+src/modules/Arrangement/useCases/device/applyDeviceChainRuntimeDelta.ts
+  s_59e31a5c6f3e31::t_45e67d840062bd 4,6,160,162-164,187,189-194,196-209,227,236
+  s_59e31a5c6f3e31::t_00693e51e50f0e 185-186
+  s_59e31a5c6f3e31::t_5a96503c5a8760 210
+  s_59e31a5c6f3e31::t_f3b8f3499aa0a2 14,39,53-54,110-112,136,161,165-169,171-184,188,195,211,215,235
+  s_59e31a5c6f3e31::t_8c0854d6d4eecd 137-153
+  s_59e31a5c6f3e31::t_fec52125a0db28 154-156
+src/modules/Arrangement/useCases/runtimeGraphTopology.ts
+  s_59e31a5c6f3e31::t_cc253c203f2b28 2,35-43,59,72,75
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_59e31a5c6f3e31::t_a4afdf96dce365 241-269
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_59e31a5c6f3e31::t_28929c7bc6970f 39-40
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_b3201877f50e8a::t_d30f7c500dc2f5 1059-1061
+  s_59e31a5c6f3e31::t_00693e51e50f0e 544-557,661-664,1787,1790,1796-1811
+  s_59e31a5c6f3e31::t_8c272b0b077865 1812-1813
+src/modules/AiRuntime/useCases/__tests__/typedDeviceBindingCommandWorkflow.spec.ts
+  s_59e31a5c6f3e31::t_dffdfb699c173f 46-51,342,374
+src/modules/Arrangement/useCases/device/__tests__/coldImportedDeviceEdits.integration.spec.ts
+  s_59e31a5c6f3e31::t_dffdfb699c173f 130
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 12-27
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 446-461
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9df025c40860defc48ed0f7f6ed4a81dfd1d949a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
