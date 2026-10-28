@@ -371,6 +371,23 @@ identity binding must fail the unchanged cluster cases. A deliberate full-histor
 also updates its owning independent assertion and regenerated snapshot; the snapshot diff must
 contain only the intended checkout depth, and a depth-two mutation must fail the assertion.
 
+### VCA Inspector call mocks missed the real Command entry
+
+Commit `22a84b216658f593391e7e141d90f7c84d13648b` introduced the Inspector's direct
+Create, Assign and None calls. PR #1049 later added typed VCA history and committed gain
+reconciliation but did not connect that entry. The missed observable was the actual Inspector
+caller reaching Command and runtime projection; historical private review prompts and tiers
+are unknown.
+
+Mount the Inspector with real registered Command handlers and CRDT storage. For each gesture,
+observe one history entry, raw and projected membership, Undo/Redo and committed runtime gain;
+locked gestures must warn without writes, and no-op gestures must complete without writes.
+Revert each component dispatch to its direct use case and require its connected case to fail.
+For a queued gesture, hold the real snapshot queue, replace the root with a same-ID successor
+through the production repository and projection path, then release the queue. Require unchanged
+successor state, history and engine calls; a same-project snapshot remains a positive control.
+This queued-successor case was caught during review of #5789, not established as a main escape.
+
 ### 2026-10-12 — a release budget missed the still-open PCM entry (PR #5239 review repair)
 
 An aborted bank could hold both a sealed sample and an unfinished reservation. Release freed

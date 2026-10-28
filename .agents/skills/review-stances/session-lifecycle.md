@@ -85,6 +85,25 @@ the next sweep to destroy it before another wait. Independently hold the owner a
 wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
 This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
 
+### VCA membership must reach committed runtime gain
+
+The Inspector's direct calls introduced in `22a84b216658f593391e7e141d90f7c84d13648b`
+bypassed the committed gain continuation added by PR #1049. The missed route was the actual
+Inspector gesture reaching that continuation; historical private review prompts and tiers are
+unknown.
+
+Drive Create, Assign and None through the mounted gesture, real Command, handler and reconciler.
+At the engine caller, require raw CRDT and projection to agree and observe composed static or
+automated gain at the selected beat through the gesture, Undo and Redo. Seed a non-unity group
+and an automated peer, check the scheduled value and absence of duplicate subject scheduling,
+and preserve unrelated tracks. Revert the matching component dispatch and require its history
+and gain case to fail. This controlled engine boundary does not establish audible output.
+
+Preserve project identity across a gesture waiting for a root snapshot. A same-ID successor must
+not receive the queued gesture; an ordinary snapshot on the same project must still allow it.
+Hold and release the real queue around production root replacement and inspect successor state,
+history and engine calls. This successor case was caught during #5789 review before merge.
+
 ### 2026-08-29 — the gesture nobody walked (escaped via PR #3073, filed as #3096)
 
 PR #3073 (#3066) wired native live graph session start and stop into `startPlayback` and
