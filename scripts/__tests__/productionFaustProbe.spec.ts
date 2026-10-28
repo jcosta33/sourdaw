@@ -3,7 +3,7 @@ import { runInNewContext } from 'node:vm';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { installFaustProbe } from './productionFaustProbe';
+import { installFaustProbe } from '../../tests/production-e2e/productionFaustProbe';
 
 // These fake native primitives calibrate instrumentation, not DSP or product audio.
 // Analysers deliberately retain cached nonzero frames after disconnection.

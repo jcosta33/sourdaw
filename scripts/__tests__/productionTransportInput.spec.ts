@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { assertTransportAdmission, createSingleInputAttempt, validateTransportStop } from './productionTransportInput';
+import {
+    assertTransportAdmission,
+    createSingleInputAttempt,
+    validateTransportStop,
+} from '../../tests/production-e2e/productionTransportInput';
 
 function stopped() {
     return { status: 'Stopped', play: 'Play', active: 'false' };
@@ -94,7 +98,10 @@ describe('native input evidence rather than API invocation', () => {
 
     it('refuses reordered or duplicate native events', () => {
         const events = successfulEvents();
-        [events[2], events[3]] = [events[3], events[2]];
+        const second = events[2];
+        const third = events[3];
+        if (!second || !third) throw new Error('Missing controlled inputs for reorder');
+        [events[2], events[3]] = [third, second];
         expect(() => validateTransportStop(events, 10)).toThrow('out of order');
         const duplicate = successfulEvents();
         const firstInput = duplicate[2];
