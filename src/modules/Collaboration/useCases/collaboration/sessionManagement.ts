@@ -1116,7 +1116,6 @@ async function resolveAssetForClips(
         return;
     }
 
-    const pendingAliases: AssetClipAlias[] = [];
     for (const alias of aliases) {
         const key = assetClipAliasKey(alias);
         if (
@@ -1126,35 +1125,29 @@ async function resolveAssetForClips(
             continue;
         }
         owner.resolvingAssetAliasKeys.add(key);
-        pendingAliases.push(alias);
-    }
-    try {
-        for (const { trackId, clipId, bufferId } of pendingAliases) {
-            try {
-                const arrayBuffer = await blob.arrayBuffer();
-                if (!canSessionOwnerWrite(owner)) {
-                    return;
-                }
-                if (!isCurrentUncachedAssetClip(trackId, clipId, hash, bufferId)) {
-                    continue;
-                }
-                const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-                if (!canSessionOwnerWrite(owner)) {
-                    return;
-                }
-                if (!isCurrentUncachedAssetClip(trackId, clipId, hash, bufferId)) {
-                    continue;
-                }
-                cacheAudioBuffer({ bufferId, buffer: audioBuffer });
-            } catch {
-                if (canSessionOwnerWrite(owner)) {
-                    logger.warn('[Collaboration] Failed to decode asset for clip', clipId);
-                }
+        const { trackId, clipId, bufferId } = alias;
+        try {
+            const arrayBuffer = await blob.arrayBuffer();
+            if (!canSessionOwnerWrite(owner)) {
+                return;
             }
-        }
-    } finally {
-        for (const alias of pendingAliases) {
-            owner.resolvingAssetAliasKeys.delete(assetClipAliasKey(alias));
+            if (!isCurrentUncachedAssetClip(trackId, clipId, hash, bufferId)) {
+                continue;
+            }
+            const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+            if (!canSessionOwnerWrite(owner)) {
+                return;
+            }
+            if (!isCurrentUncachedAssetClip(trackId, clipId, hash, bufferId)) {
+                continue;
+            }
+            cacheAudioBuffer({ bufferId, buffer: audioBuffer });
+        } catch {
+            if (canSessionOwnerWrite(owner)) {
+                logger.warn('[Collaboration] Failed to decode asset for clip', clipId);
+            }
+        } finally {
+            owner.resolvingAssetAliasKeys.delete(key);
         }
     }
 
