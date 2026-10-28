@@ -431,6 +431,10 @@ that device, nothing else) and require either the new carrier to take it or a no
 why not. Then find the product's own standing consumers of that path — the nightly harness
 project, the smoke set — and run them through the same rule.
 
+### A lossless encoder must use the format's residual grammar
+
+Commit `1d27112e9ac94295f965b35ec8856a07023f63cc` introduced FLAC Rice quotients as one bits terminated by zero, opposite RFC 9639's zero bits terminated by one. No associated introducing PR or historical private review prompt or tier is established. Compare real encoded residuals through the shipped decoder against the originating PCM at both 16 and 24 bits, including STREAMINFO MD5 and decoder warnings. Require the unchanged named parity case to fail when the unary polarity fix is reverted; format metadata alone cannot establish lossless decoding.
+
 ### 2026-09-06 — a new device body admitted against the engine's vocabulary, never against the record its producer sends (escaped via 07102e912)
 
 The change that first admitted the Fermenter body to the native graph mapper kept the mapper's
