@@ -1,0 +1,31 @@
+src/modules/Arrangement/stores/__tests__/vcaActivationQuarantine.spec.ts
+  s_59e31a5c6f3e31::t_a8bd1f95966e89 307,311-323,325
+  s_59e31a5c6f3e31::t_c661a3af5bb440 324
+  s_59e31a5c6f3e31::t_aa6ed2b500b3b4 326
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackVcaSection.command.integration.spec.tsx
+  s_59e31a5c6f3e31::t_7a6481afeac6f7 1,14,16,21,27,181-206,368-415
+  s_59e31a5c6f3e31::t_9c699648b5995b 416
+src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx
+  s_59e31a5c6f3e31::t_78ac85e97fe7b3 13,41,43-51,69,72-80
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackVcaSection.spec.tsx
+  s_59e31a5c6f3e31::t_bf57277de539a1 143,154
+  s_59e31a5c6f3e31::t_71d3a66085e9de 140-142
+  s_59e31a5c6f3e31::t_bd9fb1aca5fa17 144-146
+  s_59e31a5c6f3e31::t_3d4b0425bda3ba 155-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c737729bc8eecb85cd9efd1b2f2b3d6a994b8553",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
