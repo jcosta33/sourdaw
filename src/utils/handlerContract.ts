@@ -595,6 +595,9 @@ export type CompTakeLaneSnapshot = {
     takes: TakeSnapshot[];
     activeCompRegions: CompRegionSnapshot[];
 };
+/** Exact root publication and source member, attached only after the producer commits. */
+export type CommandSourceProof = { changeHash: string; memberId: string };
+
 /** One lane a clip removal emptied or thinned, carried by `restoreClip` as it
  *  was before the removal together with the index it held, so undoing the
  *  removal can put the same lane back in the same place. */
@@ -1190,6 +1193,7 @@ export type AppAction =
                * payload still decode; absent means the removal retired none.
                */
               retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
+              retiredTakeSourceProof?: CommandSourceProof;
           };
       }
     | {
@@ -1438,6 +1442,7 @@ export type AppAction =
                * restores nothing.
                */
               retiredTakeLanes?: RetiredTakeLaneSnapshot[];
+              retiredTakeSourceProof?: CommandSourceProof;
               /**
                * Shared holder for the take/comp-region re-key the forward split
                * captured (#5048), filled in place by its `execute()`. The undo
@@ -3193,6 +3198,8 @@ export type HandlerCommitValidation = {
     readonly validateDocument: (document: Readonly<Record<string, unknown>>) => string | null;
     /** Idempotent, nonthrowing cleanup once this handler's transaction has finished executing. */
     readonly release: () => void;
+    /** Attach evidence from the exact owned publication before history becomes visible. */
+    readonly afterPublication?: () => void;
 };
 
 type HandlerDeferredEffects =
@@ -3233,6 +3240,8 @@ export type HandlerExecutionResult = {
 export type HandlerValidationContext = {
     readonly actions: readonly AppAction[];
     readonly actionIndex: number;
+    /** Original history identity when a producer refreshes a saved capture. */
+    readonly undoEntryId?: string;
     /** Exact execution cancellation signal for long-running handler-owned follow-up work. */
     readonly signal?: AbortSignal;
     /** Caller-scoped telemetry for actual deferred work starts and for render receipts; never persisted as project truth. */
@@ -3248,6 +3257,7 @@ export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'acti
 /** Neutral persisted-history shape supplied to an owning handler after Command
  *  has validated each action against its current operation contract. */
 export type HandlerSessionActionEntry = {
+    readonly id?: string;
     readonly action: AppAction;
     readonly inverseAction: AppAction | null;
     readonly redoAction?: AppAction;

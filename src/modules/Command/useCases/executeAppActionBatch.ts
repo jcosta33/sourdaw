@@ -100,6 +100,8 @@ type ExecuteAppActionBatchResult =
       };
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
+    /** Original history identities in replay execution order. */
+    undoEntryIds?: readonly string[];
     authorizeFirstHandler?: () => string | null;
     commandEnvelopes?: readonly VersionedCommandEnvelope[];
     preExecutionValidation?: () => string | null;
@@ -385,7 +387,8 @@ async function executePreparedBatch(
     authorizeFirstHandler: (() => string | null) | undefined,
     signal: AbortSignal | undefined,
     onDeferredEffectAttempt: ExecuteOptions['onDeferredEffectAttempt'] | undefined,
-    workOwner: ExecuteOptions['workOwner'] | undefined
+    workOwner: ExecuteOptions['workOwner'] | undefined,
+    undoEntryIds: readonly string[] | undefined
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
     let approvalConsumed = false;
@@ -408,6 +411,7 @@ async function executePreparedBatch(
                 prepared.handler.execute(prepared.action, {
                     actions: preparedActions.map((candidate) => candidate.action),
                     actionIndex,
+                    undoEntryId: undoEntryIds?.[actionIndex] ?? prepared.envelope.commandId,
                     signal,
                     onDeferredEffectAttempt,
                     workOwner,
@@ -570,7 +574,8 @@ function recordCommittedBatch(
             action,
             inverseAction,
             options?.source ?? 'manual',
-            description.redoAction
+            description.redoAction,
+            action.type === 'removeClip' || action.type === 'splitClip' ? envelope.commandId : undefined
         );
         if (historyGroupId) {
             undoEntry.groupId = historyGroupId;
@@ -906,7 +911,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     options?.authorizeFirstHandler,
                     options?.signal,
                     options?.onDeferredEffectAttempt,
-                    options?.workOwner
+                    options?.workOwner,
+                    options?.undoEntryIds
                 )
             );
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);
@@ -1012,9 +1018,17 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const reason = failureReason(error);
                 logger.error(new Error('Action batch storage commit failed', { cause: error }));
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    let publicationWarning: string | null = null;
+                    try {
+                        for (const executed of executedActions) {
+                            executed.commitValidation?.afterPublication?.();
+                        }
+                    } catch (publicationError) {
+                        publicationWarning = failureReason(publicationError);
+                    }
                     const reconciliationWarning = await reconcileAmbiguousRuntime(executedActions);
                     commitRedoInverseCapture({ phase: 'settle', actions: captureActions });
-                    const warnings = [cleanupWarning, reconciliationWarning].filter(
+                    const warnings = [cleanupWarning, publicationWarning, reconciliationWarning].filter(
                         (warning): warning is string => warning !== null
                     );
                     const ambiguousReason = warnings.length > 0 ? `${reason}; ${warnings.join('; ')}` : reason;
@@ -1058,6 +1072,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             try {
+                for (const executed of executedActions) {
+                    executed.commitValidation?.afterPublication?.();
+                }
                 recordCommittedBatch(executedActions, options);
             } catch (error) {
                 const warning = failureReason(error);

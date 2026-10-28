@@ -6,7 +6,12 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiClipSplitStateMatches, restoreMidiClipSplitState } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import {
+    type AppAction,
+    type HandlerValidationContext,
+    type HandlerCommitValidation,
+    type CommandSourceProof,
+} from '#/utils/handlerContract';
 
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
 import { clipSatelliteEntriesMatchSnapshot, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
@@ -19,6 +24,7 @@ import { readClipSplitIdentityIds } from '../../useCases/clipEditing/readClipSpl
 import { replaceClipSplitTrackState } from '../../useCases/clipEditing/replaceClipSplitTrackState';
 import { applyTakeReKeyTransitions } from '../../useCases/comping/applyTakeReKeyTransitions';
 import { planTakeRetirement } from '../../useCases/comping/planTakeRetirement';
+import { captureRetiredTakeSource } from '../../useCases/comping/captureRetiredTakeSource';
 import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
 import { removeTakesForClips } from '../../useCases/comping/removeTakesForClips';
 import { restoreTakeReKeyTransitions } from '../../useCases/comping/restoreTakeReKeyTransitions';
@@ -109,7 +115,8 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
 }
 
 function applySplitTakeTransition(
-    payload: RestoreClipSplitStateAction['payload']
+    payload: RestoreClipSplitStateAction['payload'],
+    stagedRetired: ReturnType<typeof removeTakesForClips>
 ): ReturnType<typeof removeTakesForClips> {
     // Undo leg: the replacement carries no right clip, so the track restore
     // just filtered it out — retire its take lanes too, staging their capture
@@ -120,12 +127,8 @@ function applySplitTakeTransition(
     // discriminator is falsiness — `=== undefined` never fires on a real
     // payload, which is how the first cut of this leg silently never ran.
     if (!payload.replacement.rightClip) {
-        const reKeyedTakeIds = new Set(
-            (payload.reKeyedTakeLanes ?? []).flatMap((transition) => transition.takesAfter.map((take) => take.id))
-        );
         // Capture late right-side material before the transition's liveness
         // filter retires it. Transition-owned ids remain its sole responsibility.
-        const stagedRetired = planTakeRetirement([payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
         // The split's re-key (#5048) rides the shared payload array: with
         // the clips back on the track and the lane still present, put its
         // pre-split facets back before retiring any remaining right material.
@@ -189,7 +192,8 @@ function prepareSplitHistoryCapturePublication(
     capture: RestoreClipSplitStateAction['payload']['retiredTakeLanes'],
     orderCapture: string[] | undefined,
     stagedOrder: readonly string[],
-    readRetired: () => ReturnType<typeof removeTakesForClips>
+    readRetired: () => ReturnType<typeof removeTakesForClips>,
+    sourceProof?: CommandSourceProof
 ) {
     const hasCapture = Boolean(capture || orderCapture);
     const documentBeforeReplay = hasCapture ? captureDurableDocumentWitness() : null;
@@ -208,6 +212,9 @@ function prepareSplitHistoryCapturePublication(
             ) {
                 capture?.splice(0, capture.length, ...readRetired());
                 orderCapture?.splice(0, orderCapture.length, ...stagedOrder);
+                if (sourceProof && action.payload.retiredTakeSourceProof) {
+                    Object.assign(action.payload.retiredTakeSourceProof, sourceProof);
+                }
             }
         },
     };
@@ -220,11 +227,55 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
     canReapplyAfterDivergence: () => true,
     validate: clipSplitStateMatches,
     prepareAbort: (action) => () => createdClipMidiCapture({ phase: 'discard', action }),
-    execute: (action) => {
+    execute: (action, context) => {
         if (hasForeignPendingProjectWrites() || !clipSplitStateMatches(action)) {
             return { status: 'conflict' };
         }
         const proof = captureRestoreClipSplitCommitValidation(action);
+        const reKeyedTakeIds = new Set(
+            (action.payload.reKeyedTakeLanes ?? []).flatMap((lane) => lane.takesAfter.map((take) => take.id))
+        );
+        const retiredSource = !action.payload.replacement.rightClip
+            ? (planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [])
+            : [];
+        const stagedSourceProof: CommandSourceProof = { changeHash: '', memberId: '' };
+        const sourceProof = action.payload.retiredTakeSourceProof
+            ? captureRetiredTakeSource(
+                  'splitClipUndo',
+                  [action.payload.rightClipId],
+                  retiredSource,
+                  stagedSourceProof,
+                  context?.undoEntryId
+              )
+            : undefined;
+        const guards = [proof?.validation, sourceProof?.validation].filter(
+            (guard): guard is HandlerCommitValidation => guard !== undefined
+        );
+        const commitValidation: HandlerCommitValidation | undefined = guards.length
+            ? {
+                  documentId: 'root',
+                  beforeCommit: () => {
+                      for (const guard of guards) {
+                          const reason = guard.beforeCommit();
+                          if (reason) return reason;
+                      }
+                      return null;
+                  },
+                  validateDocument: (document) => {
+                      for (const guard of guards) {
+                          const reason = guard.validateDocument(document);
+                          if (reason) return reason;
+                      }
+                      return null;
+                  },
+                  release: () => {
+                      for (const guard of guards) guard.release();
+                  },
+                  afterPublication: () => {
+                      for (const guard of guards) guard.afterPublication?.();
+                  },
+              }
+            : undefined;
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
         const orderCapture = !action.payload.replacement.rightClip ? action.payload.expected.rightClipOrder : undefined;
         const stagedOrder =
@@ -233,7 +284,7 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
                 ?.clips.map((clip) => clip.id) ?? [];
         let createdMidi: ReturnType<typeof prepareCreatedMidi> = null;
         const conflict = () => {
-            proof?.validation.release();
+            commitValidation?.release();
             createdMidi?.discard();
             return { status: 'conflict' as const };
         };
@@ -246,14 +297,15 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
                 capture,
                 orderCapture,
                 stagedOrder,
-                () => stagedRetired
+                () => stagedRetired,
+                sourceProof ? stagedSourceProof : undefined
             );
             if (!restoreSplitOwners(action.payload)) {
                 return conflict();
             }
-            stagedRetired = applySplitTakeTransition(action.payload);
+            stagedRetired = applySplitTakeTransition(action.payload, retiredSource);
             createdMidi?.complete();
-            if (proof && !proof.captureWrittenState()) {
+            if ((proof && !proof.captureWrittenState()) || (sourceProof && !sourceProof.captureWrittenState())) {
                 return conflict();
             }
             // The paired arrays belong to history, outside the project transaction.
@@ -261,14 +313,14 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
             if (publication.hasCapture || createdMidi) {
                 return {
                     status: 'written',
-                    commitValidation: proof?.validation,
+                    commitValidation,
                     afterCommit: publication.install,
                     afterAmbiguousCommit: publication.install,
                 };
             }
-            return { status: 'written', commitValidation: proof?.validation };
+            return { status: 'written', commitValidation };
         } catch (error) {
-            proof?.validation.release();
+            commitValidation?.release();
             createdMidi?.discard();
             throw error;
         }

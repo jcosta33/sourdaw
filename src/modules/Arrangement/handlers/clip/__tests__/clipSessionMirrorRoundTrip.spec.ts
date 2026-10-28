@@ -9,6 +9,7 @@ import {
     countPendingAutomergeStorageWrites,
     flushAutomergeStorageWrites,
     runWithAutomergeStorageTransaction,
+    runOutsideAutomergeStoragePublisherScope,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
@@ -48,7 +49,7 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type ActionHandler } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -3175,6 +3176,140 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(undoHistoryStore.value?.future).toHaveLength(2);
     });
 
+    it('rejects a saved removal whose retired recording host alone was redirected', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [...trackStore.value!.tracks, TrackDummy.create({ id: 'empty-host', clips: [] })],
+        });
+        const take = createTake('clip-a', 'Recorded source', 0, 4);
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...createTakeLane(TRACK_ID),
+                    takes: [take],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take.id }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } });
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const inverse = persistedInverse();
+        const captures = inverse.payload.retiredTakeLanes;
+        if (!Array.isArray(captures) || !isRecord(captures[0]) || !isRecord(captures[0].lane)) {
+            throw new Error('Expected the real removal source capture');
+        }
+        captures[0].lane.trackId = 'empty-host';
+        if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) {
+            throw new Error('Expected the saved removal entry');
+        }
+        saved.past[0].inverseAction = inverse;
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        const raw = structuredClone(getCrdtDoc('root'));
+        reloadSavedProject();
+        await undo();
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        expect(clipOnTrack(TRACK_ID, 'clip-a')).toBeUndefined();
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expect(getCrdtDoc('root')).toEqual(raw);
+    });
+
+    it('rejects a substituted real retirement proof after the same clip lane and take ids were reused on another host', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        const other = createTrack({ id: 'reused-source-host', name: 'Other host', kind: 'midi' });
+        trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, other] });
+        const take = createTake('clip-a', 'First event', 0, 4);
+        const lane = { ...createTakeLane(TRACK_ID), id: 'reused-source-lane', takes: [take] };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+        stopProjectionBridge = setupProjectionBridge();
+        projectCrdtToStores();
+        const original = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        syncPeerProject((project) => {
+            if (!original) throw new Error('Expected original source clip');
+            project.tracks.tracks
+                .find((track) => track.id === other.id)!
+                .clips.push({ ...original, trackId: other.id });
+            project.takeLanes.lanes.push({ ...lane, trackId: other.id });
+        });
+        await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        if (!Array.isArray(saved.past)) throw new Error('Expected both actual retirement events');
+        const first = saved.past[0];
+        const second = saved.past[1];
+        if (
+            !isRecord(first) ||
+            !isRecord(second) ||
+            !isRecord(first.inverseAction) ||
+            !isRecord(second.inverseAction) ||
+            !isRecord(first.inverseAction.payload) ||
+            !isRecord(second.inverseAction.payload)
+        )
+            throw new Error('Expected actual producer inverses');
+        const payload = first.inverseAction.payload;
+        if (
+            !Array.isArray(payload.retiredTakeLanes) ||
+            !isRecord(payload.retiredTakeLanes[0]) ||
+            !isRecord(payload.retiredTakeLanes[0].lane)
+        )
+            throw new Error('Expected first event owner');
+        expect(first.id).not.toBe(second.id);
+        payload.retiredTakeLanes[0].lane.trackId = other.id;
+        payload.retiredTakeSourceProof = structuredClone(second.inverseAction.payload.retiredTakeSourceProof);
+        saved.past = [first];
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        reloadSavedProject();
+        expect(undoHistoryStore.value?.past).toEqual([]);
+        await expectReplayRefused('undo');
+        expect(clipOnTrack(other.id, 'clip-a')).toBeUndefined();
+    });
+
+    it('rejects a paired saved split whose right MIDI source window was redirected', async () => {
+        await executeAppAction({
+            type: 'splitClip',
+            payload: { clipId: 'clip-a', beat: 2, rightClipId: 'clip-right' },
+        });
+        expect((await undo()).headConsumed).toBe(true);
+        await vi.waitFor(() =>
+            expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+        );
+        const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        if (!Array.isArray(saved.future) || !isRecord(saved.future[0])) {
+            throw new Error('Expected the real split entry');
+        }
+        for (const [side, snapshot] of [
+            ['inverseAction', 'expected'],
+            ['redoAction', 'replacement'],
+        ] as const) {
+            const action = saved.future[0][side];
+            if (!isRecord(action) || !isRecord(action.payload)) {
+                throw new Error('Expected the split action');
+            }
+            const state = action.payload[snapshot];
+            if (!isRecord(state) || !isRecord(state.rightClip)) {
+                throw new Error('Expected the producer right fragment');
+            }
+            state.rightClip.midiOffsetBeats = 123;
+        }
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+        const raw = structuredClone(getCrdtDoc('root'));
+        reloadSavedProject();
+        await redo();
+        expect(undoHistoryStore.value?.future).toEqual([]);
+        expect(clipOnTrack(TRACK_ID, 'clip-right')).toBeUndefined();
+        expect(getCrdtDoc('root')).toEqual(raw);
+    });
+
     it.each([false, true])('keeps saved removal after a real audio move across tracks=%s', async (crossTrack) => {
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
         const source = { ...createClipFixture('clip-a', 0, 4), type: 'audio' as const, audioBufferId: 'recorded' };
@@ -5635,7 +5770,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
                 }
                 reloadSavedProject();
-                expect(undoHistoryStore.value?.[stack]).toHaveLength(grouped ? 2 : 1);
+                // Saved-source corruption is refused during admission; a live
+                // peer collision remains admitted and must be refused at replay.
+                expect(undoHistoryStore.value?.[stack]).toHaveLength(collision === 'saved-id' ? 0 : grouped ? 2 : 1);
                 if (collision === 'peer-id') {
                     syncPeerProject((project) => {
                         const foreignLane = project.takeLanes.lanes.find((lane) => lane.id === residentLane.id);
@@ -8109,6 +8246,112 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         expect(ownerProjections()).toEqual(owners);
         expectValidProject();
     });
+
+    it.each([
+        ['remove', 'beforeCommit'],
+        ['splitUndo', 'beforeCommit'],
+        ['remove', 'documentChange'],
+        ['splitUndo', 'documentChange'],
+    ] as const)(
+        'refuses %s source publication when the actual retiring lane host changes at %s',
+        async (operation, timing) => {
+            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            const other = createTrack({ id: 'late-source-host', name: 'Other host', kind: 'midi' });
+            trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, other] });
+            flushAutomergeStorageWrites();
+            stopProjectionBridge = setupProjectionBridge();
+            projectCrdtToStores();
+            if (operation === 'splitUndo') {
+                await executeAppAction(
+                    { type: 'splitClip', payload: { clipId: 'clip-a', beat: 2, rightClipId: 'late-source-right' } },
+                    { source: 'manual' }
+                );
+            }
+            const clipId = operation === 'remove' ? 'clip-a' : 'late-source-right';
+            const take = createTake(clipId, 'Actual retiring source', 0, 4);
+            syncPeerProject((project) => {
+                project.takeLanes.lanes.push({
+                    ...createTakeLane(TRACK_ID),
+                    id: 'late-source-lane',
+                    takes: [take],
+                });
+            });
+            const history = structuredClone(undoHistoryStore.value);
+            let peer: unknown;
+            let checked = false;
+            const intervene = () => {
+                checked = true;
+                runOutsideAutomergeStoragePublisherScope(() =>
+                    syncPeerProject((project) => {
+                        project.takeLanes.lanes[0]!.trackId = other.id;
+                    })
+                );
+                peer = structuredClone(getCrdtDoc('root'));
+            };
+            if (timing === 'documentChange') {
+                configureAutomergeStoragePort({
+                    getDoc: getCrdtDoc,
+                    getDocHeads: (id) => {
+                        const doc = getCrdtDoc(id);
+                        return doc && Automerge.getHeads(doc);
+                    },
+                    getSemanticMessage: () => undefined,
+                    hasDoc: (id) => getCrdtDoc(id) !== undefined,
+                    mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
+                        if (docId === 'root' && !checked) intervene();
+                        mutateCrdtDoc({ id: docId, changeFn, message, snapshotTransaction, localSlots: changedKeys });
+                    },
+                });
+            }
+            function intercept<Action extends AppAction>(handler: ActionHandler<Action>) {
+                const execute = handler.execute;
+                return vi.spyOn(handler, 'execute').mockImplementation((action, context) => {
+                    const result = execute(action, context);
+                    if (
+                        !result ||
+                        typeof result !== 'object' ||
+                        !('commitValidation' in result) ||
+                        !result.commitValidation
+                    ) {
+                        throw new Error('Actual retirement must carry a commit guard');
+                    }
+                    const validation = result.commitValidation;
+                    return {
+                        ...result,
+                        commitValidation: {
+                            ...validation,
+                            beforeCommit: () => {
+                                if (timing === 'beforeCommit') intervene();
+                                return validation.beforeCommit();
+                            },
+                        },
+                    };
+                });
+            }
+            const spy = operation === 'remove' ? intercept(handleRemoveClip) : intercept(handleRestoreClipSplitState);
+            try {
+                if (operation === 'remove') {
+                    await expect(
+                        executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' })
+                    ).rejects.toThrow(
+                        timing === 'beforeCommit'
+                            ? 'Action conflicts with current project state: removeClip'
+                            : 'Retired take source effect did not reach committed owners'
+                    );
+                } else {
+                    expect((await undo()).headConsumed).toBe(false);
+                }
+            } finally {
+                spy.mockRestore();
+                registerCrdtStorageRuntime();
+            }
+            expect(checked).toBe(true);
+            expect(getCrdtDoc('root')).toEqual(peer);
+            expect(takeLaneStore.value?.lanes[0]).toMatchObject({ trackId: other.id, takes: [take] });
+            expect(clipOnTrack(TRACK_ID, clipId)).toBeDefined();
+            expect(undoHistoryStore.value).toEqual(history);
+        }
+    );
 
     it('refuses split Undo while a foreign unpublished take owns its capture input', async () => {
         workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });

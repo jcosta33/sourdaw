@@ -39,6 +39,8 @@ import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
 export type ExecuteAppActionOptions = ExecuteOptions & {
+    /** Preserve the originating history identity while replay refreshes a capture. */
+    undoEntryId?: string;
     authorizeFirstHandler?: () => string | null;
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
@@ -325,6 +327,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 handler.execute(action, {
                     actions: [action],
                     actionIndex: 0,
+                    undoEntryId: options?.undoEntryId ?? command.envelope.commandId,
                     signal: options?.signal,
                     onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                     workOwner: options?.workOwner,
@@ -427,6 +430,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 if (reachedStorage) {
                     const committedFailures: unknown[] = [error.cause];
                     try {
+                        execution_result?.commitValidation?.afterPublication?.();
                         await execution_result?.afterAmbiguousCommit?.();
                     } catch (reconciliationError) {
                         committedFailures.push(reconciliationError);
@@ -463,6 +467,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
 
             try {
+                execution_result?.commitValidation?.afterPublication?.();
                 options?.onCommitted?.();
 
                 if (!options?.skipMacroRecording) {
@@ -504,7 +509,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             action,
                             undoResult.inverseAction ?? null,
                             options?.source ?? 'manual',
-                            undoResult.redoAction
+                            undoResult.redoAction,
+                            action.type === 'removeClip' || action.type === 'splitClip'
+                                ? command.envelope.commandId
+                                : undefined
                         );
                         const previousEntry = undoStore.value?.past.at(-1);
                         if (

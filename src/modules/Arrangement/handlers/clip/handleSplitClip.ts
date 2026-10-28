@@ -70,6 +70,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
             entry.redoAction.payload.expected = inverse.replacement;
             entry.redoAction.payload.replacement = inverse.expected;
             entry.redoAction.payload.retiredTakeLanes = entry.inverseAction.payload.retiredTakeLanes;
+            entry.redoAction.payload.retiredTakeSourceProof = entry.inverseAction.payload.retiredTakeSourceProof;
             entry.redoAction.payload.reKeyedTakeLanes = entry.inverseAction.payload.reKeyedTakeLanes;
         }
         return true;
@@ -115,6 +116,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
         // a take naming the right half can land after the split, so only the
         // undo can capture what filtering the right clip out retires.
         const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
+        const retiredTakeSourceProof = { changeHash: '', memberId: '' };
         // Filled in place by the forward `execute()` and read by both legs: the
         // split's inverse is a snapshot restore, so only this capture carries
         // the pre-split take/comp-region facets the undo must put back (#5048).
@@ -130,6 +132,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     expected: plan.next,
                     replacement: plan.previous,
                     retiredTakeLanes,
+                    retiredTakeSourceProof,
                     reKeyedTakeLanes,
                 },
             },
@@ -141,6 +144,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     expected: plan.previous,
                     replacement: plan.next,
                     retiredTakeLanes,
+                    retiredTakeSourceProof,
                     reKeyedTakeLanes,
                 },
             },

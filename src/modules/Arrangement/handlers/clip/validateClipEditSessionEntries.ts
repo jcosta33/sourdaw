@@ -9,6 +9,8 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
+import { projectClipSplitSourceWindow } from '../../useCases/clipEditing/projectClipSplitSourceWindow';
+import { retiredTakeSourceMatches } from '../../useCases/comping/captureRetiredTakeSource';
 import { clipSatelliteStateCodec } from '../../useCases/timeOperations/clipSatelliteStateCodec';
 import { isReKeyLaneTransition } from '../../useCases/timeOperations/isReKeyLaneTransition';
 import { timeOperationRestorePlan } from '../../useCases/timeOperations/prepareTimeOperationStateRestore';
@@ -292,6 +294,15 @@ export function isRemoveClipSessionEntry(entry: HandlerSessionActionEntry): bool
         isRemoveClipSessionPayload(entry.action.payload) &&
         entry.action.payload.clipId === entry.inverseAction.payload.clipId &&
         isRestoreClipSessionPayload(entry.inverseAction.payload) &&
+        retiredTakeSourceMatches(
+            'removeClip',
+            entry.inverseAction.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [
+                entry.action.payload.clipId,
+            ],
+            entry.inverseAction.payload.retiredTakeLanes ?? [],
+            entry.inverseAction.payload.retiredTakeSourceProof,
+            entry.id
+        ) &&
         (shiftedClips.length === 0 ||
             (entry.action.payload.ripple !== false &&
                 (entry.redoAction?.type !== 'removeClip' || entry.redoAction.payload.ripple !== false))) &&
@@ -445,6 +456,44 @@ function splitLeftSourceMatches(left: unknown, otherLeft: unknown): boolean {
     return valuesEqual(preservedFields(left), preservedFields(otherLeft));
 }
 
+function splitRightSourceMatches(
+    clipId: string,
+    expected: Record<string, unknown>,
+    replacement: Record<string, unknown>
+): boolean {
+    const whole = expected.rightClip === null ? expected : replacement;
+    const split = expected.rightClip === null ? replacement : expected;
+    if (
+        typeof whole.trackId !== 'string' ||
+        !isClipSnapshot(whole.leftClip, clipId, whole.trackId) ||
+        !isRecord(split.leftClip) ||
+        typeof split.leftClip.endBeat !== 'number' ||
+        !isRecord(split.rightClip)
+    ) {
+        return false;
+    }
+    const projected = projectClipSplitSourceWindow(whole.leftClip, split.leftClip.endBeat);
+    const fields = ['audioOffsetBeats', 'midiOffsetBeats', 'loopOriginBeat'];
+    const pick = (clip: Record<string, unknown>, keys: readonly string[]) =>
+        Object.fromEntries(keys.filter((key) => clip[key] !== undefined).map((key) => [key, clip[key]]));
+    const inherited = [
+        'type',
+        'audioBufferId',
+        'fileId',
+        'assetHash',
+        'stretchMode',
+        'stretchRatio',
+        'loopEnabled',
+        'loopLength',
+        'parentClipId',
+        'isLinkedInstance',
+    ];
+    return (
+        valuesEqual(pick(split.rightClip, fields), pick(projected, fields)) &&
+        valuesEqual(pick(split.rightClip, inherited), pick(whole.leftClip, inherited))
+    );
+}
+
 /** Capture ownership is structural; live owner freshness is checked at replay. */
 export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
     return (
@@ -564,6 +613,7 @@ function splitReplaySnapshotsMatch(
         valuesEqual(inverse.expected, redo.replacement) &&
         valuesEqual(inverse.replacement, redo.expected) &&
         valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes) &&
+        valuesEqual(inverse.retiredTakeSourceProof, redo.retiredTakeSourceProof) &&
         valuesEqual(inverse.reKeyedTakeLanes, redo.reKeyedTakeLanes)
     );
 }
@@ -586,6 +636,14 @@ export function isSplitClipSessionEntry(entry: HandlerSessionActionEntry): boole
         action.rightClipId === redo.rightClipId &&
         isRestoreClipSplitSessionPayload(inverse) &&
         isRestoreClipSplitSessionPayload(redo) &&
+        splitRightSourceMatches(action.clipId, inverse.expected, inverse.replacement) &&
+        retiredTakeSourceMatches(
+            'splitClipUndo',
+            [inverse.rightClipId],
+            inverse.retiredTakeLanes ?? [],
+            inverse.retiredTakeSourceProof,
+            entry.id
+        ) &&
         typeof action.resolvedBeat === 'number' &&
         Number.isFinite(action.resolvedBeat) &&
         inverse.expected.rightClip !== null &&

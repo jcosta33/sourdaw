@@ -27,6 +27,7 @@ import { removeClip } from '../../useCases/clip/removeClip';
 import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { readClipMidiSnapshot } from '../../useCases/clipEditing/readClipMidiSnapshot';
 import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTakeLanes';
+import { captureRetiredTakeSource } from '../../useCases/comping/captureRetiredTakeSource';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
@@ -353,17 +354,28 @@ export const handleRemoveClip = createHandler<'removeClip'>({
         pendingRedoCaptures.delete(alpha);
         const pendingInverse = pendingInverseCaptures.get(alpha);
         pendingInverseCaptures.delete(alpha);
+        const actualInverse = handleRemoveClip.describe(alpha).inverseAction;
+        pendingInverseCaptures.delete(alpha);
         if (pendingInverse) {
-            const fresh = handleRemoveClip.describe(alpha).inverseAction;
-            if (fresh?.type === 'restoreClip') {
-                pendingInverse.payload = fresh.payload;
+            if (actualInverse?.type === 'restoreClip') {
+                pendingInverse.payload = actualInverse.payload;
             }
         }
         // Redo runs with skipUndo. Retain its actual producer capture so the
         // following Undo authenticates the shifted owners this replay wrote,
         // and restores exactly the material this replay retired.
-        const fresh = paired?.type === 'restoreClip' ? handleRemoveClip.describe(alpha).inverseAction : null;
+        const fresh = paired?.type === 'restoreClip' ? actualInverse : null;
         pendingRedoCaptures.delete(alpha);
+        const sourceProof =
+            actualInverse?.type === 'restoreClip' && actualInverse.payload.retiredTakeSourceProof
+                ? captureRetiredTakeSource(
+                      'removeClip',
+                      actualInverse.payload.ripplePlan?.removedClips.map((clip) => clip.id) ?? [alpha.payload.clipId],
+                      actualInverse.payload.retiredTakeLanes ?? [],
+                      actualInverse.payload.retiredTakeSourceProof,
+                      context?.undoEntryId
+                  )
+                : undefined;
         const documentBeforeReplay = pendingRedo ? captureDurableDocumentWitness() : null;
         const ownsPublication = fresh || pendingRedo ? captureProjectMutationAuthorization() : null;
         // Bind now, inside the actual handler scope, while its exact transaction
@@ -393,25 +405,35 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             }
         };
         const committedResult = () => {
-            if (!fresh && !pendingRedo) {
+            if (sourceProof && !sourceProof.captureWrittenState()) {
+                sourceProof.validation.release();
+                return { status: 'conflict' as const };
+            }
+            if (!fresh && !pendingRedo && !sourceProof) {
                 return undefined;
             }
             return {
                 status: 'written' as const,
+                commitValidation: sourceProof?.validation,
                 afterCommit: installCapture,
                 afterAmbiguousCommit: installCapture,
             };
         };
 
-        const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId], ripple });
-        if (rippleResult === null) {
-            removeClip(alpha.payload.clipId);
+        try {
+            const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId], ripple });
+            if (rippleResult === null) {
+                removeClip(alpha.payload.clipId);
+                return committedResult();
+            }
+            removeMidiClipData(rippleResult.removedClips.map((clip) => clip.id));
             return committedResult();
+        } catch (error) {
+            sourceProof?.validation.release();
+            throw error;
         }
-        removeMidiClipData(rippleResult.removedClips.map((clip) => clip.id));
-        return committedResult();
     },
-    describe: (alpha, context) => {
+    describe: (alpha) => {
         const state = getTrackStoreState();
         let clipSnapshot: MinimalClipShape | null = null;
         let trackId: string | null = null;
@@ -478,11 +500,10 @@ export const handleRemoveClip = createHandler<'removeClip'>({
                 midiCcSnapshot: cc ? structuredClone(cc) : null,
                 midiPitchBendSnapshot: pb ? structuredClone(pb) : null,
                 retiredTakeLanes,
+                retiredTakeSourceProof: { changeHash: '', memberId: '' },
             },
         };
-        if (context && context.actionIndex > 0) {
-            pendingInverseCaptures.set(alpha, inverseAction);
-        }
+        pendingInverseCaptures.set(alpha, inverseAction);
         // Resolve the preference again at the actual execution prefix, then
         // publish it into this history object only after its owner commits.
         const redoPayload: RemoveClipAction['payload'] = { clipId: alpha.payload.clipId };

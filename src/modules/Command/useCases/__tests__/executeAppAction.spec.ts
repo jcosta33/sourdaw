@@ -635,6 +635,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -668,6 +669,7 @@ describe('executeAppAction', () => {
         expect(context).toEqual({
             actions: [executedAction],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: controller.signal,
             onDeferredEffectAttempt,
         });
@@ -766,6 +768,31 @@ describe('executeAppAction', () => {
 
         expect(afterCommit).toHaveBeenCalledOnce();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
+    });
+
+    it('classifies source evidence settlement failure after publication as committed', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const afterCommit = vi.fn();
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => ({
+                status: 'written',
+                commitValidation: {
+                    documentId: 'root',
+                    beforeCommit: () => null,
+                    validateDocument: () => null,
+                    release: () => undefined,
+                    afterPublication: () => {
+                        throw new Error('evidence settlement failed');
+                    },
+                },
+                afterCommit,
+                afterAmbiguousCommit: afterCommit,
+            }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionCommittedError);
+        expect(afterCommit).toHaveBeenCalledOnce();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('recovers a deferred-effect failure by reconciling durable truth', async () => {
@@ -1062,6 +1089,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -1141,6 +1169,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -1180,6 +1209,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -1196,6 +1226,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });

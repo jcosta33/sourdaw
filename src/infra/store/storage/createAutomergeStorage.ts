@@ -6,6 +6,7 @@ import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresenc
 import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
 type AutomergeStorageDocId = string;
+export const AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY = '_storagePublicationEvidence';
 
 type AutomergeStorageReadableDoc = {
     readonly [key: string]: unknown;
@@ -295,6 +296,7 @@ type ActiveAutomergeStorageTransaction = {
     readonly commitOwner: object;
     readonly snapshotTransaction: object | undefined;
     lifecycle: AutomergeStorageTransactionLifecycle;
+    readonly publicationMetadata: Map<string, unknown[]>;
 };
 
 const assertAutomergeStorageTransactionOpen = (transaction: ActiveAutomergeStorageTransaction): void => {
@@ -414,6 +416,18 @@ export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
         return activeAutomergeStorageMutationProvenance.owner;
     }
     return activeAutomergeStorageTransaction?.commitOwner;
+}
+
+/** Metadata accompanies this owner's real document effect; it never creates a publication by itself. */
+export function appendAutomergeStoragePublicationMetadata(docId: string, value: unknown): void {
+    const transaction = activeAutomergeStorageTransaction;
+    if (!transaction) {
+        throw new Error('Publication metadata requires an entered storage transaction');
+    }
+    assertAutomergeStorageTransactionOpen(transaction);
+    const members = transaction.publicationMetadata.get(docId) ?? [];
+    members.push(structuredClone(value));
+    transaction.publicationMetadata.set(docId, members);
 }
 
 /** Run one synchronous repository listener without inheriting its publisher's owner. */
@@ -758,7 +772,8 @@ type AutomergeStorageCommitOutcome =
 function commitAutomergeStorageMutations(
     mutations: readonly AutomergeStorageMutationInput[],
     owner: object | undefined,
-    validateDocument?: AutomergeStorageDocumentValidator
+    validateDocument?: AutomergeStorageDocumentValidator,
+    publicationMetadata?: readonly unknown[]
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
     if (!firstMutation) {
@@ -783,6 +798,14 @@ function commitAutomergeStorageMutations(
                 docId: firstMutation.docId,
                 changedKeys,
                 changeFn: (doc) => {
+                    const observesMetadata =
+                        publicationMetadata !== undefined ||
+                        Object.hasOwn(doc, AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY);
+                    const before = observesMetadata
+                        ? mutations.map(({ key }) =>
+                              JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] })
+                          )
+                        : [];
                     for (const mutation of mutations) {
                         if (mutation.isCurrent && !mutation.isCurrent()) {
                             throw new Error('Automerge storage execution was invalidated before publication');
@@ -792,6 +815,22 @@ function commitAutomergeStorageMutations(
                     const validationFailure = validateDocument?.(doc) ?? null;
                     if (validationFailure) {
                         throw new AutomergeStorageTransactionValidationError(validationFailure);
+                    }
+                    if (
+                        observesMetadata &&
+                        mutations.some(
+                            ({ key }, index) =>
+                                before[index] !== JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] })
+                        )
+                    ) {
+                        if (changedKeys.includes(AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY)) {
+                            throw new Error('Publication metadata overlaps an action-owned document slot');
+                        }
+                        if (publicationMetadata) {
+                            doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY] = structuredClone(publicationMetadata);
+                        } else {
+                            delete doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY];
+                        }
                     }
                     for (const mutation of mutations) {
                         if (mutation.isCurrent && !mutation.isCurrent()) {
@@ -887,6 +926,7 @@ export function runWithAutomergeStorageTransaction<Result>(
         commitOwner: Object.freeze({}),
         lifecycle: 'open',
         snapshotTransaction,
+        publicationMetadata: new Map(),
     };
     activeAutomergeStorageTransaction = transaction;
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
@@ -949,7 +989,9 @@ export function runWithAutomergeStorageTransaction<Result>(
                     (pending) =>
                         pending.commitOwner === transaction.commitOwner &&
                         pending.snapshotTransaction === transaction.snapshotTransaction,
-                    documentValidators
+                    documentValidators,
+                    undefined,
+                    transaction.publicationMetadata
                 );
             } catch (error) {
                 if (error instanceof AutomergeStorageFlushError && error.committedDocumentCount > 0) {
@@ -998,7 +1040,8 @@ function flushMatchingAutomergeStorageWrites(
      * unscoped write — its own rAF, the external `flushPendingUnscopedWrite` —
      * lands unowned, exactly like any foreign buffered write.
      */
-    attributeMutationsTo?: object
+    attributeMutationsTo?: object,
+    publicationMetadata: ReadonlyMap<string, readonly unknown[]> = new Map()
 ): void {
     let firstError: unknown;
     let committedDocumentCount = 0;
@@ -1112,7 +1155,8 @@ function flushMatchingAutomergeStorageWrites(
                 const outcome = commitAutomergeStorageMutations(
                     mutations,
                     firstWrite.scoped ? firstWrite.commitOwner : attributeMutationsTo,
-                    documentValidators.get(docId)
+                    documentValidators.get(docId),
+                    publicationMetadata.get(docId)
                 );
                 if (documentValidators.has(docId)) {
                     validatedDocumentIds.add(docId);

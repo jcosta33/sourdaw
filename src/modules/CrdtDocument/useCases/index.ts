@@ -10,6 +10,7 @@ export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRe
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
 export { readOwnedProjectPublications } from './readOwnedProjectPublications';
+export { stageCommandSourcePublication, commandSourcePublicationMatches } from './commandSourcePublication';
 export { hasForeignPendingProjectWrites } from './hasForeignPendingProjectWrites';
 export { captureUnownedProjectMutations } from './captureUnownedProjectMutations';
 export { agentProjectInspectionPort } from './agentProjectInspectionPort';

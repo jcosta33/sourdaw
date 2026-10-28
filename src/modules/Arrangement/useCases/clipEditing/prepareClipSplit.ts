@@ -1,5 +1,4 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type AppAction, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
 import { getNextClipId } from '../../repositories/clipIdCounter';
@@ -10,6 +9,7 @@ import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
 import { projectClipReplayPrefix } from './projectClipReplayPrefix';
+import { projectClipSplitSourceWindow } from './projectClipSplitSourceWindow';
 import { readClipSplitIdentityIds } from './readClipSplitIdentityIds';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
 
@@ -21,24 +21,6 @@ type PrepareClipSplitInput = {
     targetNoteIds?: readonly string[];
     priorActions?: readonly AppAction[];
 };
-
-/**
- * The spread entry the right fragment writes for the loop anchor (#4988): the
- * MIDI fragment restamps at its own start, the audio fragment shifts by
- * `timelineSplitDelta - contentSplitDelta`, and an unanchored source keeps the
- * key absent.
- */
-function fragmentLoopOriginEntry(
-    clip: Clip,
-    anchoredStartBeat: number,
-    timelineSplitDelta: number,
-    contentSplitDelta: number
-): { loopOriginBeat: number } | Record<string, never> {
-    if (clip.type === 'midi') {
-        return restampLoopOriginEntry(clip, anchoredStartBeat);
-    }
-    return shiftLoopOriginEntry(clip, timelineSplitDelta - contentSplitDelta);
-}
 
 export function prepareClipSplit({
     clipId,
@@ -154,21 +136,13 @@ export function prepareClipSplit({
     // Carried unshifted, a stretched split displaces the region by
     // `timelineSplitDelta * (stretch - 1)` source beats and the fragment
     // enters on the wrong material at the cut.
-    const rightLoopOriginEntry = fragmentLoopOriginEntry(
-        clip,
-        adjustedSplitBeat,
-        timelineSplitDelta,
-        contentSplitDelta
-    );
     const rightClip: Clip = {
         ...clip,
         id: effectiveRightClipId,
         name: `${clip.name} (R)`,
         startBeat: adjustedSplitBeat,
         fadeInBeats: 0,
-        audioOffsetBeats: contentSplitBeats,
-        midiOffsetBeats: 0,
-        ...rightLoopOriginEntry,
+        ...projectClipSplitSourceWindow(clip, adjustedSplitBeat),
     };
     const previous: ClipSplitActionSnapshot = {
         trackId: track.id,
