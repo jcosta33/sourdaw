@@ -18,7 +18,8 @@ function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['trac
 }
 
 type StripProjectionInput = Parameters<typeof projectTrackToLiveStrip>[0];
-type ExternalPluginActivation = Parameters<NonNullable<StripProjectionInput['onExternalPluginActivation']>>[0];
+// Rebuild consumers share only status/reason; native failure stages stay internal.
+type ExternalPluginActivation = Promise<{ status: 'active' } | { status: 'failed'; reason: string }>;
 
 export type EnsureTrackStripsResult =
     | {
