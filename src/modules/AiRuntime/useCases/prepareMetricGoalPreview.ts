@@ -308,7 +308,9 @@ export async function prepareMetricGoalPreview(input: {
             captureProjectRevision() !== parsed.envelope.baseRevision
         ) {
             terminalState = 'cancelled';
-            return { state: { ...state, proofs: [] }, receipts };
+            throw new Error(
+                'The project, provider configuration or run changed while metric proof was being refreshed.'
+            );
         }
         terminalState = 'completed';
         return {

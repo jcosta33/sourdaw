@@ -15,6 +15,8 @@ export function bindMetricGoalsToBatch(input: {
     }
     const envelope = parsed.envelope;
     const original = input.state ?? { schemaVersion: 1, authorities: [], steps: [], proofs: [], binding: null };
+    const schedulePosition = input.schedulePosition ?? original.binding?.schedulePosition ?? null;
+    const advancesSchedule = original.binding !== null && original.binding.schedulePosition !== schedulePosition;
     const prefixes: NonNullable<MetricGoalState['binding']>['prefixes'][number][] = [];
     let offset = 0;
     let before: string | null = null;
@@ -49,13 +51,14 @@ export function bindMetricGoalsToBatch(input: {
     }
     return {
         ...structuredClone(original),
+        proofs: advancesSchedule ? [] : structuredClone(original.proofs),
         binding: {
             contentHash: digestCommandBatchContent(envelope),
             revision: envelope.baseRevision,
             projectId: envelope.projectId,
             runId: envelope.runId,
             batchId: envelope.batchId,
-            schedulePosition: input.schedulePosition ?? null,
+            schedulePosition,
             prefixes,
         },
     };

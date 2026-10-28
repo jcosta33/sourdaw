@@ -12,7 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeVersionedCommandBatchEnvelope, undo } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 
@@ -26,15 +26,20 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { materializePromptCommandPlan } from '../agentRequestOrchestration/materializePromptCommandPlan';
+import { persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
+import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
+import { readChatThreadContext } from '../readChatThreadContext';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
 import { advertisedAnswerCandidateId } from './answerWireFixture';
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
@@ -44,6 +49,7 @@ import {
     metricGoalAudioBuffer,
     metricGoalProviderPlan,
     readMetricPublication,
+    literalMetricIntakeTurn,
 } from './metricGoalWorkflowFixture';
 
 const audio = vi.hoisted(() => ({
@@ -130,9 +136,12 @@ describe('actual current-preview comparison approval', () => {
         'confirmation-matched',
         'confirmation-replaced-proof',
         'direct-replaced-proof',
+        'refinement-literal',
+        'scheduled-fresh-proof',
     ] as const)('verifies both real named subjects for %s instead of substituting reference baseline', async (mode) => {
-        const confirmation = mode.startsWith('confirmation-');
-        const matched = mode === 'matched' || confirmation || mode === 'direct-replaced-proof';
+        const confirmation = mode.startsWith('confirmation-') || mode === 'refinement-literal';
+        const matched =
+            mode === 'matched' || confirmation || mode === 'direct-replaced-proof' || mode === 'scheduled-fresh-proof';
         let renders = 0;
         audio.renderTrackSubgraphOffline.mockImplementation(async (input: RenderInput) => {
             renders += 1;
@@ -440,6 +449,249 @@ describe('actual current-preview comparison approval', () => {
                     return { ...run, plan: { ...run.plan, metricGoalState: JSON.stringify({ ...state, proofs: [] }) } };
                 }),
             });
+        }
+        if (mode === 'scheduled-fresh-proof') {
+            const first = compileAgentActionExecution({
+                actions: planned.actions,
+                actionCommandGraph: planned.actionCommandGraph,
+                actionLabels: planned.actions.map((action) => action.type),
+                context,
+                intent: prompt,
+                projectRevision: revision,
+                runId: RUN_ID,
+                group: { groupId: 'metric-schedule-first', groupLabel: prompt },
+                requiresConfirmation: false,
+                metricGoalState: planned.metricGoalState,
+                schedulePosition: 1,
+            });
+            const firstState = metricGoalStateCodec(first.metricGoalState);
+            expect(firstState?.binding?.schedulePosition).toBe(1);
+            expect(firstState?.proofs).toHaveLength(1);
+            expect(
+                evaluateMetricGoalAdmission({
+                    state: firstState,
+                    commandBatch: first.commandBatch,
+                    currentRevision: revision,
+                })
+            ).toMatchObject({ status: 'verified' });
+            const next = compileAgentActionExecution({
+                actions: planned.actions,
+                actionCommandGraph: planned.actionCommandGraph,
+                actionLabels: planned.actions.map((action) => action.type),
+                context,
+                intent: prompt,
+                projectRevision: revision,
+                runId: RUN_ID,
+                group: { groupId: 'metric-schedule-next', groupLabel: prompt },
+                requiresConfirmation: false,
+                metricGoalState: first.metricGoalState,
+                schedulePosition: 2,
+            });
+            const nextState = metricGoalStateCodec(next.metricGoalState);
+            expect(nextState?.authorities).toEqual(firstState?.authorities);
+            expect(nextState?.binding?.schedulePosition).toBe(2);
+            expect(nextState?.proofs).toEqual([]);
+            expect(next.requiresConfirmation).toBe(true);
+            expect((await executeVersionedCommandBatchEnvelope(next.commandBatch)).status).toBe('rejected');
+            if (nextState === null) {
+                throw new Error('Expected the later batch to retain its frozen goal.');
+            }
+            const refreshed = await prepareMetricGoalPreview({
+                state: nextState,
+                commandBatch: next.commandBatch,
+                context,
+                prompt,
+                runId: RUN_ID,
+            });
+            expect(refreshed.state.binding?.schedulePosition).toBe(2);
+            expect(refreshed.state.proofs).toHaveLength(1);
+            expect(
+                evaluateMetricGoalAdmission({
+                    state: refreshed.state,
+                    commandBatch: next.commandBatch,
+                    currentRevision: revision,
+                })
+            ).toMatchObject({ status: 'verified' });
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoHistoryStore.value).toEqual(before.undo);
+            return;
+        }
+        if (mode === 'refinement-literal') {
+            if (compiled.agentApproval === null) {
+                throw new Error('Expected the real comparative confirmation binding.');
+            }
+            chatStore.set({
+                messages: [
+                    {
+                        id: 'comparison-user',
+                        role: 'user',
+                        content: prompt,
+                        timestamp: 1,
+                        projectId: captureProjectIdentity(),
+                    },
+                    {
+                        id: 'comparison-assistant',
+                        role: 'assistant',
+                        content: 'Comparison plan',
+                        timestamp: 2,
+                        agentRunId: RUN_ID,
+                        projectId: captureProjectIdentity(),
+                    },
+                ],
+                isGenerating: false,
+                enableReasoning: true,
+                chatMode: 'prompt',
+            });
+            const originalId = persistPromptActionConfirmation({
+                runId: RUN_ID,
+                prompt,
+                assistantMessageId: 'comparison-assistant',
+                actions: planned.actions,
+                actionLabels: planned.actions.map((action) => action.type),
+                commandEnvelopes: compiled.commandEnvelopes,
+                commandBatch: compiled.commandBatch,
+                agentApproval: compiled.agentApproval,
+                metricGoalState: compiled.metricGoalState,
+                affectedIds: ['drums'],
+                protectedUnchanged: [],
+                groundingBasis: planned.groundingBasis,
+                executionMode: 'atomic',
+                group: materialized.commandGroup,
+                projectRevision: revision,
+                parsedCommandBatch: materialized.parsedCommandBatch,
+                content: 'Compare Drums with Bass',
+            });
+            if (originalId === null) {
+                throw new Error('Expected the actual original card to be persisted.');
+            }
+            const thread = readChatThreadContext();
+            expect(thread?.pendingProposal?.confirmationId).toBe(originalId);
+            const refinedPrompt = 'Set device drums-trim gain-level to -6.020599913279624 over Chorus';
+            const refinedRun = 'metric-refinement-run';
+            expect(
+                agentRunLifecycle.create({
+                    runId: refinedRun,
+                    request: refinedPrompt,
+                    mode: 'apply',
+                    createdRevision: revision,
+                })
+            ).toEqual({ status: 'created' });
+            agentRunLifecycle.transitionPhase({ runId: refinedRun, phase: 'planning' });
+            let requests = 0;
+            vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, message, schemas) => {
+                requests += 1;
+                if (requests === 1) {
+                    return {
+                        status: 'complete',
+                        toolCalls: literalMetricIntakeTurn(message, schemas).map((call) => ({
+                            ...call,
+                            id: 'refinement-intake',
+                        })),
+                    };
+                }
+                if (requests === 2) {
+                    return {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'refinement-discovery',
+                                name: 'agent.catalog.discover',
+                                arguments: { category: 'command', names: ['setDeviceParameter'] },
+                            },
+                        ],
+                    };
+                }
+                if (requests === 3) {
+                    return {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'refinement-proposal',
+                                name: 'command.batch.propose',
+                                arguments: {
+                                    list: { schemaVersion: 1, items: previewItems },
+                                    refines: originalId,
+                                    plan: metricGoalProviderPlan(refinedPrompt, ['drums-trim']),
+                                },
+                            },
+                        ],
+                    };
+                }
+                throw new Error('Refinement exceeded its three actual provider turns.');
+            });
+            const refined = await parsePromptToActions({
+                prompt: refinedPrompt,
+                context,
+                projectRevision: revision,
+                thread,
+                streamIdentity: { runId: refinedRun, requestId: 'metric-refinement', cancellationGeneration: 0 },
+                onMeasurementAttempt: agentWorkBudget.admitMeasurement(refinedRun),
+            });
+            expect(refined.rejectionReason, JSON.stringify(refined.applicationToolReceipts)).toBeUndefined();
+            expect(refined.actions).toHaveLength(1);
+            expect(refined.refines).toBe(originalId);
+            const admitted = metricGoalStateCodec(refined.metricGoalState);
+            expect(admitted?.authorities[0]).toEqual(state.authorities[0]);
+            expect(admitted?.authorities[1]).toMatchObject({ kind: 'literal', goals: [] });
+            expect(admitted?.proofs).toEqual([]);
+            const next = materializePromptCommandPlan({
+                userText: refinedPrompt,
+                runId: refinedRun,
+                assistantMessageId: 'refinement-assistant',
+                interactionMode: 'apply',
+                resume: undefined,
+                onResumedPlanAccepted: undefined,
+                projectRevision: revision,
+                context,
+                result: { ...refined, planningOutcome: { kind: 'proposal' } },
+                actionLabels: refined.actions.map((action) => action.type),
+                protectedTargetIds: [],
+            });
+            if (next.status !== 'prepared' || next.compiledActionExecution.agentApproval === null) {
+                throw new Error('Expected a visible unverified refined comparison.');
+            }
+            const execution = next.compiledActionExecution;
+            expect(execution.requiresConfirmation).toBe(true);
+            expect(
+                evaluateMetricGoalAdmission({
+                    state: metricGoalStateCodec(execution.metricGoalState),
+                    commandBatch: execution.commandBatch,
+                })
+            ).toMatchObject({ status: 'blocked' });
+            const nextId = persistPromptActionConfirmation({
+                runId: refinedRun,
+                prompt: refinedPrompt,
+                assistantMessageId: 'refinement-assistant',
+                actions: refined.actions,
+                actionLabels: refined.actions.map((action) => action.type),
+                commandEnvelopes: execution.commandEnvelopes,
+                commandBatch: execution.commandBatch,
+                agentApproval: next.compiledActionExecution.agentApproval,
+                metricGoalState: execution.metricGoalState,
+                affectedIds: ['drums'],
+                protectedUnchanged: [],
+                groundingBasis: refined.groundingBasis,
+                executionMode: 'atomic',
+                group: next.commandGroup,
+                projectRevision: revision,
+                parsedCommandBatch: next.parsedCommandBatch,
+                content: 'Refined comparison',
+                supersedes: originalId,
+            });
+            if (nextId === null) {
+                throw new Error('Expected the real refined proposal to be retained.');
+            }
+            expect(getAgentApprovalView({ confirmationId: nextId })?.canConfirm).toBe(false);
+            const refreshed = await reproposePendingChatActions({ confirmationId: nextId });
+            expect(refreshed).toMatchObject({ status: 'reproposed' });
+            if (refreshed.status !== 'reproposed') {
+                throw new Error('Expected actual fresh comparison measurements for the refined batch.');
+            }
+            expect(getAgentApprovalView({ confirmationId: refreshed.confirmationId })?.canConfirm).toBe(true);
+            expect(requests).toBe(3);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoHistoryStore.value).toEqual(before.undo);
+            return;
         }
         if (confirmation) {
             if (compiled.agentApproval === null) {

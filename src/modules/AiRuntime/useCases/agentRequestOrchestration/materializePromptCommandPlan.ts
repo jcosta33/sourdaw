@@ -117,7 +117,10 @@ function cloneGrants(grants: CompiledCommandBatchAuthority['grants']): AgentRunD
  * is proposed the way the first one was. Only apply and macro runs commit batches; the dispatcher
  * refuses a schedule in any other mode before it reaches here.
  */
-function bindBatchSchedule(input: MaterializePromptCommandPlanInput): AgentRunBatchSchedule | undefined {
+function bindBatchSchedule(
+    input: MaterializePromptCommandPlanInput,
+    metricGoalState: string | undefined
+): AgentRunBatchSchedule | undefined {
     const planned = input.result.batchSchedule;
     if (planned === undefined) {
         return undefined;
@@ -127,7 +130,7 @@ function bindBatchSchedule(input: MaterializePromptCommandPlanInput): AgentRunBa
     }
     return {
         ...structuredClone(planned),
-        metricGoalState: input.result.metricGoalState,
+        metricGoalState,
         interactionMode: input.interactionMode,
         trustCeiling: input.trustCeiling ?? null,
     };
@@ -159,6 +162,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
             projectRevision: input.projectRevision,
             requiresConfirmation: input.result.requiresConfirmation,
             metricGoalState: input.result.metricGoalState,
+            schedulePosition: input.result.batchSchedule?.position,
             runId: input.runId,
             mode,
             protectedTargetIds: [...input.protectedTargetIds],
@@ -263,8 +267,8 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
         return { status: 'terminal' as const, completion };
     }
 
-    const batchSchedule = bindBatchSchedule(input);
     const compiledActionExecution = compile(input.interactionMode);
+    const batchSchedule = bindBatchSchedule(input, compiledActionExecution.metricGoalState);
     const { commandBatch } = compiledActionExecution;
     const parsedCommandBatch = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
     if (parsedCommandBatch.status === 'invalid') {

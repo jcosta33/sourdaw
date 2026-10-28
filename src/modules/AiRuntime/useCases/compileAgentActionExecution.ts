@@ -17,6 +17,7 @@ type CompileAgentActionExecutionInput = Omit<
     mode?: AgentExecutionMode;
     requiresConfirmation: boolean;
     metricGoalState?: string;
+    schedulePosition?: number;
     trustCeiling?: AgentTrustCeiling;
 };
 
@@ -26,6 +27,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         requiresConfirmation,
         trustCeiling = 'destructive-commit',
         metricGoalState,
+        schedulePosition,
         ...commandInput
     } = input;
     if (mode === 'explain' || mode === 'plan') {
@@ -43,6 +45,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
             bindMetricGoalsToBatch({
                 state: metricGoalStateCodec(metricGoalState),
                 commandBatch: proposed.commandBatch,
+                schedulePosition,
             })
         ),
     });

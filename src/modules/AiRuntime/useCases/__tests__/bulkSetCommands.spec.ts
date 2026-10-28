@@ -54,6 +54,7 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { deriveMatchSelectorPredicates } from '../deriveMatchSelectorPredicates';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { planAgentRun } from '../planAgentRun';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage } from '../sendChatMessage';
@@ -73,6 +74,7 @@ import {
     scriptProviderTurns,
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
 
@@ -1714,6 +1716,7 @@ function muteLayersItem(count = LAYER_COUNT) {
 
 function scriptMuteLayersProposal(item: Record<string, unknown> = muteLayersItem()): void {
     scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        literalMetricIntakeTurn,
         () => [MUTE_SEARCH_CALL],
         discoverSearchedCalls(['muteTrack']),
         proposeDiscoveredCalls([item], ['muteTrack']),
@@ -1893,6 +1896,12 @@ describe('a bulk request confirmed one batch at a time', () => {
         const first = requireOnlyProposedConfirmation();
         expect(first.approvalSnapshot.batchPosition).toEqual({ index: 1, total: 2 });
         expect(first.actions).toHaveLength(MAX_LLM_ACTIONS_PER_BATCH);
+        const firstGoals = metricGoalStateCodec(first.approvalSnapshot.metricGoalState);
+        expect(firstGoals?.binding?.schedulePosition).toBe(1);
+        expect(firstGoals?.authorities[0]).toMatchObject({ kind: 'literal', origin: 'configured-joint-intake' });
+        expect(agentRunLifecycle.get(first.runId)?.plan?.batchSchedule?.metricGoalState).toBe(
+            first.approvalSnapshot.metricGoalState
+        );
 
         await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
         expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
@@ -1901,6 +1910,14 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(second.runId).toBe(first.runId);
         expect(second.approvalSnapshot.batchPosition).toEqual({ index: 2, total: 2 });
         expect(getAgentApprovalView({ confirmationId: second.id })?.batchPosition).toEqual({ index: 2, total: 2 });
+        const secondGoals = metricGoalStateCodec(second.approvalSnapshot.metricGoalState);
+        expect(secondGoals?.binding?.schedulePosition).toBe(2);
+        expect(secondGoals?.authorities).toEqual(firstGoals?.authorities);
+        expect(secondGoals?.binding?.revision).not.toBe(firstGoals?.binding?.revision);
+        expect(secondGoals?.binding?.contentHash).not.toBe(firstGoals?.binding?.contentHash);
+        expect(secondGoals?.binding?.batchId).not.toBe(firstGoals?.binding?.batchId);
+        expect(secondGoals?.proofs).toEqual([]);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
 
         await expect(confirmPendingChatActions({ confirmationId: second.id })).resolves.toEqual({ status: 'executed' });
         expect(mutedTrackIds()).toEqual(layerIds);

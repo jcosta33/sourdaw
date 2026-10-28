@@ -54,6 +54,16 @@ export function validateAgentRiskApproval(input: ValidateAgentRiskApprovalInput)
     ) {
         return { status: 'invalid', reason: 'The metric goal or proof changed after approval.', stale: true };
     }
+    if (
+        state?.binding !== undefined &&
+        state?.binding !== null &&
+        ((pending?.approvalSnapshot.batchPosition !== undefined &&
+            pending.approvalSnapshot.batchPosition.index !== state.binding.schedulePosition) ||
+            (run?.plan?.batchSchedule !== undefined &&
+                run.plan.batchSchedule.position !== state.binding.schedulePosition))
+    ) {
+        return { status: 'invalid', reason: 'The metric goal proof belongs to another scheduled batch.', stale: true };
+    }
     const metricAdmission = evaluateMetricGoalAdmission({
         state,
         commandBatch: input.commandBatch,

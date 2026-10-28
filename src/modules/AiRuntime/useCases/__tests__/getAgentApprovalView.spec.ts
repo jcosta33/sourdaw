@@ -327,17 +327,20 @@ describe('getAgentApprovalView', () => {
         });
     });
 
-    // Red when a proposal matching the live revision is offered a re-preview anyway.
-    it('reports a matching proposal as current and withholds re-preview', () => {
+    // A matching legacy batch has no positive whole-request intent; freshness alone cannot approve it.
+    it('reports a matching legacy proposal as current but unverified and offers re-preview', () => {
         propose('confirmation-current');
 
         const view = getAgentApprovalView({ confirmationId: 'confirmation-current' });
 
         expect(view?.freshness).toEqual({ status: 'current', currentRevision: REVISION });
-        expect(view?.rePreview).toEqual({
-            available: false,
-            reason: 'The proposal still matches the current project.',
+        expect(view?.canConfirm).toBe(false);
+        expect(view?.metricGoals).toMatchObject({
+            status: 'blocked',
+            failure: 'missing',
+            reason: 'The whole request has no positive metric intent admission. The plan remains unverified.',
         });
+        expect(view?.rePreview).toEqual({ available: true, reason: null });
         expect(mocks.validateApproval).toHaveBeenCalledWith(
             expect.objectContaining({ currentRevision: REVISION, approval: expect.objectContaining(AGENT_APPROVAL) })
         );

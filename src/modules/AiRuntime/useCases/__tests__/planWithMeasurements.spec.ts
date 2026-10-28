@@ -5,11 +5,16 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { undoHistoryStore } from '#/modules/Command/stores';
-import { executeVersionedCommandBatchEnvelope, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import {
+    executeAppAction,
+    executeVersionedCommandBatchEnvelope,
+    parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
+import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore';
 import { chatStore } from '../../stores/chatStore';
 import { getPendingActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
@@ -17,6 +22,7 @@ import { materializePromptCommandPlan } from '../agentRequestOrchestration/mater
 import { persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentWorkBudget } from '../agentWorkBudget';
+import { agentRunCancellation } from '../cancelAgentRun';
 import { collectMetricGoalProof } from '../collectMetricGoalProof';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
@@ -73,6 +79,7 @@ beforeEach(() => {
         ],
         sections: [{ id: SECTION_ID, name: 'Chorus', startBeat: 0, endBeat: 4, color: '#ffffff' }],
     });
+    aiBackendPreferenceStore.set('auto');
     vi.mocked(generateToolPlanningOutcome).mockReset();
     for (const port of Object.values(audio)) {
         port.mockReset();
@@ -86,6 +93,7 @@ beforeEach(() => {
 });
 afterEach(() => {
     vi.restoreAllMocks();
+    aiBackendPreferenceStore.set('auto');
     resetMetricGoalProject();
 });
 
@@ -97,8 +105,14 @@ describe('configured mixing plan with actual measurements', () => {
         'two-recipes',
         'two-recipes-parameter-drift',
         'two-recipes-order-drift',
+        'stopped-repreview',
+        'project-edited-repreview',
+        'configuration-replaced-repreview',
+        'two-recipes-subset',
     ] as const)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
         const multipleRecipes = mode.startsWith('two-recipes');
+        const lateRepreview = mode.endsWith('repreview');
+        const matchedSingle = mode === 'matched' || lateRepreview;
         const targets = ['vocal'];
         const recipeIds = multipleRecipes ? ['vocal-warm', 'vocal-dark'] : ['vocal-warm'];
         const expectedCommands = multipleRecipes ? 11 : 5;
@@ -450,7 +464,7 @@ describe('configured mixing plan with actual measurements', () => {
             expect(
                 state?.binding?.prefixes,
                 JSON.stringify({ steps: state?.steps, binding: state?.binding })
-            ).toHaveLength(mode === 'two-recipes' ? 2 : 0);
+            ).toHaveLength(mode === 'two-recipes' || mode === 'two-recipes-subset' ? 2 : 0);
         }
         expect(state?.authorities[0]?.goals.slice(0, 2)).toMatchObject([
             {
@@ -480,7 +494,7 @@ describe('configured mixing plan with actual measurements', () => {
             commandBatch: compiled.commandBatch,
             currentRevision: revision,
         });
-        if (mode === 'matched') {
+        if (matchedSingle) {
             expect(evaluation).toMatchObject({
                 status: 'verified',
                 criteria: [
@@ -530,20 +544,82 @@ describe('configured mixing plan with actual measurements', () => {
         const view = getAgentApprovalView({ confirmationId });
         expect(view).not.toBeNull();
         expect(view?.actionLabels).toHaveLength(expectedCommands);
-        expect(view?.canConfirm).toBe(mode === 'matched');
+        expect(view?.canConfirm).toBe(matchedSingle);
         expect(view?.metricGoals.criteria[0]?.criterionText).toContain('frequency-band energy');
         expect(view?.metricGoals.criteria[0]?.criterionText).toContain('Lead Vocal');
         expect(view?.metricGoals.criteria[0]?.criterionText).not.toContain('recipeDigest');
         expect(
             agentRunLifecycle.get(RUN_ID)?.budgetAttempts.some((attempt) => attempt.category === 'localAnalysis')
         ).toBe(true);
+        if (lateRepreview) {
+            const entered = Promise.withResolvers<void>();
+            const resume = Promise.withResolvers<void>();
+            const renderer = audio.renderTrackSubgraphOffline.getMockImplementation();
+            if (renderer === undefined) {
+                throw new Error('Missing the actual configured audio port.');
+            }
+            audio.renderTrackSubgraphOffline.mockImplementationOnce(async (input) => {
+                entered.resolve();
+                await resume.promise;
+                return renderer(input);
+            });
+            const refreshing = reproposePendingChatActions({ confirmationId });
+            await entered.promise;
+            if (mode === 'stopped-repreview') {
+                await agentRunCancellation.cancel({ runId: RUN_ID, reason: 'Musician pressed Stop.' });
+            } else if (mode === 'project-edited-repreview') {
+                await executeAppAction({ type: 'renameTrack', payload: { trackId: 'vocal', name: 'Edited Vocal' } });
+                flushAutomergeStorageWrites();
+            } else {
+                aiBackendPreferenceStore.set('cloud');
+            }
+            const settledBeforeResume = {
+                tracks: structuredClone(trackStore.value),
+                undo: structuredClone(undoHistoryStore.value),
+                messages: structuredClone(chatStore.value?.messages),
+            };
+            resume.resolve();
+            expect(await refreshing).toMatchObject({ status: 'rejected' });
+            expect(getPendingActionConfirmation(confirmationId)?.supersededBy).toBeNull();
+            expect(trackStore.value).toEqual(settledBeforeResume.tracks);
+            expect(undoHistoryStore.value).toEqual(settledBeforeResume.undo);
+            expect(chatStore.value?.messages).toEqual(settledBeforeResume.messages);
+            expect(turns).toHaveLength(5);
+            return;
+        }
+        if (mode === 'two-recipes-subset') {
+            const selected = view?.intentGroups[0];
+            if (selected === undefined || state === null) {
+                throw new Error('Missing actual dependency-closed recipe group.');
+            }
+            const replacement = await reproposePendingChatActions({
+                confirmationId,
+                selectedIntentGroupIds: [selected.id],
+            });
+            expect(replacement).toMatchObject({ status: 'reproposed' });
+            if (replacement.status !== 'reproposed') {
+                throw new Error('Expected the real partial acceptance compiler to produce a visible subset.');
+            }
+            const subset = getPendingActionConfirmation(replacement.confirmationId);
+            const subsetState = metricGoalStateCodec(subset?.approvalSnapshot.metricGoalState);
+            expect(subsetState?.authorities).toEqual(state.authorities);
+            expect(subsetState?.steps).toEqual(state.steps);
+            expect(subset?.actions.length).toBeLessThan(expectedCommands);
+            expect(getAgentApprovalView({ confirmationId: replacement.confirmationId })?.canConfirm).toBe(false);
+            expect(subsetState?.binding?.prefixes).toEqual([]);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoHistoryStore.value).toEqual(before.undo);
+            return;
+        }
         if (multipleRecipes) {
             expect(state?.steps.map((step) => step.stepId)).toEqual([
                 'recipe:vocal-warm:vocal',
                 'recipe:vocal-dark:vocal',
             ]);
             expect(state?.steps.every((step) => step.recipePrefixHash !== null)).toBe(true);
-            expect(state?.binding?.prefixes).toHaveLength(mode === 'two-recipes' ? 2 : 0);
+            expect(state?.binding?.prefixes).toHaveLength(
+                mode === 'two-recipes' || mode === 'two-recipes-subset' ? 2 : 0
+            );
             expect(planned.measuredPreview?.recipeSource).toBeUndefined();
             // A complete final preview cannot substitute for the first independent recipe prefix.
             expect(evaluation).toMatchObject({

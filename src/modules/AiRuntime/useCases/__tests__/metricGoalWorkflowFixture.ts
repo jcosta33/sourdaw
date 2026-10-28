@@ -24,6 +24,11 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import {
+    type ScriptedTurn,
+    readCreativeInterpretationCatalog,
+    selectCreativeInterpretationCall,
+} from './highLevelIntentWorkflowFixture';
 
 function object(value: unknown): Record<string, unknown> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -239,3 +244,19 @@ export function metricGoalProviderPlan(objective: string, targetIds: readonly st
         stoppingConditions: ['Stop before mutation if actual metric proof is missing or incompatible.'],
     };
 }
+
+/** A configured provider positively admits a whole literal request using its actual published catalog. */
+export const literalMetricIntakeTurn: ScriptedTurn = (userMessage, providerView) => {
+    const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+    const call = selectCreativeInterpretationCall({ catalog, modeId: 'literal' });
+    return [
+        {
+            ...call,
+            arguments: {
+                ...call.arguments,
+                answer: null,
+                metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+            },
+        },
+    ];
+};
