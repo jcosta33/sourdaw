@@ -184,31 +184,63 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
-    it('reaches an independent B from the factory kit and persists its edit and morph controls', async () => {
+    it('reaches an independent B from the factory kit and persists its edit and morph controls', async ({
+        onTestFailed,
+    }) => {
+        const started = performance.now();
+        const cpuStarted = process.cpuUsage();
+        const stages: { stage: string; wallMs: number; cpuUserMs: number; cpuSystemMs: number }[] = [];
+        const mark = (stage: string) => {
+            const cpu = process.cpuUsage(cpuStarted);
+            stages.push({
+                stage,
+                wallMs: performance.now() - started,
+                cpuUserMs: cpu.user / 1000,
+                cpuSystemMs: cpu.system / 1000,
+            });
+        };
+        onTestFailed(() => console.error('Toaster persistence phases:', JSON.stringify(stages)));
+        mark('callback started');
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
+        mark('render pending');
         render(<ToasterPanel deviceId={DEVICE_ID} />);
+        mark('render complete');
         view('full');
+        mark('Full mounted');
         expect(screen.getByText('Copy selected pattern as B', { selector: 'button' })).toBeEnabled();
+        mark('copy B pending');
         fireEvent.click(screen.getByText('Copy selected pattern as B', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.patterns).toHaveLength(2));
+        mark('copy B committed');
         expect(selectedState().kit.activePatternId).toBe('A1');
         expect(screen.getByLabelText('Morph B target', { selector: 'select' })).toHaveValue('B1');
 
+        mark('select B pending');
         fireEvent.click(screen.getByText('Pattern B1', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.activePatternId).toBe('B1'));
+        mark('select B committed');
+        mark('B step edit pending');
         fireEvent.keyDown(screen.getByTestId('toaster-step-0-1'), { key: 'Enter' });
         await waitFor(() => expect(selectedState().kit.patterns[1]?.tracks[0]?.steps[1]?.active).toBe(true));
+        mark('B step edit observed');
         expect(selectedState().kit.patterns[0]?.tracks[0]?.steps[1]?.active).toBe(false);
         expect(screen.getByText('Morph off', { selector: 'button' })).toBeDisabled();
 
+        mark('select A pending');
         fireEvent.click(screen.getByText('Pattern A1', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.activePatternId).toBe('A1'));
+        mark('select A committed');
+        mark('enable morph pending');
         fireEvent.click(screen.getByText('Morph off', { selector: 'button' }));
         await waitFor(() => expect(selectedState().kit.morph?.enabled).toBe(true));
+        mark('enable morph committed');
+        mark('position pending');
         fireEvent.change(screen.getByLabelText('Position 0%', { selector: 'input[type=range]' }), {
             target: { value: '0.5' },
         });
         await waitFor(() => expect(selectedState().kit.morph?.position).toBe(0.5));
+        mark('position committed');
+        mark('saved state and restored UI pending');
 
         const savedChunk = trackStore.value?.tracks[0]?.devices[0]?.deviceState;
         expect(savedChunk).toBeDefined();
@@ -225,6 +257,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(screen.getByLabelText('Morph B target', { selector: 'select' })).toHaveValue('B1');
         expect(screen.getByText('Morph on', { selector: 'button' })).toBeEnabled();
         expect(screen.getByLabelText('Position 50%', { selector: 'input[type=range]' })).toHaveValue('0.5');
+        mark('saved state and restored UI complete');
     });
     it('starts in Simple and reveals every existing advanced region only in Full', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
