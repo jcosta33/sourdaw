@@ -1272,10 +1272,9 @@ reader's suite red; the producer and consumer of a CI-generated name lived in un
 no case tied either side to the other.
 
 Probe that would have caught it: for a consumer of a CI-produced artifact, check, or payload name,
-derive the spec's fixture from the producer's own definition — here, `SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME`
-in `scripts/semanticReviewWorkflowContract.ts`, itself pinned against the live workflow YAML by
-`healthGatesWorkflow.spec.ts` — with concrete values substituted for its template placeholders, and
-assert the reader selects an artifact under that derived name; then mutate the producer's shape (add
+derive the spec's fixture from the producer's own definition, with concrete values substituted for
+its template placeholders, and assert the reader selects an artifact under that derived name. Then
+mutate the producer's shape (add
 or drop a segment, as the attempt scoping did) and require the derived case to fail rather than the
 hand-written fixture staying silently valid.
 

@@ -251,9 +251,8 @@ and `ci` limits on a change set wide enough that the total binds — several col
 sources they cover, with a deleted, an over-ceiling and a credentialed path — and compare the planned
 units, their own and context regions, the reasons and their sides against the merge base. Compare
 fixture against fixture, never aggregate counts, and treat a reallocation the probe measures as the
-finding rather than as a disclosed limitation. `scripts/semanticReview/__tests__/semanticReview.spec.ts`
-now pins the case (`ranks a covered source with the spec that covers it...`), and disabling the
-`specCovered` arm still has to redden the two pairwise cases.
+finding rather than as a disclosed limitation. The semantic-review feature and its pairwise cases
+were retired; retain this probe for any future evidence allocation system.
 
 ### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
 

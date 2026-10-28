@@ -658,7 +658,6 @@ describe('planReviewRisk', () => {
         'scripts/ensurePinnedRustToolchain.sh',
         'scripts/ciApprovalAdmission.ts',
         'scripts/prepareReviewEntry.ts',
-        'scripts/semanticReviewContext.ts',
         '.github/CODEOWNERS',
         '.github/dependabot.yml',
     ])('should plan the dependency, toolchain or review-tooling surface %s alone native-security', (path) => {
