@@ -1,0 +1,23 @@
+.agents/skills/review-stances/e2e-server-provenance.md
+  s_b3201877f50e8a::t_8ee6cd2388eb65 12-16
+.agents/skills/review-stances/test-validity.md
+  s_b3201877f50e8a::t_8ee6cd2388eb65 1217-1229
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_b3201877f50e8a::t_8ee6cd2388eb65 355,357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "655d7dd5c806f5eb0057eab3a3e69f0ffedc0bad",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

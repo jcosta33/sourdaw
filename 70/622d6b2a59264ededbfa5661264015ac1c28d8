@@ -1,0 +1,21 @@
+scripts/__tests__/e2eServerIdentity.spec.ts
+  s_567a084d0540c4::t_351bb65977b282 355,357
+.agents/skills/review-stances/e2e-server-provenance.md
+  s_567a084d0540c4::t_351bb65977b282 12-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70622d6b2a59264ededbfa5661264015ac1c28d8",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
