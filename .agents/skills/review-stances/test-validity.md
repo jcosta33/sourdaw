@@ -6,6 +6,18 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
+
+The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
+had no independent failure surface. Its introducing PR and private review history are unestablished;
+the missed negative probe was an unavailable entry before application code could handle failure.
+Abort the real served entry after its element is parsed, then require changed document
+`performance.timeOrigin` and unconditional application readiness. A speculative fetch can fail
+and be refetched in the same document, so two requests alone do not prove a reload. Removing the
+independent recovery must fail the transient case; removing its budget or entry-body fence must
+fail the persistent or late-error case. Exercise source and generated entry identity under the
+actual production CSP, plus controller absence without conditional test admission.
+
 ### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
