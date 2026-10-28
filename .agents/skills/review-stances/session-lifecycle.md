@@ -234,6 +234,22 @@ requested key — and the assertion reddens, as it does at #4423.
 Ownership half: a per-track edge and a per-key stream are released exactly once, and one key's failed
 acquisition must not disturb another key's source, edge, or pending grant.
 
+### 2026-10-28 — a Levain init fault must not announce a healthy engine (#5227)
+
+The buffered pre-init loop first appears in commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57`;
+GitHub returned no associated PR. PR #946 added bank-local rejection for live handlers while
+buffered replay still escaped through init's outer catch. PR #5204 later documented the wider
+message-state contract. Historical private review prompts and tiers are unknown. PR #5587 repaired
+the bank-local replay path, but a failed engine creation could still post `ready` on a later init
+while retaining its terminal fault, and no maintained case counted a repeated `disposed` reply.
+
+Drive the raw port through a failed init, another init, a bank start and a release. Require the
+original error each time, no engine creation, replay or healthy ready, and no rendered block;
+preserve a fresh processor's successful init and bank-local replay. Dispose the same processor
+twice and require two replies plus a completed paced drain. Refusing a second init must not alter
+the shipped node's first-init readiness or the owner/follower bank lifecycle. Remove the terminal
+init refusal or repeated-dispose answer separately; each unchanged named regression must fail.
+
 ### 2026-09-20 — live cancellation is not durable cancellation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) made pending-confirmation cancellation revoke its run before cleanup, but
