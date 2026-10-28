@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { MockAudioWorkletNode } = await vi.hoisted(async () => {
+    const { createMockAudioContext, createMockAudioNode } = await import('#/helpers/__tests__/audioContext.mock');
+    function MockAudioWorkletNode(this: object) {
+        Object.assign(this, createMockAudioNode('audio-worklet'));
+    }
+    // The real engine captures its context before a confirmed bus initializes.
+    vi.stubGlobal('AudioContext', createMockAudioContext);
+    return { MockAudioWorkletNode };
+});
+
 import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
@@ -10,6 +20,7 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import {
+    audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
@@ -82,15 +93,18 @@ const runtimeMocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    addDeviceToStrip: runtimeMocks.addDeviceToStrip,
-    applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
-    clearReportedLatency: runtimeMocks.clearReportedLatency,
-    removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
-    removeTrackStrip: runtimeMocks.removeTrackStrip,
-    updateDeviceParam: runtimeMocks.updateDeviceParam,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const original = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    return {
+        ...original,
+        addDeviceToStrip: runtimeMocks.addDeviceToStrip,
+        applyRuntimeGraphDelta: runtimeMocks.applyRuntimeGraphDelta,
+        clearReportedLatency: runtimeMocks.clearReportedLatency,
+        removeDeviceFromStrip: runtimeMocks.removeDeviceFromStrip,
+        removeTrackStrip: runtimeMocks.removeTrackStrip.mockImplementation(original.removeTrackStrip),
+        updateDeviceParam: runtimeMocks.updateDeviceParam,
+    };
+});
 
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
@@ -467,6 +481,8 @@ describe('confirmed compound bus actions', () => {
     beforeEach(() => {
         configureAiWorkflowCommandCheckpointRuntime();
         vi.clearAllMocks();
+        vi.stubGlobal('AudioWorkletNode', MockAudioWorkletNode);
+        audioEngine.resetGraph();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('confirmed compound bus test');
         removeCrdtDoc('root');
@@ -508,6 +524,8 @@ describe('confirmed compound bus actions', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
+        audioEngine.resetGraph();
         resetAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
@@ -520,9 +538,11 @@ describe('confirmed compound bus actions', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        vi.unstubAllGlobals();
     });
 
     it('executes the confirmed materialized identity and undoes the whole group', async () => {
+        const initialize = vi.spyOn(audioEngine, 'initializeTrackStripFromSnapshot');
         const actions = createCompoundActions();
         propose(actions, 'confirmation-success');
 
@@ -539,13 +559,21 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([
             { busId: BUS_ID, level: 0.25, preFader: false },
         ]);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+        expect(initialize).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({
-                command: 'replace-track-device-chain',
-                operation: 'add-device',
-                after: expect.objectContaining({ id: BUS_ID }),
+                nodes: [
+                    expect.objectContaining({
+                        id: BUS_ID,
+                        devices: [
+                            expect.objectContaining({ id: committedBus?.devices[0]?.id, type: 'builtin-reverb' }),
+                        ],
+                    }),
+                ],
             })
         );
+        expect(audioEngine.getTrackStrip(BUS_ID)?.deviceNodes.map((device) => device.deviceId)).toEqual([
+            committedBus?.devices[0]?.id,
+        ]);
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
         const undoEntries = undoStore.value?.past ?? [];
         expect(undoEntries).toHaveLength(3);
@@ -556,6 +584,7 @@ describe('confirmed compound bus actions', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.sends).toEqual([]);
         expect(runtimeMocks.removeDeviceFromStrip).not.toHaveBeenCalled();
         expect(runtimeMocks.removeTrackStrip).toHaveBeenCalledWith(BUS_ID);
+        expect(audioEngine.getTrackStrip(BUS_ID)).toBeUndefined();
         expect(runtimeMocks.engineRemoveSend).toHaveBeenCalledWith('track-vocals', BUS_ID);
     });
 

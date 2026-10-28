@@ -1,14 +1,5 @@
-import { spawn, spawnSync } from 'node:child_process';
-import {
-    existsSync,
-    mkdirSync,
-    mkdtempSync,
-    readdirSync,
-    readFileSync,
-    rmSync,
-    symlinkSync,
-    writeFileSync,
-} from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -81,50 +72,18 @@ const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
-const BROWSER_INSTALL_ATTEMPTS = 3;
-const ROOT_DEPENDENCY_CAP_MINUTES = 8;
-const USER_BROWSER_CAP_MINUTES = 3;
-const INSTALL_KILL_AFTER_SECONDS = 15;
-// The loop sleeps `attempt * 5` seconds after a failed attempt except the last.
-const INSTALL_BACKOFF_SECONDS = 5 + 10;
-// The hosted image's standalone Microsoft product feed answered `apt-get update`
-// with 403 and failed every attempt (#5359), so each root apt run reads the
-// runner's sources without it; the filter refuses rather than guesses.
+const INSTALL_DRAIN_SECONDS = 15;
+// Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const FILTERED_BROWSER_DEPENDENCY_INSTALL = `${APT_FEED_FILTER} node_modules/.bin/playwright install-deps chromium`;
-// Apt gets a TERM and a grace period; the browser download is killed outright,
-// because GNU timeout's grace period ends when the direct child exits even if a
-// grandchild survives.
-const ROOT_DEPENDENCY_INSTALL_COMMAND = `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m ${FILTERED_BROWSER_DEPENDENCY_INSTALL}`;
-const USER_BROWSER_INSTALL_COMMAND = `timeout --signal=KILL ${USER_BROWSER_CAP_MINUTES}m pnpm exec playwright install chromium`;
-// Every attempt times out at its caps, the root half after its kill-after, so a
-// job must hold this plus the time its other steps have been measured to take.
-const BROWSER_INSTALL_WORST_CASE_SECONDS =
-    BROWSER_INSTALL_ATTEMPTS *
-        ((ROOT_DEPENDENCY_CAP_MINUTES + USER_BROWSER_CAP_MINUTES) * 60 + INSTALL_KILL_AFTER_SECONDS) +
-    INSTALL_BACKOFF_SECONDS;
-// What a retry loop ends with once its last attempt has failed: the exit that
-// fails the step. Without it three failed installs fall out of the loop green.
-const BROWSER_INSTALL_FAILING_EXIT = 'if [ "$attempt" -eq 3 ]; then\n    exit 1\n  fi';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
+const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
-// part on a slow mirror, so each attempt carries the same 8 minute root cap as
-// the browser dependency install, and apt gets a TERM before the KILL.
+// part on a slow mirror, so the single transaction carries the same 8 minute
+// manager deadline as the browser dependency install.
 const ALSA_ATTEMPT_CAP_MINUTES = 8;
-const FILTERED_ALSA_INSTALL = `${APT_FEED_FILTER} bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
-const ALSA_INSTALL_COMMAND = `sudo timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ALSA_ATTEMPT_CAP_MINUTES}m ${FILTERED_ALSA_INSTALL}`;
-// The loop sleeps `attempt * 15` seconds after a failed attempt except the last.
-const ALSA_BACKOFF_SECONDS = 15 + 30;
-const ALSA_INSTALL_WORST_CASE_SECONDS =
-    BROWSER_INSTALL_ATTEMPTS * (ALSA_ATTEMPT_CAP_MINUTES * 60 + INSTALL_KILL_AFTER_SECONDS) + ALSA_BACKOFF_SECONDS;
-// What the ALSA run script ends with: the exit that fails the step.
-const ALSA_FAILING_TAIL = 'done\nexit 1';
-const HEAVY_E2E_INSTALL_STEP_MINUTES = 35;
-// Longest observed time of every step except the browser install, per job.
-const SMOKE_NON_INSTALL_SECONDS = 480;
-const E2E_SHARD_NON_INSTALL_SECONDS = 2040;
-// The derived minimum is a floor only; the declared limit is also a ceiling, so
-// raising a job toward GitHub's 360-minute default (an effectively unbounded
-// job) is a deliberate edit to these constants and not a silent workflow change.
+const FILTERED_ALSA_INSTALL = `${APT_FEED_FILTER} --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev'`;
+const ALSA_INSTALL_COMMAND = `sudo env "PATH=$PATH" ${FILTERED_ALSA_INSTALL}`;
+const ALSA_INSTALL_WORST_CASE_SECONDS = ALSA_ATTEMPT_CAP_MINUTES * 60 + INSTALL_DRAIN_SECONDS;
 const SMOKE_JOB_MINUTES = 45;
 const E2E_JOB_MINUTES = 75;
 const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
@@ -458,6 +417,10 @@ const DEVICE_WRITE_BOUNDARY_CENSUS_RUN =
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
 const packageManifest = asRecord(parsedPackageManifest, 'package manifest');
+const lockfile = asRecord(
+    parseDocument(readFileSync(join(repositoryRoot, 'pnpm-lock.yaml'), 'utf8')).toJS(),
+    'lockfile'
+);
 const browserAiWebGpuConfig = asRecord(browserAiWebGpuAdmissionConfig, 'Browser AI WebGPU config');
 function loadWorkflow(fileName: string): { document: ReturnType<typeof parseDocument>; parsed: UnknownRecord } {
     const document = parseDocument(readFileSync(join(repositoryRoot, '.github/workflows', fileName), 'utf8'));
@@ -830,47 +793,47 @@ function assertProseSkippingJobs(candidate: UnknownRecord): void {
     }
 }
 
-function requiredBrowserInstallJobMinutes(nonInstallSeconds: number): number {
-    return Math.ceil((BROWSER_INSTALL_WORST_CASE_SECONDS + nonInstallSeconds) / 60);
-}
-
-// apt-get runs as root through sudo, where a timeout owned by the runner user
-// cannot signal it: the stalled apt would survive as an orphan holding its lock
-// and every later attempt would fail on it. The root half is therefore bounded
-// from the root side, and the user-side browser download separately.
-function assertBoundedBrowserInstall(
-    job: UnknownRecord,
-    label: string,
-    nonInstallSeconds: number,
-    declaredJobMinutes: number
-): void {
-    const installRun = stringAt(stepNamed(job, 'Install Playwright browsers'), 'run');
-    if (!installRun.includes('for attempt in 1 2 3')) {
-        throw new Error(`${label} must retry browser and dependency installation against mirror outages`);
+function assertContainerBrowserRuntime(job: UnknownRecord, label: string, jobMinutes: number): void {
+    const importer = recordAt(recordAt(lockfile, 'importers'), '.');
+    const version = stringAt(recordAt(recordAt(importer, 'devDependencies'), 'playwright'), 'version');
+    const image = `mcr.microsoft.com/playwright:v${version}-noble@${PLAYWRIGHT_IMAGE_DIGEST}`;
+    if (JSON.stringify(job.container) !== JSON.stringify({ image, options: '--init --ipc=host' })) {
+        throw new Error(`${label} must use the locked Playwright image and digest without extra container authority`);
     }
-    if (installRun.includes('--with-deps')) {
-        throw new Error(`${label} must not install system dependencies through the runner-user browser install`);
+    if (JSON.stringify(job.defaults) !== JSON.stringify({ run: { shell: 'bash' } })) {
+        throw new Error(`${label} must preserve bash in its container`);
     }
-    if (!installRun.includes(FILTERED_BROWSER_DEPENDENCY_INSTALL)) {
-        throw new Error(`${label} must run the root dependency install through the Microsoft apt feed filter`);
+    if (job['timeout-minutes'] !== jobMinutes) {
+        throw new Error(`${label} must keep its job limit at exactly ${jobMinutes} minutes`);
     }
-    if (!installRun.includes(ROOT_DEPENDENCY_INSTALL_COMMAND)) {
-        throw new Error(`${label} must bound the root dependency install from the root side with sudo timeout`);
+    const proof = stepNamed(job, BROWSER_RUNTIME_STEP);
+    if (proof.run !== `node scripts/verifyPlaywrightRuntime.ts ${version}` || proof['timeout-minutes'] !== 2) {
+        throw new Error(`${label} must launch and check the resolved browser within two minutes`);
     }
-    if (!installRun.includes(USER_BROWSER_INSTALL_COMMAND)) {
-        throw new Error(`${label} must bound the browser download with its own timeout`);
+    const steps = arrayAt(job, 'steps').map((step) => asRecord(step, `${label} step`));
+    for (const step of steps) {
+        if (
+            typeof step.run === 'string' &&
+            /\bapt(?:-get)?\b|playwright\s+install|aptWithoutMicrosoftFeed|hostedAptInstall/.test(step.run)
+        ) {
+            throw new Error(`${label} must not acquire browser packages or binaries at runtime`);
+        }
+        if (step.shell !== undefined && step.shell !== 'bash') {
+            throw new Error(`${label} must preserve bash in its container`);
+        }
     }
-    if (!installRun.includes(BROWSER_INSTALL_FAILING_EXIT)) {
-        throw new Error(`${label} must fail the step after the third failed install attempt`);
-    }
-    const timeoutMinutes = job['timeout-minutes'];
-    if (typeof timeoutMinutes !== 'number' || timeoutMinutes < requiredBrowserInstallJobMinutes(nonInstallSeconds)) {
+    const run = stepNamed(job, label === 'the offline smoke job' ? 'Run offline smoke set' : 'Run shard');
+    if (
+        steps.indexOf(proof) !== steps.findIndex((step) => step.name === 'Install dependencies') + 1 ||
+        steps.indexOf(run) !== steps.indexOf(proof) + 1 ||
+        run.if !== undefined ||
+        run['continue-on-error'] !== undefined ||
+        proof.if !== undefined ||
+        proof['continue-on-error'] !== undefined
+    ) {
         throw new Error(
-            `${label} must have a job limit that holds three timed-out install attempts and its other steps`
+            `${label} must prove the runtime before running its browser tests without conditional admission`
         );
-    }
-    if (timeoutMinutes !== declaredJobMinutes) {
-        throw new Error(`${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`);
     }
 }
 
@@ -881,21 +844,15 @@ function assertBoundedBrowserInstall(
 function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     const step = stepNamed(job, 'Install ALSA development headers');
     const run = stringAt(step, 'run');
-    if (!run.includes('for attempt in 1 2 3')) {
-        throw new Error(`${label} must retry the ALSA header install against mirror outages`);
-    }
     if (!run.includes(FILTERED_ALSA_INSTALL)) {
         throw new Error(`${label} must run the ALSA header install through the Microsoft apt feed filter`);
     }
-    if (!run.includes(ALSA_INSTALL_COMMAND)) {
-        throw new Error(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
-    }
-    if (!run.trimEnd().endsWith(ALSA_FAILING_TAIL)) {
-        throw new Error(`${label} must fail the step after the third failed ALSA install attempt`);
+    if (run !== `set -euo pipefail\n${ALSA_INSTALL_COMMAND}\n`) {
+        throw new Error(`${label} must run one bounded ALSA transaction and propagate its failure`);
     }
     const stepTimeoutMinutes = step['timeout-minutes'];
     if (typeof stepTimeoutMinutes !== 'number' || stepTimeoutMinutes * 60 <= ALSA_INSTALL_WORST_CASE_SECONDS) {
-        throw new Error(`${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`);
+        throw new Error(`${label} must carry a step limit that holds one bounded ALSA transaction`);
     }
     const jobTimeoutMinutes = job['timeout-minutes'];
     if (typeof jobTimeoutMinutes !== 'number' || stepTimeoutMinutes >= jobTimeoutMinutes) {
@@ -926,42 +883,14 @@ function assertOfflineSmokeJob(candidate: UnknownRecord): void {
     if (smoke.needs !== 'decide' || smoke.if !== SMOKE_CONDITION) {
         throw new Error('the offline smoke job must run on every pull-request run that touches the browser surface');
     }
-    assertBoundedBrowserInstall(smoke, 'the offline smoke job', SMOKE_NON_INSTALL_SECONDS, SMOKE_JOB_MINUTES);
+    assertContainerBrowserRuntime(smoke, 'the offline smoke job', SMOKE_JOB_MINUTES);
     if (stringAt(stepNamed(smoke, 'Run offline smoke set'), 'run') !== SMOKE_COMMAND) {
         throw new Error('the offline smoke job must run the smoke spec without retries');
     }
 }
 
 function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
-    const e2e = jobAt(candidate, 'e2e');
-    const install = stepNamed(e2e, 'Install Playwright browsers');
-    const run = stringAt(install, 'run');
-    const stepTimeoutMinutes = install['timeout-minutes'];
-    const jobTimeoutMinutes = e2e['timeout-minutes'];
-    if (
-        stepTimeoutMinutes !== HEAVY_E2E_INSTALL_STEP_MINUTES ||
-        typeof jobTimeoutMinutes !== 'number' ||
-        stepTimeoutMinutes >= jobTimeoutMinutes
-    ) {
-        throw new Error('the Playwright install step must be bounded below the E2E job limit');
-    }
-    assertBoundedBrowserInstall(e2e, 'the heavy E2E job', E2E_SHARD_NON_INSTALL_SECONDS, E2E_JOB_MINUTES);
-    if (!run.includes('sleep $((attempt * 5))') || !run.includes('if [ "$attempt" -eq 3 ]; then\n    exit 1')) {
-        throw new Error('the heavy E2E install must retry three bounded attempts and fail after the third');
-    }
-    if (stepTimeoutMinutes * 60 <= BROWSER_INSTALL_WORST_CASE_SECONDS) {
-        throw new Error('the heavy E2E install step limit must leave room for all bounded attempts and backoff');
-    }
-    const steps = arrayAt(e2e, 'steps').map((step) => asRecord(step, 'heavy E2E step'));
-    const installIndex = steps.indexOf(install);
-    const runShard = stepNamed(e2e, 'Run shard');
-    if (
-        steps.indexOf(runShard) !== installIndex + 1 ||
-        runShard.if !== undefined ||
-        runShard['continue-on-error'] !== undefined
-    ) {
-        throw new Error('a failed Playwright install must prevent the heavy E2E shard from running');
-    }
+    assertContainerBrowserRuntime(jobAt(candidate, 'e2e'), 'the heavy E2E job', E2E_JOB_MINUTES);
 }
 
 function assertPullRequestSecretScan(candidate: UnknownRecord): void {
@@ -3739,574 +3668,76 @@ describe('health gates workflow contract', () => {
         );
     });
 
-    it('bounds both halves of every Linux browser install and keeps three attempts inside the job limit', () => {
-        const installs = [
-            {
-                label: 'the offline smoke job',
-                workflow: validationWorkflow,
-                job: 'smoke',
-                nonInstallSeconds: SMOKE_NON_INSTALL_SECONDS,
-                declaredJobMinutes: SMOKE_JOB_MINUTES,
-            },
-            {
-                label: 'the affected end-to-end job',
-                workflow: heavyWorkflow,
-                job: 'e2e',
-                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
-                declaredJobMinutes: E2E_JOB_MINUTES,
-            },
-            {
-                label: 'the nightly end-to-end job',
-                workflow: nightly,
-                job: 'e2e',
-                nonInstallSeconds: E2E_SHARD_NON_INSTALL_SECONDS,
-                declaredJobMinutes: E2E_JOB_MINUTES,
-            },
-        ];
-        const unwrappedRoot = ROOT_DEPENDENCY_INSTALL_COMMAND.replace(
-            `sudo env "PATH=$PATH" timeout --kill-after=${INSTALL_KILL_AFTER_SECONDS}s ${ROOT_DEPENDENCY_CAP_MINUTES}m `,
-            'sudo '
-        );
-        const rootRunAsRunner = ROOT_DEPENDENCY_INSTALL_COMMAND.replace('sudo env "PATH=$PATH" ', '');
-
-        for (const { label, workflow, job, nonInstallSeconds, declaredJobMinutes } of installs) {
-            const check = (candidate: UnknownRecord): void => {
-                assertBoundedBrowserInstall(jobAt(candidate, job), label, nonInstallSeconds, declaredJobMinutes);
-            };
-            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
-                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
-                change(jobAt(clone, job));
-                return clone;
-            };
-            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
-                mutate(name, (target) => {
-                    const step = stepNamed(target, 'Install Playwright browsers');
-                    step.run = rewrite(stringAt(step, 'run'));
-                });
-
+    it('uses the locked preinstalled runtime and rejects browser acquisition in every Linux browser job', () => {
+        for (const [label, workflow, job] of [
+            ['the offline smoke job', validationWorkflow, 'smoke'],
+            ['the affected end-to-end job', heavyWorkflow, 'e2e'],
+            ['the nightly end-to-end job', nightly, 'e2e'],
+        ] as const) {
+            const minutes = job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES;
+            const check = (candidate: UnknownRecord) =>
+                assertContainerBrowserRuntime(jobAt(candidate, job), label, minutes);
             expect(() => check(workflow)).not.toThrow();
-
-            expect(() =>
-                check(
-                    rewriteInstall('unbounded root', (run) =>
-                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, unwrappedRoot)
-                    )
-                )
-            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
-
-            expect(() =>
-                check(rewriteInstall('unfiltered apt sources', (run) => run.replace(`${APT_FEED_FILTER} `, '')))
-            ).toThrow(`${label} must run the root dependency install through the Microsoft apt feed filter`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('runner-owned root timeout', (run) =>
-                        run.replace(ROOT_DEPENDENCY_INSTALL_COMMAND, rootRunAsRunner)
-                    )
-                )
-            ).toThrow(`${label} must bound the root dependency install from the root side with sudo timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('unbounded browser download', (run) =>
-                        run.replace(USER_BROWSER_INSTALL_COMMAND, 'pnpm exec playwright install chromium')
-                    )
-                )
-            ).toThrow(`${label} must bound the browser download with its own timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall(
-                        'coupled dependencies',
-                        (run) => `${run}\npnpm exec playwright install --with-deps chromium`
-                    )
-                )
-            ).toThrow(`${label} must not install system dependencies through the runner-user browser install`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
-                )
-            ).toThrow(`${label} must retry browser and dependency installation against mirror outages`);
-
-            const requiredMinutes = requiredBrowserInstallJobMinutes(nonInstallSeconds);
-            expect(jobAt(workflow, job)['timeout-minutes']).toBeGreaterThanOrEqual(requiredMinutes);
-            const justBelowLimit = mutate('limit just below the requirement', (target) => {
-                target['timeout-minutes'] = requiredMinutes - 1;
-            });
-            expect(() => check(justBelowLimit)).toThrow(
-                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
-            );
-            expect(declaredJobMinutes).toBeGreaterThanOrEqual(requiredMinutes);
-            const pinMessage = `${label} must keep its job limit at exactly ${declaredJobMinutes} minutes`;
-            const justAboveLimit = mutate('limit just above the declaration', (target) => {
-                target['timeout-minutes'] = declaredJobMinutes + 1;
-            });
-            expect(() => check(justAboveLimit)).toThrow(pinMessage);
-            const defaultLimit = mutate('GitHub default limit', (target) => {
-                target['timeout-minutes'] = 360;
-            });
-            expect(() => check(defaultLimit)).toThrow(pinMessage);
-            const unlimited = mutate('absent limit', (target) => {
-                delete target['timeout-minutes'];
-            });
-            expect(() => check(unlimited)).toThrow(
-                `${label} must have a job limit that holds three timed-out install attempts and its other steps`
-            );
+            for (const image of [
+                `mcr.microsoft.com/playwright:v1.62.0-noble@${PLAYWRIGHT_IMAGE_DIGEST}`,
+                'mcr.microsoft.com/playwright:v1.63.0-noble',
+                `mcr.microsoft.com/playwright:v1.63.0-noble@sha256:${'0'.repeat(64)}`,
+            ]) {
+                const mismatch = structuredClone(workflow);
+                recordAt(jobAt(mismatch, job), 'container').image = image;
+                expect(() => check(mismatch)).toThrow('must use the locked Playwright image and digest');
+            }
+            for (const command of [
+                'sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- node_modules/.bin/playwright install-deps chromium',
+                'pnpm exec playwright install chromium',
+                'apt-get install -y libnss3',
+            ]) {
+                const acquisition = structuredClone(workflow);
+                const install = stepNamed(jobAt(acquisition, job), 'Install dependencies');
+                install.run = `${stringAt(install, 'run')}\n${command}`;
+                expect(() => check(acquisition)).toThrow('must not acquire browser packages or binaries at runtime');
+            }
+            const privileged = structuredClone(workflow);
+            const container = recordAt(jobAt(privileged, job), 'container');
+            container.options = `${stringAt(container, 'options')} --privileged`;
+            expect(() => check(privileged)).toThrow('without extra container authority');
+            const wrongShell = structuredClone(workflow);
+            jobAt(wrongShell, job).defaults = { run: { shell: 'sh' } };
+            expect(() => check(wrongShell)).toThrow('must preserve bash');
+            const noLaunch = structuredClone(workflow);
+            stepNamed(jobAt(noLaunch, job), BROWSER_RUNTIME_STEP).run = 'pnpm exec playwright --version';
+            expect(() => check(noLaunch)).toThrow('must launch and check the resolved browser');
+            const conditional = structuredClone(workflow);
+            stepNamed(jobAt(conditional, job), BROWSER_RUNTIME_STEP).if = 'false';
+            expect(() => check(conditional)).toThrow('without conditional admission');
         }
     });
 
-    it('bounds, retries and fails every ALSA header install inside its step and job limits', () => {
-        const installs = [
-            { label: 'the validation Rust job', workflow: validationWorkflow },
-            { label: 'the nightly Rust job', workflow: nightly },
-        ];
-
-        for (const { label, workflow } of installs) {
-            const check = (candidate: UnknownRecord): void => {
-                assertBoundedAlsaInstall(jobAt(candidate, 'rust'), label);
-            };
-            const mutate = (name: string, change: (target: UnknownRecord) => void): UnknownRecord => {
-                const clone = asRecord(structuredClone(workflow), `${name} ${label}`);
-                change(jobAt(clone, 'rust'));
-                return clone;
-            };
-            const rewriteInstall = (name: string, rewrite: (run: string) => string): UnknownRecord =>
-                mutate(name, (target) => {
-                    const step = stepNamed(target, 'Install ALSA development headers');
-                    step.run = rewrite(stringAt(step, 'run'));
-                });
-
+    it('runs one bounded ALSA transaction with fatal failure in each Rust route', () => {
+        for (const [label, workflow] of [
+            ['the validation Rust job', validationWorkflow],
+            ['the nightly Rust job', nightly],
+        ] as const) {
+            const check = (candidate: UnknownRecord) => assertBoundedAlsaInstall(jobAt(candidate, 'rust'), label);
             expect(() => check(workflow)).not.toThrow();
-
-            expect(() =>
-                check(
-                    rewriteInstall('unbounded attempt', (run) =>
-                        run.replace(ALSA_INSTALL_COMMAND, `sudo ${FILTERED_ALSA_INSTALL}`)
-                    )
-                )
-            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
-
-            expect(() =>
-                check(rewriteInstall('unfiltered apt sources', (run) => run.replace(`${APT_FEED_FILTER} `, '')))
-            ).toThrow(`${label} must run the ALSA header install through the Microsoft apt feed filter`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('runner-owned timeout', (run) =>
-                        run.replace(ALSA_INSTALL_COMMAND, ALSA_INSTALL_COMMAND.replace('sudo timeout', 'timeout'))
-                    )
-                )
-            ).toThrow(`${label} must bound each ALSA install attempt from the root side with sudo timeout`);
-
-            expect(() =>
-                check(
-                    rewriteInstall('single attempt', (run) => run.replace('for attempt in 1 2 3', 'for attempt in 1'))
-                )
-            ).toThrow(`${label} must retry the ALSA header install against mirror outages`);
-
-            expect(() =>
-                check(rewriteInstall('swallowed failure', (run) => run.replace(/\nexit 1\s*$/, '\n')))
-            ).toThrow(`${label} must fail the step after the third failed ALSA install attempt`);
-
-            const justBelowLimit = mutate('step limit just below the requirement', (target) => {
-                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Math.floor(
-                    ALSA_INSTALL_WORST_CASE_SECONDS / 60
-                );
-            });
-            expect(() => check(justBelowLimit)).toThrow(
-                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
+            const duplicate = asRecord(structuredClone(workflow), `duplicate ${label}`);
+            const step = stepNamed(jobAt(duplicate, 'rust'), 'Install ALSA development headers');
+            step.run = `${stringAt(step, 'run')}${ALSA_INSTALL_COMMAND}\n`;
+            expect(() => check(duplicate)).toThrow('must run one bounded ALSA transaction and propagate its failure');
+            const missingDeadline = asRecord(structuredClone(workflow), `missing deadline ${label}`);
+            const missingStep = stepNamed(jobAt(missingDeadline, 'rust'), 'Install ALSA development headers');
+            missingStep.run = stringAt(missingStep, 'run').replace('--deadline 8m --', '--');
+            expect(() => check(missingDeadline)).toThrow(
+                'must run the ALSA header install through the Microsoft apt feed filter'
             );
-
-            const unlimited = mutate('absent step limit', (target) => {
-                delete stepNamed(target, 'Install ALSA development headers')['timeout-minutes'];
-            });
-            expect(() => check(unlimited)).toThrow(
-                `${label} must carry a step limit that holds three timed-out ALSA attempts and backoff`
-            );
-
-            const stepAtJobLimit = mutate('step limit at the job limit', (target) => {
-                stepNamed(target, 'Install ALSA development headers')['timeout-minutes'] = Number(
-                    target['timeout-minutes']
-                );
-            });
-            expect(() => check(stepAtJobLimit)).toThrow(`${label} must keep the ALSA step limit below its job limit`);
         }
-    });
-
-    const MAX_ALSA_PROBE_STDERR_CHARACTERS = 1_000;
-    const ALSA_PROBE_TIMEOUT_MS = 1_000;
-    const alsaCommandFunctions = `
-sudo() { "$@"; }
-timeout() { shift 2; "$@"; }
-sleep() { printf '%s\\n' "$1" >> "$SLEEP_LOG"; }
-apt-get() {
-  if [ "$1" = update ]; then
-    if [ "\${STALL_ALSA_CHILD:-false}" = true ]; then
-      trap '' TERM
-      exec 2>/dev/null
-      printf '%s\\n' "$$" > "$STALL_ALSA_PID_FILE"
-      while :; do :; done
-    fi
-    attempt_count=0
-    while IFS= read -r _; do attempt_count=$((attempt_count + 1)); done < "$ATTEMPT_LOG"
-    attempt_count=$((attempt_count + 1))
-    printf 'attempt\\n' >> "$ATTEMPT_LOG"
-    [ "$attempt_count" -ge "$SUCCEED_ON_ATTEMPT" ] || return 100
-  fi
-}
-export -f sudo timeout sleep apt-get
-`;
-
-    type AlsaProbeResult = {
-        attempts: number;
-        sleeps: string[];
-        status: number | null;
-        signal: NodeJS.Signals | null;
-        errorCode: string | null;
-        stderr: string;
-        error: Error | undefined;
-    };
-
-    const boundedAlsaProbeStderr = (stderr: string): string => stderr.slice(0, MAX_ALSA_PROBE_STDERR_CHARACTERS);
-
-    const requireOwnedPid = (pid: number): void => {
-        if (!Number.isSafeInteger(pid) || pid <= 1) {
-            throw new Error(`ALSA probe has no safe owned process ID: ${pid}`);
-        }
-    };
-
-    type OwnedProcessGroup = { pid: number | undefined };
-
-    const processGroupAlive = (group: OwnedProcessGroup): boolean => {
-        const pid = group.pid;
-        if (pid === undefined) {
-            return false;
-        }
-        requireOwnedPid(pid);
-        try {
-            process.kill(-pid, 0);
-            return true;
-        } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code === 'ESRCH') {
-                group.pid = undefined;
-                return false;
-            }
-            if (code === 'EPERM') {
-                return true;
-            }
-            throw new Error(`ALSA probe cannot inspect owned process group ${pid}: ${String(error)}`, { cause: error });
-        }
-    };
-
-    const signalProcessGroup = (group: OwnedProcessGroup, signal: NodeJS.Signals): void => {
-        const pid = group.pid;
-        if (pid === undefined) {
-            return;
-        }
-        requireOwnedPid(pid);
-        try {
-            process.kill(-pid, signal);
-        } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code === 'ESRCH') {
-                group.pid = undefined;
-                return;
-            }
-            if (code !== 'EPERM') {
-                throw new Error(`ALSA probe cannot signal owned process group ${pid}: ${String(error)}`, {
-                    cause: error,
-                });
-            }
-        }
-    };
-
-    const waitForProcessGroupExit = async (group: OwnedProcessGroup): Promise<void> => {
-        const deadline = Date.now() + 2_000;
-        while (processGroupAlive(group) && Date.now() < deadline) {
-            await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-        if (processGroupAlive(group)) {
-            throw new Error(`ALSA probe process group ${group.pid} survived SIGKILL; fixture retained`);
-        }
-    };
-
-    const describeAlsaProbeFailure = (result: AlsaProbeResult): string =>
-        `ALSA probe child failed: error=${result.errorCode ?? 'none'}; status=${result.status ?? 'null'}; ` +
-        `signal=${result.signal ?? 'none'}; stderr=${boundedAlsaProbeStderr(result.stderr) || '(empty)'}`;
-
-    // Executes the published ALSA loop with exported Bash functions so every
-    // command stays hermetic while the real nested `bash -c` and retry branches run.
-    const runAlsaInstall = async (
-        run: string,
-        succeedOnAttempt: number,
-        options: { stallChild?: boolean; timeoutMs?: number; ownedGroup?: OwnedProcessGroup } = {}
-    ): Promise<AlsaProbeResult> => {
-        const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-alsa-install-'));
-        const attemptLog = join(probeDirectory, 'attempts.log');
-        const sleepLog = join(probeDirectory, 'sleeps.log');
-        const stalledPidFile = join(probeDirectory, 'stalled.pid');
-        const preludePath = join(probeDirectory, 'functions.bash');
-        // The real apt feed filter runs between sudo and apt, over a hosted
-        // Ubuntu source fixture and the apt-config stub, so its exit status is
-        // what the retry loop sees.
-        const aptSourceParts = join(probeDirectory, 'apt', 'sources.list.d');
-        let groupPid: number | undefined;
-        const ownedGroup = options.ownedGroup ?? { pid: undefined };
-        try {
-            writeFileSync(preludePath, alsaCommandFunctions);
-            mkdirSync(aptSourceParts, { recursive: true });
-            writeFileSync(
-                join(aptSourceParts, 'ubuntu.sources'),
-                'Types: deb\nURIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble\nComponents: main\n' +
-                    'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n'
-            );
-            writeFileSync(attemptLog, '');
-            writeFileSync(sleepLog, '');
-            const child = spawn('bash', ['-c', run], {
-                detached: true,
-                stdio: ['ignore', 'ignore', 'pipe'],
-                env: {
-                    ...process.env,
-                    BASH_ENV: preludePath,
-                    PATH: `${join(repositoryRoot, 'scripts/__tests__/fixtures/aptConfigStub')}${delimiter}${process.env.PATH ?? ''}`,
-                    TMPDIR: probeDirectory,
-                    FAKE_APT_SOURCE_LIST: join(probeDirectory, 'apt', 'sources.list'),
-                    FAKE_APT_SOURCE_PARTS: aptSourceParts,
-                    ATTEMPT_LOG: attemptLog,
-                    SLEEP_LOG: sleepLog,
-                    SUCCEED_ON_ATTEMPT: String(succeedOnAttempt),
-                    STALL_ALSA_CHILD: String(options.stallChild ?? false),
-                    STALL_ALSA_PID_FILE: stalledPidFile,
-                },
-            });
-            groupPid = child.pid;
-            ownedGroup.pid = groupPid;
-            let stderr = '';
-            let childError: NodeJS.ErrnoException | undefined;
-            let timedOut = false;
-            child.stderr?.setEncoding('utf8');
-            child.stderr?.on('data', (chunk: string) => {
-                stderr = boundedAlsaProbeStderr(stderr + chunk);
-            });
-            child.once('error', (error: NodeJS.ErrnoException) => {
-                childError = error;
-            });
-            const closed = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-                child.once('close', (status, signal) => resolve({ status, signal }));
-            });
-            let resolveDeadline: (() => void) | undefined;
-            const deadlineReached = new Promise<void>((resolve) => {
-                resolveDeadline = resolve;
-            });
-            const timeout = setTimeout(() => {
-                timedOut = true;
-                signalProcessGroup(ownedGroup, 'SIGTERM');
-                resolveDeadline?.();
-            }, options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS);
-            const killAfter = setTimeout(
-                () => {
-                    if (timedOut && processGroupAlive(ownedGroup)) {
-                        signalProcessGroup(ownedGroup, 'SIGKILL');
-                    }
-                },
-                (options.timeoutMs ?? ALSA_PROBE_TIMEOUT_MS) + 200
-            );
-            let closedResult: Awaited<typeof closed>;
-            try {
-                const closedBeforeDeadline = await Promise.race([
-                    closed.then(() => true),
-                    deadlineReached.then(() => false),
-                ]);
-                if (closedBeforeDeadline) {
-                    clearTimeout(timeout);
-                }
-                if (timedOut) {
-                    await waitForProcessGroupExit(ownedGroup);
-                }
-                closedResult = await closed;
-                if (!timedOut && processGroupAlive(ownedGroup)) {
-                    signalProcessGroup(ownedGroup, 'SIGKILL');
-                    await waitForProcessGroupExit(ownedGroup);
-                    throw new Error(`ALSA probe process group ${groupPid} outlived its direct child`);
-                }
-            } finally {
-                clearTimeout(timeout);
-                clearTimeout(killAfter);
-            }
-            const outcome: AlsaProbeResult = {
-                attempts: 0,
-                sleeps: [],
-                status: closedResult.status,
-                signal: closedResult.signal,
-                errorCode: timedOut ? 'ETIMEDOUT' : (childError?.code ?? null),
-                stderr,
-                error: childError,
-            };
-            if (timedOut || outcome.error !== undefined || outcome.status === null || outcome.signal !== null) {
-                throw new Error(describeAlsaProbeFailure(outcome));
-            }
-            const lines = (path: string): string[] => readFileSync(path, 'utf8').split('\n').filter(Boolean);
-            return { ...outcome, attempts: lines(attemptLog).length, sleeps: lines(sleepLog) };
-        } catch (error) {
-            if (!(error instanceof Error)) {
-                throw error;
-            }
-            const rawStalledPid = existsSync(stalledPidFile) ? readFileSync(stalledPidFile, 'utf8').trim() : '';
-            const stalledPid = Number(rawStalledPid);
-            throw Object.assign(error, {
-                probeDirectory,
-                groupPid,
-                stalledPid: Number.isSafeInteger(stalledPid) && stalledPid > 1 ? stalledPid : undefined,
-            });
-        } finally {
-            if (!processGroupAlive(ownedGroup)) {
-                rmSync(probeDirectory, { force: true, recursive: true });
-            }
-        }
-    };
-
-    for (const { label, workflow } of [
-        { label: 'the validation Rust job', workflow: validationWorkflow },
-        { label: 'the nightly Rust job', workflow: nightly },
-    ]) {
-        const alsaRun = stringAt(stepNamed(jobAt(workflow, 'rust'), 'Install ALSA development headers'), 'run');
-        const assertExhaustionContract = (outcome: AlsaProbeResult): void => {
-            expect(outcome.attempts).toBe(3);
-            expect(outcome.sleeps).toEqual(['15', '30']);
-            expect(outcome.status).toBe(1);
-            expect(outcome.stderr).toContain('ALSA header install failed (attempt 3/3)');
-        };
-
-        it(`${label} makes three ALSA install attempts, then fails the step`, async () => {
-            const outcome = await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER);
-            assertExhaustionContract(outcome);
-        });
-
-        it(`${label} stops retrying the ALSA install once an attempt succeeds`, async () => {
-            const outcome = await runAlsaInstall(alsaRun, 2);
-            expect(outcome.attempts).toBe(2);
-            expect(outcome.sleeps).toEqual(['15']);
-            expect(outcome.status).toBe(0);
-        });
-
-        it(`${label} retry oracle rejects a loop with its later attempts removed`, async () => {
-            const oneAttempt = alsaRun.replace('for attempt in 1 2 3; do', 'for attempt in 1; do');
-            expect(oneAttempt).not.toBe(alsaRun);
-            const outcome = await runAlsaInstall(oneAttempt, Number.MAX_SAFE_INTEGER);
-            expect(() => assertExhaustionContract(outcome)).toThrow();
-        });
-
-        it(`${label} retry oracle rejects a successful exit after the third failed attempt`, async () => {
-            const swallowedFailure = alsaRun.replace(/\n\s*exit 1\s*$/, '\n  exit 0');
-            expect(swallowedFailure).not.toBe(alsaRun);
-            const outcome = await runAlsaInstall(swallowedFailure, Number.MAX_SAFE_INTEGER);
-            expect(outcome.attempts).toBe(3);
-            expect(outcome.sleeps).toEqual(['15', '30']);
-            expect(() => assertExhaustionContract(outcome)).toThrow();
-        });
-    }
-
-    it('reports a stalled ALSA child timeout, stops its process tree, and cleans up its fixture', async () => {
-        const ownedGroup: OwnedProcessGroup = { pid: undefined };
-        const kill = process.kill.bind(process);
-        const retiredIds = new Set<number>();
-        const retiredIdSignals: number[] = [];
-        const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-            if (signal !== 0 && retiredIds.has(pid)) {
-                // Model identifier reuse without ever signaling an unrelated process.
-                retiredIdSignals.push(pid);
-                return true;
-            }
-            try {
-                return kill(pid, signal);
-            } catch (error) {
-                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-                    retiredIds.add(pid);
-                }
-                throw error;
-            }
-        });
-        const failure = await (async () => {
-            try {
-                const alsaRun = stringAt(
-                    stepNamed(jobAt(validationWorkflow, 'rust'), 'Install ALSA development headers'),
-                    'run'
-                );
-                await runAlsaInstall(alsaRun, Number.MAX_SAFE_INTEGER, {
-                    stallChild: true,
-                    timeoutMs: 100,
-                    ownedGroup,
-                });
-                throw new Error('Expected the stalled ALSA child to fail with a bounded timeout');
-            } catch (error) {
-                if (!(error instanceof Error)) {
-                    throw error;
-                }
-                return {
-                    message: error.message,
-                    probeDirectory:
-                        'probeDirectory' in error && typeof error.probeDirectory === 'string'
-                            ? error.probeDirectory
-                            : undefined,
-                    stalledPid:
-                        'stalledPid' in error && typeof error.stalledPid === 'number' ? error.stalledPid : undefined,
-                    groupPid: 'groupPid' in error && typeof error.groupPid === 'number' ? error.groupPid : undefined,
-                };
-            }
-        })();
-        try {
-            expect(failure.message).toContain('error=ETIMEDOUT; status=null; signal=SIGTERM');
-            expect(failure.message.length).toBeLessThanOrEqual(
-                'ALSA probe child failed: error=ETIMEDOUT; status=null; signal=SIGTERM; stderr='.length +
-                    MAX_ALSA_PROBE_STDERR_CHARACTERS +
-                    '(empty)'.length
-            );
-            expect(failure.probeDirectory).toBeDefined();
-            if (failure.probeDirectory === undefined) {
-                throw new Error('The ALSA probe did not expose its fixture directory');
-            }
-            expect(existsSync(failure.probeDirectory)).toBe(false);
-            expect(failure.stalledPid).toBeDefined();
-            if (failure.stalledPid === undefined) {
-                throw new Error('The ALSA probe did not expose its stalled child PID');
-            }
-            const stalledPid = failure.stalledPid;
-            expect(() => process.kill(stalledPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
-            expect(failure.groupPid).toBeDefined();
-            if (failure.groupPid === undefined) {
-                throw new Error('The ALSA probe did not expose its process group');
-            }
-            const groupPid = failure.groupPid;
-            requireOwnedPid(groupPid);
-            expect(() => process.kill(-groupPid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
-            expect(retiredIds).toContain(-groupPid);
-            expect(ownedGroup.pid).toBeUndefined();
-        } finally {
-            try {
-                if (processGroupAlive(ownedGroup)) {
-                    signalProcessGroup(ownedGroup, 'SIGKILL');
-                    await waitForProcessGroupExit(ownedGroup);
-                }
-                if (failure.probeDirectory !== undefined) {
-                    rmSync(failure.probeDirectory, { force: true, recursive: true });
-                }
-            } finally {
-                killSpy.mockRestore();
-            }
-        }
-        expect(retiredIdSignals).toEqual([]);
     });
 
     it('runs every hosted apt route through the Microsoft apt feed filter', () => {
         expect(() => assertAptRoutesFiltered(workflowSet())).not.toThrow();
 
         const routes: ReadonlyArray<readonly [keyof WorkflowSet, string, string, string]> = [
-            ['heavy', 'heavy-gates.yml', 'e2e', 'Install Playwright browsers'],
-            ['validation', 'validation.yml', 'smoke', 'Install Playwright browsers'],
             ['validation', 'validation.yml', 'rust', 'Install ALSA development headers'],
-            ['nightly', 'nightly.yml', 'e2e', 'Install Playwright browsers'],
             ['nightly', 'nightly.yml', 'rust', 'Install ALSA development headers'],
             ['cargoDependencySeed', 'cargo-dependency-seed.yml', 'rust', 'Install ALSA development headers'],
             ['hostedQuantumMeasurement', 'quantum-measurements.yml', 'measure', 'Install Google Chrome'],
@@ -4332,31 +3763,6 @@ export -f sudo timeout sleep apt-get
         );
     });
 
-    it('fails every Linux browser install step after its third failed attempt', () => {
-        const installs = [
-            { label: 'the offline smoke job', workflow: validationWorkflow, job: 'smoke' },
-            { label: 'the affected end-to-end job', workflow: heavyWorkflow, job: 'e2e' },
-            { label: 'the nightly end-to-end job', workflow: nightly, job: 'e2e' },
-        ];
-
-        for (const { label, workflow, job } of installs) {
-            const clone = asRecord(structuredClone(workflow), `swallowed failure ${label}`);
-            const step = stepNamed(jobAt(clone, job), 'Install Playwright browsers');
-            step.run = stringAt(step, 'run').replace(
-                BROWSER_INSTALL_FAILING_EXIT,
-                'if [ "$attempt" -eq 3 ]; then\n    true\n  fi'
-            );
-            expect(() =>
-                assertBoundedBrowserInstall(
-                    jobAt(clone, job),
-                    label,
-                    job === 'smoke' ? SMOKE_NON_INSTALL_SECONDS : E2E_SHARD_NON_INSTALL_SECONDS,
-                    job === 'smoke' ? SMOKE_JOB_MINUTES : E2E_JOB_MINUTES
-                )
-            ).toThrow(`${label} must fail the step after the third failed install attempt`);
-        }
-    });
-
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
         expect(() => assertOfflineSmokeJob(validationWorkflow)).not.toThrow();
         expect(() => assertPullRequestSecretScan(validationWorkflow)).not.toThrow();
@@ -4371,13 +3777,6 @@ export -f sudo timeout sleep apt-get
         jobAt(eventGatedSmoke, 'smoke').if = EVENT_GATED_SMOKE_CONDITION;
         expect(() => assertOfflineSmokeJob(eventGatedSmoke)).toThrow(
             'the offline smoke job must run on every pull-request run that touches the browser surface'
-        );
-
-        const unretriedInstall = asRecord(structuredClone(validationWorkflow), 'unretried install validationWorkflow');
-        stepNamed(jobAt(unretriedInstall, 'smoke'), 'Install Playwright browsers').run =
-            'pnpm exec playwright install --with-deps chromium';
-        expect(() => assertOfflineSmokeJob(unretriedInstall)).toThrow(
-            'the offline smoke job must retry browser and dependency installation against mirror outages'
         );
 
         const eventGatedDiffScan = asRecord(
@@ -4410,146 +3809,12 @@ export -f sudo timeout sleep apt-get
         );
     });
 
-    it('bounds a stalled heavy E2E browser install and keeps its retry failure fatal', () => {
-        const e2e = jobAt(heavyWorkflow, 'e2e');
-        const installRun = stringAt(stepNamed(e2e, 'Install Playwright browsers'), 'run');
+    it('requires the heavy browser runtime proof before its unchanged shard command', () => {
         expect(() => assertBoundedHeavyE2eInstall(heavyWorkflow)).not.toThrow();
-
-        const unboundedInstall = cloneWorkflows('unbounded heavy E2E browser install');
-        stepNamed(jobAt(unboundedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            USER_BROWSER_INSTALL_COMMAND,
-            'pnpm exec playwright install chromium'
-        );
-        expect(() => assertBoundedHeavyE2eInstall(unboundedInstall.heavy)).toThrow(
-            'the heavy E2E job must bound the browser download with its own timeout'
-        );
-
-        const unretriedInstall = cloneWorkflows('unretried heavy E2E browser install');
-        stepNamed(jobAt(unretriedInstall.heavy, 'e2e'), 'Install Playwright browsers').run = installRun.replace(
-            'sleep $((attempt * 5))',
-            'sleep 0'
-        );
-        expect(() => assertBoundedHeavyE2eInstall(unretriedInstall.heavy)).toThrow(
-            'the heavy E2E install must retry three bounded attempts and fail after the third'
-        );
-
-        const overlongInstall = cloneWorkflows('overlong heavy E2E browser install');
-        const overlongJob = jobAt(overlongInstall.heavy, 'e2e');
-        stepNamed(overlongJob, 'Install Playwright browsers')['timeout-minutes'] = overlongJob['timeout-minutes'];
-        expect(() => assertBoundedHeavyE2eInstall(overlongInstall.heavy)).toThrow(
-            'the Playwright install step must be bounded below the E2E job limit'
-        );
+        const bypassed = cloneWorkflows('bypassed heavy runtime proof');
+        stepNamed(jobAt(bypassed.heavy, 'e2e'), 'Run shard').if = 'always()';
+        expect(() => assertBoundedHeavyE2eInstall(bypassed.heavy)).toThrow('without conditional admission');
     });
-
-    const gnuTimeout = process.env.SOURDAW_GNU_TIMEOUT ?? (process.platform === 'linux' ? 'timeout' : 'gtimeout');
-    const timeoutVersion = spawnSync(gnuTimeout, ['--version'], { encoding: 'utf8' });
-    const hasGnuTimeout = timeoutVersion.status === 0 && timeoutVersion.stdout.startsWith('timeout (GNU coreutils)');
-
-    for (const startupDelay of [0, 1.1]) {
-        it.runIf(process.platform === 'linux' || hasGnuTimeout)(
-            `kills a ready installer before retry after ${startupDelay}s startup`,
-            () => {
-                expect(hasGnuTimeout, 'the Ubuntu runner must use GNU timeout').toBe(true);
-                const psProbe = spawnSync('ps', ['-o', 'stat=', '-p', String(process.pid)], { encoding: 'utf8' });
-                expect(psProbe.status).toBe(0);
-                expect(psProbe.stdout.trim()).not.toBe('');
-                const installRun = stringAt(
-                    stepNamed(jobAt(heavyWorkflow, 'e2e'), 'Install Playwright browsers'),
-                    'run'
-                );
-                const probeDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-playwright-process-group-'));
-                const pidLog = join(probeDirectory, 'pids.log');
-                const overlapLog = join(probeDirectory, 'overlap.log');
-                const attemptLog = join(probeDirectory, 'attempts.log');
-                const installer = join(probeDirectory, 'installer.py');
-                writeFileSync(
-                    installer,
-                    [
-                        'import os, signal, time',
-                        'signal.signal(signal.SIGTERM, signal.SIG_IGN)',
-                        'time.sleep(float(os.environ["STALL_STARTUP_DELAY"]))',
-                        'with open(os.environ["STALL_PID_LOG"], "a") as log:',
-                        '    log.write(str(os.getpid()) + "\\n")',
-                        '    log.flush()',
-                        'os.kill(int(os.environ["TIMEOUT_PID"]), signal.SIGALRM)',
-                        'time.sleep(20)',
-                    ].join('\n')
-                );
-                writeFileSync(
-                    join(probeDirectory, 'pnpm'),
-                    [
-                        '#!/usr/bin/env bash',
-                        'trap "exit 143" TERM',
-                        'printf "attempt\\n" >> "$ATTEMPT_LOG"',
-                        'if [ -f "$STALL_PID_LOG" ]; then',
-                        '  while read -r pid; do',
-                        '    state=$(ps -o stat= -p "$pid" 2>/dev/null || true)',
-                        '    case "$state" in ""|Z*) ;; *) printf "%s\\n" "$pid" >> "$OVERLAP_LOG" ;; esac',
-                        '  done < "$STALL_PID_LOG"',
-                        'fi',
-                        'TIMEOUT_PID=$PPID python3 "$STALL_INSTALLER" &',
-                        'wait "$!"',
-                    ].join('\n'),
-                    { mode: 0o755 }
-                );
-                // The root dependency half succeeds, so each attempt reaches the
-                // user-side browser download that this probe stalls.
-                writeFileSync(join(probeDirectory, 'sudo'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-                try {
-                    if (gnuTimeout !== 'timeout') {
-                        const resolvedTimeout = spawnSync('which', [gnuTimeout], { encoding: 'utf8' });
-                        expect(resolvedTimeout.status).toBe(0);
-                        symlinkSync(resolvedTimeout.stdout.trim(), join(probeDirectory, 'timeout'));
-                    }
-                    // The child asks GNU timeout to fire its own expiry handler
-                    // only after recording readiness; startup time cannot consume
-                    // the synthetic deadline before a descendant exists.
-                    const probeRun = installRun.replace('sleep $((attempt * 5))', 'sleep 0');
-                    expect(probeRun).not.toBe(installRun);
-                    const result = spawnSync('bash', ['-c', probeRun], {
-                        env: {
-                            ...process.env,
-                            ATTEMPT_LOG: attemptLog,
-                            OVERLAP_LOG: overlapLog,
-                            STALL_INSTALLER: installer,
-                            STALL_PID_LOG: pidLog,
-                            STALL_STARTUP_DELAY: String(startupDelay),
-                            PATH: `${probeDirectory}${delimiter}${process.env.PATH ?? ''}`,
-                        },
-                        stdio: 'ignore',
-                        timeout: 10_000,
-                    });
-                    expect(result.error).toBeUndefined();
-                    expect(result.status).toBe(1);
-                    expect(existsSync(attemptLog), 'pnpm wrapper never started').toBe(true);
-                    expect(readFileSync(attemptLog, 'utf8').trim().split('\n')).toHaveLength(3);
-                    expect(existsSync(pidLog), 'installer never registered before expiry').toBe(true);
-                    expect(
-                        readFileSync(pidLog, 'utf8').trim().split('\n'),
-                        'every attempt must register before expiry'
-                    ).toHaveLength(3);
-                    expect(existsSync(overlapLog)).toBe(false);
-                    for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
-                        const state = spawnSync('ps', ['-o', 'stat=', '-p', pid], { encoding: 'utf8' }).stdout.trim();
-                        expect(state === '' || state.startsWith('Z'), `installer ${pid} survived`).toBe(true);
-                    }
-                } finally {
-                    if (existsSync(pidLog)) {
-                        for (const pid of readFileSync(pidLog, 'utf8').trim().split('\n')) {
-                            if (pid) {
-                                try {
-                                    process.kill(Number(pid), 'SIGKILL');
-                                } catch {
-                                    /* already exited */
-                                }
-                            }
-                        }
-                    }
-                    rmSync(probeDirectory, { force: true, recursive: true });
-                }
-            }
-        );
-    }
 
     it('makes selected validation, E2E and CodeQL decisive for the required Gate', () => {
         expect(() => assertJobGraph(workflowSet())).not.toThrow();
@@ -4680,6 +3945,36 @@ export -f sudo timeout sleep apt-get
             jobAt(softenedJob[wiring.workflow], suite)['continue-on-error'] = true;
             expect(() => assertJobGraph(softenedJob)).toThrow(`${suite} must not use job-level continue-on-error`);
         }
+    });
+
+    it('requires the real hosted installer systemd proof for tooling changes', () => {
+        const staticJob = jobAt(validationWorkflow, 'static');
+        const proof = stepNamed(staticJob, 'Hosted installer systemd proof');
+        expect(proof.run).toBe('pnpm test:run scripts/__tests__/hostedAptInstall.spec.ts --maxWorkers=2');
+        expect(recordAt(proof, 'env')).toEqual({ SOURDAW_SYSTEMD_TESTS: '1' });
+        expect(staticJob['runs-on']).toBe('ubuntu-latest');
+        const steps = jobSteps('validation.yml', 'static', staticJob);
+        expect(steps.findIndex((step) => step.name === 'Install dependencies')).toBeLessThan(
+            steps.findIndex((step) => step.name === 'Hosted installer systemd proof')
+        );
+        const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            PROFILE: 'tooling',
+            WEB: 'true',
+            BROWSER: 'false',
+        });
+        expect(scope.tooling).toBe('true');
+        expect(selectedPrValidationJobs(scope)).toContain('static');
+        expect(arrayAt(jobAt(validationWorkflow, 'validation-gate'), 'needs')).toContain('static');
+
+        const missing = cloneWorkflows('missing hosted installer proof');
+        removeStepNamed(jobAt(missing.validation, 'static'), 'Hosted installer systemd proof');
+        expect(() => assertStepInventory(missing)).toThrow('validation.yml job static steps drifted');
+        const conditional = cloneWorkflows('conditional hosted installer proof');
+        stepNamed(jobAt(conditional.validation, 'static'), 'Hosted installer systemd proof').if = 'false';
+        expect(() => assertUnconditionalSteps(conditional)).toThrow();
+        const softened = cloneWorkflows('softened hosted installer proof');
+        stepNamed(jobAt(softened.validation, 'static'), 'Hosted installer systemd proof')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softened)).toThrow();
     });
 
     it('requires campaign fixture freshness for Rust-only changes', () => {
