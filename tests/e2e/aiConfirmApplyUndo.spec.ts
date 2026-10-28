@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
+import { createLoopbackAnswerToolCalls } from '../../scripts/loopbackOpenAiProvider';
+
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider';
@@ -31,7 +33,10 @@ test.describe('AI chat over an admitted loopback provider', () => {
 
     test.beforeEach(async ({ page }) => {
         test.setTimeout(120000);
-        provider = await startLoopbackOpenAiProvider({ reply: LOOPBACK_REPLY });
+        provider = await startLoopbackOpenAiProvider({
+            reply: LOOPBACK_REPLY,
+            toolCalls: createLoopbackAnswerToolCalls(LOOPBACK_REPLY),
+        });
         await setupWorkspace(page);
         await launch_new_project(page);
         await admitLoopbackProvider(page, provider);
@@ -42,15 +47,20 @@ test.describe('AI chat over an admitted loopback provider', () => {
         await provider.close();
     });
 
-    // Admission is only worth asserting if the configured endpoint is the one
-    // the app actually talks to: an explain-mode prompt bypasses the local
-    // fast paths and streams straight from the provider.
-    test('streams a chat answer from the configured loopback endpoint', async ({ page }) => {
+    // Explain reads project evidence through the configured endpoint and completes a tool-backed answer.
+    test('shows a completed answer from the configured loopback endpoint', async ({ page }) => {
         const input = page.getByTestId('chat-composer-input');
         await expect(input).toBeEnabled();
 
         const executionMode = page.getByRole('combobox', { name: 'Agent execution mode' });
         await expect(executionMode).toHaveValue('explain');
+        const baseline = await trackArmButtons(page).count();
+        const undo = page.getByTestId('transport-undo');
+        const redo = page.getByTestId('transport-redo');
+        const undoEnabled = await undo.isEnabled();
+        const redoEnabled = await redo.isEnabled();
+        const play = page.getByTestId('transport-play');
+        const playLabel = await play.getAttribute('aria-label');
 
         await input.fill('What does this project sound like?');
         await input.press('Enter');
@@ -59,6 +69,30 @@ test.describe('AI chat over an admitted loopback provider', () => {
         await expect(conversation).toContainText(LOOPBACK_REPLY, { timeout: 30_000 });
         expect(provider.completionRequests.length).toBeGreaterThan(0);
         expect(provider.completionRequests[0]).toContain(provider.model);
+        expect(provider.completionRequests).toHaveLength(2);
+        const first = JSON.parse(provider.completionRequests[0]!) as { tools: Array<{ function: { name: string } }> };
+        const second = JSON.parse(provider.completionRequests[1]!) as {
+            tools: Array<{ function: { name: string } }>;
+            messages: Array<{ role: string; tool_call_id?: string; content: string }>;
+        };
+        expect(first.tools.map((tool) => tool.function.name)).toContain('project_query');
+        expect(second.tools.map((tool) => tool.function.name)).toContain('answer_respond');
+        const receipt = second.messages.find(
+            (message) => message.role === 'tool' && message.tool_call_id === 'loopback-query'
+        );
+        expect(receipt).toBeDefined();
+        expect(JSON.parse(receipt!.content)).toMatchObject({
+            callId: 'loopback-query',
+            toolName: 'project.query',
+            status: 'success',
+        });
+        await conversation.getByRole('button', { name: /Evidence/ }).click();
+        await expect(conversation.getByRole('list', { name: 'Evidence' })).toContainText('project.query');
+        await expect(page.getByRole('button', { name: 'Confirm' })).toHaveCount(0);
+        await expect(trackArmButtons(page)).toHaveCount(baseline);
+        expect(await undo.isEnabled()).toBe(undoEnabled);
+        expect(await redo.isEnabled()).toBe(redoEnabled);
+        await expect(play).toHaveAttribute('aria-label', playLabel!);
     });
 
     test('confirming "create 3 audio tracks" adds the tracks, undo restores, redo re-applies', async ({ page }) => {
