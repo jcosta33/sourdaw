@@ -263,6 +263,54 @@ async function startBlankProject(page: Page): Promise<void> {
     await expect(page.getByRole('grid', { name: /Track list/i })).toHaveCount(0);
 }
 
+async function useOriginPrivateProjectFolder(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+        Object.defineProperty(window, 'showDirectoryPicker', {
+            configurable: true,
+            value: () => navigator.storage.getDirectory(),
+        });
+    });
+}
+
+async function expectCommittedProjectFolder(page: Page): Promise<void> {
+    const committed = await page.evaluate(async () => {
+        const root = await navigator.storage.getDirectory();
+        const projects = await root.getDirectoryHandle('projects');
+        const folders: FileSystemDirectoryHandle[] = [];
+        for await (const handle of projects.values()) {
+            if (handle.kind === 'directory') {
+                folders.push(handle);
+            }
+        }
+        if (folders.length !== 1) {
+            throw new Error('Expected one saved project folder');
+        }
+        const folder = folders[0];
+        if (!folder) {
+            throw new Error('The saved project folder is unavailable');
+        }
+        const manifestFile = await (await folder.getFileHandle('manifest.json')).getFile();
+        const manifest: unknown = JSON.parse(await manifestFile.text());
+        if (
+            typeof manifest !== 'object' ||
+            manifest === null ||
+            !('document' in manifest) ||
+            typeof manifest.document !== 'object' ||
+            manifest.document === null ||
+            !('path' in manifest.document) ||
+            typeof manifest.document.path !== 'string' ||
+            !('format' in manifest)
+        ) {
+            throw new Error('The project folder has no document manifest entry');
+        }
+        const document = await (await folder.getFileHandle(manifest.document.path)).getFile();
+        return { projectId: folder.name, format: manifest.format, documentBytes: document.size };
+    });
+    expect(committed.format).toBe('sourdaw-project-directory-v1');
+    expect(committed.projectId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(committed.documentBytes).toBeGreaterThan(0);
+}
+
 async function clearCrdtDatabase(page: Page): Promise<void> {
     await page.evaluate(async (databaseName) => {
         await new Promise<void>((resolve, reject) => {
@@ -317,6 +365,7 @@ test.describe('Offline project smoke', () => {
     });
 
     test('saves and reopens an edited project', async ({ page }) => {
+        await useOriginPrivateProjectFolder(page);
         const assertOffline = await openNewProject(page);
         await expect(dirtyIndicator(page)).toHaveCount(0);
 
@@ -327,6 +376,7 @@ test.describe('Offline project smoke', () => {
 
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
+        await expectCommittedProjectFolder(page);
         await startBlankProject(page);
         await assertOffline();
 
@@ -379,6 +429,7 @@ test.describe('Offline project smoke', () => {
     });
 
     test('undo restores durable project truth before its track edit', async ({ page }) => {
+        await useOriginPrivateProjectFolder(page);
         const assertOffline = await openNewProject(page);
         await renameProject(page, 'Smoke Undo Persistence');
 
@@ -394,6 +445,7 @@ test.describe('Offline project smoke', () => {
 
         await page.keyboard.press(`${MODIFIER}+s`);
         await expect(dirtyIndicator(page)).toHaveCount(0);
+        await expectCommittedProjectFolder(page);
         await startBlankProject(page);
         await assertOffline();
 

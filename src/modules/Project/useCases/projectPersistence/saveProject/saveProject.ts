@@ -6,7 +6,6 @@ import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, exportSdawFile, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { countSettledTakes } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { writeProjectDirectory } from '../../../repositories/project/projectDirectory';
 import {
@@ -28,6 +27,7 @@ import {
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
 import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
+import { isNativeProjectRuntimeAvailable } from '../../isNativeProjectRuntimeAvailable';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
 import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
@@ -82,14 +82,16 @@ export async function saveProject(): Promise<boolean> {
     // doesn't orphan the old key.
     const recentKey = getProjectSnapshotKey(project.createdAt);
     const projectIdAtEntry = project.projectId;
-    const folderSaveAvailable = !isDesktopRuntime() && typeof window.showDirectoryPicker === 'function';
+    const folderSaveAvailable = !isNativeProjectRuntimeAvailable() && typeof window.showDirectoryPicker === 'function';
     // The picker must start in the same user-gesture turn, before migration or plugin capture awaits.
-    const selectedRoot =
-        folderSaveAvailable && (!projectIdAtEntry || !cachedProjectDirectoryRoot(projectIdAtEntry))
-            ? navigator.userActivation?.isActive
-                ? beginProjectDirectorySelection()
-                : null
-            : null;
+    let selectedRoot: Promise<FileSystemDirectoryHandle> | null = null;
+    if (
+        folderSaveAvailable &&
+        (!projectIdAtEntry || !cachedProjectDirectoryRoot(projectIdAtEntry)) &&
+        navigator.userActivation?.isActive
+    ) {
+        selectedRoot = beginProjectDirectorySelection();
+    }
     void selectedRoot?.catch(() => undefined);
 
     try {
@@ -199,9 +201,12 @@ export async function saveProject(): Promise<boolean> {
                     assertSnapshotContinuation(audioDurabilityReceipt);
 
                     if (folderSaveAvailable) {
-                        const root = selectedRoot
-                            ? await selectedRoot
-                            : await loadProjectDirectoryRoot(persistedProject.projectId!);
+                        let root: FileSystemDirectoryHandle | null;
+                        if (selectedRoot) {
+                            root = await selectedRoot;
+                        } else {
+                            root = await loadProjectDirectoryRoot(persistedProject.projectId!);
+                        }
                         if (!root) {
                             throw new Error(
                                 '[saveProject] Choose a project folder with Save before autosave can commit'

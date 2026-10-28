@@ -457,13 +457,16 @@ export class AssetTransfer {
                 if (!isCurrent()) {
                     throw new Error('Project original promotion was superseded');
                 }
-            } finally {
+            } catch (error) {
                 if (staged) {
                     const released = await assets.releaseStagedAsset(leaseId, hash);
                     if (released.status === 'failed') {
-                        throw new Error(`Project original staging could not be released: ${released.reason}`);
+                        throw new Error(`Project original staging could not be released: ${released.reason}`, {
+                            cause: error,
+                        });
                     }
                 }
+                throw error;
             }
         });
     }

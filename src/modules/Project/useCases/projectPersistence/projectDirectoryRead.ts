@@ -54,7 +54,8 @@ export async function prepareProjectDirectoryRead(
         if (!shouldContinue()) {
             throw new Error('Project directory PCM read was superseded');
         }
-        const length = entry.channels[0]?.byteLength / Float32Array.BYTES_PER_ELEMENT;
+        const firstChannel = entry.channels[0];
+        const length = firstChannel ? firstChannel.byteLength / Float32Array.BYTES_PER_ELEMENT : 0;
         if (!length || !Number.isSafeInteger(length)) {
             throw new Error(`Project directory PCM has no samples: ${bufferId}`);
         }
@@ -68,10 +69,11 @@ export async function prepareProjectDirectoryRead(
             continue;
         }
         const buffer = audioContext.createBuffer(entry.channels.length, length, entry.sampleRate);
-        entry.channels.forEach((bytes, channel) => {
-            const samples = new Float32Array(bytes.buffer, bytes.byteOffset, length);
+        for (const [channel, bytes] of entry.channels.entries()) {
+            const samples = new Float32Array(length);
+            samples.set(new Float32Array(bytes.buffer, bytes.byteOffset, length));
             buffer.copyToChannel(samples, channel);
-        });
+        }
         decodedAudioBuffers[bufferId] = buffer;
     }
     const preparedDocument = await prepareExternalProjectDocument(content.document, binding.projectId);

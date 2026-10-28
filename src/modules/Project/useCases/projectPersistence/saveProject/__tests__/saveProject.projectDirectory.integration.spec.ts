@@ -28,7 +28,9 @@ class MemoryDirectory implements ProjectDirectoryHandle {
                         pending = Uint8Array.from(bytes);
                     },
                     close: async () => {
-                        if (pending) this.files.set(name, pending);
+                        if (pending) {
+                            this.files.set(name, pending);
+                        }
                     },
                     abort: async () => {
                         pending = null;
@@ -40,8 +42,12 @@ class MemoryDirectory implements ProjectDirectoryHandle {
 
     async getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<MemoryDirectory> {
         const existing = this.directories.get(name);
-        if (existing) return existing;
-        if (!options?.create) throw new DOMException('Missing directory', 'NotFoundError');
+        if (existing) {
+            return existing;
+        }
+        if (!options?.create) {
+            throw new DOMException('Missing directory', 'NotFoundError');
+        }
         const next = new MemoryDirectory(name);
         this.directories.set(name, next);
         return next;
@@ -61,7 +67,9 @@ vi.mock('../../../../repositories/project/projectDirectoryBinding', () => ({
     loadProjectDirectoryRoot: async (projectId: string) => folder.bound.get(projectId)?.root ?? null,
     loadProjectDirectoryBinding: async (key: string) => folder.bound.get(key) ?? null,
     bindProjectDirectoryRoot: async (projectId: string, root: MemoryDirectory, recentKey: string) => {
-        if (folder.bindFail) throw new Error('Folder bookmark storage failed');
+        if (folder.bindFail) {
+            throw new Error('Folder bookmark storage failed');
+        }
         const binding = { projectId, recentKey, root };
         folder.bound.set(projectId, binding);
         folder.bound.set(`recent:${recentKey}`, binding);
@@ -71,8 +79,12 @@ vi.mock('../../../../repositories/project/projectDirectoryBinding', () => ({
         folder.bound.delete('last');
     },
     openProjectDirectory: async (root: MemoryDirectory, projectId: string, create: boolean) => {
-        if (!folder.permission) throw new Error('Project folder permission is unavailable');
-        if (root.name === projectId) return root;
+        if (!folder.permission) {
+            throw new Error('Project folder permission is unavailable');
+        }
+        if (root.name === projectId) {
+            return root;
+        }
         const projects = await root.getDirectoryHandle('projects', { create });
         return projects.getDirectoryHandle(projectId, { create });
     },
@@ -94,7 +106,9 @@ function makeWave(samples: Float32Array): File {
     const bytes = new ArrayBuffer(44 + samples.length * 2);
     const view = new DataView(bytes);
     const ascii = (offset: number, value: string) => {
-        for (let index = 0; index < value.length; index++) view.setUint8(offset + index, value.charCodeAt(index));
+        for (let index = 0; index < value.length; index++) {
+            view.setUint8(offset + index, value.charCodeAt(index));
+        }
     };
     ascii(0, 'RIFF');
     view.setUint32(4, bytes.byteLength - 8, true);
@@ -109,7 +123,9 @@ function makeWave(samples: Float32Array): File {
     view.setUint16(34, 16, true);
     ascii(36, 'data');
     view.setUint32(40, samples.length * 2, true);
-    samples.forEach((sample, index) => view.setInt16(44 + index * 2, Math.round(sample * 0x7fff), true));
+    for (const [index, sample] of samples.entries()) {
+        view.setInt16(44 + index * 2, Math.round(sample * 0x7fff), true);
+    }
     const file = new File([bytes], 'original.wav', { type: 'audio/wav' });
     Object.defineProperty(file, 'arrayBuffer', { value: () => Promise.resolve(bytes.slice(0)) });
     return file;
@@ -185,9 +201,9 @@ describe('project directory save and cold Recent open', () => {
                 const view = new DataView(bytes);
                 const count = view.getUint32(40, true) / 2;
                 const samples = new Float32Array(count);
-                samples.forEach((_, index) => {
+                for (const [index] of samples.entries()) {
                     samples[index] = view.getInt16(44 + index * 2, true) / 0x7fff;
-                });
+                }
                 return makePcm(samples);
             },
         });
@@ -210,7 +226,9 @@ describe('project directory save and cold Recent open', () => {
         await arrangement.importAudioFile(original, { shouldContinue: () => true });
         const clip = arrangementStores.trackStore.value?.tracks.flatMap((track) => track.clips)[0];
         expect(clip?.assetHash).toMatch(/^sha256:/);
-        if (!clip?.assetHash) throw new Error('Expected an imported original hash');
+        if (!clip?.assetHash) {
+            throw new Error('Expected an imported original hash');
+        }
         const residentTransfer = collaboration.getAssetTransfer();
         expect(await residentTransfer?.releaseDurableAsset(clip.assetHash)).toMatchObject({ status: 'released' });
         expect(residentTransfer?.getAsset(clip.assetHash)).toBeInstanceOf(Blob);
@@ -230,12 +248,18 @@ describe('project directory save and cold Recent open', () => {
         );
         const mediaDirectory = await directory.getDirectoryHandle('media');
         const mediaName = committed.manifest.media[0]?.path.slice('media/'.length);
-        if (!mediaName) throw new Error('Expected the original to be named in the manifest');
+        if (!mediaName) {
+            throw new Error('Expected the original to be named in the manifest');
+        }
         const originalBytes = mediaDirectory.files.get(mediaName);
-        if (!originalBytes) throw new Error('Expected the original bytes in the project folder');
+        if (!originalBytes) {
+            throw new Error('Expected the original bytes in the project folder');
+        }
         const automerge = await import('@automerge/automerge');
         const savedRoot = crdt.getCrdtDoc(crdt.DOC_PREFIX_ROOT);
-        if (!savedRoot) throw new Error('Expected saved Automerge authority');
+        if (!savedRoot) {
+            throw new Error('Expected saved Automerge authority');
+        }
         const savedChanges = automerge.getAllChanges(savedRoot).map((bytes) => Array.from(bytes));
 
         const archiveCapture: { value: Blob | null } = { value: null };
@@ -252,10 +276,18 @@ describe('project directory save and cold Recent open', () => {
             }),
         });
         await project.exportProjectFile();
-        if (!archiveCapture.value) throw new Error('Expected an archive to be exported');
+        if (!archiveCapture.value) {
+            throw new Error('Expected an archive to be exported');
+        }
         const archiveText = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
+            reader.onload = () => {
+                if (typeof reader.result !== 'string') {
+                    reject(new Error('Expected a text project archive'));
+                    return;
+                }
+                resolve(reader.result);
+            };
             reader.onerror = () => reject(reader.error);
             reader.readAsText(archiveCapture.value);
         });
@@ -280,7 +312,9 @@ describe('project directory save and cold Recent open', () => {
         mediaDirectory.files.set(mediaName, originalBytes);
         expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('committed');
         const reopenedRoot = crdt.getCrdtDoc(crdt.DOC_PREFIX_ROOT);
-        if (!reopenedRoot) throw new Error('Expected reopened Automerge authority');
+        if (!reopenedRoot) {
+            throw new Error('Expected reopened Automerge authority');
+        }
         const reopenedChanges = automerge.getAllChanges(reopenedRoot).map((bytes) => Array.from(bytes));
         for (const change of savedChanges) {
             expect(reopenedChanges).toContainEqual(change);

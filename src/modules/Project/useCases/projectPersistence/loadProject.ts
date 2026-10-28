@@ -98,9 +98,12 @@ export async function loadProject({
                 await stopPlayback();
             }
         }
-        const loaded = directory
-            ? await directory.commitDocument(isDirectoryCurrent)
-            : await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+        let loaded: boolean;
+        if (directory) {
+            loaded = await directory.commitDocument(isDirectoryCurrent);
+        } else {
+            loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+        }
         if (!transaction.isCurrent()) {
             return false;
         }

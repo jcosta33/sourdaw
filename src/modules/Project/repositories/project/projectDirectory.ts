@@ -7,7 +7,7 @@ type StoredFile = { path: string; sha256: string; byteLength: number };
 type ProjectFileHandle = {
     getFile: () => Promise<{ arrayBuffer: () => Promise<ArrayBuffer> }>;
     createWritable: () => Promise<{
-        write: (bytes: Uint8Array) => Promise<void>;
+        write: (bytes: Uint8Array<ArrayBuffer>) => Promise<void>;
         close: () => Promise<void>;
         abort: () => Promise<void>;
     }>;
@@ -158,7 +158,7 @@ function parseManifest(value: unknown, projectId: string): ProjectDirectoryManif
             !Number.isFinite(entry.sampleRate) ||
             entry.sampleRate <= 0 ||
             !Array.isArray(entry.channels) ||
-            entry.channels.length < 1 ||
+            entry.channels.length === 0 ||
             entry.channels.length > 32 ||
             (entry.freezeProjectId !== undefined &&
                 (typeof entry.freezeProjectId !== 'number' ||
@@ -167,6 +167,7 @@ function parseManifest(value: unknown, projectId: string): ProjectDirectoryManif
         ) {
             throw new Error('Project manifest names invalid PCM');
         }
+        const channels: StoredFile[] = [];
         for (const channel of entry.channels) {
             if (
                 !isStoredFile(channel) ||
@@ -175,14 +176,18 @@ function parseManifest(value: unknown, projectId: string): ProjectDirectoryManif
             ) {
                 throw new Error('Project manifest names invalid PCM');
             }
+            channels.push(channel);
         }
         seenPcm.add(entry.bufferId);
-        pcm.push({
+        const parsed: ProjectPcmBuffer = {
             bufferId: entry.bufferId,
             sampleRate: entry.sampleRate,
-            channels: entry.channels,
-            ...(entry.freezeProjectId === undefined ? {} : { freezeProjectId: entry.freezeProjectId }),
-        });
+            channels,
+        };
+        if (typeof entry.freezeProjectId === 'number') {
+            parsed.freezeProjectId = entry.freezeProjectId;
+        }
+        pcm.push(parsed);
     }
     return {
         format: FORMAT,
@@ -203,11 +208,15 @@ async function readFile(directory: ProjectDirectoryHandle, name: string): Promis
 }
 
 async function readVerifiedFile(directory: ProjectDirectoryHandle, entry: StoredFile): Promise<Uint8Array> {
-    const [parent, name] = entry.path.startsWith('media/')
-        ? [await directory.getDirectoryHandle('media'), entry.path.slice(6)]
-        : entry.path.startsWith('pcm/')
-          ? [await directory.getDirectoryHandle('pcm'), entry.path.slice(4)]
-          : [directory, entry.path];
+    let parent = directory;
+    let name = entry.path;
+    if (entry.path.startsWith('media/')) {
+        parent = await directory.getDirectoryHandle('media');
+        name = entry.path.slice(6);
+    } else if (entry.path.startsWith('pcm/')) {
+        parent = await directory.getDirectoryHandle('pcm');
+        name = entry.path.slice(4);
+    }
     const bytes = await readFile(parent, name);
     if (bytes.byteLength !== entry.byteLength || (await hashBytes(bytes)) !== entry.sha256) {
         throw new Error(`Project file failed integrity verification: ${entry.path}`);
@@ -230,7 +239,9 @@ async function writeFile(
         if (!isCurrent()) {
             throw new Error('Project changed before media write');
         }
-        await writable.write(bytes);
+        const writeBytes = new Uint8Array(bytes.byteLength);
+        writeBytes.set(bytes);
+        await writable.write(writeBytes);
         if (!isCurrent()) {
             throw new Error('Project changed before media write');
         }

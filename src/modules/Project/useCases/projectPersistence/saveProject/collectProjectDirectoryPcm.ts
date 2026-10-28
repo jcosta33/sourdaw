@@ -41,7 +41,11 @@ export async function collectProjectDirectoryPcm(
             throw new Error(`Required project PCM channel lengths differ: ${bufferId}`);
         }
         const buffer = context.createBuffer(channels.length, length, source.sampleRate);
-        channels.forEach((channel, index) => buffer.copyToChannel(channel, index));
+        for (const [index, channel] of channels.entries()) {
+            const samples = new Float32Array(channel.length);
+            samples.set(channel);
+            buffer.copyToChannel(samples, index);
+        }
         buffers.set(bufferId, buffer);
     }
     return buffers;

@@ -98,13 +98,16 @@ export async function restoreProjectOriginalMedia(
             if (!shouldContinue()) {
                 throw new Error('Project replacement superseded original media promotion');
             }
-        } finally {
+        } catch (error) {
             if (staged) {
                 const released = await repository.releaseStagedAsset(leaseId, hash);
                 if (released.status === 'failed') {
-                    throw new Error(`Project directory original staging could not be released: ${hash}`);
+                    throw new Error(`Project directory original staging could not be released: ${hash}`, {
+                        cause: error,
+                    });
                 }
             }
+            throw error;
         }
     }
 }

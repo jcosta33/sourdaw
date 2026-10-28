@@ -17,7 +17,7 @@ const clip: ProjectClip = {
     endBeat: 4,
     type: 'audio',
     bufferId: 'active-pcm',
-    assetHash: 'sha256:' + '1'.repeat(64),
+    assetHash: `sha256:${'1'.repeat(64)}`,
     fadeInBeats: 0,
     fadeOutBeats: 0,
     gain: 1,
@@ -55,7 +55,7 @@ describe('project media reference collection', () => {
                                         ...clip,
                                         id: 'alternate-clip',
                                         bufferId: 'alternate-pcm',
-                                        assetHash: 'sha256:' + '2'.repeat(64),
+                                        assetHash: `sha256:${'2'.repeat(64)}`,
                                     },
                                 ],
                             },
@@ -83,7 +83,7 @@ describe('project media reference collection', () => {
             ],
         };
 
-        expect(collectProjectOriginalHashes(data)).toEqual([clip.assetHash, 'sha256:' + '2'.repeat(64)]);
+        expect(collectProjectOriginalHashes(data)).toEqual([clip.assetHash, `sha256:${'2'.repeat(64)}`]);
         expect(collectProjectAllBufferIds(data)).toEqual(['frozen-pcm', 'active-pcm', 'alternate-pcm', 'inactive-pcm']);
         expect(collectProjectFreezeOnlyBufferIds(data)).toEqual(['frozen-pcm']);
     });

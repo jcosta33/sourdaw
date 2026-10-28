@@ -59,7 +59,8 @@ export function readProjectOriginalMediaArchive(value: unknown): {
         throw new Error('Project original media archive is invalid');
     }
     const media = new Map<string, Uint8Array>();
-    for (const value of archive.assets) {
+    const assets: readonly unknown[] = archive.assets;
+    for (const value of assets) {
         if (
             typeof value !== 'object' ||
             value === null ||

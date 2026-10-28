@@ -9,9 +9,13 @@ function addTrackHashes(tracks: readonly HydratableProjectTrack[], hashes: Set<s
         }
     };
     for (const track of tracks) {
-        track.clips.forEach(addClip);
+        for (const clip of track.clips) {
+            addClip(clip);
+        }
         for (const alternative of track.alternatives ?? []) {
-            alternative.clips.forEach(addClip);
+            for (const clip of alternative.clips) {
+                addClip(clip);
+            }
         }
     }
 }
@@ -77,5 +81,5 @@ export function collectProjectFreezeOnlyBufferIds(data: HydratableProjectData): 
     for (const arrangement of data.arrangements ?? []) {
         visit(arrangement.tracks?.tracks ?? []);
     }
-    return [...frozen].filter((id) => !ordinary.has(id));
+    return Array.from(frozen).filter((id) => !ordinary.has(id));
 }
