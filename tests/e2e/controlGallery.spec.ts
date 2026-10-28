@@ -7,11 +7,7 @@ test('development control gallery shows source tokens and interactive shared con
     await launch_new_project(page);
     await page.goto('/dev/control-gallery');
     const galleryHeading = page.getByRole('heading', { name: 'Sourdaw control gallery' });
-    const servedFromViteSource = (await page.locator('script[type="module"][src^="/src/"]').count()) > 0;
-    if (!servedFromViteSource) {
-        await expect(galleryHeading).toHaveCount(0);
-        return;
-    }
+    expect(await page.locator('script[type="module"][src^="/src/"]').count()).toBeGreaterThan(0);
     await expect(galleryHeading).toBeVisible();
 
     const tokens = page.getByRole('list', { name: 'Design tokens' }).locator('[data-token-name]');
