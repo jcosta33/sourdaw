@@ -134,6 +134,8 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
         '#/modules/CrdtDocument/useCases'
     );
     return {
+        commandSourcePublicationMatches: actual.commandSourcePublicationMatches,
+        stageCommandSourcePublication: actual.stageCommandSourcePublication,
         hasForeignPendingProjectWrites: actual.hasForeignPendingProjectWrites,
         captureDurableDocumentWitness: actual.captureDurableDocumentWitness,
         captureProjectMutationAuthorization: actual.captureProjectMutationAuthorization,

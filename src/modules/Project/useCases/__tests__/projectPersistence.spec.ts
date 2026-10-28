@@ -75,6 +75,12 @@ vi.mock('../../stores/projectStore', () => ({
 // Vitest mocks should use the same path as the import in the source file.
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
     hasForeignPendingProjectWrites: vi.fn(() => false),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
