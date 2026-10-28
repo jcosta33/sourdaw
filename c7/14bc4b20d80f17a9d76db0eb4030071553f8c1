@@ -1,0 +1,18 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 165-176
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 168-183
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 432-443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c714bc4b20d80f17a9d76db0eb4030071553f8c1",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
