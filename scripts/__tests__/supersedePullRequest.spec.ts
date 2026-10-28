@@ -5833,7 +5833,9 @@ describe('native read-only main parent completion inspection', () => {
                 inspectNativeParentCompletion(selection, {
                     ...port,
                     assertCurrentPullRequest: (number) => {
-                        if (number === moved) throw new Error('final core moved');
+                        if (number === moved) {
+                            throw new Error('final core moved');
+                        }
                     },
                 })
             ).toThrow('final core moved');

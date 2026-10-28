@@ -8,8 +8,6 @@ import { describe, expect, it } from 'vitest';
 
 import { canonicalJson } from '../canonicalRecord.ts';
 import { renderFindingLineage } from '../findingLineage.ts';
-import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
-
 import {
     AUTHOR_BOT_COMMIT_EMAIL,
     AUTHOR_BOT_COMMIT_NAME,
@@ -35,6 +33,7 @@ import {
     type HistoricalAdmissionReceipt,
     type HistoricalStackObservation,
 } from '../syncParentLane.ts';
+import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 const sha = (letter: string) => letter.repeat(40);
 const anchor = 'acf91c9e72a98ce6c25f019593df8813c7a3c61d';
@@ -1581,9 +1580,10 @@ describe('explicit superseded parent historical admission', () => {
             ...f.port,
             readReceipt: () => {
                 const value = f.receipt();
-                return value === undefined
-                    ? undefined
-                    : parseHistoricalAdmissionReceipt(JSON.parse(JSON.stringify(value)));
+                if (value === undefined) {
+                    return undefined;
+                }
+                return parseHistoricalAdmissionReceipt(structuredClone(value));
             },
         });
         expect(descriptor).toMatchObject({
@@ -1652,30 +1652,49 @@ describe('explicit superseded parent historical admission', () => {
     ])('refuses %s without writes', (change) => {
         const { f, input } = closedParentFixture();
         const observation = f.observation();
-        if (change === 'wrong actor') observation.parent.authorId = 'foreign';
-        if (change === 'wrong base') observation.child.baseBranch = 'agent/other';
-        if (change === 'reopened parent') observation.parent.events.push('ReopenedEvent');
-        if (change === 'wrong closure actor' && observation.parent.closures?.[0])
+        if (change === 'wrong actor') {
+            observation.parent.authorId = 'foreign';
+        }
+        if (change === 'wrong base') {
+            observation.child.baseBranch = 'agent/other';
+        }
+        if (change === 'reopened parent') {
+            observation.parent.events.push('ReopenedEvent');
+        }
+        if (change === 'wrong closure actor' && observation.parent.closures?.[0]) {
             observation.parent.closures[0].authorId = 'foreign';
-        if (change === 'closure before child') observation.parent.closedAt = '2026-10-20T00:00:00Z';
-        if (change === 'wrong parent at birth') f.setParentLog(f.port.parentLog().replaceAll(anchor, sha('d')));
-        if (change === 'child origin/main')
+        }
+        if (change === 'closure before child') {
+            observation.parent.closedAt = '2026-10-20T00:00:00Z';
+        }
+        if (change === 'wrong parent at birth') {
+            f.setParentLog(f.port.parentLog().replaceAll(anchor, sha('d')));
+        }
+        if (change === 'child origin/main') {
             f.setChildLog(
                 f.port.childLog().replace(`branch: Created from ${anchor}`, 'branch: Created from origin/main')
             );
-        if (change === 'arbitrary parent origin')
+        }
+        if (change === 'arbitrary parent origin') {
             f.setParentLog(
                 f.port.parentLog().replace(`branch: Created from ${sha('e')}`, 'branch: Created from agent/other')
             );
+        }
         if (change === 'missing origin flag') {
             f.setParentLog(
                 f.port.parentLog().replace(`branch: Created from ${sha('e')}`, 'branch: Created from origin/main')
             );
             input.closedParent.parentOriginMain = false;
         }
-        if (change === 'cached base absent') delete observation.child.baseRefOid;
-        if (change === 'cached base unrelated') observation.child.baseRefOid = sha('d');
-        if (change === 'dirty child') f.setClean(false);
+        if (change === 'cached base absent') {
+            delete observation.child.baseRefOid;
+        }
+        if (change === 'cached base unrelated') {
+            observation.child.baseRefOid = sha('d');
+        }
+        if (change === 'dirty child') {
+            f.setClean(false);
+        }
         expect(() => admitHistoricalStack(change === 'missing flag' ? f.input : input, f.port)).toThrow();
         expect(f.writes).toEqual([]);
     });
@@ -1695,15 +1714,21 @@ describe('explicit superseded parent historical admission', () => {
             ...f.port,
             saveReceipt: (receipt: HistoricalAdmissionReceipt) => {
                 f.port.saveReceipt(receipt);
-                if (phase === 'receipt') throw new Error('crash');
+                if (phase === 'receipt') {
+                    throw new Error('crash');
+                }
             },
             addMarker: (fork: string) => {
                 f.port.addMarker(fork);
-                if (phase === 'marker') throw new Error('crash');
+                if (phase === 'marker') {
+                    throw new Error('crash');
+                }
             },
             installDescriptor: (value: LaneStack) => {
                 f.port.installDescriptor(value);
-                if (phase === 'descriptor') throw new Error('crash');
+                if (phase === 'descriptor') {
+                    throw new Error('crash');
+                }
             },
         };
         expect(() => admitHistoricalStack(input, port)).toThrow('crash');
@@ -1727,7 +1752,9 @@ describe('explicit superseded parent historical admission', () => {
                 ...f.port,
                 observe: () => {
                     observations += 1;
-                    if (observations === boundary) f.observation().closedParentCompletion = '{"native":"changed"}';
+                    if (observations === boundary) {
+                        f.observation().closedParentCompletion = '{"native":"changed"}';
+                    }
                     return f.port.observe();
                 },
             })
@@ -1873,7 +1900,7 @@ function nativeCompletionWire() {
         lineage: { ...marker, id: 'lineage' },
         findingIds: ['1001'],
     };
-    return { f, input, payload, wire: () => canonicalJson(payload) + '\n' };
+    return { f, input, payload, wire: () => `${canonicalJson(payload)}\n` };
 }
 
 describe('bounded native parent inspection transport', () => {
@@ -1888,8 +1915,8 @@ describe('bounded native parent inspection transport', () => {
         expect(f.observation().closedParentCompletion).toBe(wire().slice(0, -1));
         expect(admitHistoricalStack(input, f.port).parentPullRequest).toBe(5425);
         for (const invalid of [
-            wire() + '\n',
-            'banner\n' + wire(),
+            `${wire()}\n`,
+            `banner\n${wire()}`,
             wire().trim(),
             '{}\n',
             wire().replace('sourceCommit', 'unknown'),
@@ -1902,14 +1929,26 @@ describe('bounded native parent inspection transport', () => {
         );
         for (const change of ['head', 'branch', 'replacement', 'merge', 'marker actor', 'roots']) {
             const row = structuredClone(payload);
-            if (change === 'head') row.parent.head = sha('d');
-            if (change === 'branch') row.parent.headRefName = 'agent/other';
-            if (change === 'replacement') row.replacement.number = 9999;
-            if (change === 'merge') row.replacement.mergeCommit = 'main';
-            if (change === 'marker actor') row.receipt.authorNodeId = 'foreign';
-            if (change === 'roots') row.findingIds = ['1001', '1001'];
+            if (change === 'head') {
+                row.parent.head = sha('d');
+            }
+            if (change === 'branch') {
+                row.parent.headRefName = 'agent/other';
+            }
+            if (change === 'replacement') {
+                row.replacement.number = 9999;
+            }
+            if (change === 'merge') {
+                row.replacement.mergeCommit = 'main';
+            }
+            if (change === 'marker actor') {
+                row.receipt.authorNodeId = 'foreign';
+            }
+            if (change === 'roots') {
+                row.findingIds = ['1001', '1001'];
+            }
             expect(() =>
-                checkedNativeParentCompletion(canonicalJson(row) + '\n', f.observation().parent, 5636, sha('9'))
+                checkedNativeParentCompletion(`${canonicalJson(row)}\n`, f.observation().parent, 5636, sha('9'))
             ).toThrow();
         }
     });
@@ -1942,11 +1981,9 @@ describe('bounded native parent inspection transport', () => {
         expect(end).toBeGreaterThan(start);
         writeFileSync(
             identityPath,
-            identity.slice(0, start) +
-                `export async function authenticateRole() {
+            `${identity.slice(0, start)}export async function authenticateRole() {
             return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session: { configDir: ${JSON.stringify(root)}, env: process.env, dispose() {} } };
-        }\n` +
-                identity.slice(end)
+        }\n${identity.slice(end)}`
         );
         writeFileSync(
             join(root, 'package.json'),
@@ -2041,7 +2078,7 @@ process.stdout.write(JSON.stringify(result));
         // The outer primary boundary is real: a mutated local launcher cannot execute inspection.
         writeFileSync(
             join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
-            readFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8') + '\n// local drift\n'
+            `${readFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')}\n// local drift\n`
         );
         expect(() =>
             execFileSync(invocation.command, invocation.args, {
@@ -2089,16 +2126,17 @@ describe('closed parent shell observation boundaries', () => {
             baseRef: { name: pr.baseBranch, target: { oid: parent } },
             timelineItems: {
                 pageInfo: { hasNextPage: change === 'truncated lifecycle' },
-                nodes: pr.events.map((event) =>
-                    event === 'ClosedEvent'
-                        ? {
-                              __typename: event,
-                              id: 'close-node',
-                              createdAt: pr.closedAt,
-                              actor: { id: AUTHOR_BOT_NODE_ID },
-                          }
-                        : { __typename: event }
-                ),
+                nodes: pr.events.map((event) => {
+                    if (event === 'ClosedEvent') {
+                        return {
+                            __typename: event,
+                            id: 'close-node',
+                            createdAt: pr.closedAt,
+                            actor: { id: AUTHOR_BOT_NODE_ID },
+                        };
+                    }
+                    return { __typename: event };
+                }),
             },
         });
         const candidates = (pr: HistoricalStackObservation['parent']) =>
@@ -2135,13 +2173,16 @@ describe('closed parent shell observation boundaries', () => {
                             '--inspect-parent-completion',
                         ]);
                         expect(options?.cwd).toBe(root);
-                        if (change === 'inspection fails') throw new Error('inspection subprocess failed');
+                        if (change === 'inspection fails') {
+                            throw new Error('inspection subprocess failed');
+                        }
                         return change === 'source changes' ? wire().replace(sha('9'), sha('8')) : wire();
                     }
                     if (args[0] === 'api' && args[1] === 'graphql') {
                         queries += 1;
-                        if (queries % 2 === 0 && change === 'final query errors')
+                        if (queries % 2 === 0 && change === 'final query errors') {
                             return JSON.stringify({ errors: [{ message: 'unavailable' }] });
+                        }
                         const childPr = remote(f.observation().child);
                         if (queries % 2 === 0 && change === 'child moves') {
                             childPr.headRefOid = sha('d');
@@ -2152,16 +2193,20 @@ describe('closed parent shell observation boundaries', () => {
                             parentPr.headRefOid = sha('d');
                             parentPr.headRef.target.oid = sha('d');
                         }
-                        if (queries % 2 === 0 && change === 'base ref moves') childPr.baseRef.target.oid = sha('d');
+                        if (queries % 2 === 0 && change === 'base ref moves') {
+                            childPr.baseRef.target.oid = sha('d');
+                        }
                         return JSON.stringify({ data: { repository: { child: childPr, parent: parentPr } } });
                     }
-                    if (args[0] === 'api')
-                        return candidates(
-                            args[3]?.includes(encodeURIComponent(childBranch))
-                                ? f.observation().child
-                                : f.observation().parent
-                        );
-                    if (args[0] === 'rev-parse') return parent;
+                    if (args[0] === 'api') {
+                        if (args[3]?.includes(encodeURIComponent(childBranch))) {
+                            return candidates(f.observation().child);
+                        }
+                        return candidates(f.observation().parent);
+                    }
+                    if (args[0] === 'rev-parse') {
+                        return parent;
+                    }
                     throw new Error('unexpected observer operation');
                 },
             },
@@ -2172,7 +2217,9 @@ describe('closed parent shell observation boundaries', () => {
             expect(port.observe().closedParentCompletion).toBe(wire().trim());
             expect(inspections).toBe(2);
             expect(queries).toBe(4);
-        } else expect(() => port.observe()).toThrow();
+        } else {
+            expect(() => port.observe()).toThrow();
+        }
     });
 });
 
@@ -2183,7 +2230,7 @@ describe('version2 registered-lineage reader', () => {
         const receipt = f.receipt();
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-closed-journal-'));
         mkdirSync(join(root, '.agents/lane-stacks'), { recursive: true });
-        writeFileSync(laneStackPath(root, childBranch) + '.admission.json', JSON.stringify(receipt));
+        writeFileSync(`${laneStackPath(root, childBranch)}.admission.json`, JSON.stringify(receipt));
         expect(() => readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch))).toThrow(
             'incomplete'
         );
@@ -2192,6 +2239,6 @@ describe('version2 registered-lineage reader', () => {
         expect(readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch, anchor))).toEqual(
             descriptor
         );
-        expect(JSON.parse(readFileSync(laneStackPath(root, childBranch) + '.admission.json', 'utf8'))).toEqual(receipt);
+        expect(JSON.parse(readFileSync(`${laneStackPath(root, childBranch)}.admission.json`, 'utf8'))).toEqual(receipt);
     });
 });
