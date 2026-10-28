@@ -1,0 +1,21 @@
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicThinkingWithTools.spec.ts
+  s_3168504f6ce387::t_b3a0eedf0c4945 239-261
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/anthropicModelFamilies.ts
+  s_3168504f6ce387::t_304e4874931921 1-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5421b65952af244599c5f79bc1e7d96721b6294c",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
