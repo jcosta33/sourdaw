@@ -398,6 +398,22 @@ check. Poison the reserved PCM span, compare each acknowledged window with the i
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
 
+### Project-device assertions missed the Web Audio projection and cold strip
+
+PR #2035 constructed runtime topology from every project device; PR #2083 filtered Yeast but not
+scheduler synths and drums. A project snapshot can be correct while its Web Audio chain still
+contains devices with no Web Audio node. The missed evidence joined actual MIDI editing to strip
+construction; historical private review prompts and tiers are unknown.
+
+Create a MIDI track with a scheduler synth or drum and a node-backed effect. Through real user
+commands, inspect complete project identity and the Web Audio initializer and live chain before
+Play, then after Play, Undo and Redo. Require only node-backed effects in Web Audio while the
+project and native snapshots retain all devices; preserve unknown types for normal failure. Use
+a deterministic AudioContext fixture that actually implements the strip constructor's required
+methods, rather than treating a minimal mock's missing method as a product warning. Reintroduce
+the unfiltered topology or remove cold initialization and require the corresponding unchanged
+case to fail. A controlled engine boundary does not establish audible or hardware behavior.
+
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
 The subgraph fixture asserted that the inverse callback received the requested beat-four
