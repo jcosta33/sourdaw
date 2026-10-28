@@ -268,8 +268,10 @@ describe('audio slip exact source session replay', () => {
                 redoAction: { ...pair.redo, payload: { ...pair.redo.payload, offset: 0.8 } },
             })
         ).toBe(false);
-        const forged = structuredClone(pair.inverse.payload);
-        forged.after.clip.gain = 99;
+        const forged = {
+            ...pair.inverse.payload,
+            after: { ...pair.inverse.payload.after, clip: { ...pair.inverse.payload.after.clip, gain: 99 } },
+        };
         expect(handleRestoreAudioClipSlip.validateSessionActionArguments?.(forged)).toBe(false);
         for (const field of audioClipSlipState.optionalFields.filter((key) => key !== 'audioOffsetBeats')) {
             expect(

@@ -1175,6 +1175,7 @@ describe('createAutomergeStorage', () => {
         configureAutomergeStoragePort(port);
         const storage = createAutomergeStorage<{ count: number }, { expected: number }>('root', 'state', {
             writeMetadata: {
+                captureMode: 'values',
                 capture: ({ beforeValue }) => ({ expected: beforeValue?.count ?? -1 }),
                 reduce: ({ captured }) => captured,
             },
@@ -1295,6 +1296,7 @@ describe('createAutomergeStorage', () => {
         };
         const storage = createAutomergeStorage<State, readonly Operation[]>('root', 'state', {
             writeMetadata: {
+                captureMode: 'values',
                 capture: ({ beforeValue, nextValue }) => {
                     if (!beforeValue || !nextValue) {
                         return null;
@@ -1944,6 +1946,7 @@ describe('createAutomergeStorage', () => {
         configureAutomergeStoragePort(port);
         const storage = createAutomergeStorage<{ nested: { count: number } }, { operation: string }>('root', 'state', {
             writeMetadata: {
+                captureMode: 'values',
                 capture: ({ beforeValue, nextValue, operation }) => {
                     expect(beforeValue).toEqual({ nested: { count: 0 } });
                     expect(nextValue).toEqual({ nested: { count: 1 } });
@@ -2106,6 +2109,7 @@ describe('createAutomergeStorage', () => {
         const mutatedMetadata: Metadata[] = [];
         const storage = createAutomergeStorage<{ count: number }, Metadata>('root', 'state', {
             writeMetadata: {
+                captureMode: 'values',
                 capture: ({ beforeValue, nextValue }) => ({
                     steps: [{ before: beforeValue?.count ?? null, next: nextValue?.count ?? null }],
                 }),
@@ -2146,6 +2150,7 @@ describe('createAutomergeStorage', () => {
         const observed: Array<{ metadata: Metadata | null; value: { count: number } | null }> = [];
         const storage = createAutomergeStorage<{ count: number }, Metadata>('root', 'state', {
             writeMetadata: {
+                captureMode: 'values',
                 capture: ({ beforeValue, nextValue }) => ({
                     before: beforeValue?.count ?? null,
                     next: nextValue?.count ?? null,
