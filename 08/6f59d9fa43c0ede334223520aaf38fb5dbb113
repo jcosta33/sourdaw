@@ -1,0 +1,21 @@
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/reverbImpulse.spec.ts
+  s_26f70b851e8f7a::t_db46e97dece195 4,10,13,47-58,282,287-291,293-385
+  s_26f70b851e8f7a::t_1cf04a946352d8 283-286,292
+  s_26f70b851e8f7a::t_887f8a8874ec77 386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "086f59d9fa43c0ede334223520aaf38fb5dbb113",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
