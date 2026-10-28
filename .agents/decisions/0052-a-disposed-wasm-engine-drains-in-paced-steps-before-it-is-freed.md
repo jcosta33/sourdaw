@@ -28,10 +28,12 @@ removal, track deletion and every other route that destroys a Levain node.
 
 ## Decision
 
-This record extends 0051 and supersedes one of its clauses. 0051 says a processor that "faulted or
-was disposed, and drops every later message"; a disposed processor now answers two, `releaseDisposedBanks` and a
-repeated `dispose`, and still drops every other, and a faulted processor that is not disposed still
-answers `dispose`. Every other clause of 0051 stands. The [Message contract](#message-contract)
+This record extends 0051 and supersedes its whole ended-processor message clause. 0051 says a
+processor that "faulted or was disposed, and drops every later message"; a disposed processor now
+answers `releaseDisposedBanks` and repeated `dispose` and drops every other, while a faulted processor
+that is not disposed answers `beginSampleBank` and `releaseRetiredBank` with its original error and
+still answers `dispose`. A fault before ready also refuses repeated `init` with the same error rather
+than retrying partial WASM creation. Every other clause of 0051 stands. The [Message contract](#message-contract)
 below states every answer in full.
 
 - **A disposed processor never frees its engine in `dispose`.** `dispose` still posts `disposed`
@@ -75,7 +77,7 @@ posted `error` once. A faulted processor that has not been disposed still handle
 
 | Message                                                                                          | Live                                                                                                                                                                                      | Faulted, not disposed                                | Disposed, not faulted                              | Faulted, then disposed                             |
 | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------- |
-| `init`                                                                                           | `ready` the first time, once the engine exists; silent after                                                                                                                              | silent                                               | silent                                             | silent                                             |
+| `init`                                                                                           | `ready` the first time, once the engine exists; silent after                                                                                                                              | `error` before ready; silent after ready             | silent                                             | silent                                             |
 | `noteOn`, `noteOff`, `noteExpression`, `allNotesOff`, `param`, `cc`, `discardStoredCc`, `bypass` | silent (queued or applied)                                                                                                                                                                | silent                                               | silent                                             | silent                                             |
 | `beginSampleBank`                                                                                | `sampleBankUploadDecision { loadToken, uploadRequired }`                                                                                                                                  | `error { message }`, the original fault posted again | silent                                             | silent                                             |
 | `abortSampleBank`, `addZone`, `addLegatoTransition`                                              | silent for a stale or foreign `loadToken`; an abort of the current load posts `sampleBankError { loadToken, message }`                                                                    | silent                                               | silent                                             | silent                                             |
@@ -123,8 +125,9 @@ Where the posts come from, beyond the table:
   open when the load aborts retires with the staged bank. `commitSampleBank` is the message that commits
   the sealed bank; the engine refuses to commit a bank whose tables are not sealed.
 - **A processor that faulted before `init` completed** answers like the faulted column: it re-posts
-  `error` for `beginSampleBank` and `releaseRetiredBank`, buffers the rest unanswered, and a repeated
-  `init` retries the engine's creation.
+  its original `error` for `beginSampleBank`, `releaseRetiredBank` and repeated `init`. It drops other
+  messages and clears messages buffered before the failed init; it never retries partial WASM
+  creation or posts a healthy `ready`. A processor faulted after ready keeps repeated `init` silent.
 - **A message before `init`** is buffered, not answered, and replayed once the engine exists; `dispose`
   clears the buffer.
 - **The disposal drain's answers.** `disposedBanksReleased { done: false }` follows a step that released
