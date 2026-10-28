@@ -1,0 +1,16 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  h_beb54bf43b47b7 101-134
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 272,294-330,334,411-412,420-422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3d3bee3b4235da9035bc37f32b29ff7f25b023c8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
