@@ -1,0 +1,36 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 59-70
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 503-508
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-30,1664-1669
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 149-151
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 420,423,1048-1051,1058,1061,1066-1078
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 193-196,808,812,1379-1381,1390,1397
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 5,901-904,914-915,935-1051,1064-1066,1076,1079,2572-2578,2580-2595,3333-3384,3682-3712,3715-3717,3719,3727
+scripts/test-health-gate-scripts.sh
+  h_beb54bf43b47b7 347-362,368,755-756,765,767-775
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  h_beb54bf43b47b7 300-611,1140,1157-1164,1183,1186-1196
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  h_beb54bf43b47b7 46-50,161-170
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  h_beb54bf43b47b7 50,801-819,828,831-834,930
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx
+  h_beb54bf43b47b7 228-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bbf4de550c8a39882216178e7a30af974ae68bf",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
