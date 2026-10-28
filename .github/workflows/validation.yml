@@ -65,9 +65,8 @@ jobs:
       code: ${{ steps.scope.outputs.code }}
       tooling: ${{ steps.scope.outputs.tooling }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+      # Both callers run only on pull_request. With a token and inline filters,
+      # paths-filter lists files through the API; no repository checkout is needed.
       - name: Filter changed paths
         id: filter
         # A transient GitHub API failure while listing the changed files must
@@ -76,6 +75,7 @@ jobs:
         continue-on-error: true
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
+          token: ${{ github.token }}
           # Negated patterns only subtract under this quantifier. The default
           # `some` would let `**` alone satisfy `unclassified`, which would then
           # match every change and force the full lane on documentation too.
@@ -142,7 +142,7 @@ jobs:
               - '!playwright.config.ts'
               - '!tsconfig*.json'
 
-      # On a pull request's shallow checkout the filter lists the changed files
+      # On a pull request the filter lists the changed files
       # through the GitHub REST API, which intermittently answers 500; that one
       # transient answer used to fail the whole job and block Gate (#3592). The
       # retry re-runs the identical filter, and `Resolve scope` fails loudly
@@ -155,6 +155,7 @@ jobs:
         if: steps.filter.outcome == 'failure'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
+          token: ${{ github.token }}
           # Must stay identical to the `Filter changed paths` step's `with:`
           # block above: a retry that filtered differently would resolve the
           # scope from rules no pin reads.
