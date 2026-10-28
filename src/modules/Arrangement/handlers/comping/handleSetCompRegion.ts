@@ -9,16 +9,44 @@ function getPatch(action: SetCompRegionAction) {
     if (!compRegionInterval.isCompleteSetPayload(action.payload)) {
         return null;
     }
-    const { laneId, trackId, startBeat, endBeat, expected, replacement } = action.payload;
-    return { laneId, trackId, startBeat, endBeat, expected, replacement };
+    const {
+        laneId,
+        trackId,
+        startBeat,
+        endBeat,
+        expected,
+        replacement,
+        audioSourcePromotions,
+        baseGapAudioSourceFieldPresence,
+    } = action.payload;
+    const patch: {
+        laneId: typeof laneId;
+        trackId: typeof trackId;
+        startBeat: typeof startBeat;
+        endBeat: typeof endBeat;
+        expected: typeof expected;
+        replacement: typeof replacement;
+        audioSourcePromotions?: typeof audioSourcePromotions;
+        baseGapAudioSourceFieldPresence?: typeof baseGapAudioSourceFieldPresence;
+    } = { laneId, trackId, startBeat, endBeat, expected, replacement };
+    if (audioSourcePromotions !== undefined) {
+        patch.audioSourcePromotions = audioSourcePromotions;
+    }
+    if (baseGapAudioSourceFieldPresence !== undefined) {
+        patch.baseGapAudioSourceFieldPresence = baseGapAudioSourceFieldPresence;
+    }
+    return patch;
 }
 
 export const handleSetCompRegion = createHandler<'setCompRegion'>({
+    validateSessionEntry: compRegionInterval.isSessionEntry,
     canReportConflict: true,
     materializeCommandArguments: (action, context) => {
         delete action.payload.laneId;
         delete action.payload.expected;
         delete action.payload.replacement;
+        delete action.payload.audioSourcePromotions;
+        delete action.payload.baseGapAudioSourceFieldPresence;
         const patch = compRegionInterval.capturePatchAfterPrefix(action.payload, context);
         if (!patch) {
             return;
@@ -26,6 +54,12 @@ export const handleSetCompRegion = createHandler<'setCompRegion'>({
         action.payload.laneId = patch.laneId;
         action.payload.expected = patch.expected;
         action.payload.replacement = patch.replacement;
+        if (patch.audioSourcePromotions !== undefined) {
+            action.payload.audioSourcePromotions = patch.audioSourcePromotions;
+        }
+        if (patch.baseGapAudioSourceFieldPresence !== undefined) {
+            action.payload.baseGapAudioSourceFieldPresence = patch.baseGapAudioSourceFieldPresence;
+        }
     },
     materializeCommandArgumentsAt: 'admission',
     validateMaterializedCommandArguments: compRegionInterval.isCompleteSetPayload,
@@ -53,7 +87,7 @@ export const handleSetCompRegion = createHandler<'setCompRegion'>({
             label: 'Set comp region',
             inverseAction: {
                 type: 'restoreCompRegionInterval',
-                payload: { ...patch, expected: patch.replacement, replacement: patch.expected },
+                payload: compRegionInterval.reversePatch(patch),
             },
             redoAction: {
                 type: 'restoreCompRegionInterval',

@@ -3,6 +3,14 @@ import {
     AutomergeStorageWriteConflictError,
     createAutomergeStorage,
 } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    hasValidAudioPassOrigin,
+    hasValidAudioSourceTiles,
+    isAudioSourceSnapshot,
+    isAudioSourceTile,
+    type AudioSourceTile,
+    type AudioSourceSnapshot,
+} from '#/utils/audioSourceTime';
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
@@ -23,15 +31,19 @@ export const defaultTakeLaneStoreState: TakeLaneStoreState = { lanes: [] };
 
 const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
-const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId'] as const;
+const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId', 'baseGapAudioSources'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
 const TAKE_OPTIONAL_KEYS = [
     'sourceOffsetBeats',
+    'sourceOffsetSeconds',
     'passAnchorSeconds',
     'passDepthSeconds',
     'passSourceEndSeconds',
+    'passOriginBeat',
+    'passOriginSourceSeconds',
 ] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
+const COMP_REGION_OPTIONAL_KEYS = ['audioSource'] as const;
 
 type HasExactKeysInput = {
     value: object;
@@ -74,6 +86,13 @@ function get_lane_values(value: unknown): unknown[] | null {
     return value.lanes;
 }
 
+function hasValidTakeOffsets(value: object): boolean {
+    return (
+        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
+        (!('sourceOffsetSeconds' in value) || is_finite_non_negative_number(value.sourceOffsetSeconds))
+    );
+}
+
 function is_valid_take(value: unknown): value is Take {
     return (
         value !== null &&
@@ -93,8 +112,9 @@ function is_valid_take(value: unknown): value is Take {
         typeof value.selected === 'boolean' &&
         // A take without the field reads at its clip's origin; a take with a
         // malformed one is dropped whole, like any other malformed take field.
-        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
-        is_valid_pass_placement(value)
+        hasValidTakeOffsets(value) &&
+        is_valid_pass_placement(value) &&
+        hasValidAudioPassOrigin(value)
     );
 }
 
@@ -141,11 +161,18 @@ function normalize_take(take: Take): Take {
     if (take.sourceOffsetBeats !== undefined) {
         sanitized.sourceOffsetBeats = take.sourceOffsetBeats;
     }
+    if (take.sourceOffsetSeconds !== undefined) {
+        sanitized.sourceOffsetSeconds = take.sourceOffsetSeconds;
+    }
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
         sanitized.passAnchorSeconds = take.passAnchorSeconds;
         sanitized.passDepthSeconds = take.passDepthSeconds;
         if (take.passSourceEndSeconds !== undefined) {
             sanitized.passSourceEndSeconds = take.passSourceEndSeconds;
+        }
+        if (take.passOriginBeat !== undefined && take.passOriginSourceSeconds !== undefined) {
+            sanitized.passOriginBeat = take.passOriginBeat;
+            sanitized.passOriginSourceSeconds = take.passOriginSourceSeconds;
         }
     }
     return sanitized;
@@ -161,20 +188,28 @@ function is_valid_comp_region(value: unknown): value is CompRegion {
         is_finite_non_negative_number(value.endBeat) &&
         value.endBeat >= value.startBeat &&
         'takeId' in value &&
-        typeof value.takeId === 'string'
+        typeof value.takeId === 'string' &&
+        (!('audioSource' in value) || isAudioSourceSnapshot(value.audioSource))
     );
 }
 
 function is_exact_comp_region(value: unknown): value is CompRegion {
-    return is_valid_comp_region(value) && has_exact_keys({ value, required_keys: COMP_REGION_KEYS });
+    return (
+        is_valid_comp_region(value) &&
+        has_exact_keys({ value, required_keys: COMP_REGION_KEYS, optional_keys: COMP_REGION_OPTIONAL_KEYS })
+    );
 }
 
 function normalize_comp_region(region: CompRegion): CompRegion {
-    return {
+    const normalized: CompRegion = {
         startBeat: region.startBeat,
         endBeat: region.endBeat,
         takeId: region.takeId,
     };
+    if (region.audioSource) {
+        normalized.audioSource = structuredClone(region.audioSource);
+    }
+    return normalized;
 }
 
 type SanitizableTakeLane = {
@@ -183,6 +218,7 @@ type SanitizableTakeLane = {
     automationLaneId?: string;
     takes: unknown[];
     activeCompRegions: unknown[];
+    baseGapAudioSources?: unknown[];
 };
 
 function get_sanitizable_take_lane(value: unknown): SanitizableTakeLane | null {
@@ -206,26 +242,27 @@ function get_sanitizable_take_lane(value: unknown): SanitizableTakeLane | null {
         return null;
     }
 
+    if ('baseGapAudioSources' in value && !is_unknown_array(value.baseGapAudioSources)) {
+        return null;
+    }
+
     if ('automationLaneId' in value && typeof value.automationLaneId !== 'string') {
         return null;
     }
 
-    if ('automationLaneId' in value && typeof value.automationLaneId === 'string') {
-        return {
-            id: value.id,
-            trackId: value.trackId,
-            automationLaneId: value.automationLaneId,
-            takes: value.takes,
-            activeCompRegions: value.activeCompRegions,
-        };
-    }
-
-    return {
+    const lane: SanitizableTakeLane = {
         id: value.id,
         trackId: value.trackId,
         takes: value.takes,
         activeCompRegions: value.activeCompRegions,
     };
+    if ('automationLaneId' in value && typeof value.automationLaneId === 'string') {
+        lane.automationLaneId = value.automationLaneId;
+    }
+    if ('baseGapAudioSources' in value && is_unknown_array(value.baseGapAudioSources)) {
+        lane.baseGapAudioSources = value.baseGapAudioSources;
+    }
+    return lane;
 }
 
 function is_sanitizable_take_lane(value: SanitizableTakeLane | null): value is SanitizableTakeLane {
@@ -283,6 +320,7 @@ function is_exact_take_lane(value: unknown): value is TakeLane {
         value !== null &&
         typeof value === 'object' &&
         (!('automationLaneId' in value) || typeof value.automationLaneId === 'string') &&
+        (!('baseGapAudioSources' in value) || hasValidAudioSourceTiles(value.baseGapAudioSources)) &&
         has_exact_keys({
             value,
             required_keys: TAKE_LANE_REQUIRED_KEYS,
@@ -296,12 +334,81 @@ function is_exact_take_lane(value: unknown): value is TakeLane {
     );
 }
 
-export function decodeExactTakeLaneSnapshots(value: readonly unknown[]): TakeLane[] | null {
+type TakeLaneSnapshotNumbers = 'exact' | 'source-prefix';
+
+function snapshot_number(value: number, numbers: TakeLaneSnapshotNumbers): number {
+    return numbers === 'source-prefix' && value === 0 ? 0 : value;
+}
+
+function project_exact_audio_source(value: AudioSourceSnapshot, numbers: TakeLaneSnapshotNumbers): AudioSourceSnapshot {
+    return {
+        startBeat: snapshot_number(value.startBeat, numbers),
+        audioOffsetSeconds: snapshot_number(value.audioOffsetSeconds, numbers),
+        audioLoopStartSeconds: snapshot_number(value.audioLoopStartSeconds, numbers),
+        audioLoopPassEntrySeconds: snapshot_number(value.audioLoopPassEntrySeconds, numbers),
+        audioLoopPassOriginBeat: snapshot_number(value.audioLoopPassOriginBeat, numbers),
+        loopOriginBeat: snapshot_number(value.loopOriginBeat, numbers),
+        loopLength: snapshot_number(value.loopLength, numbers),
+    };
+}
+
+function project_exact_take(value: Take, numbers: TakeLaneSnapshotNumbers): Take {
+    const take: Take = {
+        id: value.id,
+        clipId: value.clipId,
+        name: value.name,
+        startBeat: snapshot_number(value.startBeat, numbers),
+        endBeat: snapshot_number(value.endBeat, numbers),
+        selected: value.selected,
+    };
+    for (const field of TAKE_OPTIONAL_KEYS) {
+        const number = value[field];
+        if (Object.hasOwn(value, field) && number !== undefined) {
+            take[field] = snapshot_number(number, numbers);
+        }
+    }
+    return take;
+}
+
+function project_exact_take_lane(value: TakeLane, numbers: TakeLaneSnapshotNumbers): TakeLane {
+    const lane: TakeLane = {
+        id: value.id,
+        trackId: value.trackId,
+        takes: value.takes.map((take) => project_exact_take(take, numbers)),
+        activeCompRegions: value.activeCompRegions.map((region) => {
+            const projected: CompRegion = {
+                startBeat: snapshot_number(region.startBeat, numbers),
+                endBeat: snapshot_number(region.endBeat, numbers),
+                takeId: region.takeId,
+            };
+            if (Object.hasOwn(region, 'audioSource') && region.audioSource !== undefined) {
+                projected.audioSource = project_exact_audio_source(region.audioSource, numbers);
+            }
+            return projected;
+        }),
+    };
+    if (Object.hasOwn(value, 'automationLaneId') && value.automationLaneId !== undefined) {
+        lane.automationLaneId = value.automationLaneId;
+    }
+    if (Object.hasOwn(value, 'baseGapAudioSources') && value.baseGapAudioSources !== undefined) {
+        lane.baseGapAudioSources = value.baseGapAudioSources.map((tile) => ({
+            clipId: tile.clipId,
+            startBeat: snapshot_number(tile.startBeat, numbers),
+            endBeat: snapshot_number(tile.endBeat, numbers),
+            audioSource: project_exact_audio_source(tile.audioSource, numbers),
+        }));
+    }
+    return lane;
+}
+
+export function decodeExactTakeLaneSnapshots(
+    value: readonly unknown[],
+    numbers: TakeLaneSnapshotNumbers = 'exact'
+): TakeLane[] | null {
     if (!value.every(is_exact_take_lane)) {
         return null;
     }
-
-    return value.map((lane) => structuredClone(lane));
+    return value.map((lane) => project_exact_take_lane(lane, numbers));
 }
 
 function normalize_take_lane(take_lane: SanitizableTakeLane): TakeLane {
@@ -309,22 +416,40 @@ function normalize_take_lane(take_lane: SanitizableTakeLane): TakeLane {
     const take_ids = new Set(takes.map((take) => take.id));
     const active_comp_regions = get_normalized_comp_regions(take_lane.activeCompRegions, take_ids);
 
+    const baseGaps = take_lane.baseGapAudioSources
+        ?.filter(isAudioSourceTile)
+        .sort((a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat);
+    const retained: AudioSourceTile[] = [];
+    for (const tile of baseGaps ?? []) {
+        const previous = retained.at(-1);
+        if (!previous || previous.clipId !== tile.clipId || previous.endBeat <= tile.startBeat) {
+            retained.push(structuredClone(tile));
+        }
+    }
     if (take_lane.automationLaneId !== undefined) {
-        return {
+        const lane: TakeLane = {
             id: take_lane.id,
             trackId: take_lane.trackId,
             automationLaneId: take_lane.automationLaneId,
             takes,
             activeCompRegions: active_comp_regions,
         };
+        if (baseGaps !== undefined) {
+            lane.baseGapAudioSources = retained;
+        }
+        return lane;
     }
 
-    return {
+    const lane: TakeLane = {
         id: take_lane.id,
         trackId: take_lane.trackId,
         takes,
         activeCompRegions: active_comp_regions,
     };
+    if (baseGaps !== undefined) {
+        lane.baseGapAudioSources = retained;
+    }
+    return lane;
 }
 
 function is_exact_take_lane_store_state(value: unknown): value is TakeLaneStoreState {
@@ -376,23 +501,25 @@ export const takeLaneStore = createStore<TakeLaneStoreState>({
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTakeLaneStoreState,
         writeMetadata: {
+            captureMode: 'values',
             capture: ({ beforeValue, nextValue }) => captureTakeLaneWriteJournal({ beforeValue, nextValue }),
             reduce: ({ current, captured }) => appendTakeLaneWriteJournal(current, captured),
         },
-        rebasePending: ({ hydratedValue, metadata, pendingValue }) => {
+        rebasePendingOnDocumentChange: true,
+        rebasePending: ({ hydratedValue, metadata, pendingValue, document }) => {
             if (!metadata) {
                 return pendingValue;
             }
-            const replay = replayTakeLaneWriteJournal(hydratedValue, metadata);
+            const replay = replayTakeLaneWriteJournal(hydratedValue, metadata, document);
             return replay.status === 'applied' ? replay.value : hydratedValue;
         },
-        mutateCrdtWithMetadata: ({ authorityValue, baseValue, metadata, reconcile, value }) => {
+        mutateCrdtWithMetadata: ({ authorityValue, baseValue, metadata, reconcile, value, doc }) => {
             if (!metadata) {
                 reconcile(value, baseValue);
                 return;
             }
             const authority = get_replay_authority(authorityValue, metadata);
-            const replay = replayTakeLaneWriteJournal(authority, metadata);
+            const replay = replayTakeLaneWriteJournal(authority, metadata, doc);
             if (replay.status === 'conflict') {
                 throw new AutomergeStorageWriteConflictError(
                     'Take lane write conflicts with current authoritative state'

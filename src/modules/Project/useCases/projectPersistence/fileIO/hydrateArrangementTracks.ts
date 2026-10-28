@@ -6,6 +6,31 @@ import { type ProjectClip, type ProjectTrack, type ProjectTrackAlternative } fro
 import { type HydratableProjectTrack } from '../helpers/isHydratableProjectData';
 
 function hydrateClip(clip: SerializedProjectClip): ProjectClip {
+    const audioTimeFields: Pick<
+        ProjectClip,
+        | 'audioOffsetSeconds'
+        | 'audioUnwrappedOffsetSeconds'
+        | 'audioLoopStartSeconds'
+        | 'audioLoopPassEntrySeconds'
+        | 'audioLoopPassOriginBeat'
+    > = {};
+    if (clip.type === 'audio') {
+        if (clip.audioOffsetSeconds !== undefined) {
+            audioTimeFields.audioOffsetSeconds = clip.audioOffsetSeconds;
+        }
+        if (clip.audioUnwrappedOffsetSeconds !== undefined) {
+            audioTimeFields.audioUnwrappedOffsetSeconds = clip.audioUnwrappedOffsetSeconds;
+        }
+        if (clip.audioLoopStartSeconds !== undefined) {
+            audioTimeFields.audioLoopStartSeconds = clip.audioLoopStartSeconds;
+        }
+        if (clip.audioLoopPassEntrySeconds !== undefined) {
+            audioTimeFields.audioLoopPassEntrySeconds = clip.audioLoopPassEntrySeconds;
+        }
+        if (clip.audioLoopPassOriginBeat !== undefined) {
+            audioTimeFields.audioLoopPassOriginBeat = clip.audioLoopPassOriginBeat;
+        }
+    }
     return {
         id: clip.id,
         trackId: clip.trackId,
@@ -17,6 +42,7 @@ function hydrateClip(clip: SerializedProjectClip): ProjectClip {
         fileId: clip.fileId,
         assetHash: clip.assetHash,
         audioOffsetBeats: clip.sampleStartBeat ?? clip.audioOffsetBeats,
+        ...audioTimeFields,
         midiOffsetBeats: clip.midiOffsetBeats,
         fadeInBeats: clip.fadeInBeats,
         fadeOutBeats: clip.fadeOutBeats,

@@ -50,7 +50,12 @@ export function insertTakeLane(lane: TakeLane, laneIndex: number): void {
         // A landed lane keeps its place and takes what this one would add: a take
         // whose clip is still in the project, and a comp region naming it.
         const placedTakeIds = takesWithLiveClips(lane.takes).map((take) => take.id);
-        const merged = reconcileLane(state.lanes[existingIndex]!, lane, placedTakeIds);
+        const merged = reconcileLane(
+            state.lanes[existingIndex]!,
+            lane,
+            placedTakeIds,
+            laneWithLiveTakes(lane).baseGapAudioSources ?? []
+        );
         if (!merged) {
             return;
         }

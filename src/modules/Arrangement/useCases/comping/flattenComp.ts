@@ -4,6 +4,7 @@ import { prepareMidiClipFanOutState } from '#/modules/MIDI/useCases';
 import { type ClipGlueActionSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { type ResolvedClip } from '../../models/ResolvedClip';
 import { type Clip, type Track } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -11,7 +12,7 @@ import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { restoreClipGlueState } from '../clipEditing/restoreClipGlueState';
-import { resolveClipsWithComping, type ResolvedClip } from '../resolveComping';
+import { resolveClipsWithComping } from '../resolveComping';
 
 import { insertTakeLane } from './insertTakeLane';
 import { removeTakeLane } from './removeTakeLane';
@@ -148,7 +149,7 @@ export function flattenComp(trackId: string): boolean {
     }
     const laneIndex = laneState.lanes.indexOf(lane);
 
-    if (lane.activeCompRegions.length === 0 || track.clips.length === 0) {
+    if ((lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length) || track.clips.length === 0) {
         removeTakeLane(lane.id);
         // The entry captures only the removed lane (#4081): replaying a
         // whole-store snapshot on undo erased every later edit to any other lane.

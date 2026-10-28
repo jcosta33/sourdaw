@@ -10,7 +10,7 @@ import { SetlistEventBus } from './setlistEventBus';
  */
 export const goToItem = inject({ eventBus: SetlistEventBus })(
     ({ eventBus: bus }) =>
-        function goToItem(index: number): void {
+        async function goToItem(index: number): Promise<void> {
             const state = setlistStore.value;
             if (!state || index < 0 || index >= state.items.length) {
                 return;
@@ -23,9 +23,23 @@ export const goToItem = inject({ eventBus: SetlistEventBus })(
                 return;
             }
 
-            applySetlistItemTransport(item);
+            const isCurrent = (): boolean => {
+                const current = setlistStore.value;
+                const selectedItem = current?.items[current.currentIndex];
+                if (!selectedItem || selectedItem.id !== item.id) {
+                    return false;
+                }
+                return (
+                    selectedItem.bpm === item.bpm &&
+                    selectedItem.timeSignature?.numerator === item.timeSignature?.numerator &&
+                    selectedItem.timeSignature?.denominator === item.timeSignature?.denominator &&
+                    selectedItem.programChange?.channel === item.programChange?.channel &&
+                    selectedItem.programChange?.program === item.programChange?.program
+                );
+            };
+            await applySetlistItemTransport(item, isCurrent);
 
-            if (item.programChange) {
+            if (isCurrent() && item.programChange) {
                 void bus.emit('midi.out', {
                     type: 'programChange',
                     channel: item.programChange.channel,
