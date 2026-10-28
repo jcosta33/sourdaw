@@ -1,0 +1,25 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_3168504f6ce387::t_982cd7c9ce1df2 429-445
+  s_3168504f6ce387::t_b0716d50a933b2 428
+  s_3168504f6ce387::t_603bb009f35988 427
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_982cd7c9ce1df2 1627-1643
+  s_3168504f6ce387::t_b0716d50a933b2 1626
+  s_3168504f6ce387::t_4e01640b42e4ca 1625
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4cc340fc4fa1bb316b2c37f242ca1138e03c7cfb",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
