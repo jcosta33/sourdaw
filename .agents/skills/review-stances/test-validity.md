@@ -6,6 +6,35 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — successful scan did not prove comparison coverage (PRs #3170 and #4854)
+
+PR #3170 moved the main CodeQL producer to Nightly and left its former Health gates configuration
+in history. PR #4854 added a PR scan with a different default identity from Nightly. Execution and
+Gate checks could succeed while the comparison omitted a main configuration. Historical private
+review prompts and tiers are not established.
+
+Paginate all main analysis configurations, compare actual uploads and scan scope, and inspect the
+hosted introduced-alert summary. Check alert continuity and documented authorized retirement before
+deleting history. Remove or alter the PR category, re-record the snapshot, and require the independent
+input contract to fail; neither a snapshot nor an imitation of the upstream action proves upload.
+
+### 2026-10-28 — composite factory flow exhausted its aggregate budget (PR #5798)
+
+PR #5798 introduced a multi-step factory persistence case whose separate bounded state waits share
+the default aggregate deadline. Bounded slow work can exceed that deadline while each state arrives
+within its own limit. The exact phase of the earlier historical CI timeout was not established.
+[Hosted run 40777377382, unit shard 3/4](https://github.com/jcosta33/sourdaw/actions/runs/40777377382/job/123131079682)
+subsequently showed continuing progress and CPU work: the final position transition began at 4834 ms
+of a 5000 ms case budget. Historical private review prompts and tiers are unknown.
+
+Inject bounded slow work through the complete flow: the old aggregate bound must fail and the revised
+bound must finish all assertions. Keep each state wait and assertion unchanged, and require a missing
+state to fail its original wait rather than pass under the larger aggregate budget. Check that the
+whole-case budget accommodates sequential committed transitions and their individual wait bounds;
+measure phase progress and CPU before adjusting a deadline. Do not raise global timeouts or treat a
+green retry as recovery. Mutate a real producer to persist the wrong value and require the existing
+functional case to fail even with the adjusted budget.
+
 ### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
 
 The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
@@ -17,18 +46,6 @@ and be refetched in the same document, so two requests alone do not prove a relo
 independent recovery must fail the transient case; removing its budget or entry-body fence must
 fail the persistent or late-error case. Exercise source and generated entry identity under the
 actual production CSP, plus controller absence without conditional test admission.
-
-### 2026-10-28 — a complete persistence workflow exhausted its case budget (introduced by PR #5798)
-
-PR #5798 added a case with six sequential real committed transitions under the default case deadline.
-[Hosted run 40777377382, unit shard 3/4](https://github.com/jcosta33/sourdaw/actions/runs/40777377382/job/123131079682)
-showed continuing progress and CPU work: the final position transition began at 4834 ms of a
-5000 ms case budget. Historical private review prompts and tiers are unknown.
-
-Check that the whole-case budget accommodates sequential committed transitions and their individual
-wait bounds. Measure phase progress and CPU before adjusting a deadline; do not raise global timeouts
-or treat a green retry as recovery. Mutate a real producer to persist the wrong value and require the
-existing functional case to fail even with the adjusted budget.
 
 ### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
 
