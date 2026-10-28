@@ -1,0 +1,23 @@
+src/modules/AudioEngine/presentations/views/__tests__/MidiDevicePicker.spec.tsx
+  s_59e31a5c6f3e31::t_d42a7d1062415f 1,120-122
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiCapabilityIntegration.spec.ts
+  s_59e31a5c6f3e31::t_e9032452e45ee2 61,175-268
+src/modules/MIDI/repositories/webMidi/lifecycle/destroyWebMidi.ts
+  s_59e31a5c6f3e31::t_cb5cd6c3ba7a65 13,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae52614c81b3d22c52beaface16fc9705818518b",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
