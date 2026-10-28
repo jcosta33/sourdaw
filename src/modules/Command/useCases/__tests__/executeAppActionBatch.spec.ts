@@ -1319,7 +1319,9 @@ describe('executeAppActionBatch', () => {
                                 validateDocument: () => null,
                                 release: () => undefined,
                                 afterPublication: () => {
-                                    if (publicationFails) throw new Error('evidence settlement failed');
+                                    if (publicationFails) {
+                                        throw new Error('evidence settlement failed');
+                                    }
                                 },
                             },
                             afterCommit: () => undefined,
@@ -1348,9 +1350,7 @@ describe('executeAppActionBatch', () => {
 
             expect(result).toEqual({
                 status: 'ambiguous',
-                reason:
-                    'Automerge storage transaction committed before a later document failed' +
-                    (publicationFails ? '; evidence settlement failed' : ''),
+                reason: `Automerge storage transaction committed before a later document failed${publicationFails ? '; evidence settlement failed' : ''}`,
                 actions: [],
             });
             expect(documents.first).toEqual({ editingTool: { tool: 'marquee' } });

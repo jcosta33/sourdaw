@@ -22,7 +22,9 @@ const causalMembership = new WeakMap<object, Map<string, boolean>>();
 function belongsToCurrentFrontier(root: Doc<unknown>, hash: string): boolean {
     const known = causalMembership.get(root) ?? new Map<string, boolean>();
     const cached = known.get(hash);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        return cached;
+    }
     // hasHeads sees the shared backend, including futures and siblings retained
     // by an older view. Query only changes outside this frontier's causal closure.
     // Cache the answer for a known hash, not the whole outside set: the backend
@@ -39,9 +41,13 @@ function publicationContains(hash: string, memberId: string, kind: string, expec
         return false;
     }
     try {
-        if (!belongsToCurrentFrontier(root, hash)) return false;
+        if (!belongsToCurrentFrontier(root, hash)) {
+            return false;
+        }
         const change = inspectChange(root, hash);
-        if (!change) return false;
+        if (!change) {
+            return false;
+        }
         const historical = automergeRepository.getDocAtHeads('root', [hash]);
         const members = historical?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY];
         const prior = automergeRepository.getDocAtHeads('root', change.deps)?.[
@@ -50,7 +56,9 @@ function publicationContains(hash: string, memberId: string, kind: string, expec
         // An inherited record does not attest the descendant change. Compare CRDT
         // object identity, since repeating the same real retirement has the same
         // semantic members but creates a fresh record in its own publication.
-        if (Array.isArray(members) && Array.isArray(prior) && getObjectId(members) === getObjectId(prior)) return false;
+        if (Array.isArray(members) && Array.isArray(prior) && getObjectId(members) === getObjectId(prior)) {
+            return false;
+        }
         return (
             Array.isArray(members) &&
             members.some(

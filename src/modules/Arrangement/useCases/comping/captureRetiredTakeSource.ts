@@ -113,7 +113,9 @@ export function captureRetiredTakeSource(
     try {
         publish = stageCommandSourcePublication(kind, sourceOwners(clipIds, captures, undoEntryId), reference);
     } catch (error) {
-        for (const release of releases) release();
+        for (const release of releases) {
+            release();
+        }
         throw error;
     }
     return {
@@ -138,7 +140,9 @@ export function captureRetiredTakeSource(
                     ? null
                     : 'Retired take source effect did not reach committed owners',
             release: () => {
-                for (const release of releases.splice(0)) release();
+                for (const release of releases.splice(0)) {
+                    release();
+                }
             },
             afterPublication: publish,
         },

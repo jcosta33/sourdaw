@@ -11,6 +11,7 @@ import {
     type HandlerValidationContext,
     type HandlerCommitValidation,
     type CommandSourceProof,
+    type RetiredTakeLaneSnapshot,
 } from '#/utils/handlerContract';
 
 import { collectClipSplitIdentityIds } from '../../services/collectClipSplitIdentityIds';
@@ -235,47 +236,58 @@ export const handleRestoreClipSplitState = createHandler<'restoreClipSplitState'
         const reKeyedTakeIds = new Set(
             (action.payload.reKeyedTakeLanes ?? []).flatMap((lane) => lane.takesAfter.map((take) => take.id))
         );
-        const retiredSource = !action.payload.replacement.rightClip
-            ? (planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [])
-            : [];
+        let retiredSource: readonly RetiredTakeLaneSnapshot[] = [];
+        if (!action.payload.replacement.rightClip) {
+            retiredSource = planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
+        }
         const stagedSourceProof: CommandSourceProof = { changeHash: '', memberId: '' };
-        const sourceProof = action.payload.retiredTakeSourceProof
-            ? captureRetiredTakeSource(
-                  'splitClipUndo',
-                  [action.payload.rightClipId],
-                  retiredSource,
-                  stagedSourceProof,
-                  context?.undoEntryId
-              )
-            : undefined;
+        let sourceProof: ReturnType<typeof captureRetiredTakeSource> = undefined;
+        if (action.payload.retiredTakeSourceProof) {
+            sourceProof = captureRetiredTakeSource(
+                'splitClipUndo',
+                [action.payload.rightClipId],
+                retiredSource,
+                stagedSourceProof,
+                context?.undoEntryId
+            );
+        }
         const guards = [proof?.validation, sourceProof?.validation].filter(
             (guard): guard is HandlerCommitValidation => guard !== undefined
         );
-        const commitValidation: HandlerCommitValidation | undefined = guards.length
-            ? {
-                  documentId: 'root',
-                  beforeCommit: () => {
-                      for (const guard of guards) {
-                          const reason = guard.beforeCommit();
-                          if (reason) return reason;
-                      }
-                      return null;
-                  },
-                  validateDocument: (document) => {
-                      for (const guard of guards) {
-                          const reason = guard.validateDocument(document);
-                          if (reason) return reason;
-                      }
-                      return null;
-                  },
-                  release: () => {
-                      for (const guard of guards) guard.release();
-                  },
-                  afterPublication: () => {
-                      for (const guard of guards) guard.afterPublication?.();
-                  },
-              }
-            : undefined;
+        let commitValidation: HandlerCommitValidation | undefined;
+        if (guards.length > 0) {
+            commitValidation = {
+                documentId: 'root',
+                beforeCommit: () => {
+                    for (const guard of guards) {
+                        const reason = guard.beforeCommit();
+                        if (reason) {
+                            return reason;
+                        }
+                    }
+                    return null;
+                },
+                validateDocument: (document) => {
+                    for (const guard of guards) {
+                        const reason = guard.validateDocument(document);
+                        if (reason) {
+                            return reason;
+                        }
+                    }
+                    return null;
+                },
+                release: () => {
+                    for (const guard of guards) {
+                        guard.release();
+                    }
+                },
+                afterPublication: () => {
+                    for (const guard of guards) {
+                        guard.afterPublication?.();
+                    }
+                },
+            };
+        }
         const capture = !action.payload.replacement.rightClip ? action.payload.retiredTakeLanes : undefined;
         const orderCapture = !action.payload.replacement.rightClip ? action.payload.expected.rightClipOrder : undefined;
         const stagedOrder =

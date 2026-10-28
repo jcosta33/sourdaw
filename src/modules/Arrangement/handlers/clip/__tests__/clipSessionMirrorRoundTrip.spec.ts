@@ -3233,7 +3233,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         const original = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
         syncPeerProject((project) => {
-            if (!original) throw new Error('Expected original source clip');
+            if (!original) {
+                throw new Error('Expected original source clip');
+            }
             project.tracks.tracks
                 .find((track) => track.id === other.id)!
                 .clips.push({ ...original, trackId: other.id });
@@ -3244,7 +3246,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(2)
         );
         const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-        if (!Array.isArray(saved.past)) throw new Error('Expected both actual retirement events');
+        if (!Array.isArray(saved.past)) {
+            throw new Error('Expected both actual retirement events');
+        }
         const first = saved.past[0];
         const second = saved.past[1];
         if (
@@ -3254,15 +3258,17 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             !isRecord(second.inverseAction) ||
             !isRecord(first.inverseAction.payload) ||
             !isRecord(second.inverseAction.payload)
-        )
+        ) {
             throw new Error('Expected actual producer inverses');
+        }
         const payload = first.inverseAction.payload;
         if (
             !Array.isArray(payload.retiredTakeLanes) ||
             !isRecord(payload.retiredTakeLanes[0]) ||
             !isRecord(payload.retiredTakeLanes[0].lane)
-        )
+        ) {
             throw new Error('Expected first event owner');
+        }
         expect(first.id).not.toBe(second.id);
         payload.retiredTakeLanes[0].lane.trackId = other.id;
         payload.retiredTakeSourceProof = structuredClone(second.inverseAction.payload.retiredTakeSourceProof);
@@ -5772,7 +5778,14 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 reloadSavedProject();
                 // Saved-source corruption is refused during admission; a live
                 // peer collision remains admitted and must be refused at replay.
-                expect(undoHistoryStore.value?.[stack]).toHaveLength(collision === 'saved-id' ? 0 : grouped ? 2 : 1);
+                let expectedHistoryLength = 1;
+                if (grouped) {
+                    expectedHistoryLength = 2;
+                }
+                if (collision === 'saved-id') {
+                    expectedHistoryLength = 0;
+                }
+                expect(undoHistoryStore.value?.[stack]).toHaveLength(expectedHistoryLength);
                 if (collision === 'peer-id') {
                     syncPeerProject((project) => {
                         const foreignLane = project.takeLanes.lanes.find((lane) => lane.id === residentLane.id);
@@ -8298,7 +8311,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     getSemanticMessage: () => undefined,
                     hasDoc: (id) => getCrdtDoc(id) !== undefined,
                     mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
-                        if (docId === 'root' && !checked) intervene();
+                        if (docId === 'root' && !checked) {
+                            intervene();
+                        }
                         mutateCrdtDoc({ id: docId, changeFn, message, snapshotTransaction, localSlots: changedKeys });
                     },
                 });
@@ -8321,7 +8336,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                         commitValidation: {
                             ...validation,
                             beforeCommit: () => {
-                                if (timing === 'beforeCommit') intervene();
+                                if (timing === 'beforeCommit') {
+                                    intervene();
+                                }
                                 return validation.beforeCommit();
                             },
                         },

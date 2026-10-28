@@ -14,6 +14,7 @@ import { decodeMidiClipDataSnapshots, getMidiStoreState, removeMidiClipData } fr
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { createHandler } from '#/utils/createHandler';
 import {
+    type ActionHandler,
     type AppAction,
     type HandlerValidationContext,
     type MidiClipDataActionSnapshot,
@@ -309,7 +310,7 @@ function batchMembersAreIndependent(action: RemoveClipAction, context: HandlerVa
     );
 }
 
-export const handleRemoveClip = createHandler<'removeClip'>({
+export const handleRemoveClip: ActionHandler<RemoveClipAction> = createHandler<'removeClip'>({
     validateSessionEntry: (entry) => {
         if (!isRemoveClipSessionEntry(entry)) {
             return false;

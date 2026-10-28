@@ -8,11 +8,16 @@ import { consumedStretchFactor } from './consumedStretchFactor';
 export function projectClipSplitSourceWindow(clip: Clip, splitBeat: number) {
     const timelineDelta = splitBeat - clip.startBeat;
     const contentDelta = timelineDelta * consumedStretchFactor(clip);
+    if (clip.type === 'midi') {
+        return {
+            audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
+            midiOffsetBeats: 0,
+            ...restampLoopOriginEntry(clip, splitBeat),
+        };
+    }
     return {
         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
         midiOffsetBeats: 0,
-        ...(clip.type === 'midi'
-            ? restampLoopOriginEntry(clip, splitBeat)
-            : shiftLoopOriginEntry(clip, timelineDelta - contentDelta)),
+        ...shiftLoopOriginEntry(clip, timelineDelta - contentDelta),
     };
 }
