@@ -178,6 +178,9 @@ describe.each(['builtin-synth', 'builtin-drum-kit'])('%s alongside persistent ru
         const before = audioEngine.getTrackStrip(track.id);
         const eqNode = before?.deviceNodes[0];
         const compNode = before?.deviceNodes[1];
+        if (!before || !eqNode || !compNode) {
+            throw new Error('Expected both real persistent effect nodes before reorder');
+        }
         const action = compileReorderDevicesAction(track.id, 'comp', 'eq');
         if (!action) {
             throw new Error('Expected a legal compiled rack reorder');
@@ -186,11 +189,16 @@ describe.each(['builtin-synth', 'builtin-drum-kit'])('%s alongside persistent ru
         expect(currentTrack().devices.map((device) => device.id)).toEqual(['synth', 'comp', 'eq']);
         expect(audioEngine.getTrackStrip(track.id)?.deviceNodes).toEqual([compNode, eqNode]);
         expect(audioEngine.getTrackStrip(track.id)?.faderNode).toBe(before?.faderNode);
+        expect(audio.edges.get(before.gainNode)?.has(compNode.inputNode)).toBe(true);
+        expect(audio.edges.get(compNode.outputNode)?.has(eqNode.inputNode)).toBe(true);
+        expect(audio.edges.get(eqNode.outputNode)?.has(before.preFaderTap)).toBe(true);
         expect(vi.mocked(mirrorDeviceChainDelta).mock.calls.at(-1)?.[0].after.devices.map((device) => device.id)).toEqual(['synth', 'comp', 'eq']);
         expect(removed).not.toHaveBeenCalled();
         await undo();
         expect(currentTrack().devices.map((device) => device.id)).toEqual(['synth', 'eq', 'comp']);
         expect(liveIds()).toEqual(['eq', 'comp']);
+        expect(audio.edges.get(before.gainNode)?.has(eqNode.inputNode)).toBe(true);
+        expect(audio.edges.get(eqNode.outputNode)?.has(compNode.inputNode)).toBe(true);
         await redo();
         expect(currentTrack().devices.map((device) => device.id)).toEqual(['synth', 'comp', 'eq']);
         expect(liveIds()).toEqual(['comp', 'eq']);
@@ -208,6 +216,13 @@ describe.each(['builtin-synth', 'builtin-drum-kit'])('%s alongside persistent ru
         const replacement = audioEngine.getTrackStrip(track.id)?.deviceNodes[0];
         expect(replacement?.nodes).toHaveLength(3);
         expect(replacement?.nodes[0]).toHaveProperty('gain.value', 2);
+        const strip = audioEngine.getTrackStrip(track.id);
+        if (!strip || !replacement) {
+            throw new Error('Expected the constructed replacement and owning strip');
+        }
+        expect(audio.edges.get(strip.gainNode)?.has(replacement.inputNode)).toBe(true);
+        expect(audio.edges.get(replacement.outputNode)?.has(strip.preFaderTap)).toBe(true);
+        expect(audioEngine.getDeviceReadinessDiagnostics().devices.find((device) => device.deviceId === replacement.deviceId)).toMatchObject({ status: 'ready', failureStage: null });
         expect(replacement).not.toBe(oldNodes?.[0]);
         expect(removed.mock.calls.map(([payload]) => payload.deviceId)).toEqual(['eq', 'comp']);
         expect(vi.mocked(mirrorDeviceChainDelta).mock.calls.at(-1)?.[0].after.devices.map((device) => device.id)).toEqual(['synth', 'replacement-eq']);
