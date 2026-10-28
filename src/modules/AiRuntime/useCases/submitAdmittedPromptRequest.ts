@@ -1,6 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+
+import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
@@ -253,8 +255,23 @@ export async function submitAdmittedPromptRequest(
         // batch that arrived beside it may run.
         const planningOutcome = planned.result.planningOutcome;
         if (planningOutcome?.kind === 'answer') {
-            transitionTerminalRun(runId, 'completed');
             await releasePlanOwnedStemResources();
+            if (input.signal?.aborted) {
+                await cancelAfterAbort();
+                return { status: 'rejected', runId };
+            }
+            const run = agentRunLifecycle.get(runId);
+            if (
+                !run ||
+                ['completed', 'failed', 'cancelled', 'partially-completed'].includes(run.phase) ||
+                (providerLease !== null && run.cancellation.generation !== providerLease.cancellationGeneration)
+            ) {
+                return { status: 'rejected', runId };
+            }
+            if (settlePendingProjectWritesAndCaptureRevision() !== planned.projectRevision) {
+                throw new AiProposalInvalidatedError();
+            }
+            transitionTerminalRun(runId, 'completed');
             const answerText = describePlanningOutcome(planningOutcome);
             if (answerText === null) {
                 notifyAiChange(NO_PROMPT_ACTIONS_NOTICE, []);
