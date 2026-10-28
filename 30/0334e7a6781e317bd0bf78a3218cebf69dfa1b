@@ -1,0 +1,25 @@
+tests/e2e/smoke.spec.ts
+  s_59e31a5c6f3e31::t_c74e4b864095d6 1-5,270-271,273-275,277-284,287-303,307-309,311,313-315,320,322-324,338,340-350,352,365,368,370,386-387,396-397,403-410,415-420
+  s_59e31a5c6f3e31::t_66e0634befaef8 353,355-358,361-364
+  s_59e31a5c6f3e31::t_4238623b75d995 478-501,544-573
+  s_59e31a5c6f3e31::t_1d57b7023d9f06 354
+  s_59e31a5c6f3e31::t_f5f19c84aa8af8 285-286
+  s_59e31a5c6f3e31::t_e495ac04c9d13c 276,306,310,316-319,321,325-337,339,359-360
+  s_59e31a5c6f3e31::t_ce6ba58c9980a3 272,476-477,542-543
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "300334e7a6781e317bd0bf78a3218cebf69dfa1b",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
