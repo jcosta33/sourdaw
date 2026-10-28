@@ -1,0 +1,24 @@
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  s_59e31a5c6f3e31::t_4eb3ad551dd00c 9-10
+  s_59e31a5c6f3e31::t_039b6aeeb50ac1 11,19,21-62,64-167,172-180
+  s_59e31a5c6f3e31::t_752cb744d659cf 168-171
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  s_59e31a5c6f3e31::t_24c283116d4918 19-20,22-27,30,41,46-51,59,61,65,67,73,85-97
+  s_59e31a5c6f3e31::t_7260b976007f5e 31,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54d935f85c63ee3af87d26a3b999181128a681e3",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
