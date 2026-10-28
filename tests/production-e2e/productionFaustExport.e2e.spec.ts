@@ -78,22 +78,49 @@ async function holdAndRelease(frame: Frame, context: 'live' | 'offline'): Promis
 }
 
 async function setShortLoop(page: Page, app: FrameLocator): Promise<void> {
+    await expect(app.getByRole('dialog', { name: 'Sourdaw — start a project', exact: true })).toHaveCount(0, {
+        timeout: 90_000,
+    });
+    const minimap = app.getByRole('slider', {
+        name: 'Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys',
+        exact: true,
+    });
+    await expect(minimap).toBeVisible();
+    await minimap.focus();
+    await expect(minimap).toBeFocused();
+    // The public Zoom Out shortcut subtracts 4px/beat from the fresh 12px/beat.
+    await minimap.press('-');
+    await minimap.press('-');
+    await minimap.press('Home');
+    const pixelsPerBeat = 4;
+    const loopStart = 104;
+    const loopEnd = 120;
     const ruler = app.getByLabel('Beat ruler', { exact: true });
     await expect(ruler).toBeVisible();
+    await ruler.click({ trial: true });
     const box = await ruler.boundingBox();
-    if (!box || box.width < 300) {
-        throw new Error('Beat ruler cannot expose the source-backed 8–24 beat window');
+    if (!box || box.width <= loopEnd * pixelsPerBeat) {
+        throw new Error('Beat ruler cannot expose the source-backed 104–120 beat window');
     }
-    // Fresh-project timeline is 12px/beat. Nebula's Pluck begins at beat 10,
-    // sends to Delay Bus, and the 8–24 window includes several delay repeats.
+    // Pluck's gain automation reaches 0.4 at beat 104, feeding its post-fader send.
+    // Stay inside each edge so the ruler's floor/ceil commits exactly 104–120.
+    const edgeInsetPx = 0.25;
     const y = box.y + box.height / 2;
-    await page.mouse.move(box.x + 96, y);
+    await page.mouse.move(box.x + loopStart * pixelsPerBeat + edgeInsetPx, y);
     await page.keyboard.down('Shift');
     await page.mouse.down();
-    await page.mouse.move(box.x + 288, y, { steps: 12 });
+    await page.mouse.move(box.x + loopEnd * pixelsPerBeat - edgeInsetPx, y, { steps: 12 });
     await page.mouse.up();
     await page.keyboard.up('Shift');
-    await ruler.click({ position: { x: 120, y: box.height / 2 } });
+    await ruler.click({ trial: true });
+    const seekBox = await ruler.boundingBox();
+    if (!seekBox) {
+        throw new Error('Beat ruler disappeared before the exact loop-start seek');
+    }
+    // Raw page coordinates share getBeat's border-box origin; locator click
+    // positions would add the ruler's border before the pixel-to-beat mapping.
+    await page.mouse.click(seekBox.x + loopStart * pixelsPerBeat, seekBox.y + seekBox.height / 2);
+    await expect(app.getByTestId('transport-playhead')).toHaveText(/^Bars\s*27\s*\.\s*1\s*\.\s*000$/);
 }
 
 async function openBakery(app: FrameLocator): Promise<Locator> {
@@ -101,8 +128,12 @@ async function openBakery(app: FrameLocator): Promise<Locator> {
     await app.locator('body').press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
     const dialog = app.getByRole('dialog').filter({ hasText: /The Bakery/i });
     await expect(dialog).toBeVisible();
+    const exactLoop = dialog.getByRole('radio', { name: 'Loop region (beat 104.00 → 120.00)', exact: true });
+    await expect(exactLoop).toBeVisible();
+    await expect(exactLoop).toBeEnabled();
     await dialog.getByRole('radio', { name: /Loop region/i }).check();
     await expect(dialog.getByRole('radio', { name: /Loop region/i })).toBeChecked();
+    await expect(exactLoop).toBeChecked();
     await dialog.getByLabel('Auto-detect').uncheck();
     await dialog.getByLabel('Tail seconds').fill('2');
     return dialog;
@@ -212,6 +243,9 @@ test('production Faust plays and exports after slow native loading, refuses a na
             timeout: 90_000,
         });
         await setShortLoop(page, app);
+        const rangeDialog = await openBakery(app);
+        await rangeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await expect(rangeDialog).toHaveCount(0);
         await app.getByRole('button', { name: 'Play', exact: true }).click();
         await expect
             .poll(
