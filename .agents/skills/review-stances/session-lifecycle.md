@@ -165,6 +165,22 @@ arm's stamps, and the other carrier's gate ramp and voice presence (`TrackNode.s
 delivers is the finding; a claim that "the other carrier covers it" without those two traces is
 discarded.
 
+### A refused monitoring Off must retain the admitted capture
+
+The setter's eager Off release first appears in `0249a95cc5292e687a27f084bac510d31eb7f3d8`
+and the toggle's in `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; GitHub reports no associated
+PR for either. PR #4255 narrowed the setter's global stop to a per-track stop but retained its
+pre-commit release. Review of #5091 exposed the rollback gap; it did not introduce it. Historical
+private review prompts and tiers are unknown.
+
+Start with committed and admitted On for two tracks sharing capture. Invoke a real Off gesture
+inside the actual CRDT transaction; while projection is Off and committed state remains On, reject
+and abort the write. Both original source edges must remain connected, with no stop or reacquisition,
+and projection must return to On. A committed Off releases only its owner; final Off stops the
+shared stream once. Pair a pending grant with committed Off and a stored-but-unadmitted On control.
+Reintroduce eager release in each setter and toggle route: the unchanged refused-Off integration
+cases must fail. Controlled media and a programmatic DOM click do not establish physical audibility.
+
 ### 2026-09-09 — the correction removed for every caller (caught in review of the #4020 repair)
 
 The repair for the entry above deleted the roll projection from the shared session start rather than
