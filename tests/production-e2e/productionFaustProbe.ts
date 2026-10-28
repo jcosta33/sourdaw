@@ -36,7 +36,8 @@ export function installFaustProbe(): void {
     const contexts = new WeakMap<AudioWorklet, { kind: 'live' | 'offline'; context: BaseAudioContext }>();
     const contextLoads = new WeakMap<BaseAudioContext, LoadObservation[]>();
     const loads: LoadObservation[] = [];
-    const taps: AnalyserNode[] = [];
+    const taps: Array<{ analyser: AnalyserNode; connected: boolean }> = [];
+    const diagnosticErrors: unknown[] = [];
     const releases: Array<() => void> = [];
     let mode: LoadMode = 'hold-live';
     let successNotifications = 0;
@@ -141,8 +142,74 @@ export function installFaustProbe(): void {
             if (load?.context === 'live') {
                 const analyser = node.context.createAnalyser();
                 analyser.fftSize = 2048;
-                node.connect(analyser);
-                taps.push(analyser);
+                const tap = { analyser, connected: false };
+                let tapOutput = 0;
+                const nativeConnect = node.connect;
+                const nativeDisconnect = node.disconnect;
+                // Report observer failures at observation time, without replacing
+                // a successful application's native connection result.
+                function observeConnection(action: () => void): void {
+                    try {
+                        action();
+                    } catch (error) {
+                        diagnosticErrors.push(error);
+                    }
+                }
+                Object.defineProperties(node, {
+                    connect: {
+                        configurable: true,
+                        writable: true,
+                        value: new Proxy(nativeConnect, {
+                            apply(target, receiver, args) {
+                                const result: unknown = Reflect.apply(target, receiver, args);
+                                if (receiver === node) {
+                                    const requestedOutput: unknown = args[1];
+                                    const output = typeof requestedOutput === 'number' ? requestedOutput : 0;
+                                    observeConnection(() => {
+                                        if (tap.connected && tapOutput !== output) {
+                                            tap.connected = false;
+                                            Reflect.apply(nativeDisconnect, node, [analyser, tapOutput, 0]);
+                                        }
+                                        if (!tap.connected) {
+                                            Reflect.apply(nativeConnect, node, [analyser, output, 0]);
+                                            tapOutput = output;
+                                            tap.connected = true;
+                                        }
+                                    });
+                                }
+                                return result;
+                            },
+                        }),
+                    },
+                    disconnect: {
+                        configurable: true,
+                        writable: true,
+                        value: new Proxy(nativeDisconnect, {
+                            apply(target, receiver, args) {
+                                const result: unknown = Reflect.apply(target, receiver, args);
+                                if (receiver === node && tap.connected) {
+                                    const destination: unknown = args[0];
+                                    const output: unknown = args[1];
+                                    const input: unknown = args[2];
+                                    const removedAll = args.length === 0;
+                                    const removedOutput = typeof destination === 'number' && destination === tapOutput;
+                                    const removedTap =
+                                        destination === analyser &&
+                                        (output === undefined || output === tapOutput) &&
+                                        (input === undefined || input === 0);
+                                    tap.connected = false;
+                                    if (!removedAll && !removedOutput && !removedTap) {
+                                        observeConnection(() => {
+                                            Reflect.apply(nativeDisconnect, node, [analyser, tapOutput, 0]);
+                                        });
+                                    }
+                                }
+                                return result;
+                            },
+                        }),
+                    },
+                });
+                taps.push(tap);
             }
             return node;
         },
@@ -174,11 +241,15 @@ export function installFaustProbe(): void {
             successObserver?.disconnect();
         },
         snapshot() {
+            if (diagnosticErrors.length > 0) {
+                throw diagnosticErrors[0];
+            }
             let samplePeak = 0;
             let finite = true;
-            for (const tap of taps) {
-                const samples = new Float32Array(tap.fftSize);
-                tap.getFloatTimeDomainData(samples);
+            const connectedTaps = taps.filter((tap) => tap.connected);
+            for (const { analyser } of connectedTaps) {
+                const samples = new Float32Array(analyser.fftSize);
+                analyser.getFloatTimeDomainData(samples);
                 for (const sample of samples) {
                     finite &&= Number.isFinite(sample);
                     samplePeak = Math.max(samplePeak, Math.abs(sample));
@@ -186,7 +257,7 @@ export function installFaustProbe(): void {
             }
             return {
                 loads: loads.map((load) => ({ ...load })),
-                tapCount: taps.length,
+                tapCount: connectedTaps.length,
                 finite,
                 samplePeak,
                 successNotifications,
