@@ -1,0 +1,66 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  s_59e31a5c6f3e31::t_65774faf9bf378 409
+  s_59e31a5c6f3e31::t_442d115e812da0 273-275
+  s_59e31a5c6f3e31::t_5765c022144d80 426
+  s_59e31a5c6f3e31::t_d7008c04f513b1 271-272,283,311,368,413,421-422
+  s_59e31a5c6f3e31::t_0b3231d8badb69 359-364
+  s_59e31a5c6f3e31::t_4fde97a4f6f645 376-377,387
+  s_59e31a5c6f3e31::t_c9b6c6f457baaf 295
+  s_59e31a5c6f3e31::t_2385f5310cd722 230-231,241,249-250,276-282
+  s_59e31a5c6f3e31::t_289fbde6205663 301-307,358,365,400-401
+  s_59e31a5c6f3e31::t_f27ba2e0a68c0a 373-375
+  s_59e31a5c6f3e31::t_2a90db9e80352b 414-420
+  s_59e31a5c6f3e31::t_311d02df340a63 284-294,296-300,308-310,355-357,366,371-372,378-386,388-399,402-408,410-412
+  s_59e31a5c6f3e31::t_889da1b48251e0 369-370
+src/modules/CrdtDocument/useCases/prepareExternalProjectDocument.ts
+  s_59e31a5c6f3e31::t_2cd64290c750bf 14-25,42
+  s_59e31a5c6f3e31::t_889884190c6dc1 32,45
+  s_59e31a5c6f3e31::t_222d80d851a0cc 65-66
+src/modules/Collaboration/useCases/__tests__/assetTransferLibrary.spec.ts
+  s_59e31a5c6f3e31::t_d0cec581c3beea 336,348-353,356-375,380-383
+  s_59e31a5c6f3e31::t_2a90db9e80352b 354-355,376-379
+  s_59e31a5c6f3e31::t_889da1b48251e0 337-347
+  s_59e31a5c6f3e31::t_c596533e1d5a1e 384-386
+src/modules/Collaboration/useCases/assetTransfer.ts
+  s_59e31a5c6f3e31::t_254cb5d6179584 424-429,434-435,437-439,1117
+  s_59e31a5c6f3e31::t_091bcadaba0157 1118
+src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts
+  s_59e31a5c6f3e31::t_3a05b06b21b7ea 48
+  s_59e31a5c6f3e31::t_254cb5d6179584 45-47,49-50
+  s_59e31a5c6f3e31::t_b6bb300f185610 51-52
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_59e31a5c6f3e31::t_bb40ae79b20a99 101-128,152,169-179
+  s_59e31a5c6f3e31::t_3a05b06b21b7ea 181-196
+  s_59e31a5c6f3e31::t_a9d767aeee6862 14,156
+  s_59e31a5c6f3e31::t_ea1b4200ea5ad9 4,6,18,38,138,149-151,153-155,157-158,162-168
+  s_59e31a5c6f3e31::t_0eb60d81363da6 13,53-58,159-161
+  s_59e31a5c6f3e31::t_8c04dc1dc77d85 15
+  s_59e31a5c6f3e31::t_ff12150841a9eb 180
+src/modules/Project/useCases/projectPersistence/projectDirectoryRead.ts
+  s_59e31a5c6f3e31::t_520dbbbde45386 38,40,55,63,68
+  s_59e31a5c6f3e31::t_db31ef5e32189b 17-37,39,41-54,60-62,64-67,69-88,95-100,110-111,184-191,193-194
+  s_59e31a5c6f3e31::t_c0002b9328dddb 56-59,101-109,195
+  s_59e31a5c6f3e31::t_222d80d851a0cc 89-94,192
+src/modules/CrdtDocument/useCases/__tests__/prepareExternalProjectDocument.spec.ts
+  s_59e31a5c6f3e31::t_050c31f5a51cb5 111-115,140
+  s_59e31a5c6f3e31::t_436db65cf2509b 6,26,36,93-94,96,98-110,116-120,128-132,139
+  s_59e31a5c6f3e31::t_52e0ed30a6b4dc 10,97
+  s_59e31a5c6f3e31::t_ea1b4200ea5ad9 81-88,90-92,141
+  s_59e31a5c6f3e31::t_53b01bb0e8b5ef 89,95,121-127,133-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb893e27a2f57736de96974ccd595d46eee9ef12",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
