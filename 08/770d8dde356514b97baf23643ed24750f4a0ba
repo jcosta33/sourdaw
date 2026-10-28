@@ -1,0 +1,20 @@
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_3168504f6ce387::t_a62347840bd1e3 18,441-444,447,458-465,474,476,478-487,489-490
+  s_3168504f6ce387::t_d56712c2e1c0b2 466-473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08770d8dde356514b97baf23643ed24750f4a0ba",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
