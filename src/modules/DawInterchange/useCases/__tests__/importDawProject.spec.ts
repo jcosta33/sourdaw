@@ -982,4 +982,37 @@ describe('importDawProject', () => {
             expect.stringContaining('Imported bounds.dawproject'),
         ]);
     });
+    it('keeps standard pan bounds quiet in a real ZIP while reporting custom bounds', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        const projectXml =
+            '<Project version="1.0"><Structure><Track id="keys" name="Keys" contentType="notes"><Channel><Pan id="standard" unit="normalized" min="0" max="1" value="0.75"/></Channel></Track><Track id="custom" name="Custom" contentType="notes"><Channel><Pan id="custom-pan" name="Position" min="0.25" max="0.75" value="0.75"/></Channel></Track></Structure><Arrangement><Lanes><Clips track="keys"><Clip name="Playable" time="0" duration="1"><Notes><Note key="64" time="0" duration="1"/></Notes></Clip></Clips></Lanes></Arrangement></Project>';
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'standard-pan.dawproject',
+        });
+        expect(result.warnings).toMatchObject([
+            {
+                sourceType: 'Pan',
+                sourceId: 'custom-pan',
+                name: 'Position',
+                context: 'Custom',
+                handling: 'partial',
+                details: ['parameter name', 'parameter bounds'],
+            },
+        ]);
+        expect(result.warnings).toHaveLength(1);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')).toMatchObject({
+            pan: 0.5,
+            clips: [{ name: 'Playable' }],
+        });
+        expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+            expect.stringContaining(
+                'Pan "Position" on "Custom" was partially imported: parameter name, parameter bounds'
+            ),
+            expect.stringContaining('Imported standard-pan.dawproject'),
+        ]);
+    });
 });

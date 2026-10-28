@@ -174,10 +174,20 @@ function warnTimelineMetadata(context: ParseContext, node: XmlQuery, owner: stri
 }
 
 function hasMixerBounds(node: XmlQuery): boolean {
-    return (
-        (node.element.tagName === VOLUME || node.element.tagName === PAN) &&
-        ['min', 'max'].some((name) => node.attr(name) !== null)
-    );
+    const tag = node.element.tagName;
+    if (tag !== VOLUME && tag !== PAN) {
+        return false;
+    }
+    const unit = node.attr('unit');
+    const normalizedPan = tag === PAN && (unit === null || unit === 'linear' || unit === 'normalized');
+    return ['min', 'max'].some((name) => {
+        const raw = node.attr(name);
+        if (raw === null) {
+            return false;
+        }
+        const defaultBound = name === 'min' ? 0 : 1;
+        return !normalizedPan || raw.trim() === '' || Number(raw) !== defaultBound;
+    });
 }
 
 function warnParameterMetadata(context: ParseContext, node: XmlQuery | null, owner: string, units: string[]): void {

@@ -3324,4 +3324,32 @@ describe('rejected owners and invalid mixer values', () => {
             { volume: 0.8, pan: 0 },
         ]);
     });
+    it('keeps standard pan bounds quiet while reporting custom bounds and other metadata', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track name="Both" contentType="notes"><Channel><Pan value="0.75" unit="normalized" min="0" max="1"/></Channel></Track><Track name="Min" contentType="notes"><Channel><Pan value="0.75" min="0"/></Channel></Track><Track name="Max" contentType="notes"><Channel><Pan value="0.75" max="1"/></Channel></Track><Track name="Absent" contentType="notes"><Channel><Pan value="0.75"/></Channel></Track><Track name="Custom" contentType="notes"><Channel><Pan id="custom" name="Position" value="0.75" min="0.25" max="0.75"/></Channel></Track><Track name="Volume" contentType="notes"><Channel><Volume id="vol" value="0.75" min="0" max="1"/></Channel></Track></Structure>'
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Pan',
+                sourceId: 'custom',
+                name: 'Position',
+                context: 'Custom',
+                handling: 'partial',
+                details: ['parameter name', 'parameter bounds'],
+            },
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Volume',
+                context: 'Volume',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.tracks.slice(0, 5).map(({ pan }) => pan)).toEqual([0.5, 0.5, 0.5, 0.5, 0.5]);
+        expect(parsed.tracks[5]?.volume).toBe(0.75);
+    });
 });
