@@ -1,0 +1,44 @@
+src/modules/Arrangement/handlers/clip/handleMoveClip.ts
+  h_beb54bf43b47b7 9
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  h_beb54bf43b47b7 319-395,439-445
+src/modules/Arrangement/handlers/clip/handleRestoreClipPlacement.ts
+  h_beb54bf43b47b7 9
+src/modules/Arrangement/handlers/clip/handleRestoreClipSplitState.ts
+  h_beb54bf43b47b7 28,224-293,306-309,340
+src/modules/Arrangement/handlers/clip/hasFiniteNumbers.ts
+  h_beb54bf43b47b7 1-14
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  h_beb54bf43b47b7 13,19,276-285,295,536-551,578
+src/modules/Arrangement/handlers/clip/validateClipPlacementSessionEntries.ts
+  h_beb54bf43b47b7 1-80
+src/modules/Arrangement/useCases/comping/captureRetiredTakeSource.ts
+  h_beb54bf43b47b7 4,16
+src/modules/Arrangement/useCases/comping/retiredTakeSourceMatches.ts
+  h_beb54bf43b47b7 1-27
+src/modules/Arrangement/useCases/comping/retiredTakeSourceOwners.ts
+  h_beb54bf43b47b7 1-38
+src/modules/CrdtDocument/useCases/__tests__/commandSourcePublication.spec.ts
+  h_beb54bf43b47b7 10,13,20
+src/modules/CrdtDocument/useCases/commandSourceDigest.ts
+  h_beb54bf43b47b7 1-5
+src/modules/CrdtDocument/useCases/commandSourcePublicationContains.ts
+  h_beb54bf43b47b7 3,26-31
+src/modules/CrdtDocument/useCases/commandSourcePublicationMatches.ts
+  h_beb54bf43b47b7 1-21
+src/modules/CrdtDocument/useCases/index.ts
+  h_beb54bf43b47b7 13-14
+src/modules/CrdtDocument/useCases/stageCommandSourcePublication.ts
+  h_beb54bf43b47b7 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a26a4327cea89688afa2041802d4a335cf6a5b03",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
