@@ -1,0 +1,22 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 59-70
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-19
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 149-151
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 193-196
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 2525-2531,2533-2548
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b804daefa52d06f8e0bd157524ab8c96122ea253",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
