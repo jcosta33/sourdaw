@@ -9,7 +9,13 @@ import { latencyCompensatedBeat } from './latencyCompensatedBeat';
 import { makeKey } from './makeKey';
 import { RECORDING_MODES, activeRecording, pendingPoints, touchActive } from './recordingSessionState';
 
-export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
+export function recordAutomationValue(
+    trackId: string,
+    parameterId: string,
+    value: number,
+    beat: number,
+    recordingOwner?: symbol
+): void {
     const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
     if (!track || !RECORDING_MODES.has(track.automationMode)) {
         return;
@@ -98,6 +104,9 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     const points = pendingPoints.get(key);
     points?.push(point);
     session.lastValue = value;
+    // Every admitted producer supersedes the previous release authority, including
+    // ownerless MIDI writes. A nonrecording runtime write never reaches this door.
+    session.recordingOwner = recordingOwner;
 
     if (track.automationMode === 'touch' || track.automationMode === 'latch') {
         touchActive.add(key);
