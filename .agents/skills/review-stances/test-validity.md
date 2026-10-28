@@ -1214,6 +1214,19 @@ Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the add
 
 Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` as the focused regression check, and inspect the selected PR CI E2E result. A locator whose precondition no helper in the test produces is the finding.
 
+### 2026-10-28 — Grinder shard assertions disagreed with the configured origin (introduced across PRs #5437 and #5723)
+
+PR #5437 added a Grinder-only dev-companion assertion using `localhost`; PR #5723 pinned
+`e2eOrigin` to `127.0.0.1` because Vite binds IPv4 loopback. The exact shard assertion therefore
+contradicted the shared serving-origin contract and failed in PR #5371's unit suite. Passing adjacent
+shard cases did not exercise this pairing.
+
+Probe that would have caught it: run `runs a shard selecting only Grinder PCM parity through its
+matching dev companion` with `SOURDAW_E2E_PORT=6123`. Require the companion `baseURL` and both
+readiness URLs to use the explicit `http://127.0.0.1` origin. Keep literal expectations so changing
+the production origin back to `localhost` makes the unchanged named case fail; deriving expected
+values from `e2eOrigin` would couple the oracle to the helper.
+
 ### Parameter replay-operation escape — unregistered alternatives hide owner-validation gaps
 
 Session hydration introduced in `4f410257b212bbbd2210fa6553f7aaa3394f69bc` (no associated PR)
