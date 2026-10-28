@@ -228,10 +228,16 @@ async function executeMacroAction(
 ): Promise<void> {
     const replayAction = structuredClone(action);
     if (replayAction.type === 'slipClipContent' || replayAction.type === 'trimClipStart') {
-        // A public history reversion can be recorded with exact Undo coordinates.
-        // Macro playback is a new command against today's rows; its handler must
-        // capture those rows for its own history rather than restore the recording.
+        // A public history reversion can record restoration-only hints. Macro
+        // playback uses the fresh command law against today's clip and rows;
+        // its handler captures that execution for its own exact Undo and Redo.
         delete replayAction.payload.midiRowCoordinates;
+        if (replayAction.type === 'slipClipContent') {
+            delete replayAction.payload.rowLiftBeats;
+        } else {
+            delete replayAction.payload.midiOffsetBeats;
+            delete replayAction.payload.loopOriginBeat;
+        }
     }
     if (replayAction.type === 'addSidechainRoute') {
         const recordedRouteId = replayAction.payload.routeId;

@@ -122,7 +122,7 @@ describe('playMacro', () => {
         });
     });
 
-    it('replays recorded row counteractions as commands without their old exact Undo coordinates', async () => {
+    it('replays recorded row counteractions using only their public request fields', async () => {
         const rowMacro: Macro = {
             id: 'row-counteractions',
             name: 'Row counteractions',
@@ -156,11 +156,8 @@ describe('playMacro', () => {
             await playMacro(rowMacro.id);
         }
         const expected = [
-            { type: 'slipClipContent', payload: { clipId: 'phrase', clipType: 'midi', offset: 0, rowLiftBeats: -8 } },
-            {
-                type: 'trimClipStart',
-                payload: { clipId: 'phrase', newStartBeat: 0, midiOffsetBeats: 7, loopOriginBeat: null },
-            },
+            { type: 'slipClipContent', payload: { clipId: 'phrase', clipType: 'midi', offset: 0 } },
+            { type: 'trimClipStart', payload: { clipId: 'phrase', newStartBeat: 0 } },
         ];
         expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([...expected, ...expected]);
         expect(macroStore.value?.macros).toEqual([saved]);

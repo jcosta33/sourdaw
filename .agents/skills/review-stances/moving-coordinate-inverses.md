@@ -66,6 +66,30 @@ zero captures and whole-loop captures. Removing replay admission must fail the u
 historical case; deleting a capture field from a modern fixture cannot establish
 historical compatibility.
 
+## Fresh macro commands must discard inverse restoration hints
+
+PR #5495 (`0f1e87dc8`) introduced the slip inverse's `rowLiftBeats` and the trim
+inverse's `loopOriginBeat`; PR #5578 (`e930f16eb`) added the trim inverse's
+`midiOffsetBeats`. Public action-history reversion can record those inverse
+requests into a macro. Replaying the saved request verbatim applies the old
+restoration basis instead of a fresh command's current wrap and anchor laws.
+Historical private reviewer prompts and tiers are unverified; the missing probe
+compared macro playback with independent fresh commands after that basis changed.
+
+Record a real slip or trim and public history reversal, serialize the macro, then
+change an eight-beat loop to four beats. Compare the full clip and every row with
+fresh public requests executed from the identical prestate. Repeat on the same
+basis, with looping disabled, and on audio. Include zero-valued restoration keys
+and an anchorless recording whose inverse carries `null`, followed by a current
+anchor. A fresh macro copy discards every documented restoration-only hint while
+preserving public request fields and stored macro bytes. Its own executed history
+must still restore each before-figure exactly through saved Undo and Redo; fresh
+macro arithmetic is not dynamic Undo or a byte-exact net-zero promise.
+
+Leave coordinate captures stripped but restore scalar-hint forwarding as the
+mutation. The unchanged fresh-producer comparisons must fail. An expected value
+computed from the old inverse displacement merely repeats the defect.
+
 ## Fractional row coordinates and reciprocal history captures
 
 PR #5495 (`0f1e87dc8`) introduced the slip's arithmetic row-lift inverse; PR #5578

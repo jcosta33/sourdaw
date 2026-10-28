@@ -515,108 +515,151 @@ describe('exact row captures through real Command history and persistence (#5695
         expect(snapshot()).toEqual(before);
     });
 
-    it.each(['slip', 'trim'] as const)(
-        'replays a saved macro containing a public %s reversion against current rows with its own exact history',
-        async (kind) => {
-            seed();
-            if (kind === 'trim') {
-                await executeAppAction(slip());
-            }
-            await executeAppAction({ type: 'startMacroRecording' });
-            await executeAppAction(kind === 'slip' ? slip() : trim());
-            const id = actionHistoryStore.value?.entries.at(-1)?.id;
-            if (!id) {
-                throw new Error('Expected an action-history entry to revert');
-            }
-            await expect(revertAction(id)).resolves.toEqual({ status: 'executed' });
-            await executeAppAction({ type: 'stopMacroRecording', payload: { name: 'Edit and reverse' } });
-            const recorded = macroStore.value?.macros[0];
-            if (!recorded) {
-                throw new Error('Expected a saved macro');
-            }
-            expect(recorded.actions).toHaveLength(2);
-            expect(recorded.actions[1]).toMatchObject({ payload: { midiRowCoordinates: expect.any(Object) } });
-            const serialized = JSON.stringify(recorded);
-            const saved: typeof recorded = JSON.parse(serialized);
-            macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
-
-            for (let playback = 0; playback < 2; playback += 1) {
-                peerRows((state) => {
-                    state.notesByClipId[CLIP_ID]![0]!.startBeat = 0.1 + playback;
-                    state.notesByClipId[CLIP_ID]![0]!.velocity = 42;
-                    state.notesByClipId[CLIP_ID]![0]!.expression = {
-                        pressure: [{ offsetBeats: 0.125, value: 0.5 }],
-                    };
-                    state.notesByClipId[CLIP_ID]![1] = {
-                        id: 'new-peer',
-                        startBeat: 0.2 + playback,
-                        pitch: 64,
-                        duration: 0.5,
-                        velocity: 80,
-                    };
-                    state.ccByClipId[CLIP_ID] = [];
-                    state.pitchBendByClipId[CLIP_ID]![0]!.beat = 0.3 + playback;
-                    state.pitchBendByClipId[CLIP_ID]![0]!.value = -2048;
-                    state.notesByClipId.other = [
-                        { id: 'unrelated', startBeat: 0.1, pitch: 67, duration: 0.5, velocity: 90 },
-                    ];
-                });
-                const before = readRows();
-                const beforeClip = structuredClone(readClip());
-                const pastLength = undoStore.value!.past.length;
-                const expected = structuredClone(before)!;
-                const intermediate = structuredClone(before)!;
-                const firstShift = kind === 'slip' ? 8 : -6;
-                for (const row of intermediate.notesByClipId[CLIP_ID]!) {
-                    row.startBeat += firstShift;
-                }
-                intermediate.pitchBendByClipId[CLIP_ID]![0]!.beat += firstShift;
-                for (const row of expected.notesByClipId[CLIP_ID]!) {
-                    row.startBeat = row.startBeat + firstShift - firstShift;
-                }
-                expected.pitchBendByClipId[CLIP_ID]![0]!.beat =
-                    expected.pitchBendByClipId[CLIP_ID]![0]!.beat + firstShift - firstShift;
-                await expect(
-                    executeAppAction({ type: 'playMacro', payload: { macroId: saved.id } })
-                ).resolves.toBeUndefined();
-                expect(readRows()).toEqual(expected);
-                expect(readClip()).toEqual(beforeClip);
-                expect(undoStore.value?.past).toHaveLength(pastLength + 2);
-                const replayedEntries = undoStore.value!.past.slice(-2);
-                // These handlers are singleton dispatches, so macro playback
-                // preserves their separate Undo steps instead of grouping them.
-                expect(replayedEntries.every((entry) => entry.groupId === undefined)).toBe(true);
-                expect(
-                    replayedEntries.every(
-                        (entry) =>
-                            entry.kind === 'action' && !Object.hasOwn(entry.action.payload!, 'midiRowCoordinates')
-                    )
-                ).toBe(true);
-                expect(JSON.stringify(macroStore.value?.macros[0])).toBe(serialized);
-                await saveAndReload();
-                await expect(undo()).resolves.toEqual({ headConsumed: true });
-                expect(undoStore.value?.past).toHaveLength(pastLength + 1);
-                expect(undoStore.value?.future).toHaveLength(1);
-                expect(readRows()).toEqual(intermediate);
-                await saveAndReload();
-                await expect(undo()).resolves.toEqual({ headConsumed: true });
-                expect(undoStore.value?.past).toHaveLength(pastLength);
-                expect(undoStore.value?.future).toHaveLength(2);
-                expect(readRows()).toEqual(before);
-                expect(readClip()).toEqual(beforeClip);
-                await saveAndReload();
-                await redo();
-                expect(readRows()).toEqual(intermediate);
-                await saveAndReload();
-                await redo();
-                expect(undoStore.value?.past).toHaveLength(pastLength + 2);
-                expect(undoStore.value?.future).toHaveLength(0);
-                expect(readRows()).toEqual(expected);
-                expect(readClip()).toEqual(beforeClip);
-            }
-            expect(notifyUser).not.toHaveBeenCalled();
+    it.each([
+        ['slip', 'same loop'],
+        ['trim', 'same loop'],
+        ['slip', 'changed loop'],
+        ['trim', 'changed loop'],
+        ['slip', 'zero hints'],
+        ['trim', 'zero hints'],
+        ['slip', 'unlooped'],
+        ['trim', 'unlooped'],
+        ['slip', 'audio'],
+        ['trim', 'audio'],
+    ] as const)('matches fresh public %s commands for saved macro replay on %s material', async (kind, mode) => {
+        const audio = mode === 'audio';
+        const zeroSlip = mode === 'zero hints' && kind === 'slip';
+        seed(8, audio ? 'audio' : 'midi', !zeroSlip);
+        if (zeroSlip || (kind === 'trim' && mode !== 'zero hints' && !audio)) {
+            await executeAppAction(slip());
         }
-    );
+        if (zeroSlip || (mode === 'zero hints' && kind === 'trim')) {
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                changeFn: (document) => {
+                    const clip = document.tracks.tracks[0]?.clips.find((candidate) => candidate.id === CLIP_ID);
+                    if (!clip) {
+                        throw new Error('Expected the recording clip');
+                    }
+                    clip.loopEnabled = true;
+                    delete clip.loopOriginBeat;
+                },
+            });
+            projectCrdtToStores({ resetProjections: true });
+        }
+        const forwardOffset = zeroSlip ? 1 : -1;
+        const previousOffset = zeroSlip ? -1 : 0;
+        const freshSlip = (offset: number): AppAction => ({
+            type: 'slipClipContent',
+            payload: { clipId: CLIP_ID, clipType: audio ? 'audio' : 'midi', offset },
+        });
+        await executeAppAction({ type: 'startMacroRecording' });
+        await executeAppAction(kind === 'slip' ? freshSlip(forwardOffset) : trim());
+        const id = actionHistoryStore.value?.entries.at(-1)?.id;
+        if (!id) {
+            throw new Error('Expected an action-history entry to revert');
+        }
+        await expect(revertAction(id)).resolves.toEqual({ status: 'executed' });
+        await executeAppAction({ type: 'stopMacroRecording', payload: { name: 'Edit and reverse' } });
+        const recorded = macroStore.value?.macros[0];
+        if (!recorded) {
+            throw new Error('Expected a saved macro');
+        }
+        expect(recorded.actions).toHaveLength(2);
+        if (!audio) {
+            expect(recorded.actions[1]).toMatchObject({ payload: { midiRowCoordinates: expect.any(Object) } });
+        }
+        if (mode === 'zero hints') {
+            expect(recorded.actions[1]).toMatchObject({
+                payload: kind === 'slip' ? { rowLiftBeats: 0 } : { midiOffsetBeats: 0, loopOriginBeat: null },
+            });
+        }
+        const serialized = JSON.stringify(recorded);
+        const saved: typeof recorded = JSON.parse(serialized);
+        macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+        if (mode === 'zero hints' && kind === 'trim') {
+            await executeAppAction(slip(5));
+        }
+        mutateCrdtDoc<{ tracks: TrackStoreState }>({
+            id: 'root',
+            changeFn: (document) => {
+                const clip = document.tracks.tracks[0]?.clips.find((candidate) => candidate.id === CLIP_ID);
+                if (!clip) {
+                    throw new Error('Expected the current clip');
+                }
+                clip.loopLength = mode === 'same loop' ? 8 : 4;
+                clip.loopEnabled = mode !== 'unlooped';
+                if (kind === 'trim') {
+                    clip.loopOriginBeat = 3;
+                }
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        const product = () => ({ rows: readRows(), clip: structuredClone(readClip()) });
+
+        for (let playback = 0; playback < 2; playback += 1) {
+            peerRows((state) => {
+                state.notesByClipId[CLIP_ID]![0]!.startBeat += playback * 0.125;
+                state.notesByClipId[CLIP_ID]![0]!.velocity = 42 + playback;
+                state.notesByClipId[CLIP_ID]![0]!.expression = { pressure: [{ offsetBeats: 0.125, value: 0.5 }] };
+                state.notesByClipId[CLIP_ID]!.push({
+                    id: `new-peer-${playback}`,
+                    startBeat: 0.2 + playback,
+                    pitch: 64,
+                    duration: 0.5,
+                    velocity: 80,
+                });
+                state.ccByClipId[CLIP_ID] = [
+                    { id: 'peer-cc', beat: 0.3 + playback, controller: 1, value: 42, channel: 2 },
+                ];
+                state.pitchBendByClipId[CLIP_ID]![0]!.beat += 0.25;
+                state.pitchBendByClipId[CLIP_ID]![0]!.value = -2048;
+                state.notesByClipId.other = [
+                    { id: 'unrelated', startBeat: 0.1, pitch: 67, duration: 0.5, velocity: 90 },
+                ];
+            });
+            const before = product();
+            const pastLength = undoStore.value!.past.length;
+            // Independent real producers use only public request fields. Undo
+            // their own executions to restore the identical macro prestate.
+            await executeAppAction(kind === 'slip' ? freshSlip(forwardOffset) : trim(2));
+            const freshFirst = product();
+            await executeAppAction(kind === 'slip' ? freshSlip(previousOffset) : trim(0));
+            const freshSecond = product();
+            await saveAndReload();
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(product()).toEqual(freshFirst);
+            await saveAndReload();
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(product()).toEqual(before);
+            expect(undoStore.value?.past).toHaveLength(pastLength);
+
+            await executeAppAction({ type: 'playMacro', payload: { macroId: saved.id } });
+            expect(product()).toEqual(freshSecond);
+            expect(undoStore.value?.past).toHaveLength(pastLength + 2);
+            const replayedEntries = undoStore.value!.past.slice(-2);
+            expect(replayedEntries.every((entry) => entry.groupId === undefined)).toBe(true);
+            expect(JSON.stringify(macroStore.value?.macros[0])).toBe(serialized);
+            await saveAndReload();
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(product()).toEqual(freshFirst);
+            expect(undoStore.value?.past).toHaveLength(pastLength + 1);
+            await saveAndReload();
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(product()).toEqual(before);
+            expect(undoStore.value?.past).toHaveLength(pastLength);
+            expect(undoStore.value?.future).toHaveLength(2);
+            await saveAndReload();
+            await redo();
+            expect(product()).toEqual(freshFirst);
+            await saveAndReload();
+            await redo();
+            expect(product()).toEqual(freshSecond);
+            expect(undoStore.value?.past).toHaveLength(pastLength + 2);
+            expect(undoStore.value?.future).toHaveLength(0);
+        }
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
 
     it('keeps aliased capability reversions coherent when both original entries replay with peers and reload', async () => {
         seed();

@@ -1289,6 +1289,15 @@ hydration binding or abort metadata restoration must fail the case that claims i
 CRDT and projected-store equality; audible equivalence and tolerance assertions cannot prove
 exact stored restoration.
 
+For the [macro restoration-hint escape](./moving-coordinate-inverses.md#fresh-macro-commands-must-discard-inverse-restoration-hints)
+introduced by PR #5495 and PR #5578, a fixture's expected result must come from
+independent real public commands, not retained inverse fields or the normalization
+helper under test. Record public history reversion, serialize it, change loop
+basis or anchor, and run both routes from an exactly restored common prestate.
+Compare full rows and clip state, then check each saved Undo/Redo checkpoint.
+Include zero and null restoration hints; keeping only those scalar hints while
+stripping coordinate captures must fail the unchanged macro comparison.
+
 ### 2026-09-30 — exact payload assertions preserved uncompensable MIDI transforms (escaped at 64b9d77c01a)
 
 PR #939 (`90953dc23e0`) asserted the shared transform helper's complete inverse and redo payloads and
