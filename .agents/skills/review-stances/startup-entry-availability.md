@@ -12,8 +12,10 @@ independent readable fallback and, when automatic recovery is offered, one real 
 navigation followed by unconditional application readiness. Hold a speculative request until
 its script element is parsed: raw request counts alone can mistake a parser refetch for recovery.
 Prove the generated entry identity and controller ordering in both source and built HTML under
-the unchanged production CSP. If the independent controller also fails, native browser Reload
-instructions must remain usable without a misleading inactive button.
+the unchanged production CSP. If the independent controller fails or stays pending, native browser
+Reload instructions must remain visible without a misleading inactive button. Hold its download
+while the parsed entry's real network request fails, then release it and require recovery through
+a changed document lifetime; parser availability must not sacrifice resource-error ordering.
 
 Require a persistent failure to stop at an accessible manual Reload surface, preserving the full
 URL. Unrelated resource errors must not spend the retry budget. Mark entry-body start before

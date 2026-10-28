@@ -49,7 +49,7 @@
         button.hidden = false;
     }
 
-    // Install before the module element is parsed, independently of its graph.
+    // This independent deferred script runs before the later module entry.
     window.addEventListener(
         'error',
         (event) => {

@@ -25,7 +25,7 @@ async function readEntryUrl(page: Page): Promise<string> {
 }
 
 async function abortParsedEntry(route: Route, entryUrl: string): Promise<void> {
-    // The speculative scanner can fetch ahead of the parser-blocking controller.
+    // The speculative scanner can fetch before its module element is parsed.
     // Fail the pending request only once its real script element owns that fetch.
     await route
         .request()
@@ -100,6 +100,67 @@ test('persistent entry failure stops after one retry and manual Reload preserves
     await page.waitForLoadState('networkidle');
     expect(attempts).toBe(3);
     expect(page.url()).toBe(url);
+});
+
+test('a pending recovery controller leaves fallback readable and catches an already failed entry after release', async ({
+    page,
+}) => {
+    await enable_direct_e2e_viewport(page);
+    const entryUrl = await readEntryUrl(page);
+    let releaseController = (): void => undefined;
+    const controllerAllowed = new Promise<void>((resolve) => {
+        releaseController = resolve;
+    });
+    let controllerPending = false;
+    let entryAttempts = 0;
+    let firstTimeOrigin: number | undefined;
+    const entryFailures: string[] = [];
+    page.on('requestfailed', (request) => {
+        if (request.url() === entryUrl) {
+            entryFailures.push(request.failure()?.errorText ?? 'unknown failure');
+        }
+    });
+    await page.route('**/entryLoadRecovery.js', async (route) => {
+        controllerPending = true;
+        await controllerAllowed;
+        controllerPending = false;
+        await route.continue();
+    });
+    await page.route(entryUrl, async (route) => {
+        entryAttempts += 1;
+        if (entryAttempts === 1) {
+            firstTimeOrigin = await route
+                .request()
+                .frame()
+                .evaluate(() => performance.timeOrigin);
+            await abortParsedEntry(route, entryUrl);
+            return;
+        }
+        await route.continue();
+    });
+    try {
+        await page.goto('/', { waitUntil: 'commit' });
+        await expect(page.getByRole('status', { name: 'Starting Sourdaw' })).toBeVisible();
+        await expect(
+            page.getByText("If this screen remains, use your browser's Reload to try starting Sourdaw again.")
+        ).toBeVisible();
+        await expect.poll(() => entryFailures).toEqual(['net::ERR_ABORTED']);
+        expect(controllerPending).toBe(true);
+        expect(entryAttempts).toBe(1);
+        expect(await page.evaluate((key) => sessionStorage.getItem(key), RETRY_KEY)).toBeNull();
+        expect(await page.evaluate(() => document.documentElement.hasAttribute('data-sourdaw-entry-started'))).toBe(
+            false
+        );
+
+        releaseController();
+        await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
+        expect(firstTimeOrigin).toBeDefined();
+        expect(await page.evaluate(() => performance.timeOrigin)).not.toBe(firstTimeOrigin);
+        expect(entryAttempts).toBe(2);
+        expect(await page.evaluate((key) => sessionStorage.getItem(key), RETRY_KEY)).toBe('used');
+    } finally {
+        releaseController();
+    }
 });
 
 test('an unrelated script error before entry execution cannot consume the retry budget', async ({ page }) => {
