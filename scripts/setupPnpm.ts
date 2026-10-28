@@ -225,15 +225,69 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     return { bin, dest, version };
 }
 
+export function preparePnpmNode(node: string): string[] {
+    const nodeBin = dirname(node);
+    const corepackDist =
+        process.platform === 'win32'
+            ? join(nodeBin, 'node_modules/corepack/dist')
+            : resolve(nodeBin, '../lib/node_modules/corepack/dist');
+    const extensions = process.platform === 'win32' ? ['', '.cmd', '.ps1'] : [''];
+    const owned: string[] = [];
+    for (const name of ['pnpm', 'pnpx']) {
+        for (const extension of extensions) {
+            const file = join(nodeBin, `${name}${extension}`);
+            let stat;
+            try {
+                stat = lstatSync(file);
+            } catch (error) {
+                if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+                throw error;
+            }
+            // Corepack disable unlinks names blindly. Admit the whole affected set
+            // before invoking it, so an unrelated launcher is never removed.
+            if (!stat.isSymbolicLink() || realpathSync(file) !== realpathSync(join(corepackDist, `${name}.js`))) {
+                throw new Error(`Refusing to remove an unrecognized Node package-manager launcher: ${file}`);
+            }
+            owned.push(file);
+        }
+    }
+    if (owned.length === 0) return [];
+    const env = Object.fromEntries(
+        Object.entries(process.env).filter(([name]) => !/^(npm_|pnpm_|corepack_|node_options$|node_path$)/i.test(name))
+    );
+    const result = nativeCommand(
+        node,
+        [join(corepackDist, 'corepack.js'), 'disable', 'pnpm', '--install-directory', nodeBin],
+        { cwd: nodeBin, env: { ...env, COREPACK_ENABLE_NETWORK: '0' } }
+    );
+    if (result.status !== 0) throw new Error("Could not disable the selected Node installation's Corepack shims");
+    for (const file of owned) {
+        try {
+            lstatSync(file);
+        } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+            throw error;
+        }
+        throw new Error(`Corepack left a package-manager launcher in the selected Node directory: ${file}`);
+    }
+    return owned;
+}
+
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-    const workspace = process.env.GITHUB_WORKSPACE;
-    if (!workspace) throw new Error('pnpm setup requires GITHUB_WORKSPACE');
-    const result = setupPnpm({
-        workspace,
-        manifest: process.env.SOURDAW_PNPM_MANIFEST ?? 'package.json',
-        dest: process.env.SOURDAW_PNPM_DEST,
-        env: process.env,
-        node: process.execPath,
-    });
-    console.log(`Verified JavaScript pnpm ${result.version}`);
+    if (process.argv[2] === '--prepare-node') {
+        if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('Node preparation is restricted to the CI action');
+        preparePnpmNode(process.execPath);
+        console.log('Selected Node installation cannot shadow the verified pnpm target');
+    } else {
+        const workspace = process.env.GITHUB_WORKSPACE;
+        if (!workspace) throw new Error('pnpm setup requires GITHUB_WORKSPACE');
+        const result = setupPnpm({
+            workspace,
+            manifest: process.env.SOURDAW_PNPM_MANIFEST ?? 'package.json',
+            dest: process.env.SOURDAW_PNPM_DEST,
+            env: process.env,
+            node: process.execPath,
+        });
+        console.log(`Verified JavaScript pnpm ${result.version}`);
+    }
 }

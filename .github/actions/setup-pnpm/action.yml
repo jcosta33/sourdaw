@@ -20,6 +20,8 @@ runs:
       with:
         node-version: 24.19.0
         package-manager-cache: false
+    - shell: bash
+      run: node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts" --prepare-node
     - id: install
       shell: bash
       env:

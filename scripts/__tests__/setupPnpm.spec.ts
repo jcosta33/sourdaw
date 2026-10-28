@@ -1,11 +1,21 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
 
-import { setupPnpm, type SetupPnpmOptions } from '../setupPnpm';
+import { preparePnpmNode, setupPnpm, type SetupPnpmOptions } from '../setupPnpm';
 
 const directories: string[] = [];
 const repository = resolve(import.meta.dirname, '../..');
@@ -306,9 +316,95 @@ writeFileSync(join(process.cwd(),'node_modules/pnpm/bin/pnpm.mjs'),${JSON.string
                         uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
                         with: { 'node-version': '24.19.0', 'package-manager-cache': false },
                     },
+                    { run: 'node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts" --prepare-node' },
                     { run: 'node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts"' },
                 ],
             },
         });
+    });
+});
+
+function nodeFixture() {
+    const root = mkdtempSync(join(tmpdir(), 'pnpm-node-preparation-'));
+    directories.push(root);
+    const bin = join(root, 'node-bin');
+    mkdirSync(bin);
+    const node = join(bin, process.platform === 'win32' ? 'node.exe' : 'node');
+    symlinkSync(process.execPath, node);
+    const corepack =
+        process.platform === 'win32'
+            ? join(bin, 'node_modules/corepack')
+            : resolve(bin, '../lib/node_modules/corepack');
+    const official =
+        process.platform === 'win32'
+            ? join(dirname(process.execPath), 'node_modules/corepack')
+            : resolve(dirname(process.execPath), '../lib/node_modules/corepack');
+    mkdirSync(dirname(corepack), { recursive: true });
+    symlinkSync(official, corepack, 'dir');
+    for (const name of ['npm', 'npx', 'yarn', 'unrelated']) writeFileSync(join(bin, name), `preserve ${name}`);
+    const link = (name: string) => symlinkSync(join(corepack, 'dist', `${name}.js`), join(bin, name));
+    return { root, bin, node, link };
+}
+
+describe('selected Node package-manager precedence', () => {
+    it('does nothing when the selected Node has no package-manager aliases', () => {
+        const input = nodeFixture();
+        expect(preparePnpmNode(input.node)).toEqual([]);
+        expect(readFileSync(join(input.bin, 'npm'), 'utf8')).toBe('preserve npm');
+    });
+
+    it('removes only known Corepack shims so outer Node PATH prepend still queries the verified target cache', () => {
+        const input = nodeFixture();
+        input.link('pnpm');
+        input.link('pnpx');
+        const target = join(input.root, 'verified-bin');
+        mkdirSync(target);
+        writeFileSync(join(target, 'pnpm'), '#!/bin/sh\nprintf "verified-target-store\\n"\n');
+        chmodSync(join(target, 'pnpm'), 0o755);
+        writeFileSync(join(input.root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@11.6.0' }));
+        const query = () =>
+            spawnSync('bash', ['-c', 'pnpm store path --silent'], {
+                cwd: input.root,
+                env: {
+                    ...process.env,
+                    PATH: [input.bin, target, process.env.PATH].join(delimiter),
+                    COREPACK_HOME: join(input.root, 'empty-corepack-home'),
+                    COREPACK_ENABLE_NETWORK: '0',
+                },
+                encoding: 'utf8',
+            });
+        const before = query();
+        expect(before.status).not.toBe(0);
+        expect(before.stderr).toContain('Network access disabled');
+        expect(preparePnpmNode(input.node)).toEqual([join(input.bin, 'pnpm'), join(input.bin, 'pnpx')]);
+        expect(existsSync(join(input.bin, 'pnpm'))).toBe(false);
+        expect(existsSync(join(input.bin, 'pnpx'))).toBe(false);
+        const after = query();
+        expect(after.status).toBe(0);
+        expect(after.stdout.trim()).toBe('verified-target-store');
+        for (const name of ['npm', 'npx', 'yarn', 'unrelated']) {
+            expect(readFileSync(join(input.bin, name), 'utf8')).toBe(`preserve ${name}`);
+        }
+    });
+
+    it('refuses a foreign launcher before deleting any recognized peer', () => {
+        const input = nodeFixture();
+        input.link('pnpm');
+        writeFileSync(join(input.bin, 'pnpx'), 'foreign launcher');
+        expect(() => preparePnpmNode(input.node)).toThrow('unrecognized Node package-manager launcher');
+        expect(existsSync(join(input.bin, 'pnpm'))).toBe(true);
+        expect(readFileSync(join(input.bin, 'pnpx'), 'utf8')).toBe('foreign launcher');
+    });
+
+    it('refuses a foreign symlink without removing either the link or its target', () => {
+        const input = nodeFixture();
+        const foreign = join(input.root, 'foreign.js');
+        writeFileSync(foreign, 'preserve foreign target');
+        symlinkSync(foreign, join(input.bin, 'pnpm'));
+        input.link('pnpx');
+        expect(() => preparePnpmNode(input.node)).toThrow('unrecognized Node package-manager launcher');
+        expect(existsSync(join(input.bin, 'pnpm'))).toBe(true);
+        expect(existsSync(join(input.bin, 'pnpx'))).toBe(true);
+        expect(readFileSync(foreign, 'utf8')).toBe('preserve foreign target');
     });
 });
