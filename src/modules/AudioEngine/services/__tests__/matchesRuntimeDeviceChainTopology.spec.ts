@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { asAudioNode, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
-import { matchesRuntimeDeviceChainTopology } from '../matchesRuntimeDeviceChainTopology';
+import { matchesRuntimeDeviceChainTopology, projectPersistentRuntimeDevices } from '../matchesRuntimeDeviceChainTopology';
 
 import type { BuiltinDeviceNode, TrackChannelStrip } from '../../models/AudioEngineState';
 import type { RuntimeGraphDeltaDevice, RuntimeGraphDeltaNode } from '../../models/RuntimeGraphDelta';
@@ -284,4 +284,20 @@ describe('matchesRuntimeDeviceChainTopology', () => {
             )
         ).toBe(false);
     });
+
+    it('projects only scheduled slots while retaining the original full project/native device records', () => {
+        const expected = createExpectedTopology('track-1', [
+            { id: 'synth', type: 'builtin-synth', parameterIds: ['level'] },
+            { id: 'eq', type: 'builtin-eq', parameterIds: ['gain'] },
+            { id: 'drums', type: 'builtin-drum-kit', parameterIds: [] },
+            { id: 'required', type: 'unknown-device', parameterIds: ['mix'] },
+        ]);
+        const before = structuredClone(expected);
+        const projected = projectPersistentRuntimeDevices(expected.devices);
+        expect(projected.map((device) => device.id)).toEqual(['eq', 'required']);
+        expect(projected[0]).toBe(expected.devices[1]);
+        expect(projected[1]).toBe(expected.devices[3]);
+        expect(expected).toEqual(before);
+    });
+
 });

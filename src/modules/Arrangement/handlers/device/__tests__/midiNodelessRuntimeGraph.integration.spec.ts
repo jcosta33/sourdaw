@@ -22,6 +22,7 @@ import {
 
 import { type Device, type Track, trackStore } from '../../../stores/trackStore';
 import { createTrack } from '../../../useCases/createTrack';
+import { applyDeviceChainRuntimeDelta } from '../../../useCases/device/applyDeviceChainRuntimeDelta';
 import { compileReorderDevicesAction } from '../../../useCases/device/compileReorderDevicesAction';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { projectTrackToLiveStrip } from '../../../useCases/projectTrackToLiveStrip';
@@ -102,9 +103,9 @@ function liveIds(): string[] {
     return audioEngine.getTrackStrip('midi')?.deviceNodes.map((device) => device.deviceId) ?? [];
 }
 
-function warmProject(): { track: Track; bus: Track; instrument: Device } {
+function warmProject(instrumentType = 'builtin-synth'): { track: Track; bus: Track; instrument: Device } {
     const track = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi', withoutDefaultDevice: true });
-    const instrument: Device = { id: 'synth', name: 'Synth', type: 'builtin-synth', bypassed: false, parameterValues: {} };
+    const instrument: Device = { id: 'synth', name: 'Synth', type: instrumentType, bypassed: false, parameterValues: {} };
     const compressor: Device = { id: 'comp', name: 'Compressor', type: 'builtin-compressor', bypassed: false, parameterValues: { threshold: -18 } };
     track.devices = [instrument, eq('eq'), compressor];
     const bus = createTrack({ id: 'bus', name: 'Bus', kind: 'bus' });
@@ -155,12 +156,13 @@ afterEach(() => {
     stopProjection = undefined;
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
+    removeCrdtDoc('revision-change');
     vi.restoreAllMocks();
 });
 
-describe('note-scheduled instruments alongside persistent runtime devices', () => {
+describe.each(['builtin-synth', 'builtin-drum-kit'])('%s alongside persistent runtime devices', (instrumentType) => {
     it('routes a warm Synth/EQ/compressor strip to a verified bus through the actual output writer', () => {
-        const { track, bus } = warmProject();
+        const { track, bus } = warmProject(instrumentType);
         expect(setTrackOutput(track.id, bus.id)).toBe(true);
         expect(currentTrack().outputId).toBe(bus.id);
         expect(currentTrack().devices.map((device) => device.id)).toEqual(['synth', 'eq', 'comp']);
@@ -172,7 +174,7 @@ describe('note-scheduled instruments alongside persistent runtime devices', () =
     });
 
     it('reorders real persistent effects around Synth and retains full project/native chains through Undo and Redo', async () => {
-        const { track } = warmProject();
+        const { track } = warmProject(instrumentType);
         const before = audioEngine.getTrackStrip(track.id);
         const eqNode = before?.deviceNodes[0];
         const compNode = before?.deviceNodes[1];
@@ -195,7 +197,7 @@ describe('note-scheduled instruments alongside persistent runtime devices', () =
     });
 
     it('restores a mixed Synth/effect preset chain with actual constructors and complete native input', async () => {
-        const { track, instrument } = warmProject();
+        const { track, instrument } = warmProject(instrumentType);
         const oldNodes = audioEngine.getTrackStrip(track.id)?.deviceNodes;
         await expect(executeAppAction({
             type: 'restorePresetDeviceChain',
@@ -209,5 +211,118 @@ describe('note-scheduled instruments alongside persistent runtime devices', () =
         expect(replacement).not.toBe(oldNodes?.[0]);
         expect(removed.mock.calls.map(([payload]) => payload.deviceId)).toEqual(['eq', 'comp']);
         expect(vi.mocked(mirrorDeviceChainDelta).mock.calls.at(-1)?.[0].after.devices.map((device) => device.id)).toEqual(['synth', 'replacement-eq']);
+    });
+});
+
+
+function publishAfter(after: Track, bus: Track): void {
+    trackStore.set({ tracks: [after, bus], selectedTrackId: after.id });
+    flushAutomergeStorageWrites();
+}
+
+function outputDelta(track: Track, bus: Track) {
+    return {
+        schemaVersion: 1,
+        command: 'set-track-output',
+        correlation: { appRevision: audioEngine.getRuntimeGraphRevision(), projectRevision: captureProjectRevision() },
+        nodes: [runtimeGraphTopology.createNode(track), runtimeGraphTopology.createNode(bus)],
+        edges: [{ kind: 'output', sourceId: track.id, targetId: bus.id }],
+        parameters: [],
+    };
+}
+
+describe('persistent runtime identity and failure boundaries', () => {
+    it.each(['id', 'type', 'parameters', 'instance', 'target parameters'] as const)(
+        'refuses a real live %s mismatch before changing output', (mismatch) => {
+            const { track, bus } = warmProject();
+            const strip = audioEngine.getTrackStrip(mismatch === 'target parameters' ? bus.id : track.id);
+            const device = strip?.deviceNodes[0];
+            if (!device) {
+                throw new Error('Expected the real persistent node for the mismatch fixture');
+            }
+            if (mismatch === 'id') {
+                device.deviceId = 'foreign-eq';
+            } else if (mismatch === 'type') {
+                device.type = 'builtin-filter';
+            } else if (mismatch === 'instance') {
+                device.externalInstanceId = 'foreign-instance';
+            } else {
+                device.parameterIds = ['foreign-parameter'];
+            }
+            const source = audioEngine.getTrackStrip(track.id);
+            const destination = audioEngine.getTrackStrip(bus.id);
+            expect(audioEngine.applyRuntimeGraphDelta(outputDelta(track, bus))).toMatchObject({ acceptance: 'rejected', application: 'not-applied', reason: expect.stringContaining('does not match') });
+            expect(source?.outputId).toBe('master');
+            expect(audio.edges.get(source!.carrierGate)?.has(destination!.gainNode)).toBe(false);
+        }
+    );
+
+    it.each(['runtime', 'project', 'topology', 'duplicate owner', 'ABA'] as const)(
+        'retains %s output authority instead of letting projection discharge a stale delta', (state) => {
+            const { track, bus } = warmProject();
+            const delta = outputDelta(track, bus);
+            if (state === 'runtime') {
+                audioEngine.ensureTrackStrip('another');
+            } else if (state === 'project') {
+                createCrdtDoc('revision-change');
+            } else if (state === 'topology') {
+                publishAfter({ ...track, devices: track.devices.slice(0, 2) }, bus);
+            } else if (state === 'duplicate owner') {
+                trackStore.set({ tracks: [track, bus, { ...track, name: 'Duplicate owner' }], selectedTrackId: null });
+                flushAutomergeStorageWrites();
+            } else {
+                const oldStrip = audioEngine.getTrackStrip(track.id);
+                audioEngine.removeTrackStrip(track.id);
+                expect(projectTrackToLiveStrip({ trackId: track.id })).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+                expect(audioEngine.getTrackStrip(track.id)).not.toBe(oldStrip);
+            }
+            expect(audioEngine.applyRuntimeGraphDelta(delta)).toMatchObject({ acceptance: 'rejected', application: 'not-applied' });
+            expect(audioEngine.getTrackStrip(track.id)?.outputId).toBe('master');
+        }
+    );
+
+    it('does not announce a retained device id as removed when replacement rebuilds its physical node', () => {
+        const { track, bus, instrument } = warmProject();
+        const oldEq = audioEngine.getTrackStrip(track.id)?.deviceNodes[0];
+        const after = { ...track, devices: [instrument, eq('eq')] };
+        publishAfter(after, bus);
+        expect(applyDeviceChainRuntimeDelta({ before: track, after, operation: 'replace-device-chain' })).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        expect(liveIds()).toEqual(['eq']);
+        expect(audioEngine.getTrackStrip(track.id)?.deviceNodes[0]).not.toBe(oldEq);
+        expect(removed.mock.calls.map(([payload]) => payload.deviceId)).toEqual(['comp']);
+        expect(vi.mocked(mirrorDeviceChainDelta).mock.calls.at(-1)?.[0].after.devices.map((device) => device.id)).toEqual(['synth', 'eq']);
+    });
+
+    it.each(['unknown device', 'physical constructor failure'] as const)(
+        'reports actual partial replacement for %s and withholds the native mirror', (failure) => {
+            const { track, bus, instrument } = warmProject();
+            let replacement = eq('replacement-eq');
+            if (failure === 'unknown device') {
+                replacement = { ...replacement, type: 'unregistered-physical-device' };
+            } else {
+                vi.spyOn(audio.context, 'createBiquadFilter').mockImplementationOnce(() => {
+                    throw new Error('Physical Biquad constructor rejected');
+                });
+            }
+            const after = { ...track, devices: [instrument, replacement] };
+            publishAfter(after, bus);
+            expect(applyDeviceChainRuntimeDelta({ before: track, after, operation: 'replace-device-chain' })).toMatchObject({ acceptance: 'accepted', application: 'needs-reconcile', reason: expect.stringContaining('partially changed') });
+            expect(currentTrack().devices.map((device) => device.id)).toEqual(['synth', 'replacement-eq']);
+            expect(liveIds()).toEqual([]);
+            expect(removed.mock.calls.map(([payload]) => payload.deviceId)).toEqual(['eq', 'comp']);
+            expect(mirrorDeviceChainDelta).not.toHaveBeenCalled();
+        }
+    );
+
+    it('keeps instrument-only Web Audio discharge while forwarding the complete native chain', () => {
+        const { track, bus, instrument } = warmProject();
+        const drum: Device = { ...instrument, id: 'drum', type: 'builtin-drum-kit', name: 'Drums' };
+        const after = { ...track, devices: [instrument, drum, ...track.devices.slice(1)] };
+        publishAfter(after, bus);
+        const writer = vi.spyOn(audioEngine, 'applyRuntimeGraphDelta');
+        expect(applyDeviceChainRuntimeDelta({ before: track, after, operation: 'add-device' })).toMatchObject({ acceptance: 'superseded', application: 'discharged' });
+        expect(writer).not.toHaveBeenCalled();
+        expect(liveIds()).toEqual(['eq', 'comp']);
+        expect(vi.mocked(mirrorDeviceChainDelta).mock.calls.at(-1)?.[0].after.devices.map((device) => device.id)).toEqual(['synth', 'drum', 'eq', 'comp']);
     });
 });
