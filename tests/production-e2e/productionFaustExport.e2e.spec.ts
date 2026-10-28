@@ -402,7 +402,9 @@ test('production Faust plays and exports after slow native loading, refuses a na
         await app.locator('#launch-demo-project').click();
         await app.getByRole('button', { name: /Nebula Drift/i }).click();
         await holdAndRelease(frame, 'live');
-        await expect(app.getByRole('button', { name: 'Nebula Drift', exact: true })).toBeVisible({ timeout: 90_000 });
+        await expect(app.getByRole('button', { name: 'Nebula Drift (Demo)', exact: true })).toBeVisible({
+            timeout: 90_000,
+        });
         await setShortLoop(page, app);
         await app.getByRole('button', { name: 'Play', exact: true }).click();
         await expect
