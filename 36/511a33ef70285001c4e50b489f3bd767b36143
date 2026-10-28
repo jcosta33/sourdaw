@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_3168504f6ce387::t_0f6f9f9b743588 386-395
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_3168504f6ce387::t_ae133ba36253f0 394-396
+  s_3168504f6ce387::t_45d6acb1ad7b93 399-410
+  s_3168504f6ce387::t_1b6e3931a8bf42 398,411-412
+  s_3168504f6ce387::t_0f6f9f9b743588 413-415
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/explainRouteTools.spec.ts
+  s_3168504f6ce387::t_2df02a2804f55e 52,55,57,268-272,276-278,282-293,299-301,319
+  s_3168504f6ce387::t_b9a683c38f6634 8,11-12,353-371,377-385
+  s_3168504f6ce387::t_94f29d53445387 320-334,339-341,345-352
+  s_3168504f6ce387::t_1721f7fea0a300 273-275,279-281,294-298,302-318,335-338,342-344,372-376
+  s_3168504f6ce387::t_20fab31c80c818 386-387
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_3168504f6ce387::t_0f6f9f9b743588 4-5,259-263,269-274
+  s_3168504f6ce387::t_45d6acb1ad7b93 264-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "36511a33ef70285001c4e50b489f3bd767b36143",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
