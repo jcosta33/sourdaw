@@ -176,13 +176,17 @@ function pruneStrings(factored: JsonObject): JsonObject {
     const counts = strings.map(() => 0);
     function count(node: Json): void {
         if (Array.isArray(node)) {
-            node.forEach(count);
+            for (const child of node) {
+                count(child);
+            }
         } else if (node !== null && typeof node === 'object') {
             const keys = Object.keys(node);
             if (keys.length === 1 && keys[0] === '$s' && typeof node.$s === 'number') {
                 counts[node.$s] = (counts[node.$s] ?? 0) + 1;
             } else {
-                Object.values(node).forEach(count);
+                for (const child of Object.values(node)) {
+                    count(child);
+                }
             }
         }
     }

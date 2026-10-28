@@ -85,7 +85,7 @@ it('bounds factoring work for cumulative real project and recipe receipts', asyn
         },
     });
     trackStore.set({
-        tracks: [createTrack({ id: trackId, name: 'Lead Vocal' })],
+        tracks: [createTrack({ id: trackId, name: 'Lead Vocal', kind: 'audio' })],
         selectedTrackId: trackId,
         ghostClips: [],
     });
