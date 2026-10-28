@@ -413,6 +413,22 @@ shared sounding owner. Charge every PCM holder to the normalized budget; never f
 remaining budget to a lower helper that independently normalizes it to one. This is an entry
 count contract, not a browser deallocation-time or audio-deadline measurement.
 
+### Timeline-bake writer spies missed partial project commits
+
+PR #474's exporter spec checked direct writer calls while a new groove-projection refusal could
+occur after an earlier clip was added. Those spies could not establish atomic project truth or a
+single Undo; historical private review prompts and tiers are unknown.
+
+Run the real Command and CRDT batch with at least two active pad lanes. Reject or freeze the later
+lane and compare the raw document, projected stores and history before and after. On success require
+one grouped Undo to remove both lanes and Redo to restore them. Replace the batch with the prior
+direct per-pad writers and require the later-lane case to fail.
+
+A separate warning failure was caught in #5798 review before merge: the batch committed but the
+history port failed, and the caller returned success without its warning. Inject that failure through
+the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
+that identifies the committed result. Do not describe that finding as the #474 main escape.
+
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
 Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
