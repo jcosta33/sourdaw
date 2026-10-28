@@ -1,0 +1,26 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 427-432
+src/app/__tests__/midiPermissionRecovery.integration.spec.tsx
+  h_beb54bf43b47b7 1-96
+src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx
+  h_beb54bf43b47b7 1,26,29-33,40
+src/modules/AudioEngine/presentations/views/__tests__/MidiDevicePicker.spec.tsx
+  h_beb54bf43b47b7 119
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiCapabilityIntegration.spec.ts
+  h_beb54bf43b47b7 113
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  h_beb54bf43b47b7 270,278
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  h_beb54bf43b47b7 402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b60ab211e9796b37a0f973d8f5b223c5ff3e8e6d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
