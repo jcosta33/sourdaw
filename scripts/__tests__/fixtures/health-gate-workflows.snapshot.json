@@ -1377,7 +1377,9 @@
             "with": {
               "ref": "${{ github.event.pull_request.base.sha }}",
               "path": "trusted-scanner",
-              "persist-credentials": false
+              "persist-credentials": false,
+              "sparse-checkout": "/.gitleaks.toml\n/.gitleaksignore\n",
+              "sparse-checkout-cone-mode": false
             }
           },
           {
@@ -1386,14 +1388,14 @@
             "with": {
               "ref": "${{ github.event.pull_request.head.sha }}",
               "path": "scan-target",
-              "fetch-depth": 0,
+              "fetch-depth": 1,
               "persist-credentials": false
             }
           },
           {
             "name": "Fetch immutable base SHA",
             "working-directory": "scan-target",
-            "run": "git fetch --no-tags --depth=1 origin \"$BASE_SHA\""
+            "run": "set -euo pipefail\nif [ \"$(git rev-parse --is-shallow-repository)\" = true ]; then\n  git fetch --no-tags --no-recurse-submodules --unshallow origin \"$BASE_SHA\" \"$HEAD_SHA\"\nelse\n  git fetch --no-tags --no-recurse-submodules origin \"$BASE_SHA\" \"$HEAD_SHA\"\nfi\nif [ \"$(git rev-parse --is-shallow-repository)\" != false ]; then\n  printf 'PR secret scan requires complete pinned histories\\n' >&2\n  exit 1\nfi\ngit cat-file -e \"$BASE_SHA^{commit}\"\ngit cat-file -e \"$HEAD_SHA^{commit}\"\n"
           },
           {
             "name": "Install trusted Gitleaks",

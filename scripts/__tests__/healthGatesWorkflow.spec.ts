@@ -1011,7 +1011,9 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     if (
         trustedScanner.ref !== '${{ github.event.pull_request.base.sha }}' ||
         trustedScanner.path !== 'trusted-scanner' ||
-        trustedScanner['persist-credentials'] !== false
+        trustedScanner['persist-credentials'] !== false ||
+        trustedScanner['sparse-checkout'] !== '/.gitleaks.toml\n/.gitleaksignore\n' ||
+        trustedScanner['sparse-checkout-cone-mode'] !== false
     ) {
         throw new Error('pull-request scanner config must come from the trusted base and retain no credentials');
     }
@@ -1021,10 +1023,10 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     if (
         scanTarget.ref !== '${{ github.event.pull_request.head.sha }}' ||
         scanTarget.path !== 'scan-target' ||
-        scanTarget['fetch-depth'] !== 0 ||
+        scanTarget['fetch-depth'] !== 1 ||
         scanTarget['persist-credentials'] !== false
     ) {
-        throw new Error('pull-request scan target must retain the complete untrusted history without credentials');
+        throw new Error('pull-request scan target must bootstrap only the pinned head without credentials');
     }
     const scan = stringAt(stepNamed(prSecrets, 'Scan pull request diff for secrets'), 'run');
     if (!scan.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"')) {

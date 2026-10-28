@@ -349,6 +349,7 @@ const smoke = validationWorkflow.jobs?.smoke;
 const prSecrets = validationWorkflow.jobs?.['pr-secrets'];
 const prSecretsTrustedCheckout = stepNamed(prSecrets, 'Checkout trusted scanner');
 const prSecretsTargetCheckout = stepNamed(prSecrets, 'Checkout scan target');
+const prSecretsFetchRun = stepNamed(prSecrets, 'Fetch immutable base SHA')?.run ?? '';
 const prSecretsScanRun = stepNamed(prSecrets, 'Scan pull request diff for secrets')?.run ?? '';
 const prMergeControl = stepNamed(prSecrets, 'Validate PR merge diff secret scanner');
 const prMergeControlRun = prMergeControl?.run ?? '';
@@ -735,6 +736,8 @@ expect(
 );
 expect(
     prSecretsTrustedCheckout?.with?.ref === '${{ github.event.pull_request.base.sha }}' &&
+        prSecretsTrustedCheckout?.with?.['sparse-checkout'] === '/.gitleaks.toml\n/.gitleaksignore\n' &&
+        prSecretsTrustedCheckout?.with?.['sparse-checkout-cone-mode'] === false &&
         prSecretsTrustedCheckout?.with?.['persist-credentials'] === false,
     'diff secret scan must read its config from the trusted base revision without persisting credentials'
 );
@@ -743,9 +746,17 @@ expect(
 expect(
     prSecretsTargetCheckout?.with?.ref === '${{ github.event.pull_request.head.sha }}' &&
         prSecretsTargetCheckout?.with?.path === 'scan-target' &&
-        prSecretsTargetCheckout?.with?.['fetch-depth'] === 0 &&
+        prSecretsTargetCheckout?.with?.['fetch-depth'] === 1 &&
         prSecretsTargetCheckout?.with?.['persist-credentials'] === false,
-    'diff secret scan target must retain the complete untrusted history without persisting credentials'
+    'diff secret scan target must bootstrap only the pinned head without persisting credentials'
+);
+expect(
+    prSecretsFetchRun.includes('git fetch --no-tags --no-recurse-submodules --unshallow origin "$BASE_SHA" "$HEAD_SHA"') &&
+        prSecretsFetchRun.includes('git fetch --no-tags --no-recurse-submodules origin "$BASE_SHA" "$HEAD_SHA"') &&
+        prSecretsFetchRun.includes('if [ "$(git rev-parse --is-shallow-repository)" != false ]; then') &&
+        prSecretsFetchRun.includes('git cat-file -e "$BASE_SHA^{commit}"') &&
+        prSecretsFetchRun.includes('git cat-file -e "$HEAD_SHA^{commit}"'),
+    'diff secret scan must acquire complete pinned histories and refuse shallow or missing endpoints'
 );
 expect(
     prSecretsScanRun.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"'),
