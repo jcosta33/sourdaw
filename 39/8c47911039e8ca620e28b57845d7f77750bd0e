@@ -1,0 +1,58 @@
+scripts/resourceGuardStorage.ts
+  h_beb54bf43b47b7 120,147
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  h_beb54bf43b47b7 121
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  h_beb54bf43b47b7 1-388
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  h_beb54bf43b47b7 1-226
+src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts
+  h_beb54bf43b47b7 1-3,8,11-12,14-16,18-20,24,26-27,30-41,140,151,153,181,183,213-788
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  h_beb54bf43b47b7 1-377
+src/modules/AiRuntime/useCases/__tests__/planningInterpretation.spec.ts
+  h_beb54bf43b47b7 425,427-429,433
+src/modules/AiRuntime/useCases/admitMetricIntent.ts
+  h_beb54bf43b47b7 70-74,106,108
+src/modules/AiRuntime/useCases/admitPlanningInterpretation.ts
+  h_beb54bf43b47b7 19-33
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 10,26,97-100,199,202,2104,2203,2265-2285,2494-2509,2511,2520-2539
+src/modules/AiRuntime/useCases/createPlanningCandidateView.ts
+  h_beb54bf43b47b7 5,103-111,178-241,252-258
+src/modules/AiRuntime/useCases/createPlanningInterpretationToolSchema.ts
+  h_beb54bf43b47b7 92
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  h_beb54bf43b47b7 201-210,212-224,278-280
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  h_beb54bf43b47b7 2,17,406,419-422,427-451,453-455,457-459,462
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  h_beb54bf43b47b7 41,60,138-140,228-280,554,885-1136
+src/modules/AiRuntime/useCases/llmOrchestration/getHostedProposalWireToolSchema.ts
+  h_beb54bf43b47b7 63-64,66-73,77-88
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  h_beb54bf43b47b7 100,102,130-136,144-145,147,231-236,276-279,281,298,300,307,309,353,355
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 767,897,1054,1086-1087,1146-1170,1647-1650,1652,1673,1675,1684-1685,1687-1691
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  h_beb54bf43b47b7 74-76,88-90,99,101,125-127,168-170,182-184
+src/modules/AiRuntime/useCases/prepareMetricIntentCatalog.ts
+  h_beb54bf43b47b7 8,15-22,37-38,42,55-56,60,73-74,78,91-92,96,110-124,126-139,149-150,152,185-186,190,209-210
+src/modules/AiRuntime/useCases/projectAnswerProviderReceipt.ts
+  h_beb54bf43b47b7 28-61,66-77
+src/modules/AiRuntime/useCases/projectPlanningProviderToolSchemas.ts
+  h_beb54bf43b47b7 1-8,16-22,28-29,49-72
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  h_beb54bf43b47b7 358-360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "398c47911039e8ca620e28b57845d7f77750bd0e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
