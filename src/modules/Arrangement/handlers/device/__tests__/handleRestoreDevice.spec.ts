@@ -54,6 +54,18 @@ describe('handleRestoreDevice', () => {
         expect(result).toEqual({ status: 'written', afterCommit, afterAmbiguousCommit });
     });
 
+    it('passes the batch context through to the shared runtime composition boundary', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-vocal', devices: [{ id: 'eq' }] }] });
+        mocks.restoreDevice.mockReturnValue({
+            outcome: 'written',
+            afterCommit: vi.fn(),
+            afterAmbiguousCommit: vi.fn(),
+        });
+        const context = { actions: [restoreAction], actionIndex: 0 };
+        handleRestoreDevice.execute(restoreAction, context);
+        expect(mocks.restoreDevice.mock.calls[0]?.[1]).toEqual({ deferRuntimeEffects: true, batchContext: context });
+    });
+
     it('rejects an unrelated collaborator chain change before project or runtime mutation', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'track-vocal', devices: [{ id: 'eq' }, { id: 'collaborator-compressor' }] }],

@@ -19,16 +19,11 @@ import { executeRemoveDeviceAction } from '../executeRemoveDeviceAction';
 
 const mocks = vi.hoisted(() => ({
     applyDeviceChainRuntimeDelta: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
-    projectTrackToLiveStrip: vi.fn(),
     notifyUser: vi.fn(),
 }));
 
 vi.mock('../applyDeviceChainRuntimeDelta', () => ({
     applyDeviceChainRuntimeDelta: mocks.applyDeviceChainRuntimeDelta,
-}));
-
-vi.mock('../../projectTrackToLiveStrip', () => ({
-    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({

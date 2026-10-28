@@ -8,6 +8,7 @@ import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
 import { isFaustDeviceExportError, type FaustDeviceExportError } from '../errors/FaustDeviceExportError';
+import { isOfflineGrinderSetupError, type OfflineGrinderSetupError } from '../errors/OfflineGrinderSetupError';
 import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
@@ -242,7 +243,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
         // Ordinary per-track failures retain the existing partial-set warning.
         // A failed audible Faust device invalidates the whole musician export.
         const failures: { trackId: string; reason: string }[] = [];
-        let faustFailure: FaustDeviceExportError | undefined;
+        let requiredDeviceFailure: FaustDeviceExportError | OfflineGrinderSetupError | undefined;
 
         // Every read of "was this export cancelled" goes through this stem set's own scope signal
         // beside the shared flag. The export's finally lowers the flag, and a stem task still in
@@ -521,8 +522,8 @@ export const exportStems: ExportStemsFn = async function exportStems(
                                 reject(failure);
                                 return;
                             }
-                            if (isFaustDeviceExportError(error)) {
-                                faustFailure ??= error;
+                            if (isFaustDeviceExportError(error) || isOfflineGrinderSetupError(error)) {
+                                requiredDeviceFailure ??= error;
                             }
                             failures.push({ trackId: stemTrackId, reason: failure.message });
                             // This stem's slot is spent either way; without this
@@ -540,9 +541,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
         });
 
         // Settle every task and its teardown before releasing the export lock.
-        // A Faust refusal invalidates the whole requested set, including already-rendered stems.
-        if (faustFailure !== undefined) {
-            throw faustFailure;
+        // A required device refusal invalidates the whole requested set, including already-rendered stems.
+        if (requiredDeviceFailure !== undefined) {
+            throw requiredDeviceFailure;
         }
 
         if (failures.length > 0) {
