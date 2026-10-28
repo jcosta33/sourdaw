@@ -11,17 +11,18 @@ import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import * as command from '#/modules/Command/useCases';
 import { actionHistoryStore, agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
 import {
     captureProjectIdentity,
     clearActionHistory,
     createCrdtDoc,
     getCrdtDoc,
     markActionHistoryEntryReverted,
+    mutateCrdtDoc,
     projectCrdtToStores,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
     transactSnapshot,
@@ -188,7 +189,8 @@ async function holdRootSnapshot(replaceRoot: boolean) {
         release = resolve;
     });
     const transaction = transactSnapshot(async (snapshotTransaction) => {
-        automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, ['root']);
+        // Dirtying the root through its public mutation boundary fences outside writers.
+        mutateCrdtDoc({ id: 'root', changeFn: () => {}, snapshotTransaction });
         markStarted();
         await held;
         if (replaceRoot) {
@@ -196,11 +198,16 @@ async function holdRootSnapshot(replaceRoot: boolean) {
             if (!root) {
                 throw new Error('Expected root before replacement');
             }
-            automergeRepository.replaceDoc('root', clone(root), snapshotTransaction);
+            replaceCrdtDoc({ id: 'root', doc: clone(root), snapshotTransaction });
             projectCrdtToStores();
         }
     });
     await started;
+    const root = getCrdtDoc('root');
+    if (!root) {
+        throw new Error('Expected reserved root');
+    }
+    expect(() => replaceCrdtDoc({ id: 'root', doc: clone(root) })).toThrow('overlaps the active snapshot transaction');
     return { release, transaction };
 }
 

@@ -8,7 +8,8 @@ import { TrackVcaSection } from '../TrackVcaSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 const mockExecuteUserAppAction = vi.fn<(...args: unknown[]) => Promise<void>>();
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
 }));
 
