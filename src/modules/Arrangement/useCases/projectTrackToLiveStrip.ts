@@ -23,6 +23,7 @@ type ProjectTrackToLiveStripInput = {
     mode?: 'strip';
     trackId: string;
     deferSidechainWiring?: boolean;
+    deferSends?: boolean;
     activateDormantExternalPlugins?: boolean;
     onExternalPluginActivation?: (activation: ReturnType<typeof activateExternalPlugin>) => void;
 };
@@ -34,6 +35,13 @@ type ProjectDeviceControlsInput = {
     activateDormantExternalPlugins?: boolean;
     onExternalPluginActivation?: ProjectTrackToLiveStripInput['onExternalPluginActivation'];
 };
+
+type ProjectTrackSendsInput = {
+    mode: 'sends';
+    trackId: string;
+};
+
+type ProjectTrackSendsResult = { status: 'projected' } | { status: 'rejected'; reason: string };
 
 type ReplayDeviceToLiveStripInput = {
     trackId: string;
@@ -95,22 +103,38 @@ function acceptsRoutingEndpoint(tracks: readonly Track[], targetId: string): boo
     return target ? getTrackEligibility(target.kind).acceptsRoutingEndpoint : false;
 }
 
+function replayTrackSends(track: Track, tracks: readonly Track[]): void {
+    for (const send of track.sends) {
+        if (acceptsRoutingEndpoint(tracks, send.busId)) {
+            setSend(track.id, send.busId, send.level, send.preFader);
+        }
+    }
+}
+
+export function projectTrackToLiveStrip(input: ProjectTrackSendsInput): ProjectTrackSendsResult;
 export function projectTrackToLiveStrip(input: ProjectDeviceControlsInput): void;
 export function projectTrackToLiveStrip(
     input: ProjectTrackToLiveStripInput
 ): ReturnType<typeof initializeTrackStripFromSnapshot> | undefined;
 export function projectTrackToLiveStrip(
-    input: ProjectTrackToLiveStripInput | ProjectDeviceControlsInput
-): ReturnType<typeof initializeTrackStripFromSnapshot> | undefined {
-    const { trackId, activateDormantExternalPlugins = false, onExternalPluginActivation } = input;
+    input: ProjectTrackToLiveStripInput | ProjectDeviceControlsInput | ProjectTrackSendsInput
+): ReturnType<typeof initializeTrackStripFromSnapshot> | ProjectTrackSendsResult | undefined {
+    const { trackId } = input;
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
-        return undefined;
+        return input.mode === 'sends' ? { status: 'rejected', reason: 'Project tracks are unavailable' } : undefined;
     }
     const track = findUniqueTrack(tracks, trackId);
     if (!track || !shouldCreateLiveTrackStrip(track)) {
-        return undefined;
+        return input.mode === 'sends'
+            ? { status: 'rejected', reason: `Track ${trackId} has no unique eligible routing owner` }
+            : undefined;
     }
+    if (input.mode === 'sends') {
+        replayTrackSends(track, tracks);
+        return { status: 'projected' };
+    }
+    const { activateDormantExternalPlugins = false, onExternalPluginActivation } = input;
 
     if (input.mode === 'device-controls') {
         const target = resolveEligibleDeviceWriteTarget(input.deviceId);
@@ -126,7 +150,7 @@ export function projectTrackToLiveStrip(
         replayDeviceToLiveStrip({ trackId, device, activateDormantExternalPlugins, onExternalPluginActivation });
         return undefined;
     }
-    const { deferSidechainWiring = false } = input;
+    const { deferSidechainWiring = false, deferSends = false } = input;
 
     const audioDevices = track.devices.filter((device) => device.type !== 'yeast');
     for (const device of audioDevices) {
@@ -160,10 +184,8 @@ export function projectTrackToLiveStrip(
         });
     }
 
-    for (const send of track.sends) {
-        if (acceptsRoutingEndpoint(tracks, send.busId)) {
-            setSend(track.id, send.busId, send.level, send.preFader);
-        }
+    if (!deferSends) {
+        replayTrackSends(track, tracks);
     }
     if (!deferSidechainWiring) {
         wireSidechainRoutes();

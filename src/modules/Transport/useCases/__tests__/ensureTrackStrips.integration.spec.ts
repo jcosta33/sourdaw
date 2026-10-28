@@ -55,6 +55,13 @@ describe('project strip initialization before bus facade and send publication', 
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         audioEngine.resetGraph();
+        const WorkletNode = globalThis.AudioWorkletNode;
+        vi.stubGlobal('AudioWorkletNode', class extends WorkletNode {
+            constructor(...args: ConstructorParameters<typeof WorkletNode>) {
+                super(...args);
+                this.port.close = vi.fn();
+            }
+        });
         platform = createMockAudioContext();
         edges = new Map();
         privateConstruction = [];
@@ -117,6 +124,7 @@ describe('project strip initialization before bus facade and send publication', 
         removeCrdtDoc('root');
         removeCrdtDoc('revision-change');
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
         for (const key of Object.keys(Object.getOwnPropertyDescriptors(audioEngine.context))) {
             const original = originalContextProperties[key];
             if (original) Object.defineProperty(audioEngine.context, key, original);

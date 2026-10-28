@@ -9,7 +9,7 @@
 
 import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/stores';
 import { applySoloLogic, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
-import { ensureBusStrip, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
+import { ensureBusStrip, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['tracks']): boolean {
     return tracks.some(
@@ -68,32 +68,34 @@ export function ensureTrackStrips(input?: { collectExternalPluginActivations?: b
     const busTracks = tracks.filter((track) => track.kind === 'bus');
     const liveTracks = tracks.filter(shouldCreateLiveTrackStrip);
 
-    for (const bus of busTracks) {
-        ensureBusStrip(bus.id);
-    }
-
-    for (const bus of busTracks) {
-        setBusGain(bus.id, bus.gain);
-    }
-
     const externalPluginActivations: Promise<{ status: 'active' } | { status: 'failed'; reason: string }>[] = [];
     for (const track of orderLiveTracksForInitialization(liveTracks)) {
         const outcome = projectTrackToLiveStrip({
             trackId: track.id,
             deferSidechainWiring: true,
+            deferSends: true,
             activateDormantExternalPlugins: true,
             ...(input?.collectExternalPluginActivations
                 ? { onExternalPluginActivation: (activation) => externalPluginActivations.push(activation) }
                 : {}),
         });
-        if (
-            input?.collectExternalPluginActivations &&
-            (outcome?.acceptance !== 'accepted' || outcome.application !== 'applied')
-        ) {
+        if (outcome?.acceptance !== 'accepted' || outcome.application !== 'applied') {
             return {
                 status: 'failed',
                 reason: outcome?.reason ?? `Track strip initialization did not produce an outcome for ${track.id}`,
             };
+        }
+    }
+
+    // A facade or send can create an empty paired strip. Publish them only
+    // after all full chains have been admitted, including later send targets.
+    for (const bus of busTracks) {
+        ensureBusStrip(bus.id);
+    }
+    for (const track of liveTracks) {
+        const routing = projectTrackToLiveStrip({ mode: 'sends', trackId: track.id });
+        if (routing.status === 'rejected') {
+            return { status: 'failed', reason: routing.reason };
         }
     }
 
