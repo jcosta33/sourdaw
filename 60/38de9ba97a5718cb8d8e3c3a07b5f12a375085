@@ -1,0 +1,14 @@
+src/modules/AiRuntime/AGENTS.md
+  h_beb54bf43b47b7 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6038de9ba97a5718cb8d8e3c3a07b5f12a375085",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
