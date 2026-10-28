@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -33,7 +33,7 @@ import {
     type HistoricalAdmissionReceipt,
     type HistoricalStackObservation,
 } from '../syncParentLane.ts';
-import { trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
+import { resolveTrustedExecutable, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 const sha = (letter: string) => letter.repeat(40);
 const anchor = 'acf91c9e72a98ce6c25f019593df8813c7a3c61d';
@@ -1802,11 +1802,12 @@ describe('explicit superseded parent historical admission', () => {
 
     it('uses the frozen Node/primary native tuple, strips tokens/loaders/overrides and adds only Darwin system ps', () => {
         const { f, input } = closedParentFixture();
+        const tools = inspectionToolFixture();
         const invocation = nativeParentInspectionInvocation(
             {
-                primaryRoot: '/primary',
-                gitPath: '/frozen/git/bin/git',
-                ghPath: '/frozen/gh/bin/gh',
+                primaryRoot: tools.root,
+                gitPath: tools.gitPath,
+                ghPath: tools.ghPath,
                 localEnv: {
                     PATH: '/evil',
                     GH_TOKEN: ['private', 'fixture'].join('-'),
@@ -1817,13 +1818,12 @@ describe('explicit superseded parent historical admission', () => {
             },
             input.closedParent,
             f.observation().parent,
-            'darwin',
-            () => undefined
+            'darwin'
         );
         expect(invocation.command).toBe(process.execPath);
-        expect(invocation.cwd).toBe('/primary');
+        expect(invocation.cwd).toBe(tools.root);
         expect(invocation.args).toEqual([
-            '/primary/scripts/trustedGithubWriteBootstrap.ts',
+            join(tools.root, 'scripts/trustedGithubWriteBootstrap.ts'),
             'pr:supersede',
             '--inspect-parent-completion',
             '--parent-pr',
@@ -1841,7 +1841,7 @@ describe('explicit superseded parent historical admission', () => {
         expect(JSON.stringify(invocation.args)).not.toContain('private');
         expect(() =>
             nativeParentInspectionInvocation(
-                { primaryRoot: '/primary', gitPath: '/git', ghPath: '/gh', localEnv: {} },
+                { primaryRoot: tools.root, gitPath: tools.gitPath, ghPath: tools.ghPath, localEnv: {} },
                 input.closedParent,
                 f.observation().parent,
                 'linux',
@@ -1850,7 +1850,7 @@ describe('explicit superseded parent historical admission', () => {
         ).toThrow('only on Darwin');
         expect(() =>
             nativeParentInspectionInvocation(
-                { primaryRoot: '/primary', gitPath: '/git', ghPath: '/gh', localEnv: {} },
+                { primaryRoot: tools.root, gitPath: tools.gitPath, ghPath: tools.ghPath, localEnv: {} },
                 input.closedParent,
                 f.observation().parent,
                 'darwin',
@@ -1957,7 +1957,21 @@ describe('bounded native parent inspection transport', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-parent-inspection-native-'));
         const bin = join(root, 'bin');
         mkdirSync(bin);
-        const gitPath = realpathSync(execFileSync('which', ['git'], { encoding: 'utf8' }).trim());
+        const installedGit = realpathSync(execFileSync('which', ['git'], { encoding: 'utf8' }).trim());
+        const gitPath = join(bin, 'git');
+        writeFileSync(
+            gitPath,
+            `#!${process.execPath}
+import { spawnSync } from 'node:child_process';
+const result = spawnSync(${JSON.stringify(installedGit)}, process.argv.slice(2), { stdio: 'inherit', env: process.env });
+if (result.error) throw result.error;
+if (result.signal) process.kill(process.pid, result.signal);
+else process.exit(result.status ?? 1);
+`
+        );
+        chmodSync(gitPath, 0o700);
+        symlinkSync(process.execPath, join(bin, 'node'));
+        symlinkSync('/bin/ps', join(bin, 'ps'));
         const env = {
             ...process.env,
             GIT_CONFIG_GLOBAL: '/dev/null',
@@ -2107,7 +2121,8 @@ describe('closed parent shell observation boundaries', () => {
             'inspection fails',
         ])('binds freshly inspected completion: %s', (change) => {
         const { f, input, wire } = nativeCompletionWire();
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-closed-observer-'));
+        const tools = inspectionToolFixture();
+        const root = tools.root;
         const remote = (pr: HistoricalStackObservation['parent']) => ({
             id: pr.id,
             number: pr.number,
@@ -2158,8 +2173,8 @@ describe('closed parent shell observation boundaries', () => {
                 lane: root,
                 branch: childBranch,
                 primaryRoot: root,
-                gitPath: '/fixed/git',
-                ghPath: '/fixed/gh',
+                gitPath: tools.gitPath,
+                ghPath: tools.ghPath,
                 originCommit: sha('9'),
                 localEnv: {},
                 session: { configDir: root, env: { GH_TOKEN: ['ghs', 'fixture'].join('_') }, dispose: () => undefined },
@@ -2241,4 +2256,114 @@ describe('version2 registered-lineage reader', () => {
         );
         expect(JSON.parse(readFileSync(`${laneStackPath(root, childBranch)}.admission.json`, 'utf8'))).toEqual(receipt);
     });
+});
+
+function inspectionToolFixture() {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-selected-inspection-tools-'));
+    const gitDir = join(root, 'git');
+    const ghDir = join(root, 'gh');
+    mkdirSync(gitDir);
+    mkdirSync(ghDir);
+    const executable = (path: string) => {
+        writeFileSync(path, '#!/bin/sh\nexit 0\n');
+        chmodSync(path, 0o700);
+        return realpathSync(path);
+    };
+    const gitPath = executable(join(gitDir, 'git'));
+    const ghPath = executable(join(ghDir, 'gh'));
+    const operatorPath = [ghDir, gitDir, dirname(process.execPath), '/bin'].join(delimiter);
+    return { root, gitDir, ghDir, gitPath, ghPath, operatorPath, executable };
+}
+
+describe('native inspection executable identity', () => {
+    it('retains the actual selected tools and canonical system ps through legitimate aliases', () => {
+        const tools = inspectionToolFixture();
+        symlinkSync(tools.ghPath, join(tools.gitDir, 'gh'));
+        symlinkSync('/bin/ps', join(tools.gitDir, 'ps'));
+        const { f, input } = closedParentFixture();
+        const invocation = nativeParentInspectionInvocation(
+            {
+                primaryRoot: tools.root,
+                gitPath: tools.gitPath,
+                ghPath: tools.ghPath,
+                localEnv: { PATH: tools.operatorPath },
+            },
+            input.closedParent,
+            f.observation().parent,
+            'darwin'
+        );
+        expect(resolveTrustedExecutable('git', { PATH: tools.operatorPath }, 'darwin')).toBe(tools.gitPath);
+        expect(resolveTrustedExecutable('gh', { PATH: tools.operatorPath }, 'darwin')).toBe(tools.ghPath);
+        expect(resolveTrustedExecutable('git', invocation.env, 'darwin')).toBe(tools.gitPath);
+        expect(resolveTrustedExecutable('gh', invocation.env, 'darwin')).toBe(tools.ghPath);
+        expect(resolveTrustedExecutable('ps', invocation.env, 'darwin')).toBe(realpathSync('/bin/ps'));
+        const resolvedNode = execFileSync('/usr/bin/which', ['node'], { env: invocation.env, encoding: 'utf8' }).trim();
+        expect(realpathSync(resolvedNode)).toBe(realpathSync(process.execPath));
+        expect(invocation.command).toBe(process.execPath);
+    });
+
+    it.each(['gh and ps', 'ps', 'node', 'git alias'])(
+        'refuses competing %s identities before launching the reader',
+        (collision) => {
+            const tools = inspectionToolFixture();
+            let gitPath = tools.gitPath;
+            let operatorPath = tools.operatorPath;
+            let competing = '';
+            if (collision === 'gh and ps') {
+                competing = tools.executable(join(tools.gitDir, 'gh'));
+                tools.executable(join(tools.gitDir, 'ps'));
+            }
+            if (collision === 'ps') {
+                competing = tools.executable(join(tools.gitDir, 'ps'));
+            }
+            if (collision === 'node') {
+                competing = tools.executable(join(tools.gitDir, 'node'));
+            }
+            if (collision === 'git alias') {
+                const aliases = join(tools.root, 'aliases');
+                const stored = join(tools.root, 'stored');
+                mkdirSync(aliases);
+                mkdirSync(stored);
+                gitPath = tools.executable(join(stored, 'selected-git'));
+                symlinkSync(gitPath, join(aliases, 'git'));
+                competing = tools.executable(join(stored, 'git'));
+                operatorPath = [tools.ghDir, aliases, dirname(process.execPath), '/bin'].join(delimiter);
+            }
+            expect(resolveTrustedExecutable('git', { PATH: operatorPath }, 'darwin')).toBe(gitPath);
+            expect(resolveTrustedExecutable('gh', { PATH: operatorPath }, 'darwin')).toBe(tools.ghPath);
+            // The native resolver demonstrates why the published reconstructed layout is unsafe.
+            const reconstructed = [dirname(gitPath), dirname(tools.ghPath), dirname(process.execPath), '/bin'].join(
+                delimiter
+            );
+            if (collision === 'node') {
+                const node = execFileSync('/usr/bin/which', ['node'], {
+                    env: { PATH: reconstructed },
+                    encoding: 'utf8',
+                }).trim();
+                expect(realpathSync(node)).toBe(competing);
+                expect(realpathSync(node)).not.toBe(realpathSync(process.execPath));
+            } else {
+                let name: 'git' | 'gh' | 'ps' = 'gh';
+                if (collision === 'ps') {
+                    name = 'ps';
+                }
+                if (collision === 'git alias') {
+                    name = 'git';
+                }
+                expect(resolveTrustedExecutable(name, { PATH: reconstructed }, 'darwin')).toBe(competing);
+            }
+            const { f, input } = closedParentFixture();
+            let launches = 0;
+            expect(() => {
+                nativeParentInspectionInvocation(
+                    { primaryRoot: tools.root, gitPath, ghPath: tools.ghPath, localEnv: { PATH: operatorPath } },
+                    input.closedParent,
+                    f.observation().parent,
+                    'darwin'
+                );
+                launches += 1;
+            }).toThrow(/native inspection .* executable/);
+            expect(launches).toBe(0);
+        }
+    );
 });

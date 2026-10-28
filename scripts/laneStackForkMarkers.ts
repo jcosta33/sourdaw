@@ -1,4 +1,4 @@
-import { accessSync, constants, closeSync, openSync, readSync } from 'node:fs';
+import { accessSync, constants, closeSync, openSync, readSync, realpathSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 
 import {
@@ -454,6 +454,26 @@ export function checkedNativeParentCompletion(
     return proof;
 }
 
+function assertNativeInspectionExecutable(name: string, expected: string, directories: readonly string[]): void {
+    if (realpathSync(expected) !== expected) {
+        fail(`native inspection ${name} executable is no longer the selected identity`);
+    }
+    let selected: string | undefined;
+    for (const directory of directories) {
+        const candidate = join(directory, name);
+        try {
+            accessSync(candidate, constants.X_OK);
+            selected = realpathSync(candidate);
+            break;
+        } catch {
+            // The native launcher also skips candidates it cannot execute or resolve.
+        }
+    }
+    if (selected !== expected) {
+        fail(`native inspection ${name} executable does not retain the selected identity`);
+    }
+}
+
 export function nativeParentInspectionInvocation(
     input: { primaryRoot: string; gitPath: string; ghPath: string; localEnv: NodeJS.ProcessEnv },
     admission: NonNullable<HistoricalAdmissionInput['closedParent']>,
@@ -483,9 +503,14 @@ export function nativeParentInspectionInvocation(
             delete env[key];
         }
     }
-    env.PATH = [...new Set([dirname(input.gitPath), dirname(input.ghPath), dirname(process.execPath), '/bin'])].join(
-        delimiter
-    );
+    const directories = [
+        ...new Set([dirname(input.gitPath), dirname(input.ghPath), dirname(process.execPath), '/bin']),
+    ];
+    env.PATH = directories.join(delimiter);
+    assertNativeInspectionExecutable('git', input.gitPath, directories);
+    assertNativeInspectionExecutable('gh', input.ghPath, directories);
+    assertNativeInspectionExecutable('node', process.execPath, directories);
+    assertNativeInspectionExecutable('ps', realpathSync('/bin/ps'), directories);
     return {
         command: process.execPath,
         cwd: input.primaryRoot,
