@@ -791,13 +791,13 @@ describe('Inspector continuous parameter gestures through real history', () => {
                 await entered.promise;
                 beat = 2;
                 endKnob();
-                const expectedSamples =
-                    automationMode === 'read'
-                        ? []
-                        : [
-                              ['track-1', 'synth-1:detune', 25, 1, expect.any(Symbol)],
-                              ['track-1', 'synth-1:detune', 25, 2, expect.any(Symbol)],
-                          ];
+                const expectedSamples: unknown[][] = [];
+                if (automationMode !== 'read') {
+                    expectedSamples.push(
+                        ['track-1', 'synth-1:detune', 25, 1, expect.any(Symbol)],
+                        ['track-1', 'synth-1:detune', 25, 2, expect.any(Symbol)]
+                    );
+                }
                 expect(recording.mock.calls).toEqual(expectedSamples);
                 expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(
                     automationMode === 'latch' || automationMode === 'write'
