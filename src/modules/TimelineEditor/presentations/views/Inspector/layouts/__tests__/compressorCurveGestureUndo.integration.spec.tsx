@@ -1107,7 +1107,7 @@ describe('actual registered Compressor curve through real project and history', 
         }
     );
 
-    it.each(['cancel', 'unmount', 'release', 'sample'] as const)(
+    it.each(['cancel', 'unmount', 'release'] as const)(
         'preserves a newer effective runtime write after former curve %s',
         async (ending) => {
             const view = render(<Layout />);
@@ -1119,10 +1119,8 @@ describe('actual registered Compressor curve through real project and history', 
                 view.unmount();
             } else if (ending === 'cancel') {
                 fireEvent.pointerCancel(canvas, { pointerId: 5 });
-            } else if (ending === 'release') {
-                end(canvas);
             } else {
-                move(-30, canvas);
+                end(canvas);
             }
             await drainActions();
             expect(writes()).toEqual(before);
@@ -1130,6 +1128,29 @@ describe('actual registered Compressor curve through real project and history', 
             expect(depth()).toBe(0);
         }
     );
+
+    it.each(deviceTypes)('admits fresh %s curve movement after an intervening runtime write', async (type) => {
+        seed(type);
+        const paramId = `${prefix(type)}-threshold`;
+        render(<Layout />);
+        const canvas = begin();
+        move(-45, canvas);
+        updateDeviceParam('track-1', DEVICE_ID, paramId, -10);
+        move(-30, canvas);
+        expect(writes().map((write) => write.value)).toEqual([-45, -10, -30]);
+        expectThresholdValue(type, -30);
+        expect(rawValues()[paramId]).toBe(-20);
+        expect(depth()).toBe(0);
+        end(canvas);
+        await committed(type, -30);
+        expect(writes().map((write) => write.value)).toEqual([-45, -10, -30, -30]);
+        await act(() => undo());
+        expect(rawValues()[paramId]).toBe(-20);
+        expect(writes().at(-1)?.value).toBe(-20);
+        await act(() => redo());
+        expect(rawValues()[paramId]).toBe(-30);
+        expect(writes().at(-1)?.value).toBe(-30);
+    });
 
     it('preserves a newer same-key MIDI Touch producer on curve cancellation', () => {
         recordMode('builtin-compressor', 'touch');

@@ -199,6 +199,16 @@ function finishGesture(context: GestureContext, gesture: ParameterGesture): void
     }
 }
 
+function canAcceptGestureInput(gesture: ParameterGesture, isTransient: boolean): boolean {
+    return (
+        !gesture.invalidated &&
+        (gesture.previewValue === undefined ||
+            ownsDeviceParameterPreview(gesture.previewKey, gesture.runtimeAuthority.owner)) &&
+        (isTransient || gesture.runtimeAuthority.canCommit()) &&
+        !!readGestureDevice(gesture, true)
+    );
+}
+
 function handleKnobChange(
     context: GestureContext,
     nextValue: number,
@@ -215,11 +225,7 @@ function handleKnobChange(
     if (!gesture || gesture.settling) {
         return;
     }
-    if (
-        gesture.invalidated ||
-        (gesture.previewValue !== undefined && !gesture.runtimeAuthority.canCommit()) ||
-        !readGestureDevice(gesture, true)
-    ) {
+    if (!canAcceptGestureInput(gesture, isTransient)) {
         cancelGesture(context, gesture);
         if (!isTransient) {
             context.gestureRef.current = null;
@@ -314,12 +320,7 @@ function commitGesture(context: GestureContext, gesture: ParameterGesture, nextV
 
 function isGestureCurrent(context: GestureContext, token: string | number): boolean {
     const gesture = context.gestureRef.current;
-    return (
-        gesture?.id === token &&
-        !gesture.invalidated &&
-        gesture.runtimeAuthority.canCommit() &&
-        !!readGestureDevice(gesture, true)
-    );
+    return gesture?.id === token && canAcceptGestureInput(gesture, true);
 }
 
 function cancel(context: GestureContext): void {

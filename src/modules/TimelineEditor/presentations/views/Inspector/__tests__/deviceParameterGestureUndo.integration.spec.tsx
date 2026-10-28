@@ -762,6 +762,45 @@ describe('Inspector continuous parameter gestures through real history', () => {
         }
     });
 
+    it.each(['read', 'touch'] as const)(
+        'admits fresh Ratio movement after an intervening runtime write in %s mode',
+        async (automationMode) => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(compressor)]), automationMode }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            render(<Control deviceId={compressor.id} paramId="comp-ratio" />);
+            const control = screen.getByRole('slider', { name: 'Ratio' });
+            capturePointer(control);
+            fireEvent.pointerDown(control, { button: 0, pointerId: 7, clientY: 100 });
+            fireEvent.pointerMove(control, { pointerId: 7, clientY: 80 });
+            expect(writes(compressor.id)).toEqual([6.5]);
+            updateDeviceParam('track-1', compressor.id, 'comp-ratio', 10);
+            expect(writes(compressor.id)).toEqual([6.5, 10]);
+            fireEvent.pointerMove(control, { pointerId: 7, clientY: 60 });
+            expect(writes(compressor.id)).toEqual([6.5, 10, 9.1]);
+            expect(control).toHaveAttribute('aria-valuenow', '9.1');
+            expect(rawValues(compressor.id)?.['comp-ratio']).toBe(4);
+            expect(values(compressor.id)['comp-ratio']).toBe(4);
+            expect(depth()).toBe(0);
+            fireEvent.pointerUp(control, { pointerId: 7 });
+            await expectCommitted('comp-ratio', 9.1, 1, compressor.id);
+            expect(writes(compressor.id)).toEqual([6.5, 10, 9.1, 9.1, 9.1]);
+            const samples = automationMode === 'touch' ? 3 : 0;
+            expect(recording).toHaveBeenCalledTimes(samples);
+            expect(automationUseCases.isRecordingAutomation('track-1', 'compressor-1:comp-ratio')).toBe(false);
+            await act(() => undo());
+            expect(rawValues(compressor.id)?.['comp-ratio']).toBe(4);
+            expect(writes(compressor.id).at(-1)).toBe(4);
+            await act(() => redo());
+            expect(rawValues(compressor.id)?.['comp-ratio']).toBe(9.1);
+            expect(writes(compressor.id).at(-1)).toBe(9.1);
+            expect(recording).toHaveBeenCalledTimes(samples);
+        }
+    );
+
     it('retains a carried Grinder fallback written by real Read automation when a preview unmounts', async () => {
         const grinder: Device = {
             id: 'grinder-1',
