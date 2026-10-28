@@ -184,6 +184,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
+    // Allow six one-second observations plus setup/rendering without extending any stage's bound.
     it('reaches an independent B from the factory kit and persists its edit and morph controls', async () => {
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
         render(<ToasterPanel deviceId={DEVICE_ID} />);
@@ -225,7 +226,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(screen.getByLabelText('Morph B target', { selector: 'select' })).toHaveValue('B1');
         expect(screen.getByText('Morph on', { selector: 'button' })).toBeEnabled();
         expect(screen.getByLabelText('Position 50%', { selector: 'input[type=range]' })).toHaveValue('0.5');
-    });
+    }, 7_000);
     it('starts in Simple and reveals every existing advanced region only in Full', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
         expect(screen.getByRole('combobox', { name: 'Toaster view' })).toHaveValue('simple');

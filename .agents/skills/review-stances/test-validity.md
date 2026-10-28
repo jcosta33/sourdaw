@@ -1683,3 +1683,21 @@ input. When readiness fails, capture the supervisor's actual error, exit and
 private readiness records before teardown; a later pass does not explain the
 original failure. Use synthetic process data in durable evidence rather than
 publishing real process environment values.
+
+### Whole-scenario deadlines must cover their composed stage allowances (#5798)
+
+PR #5798 (`a82b97abc9`) added the combined independent-pattern edit, morph and
+save/restore case to the full-view integration route introduced by PR #5413
+(`bfbea2fe5a`). Its whole-case deadline could expire while sequential operations
+still satisfied their individual observation bounds. Historical private prompts
+and tiers are unknown; the missing probe composed valid delayed real completions
+through the entire original scenario. The original hosted timeout did not record
+its failing stage, so a controlled reproduction does not establish that microstate.
+
+Keep the complete admission, clone, edit, morph and save/load assertions. Delay
+actual persistence completions within their unchanged per-stage allowances and
+require every original assertion to finish within the explicit whole-case budget.
+Hold a real completion and require its original observation to reject before the
+whole-case deadline; extending that deadline must not extend individual waits or
+hide the lost operation. Retain the original failure and both controlled outcomes.
+A later passing run alone neither explains the failure nor proves recovery.
