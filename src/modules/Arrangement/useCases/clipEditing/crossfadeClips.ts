@@ -65,10 +65,14 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
 
     const clipBDelta = newClipBStart - clipB.startBeat;
     const contentDelta = clipBDelta * stretchFactor;
-    const newAudioOffsetBeats =
-        clipB.audioOffsetBeats !== undefined ? Math.max(0, clipB.audioOffsetBeats + contentDelta) : undefined;
-    const newMidiOffsetBeats =
-        clipB.midiOffsetBeats !== undefined ? Math.max(0, clipB.midiOffsetBeats + clipBDelta) : undefined;
+    let newAudioOffsetBeats: number | undefined;
+    if (clipB.audioOffsetBeats !== undefined) {
+        newAudioOffsetBeats = Math.max(Math.min(0, clipB.audioOffsetBeats), clipB.audioOffsetBeats + contentDelta);
+    }
+    let newMidiOffsetBeats: number | undefined;
+    if (clipB.midiOffsetBeats !== undefined) {
+        newMidiOffsetBeats = Math.max(0, clipB.midiOffsetBeats + clipBDelta);
+    }
     // The loop anchor follows the offset its clip type moves (#4988). The
     // audio offset retreats by the stretched `contentDelta` while the start
     // retreats by the raw `clipBDelta`, so the carried anchor shifts by
@@ -77,9 +81,10 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     // ratio. Carried unshifted, a stretched crossfade drives the advance
     // negative and slides the region by `clipBDelta * (stretch - 1)` source
     // beats. The MIDI offset retreats by the raw delta, so its carried
-    // anchor already holds and stays untouched. The pre-roll bound keeps
-    // `contentDelta` within the offset, so the `Math.max(0, …)` clamp above
-    // never bites an audio clip and the shift is exact.
+    // anchor already holds and stays untouched. A negative audio offset
+    // names leading silence before recorded media; the pre-roll bound keeps
+    // that start fixed. Preserve its signed lower bound while retaining the
+    // zero clamp for rounding at the end of a nonnegative pre-roll handle.
     const clipBLoopOriginEntry = clipB.type === 'audio' ? shiftLoopOriginEntry(clipB, clipBDelta - contentDelta) : {};
 
     if (

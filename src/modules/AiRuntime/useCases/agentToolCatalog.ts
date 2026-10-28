@@ -11,6 +11,7 @@ import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
@@ -56,6 +57,7 @@ export {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
@@ -159,7 +161,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
     };
     return tool(
         AGENT_CATALOG_DISCOVERY_TOOL_NAME,
-        'Request exact schemas by canonical catalog names. Primitive schemas are returned only for explicitly requested operation names.',
+        'Read only named schemas. For drum timing or clip onsets, request analysis.detectTransients in category analysis.',
         {
             category: { type: 'string', enum: AGENT_CATALOG_CATEGORIES },
             names: {
@@ -293,6 +295,19 @@ function getAnalysisMeasureSchema(): ToolSchema {
             ...getProjectMeasurementProperties(),
         },
         ['scope', 'range']
+    );
+}
+
+function getTransientOnsetReadSchema(): ToolSchema {
+    return tool(
+        ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+        'Read whole-source transient onsets for one audio clip without creating markers or changing the project. Returns at most 64 source-buffer onset times in seconds with confidence per page, never audio. Continue with the returned cursor and the same clipId and sensitivity.',
+        {
+            clipId: { type: 'string', minLength: 1, maxLength: 256 },
+            sensitivity: { type: 'number', minimum: 0, maximum: 1 },
+            cursor: { type: 'string', minLength: 1, maxLength: 128 },
+        },
+        ['clipId']
     );
 }
 
@@ -502,6 +517,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             ['scope']
         ),
         getAnalysisMeasureSchema(),
+        getTransientOnsetReadSchema(),
         getAnalysisCompareReferenceSchema(),
         getRecipeDiscoverySchema(),
         getRecipeExpansionSchema(),

@@ -21,6 +21,9 @@ vi.mock('#/modules/Arrangement/stores', async () => {
     const { createStore } = await import('#/infra/store/createStore');
     return {
         trackStore: createStore<{ tracks: [] }>({ initialData: { tracks: [] } }),
+        resolveEligibleClipWriteTarget: vi.fn<
+            typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget
+        >(() => ({ status: 'missing' })),
         resolveEligibleDeviceWriteTarget,
     };
 });

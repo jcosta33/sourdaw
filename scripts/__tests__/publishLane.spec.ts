@@ -675,6 +675,7 @@ describe('lane publish', () => {
                 'testInstructions.ts',
                 'testInstructionVocabulary.ts',
                 'stackedLanes.ts',
+                'laneStackForkMarkers.ts',
                 'reviewDiffSummary.ts',
                 'wasm-artifacts.ts',
                 'wasmToolchainPins.ts',

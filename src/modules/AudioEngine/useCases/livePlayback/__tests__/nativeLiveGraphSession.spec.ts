@@ -117,6 +117,7 @@ const mocks = vi.hoisted(() => ({
      * file's job; what is, is what the session does with a drop.
      */
     programmeOverride: null as unknown,
+    midiNoteSeconds: [0],
     warn: vi.fn<(message: string) => void>(),
     /** Every bridge call this session made, in order. */
     wireCalls: [] as string[],
@@ -198,7 +199,7 @@ vi.mock('../readLiveMidiProgramme', () => ({
      * proven where they live (`projectLiveMidiProgramme.spec.ts`), and standing
      * a tempo projector and a note store up here would prove them twice. What
      * this file owns is which attach state and which carried set the session
-     * hands the writer, so the double answers one note per strip whose chain
+     * hands the writer, so the double answers notes per strip whose chain
      * names an attached instance or a built-in that sounds notes — fermenter
      * stands in for that, exactly as `nativeMidiNoteSink` picks the sink — and
      * only for a strip named in `carriedStripIds`, exactly as the carriage gate
@@ -225,7 +226,13 @@ vi.mock('../readLiveMidiProgramme', () => ({
             return [
                 {
                     target: { trackId: track.id, deviceId: sink.id },
-                    events: [{ time: 0, note: 60, velocity: 100, channel: 0, isNoteOn: true }],
+                    events: mocks.midiNoteSeconds.map((time) => ({
+                        time,
+                        note: 60,
+                        velocity: 100,
+                        channel: 0,
+                        isNoteOn: true,
+                    })),
                 },
             ];
         }),
@@ -651,6 +658,7 @@ beforeEach(async () => {
     mocks.stopLivenessWatch.mockClear();
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
+    mocks.midiNoteSeconds = [0];
     mocks.warn.mockClear();
     mocks.markExternalPluginEngineAttached.mockReset();
     mocks.openedBackends = [];
@@ -2659,6 +2667,9 @@ describe('repositionNativeLiveGraphSession', () => {
     // strip's instrument has to be re-addressed from the position the engine
     // just moved to — not left silent until the next full session start.
     it('schedules the carried Fermenter strip again after a locate', async () => {
+        // Keep one attack behind the locate and one ahead: carriage must be
+        // retained without replaying the old attack after its frame passed.
+        mocks.midiNoteSeconds = [0, 13];
         offlinePpqEndpointProjectorState.project = projectPpqEndpoints;
         offlinePpqEndpointProjectorState.resolveTempoAtBeat = () => 120;
         trackStore.set({
@@ -2681,6 +2692,16 @@ describe('repositionNativeLiveGraphSession', () => {
         await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
 
         expect(scheduledMidiTargets()).toEqual([{ trackId: 'midi-1', deviceId: 'ferm-1' }]);
+        expect(
+            mocks.applyGraphCommands.mock.calls
+                .flatMap(([input]) => (input.batch as NativeGraphWireBatch).commands)
+                .flatMap((command) => {
+                    if (command.kind !== 'schedule-midi') {
+                        return [];
+                    }
+                    return command.notes.map((note) => note.time);
+                })
+        ).toEqual([13]);
     });
 });
 

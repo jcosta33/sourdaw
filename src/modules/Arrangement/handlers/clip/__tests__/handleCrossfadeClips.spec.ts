@@ -1,7 +1,43 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+
+import { Container } from '#/infra/di/Container';
+import { createEventBus } from '#/infra/events/createEventBus';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import {
+    clearHandlerRegistry,
+    macroStore,
+    registerHandlerMap,
+    undoHistoryStore as undoStore,
+} from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppAction,
+    redo,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+    undo,
+} from '#/modules/Command/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    resetCrdtProjectAuthority,
+} from '#/modules/CrdtDocument/useCases';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore, type TrackStoreState } from '../../../stores/trackStore';
+import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { handleCrossfadeClips } from '../handleCrossfadeClips';
 import { handleRestoreCrossfadeClips } from '../handleRestoreCrossfadeClips';
 
@@ -19,7 +55,8 @@ const mocks = vi.hoisted(() => ({
     resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
 }));
 
-vi.mock('../../../useCases/clipEditing/crossfadeClips', () => ({
+vi.mock('../../../useCases/clipEditing/crossfadeClips', async (importOriginal) => ({
+    ...(await importOriginal<typeof crossfadeModule>()),
     crossfadeClips: mocks.crossfadeClips,
 }));
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -516,4 +553,153 @@ describe('handleCrossfadeClips', () => {
             ],
         });
     });
+});
+
+describe('crossfade recorded leading silence through command history', () => {
+    let notifications: NotifyPayload[];
+    let unsubscribeFromNotifications: () => void;
+
+    beforeAll(async () => {
+        // Retain the unit-test spies above, but connect every domain seam to its
+        // production implementation for the real command, CRDT, and undo route.
+        const [crossfade, state, storeState, mapper, resolver] = await Promise.all([
+            vi.importActual<typeof crossfadeModule>('../../../useCases/clipEditing/crossfadeClips'),
+            vi.importActual<typeof trackStateRepo>('../../../repositories/track/getTrackState'),
+            vi.importActual<typeof trackStoreStateModule>('../../../useCases/getTrackStoreState'),
+            vi.importActual<typeof mapAllTracksRepo>('../../../repositories/track/mapAllTracks'),
+            vi.importActual<typeof resolverModule>('../../../stores/resolveEligibleClipWriteTarget'),
+        ]);
+        mocks.crossfadeClips.mockImplementation(crossfade.crossfadeClips);
+        mocks.getTrackState.mockImplementation(state.getTrackState);
+        mocks.getTrackStoreState.mockImplementation(storeState.getTrackStoreState);
+        mocks.mapAllTracks.mockImplementation(mapper.mapAllTracks);
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(resolver.resolveEligibleClipWriteTarget);
+    });
+
+    beforeEach(() => {
+        Container.clear();
+        const notificationBus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        notifications = [];
+        unsubscribeFromNotifications = notificationBus.on('ui.notify', (notification) => {
+            notifications.push(notification);
+        });
+        setNotificationEventBus(notificationBus);
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('crossfade recorded leading silence');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' as const }),
+            clear: () => undefined,
+        });
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+    });
+
+    afterEach(() => {
+        unsubscribeFromNotifications();
+        Container.clear();
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    it.each([
+        { stretchRatio: 1, loopOriginBeat: undefined },
+        { stretchRatio: 1, loopOriginBeat: 4 },
+        { stretchRatio: 2, loopOriginBeat: undefined },
+        { stretchRatio: 2, loopOriginBeat: 4 },
+    ])(
+        'round-trips signed source origin at stretch $stretchRatio with anchor $loopOriginBeat',
+        async ({ stretchRatio, loopOriginBeat }) => {
+            const clipOverrides: { loopOriginBeat?: number } = {};
+            if (loopOriginBeat !== undefined) {
+                clipOverrides.loopOriginBeat = loopOriginBeat;
+            }
+            const track = TrackDummy.create({
+                id: 'track-1',
+                clips: [
+                    ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                    ClipDummy.create({
+                        id: 'c2',
+                        startBeat: 4,
+                        endBeat: 8,
+                        audioOffsetBeats: -1,
+                        stretchMode: 'timestretch',
+                        stretchRatio,
+                        loopEnabled: true,
+                        loopLength: 4,
+                        ...clipOverrides,
+                    }),
+                ],
+            });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+            const origin = 4 + 1 / stretchRatio;
+            const transientBeat = origin + 1 / stretchRatio;
+
+            function expectSourceOrigin(): void {
+                flushAutomergeStorageWrites();
+                const projected = trackStore.value!.tracks[0]!.clips;
+                const authoritative = getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.clips;
+                expect(authoritative).toEqual(projected);
+                const clipB = projected[1]!;
+                expect.soft(clipB.audioOffsetBeats).toBe(-1);
+                expect.soft(clipB.startBeat - clipB.audioOffsetBeats! / stretchRatio).toBe(origin);
+                expect.soft(clipB.audioOffsetBeats! + (transientBeat - clipB.startBeat) * stretchRatio).toBe(1);
+                expect(clipB.loopOriginBeat).toBe(loopOriginBeat);
+                expect(Object.hasOwn(clipB, 'loopOriginBeat')).toBe(loopOriginBeat !== undefined);
+            }
+
+            await executeAppAction({
+                type: 'crossfadeClips',
+                payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+            });
+            expectSourceOrigin();
+            const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+            expect(after[0]).toMatchObject({ endBeat: 4.5, fadeOutBeats: 0.5 });
+            expect(after[1]).toMatchObject({ startBeat: 4, endBeat: 8, fadeInBeats: 0.5 });
+            expect(undoStore.value?.past).toHaveLength(1);
+            const entry = undoStore.value?.past[0];
+            if (entry?.kind !== 'action') {
+                throw new Error('Expected the crossfade action history entry');
+            }
+            expect.soft(entry.inverseAction).toMatchObject({
+                type: 'restoreCrossfadeClips',
+                payload: { expected: { clipBAudioOffsetBeats: -1 }, replacement: { clipBAudioOffsetBeats: -1 } },
+            });
+            expect.soft(entry.redoAction).toMatchObject({
+                type: 'restoreCrossfadeClips',
+                payload: { expected: { clipBAudioOffsetBeats: -1 }, replacement: { clipBAudioOffsetBeats: -1 } },
+            });
+
+            expect.soft((await undo()).headConsumed).toBe(true);
+            expect.soft(notifications).toEqual([]);
+            expectSourceOrigin();
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+            expect(undoStore.value?.past).toHaveLength(0);
+            expect(undoStore.value?.future).toHaveLength(1);
+
+            await redo();
+            expect(notifications).toEqual([]);
+            expectSourceOrigin();
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+            expect(undoStore.value?.past).toHaveLength(1);
+            expect(undoStore.value?.future).toHaveLength(0);
+        }
+    );
 });

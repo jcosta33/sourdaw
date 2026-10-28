@@ -15,10 +15,15 @@ import {
     queryAgentDiscovery,
     querySemanticProject,
 } from '#/modules/Project/useCases';
+import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
-import { AGENT_CATALOG_CATEGORIES, type AgentCatalogCategory } from '../models/AgentToolCatalogNames';
+import {
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+    AGENT_CATALOG_CATEGORIES,
+    type AgentCatalogCategory,
+} from '../models/AgentToolCatalogNames';
 import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type PlanningAnswer } from '../models/AnswerRespond';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
@@ -174,6 +179,8 @@ type RunApplicationOwnedToolLoopInput = {
         receiptContext: string | null;
         /** Every earlier turn a hosted provider reported, ascending, for callers that replay them natively. */
         history: HostedTurnHistory;
+        /** Set only after this run admitted the exact analysis catalog discovery receipt. */
+        transientOnsetsDiscovered?: true;
         /** `receiptContext`'s header and what the run still allows, without the receipt JSON. */
         budgetNote: string;
         remaining: {
@@ -187,6 +194,8 @@ type RunApplicationOwnedToolLoopInput = {
     terminalToolNames: ReadonlySet<string>;
     signal?: AbortSignal;
     limits?: ToolLoopLimits;
+    /** A caller whose local message carries receipts as text must admit that whole carrier. */
+    textReceiptCharacterBudget?: number;
     /**
      * The application-owned control phase. The loop learns only whether a call was admitted; the
      * record it mints stays in the caller's closure, so no provider-visible turn can restate it.
@@ -214,6 +223,10 @@ type RunApplicationOwnedToolLoopInput = {
         companionToolNames?: readonly string[];
         revision?: string;
         execute: (call: ToolCallResult, context: MeasurementCallContext) => Promise<AnalysisMeasureRead>;
+    };
+    /** Local source analysis; unlike measurement it never renders or retains commands. */
+    transientOnsetRead?: {
+        execute: (input: { call: ToolCallResult; callId: string; turn: number }) => Promise<ApplicationToolReceipt>;
     };
     transform?: {
         toolName: typeof TRANSFORM_COMPILE_TOOL_NAME;
@@ -1318,6 +1331,7 @@ function executeTurnReads(input: {
     turn: number;
     loopId: string;
     measurement: RunApplicationOwnedToolLoopInput['measurement'];
+    transientOnsetRead: RunApplicationOwnedToolLoopInput['transientOnsetRead'];
     transform: RunApplicationOwnedToolLoopInput['transform'];
     recipe: RunApplicationOwnedToolLoopInput['recipe'];
     nextRecipeOrdinal: () => number;
@@ -1327,6 +1341,23 @@ function executeTurnReads(input: {
     const measurementToolNames = getMeasurementToolNames(measurement);
     const firstMeasurementIndex = input.calls.findIndex(({ call }) => measurementToolNames.includes(call.name));
     return input.calls.map(async ({ call, callId }, index) => {
+        if (input.transientOnsetRead !== undefined && call.name === ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME) {
+            try {
+                return { commands: null, receipt: await input.transientOnsetRead.execute({ call, callId, turn }) };
+            } catch {
+                return {
+                    commands: null,
+                    receipt: failureReceipt({
+                        callId,
+                        toolName: call.name,
+                        turn,
+                        code: 'tool-execution-failed',
+                        safeMessage: 'Transient source read failed inside the application authority.',
+                        retryable: true,
+                    }),
+                };
+            }
+        }
         if (input.transform !== undefined && call.name === input.transform.toolName) {
             try {
                 return input.transform.execute(call, { callId, turn, loopId: input.loopId, signal: input.signal });
@@ -1378,6 +1409,42 @@ function executeTurnReads(input: {
             };
         }
         return executeMeasurement(measurement, call, { callId, turn, loopId: input.loopId, signal: input.signal });
+    });
+}
+
+/** Only successful application catalog output earns a later local tool slot, never receipt text. */
+function hasAdmittedTransientDiscovery(
+    calls: readonly IdentifiedToolCall[],
+    receipts: readonly ApplicationToolReceipt[]
+): boolean {
+    const canonical: ToolSchema | undefined = getAgentToolCatalogSchemas().find(
+        (schema) => schema.function.name === ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME
+    );
+    if (canonical === undefined) {
+        return false;
+    }
+    return calls.some(({ call, callId }) => {
+        if (call.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME) {
+            return false;
+        }
+        const parsed = parseCatalogDiscoveryArguments(call.arguments);
+        if (
+            parsed.status !== 'valid' ||
+            parsed.input.category !== 'analysis' ||
+            !parsed.input.names.includes(ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME)
+        ) {
+            return false;
+        }
+        const receipt = receipts.find((entry) => entry.callId === callId && entry.toolName === call.name);
+        return (
+            receipt?.status === 'success' &&
+            isRecord(receipt.data) &&
+            receipt.data.schema === 'sourdaw.agent-tool-catalog' &&
+            receipt.data.schemaVersion === 1 &&
+            receipt.data.category === 'analysis' &&
+            Array.isArray(receipt.data.items) &&
+            receipt.data.items.some((item: unknown) => canonicalJson(item) === canonicalJson(canonical))
+        );
     });
 }
 
@@ -1945,6 +2012,7 @@ export async function runApplicationOwnedToolLoop(
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
     const history: HostedTurnRecord[] = [];
+    let transientOnsetsDiscovered = false;
     let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
 
     /**
@@ -1975,6 +2043,13 @@ export async function runApplicationOwnedToolLoop(
         receiptContext = serializeReceiptContext(receipts, turn);
         if (byteLength(receiptContext) > limits.maxTotalReceiptBytes) {
             return { reason: overBudget, receipts };
+        }
+        if (
+            outcome.providerTurn === undefined &&
+            input.textReceiptCharacterBudget !== undefined &&
+            receiptContext.length > input.textReceiptCharacterBudget
+        ) {
+            return { reason: 'Application tool receipts exceeded the bounded text context budget.', receipts };
         }
         // Only a provider that reported its own turn can be handed that turn back; a backend
         // that plans locally records nothing and keeps reading the text form above. Every hosted
@@ -2019,6 +2094,7 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 receiptContext,
                 history: [...history],
+                ...(transientOnsetsDiscovered ? { transientOnsetsDiscovered: true as const } : {}),
                 budgetNote:
                     lastRecordedTurn === undefined ? '' : serializeRemainingBudgetNote(lastRecordedTurn, remaining),
                 remaining,
@@ -2152,6 +2228,7 @@ export async function runApplicationOwnedToolLoop(
             COMMAND_HISTORY_TOOL_NAME,
             RECIPE_DISCOVERY_TOOL_NAME,
             ...getMeasurementToolNames(input.measurement),
+            ...(input.transientOnsetRead === undefined ? [] : [ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME]),
             ...(input.transform === undefined ? [] : [input.transform.toolName]),
             ...(input.recipe === undefined ? [] : [input.recipe.toolName]),
         ]);
@@ -2270,6 +2347,7 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 loopId: input.loopId,
                 measurement: input.measurement,
+                transientOnsetRead: input.transientOnsetRead,
                 transform: input.transform,
                 recipe: input.recipe,
                 nextRecipeOrdinal,
@@ -2298,6 +2376,7 @@ export async function runApplicationOwnedToolLoop(
         if (overBudget !== null) {
             return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
         }
+        transientOnsetsDiscovered ||= hasAdmittedTransientDiscovery(safeReadCalls, turnReceipts);
         for (const [index, executed] of executedReads.entries()) {
             const admitted = turnReceipts[index];
             if (
