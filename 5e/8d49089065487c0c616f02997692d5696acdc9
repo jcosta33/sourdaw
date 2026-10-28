@@ -1,0 +1,54 @@
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_29d8df116c5b92::t_43ba94deea5eb3 97-100,103-105
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_2b33c531343efd 3424
+  s_29d8df116c5b92::t_b05d907a3896e2 216-227,763-776,781-789,803-804,840-846,848-851,854-857,865-869,879-881
+  s_29d8df116c5b92::t_ccbbe2ab90cc5a 750-754,777-780,790-802,805-831
+  s_29d8df116c5b92::t_0460f6c9cf3d22 833-836,838,858-859,872-873,876-878,882-885,887,889-905,907-916
+  s_29d8df116c5b92::t_cd2a5569522698 26,28,35,45,214
+  s_29d8df116c5b92::t_8dddab3d1ab9b9 213,755-762
+  s_29d8df116c5b92::t_d80064014a263d 874-875
+  s_29d8df116c5b92::t_4bfced550aaa12 860-864,870-871,886
+  s_29d8df116c5b92::t_6cd5246349aa0f 832,837,839,847,852-853,888,906
+src/modules/CrdtDocument/useCases/__tests__/commandSourcePublication.spec.ts
+  s_29d8df116c5b92::t_e9a7ddab72abdc 44-46
+src/modules/Command/stores/undoSessionMirror.ts
+  s_29d8df116c5b92::t_da7018bf0bb5e4 337,339,359-364,366-379
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_29d8df116c5b92::t_d0706585c30d1b 618-637
+  s_29d8df116c5b92::t_0ab26dfce7da19 617
+src/app/bootstrap.ts
+  s_29d8df116c5b92::t_1ec8a86267eb85 659-661
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_29d8df116c5b92::t_d87a8c126bb2fd 288-315
+src/modules/Command/stores/undoStore.ts
+  s_29d8df116c5b92::t_b51211fba76e32 193-196
+  s_29d8df116c5b92::t_de35624c533e8b 39-41
+  s_29d8df116c5b92::t_21e8a371e97673 5,33-34,43-59,78-81,89,95-96,118-119,158-160
+  s_29d8df116c5b92::t_cf5cee20f4e218 82-88,90-94
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_29d8df116c5b92::t_fb1c4ee5bebf7b 21-38,44-52,54-61,78-80,111-134
+  s_29d8df116c5b92::t_6c12bd1d3dfde7 20,39-43,53,62-77,81-110,135-149
+src/modules/Command/useCases/registerProductionCommandHandlers.ts
+  s_29d8df116c5b92::t_edc672cf649d91 9-12,20-29
+  s_29d8df116c5b92::t_f88830fb207a78 30-32
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_29d8df116c5b92::t_08daf5a6097d29 35-37,43,45
+  s_29d8df116c5b92::t_118bc19714554d 31-33,54-55,67,74,83,85,133-134,137,142,158,163,167,175,179,183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e8d49089065487c0c616f02997692d5696acdc9",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
