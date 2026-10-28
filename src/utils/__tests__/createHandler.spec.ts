@@ -25,6 +25,29 @@ describe('createHandler', () => {
         expect(describe).toHaveBeenCalledWith(action);
     });
 
+    it('forwards the optional abort context without requiring it from existing callers', () => {
+        const rollback = vi.fn();
+        const abort = vi.fn();
+        const handler = createHandler<'setTempo'>({
+            undoable: true,
+            execute: vi.fn(),
+            describe: () => ({ label: 'Set tempo' }),
+            prepareAbort: (action, context) => {
+                abort(action, context);
+                return rollback;
+            },
+        });
+        const action = { type: 'setTempo' as const, payload: { bpm: 120 } };
+        const context = { actions: [action], actionIndex: 0 };
+        handler.prepareAbort?.(action, context)();
+        handler.prepareAbort?.(action)();
+        expect(abort.mock.calls).toEqual([
+            [action, context],
+            [action, undefined],
+        ]);
+        expect(rollback).toHaveBeenCalledTimes(2);
+    });
+
     it('keeps only handlers with explicit side-effect-free validation batchable', () => {
         const handler = createHandler<'setTempo'>({
             undoable: true,
