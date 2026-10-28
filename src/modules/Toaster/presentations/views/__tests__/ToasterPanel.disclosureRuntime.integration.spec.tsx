@@ -261,7 +261,7 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
         expect(screen.getByText('Morph on', { selector: 'button' })).toBeEnabled();
         expect(screen.getByLabelText('Position 50%', { selector: 'input[type=range]' })).toHaveValue('0.5');
         mark('saved state and restored UI complete');
-    });
+    }, 10_000);
     it('starts in Simple and reveals every existing advanced region only in Full', () => {
         render(<ToasterPanel deviceId={DEVICE_ID} />);
         expect(screen.getByRole('combobox', { name: 'Toaster view' })).toHaveValue('simple');

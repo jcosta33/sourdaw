@@ -18,6 +18,18 @@ independent recovery must fail the transient case; removing its budget or entry-
 fail the persistent or late-error case. Exercise source and generated entry identity under the
 actual production CSP, plus controller absence without conditional test admission.
 
+### 2026-10-28 — a complete persistence workflow exhausted its case budget (introduced by PR #5798)
+
+PR #5798 added a case with six sequential real committed transitions under the default case deadline.
+[Hosted run 40777377382, unit shard 3/4](https://github.com/jcosta33/sourdaw/actions/runs/40777377382/job/123131079682)
+showed continuing progress and CPU work: the final position transition began at 4834 ms of a
+5000 ms case budget. Historical private review prompts and tiers are unknown.
+
+Check that the whole-case budget accommodates sequential committed transitions and their individual
+wait bounds. Measure phase progress and CPU before adjusting a deadline; do not raise global timeouts
+or treat a green retry as recovery. Mutate a real producer to persist the wrong value and require the
+existing functional case to fail even with the adjusted budget.
+
 ### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
