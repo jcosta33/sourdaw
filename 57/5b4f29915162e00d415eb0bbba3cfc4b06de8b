@@ -1,0 +1,24 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_b3201877f50e8a::t_8ee18f42d670ff 363,569,682-725,2774-2814
+  s_b3201877f50e8a::t_156623c223fe03 2815-2816
+.github/workflows/validation.yml
+  s_b3201877f50e8a::t_8ee18f42d670ff 68-69,78,145,158
+.agents/skills/review-stances/repository-independent-scope.md
+  s_b3201877f50e8a::t_9a532940fd02d2 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "575b4f29915162e00d415eb0bbba3cfc4b06de8b",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
